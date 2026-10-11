@@ -185,9 +185,10 @@ namespace ZoneEngine_New.Core.Inventory
             => Identity.Type == IdentityType.Container && Identity.Instance != 0 && Can(CanFlags.Use);
 
         /// <summary>Gates checked when a use starts: <see cref="CanStillUse"/> plus the ToUse requirements.</summary>
-        public bool CanBeginUse(Player player)
+        public bool CanBeginUse(Player player, Character? target = null)
             => CanStillUse(player)
-                && Definition.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse, player.ResolvePerkRequirement);
+                && Definition.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse, player.ResolvePerkRequirement,
+                    target == null ? null : stat => target.Stats.Get(stat), target == null ? null : target.ResolveRequirement);
 
         /// <summary>
         /// Gates checked again when a delayed use completes. ToUse requirements are not among them: met when the use
@@ -213,8 +214,7 @@ namespace ZoneEngine_New.Core.Inventory
 
         /// <summary>
         /// Runs OnUse spells and spends a consumable charge. Callers gate with <see cref="CanBeginUse"/>.
-        /// <paramref name="target"/> is who Target functions land on: the user unless the item applies to a hostile
-        /// (<see cref="UseTargetRules"/>).
+        /// <paramref name="target"/> is who Target functions land on, resolved before queuing by <see cref="UseTargetRules"/>.
         /// </summary>
         public bool ExecuteUse(
             Player player,

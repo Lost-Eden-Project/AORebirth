@@ -113,22 +113,34 @@ namespace ZoneEngine_New.Core.Inventory
                 return ItemUseStart.Rejected;
 
             player.SyncCharState();
-            if (!item.CanBeginUse(player))
+            CanFlags can = UseTargetRules.CanOf(item.Definition);
+            Character useTarget = player;
+            if ((UseTargetRules.IsHostileTargeted(can) || UseTargetRules.AppliesToFriendly(can))
+                && !UseTargetRules.TryResolve(player, can, out useTarget, out UseTargetRules.Failure targetFailure))
+            {
+                UseTargetRules.SendFailure(player, targetFailure, player.TryResolveFightingTarget());
+                return ItemUseStart.Rejected;
+            }
+
+            if (!ReferenceEquals(useTarget, player))
+            {
+                useTarget.SyncCharState();
+            }
+            if (!item.CanBeginUse(player, useTarget))
             {
                 if (item.UsesFightingTarget && player.TryResolveFightingTarget() == null)
                     ClientFeedback.Send(player, ClientFeedback.RequiresFightingTarget);
                 else
-                    RequirementFeedback.SendIfUnmet(player, item.Definition, ActionType.ToUse, resolve: player.ResolvePerkRequirement);
+                    RequirementFeedback.SendIfUnmet(player, item.Definition, ActionType.ToUse,
+                        resolve: player.ResolvePerkRequirement, getTargetStat: stat => useTarget.Stats.Get(stat),
+                        resolveTarget: useTarget.ResolveRequirement);
                 return ItemUseStart.Rejected;
             }
 
-            // ApplyOnHostile / ApplyOnFightingTarget items are used on a hostile, not on the user (UseTargetRules).
-            CanFlags can = UseTargetRules.CanOf(item.Definition);
-            Character useTarget = player;
-            if (UseTargetRules.IsHostileTargeted(can)
-                && !UseTargetRules.TryResolve(player, can, out useTarget, out UseTargetRules.Failure targetFailure))
+            if (UseTargetRules.AppliesToFriendly(can)
+                && UseTargetRules.CheckFriendlyReach(player, item.Definition, useTarget) is { } reachFailure)
             {
-                UseTargetRules.SendFailure(player, targetFailure, player.TryResolveFightingTarget());
+                UseTargetRules.SendFailure(player, reachFailure, useTarget);
                 return ItemUseStart.Rejected;
             }
 

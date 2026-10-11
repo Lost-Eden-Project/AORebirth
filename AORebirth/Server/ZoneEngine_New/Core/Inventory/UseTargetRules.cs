@@ -6,6 +6,7 @@ namespace ZoneEngine_New.Core.Inventory
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
+    using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
@@ -14,8 +15,10 @@ namespace ZoneEngine_New.Core.Inventory
     /// <item><see cref="CanFlags.ApplyOnFightingTarget"/>: only the character the user is fighting right now.</item>
     /// <item><see cref="CanFlags.ApplyOnHostile"/>: any combat-enabled character the user may attack (selected, else
     /// the fighting target), without having to be fighting it; using it does not start auto-attack.</item>
+    /// <item><see cref="CanFlags.ApplyOnFriendly"/>: the selected character; no selection or explicit self selection
+    /// uses the user only with <see cref="CanFlags.ApplyOnSelf"/>. Hostile flags retain precedence.</item>
     /// </list>
-    /// Templates with neither flag keep their own targeting.
+    /// Templates with none of these flags keep their own targeting.
     /// </summary>
     internal static class UseTargetRules
     {
@@ -30,7 +33,10 @@ namespace ZoneEngine_New.Core.Inventory
             None,
             NoFightingTarget,
             NoHostileTarget,
-            NotAttackable
+            NotAttackable,
+            NoFriendlyTarget,
+            OutOfRange,
+            NoLineOfSight
         }
 
         public static CanFlags CanOf(ItemTemplate template)
@@ -43,14 +49,43 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>True when <paramref name="can"/> aims the use at a hostile (either rule above).</summary>
         public static bool IsHostileTargeted(CanFlags can) => NeedsFightingTarget(can) || AppliesToHostile(can);
 
+        public static bool AppliesToFriendly(CanFlags can) => !IsHostileTargeted(can) && (can & CanFlags.ApplyOnFriendly) != 0;
+
         /// <summary>
-        /// Resolves the target of a hostile-targeted use. False with <paramref name="failure"/> when there is no valid
-        /// target; <paramref name="target"/> is then the user.
+        /// Resolves the target of a character-targeted use. False with <paramref name="failure"/> when there is no valid target.
         /// </summary>
         public static bool TryResolve(Player user, CanFlags can, out Character target, out Failure failure)
         {
             target = user;
             failure = Failure.None;
+
+            if (AppliesToFriendly(can))
+            {
+                Identity selected = user.Target;
+                if (selected.Instance == 0 || selected == user.Identity)
+                {
+                    if ((can & CanFlags.ApplyOnSelf) == 0)
+                    {
+                        failure = Failure.NoFriendlyTarget;
+                        return false;
+                    }
+                }
+                else
+                {
+                    // An invalid selection must not silently redirect a consumable to its user.
+                    if (user.Playfield == null
+                        || !user.Playfield.GetRequiredService<DynelRegistry>().TryGet(selected, out Dynel? dynel)
+                        || dynel is not Character chosenFriendly)
+                    {
+                        failure = Failure.NoFriendlyTarget;
+                        return false;
+                    }
+                    target = chosenFriendly;
+                }
+
+                failure = Revalidate(user, can, target) ?? Failure.None;
+                return failure == Failure.None;
+            }
 
             Character? chosen;
             if (NeedsFightingTarget(can))
@@ -83,11 +118,23 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// Rechecks a resolved target when a delayed use finishes: still here and attackable, and for a fighting-target use
-        /// still the one being fought. Null when still valid.
+        /// Rechecks the captured recipient when a delayed use finishes. Friendly recipients must remain present, alive
+        /// and connected. Hostile recipients must remain attackable and, when required, still the one being fought.
         /// </summary>
         public static Failure? Revalidate(Player user, CanFlags can, Character target)
         {
+            if (AppliesToFriendly(can))
+            {
+                if (target.IsDead || user.Playfield == null || !ReferenceEquals(target.Playfield, user.Playfield)
+                    || (target is Player recipient && recipient.Session?.State != SessionState.InPlay))
+                    return Failure.NoFriendlyTarget;
+                if (!ReferenceEquals(target, user)
+                    && (!user.Playfield.GetRequiredService<DynelRegistry>().TryGet(target.Identity, out Dynel? current)
+                        || !ReferenceEquals(current, target)))
+                    return Failure.NoFriendlyTarget;
+                return null;
+            }
+
             if (ReferenceEquals(target, user) || !IsHostileTargeted(can))
                 return null;
             if (target.IsDead || !ReferenceEquals(target.Playfield, user.Playfield))
@@ -96,6 +143,19 @@ namespace ZoneEngine_New.Core.Inventory
                 return Failure.NoFightingTarget;
             if (!CombatRules.CanAttack(user, target))
                 return Failure.NotAttackable;
+            return null;
+        }
+
+        /// <summary>Use the template's AttackRange and the same start-only reach checks as item-backed perk actions.</summary>
+        public static Failure? CheckFriendlyReach(Player user, ItemTemplate template, Character target)
+        {
+            if (ReferenceEquals(target, user))
+                return null;
+            int range = template.Stats.TryGetValue(CharacterStat.AttackRange, out int value) ? StatCollection.Normalize(value) : 0;
+            if (user.GetEdgeDistanceTo(target) > (range > 0 ? range : 1))
+                return Failure.OutOfRange;
+            if (!user.HasLineOfSightTo(target))
+                return Failure.NoLineOfSight;
             return null;
         }
 
@@ -108,6 +168,15 @@ namespace ZoneEngine_New.Core.Inventory
                     break;
                 case Failure.NoHostileTarget:
                     RequirementFeedback.SendText(user, "You need a hostile target to use this.");
+                    break;
+                case Failure.NoFriendlyTarget:
+                    RequirementFeedback.SendText(user, "You need a valid friendly target to use this.");
+                    break;
+                case Failure.OutOfRange:
+                    RequirementFeedback.SendText(user, "Your target is out of range.");
+                    break;
+                case Failure.NoLineOfSight:
+                    RequirementFeedback.SendText(user, "Your target is not in line of sight.");
                     break;
                 case Failure.NotAttackable:
                     ClientFeedback.Send(user, target != null && CombatRules.IsPvpAttackBlocked(user, target)

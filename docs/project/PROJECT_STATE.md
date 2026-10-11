@@ -1,5 +1,15 @@
 # AORebirth Project State
 
+PROVEN (2026-10-11, friendly inventory item recipient repair):
+`codex/friendly-item-targeting`, based on public master `3805aa851fcbe9ba81a9147954a9f1bf26e4fa8f`,
+resolves ApplyOnFriendly from selection before ToUse checks, preserves permitted
+self-use and captures the recipient through delay. Existing effect functions,
+restoration data, explicit skill-lock ownership and user-owned consumption remain
+unchanged. Approved Windows core build and 52 focused tests passed. The normal
+test-project compile still reports six unrelated missing mission-test types;
+no full-suite pass is claimed. Two-client acceptance and obstructed LOS geometry
+remain UNVERIFIED. No master merge or deployment. See `docs/ai/CURRENT_TASK.md`.
+
 UNVERIFIED (2026-10-11, ordinary empty-playfield unload candidate):
 `codex/idle-playfield-unload`, based on public master
 `6ec06bbd45e72496923275dcc8fd4e25fecace73`, implements full retirement after

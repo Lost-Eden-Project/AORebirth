@@ -51,4 +51,12 @@
     <Compile Include="QuestDungeonDestinationTests.cs" />
     <Compile Include="../../Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging.Tests/MissionLevelGraphTests.cs" Link="Missions/MissionLevelGraphTests.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(FriendlyItemUseFocusedTests)' == 'true'">
+    <Compile Remove="@(Compile)" />
+    <Compile Include="TestDoubles.cs" />
+    <Compile Include="InventoryActionTests.cs" />
+    <Compile Include="FriendlyItemUseTests.cs" />
+    <Compile Include="SkillLockTests.cs" />
+    <Compile Include="RequirementExpressionTests.cs" />
+  </ItemGroup>
 </Project>
