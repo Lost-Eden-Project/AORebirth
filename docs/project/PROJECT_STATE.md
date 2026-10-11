@@ -1,5 +1,16 @@
 # AORebirth Project State
 
+PROVEN (2026-10-11, procedural dungeon foundation candidate):
+`codex/procedural-dungeon-foundation`, based on master `3805aa851`, extends the
+existing assembler with editable multi-style solo selection and validated team
+floor/boss-chamber geometry. Version-1/2 accepted layouts remain byte-identical;
+new version-3 plans use existing quest JSON persistence. Approved build,
+111 focused cases (including 288 configured-boundary layouts), 74 real-MySQL
+identity checks and 275 persistence checks passed. Team acceptance/boss NPCs,
+objective population and independent loot remain the next milestone; original
+client acceptance of the new layouts is UNVERIFIED. No runtime capture loading,
+DAO/schema change or deployment. See `docs/reports/PROCEDURAL_DUNGEON_FOUNDATION.md`.
+
 UNVERIFIED (2026-10-11, ordinary empty-playfield unload candidate):
 `codex/idle-playfield-unload`, based on public master
 `6ec06bbd45e72496923275dcc8fd4e25fecace73`, implements full retirement after

@@ -1,0 +1,12 @@
+{
+  "_comment": "AORebirth generation policy, not a reconstruction of Funcom selection probabilities. QL2 team captures have two floors; QL220 has five. Intermediate sizes/floor bands are configurable policy. Team layout support reserves a separate boss floor; team acceptance and boss population are a subsequent milestone. Room roles and exact floor-travel anchors live in DungeonEntrances.json.",
+  "FloorHeight": 64,
+  "LockedDoorChancePercent": 0,
+  "Profiles": [
+    { "Team": false, "MinQuality": 1, "MaxQuality": 250, "Styles": [321, 324, 341, 351], "Floors": 1, "MinFloorSize": 9, "MaxFloorSize": 16 },
+    { "Team": true, "MinQuality": 1, "MaxQuality": 24, "Styles": [324, 341], "Floors": 2, "MinFloorSize": 8, "MaxFloorSize": 12 },
+    { "Team": true, "MinQuality": 25, "MaxQuality": 99, "Styles": [341], "Floors": 3, "MinFloorSize": 9, "MaxFloorSize": 14 },
+    { "Team": true, "MinQuality": 100, "MaxQuality": 179, "Styles": [341], "Floors": 4, "MinFloorSize": 9, "MaxFloorSize": 14 },
+    { "Team": true, "MinQuality": 180, "MaxQuality": 250, "Styles": [341], "Floors": 5, "MinFloorSize": 10, "MaxFloorSize": 14 }
+  ]
+}

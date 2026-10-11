@@ -59,6 +59,14 @@ public sealed class QuestDungeonDestinationTests
         };
         Assert.IsNull(f.Accept());
         QuestDungeonParameters parameters = f.Parameters();
+        Assert.AreEqual(DungeonLayoutGenerator.CurrentVersion, parameters.GeneratorVersion);
+        Assert.IsFalse(parameters.IsTeam);
+        Assert.IsNotNull(parameters.LayoutPlan);
+        Assert.AreEqual(1, parameters.LayoutPlan.FloorCount);
+        Assert.IsFalse(parameters.LayoutPlan.BossFloor);
+        Assert.IsTrue(f.Layouts.TryGenerate(parameters, out var acceptedLayout));
+        Assert.IsNull(acceptedLayout.BossRoomIndex);
+        Assert.AreEqual(0, acceptedLayout.FloorTransitions.Count);
         Assert.AreEqual(f.Offer.EntranceType, parameters.EntranceType);
         Assert.AreEqual(f.Offer.EntranceInstance, parameters.EntranceInstance);
         Assert.AreEqual(f.Entrance.PlayfieldId, parameters.EntrancePlayfield);
@@ -122,7 +130,7 @@ public sealed class QuestDungeonDestinationTests
     {
         var parameters = new QuestDungeonParameters
         {
-            Seed = 42, GeneratorVersion = DungeonLayoutGenerator.CurrentVersion,
+            Seed = 42, GeneratorVersion = 2,
             DungeonPlayfield = QuestDungeonIds.FirstPlayfield + 100, EntranceInstance = unchecked((int)0xF1234567)
         };
         Assert.IsTrue(QuestDungeonParameters.TryParse(parameters.ToJson(), out var restored));
@@ -140,9 +148,9 @@ public sealed class QuestDungeonDestinationTests
     public void RealProceduralLayoutPreservesHighBitIdentityAndSameSeedPayload()
     {
         using var f = new Fixture();
-        Assert.IsTrue(f.Layouts.TryGenerate(42, DungeonLayoutGenerator.CurrentVersion, f.Offer.EntranceInstance, out var first));
+        Assert.IsTrue(f.Layouts.TryGenerate(42, 2, f.Offer.EntranceInstance, out var first));
         var independent = new DungeonLayoutGenerator(RuntimeData.Value, new StubLogger());
-        Assert.IsTrue(independent.TryGenerate(42, DungeonLayoutGenerator.CurrentVersion, f.Offer.EntranceInstance, out var second));
+        Assert.IsTrue(independent.TryGenerate(42, 2, f.Offer.EntranceInstance, out var second));
         Assert.AreEqual(f.Offer.EntranceInstance, first.Generator.Identity.Instance);
         Assert.AreEqual(DungeonLayoutGenerator.BuildingIdentityType, (int)first.Generator.Identity.Type);
         CollectionAssert.AreEqual(first.GeneratorPayload, second.GeneratorPayload);
@@ -348,6 +356,88 @@ public sealed class QuestDungeonDestinationTests
         f.AssertNoErrors();
     }
 
+    [TestMethod]
+    [DataRow(2)]
+    [DataRow(220)]
+    public void ActualTeamWorldBuildsEveryPlatformAndButtonAndUsesBidirectionalIntrazoneTeleports(int quality)
+    {
+        using var f = new Fixture();
+        QuestDungeonPlayfield world = f.CreateTeamWorld(quality);
+        var dynels = world.GetRequiredService<DynelRegistry>().Dynels().OfType<DungeonFloorTransitionDynel>().ToArray();
+        Assert.AreEqual(world.Layout.FloorTransitions.Count * 4, dynels.Length);
+        Assert.IsTrue(dynels.Length > 0);
+        foreach (var transition in world.Layout.FloorTransitions)
+        {
+            VerifyEndpoint(transition.From, transition.To);
+            VerifyEndpoint(transition.To, transition.From);
+        }
+        Assert.AreEqual(0, f.Session.Transfers.Count, "A floor transition must retain the same playfield instance.");
+        f.AssertNoErrors();
+
+        void VerifyEndpoint(AORebirth.DungeonGenerator.DungeonTransitionEndpoint source,
+            AORebirth.DungeonGenerator.DungeonTransitionEndpoint target)
+        {
+            foreach (int template in new[] { source.PlatformTemplateId, source.ButtonTemplateId })
+            {
+                DungeonFloorTransitionDynel dynel = dynels.Single(row => row.Template.Id == template
+                    && row.Position.xf == source.Position.X && row.Position.yf == source.Position.Y && row.Position.zf == source.Position.Z);
+                Assert.AreEqual(source.RoomIndex, dynel.Cell?.Id);
+                SimpleItemFullUpdateMessage spawn = (SimpleItemFullUpdateMessage)dynel.BuildSpawnMessage();
+                Assert.AreEqual(world.Identity.Instance, spawn.Playfield);
+                Assert.IsTrue(spawn.Stats.Any(stat => stat.Value1 == CharacterStat.StaticInstance && stat.Value2 == (uint)template));
+                Assert.IsTrue(spawn.Stats.Any(stat => stat.Value1 == CharacterStat.ACGItemLevel && stat.Value2 == (uint)dynel.Template.Quality));
+                Assert.IsTrue(spawn.Stats.Any(stat => stat.Value1 == CharacterStat.MultipleCount && stat.Value2 == 1));
+                f.Player.Playfield = world;
+                f.Player.Position = new Vector3(source.Position.X, source.Position.Y, source.Position.Z);
+                f.Session.Sent.Clear();
+                Assert.IsTrue(((IUsableDynel)dynel).TryUse(f.Player));
+                Assert.AreSame(world, f.Player.Playfield);
+                N3TeleportMessage teleport = f.Session.Sent.OfType<N3TeleportMessage>().Single();
+                Assert.AreEqual(0, teleport.ChangePlayfield.Instance);
+                Assert.AreEqual(world.Identity.Instance, teleport.Playfield2.Instance);
+                Assert.AreEqual(target.Position.X, teleport.Destination.X);
+                Assert.AreEqual(target.Position.Y, teleport.Destination.Y);
+                Assert.AreEqual(target.Position.Z, teleport.Destination.Z);
+                Assert.AreEqual(target.Position.X, f.Player.Position.xf);
+                Assert.AreEqual(target.Position.Y, f.Player.Position.yf);
+                Assert.AreEqual(target.Position.Z, f.Player.Position.zf);
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow("wrongInstance")]
+    [DataRow("distant")]
+    [DataRow("dead")]
+    [DataRow("quarantined")]
+    public void ActualFloorTransitionRejectsInvalidUsersWithoutTeleport(string denial)
+    {
+        using var f = new Fixture();
+        QuestDungeonPlayfield world = f.CreateTeamWorld(2);
+        DungeonFloorTransitionDynel dynel = world.GetRequiredService<DynelRegistry>().Dynels().OfType<DungeonFloorTransitionDynel>().First();
+        f.Player.Playfield = world;
+        f.Player.Position = new Vector3(dynel.Position.x, dynel.Position.y, dynel.Position.z);
+        switch (denial)
+        {
+            case "wrongInstance":
+                f.Player.Playfield = Blank<Playfield>();
+                typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(f.Player.Playfield, world.Identity);
+                break;
+            case "distant": f.Player.Position = new Vector3(dynel.Position.x + 100, dynel.Position.y, dynel.Position.z); break;
+            case "dead": typeof(Character).GetField("_deathNotified", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(f.Player, true); break;
+            case "quarantined": f.Player.QuarantinePersistence(); break;
+        }
+        Vector3 before = f.Player.Position;
+        f.Session.Sent.Clear();
+        Assert.IsFalse(((IUsableDynel)dynel).TryUse(f.Player));
+        Assert.AreEqual(before.x, f.Player.Position.x);
+        Assert.AreEqual(before.y, f.Player.Position.y);
+        Assert.AreEqual(before.z, f.Player.Position.z);
+        Assert.AreEqual(0, f.Session.Sent.OfType<N3TeleportMessage>().Count());
+        Assert.AreEqual(0, f.Session.Transfers.Count);
+    }
+
     static string RepositoryRoot()
     {
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
@@ -397,7 +487,7 @@ public sealed class QuestDungeonDestinationTests
             _actions = new InventoryActionService(Persistence, _flush, _ids, _logger);
             _quests = new QuestService(new QuestCatalog(RuntimeData.Value, _logger), Store, _items, _flush, _logger);
             Layouts = new DungeonLayoutGenerator(RuntimeData.Value, _logger);
-            Assert.IsTrue(Layouts.IsAvailable, "Existing runtime GameData must contain procedural style 324. Root=" + RuntimeData.Value.RootPath + "; " + _logger.Errors);
+            Assert.IsTrue(Layouts.IsAvailable, "Existing runtime GameData must contain the configured procedural styles. Root=" + RuntimeData.Value.RootPath + "; " + _logger.Errors);
             var minter = new HashItemMinter(RuntimeData.Value, _templates, _items);
             var authored = new AuthoredQuestService(null!, _flush, _items, _templates, _ids,
                 new AuthoredQuestCatalog(new InteractionContent()), _logger);
@@ -426,7 +516,7 @@ public sealed class QuestDungeonDestinationTests
             if (result == null)
             {
                 QuestDungeonParameters parameters = Parameters();
-                Assert.IsTrue(Layouts.TryGenerate(parameters.Seed, parameters.GeneratorVersion, parameters.EntranceInstance, out var layout));
+                Assert.IsTrue(Layouts.TryGenerate(parameters, out var layout));
                 Assert.IsNotNull(layout.Doors, "Existing style data must provide its door templates.");
                 _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
             }
@@ -437,6 +527,22 @@ public sealed class QuestDungeonDestinationTests
             Assert.IsNotNull(Store.Generated);
             Assert.IsTrue(QuestDungeonParameters.TryParse(Store.Generated.AcgBuildingGeneratorJson, out var parameters));
             return parameters;
+        }
+        internal QuestDungeonPlayfield CreateTeamWorld(int quality)
+        {
+            var parameters = new QuestDungeonParameters
+            {
+                Seed = 42, Quality = quality, EntranceInstance = Offer.EntranceInstance,
+                DungeonPlayfield = QuestDungeonIds.FirstPlayfield + 100
+            };
+            Assert.IsTrue(Layouts.ConfigureNewDungeon(parameters, team: true));
+            Assert.IsTrue(Layouts.TryGenerate(parameters, out DungeonLayout layout));
+            Assert.IsNotNull(layout.Doors);
+            _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
+            foreach (var transition in layout.FloorTransitions)
+                foreach (var endpoint in new[] { transition.From, transition.To })
+                    _templates.Add(endpoint.PlatformTemplateId, 1).Add(endpoint.ButtonTemplateId, 1);
+            return Manager.GetOrCreateQuestDungeon(parameters.DungeonPlayfield, "GFOUNDATION", layout, Entrance, quality: quality);
         }
         internal void SetExteriorIdentity(int playfield) => typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(_exterior, new Identity { Type = IdentityType.Playfield, Instance = playfield });
@@ -471,6 +577,8 @@ public sealed class QuestDungeonDestinationTests
         public void BindPlayer(Player player) => Player = player;
         public void UnbindPlayer() => Player = null;
         public void TransferToPlayfield(Playfield destination, Vector3 landing) => Transfers.Add((destination, landing));
+        public void SendIntrazoneTeleport(Vector3 landing, AORebirth.Core.Vector.Quaternion heading, int destinationKey)
+            => Send(ZoneSession.BuildIntrazoneTeleport(Player!, landing, heading, destinationKey));
         public void Send(byte[] packet) => throw new AssertFailedException("Unexpected raw packet.");
         public void Send(Message message) => Sent.Add(message.Body);
         public void Send(MessageBody body) => Sent.Add(body);

@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
     /// <summary>
     /// What a quest stores to recreate its dungeon (generatedquests.AcgBuildingGeneratorJson): the layout seed and
-    /// generator version, never the generated layout itself, plus the entrance it is reached through.
+    /// generator version and (from version 3) frozen generation choices, plus the entrance it is reached through.
     /// </summary>
     public sealed class QuestDungeonParameters
     {
@@ -15,6 +15,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public int Seed { get; set; }
 
         public int GeneratorVersion { get; set; }
+
+        public DungeonLayoutPlan? LayoutPlan { get; set; }
+
+        public bool IsTeam { get; set; }
 
         /// <summary>Playfield2 id of this quest's dungeon (<see cref="QuestDungeonIds"/>).</summary>
         public int DungeonPlayfield { get; set; }
@@ -64,7 +68,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 QuestDungeonParameters? parsed = JsonSerializer.Deserialize<QuestDungeonParameters>(json, JsonOptions);
                 if (parsed == null || parsed.GeneratorVersion <= 0 || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
-                    || parsed.EntranceType != (int)IdentityType.MissionEntrance)
+                    || parsed.EntranceType != (int)IdentityType.MissionEntrance
+                    || (parsed.GeneratorVersion == DungeonLayoutGenerator.CurrentVersion
+                        && (parsed.LayoutPlan?.IsValid != true || parsed.IsTeam != parsed.LayoutPlan.BossFloor)))
                     return false;
 
                 parameters = parsed;

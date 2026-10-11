@@ -1,29 +1,29 @@
 # Current Task
 
-Implement full unloading of empty ordinary playfields after a grace period.
+Implement the shared procedural mission dungeon layout foundation.
 
-Base: public master `6ec06bbd45e72496923275dcc8fd4e25fecace73`.
-Branch: `codex/idle-playfield-unload`.
+Base: public master `3805aa851` (includes the accepted mission destinations and ordinary playfield unloading).
+Branch: `codex/procedural-dungeon-foundation`.
 
-PROVEN by source inspection: ordinary playfields previously remained loaded
-with active heartbeat threads until manager shutdown. Existing cell heat and
-quest-dungeon cleanup did not retire ordinary worlds.
+Scope: extend the existing connector-based room assembler, use editable layout
+policies, add connected multi-floor layouts with a separate boss chamber and
+existing world-use/intrazone travel, and preserve accepted version-1/2 layouts.
 
-Implemented policy: a 30-second manager sweep retires an ordinary playfield
-after ten minutes continuously empty of players, admissions and transfers.
-Queued work must be drained before retirement. NPC maintenance does not reset
-the player-empty clock. Unloading discards transient NPC, corpse and respawn
-state; the next entry rebuilds the world on demand.
+New solo acceptance uses the same transaction/key/entrance flow. Team layout
+generation is exercised independently; carrying team mode through offer/roster
+acceptance and populating a guaranteed boss are the next encounter milestone.
+Do not enable a team mission without that boss contract. NPC/content/loot,
+terminal rewards, QL, destinations, DAO and schema are outside this increment.
 
-Admissions protect login, reconnect, respawn, queued destination callbacks and
-transfer completion. Existing logout inventory flush/snapshot ordering and
-quest-dungeon cleanup remain in place. Retirement stops the heartbeat and
-disposes the world before releasing its per-playfield caches and metrics.
-A cleanup failure blocks replacement rather than overlapping two worlds.
+Evidence inputs are the completed retail capture corpus only. Runtime reads
+GameData, never captures. Generated policy is explicitly AORebirth policy;
+observations do not establish Funcom's random selection probabilities.
 
-Validation: approved Windows core-engine build PASS; source/lock review and
-diff checks completed. Automated suites were not requested or run. Live client
-acceptance, timed idle unloading/re-entry and measured resource recovery remain
-UNVERIFIED. No production deployment is included.
+Validation: approved build and 111 focused mission/foundation cases passed,
+including 288 configured-boundary layouts, real collision/floor-travel worlds,
+and legacy byte-for-byte fixtures. Disposable MySQL passed 74 identity and
+275 persistence/rollback/concurrency checks. Mike performs original-client
+acceptance; the agent does not control the client. Services are stopped.
 
-See `docs/reports/EMPTY_PLAYFIELD_UNLOAD.md` for scope and remaining risks.
+See `docs/evidence/PROCEDURAL_DUNGEON_FOUNDATION_EVIDENCE.md` for capture provenance.
+Implementation and remaining encounter work: `docs/reports/PROCEDURAL_DUNGEON_FOUNDATION.md`.

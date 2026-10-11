@@ -5,6 +5,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Text.Json;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
@@ -18,13 +19,17 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     /// A generated dungeon layout: the generator the client builds the building from, the arrival point, the seed it
     /// came from (door states roll from it), and the style's doors (null when the style has none configured).
     /// </summary>
-    public sealed record DungeonLayout(AcgBuildingGeneratorData Generator, byte[] GeneratorPayload, Vector3 Spawn, int Seed, DungeonDoorStyle? Doors);
+    public sealed record DungeonLayout(AcgBuildingGeneratorData Generator, byte[] GeneratorPayload, Vector3 Spawn, int Seed, DungeonDoorStyle? Doors)
+    {
+        public IReadOnlyList<AORebirth.DungeonGenerator.DungeonFloorTransition> FloorTransitions { get; init; } = [];
+        public int? BossRoomIndex { get; init; }
+    }
 
     /// <summary>GameData/DungeonDoorStyles.json for one ACG style: door item templates and spawn-state chances.</summary>
     public sealed record DungeonDoorStyle(int DoorTemplate, int ExitTemplate, int OpenChancePercent, int LockedChancePercent);
 
     /// <summary>
-    /// Builds a quest dungeon's ACG building generator from its stored seed. The same seed, generator version and
+    /// Builds a quest dungeon's ACG building generator from its stored seed and frozen layout plan. The same plan, seed, generator version and
     /// building identity always give the same layout, so a dungeon released while empty comes back identical.
     /// Layouts are built procedurally with AORebirth.DungeonGenerator. Version 1 (captured layouts picked by seed)
     /// was removed; quests stored with it build procedurally too.
@@ -33,13 +38,14 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     {
         public const string DoorStylesFileName = "DungeonDoorStyles.json";
 
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
+        public const string GenerationFileName = "DungeonGeneration.json";
 
         /// <summary>The removed captured-layout version; its stored seeds now build procedurally.</summary>
         const int RetiredCapturedVersion = 1;
 
-        // TEMPORARY: every accepted mission gets the same procedural dungeon shape until quest parameters (mission
-        // type, difficulty, playfield) choose the style, floors, size and lock chance.
+        // Immutable version-1/2 compatibility contract for already accepted seed-only records.
+        // New missions select their style and dimensions from editable GameData.
         const int TemporaryStyle = 324;
         const int TemporaryFloors = 2;
         const int TemporaryFloorSize = 16;
@@ -57,6 +63,25 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly ConcurrentDictionary<(int Seed, int Building), Built> _built = new();
         readonly AORebirth.DungeonGenerator.DungeonGenerator? _generator;
         readonly IZoneLogger _logger;
+        GenerationPolicy? _policy;
+
+        sealed class GenerationPolicy
+        {
+            public int FloorHeight { get; set; }
+            public int LockedDoorChancePercent { get; set; }
+            public List<GenerationProfile> Profiles { get; set; } = [];
+        }
+
+        sealed class GenerationProfile
+        {
+            public bool Team { get; set; }
+            public int MinQuality { get; set; }
+            public int MaxQuality { get; set; }
+            public int[] Styles { get; set; } = [];
+            public int Floors { get; set; }
+            public int MinFloorSize { get; set; }
+            public int MaxFloorSize { get; set; }
+        }
 
         sealed class DoorStylesFile
         {
@@ -85,15 +110,37 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             try
             {
                 _generator = new AORebirth.DungeonGenerator.DungeonGenerator(gameData.RootPath);
-                _generator.LoadStyle(TemporaryStyle);
             }
             catch (Exception exception)
             {
                 _generator = null;
-                logger.Error(exception, "Procedural dungeon style " + TemporaryStyle + " failed to load; new quest dungeons cannot be generated");
+                logger.Error(exception, "Procedural dungeon resources failed to initialize");
             }
 
             LoadDoorStyles(Path.Combine(gameData.RootPath, DoorStylesFileName), logger);
+            try
+            {
+                _policy = JsonSerializer.Deserialize<GenerationPolicy>(File.ReadAllText(Path.Combine(gameData.RootPath, GenerationFileName)),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (_policy == null || _policy.FloorHeight is <= 0 or > 255
+                    || _policy.LockedDoorChancePercent is < 0 or > 100 || _policy.Profiles.Count == 0
+                    || _policy.Profiles.Any(p => p.MinQuality < 1 || p.MinQuality > p.MaxQuality
+                        || p.Styles.Length == 0 || p.Styles.Any(s => s <= 0) || p.Floors < (p.Team ? 2 : 1) || p.Floors > 8
+                        || (!p.Team && p.Floors != 1) || p.MinFloorSize < 3 || p.MaxFloorSize > 40 || p.MinFloorSize > p.MaxFloorSize))
+                    throw new InvalidDataException("Invalid dungeon generation policy.");
+                // Coverage must be unambiguous: missing bands are explicitly unsupported, overlapping ones are a data error.
+                for (int i = 0; i < _policy.Profiles.Count; i++)
+                    for (int j = i + 1; j < _policy.Profiles.Count; j++)
+                        if (_policy.Profiles[i].Team == _policy.Profiles[j].Team
+                            && _policy.Profiles[i].MinQuality <= _policy.Profiles[j].MaxQuality
+                            && _policy.Profiles[j].MinQuality <= _policy.Profiles[i].MaxQuality)
+                            throw new InvalidDataException("Overlapping dungeon generation profiles.");
+            }
+            catch (Exception exception)
+            {
+                _policy = null;
+                logger.Error(exception, "Failed to load " + GenerationFileName + "; new mission acceptance is unavailable");
+            }
         }
 
         void LoadDoorStyles(string path, IZoneLogger logger)
@@ -125,7 +172,74 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         }
 
         /// <summary>True when layouts of <see cref="CurrentVersion"/> can be generated.</summary>
-        public bool IsAvailable => _generator != null;
+        public bool IsAvailable => _generator != null && _policy != null;
+
+        /// <summary>Freeze new layout choices before the existing acceptance transaction. No capture data is read here.</summary>
+        public bool ConfigureNewDungeon(QuestDungeonParameters parameters, bool team)
+        {
+            ArgumentNullException.ThrowIfNull(parameters);
+            if (_generator == null || _policy == null || (parameters.GeneratorVersion != 0 && parameters.GeneratorVersion != CurrentVersion))
+                return false;
+            GenerationProfile? profile = _policy.Profiles.SingleOrDefault(p => p.Team == team
+                && parameters.Quality >= p.MinQuality && parameters.Quality <= p.MaxQuality);
+            if (profile == null) return false;
+            try
+            {
+                var random = new Random(parameters.Seed);
+                int style = profile.Styles[random.Next(profile.Styles.Length)];
+                var rooms = _generator.LoadStyle(style);
+                parameters.GeneratorVersion = CurrentVersion;
+                parameters.IsTeam = team;
+                parameters.LayoutPlan = new DungeonLayoutPlan
+                {
+                    StyleId = style, FloorCount = profile.Floors,
+                    FloorSize = random.Next(profile.MinFloorSize, profile.MaxFloorSize + 1),
+                    FloorHeight = _policy.FloorHeight, BossFloor = team,
+                    DescendingFloors = rooms.Transitions?.DescendingFloors ?? false,
+                    LockedDoorChancePercent = _policy.LockedDoorChancePercent
+                };
+                return parameters.LayoutPlan.IsValid;
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Dungeon generation profile could not be resolved");
+                return false;
+            }
+        }
+
+        public bool TryGenerate(QuestDungeonParameters parameters, out DungeonLayout layout)
+        {
+            ArgumentNullException.ThrowIfNull(parameters);
+            if (parameters.GeneratorVersion is 1 or 2)
+                return TryGenerate(parameters.Seed, parameters.GeneratorVersion, parameters.EntranceInstance, out layout);
+            layout = null!;
+            DungeonLayoutPlan? plan = parameters.LayoutPlan;
+            if (parameters.GeneratorVersion != CurrentVersion || _generator == null || plan?.IsValid != true
+                || parameters.IsTeam != plan.BossFloor) return false;
+            try
+            {
+                var result = _generator.Generate(new AORebirth.DungeonGenerator.DungeonGenerationRequest
+                {
+                    StyleId = plan.StyleId, Seed = parameters.Seed, FloorCount = plan.FloorCount,
+                    FloorSize = plan.FloorSize, FloorHeight = plan.FloorHeight, BossFloor = plan.BossFloor,
+                    DescendingFloors = plan.DescendingFloors, UseFloorTransitions = true,
+                    LockedDoorChancePercent = plan.LockedDoorChancePercent, BuildingInstance = parameters.EntranceInstance
+                });
+                DungeonDoorStyle? doors = _doorStyles.TryGetValue(plan.StyleId, out var style)
+                    ? style with { LockedChancePercent = plan.LockedDoorChancePercent } : null;
+                layout = new DungeonLayout(result.Generator, result.Generator.ToByteArray(),
+                    new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z), parameters.Seed, doors)
+                {
+                    FloorTransitions = result.Transitions, BossRoomIndex = result.BossRoomIndex
+                };
+                return true;
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Procedural dungeon generation failed for seed " + parameters.Seed.ToString(CultureInfo.InvariantCulture));
+                return false;
+            }
+        }
 
         /// <summary>
         /// The layout for <paramref name="seed"/> at <paramref name="version"/>, stamped with the dungeon's building
@@ -134,7 +248,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public bool TryGenerate(int seed, int version, int buildingInstance, out DungeonLayout layout)
         {
             layout = null!;
-            if ((version != CurrentVersion && version != RetiredCapturedVersion) || _generator == null)
+            if ((version != 2 && version != RetiredCapturedVersion) || _generator == null)
                 return false;
 
             if (!_built.TryGetValue((seed, buildingInstance), out Built? built))

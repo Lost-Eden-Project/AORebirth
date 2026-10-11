@@ -185,7 +185,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 };
                 using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.layout", player.Identity.Instance))
                 {
-                    if (!_layouts.TryGenerate(parameters.Seed, parameters.GeneratorVersion, parameters.EntranceInstance, out _))
+                    // Current offers are solo. Team mode must be carried from the roll request and accepted roster
+                    // in the encounter milestone; party membership alone must never change an offered mission's mode.
+                    if (!_layouts.ConfigureNewDungeon(parameters, team: false) || !_layouts.TryGenerate(parameters, out _))
                         return "Mission dungeons are unavailable.";
                 }
 
@@ -304,7 +306,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         || unchecked((uint)dungeon.Parameters.EntranceInstance) != entrance.IdentityInstance)
                         continue;
 
-                    if (!_layouts.TryGenerate(dungeon.Parameters.Seed, dungeon.Parameters.GeneratorVersion, dungeon.Parameters.EntranceInstance, out DungeonLayout layout))
+                    if (!_layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
                         return false;
 
                     QuestDungeonPlayfield world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
@@ -393,7 +395,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 && _entrances.TryGetByIdentity(unchecked((uint)dungeon.Parameters.EntranceType), unchecked((uint)dungeon.Parameters.EntranceInstance), out MissionEntrancePlacement entrance))
             {
                 if (!dungeon.Ended && dungeon.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks && dungeon.Parameters.DungeonPlayfield == storedPlayfield
-                    && _layouts.TryGenerate(dungeon.Parameters.Seed, dungeon.Parameters.GeneratorVersion, dungeon.Parameters.EntranceInstance, out DungeonLayout layout))
+                    && _layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
                     return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
                         dungeon.Parameters.Quality), layout.Spawn, null);
 

@@ -88,6 +88,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         if (dungeon != null)
         {
             SpawnDoors(dungeon.Doors, locality);
+            SpawnFloorTransitions(locality);
             AddDistrictSpawns(dungeon);
         }
 
@@ -222,6 +223,11 @@ public sealed class QuestDungeonPlayfield : Playfield
             links[door.Room].Add(door.LinkedRoom);
             links[door.LinkedRoom].Add(door.Room);
         }
+        foreach (var transition in Layout.FloorTransitions)
+        {
+            links[transition.From.RoomIndex].Add(transition.To.RoomIndex);
+            links[transition.To.RoomIndex].Add(transition.From.RoomIndex);
+        }
 
         var distance = new int[count];
         Array.Fill(distance, -1);
@@ -295,6 +301,36 @@ public sealed class QuestDungeonPlayfield : Playfield
                 return null;
             }
         });
+
+    void SpawnFloorTransitions(PlayfieldLocality locality)
+    {
+        var registry = GetRequiredService<DynelRegistry>();
+        foreach (var transition in Layout.FloorTransitions)
+        {
+            SpawnEndpoint(transition.From, transition.To);
+            SpawnEndpoint(transition.To, transition.From);
+        }
+
+        void SpawnEndpoint(AORebirth.DungeonGenerator.DungeonTransitionEndpoint source,
+            AORebirth.DungeonGenerator.DungeonTransitionEndpoint target)
+        {
+            foreach (int templateId in new[] { source.PlatformTemplateId, source.ButtonTemplateId })
+            {
+                if (!ItemTemplates.TryGet(templateId, out ItemTemplate? template) || template == null)
+                    throw new InvalidDataException("Dungeon floor transition item template is unavailable: " + templateId);
+                var dynel = new DungeonFloorTransitionDynel(registry.AllocateStaticDynelIdentity(),
+                    template, new AORebirth.Core.Vector.Vector3(target.Position.X, target.Position.Y, target.Position.Z))
+                {
+                    Playfield = this,
+                    Position = new AORebirth.Core.Vector.Vector3(source.Position.X, source.Position.Y, source.Position.Z),
+                    // Platform/button updates retain world identity heading even in rotated captured rooms.
+                    Rotation = new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1)
+                };
+                registry.Register(dynel);
+                locality.RegisterDynel(dynel);
+            }
+        }
+    }
 
     /// <summary>First door instance; doors are numbered in layout order, exit first, as live dungeons do.</summary>
     const int FirstDoorInstance = 0x10000001;

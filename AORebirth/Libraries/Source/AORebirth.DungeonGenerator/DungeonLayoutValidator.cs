@@ -14,7 +14,12 @@ namespace AORebirth.DungeonGenerator
         /// <summary>Rooms overlapping another room's blocks, or outside the grid.</summary>
         public IReadOnlyList<int> BadRooms { get; init; } = [];
 
-        public bool IsValid => Unmatched.Count == 1 && BadRooms.Count == 0;
+        public IReadOnlyList<int> UnreachableRooms { get; init; } = [];
+
+        public IReadOnlyList<int> BadTransitions { get; init; } = [];
+
+        public bool IsValid => Unmatched.Count == 1 && BadRooms.Count == 0
+            && UnreachableRooms.Count == 0 && BadTransitions.Count == 0;
     }
 
     /// <summary>
@@ -25,6 +30,78 @@ namespace AORebirth.DungeonGenerator
     /// </summary>
     public static class DungeonLayoutValidator
     {
+        /// <summary>Door legality plus reachability from the entry room through doors and explicit floor platforms.</summary>
+        public static DungeonValidation ValidateConnected(IReadOnlyList<PlacedRoom> rooms, int gridWidth,
+            int gridHeight, IReadOnlyList<DungeonFloorTransition> transitions)
+        {
+            ArgumentNullException.ThrowIfNull(transitions);
+            DungeonValidation geometry = Validate(rooms, gridWidth, gridHeight);
+            var edges = Enumerable.Range(0, rooms.Count).Select(_ => new HashSet<int>()).ToArray();
+            for (int from = 0; from < rooms.Count; from++)
+            {
+                for (int to = from + 1; to < rooms.Count; to++)
+                {
+                    if (rooms[from].Floor == rooms[to].Floor
+                        && rooms[from].Doors.Any(door => rooms[to].Doors.Any(door.Meets)))
+                        Connect(from, to);
+                }
+            }
+
+            var badTransitions = new List<int>();
+            var seen = new HashSet<(int, int)>();
+            for (int i = 0; i < transitions.Count; i++)
+            {
+                DungeonFloorTransition transition = transitions[i];
+                int from = transition.From.RoomIndex;
+                int to = transition.To.RoomIndex;
+                if (from < 0 || from >= rooms.Count || to < 0 || to >= rooms.Count
+                    || Math.Abs(rooms[from].Floor - rooms[to].Floor) != 1
+                    || !seen.Add((Math.Min(from, to), Math.Max(from, to)))
+                    || !ValidEndpoint(transition.From) || !ValidEndpoint(transition.To))
+                {
+                    badTransitions.Add(i);
+                    continue;
+                }
+
+                Connect(from, to);
+            }
+
+            var reached = new HashSet<int>();
+            var pending = new Queue<int>();
+            if (rooms.Count > 0)
+            {
+                reached.Add(0);
+                pending.Enqueue(0);
+            }
+            while (pending.TryDequeue(out int room))
+            {
+                foreach (int next in edges[room])
+                    if (reached.Add(next))
+                        pending.Enqueue(next);
+            }
+
+            return new DungeonValidation
+            {
+                PairedDoors = geometry.PairedDoors,
+                SealedDoors = geometry.SealedDoors,
+                Unmatched = geometry.Unmatched,
+                BadRooms = geometry.BadRooms,
+                UnreachableRooms = Enumerable.Range(0, rooms.Count).Where(room => !reached.Contains(room)).ToArray(),
+                BadTransitions = badTransitions
+            };
+
+            void Connect(int from, int to)
+            {
+                edges[from].Add(to);
+                edges[to].Add(from);
+            }
+
+            static bool ValidEndpoint(DungeonTransitionEndpoint endpoint)
+                => endpoint.PlatformTemplateId > 0 && endpoint.ButtonTemplateId > 0
+                    && float.IsFinite(endpoint.Position.X) && float.IsFinite(endpoint.Position.Y)
+                    && float.IsFinite(endpoint.Position.Z);
+        }
+
         public static DungeonValidation Validate(IReadOnlyList<PlacedRoom> rooms, int gridWidth, int gridHeight)
         {
             ArgumentNullException.ThrowIfNull(rooms);

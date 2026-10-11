@@ -1,6 +1,18 @@
 namespace AORebirth.DungeonGenerator
 {
     using System.Text.Json;
+    using System.Numerics;
+
+    /// <summary>An original room's floor-platform position relative to its template origin.</summary>
+    public sealed record DungeonTransitionRoom(int Room, Vector3 LocalPosition, int PlatformTemplateId,
+        int ButtonTemplateId, int BossButtonTemplateId = 0);
+
+    /// <summary>Editable, capture-backed platform roles for a style. These are not NPC or loot definitions.</summary>
+    public sealed record DungeonTransitionMap(
+        IReadOnlyList<DungeonTransitionRoom> ArrivalRooms,
+        IReadOnlyList<DungeonTransitionRoom> DepartureRooms,
+        IReadOnlyList<DungeonTransitionRoom> BossRooms,
+        bool DescendingFloors);
 
     /// <summary>
     /// GameData/DungeonEntrances.json for one style: which rooms are entrances and which of each room's doors is the
@@ -11,6 +23,8 @@ namespace AORebirth.DungeonGenerator
     public sealed record DungeonEntranceMap(IReadOnlyDictionary<int, int> ExitDoors, IReadOnlySet<int> MainHalls)
     {
         public const string FileName = "DungeonEntrances.json";
+
+        public DungeonTransitionMap? Transitions { get; init; }
 
         sealed class EntrancesFile
         {
@@ -24,6 +38,25 @@ namespace AORebirth.DungeonGenerator
             public List<EntranceRow> Entrances { get; set; } = [];
 
             public List<int> MainHalls { get; set; } = [];
+
+            public TransitionRows? FloorTransitions { get; set; }
+        }
+
+        sealed class TransitionRows
+        {
+            public bool DescendingFloors { get; set; }
+            public List<TransitionRoomRow> ArrivalRooms { get; set; } = [];
+            public List<TransitionRoomRow> DepartureRooms { get; set; } = [];
+            public List<TransitionRoomRow> BossRooms { get; set; } = [];
+        }
+
+        sealed class TransitionRoomRow
+        {
+            public int Room { get; set; }
+            public float[] Position { get; set; } = [];
+            public int PlatformTemplateId { get; set; }
+            public int ButtonTemplateId { get; set; }
+            public int BossButtonTemplateId { get; set; }
         }
 
         sealed class EntranceRow
@@ -40,6 +73,7 @@ namespace AORebirth.DungeonGenerator
             string path = Path.Combine(gameDataRoot, FileName);
             var exits = new Dictionary<int, int>();
             var mainHalls = new HashSet<int>();
+            DungeonTransitionMap? transitions = null;
             if (!File.Exists(path))
                 return new DungeonEntranceMap(exits, mainHalls);
 
@@ -57,9 +91,35 @@ namespace AORebirth.DungeonGenerator
 
                 foreach (int room in style.MainHalls ?? [])
                     mainHalls.Add(room);
+
+                if (style.FloorTransitions is TransitionRows roles)
+                {
+                    if (transitions != null)
+                        throw new InvalidDataException("Duplicate floor transition map for style " + styleId + ".");
+                    transitions = new DungeonTransitionMap(ReadTransitionRooms(roles.ArrivalRooms),
+                        ReadTransitionRooms(roles.DepartureRooms), ReadTransitionRooms(roles.BossRooms), roles.DescendingFloors);
+                }
             }
 
-            return new DungeonEntranceMap(exits, mainHalls);
+            return new DungeonEntranceMap(exits, mainHalls) { Transitions = transitions };
+        }
+
+        static IReadOnlyList<DungeonTransitionRoom> ReadTransitionRooms(List<TransitionRoomRow>? rows)
+        {
+            var result = new List<DungeonTransitionRoom>();
+            var seen = new HashSet<int>();
+            foreach (TransitionRoomRow row in rows ?? [])
+            {
+                if (row == null || row.Room < 0 || !seen.Add(row.Room) || row.Position == null || row.Position.Length != 3
+                    || row.Position.Any(value => !float.IsFinite(value))
+                    || row.PlatformTemplateId <= 0 || row.ButtonTemplateId <= 0 || row.BossButtonTemplateId < 0)
+                    throw new InvalidDataException("Invalid or duplicate floor transition room in " + FileName + ".");
+                result.Add(new DungeonTransitionRoom(row.Room,
+                    new Vector3(row.Position[0], row.Position[1], row.Position[2]), row.PlatformTemplateId,
+                    row.ButtonTemplateId, row.BossButtonTemplateId));
+            }
+
+            return result.AsReadOnly();
         }
     }
 }
