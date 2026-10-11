@@ -334,6 +334,21 @@ namespace ZoneEngine_New.Core.GameData
             }
         }
 
+        /// <summary>Drops reloadable data for a fully retired ordinary world, preserving global catalogs.</summary>
+        internal void ReleasePlayfieldCache(int playfieldId)
+        {
+            lock (_playfieldSync)
+            {
+                _playfieldMetaData.Remove(playfieldId);
+                _playfieldSpawns.Remove(playfieldId);
+                _playfieldNpcs.Remove(playfieldId);
+                _playfieldGeometry.Remove(playfieldId);
+                _playfieldCharacterAppearanceOverrides.Remove(playfieldId);
+                _exitProxyDoorAllowLists.Remove(playfieldId);
+                _dungeonExitDoors.Remove(playfieldId);
+            }
+        }
+
         public IReadOnlyList<int> GetExitProxyDoorInstances(int playfieldId)
         {
             if (playfieldId <= 0)

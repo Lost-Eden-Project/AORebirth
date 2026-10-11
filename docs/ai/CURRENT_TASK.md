@@ -1,30 +1,29 @@
 # Current Task
 
-Merge the manually verified mission destination implementation into public master.
+Implement full unloading of empty ordinary playfields after a grace period.
 
-Verified source: codex/mission-destination-integration at
-30f1b3c33eb1334f6dc6e514cb3c7ac8a5f84150. Mike reports original AO client
-verification of rolling/QL, five offers/fees, terminal geography, acceptance,
-persistence, dungeon entry, mission deletion and key removal.
-Preservation tag: mission-destinations-working-30f1b3c33.
-Fetched target: ce4a3bf973b92cc7b42c3a867e636f04b89eaca7.
-Merge base: bddea56ca2d47c5eb64ed53f6e9efd279ff4f694.
+Base: public master `6ec06bbd45e72496923275dcc8fd4e25fecace73`.
+Branch: `codex/idle-playfield-unload`.
 
-Preserve both parents: master has the completed PR31/PR32 perk/buff/aura/taunt
-integration recorded in docs/evidence/PR31_PR32_INTEGRATION.md. The mission
-branch has the exact two-file destination catalog, 2,242 placements, 812 supported
-identities and 45 QL pools documented in
-docs/evidence/MISSION_DESTINATION_TWO_FILE_MIGRATION.md.
-The only content conflict was this active-task document. Project-state history
-from both branches is retained. Runtime, content and test files merged cleanly.
+PROVEN by source inspection: ordinary playfields previously remained loaded
+with active heartbeat threads until manager shutdown. Existing cell heat and
+quest-dungeon cleanup did not retire ordinary worlds.
 
-No new gameplay changes, refactoring, mission-objective changes, PF324 template
-selection changes or retired destination/location systems are permitted.
-Merged validation passed: approved build, offline exact catalog check, 81 mission
-regressions, 74 real DAO identity checks and 275 full DAO persistence checks.
-The ordinary full test project reproduces the same six CS0246 compilation
-diagnostics on untouched fetched master and the merged tree; no new diagnostics.
-No source/test workaround was introduced. See
-docs/evidence/MISSION_DESTINATION_MASTER_MERGE.md for the comparison and scope.
-The validated merge and exact preservation tag are ready for publication to master.
-No Linux work or deployment is requested.
+Implemented policy: a 30-second manager sweep retires an ordinary playfield
+after ten minutes continuously empty of players, admissions and transfers.
+Queued work must be drained before retirement. NPC maintenance does not reset
+the player-empty clock. Unloading discards transient NPC, corpse and respawn
+state; the next entry rebuilds the world on demand.
+
+Admissions protect login, reconnect, respawn, queued destination callbacks and
+transfer completion. Existing logout inventory flush/snapshot ordering and
+quest-dungeon cleanup remain in place. Retirement stops the heartbeat and
+disposes the world before releasing its per-playfield caches and metrics.
+A cleanup failure blocks replacement rather than overlapping two worlds.
+
+Validation: approved Windows core-engine build PASS; source/lock review and
+diff checks completed. Automated suites were not requested or run. Live client
+acceptance, timed idle unloading/re-entry and measured resource recovery remain
+UNVERIFIED. No production deployment is included.
+
+See `docs/reports/EMPTY_PLAYFIELD_UNLOAD.md` for scope and remaining risks.

@@ -16,14 +16,17 @@ namespace ZoneEngine_New.Core.Playfield
         private Phase _phase;
         private Vector3? _origin;
         private Quaternion? _originHeading;
+        private readonly PlayfieldAdmission _destinationAdmission;
         private readonly Func<bool>? _stillAuthorized;
 
         public PlayfieldTransfer(ZoneSession session, Player player, Playfield source,
-            Playfield destination, Vector3 landing, Quaternion heading, Func<bool>? stillAuthorized = null)
+            Playfield destination, Vector3 landing, Quaternion heading, PlayfieldAdmission destinationAdmission,
+            Func<bool>? stillAuthorized = null)
         {
             Session = session; Player = player; Source = source; Destination = destination;
             Landing = new Vector3(landing.x, landing.y, landing.z);
             Heading = new Quaternion(heading.x, heading.y, heading.z, heading.w);
+            _destinationAdmission = destinationAdmission;
             _stillAuthorized = stillAuthorized;
         }
 
@@ -175,9 +178,16 @@ namespace ZoneEngine_New.Core.Playfield
         private void Finish(Phase phase)
         {
             _phase = phase;
-            Source.ForgetOutgoingTransfer(this);
-            Destination.ForgetIncomingTransfer(this);
-            Session.FinishTransfer(this);
+            try
+            {
+                Source.ForgetOutgoingTransfer(this);
+                Destination.ForgetIncomingTransfer(this);
+                Session.FinishTransfer(this);
+            }
+            finally
+            {
+                _destinationAdmission.Dispose();
+            }
         }
     }
 }

@@ -267,22 +267,33 @@ namespace ZoneEngine_New.Core.Network
             ArgumentNullException.ThrowIfNull(destination);
             ArgumentNullException.ThrowIfNull(landing);
             ArgumentNullException.ThrowIfNull(heading);
-            lock (this)
+            PlayfieldAdmission? destinationAdmission = destination.TryAcquireAdmission()
+                ?? throw new ObjectDisposedException(nameof(destination));
+            try
             {
-                Player player = Player ?? throw new InvalidOperationException("Session has no bound player.");
-                Playfield source = player.Playfield ?? throw new InvalidOperationException("Player is not on a playfield.");
-                if (_closed || State != SessionState.InPlay || !ReferenceEquals(player.Session, this)
-                    || _transfer != null || player.IsPersistenceQuarantined)
-                    throw new InvalidOperationException("Session is not the current playable transfer owner.");
-                if (ReferenceEquals(source, destination))
-                    throw new InvalidOperationException("Destination playfield matches current playfield.");
-                var transfer = new PlayfieldTransfer(this, player, source, destination, landing, heading, stillAuthorized);
-                _transfer = transfer;
-                if (!source.ScheduleTransfer(transfer))
+                lock (this)
                 {
-                    _transfer = null;
-                    throw new ObjectDisposedException(nameof(source));
+                    Player player = Player ?? throw new InvalidOperationException("Session has no bound player.");
+                    Playfield source = player.Playfield ?? throw new InvalidOperationException("Player is not on a playfield.");
+                    if (_closed || State != SessionState.InPlay || !ReferenceEquals(player.Session, this)
+                        || _transfer != null || player.IsPersistenceQuarantined)
+                        throw new InvalidOperationException("Session is not the current playable transfer owner.");
+                    if (ReferenceEquals(source, destination))
+                        throw new InvalidOperationException("Destination playfield matches current playfield.");
+                    var transfer = new PlayfieldTransfer(this, player, source, destination, landing, heading,
+                        destinationAdmission, stillAuthorized);
+                    _transfer = transfer;
+                    if (!source.ScheduleTransfer(transfer))
+                    {
+                        _transfer = null;
+                        throw new ObjectDisposedException(nameof(source));
+                    }
+                    destinationAdmission = null;
                 }
+            }
+            finally
+            {
+                destinationAdmission?.Dispose();
             }
         }
 

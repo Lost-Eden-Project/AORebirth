@@ -129,48 +129,63 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (hydration == null || session.State != SessionState.Loading)
                 return;
 
-            Playfield playfield;
-            int storedPlayfield = hydration.Character.Playfield;
-            if (_dungeons != null && Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(storedPlayfield))
+            PlayfieldAdmission? playfieldAdmission = null;
+            try
             {
-                (Playfield dungeonOrExterior, AORebirth.Core.Vector.Vector3? landing) = _dungeons.ResolveLogin(storedPlayfield);
-                playfield = dungeonOrExterior;
-                // Vector3 overloads != with v1.Equals, which throws for a null left operand.
-                if (landing is not null)
-                    hydration = WithLoginPosition(hydration, dungeonOrExterior.Identity.Instance, landing);
-            }
-            else if (storedPlayfield >= GeneratedMissionIdentitySpace.MinimumLivePlayfield2
-                && storedPlayfield <= GeneratedMissionIdentitySpace.MaximumLivePlayfield2)
-            {
-                // The old mission worlds are gone: a character saved inside one returns to where that mission was
-                // accepted (its offer's destination).
-                GeneratedMissionBinding? binding = _retiredMissions.ReadAccepted(characterId)
-                    .FirstOrDefault(value => value.LivePlayfield == storedPlayfield);
-                if (binding?.Offer == null || binding.Offer.DestinationPlayfield <= 0)
+                Playfield playfield;
+                int storedPlayfield = hydration.Character.Playfield;
+                if (_dungeons != null && Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(storedPlayfield))
                 {
-                    FailLogin(session, characterId, "Saved inside a retired mission world with no way out.");
-                    return;
+                    (Playfield dungeonOrExterior, AORebirth.Core.Vector.Vector3? landing, PlayfieldAdmission? admission)
+                        = _dungeons.ResolveLogin(storedPlayfield);
+                    playfield = dungeonOrExterior;
+                    playfieldAdmission = admission;
+                    // Vector3 overloads != with v1.Equals, which throws for a null left operand.
+                    if (landing is not null)
+                        hydration = WithLoginPosition(hydration, dungeonOrExterior.Identity.Instance, landing);
+                }
+                else if (storedPlayfield >= GeneratedMissionIdentitySpace.MinimumLivePlayfield2
+                    && storedPlayfield <= GeneratedMissionIdentitySpace.MaximumLivePlayfield2)
+                {
+                    // The old mission worlds are gone: a character saved inside one returns to where that mission was
+                    // accepted (its offer's destination).
+                    GeneratedMissionBinding? binding = _retiredMissions.ReadAccepted(characterId)
+                        .FirstOrDefault(value => value.LivePlayfield == storedPlayfield);
+                    if (binding?.Offer == null || binding.Offer.DestinationPlayfield <= 0)
+                    {
+                        FailLogin(session, characterId, "Saved inside a retired mission world with no way out.");
+                        return;
+                    }
+
+                    playfieldAdmission = _playfieldManager.AcquirePlayfield(binding.Offer.DestinationPlayfield);
+                    playfield = playfieldAdmission.Playfield;
+                    hydration = WithLoginPosition(hydration, binding.Offer.DestinationPlayfield,
+                        new AORebirth.Core.Vector.Vector3(binding.Offer.DestinationX, binding.Offer.DestinationY, binding.Offer.DestinationZ));
+                }
+                else
+                {
+                    playfieldAdmission = _playfieldManager.AcquirePlayfield(storedPlayfield);
+                    playfield = playfieldAdmission.Playfield;
                 }
 
-                playfield = _playfieldManager.GetOrCreate(binding.Offer.DestinationPlayfield);
-                hydration = WithLoginPosition(hydration, binding.Offer.DestinationPlayfield,
-                    new AORebirth.Core.Vector.Vector3(binding.Offer.DestinationX, binding.Offer.DestinationY, binding.Offer.DestinationZ));
+                session.SendInitiateCompression();
+                SendChatServerInfo(session, playfield, characterId);
+                SendPlayfieldAnarchyF(
+                    session,
+                    playfield,
+                    new Vector3
+                    {
+                        X = hydration.Character.X,
+                        Y = hydration.Character.Y,
+                        Z = hydration.Character.Z
+                    },
+                    characterId);
+                EnqueueSpawn(session, playfield, hydration);
             }
-            else playfield = _playfieldManager.GetOrCreate(storedPlayfield);
-
-            session.SendInitiateCompression();
-            SendChatServerInfo(session, playfield, characterId);
-            SendPlayfieldAnarchyF(
-                session,
-                playfield,
-                new Vector3
-                {
-                    X = hydration.Character.X,
-                    Y = hydration.Character.Y,
-                    Z = hydration.Character.Z
-                },
-                characterId);
-            EnqueueSpawn(session, playfield, hydration);
+            finally
+            {
+                playfieldAdmission?.Dispose();
+            }
         }
 
         /// <summary>The same hydration, placed at <paramref name="position"/> on <paramref name="playfieldId"/>.</summary>
@@ -194,6 +209,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (player.Playfield is not Playfield playfield)
             {
                 FailLogin(session, characterId, "In-world player has no playfield.");
+                return;
+            }
+
+            using PlayfieldAdmission? playfieldAdmission = playfield.TryAcquireAdmission();
+            if (playfieldAdmission == null)
+            {
+                FailLogin(session, characterId, "In-world playfield is no longer accepting arrivals.");
                 return;
             }
 

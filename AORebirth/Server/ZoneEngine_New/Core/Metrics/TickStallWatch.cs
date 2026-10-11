@@ -73,6 +73,20 @@ namespace ZoneEngine_New.Core.Metrics
             Stage("tick.begin");
         }
 
+        /// <summary>Releases the exiting heartbeat thread's diagnostic ownership and retained dynels.</summary>
+        internal static void ReleaseCurrentThread()
+        {
+            ThreadSlot? slot = threadSlot;
+            if (slot == null)
+                return;
+
+            Volatile.Write(ref slot.Stage, null);
+            slot.CurrentDynel = null;
+            slot.WorstDynel = null;
+            SlotsByThread.TryRemove(new System.Collections.Generic.KeyValuePair<int, ThreadSlot>(slot.ThreadId, slot));
+            threadSlot = null;
+        }
+
         internal static void Stage(string stage) => Stage(stage, 0);
 
         /// <summary>

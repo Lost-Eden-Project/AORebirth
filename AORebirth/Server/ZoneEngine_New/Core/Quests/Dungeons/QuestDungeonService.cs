@@ -380,14 +380,14 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// new one from the quest's seed, arriving at its spawn; otherwise (quest over) its entrance, or the
         /// respawn point when the quest is gone.
         /// </summary>
-        public (Playfield Playfield, Vector3? Position) ResolveLogin(int storedPlayfield)
+        internal (Playfield Playfield, Vector3? Position, PlayfieldAdmission? Admission) ResolveLogin(int storedPlayfield)
         {
             PlayfieldManager playfields = _playfields.Value;
             if (!QuestDungeonIds.TryGetQuestId(storedPlayfield, out string questId))
                 throw new ArgumentOutOfRangeException(nameof(storedPlayfield));
 
             if (playfields.TryGetQuestDungeon(storedPlayfield, out QuestDungeonPlayfield live))
-                return (live, null);
+                return (live, null, null);
 
             if (TryGetDungeon(questId, out CachedDungeon dungeon)
                 && _entrances.TryGetByIdentity(unchecked((uint)dungeon.Parameters.EntranceType), unchecked((uint)dungeon.Parameters.EntranceInstance), out MissionEntrancePlacement entrance))
@@ -395,15 +395,17 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (!dungeon.Ended && dungeon.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks && dungeon.Parameters.DungeonPlayfield == storedPlayfield
                     && _layouts.TryGenerate(dungeon.Parameters.Seed, dungeon.Parameters.GeneratorVersion, dungeon.Parameters.EntranceInstance, out DungeonLayout layout))
                     return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
-                        dungeon.Parameters.Quality), layout.Spawn);
+                        dungeon.Parameters.Quality), layout.Spawn, null);
 
-                return (playfields.GetOrCreate(entrance.PlayfieldId), new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ));
+                PlayfieldAdmission admission = playfields.AcquirePlayfield(entrance.PlayfieldId);
+                return (admission.Playfield, new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ), admission);
             }
 
             RespawnContentCatalog respawn = _gameData.RespawnContent;
             if (respawn.PlayfieldId <= 0 || respawn.Position is not { Length: 3 })
                 throw new InvalidOperationException("No respawn destination is configured for a login in an ended dungeon.");
-            return (playfields.GetOrCreate(respawn.PlayfieldId), new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]));
+            PlayfieldAdmission respawnAdmission = playfields.AcquirePlayfield(respawn.PlayfieldId);
+            return (respawnAdmission.Playfield, new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]), respawnAdmission);
         }
 
         /// <summary>
@@ -580,10 +582,15 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 if (evict)
                 {
-                    Playfield exterior = playfields.GetOrCreate(dungeon.Entrance.PlayfieldId);
                     var landing = new Vector3(dungeon.Entrance.LocalX, dungeon.Entrance.LocalY, dungeon.Entrance.LocalZ);
                     foreach (Player inside in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities().ToArray())
-                        dungeon.DispatchPlayerProjection(inside, () => inside.Session?.TransferToPlayfield(exterior, landing));
+                        dungeon.DispatchPlayerProjection(inside, () =>
+                        {
+                            if (inside.Session == null)
+                                return;
+                            using PlayfieldAdmission admission = playfields.AcquirePlayfield(dungeon.Entrance.PlayfieldId);
+                            inside.Session.TransferToPlayfield(admission.Playfield, landing);
+                        });
                 }
 
                 // Occupied: the sweep releases it once empty.

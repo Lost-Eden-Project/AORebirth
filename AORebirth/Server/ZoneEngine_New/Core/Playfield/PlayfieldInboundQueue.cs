@@ -19,6 +19,8 @@ namespace ZoneEngine_New.Core.Playfield
         public bool TryEnqueue(PlayfieldInboundItem item) =>
             _channel.Writer.TryWrite(item);
 
+        internal bool HasPendingItems => _channel.Reader.TryPeek(out _);
+
         /// <summary>Called from <see cref="Playfield.Tick"/> only.</summary>
         /// <summary>Stall-watch stage per message type ("in.CharDCMoveMessage"), built once per type.</summary>
         static readonly System.Collections.Concurrent.ConcurrentDictionary<System.Type, string> InboundStageNames = new();
