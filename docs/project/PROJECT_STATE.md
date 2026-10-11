@@ -1,6 +1,15 @@
 # AORebirth Project State
 
-Updated: 2026-10-10
+UNVERIFIED (2026-10-11, ordinary empty-playfield unload candidate):
+`codex/idle-playfield-unload`, based on public master
+`6ec06bbd45e72496923275dcc8fd4e25fecace73`, implements full retirement after
+ten empty minutes, protected admissions/transfers, and per-world data/cache
+release. Approved Windows build PASS. Existing quest cleanup and logout
+persistence ordering are preserved in source. Runtime unload/re-entry,
+gameplay acceptance and resource recovery remain unverified. No automated
+suites or production deployment. See `docs/reports/EMPTY_PLAYFIELD_UNLOAD.md`.
+
+Updated: 2026-10-11
 
 OBSERVED (2026-10-10, original-client mission acceptance): Mike reports that
 30f1b3c33eb1334f6dc6e514cb3c7ac8a5f84150 works in the original AO client for

@@ -1127,7 +1127,8 @@ namespace ZoneEngine_New.Core.Entities
             Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
 
-            Playfield destination = manager.GetOrCreate(respawn.PlayfieldId);
+            using PlayfieldAdmission destinationAdmission = manager.AcquirePlayfield(respawn.PlayfieldId);
+            Playfield destination = destinationAdmission.Playfield;
             if (Session != null)
             {
                 Session.TransferToPlayfield(destination, landing);

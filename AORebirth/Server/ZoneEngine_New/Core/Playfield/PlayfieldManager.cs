@@ -31,8 +31,11 @@ namespace ZoneEngine_New.Core.Playfield
     public sealed class PlayfieldManager : IDisposable
     {
         public const int DefaultLinkDeadTimeoutSeconds = 60;
+        internal static readonly TimeSpan EmptyPlayfieldLifetime = TimeSpan.FromMinutes(10);
 
         private readonly Lock _sync = new();
+        private readonly Timer _emptyPlayfieldSweep;
+        private int _sweepingEmptyPlayfields;
         private readonly Dictionary<int, Playfield> _playfields = new();
         private readonly Dictionary<int, Player> _playersByCharacterId = new();
 
@@ -117,6 +120,11 @@ namespace ZoneEngine_New.Core.Playfield
             AuthoredQuests = authoredQuests ?? throw new ArgumentNullException(nameof(authoredQuests));
             ItemTemplates = itemTemplates ?? throw new ArgumentNullException(nameof(itemTemplates));
             Quests = quests;
+            _emptyPlayfieldSweep = new Timer(
+                _ => SweepEmptyPlayfields(DateTime.UtcNow),
+                null,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(30));
         }
 
         public TeamService Teams { get; }
@@ -156,6 +164,42 @@ namespace ZoneEngine_New.Core.Playfield
             return GetOrCreateCore(playfieldId);
         }
 
+        /// <summary>Reserves a live destination until the caller has queued its admission or transfer.</summary>
+        internal PlayfieldAdmission AcquirePlayfield(int playfieldId)
+        {
+            while (true)
+            {
+                Playfield playfield = GetOrCreate(playfieldId);
+                PlayfieldAdmission? admission;
+                lock (_sync)
+                {
+                    ObjectDisposedException.ThrowIf(_disposed, this);
+                    if (!_playfields.TryGetValue(playfieldId, out Playfield? current)
+                        || !ReferenceEquals(current, playfield))
+                        continue;
+
+                    admission = playfield.TryAcquireAdmission();
+                }
+
+                if (admission != null)
+                    return admission;
+
+                // Retirement owns disposal and cache eviction. Never wait while holding the manager lock.
+                playfield.IdleRetirementCompleted.GetAwaiter().GetResult();
+            }
+        }
+
+        private PlayfieldAdmission? TryAcquireLoadedPlayfield(int playfieldId)
+        {
+            lock (_sync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _playfields.TryGetValue(playfieldId, out Playfield? playfield)
+                    ? playfield.TryAcquireAdmission()
+                    : null;
+            }
+        }
+
         /// <summary>
         /// Runs <paramref name="then"/> with the destination on <paramref name="player"/>'s own playfield tick. When the
         /// destination is loaded that is right now, on the caller's thread, exactly as a direct call. Otherwise the
@@ -168,10 +212,13 @@ namespace ZoneEngine_New.Core.Playfield
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(then);
 
-            if (TryGet(playfieldId, out Playfield? loaded) && loaded != null)
+            using (PlayfieldAdmission? loaded = TryAcquireLoadedPlayfield(playfieldId))
             {
-                then(loaded);
-                return true;
+                if (loaded != null)
+                {
+                    then(loaded.Playfield);
+                    return true;
+                }
             }
 
             int characterId = player.Identity.Instance;
@@ -201,7 +248,6 @@ namespace ZoneEngine_New.Core.Playfield
                         return;
                     }
 
-                    Playfield ready = build.Result;
                     Playfield? owner = player.Playfield;
                     if (owner == null)
                     {
@@ -211,8 +257,17 @@ namespace ZoneEngine_New.Core.Playfield
 
                     owner.DispatchPlayerProjection(player, () =>
                     {
+                        using PlayfieldAdmission? admission = TryAcquireLoadedPlayfield(playfieldId);
                         _pendingMoveByCharacter.TryRemove(characterId, out _);
-                        then(ready);
+                        if (admission == null)
+                        {
+                            // A destination can retire before this owner processes its projection.
+                            // Rebuild off the tick rather than use a disposed reference or wait here.
+                            WithPlayfield(playfieldId, player, then);
+                            return;
+                        }
+
+                        then(admission.Playfield);
                     });
                 },
                 CancellationToken.None,
@@ -254,12 +309,26 @@ namespace ZoneEngine_New.Core.Playfield
             if (ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(playfieldId))
                 throw new InvalidOperationException("A quest dungeon playfield requires its quest's generated layout.");
 
-            lock (_sync)
+            while (true)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
+                Task? retirement = null;
+                lock (_sync)
+                {
+                    ObjectDisposedException.ThrowIf(_disposed, this);
 
-                if (_playfields.TryGetValue(playfieldId, out Playfield? existing))
-                    return existing;
+                    if (_playfields.TryGetValue(playfieldId, out Playfield? existing))
+                    {
+                        if (!existing.IsDisposed)
+                            return existing;
+
+                        retirement = existing.IdleRetirementCompleted;
+                    }
+                }
+
+                if (retirement == null)
+                    break;
+
+                retirement.GetAwaiter().GetResult();
             }
 
             // Construct outside the manager lock. Playfield starts a heartbeat thread that may
@@ -364,7 +433,83 @@ namespace ZoneEngine_New.Core.Playfield
         {
             lock (_sync)
             {
-                return _playfields.TryGetValue(playfieldId, out playfield);
+                if (_playfields.TryGetValue(playfieldId, out playfield) && !playfield.IsDisposed)
+                    return true;
+
+                playfield = null;
+                return false;
+            }
+        }
+
+        /// <summary>Retires empty ordinary worlds off their heartbeat threads; quest dungeon policy is separate.</summary>
+        internal void SweepEmptyPlayfields(DateTime nowUtc)
+        {
+            if (Interlocked.Exchange(ref _sweepingEmptyPlayfields, 1) != 0)
+                return;
+
+            try
+            {
+                List<Playfield> candidates;
+                lock (_sync)
+                {
+                    if (_disposed)
+                        return;
+
+                    var pendingDestinations = new HashSet<int>(_pendingMoveByCharacter.Values);
+                    candidates = _playfields.Values
+                        .Where(playfield => playfield is not QuestDungeonPlayfield
+                            && !playfield.IsDisposed
+                            && !_building.ContainsKey(playfield.Identity.Instance)
+                            && !pendingDestinations.Contains(playfield.Identity.Instance))
+                        .ToList();
+                }
+
+                foreach (Playfield playfield in candidates)
+                {
+                    // A tick may acquire _sync. Do not take its tick lock while holding _sync.
+                    if (!playfield.TryBeginIdleRetirement(nowUtc, EmptyPlayfieldLifetime))
+                        continue;
+
+                    try
+                    {
+                        // Keep the retiring instance published until all its cleanup has finished.
+                        // Admissions wait on its completion, preventing overlapping worlds of one ID.
+                        playfield.Dispose();
+                        lock (_sync)
+                        {
+                            int id = playfield.Identity.Instance;
+                            if (_playfields.TryGetValue(id, out Playfield? current)
+                                && ReferenceEquals(current, playfield))
+                            {
+                                if (_gameData is GameDataStore store)
+                                    store.ReleasePlayfieldCache(id);
+                                _metricsRegistry.Remove(id);
+                                _playfields.Remove(id);
+                            }
+                        }
+
+                        playfield.CompleteIdleRetirement();
+                        _logger.Info(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Empty playfield unloaded playfield={0} emptyLifetimeSeconds={1}",
+                            playfield.Identity.Instance,
+                            (int)EmptyPlayfieldLifetime.TotalSeconds));
+                    }
+                    catch (Exception exception)
+                    {
+                        // A failed cleanup must not admit a replacement over partially disposed state.
+                        playfield.CompleteIdleRetirement(exception);
+                        _logger.Error(exception, "Empty playfield unload failed playfield=" + playfield.Identity.Instance);
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Empty playfield sweep failed.");
+            }
+            finally
+            {
+                Volatile.Write(ref _sweepingEmptyPlayfields, 0);
             }
         }
 
@@ -548,7 +693,7 @@ namespace ZoneEngine_New.Core.Playfield
         {
             lock (_sync)
             {
-                return _playfields.Values.ToList();
+                return _playfields.Values.Where(playfield => !playfield.IsDisposed).ToList();
             }
         }
 
@@ -593,13 +738,19 @@ namespace ZoneEngine_New.Core.Playfield
 
         public void Dispose()
         {
-            List<Playfield> playfields;
             lock (_sync)
             {
                 if (_disposed)
                     return;
 
                 _disposed = true;
+            }
+
+            // Wait outside _sync for an in-progress retirement before disposing the remaining worlds.
+            _emptyPlayfieldSweep.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            List<Playfield> playfields;
+            lock (_sync)
+            {
                 playfields = new List<Playfield>(_playfields.Values);
                 _playfields.Clear();
                 _playersByCharacterId.Clear();

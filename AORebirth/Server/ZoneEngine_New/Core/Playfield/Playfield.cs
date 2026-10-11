@@ -5,7 +5,9 @@ namespace ZoneEngine_New.Core.Playfield
     using System.Diagnostics;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Threading;
+    using System.Threading.Tasks;
 
     using AORebirth.Core.GameData;
     using AORebirth.World.Collision;
@@ -58,6 +60,11 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>Configured heartbeat rate (ticks per second); 0 before the heartbeat starts.</summary>
         internal int TickRate => _heartBeat?.TickRate ?? 0;
         private readonly Lock _tickSync = new();
+        private readonly Lock _lifecycleSync = new();
+        private readonly TaskCompletionSource _idleRetirementCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _admissions;
+        private DateTime? _emptySinceUtc;
+        private volatile bool _retiring;
         private int _nextContainerInventoryHandle = 1;
         // TEMP: WIFU Identity.Instance until real weapon-instance identity allocation exists.
         /// <summary>
@@ -186,7 +193,7 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>Starts the tick thread after the playfield is registered with <see cref="PlayfieldManager"/>.</summary>
         public void StartHeartbeat()
         {
-            if (_heartBeat != null || _disposed)
+            if (_heartBeat != null || IsDisposed)
                 return;
 
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.activate", Identity.Instance);
@@ -352,7 +359,87 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>Called from async I/O tasks. Handlers run on the playfield tick thread.</summary>
-        public bool TryEnqueue(PlayfieldInboundItem item) => _inbound.TryEnqueue(item);
+        public bool TryEnqueue(PlayfieldInboundItem item)
+        {
+            lock (_lifecycleSync)
+            {
+                if (IsDisposed)
+                    return false;
+
+                bool accepted = _inbound.TryEnqueue(item);
+                if (accepted && (item is PendingSpawnInboundItem or PendingReconnectInboundItem
+                    or TransferDepartureInboundItem or TransferArrivalInboundItem or TransferReturnInboundItem))
+                    _emptySinceUtc = null;
+                return accepted;
+            }
+        }
+
+        internal PlayfieldAdmission? TryAcquireAdmission()
+        {
+            lock (_lifecycleSync)
+            {
+                if (IsDisposed)
+                    return null;
+
+                _admissions++;
+                _emptySinceUtc = null;
+                return new PlayfieldAdmission(this);
+            }
+        }
+
+        internal void ReleaseAdmission()
+        {
+            lock (_lifecycleSync)
+            {
+                _admissions--;
+                _emptySinceUtc = null;
+            }
+        }
+
+        internal bool TryBeginIdleRetirement(DateTime nowUtc, TimeSpan emptyLifetime)
+        {
+            // Ticks may acquire the manager lock. The sweeper must reach this method without it.
+            lock (_tickSync)
+            lock (_lifecycleSync)
+            {
+                if (IsDisposed)
+                    return false;
+
+                if (_admissions != 0 || !_incomingTransfers.IsEmpty || !_outgoingTransfers.IsEmpty
+                    || _dynelRegistry.PlayerEntities().Any())
+                {
+                    _emptySinceUtc = null;
+                    return false;
+                }
+
+                if (_emptySinceUtc is not DateTime since || nowUtc < since)
+                {
+                    _emptySinceUtc = nowUtc;
+                    return false;
+                }
+
+                // NPC work may defer a release, but only player activity restarts the empty grace.
+                if (nowUtc - since < emptyLifetime || _inbound.HasPendingItems || !_pendingStatRebases.IsEmpty)
+                    return false;
+
+                _retiring = true;
+                return true;
+            }
+        }
+
+        internal Task IdleRetirementCompleted => _idleRetirementCompleted.Task;
+
+        internal void CompleteIdleRetirement(Exception? failure = null)
+        {
+            if (failure == null)
+            {
+                _idleRetirementCompleted.TrySetResult();
+            }
+            else
+            {
+                _idleRetirementCompleted.TrySetException(failure);
+            }
+        }
 
         // Team projections may originate on another playfield. Never enter the
         // recipient tick lock synchronously while the caller owns another tick.
@@ -363,11 +450,10 @@ namespace ZoneEngine_New.Core.Playfield
                 projection();
                 return;
             }
-            if (!_disposed)
-                _inbound.TryEnqueue(new PlayerProjectionInboundItem { Player = player, Projection = projection });
+            TryEnqueue(new PlayerProjectionInboundItem { Player = player, Projection = projection });
         }
 
-        internal bool IsDisposed => _disposed;
+        internal bool IsDisposed => _disposed || _retiring;
         internal void NotifyTransportDisconnected(Player player, IZoneSession session)
             => _playfieldManager.Teams.OnTransportDisconnected(player, session);
         internal void RequireTransferTick()
@@ -381,27 +467,62 @@ namespace ZoneEngine_New.Core.Playfield
 
         internal bool ScheduleTransfer(PlayfieldTransfer transfer)
         {
-            if (_disposed) return false;
-            _outgoingTransfers.TryAdd(transfer, 0);
-            if (_disposed) { _outgoingTransfers.TryRemove(transfer, out _); return false; }
-            // Even an owner-tick request is queued: the caller may hold its session lock,
-            // but departure must acquire PersistenceGate before that lock for the hard flush.
-            _inbound.TryEnqueue(new TransferDepartureInboundItem(transfer));
-            return true;
+            lock (_lifecycleSync)
+            {
+                if (IsDisposed)
+                    return false;
+
+                _outgoingTransfers.TryAdd(transfer, 0);
+                // Even an owner-tick request is queued: departure must take PersistenceGate first.
+                if (!_inbound.TryEnqueue(new TransferDepartureInboundItem(transfer)))
+                {
+                    _outgoingTransfers.TryRemove(transfer, out _);
+                    return false;
+                }
+
+                _emptySinceUtc = null;
+                return true;
+            }
         }
 
         internal bool QueueTransferArrival(PlayfieldTransfer transfer)
         {
-            if (_disposed) return false;
-            _incomingTransfers.TryAdd(transfer, 0);
-            if (_disposed) { _incomingTransfers.TryRemove(transfer, out _); return false; }
-            return _inbound.TryEnqueue(new TransferArrivalInboundItem(transfer));
+            lock (_lifecycleSync)
+            {
+                if (IsDisposed)
+                    return false;
+
+                _incomingTransfers.TryAdd(transfer, 0);
+                if (!_inbound.TryEnqueue(new TransferArrivalInboundItem(transfer)))
+                {
+                    _incomingTransfers.TryRemove(transfer, out _);
+                    return false;
+                }
+
+                _emptySinceUtc = null;
+                return true;
+            }
         }
 
         internal void QueueTransferReturn(PlayfieldTransfer transfer) =>
-            _inbound.TryEnqueue(new TransferReturnInboundItem(transfer));
-        internal void ForgetOutgoingTransfer(PlayfieldTransfer transfer) => _outgoingTransfers.TryRemove(transfer, out _);
-        internal void ForgetIncomingTransfer(PlayfieldTransfer transfer) => _incomingTransfers.TryRemove(transfer, out _);
+            TryEnqueue(new TransferReturnInboundItem(transfer));
+        internal void ForgetOutgoingTransfer(PlayfieldTransfer transfer)
+        {
+            lock (_lifecycleSync)
+            {
+                _outgoingTransfers.TryRemove(transfer, out _);
+                _emptySinceUtc = null;
+            }
+        }
+
+        internal void ForgetIncomingTransfer(PlayfieldTransfer transfer)
+        {
+            lock (_lifecycleSync)
+            {
+                _incomingTransfers.TryRemove(transfer, out _);
+                _emptySinceUtc = null;
+            }
+        }
 
         /// <summary>Destination-owner operation only; the caller must queue across playfields.</summary>
         public void ArriveTransferredPlayer(Player player, AORebirth.Core.Vector.Vector3 position)
@@ -410,7 +531,7 @@ namespace ZoneEngine_New.Core.Playfield
             ArgumentNullException.ThrowIfNull(position);
 
             RequireTransferTick();
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
             if (!_dynelRegistry.TryRegister(player))
                 throw new InvalidOperationException("Transfer destination identity is already occupied.");
             GetRequiredService<SpawnService>().ArriveFromTransfer(player, position);
@@ -468,12 +589,14 @@ namespace ZoneEngine_New.Core.Playfield
 
         public void Dispose()
         {
-            if (_disposed)
+            lock (_lifecycleSync)
             {
-                return;
+                if (_disposed)
+                    return;
+
+                _disposed = true;
             }
 
-            _disposed = true;
             _heartBeat?.Dispose();
             _heartBeat = null;
 
@@ -522,7 +645,13 @@ namespace ZoneEngine_New.Core.Playfield
         public void QueueRebase(Character character)
         {
             ArgumentNullException.ThrowIfNull(character);
-            if (ReferenceEquals(character.Playfield, this)) _pendingStatRebases.TryAdd(character, 0);
+            lock (_lifecycleSync)
+            {
+                if (IsDisposed || !ReferenceEquals(character.Playfield, this))
+                    return;
+
+                _pendingStatRebases.TryAdd(character, 0);
+            }
         }
 
         private void DrainRebases()
@@ -544,6 +673,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         public void Tick(double deltaTime)
         {
+            if (IsDisposed)
+                return;
+
             ZoneEngine_New.Core.Metrics.TickStallWatch.BeginTick(Identity.Instance, TickRate > 0 ? 1000.0 / TickRate : 0);
             try { TickCore(deltaTime); }
             finally { ZoneEngine_New.Core.Metrics.TickStallWatch.EndTick(); }
@@ -554,7 +686,7 @@ namespace ZoneEngine_New.Core.Playfield
             long tickStart = Stopwatch.GetTimestamp();
             lock (_tickSync)
             {
-                if (_disposed)
+                if (IsDisposed)
                     return;
 
                 SpawnService spawn = _serviceProvider.GetRequiredService<SpawnService>();

@@ -76,6 +76,10 @@ namespace ZoneEngine_New.Core.Playfield
                         CultureInfo.InvariantCulture,
                         "Playfield {0} heartbeat thread did not exit within 2s",
                         _playfieldIdentity));
+                throw new TimeoutException(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Playfield {0} heartbeat did not stop within 2s; cleanup was not completed.",
+                    _playfieldIdentity));
             }
 
             _stopEvent.Dispose();
@@ -83,45 +87,52 @@ namespace ZoneEngine_New.Core.Playfield
 
         private void Run()
         {
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            long nextDueTicks = stopwatch.ElapsedTicks + _targetIntervalTicks;
-            long lastTickTicks = stopwatch.ElapsedTicks;
-
-            while (!_stopEvent.IsSet)
+            try
             {
-                WaitUntil(stopwatch, nextDueTicks);
-                if (_stopEvent.IsSet)
-                {
-                    break;
-                }
+                Stopwatch stopwatch = Stopwatch.StartNew();
+                long nextDueTicks = stopwatch.ElapsedTicks + _targetIntervalTicks;
+                long lastTickTicks = stopwatch.ElapsedTicks;
 
-                long nowTicks = stopwatch.ElapsedTicks;
-                double deltaTime = (nowTicks - lastTickTicks) / (double)Stopwatch.Frequency;
-                if (deltaTime <= 0.0)
+                while (!_stopEvent.IsSet)
                 {
-                    deltaTime = _targetIntervalSeconds;
-                }
+                    WaitUntil(stopwatch, nextDueTicks);
+                    if (_stopEvent.IsSet)
+                    {
+                        break;
+                    }
 
-                lastTickTicks = nowTicks;
+                    long nowTicks = stopwatch.ElapsedTicks;
+                    double deltaTime = (nowTicks - lastTickTicks) / (double)Stopwatch.Frequency;
+                    if (deltaTime <= 0.0)
+                    {
+                        deltaTime = _targetIntervalSeconds;
+                    }
 
-                try
-                {
-                    _tick(deltaTime);
-                }
-                catch (Exception e)
-                {
-                    LogUtil.ErrorException(e, false, "Playfield heartbeat failed for {0}", _playfieldIdentity);
-                }
+                    lastTickTicks = nowTicks;
 
-                nextDueTicks += _targetIntervalTicks;
+                    try
+                    {
+                        _tick(deltaTime);
+                    }
+                    catch (Exception e)
+                    {
+                        LogUtil.ErrorException(e, false, "Playfield heartbeat failed for {0}", _playfieldIdentity);
+                    }
 
-                // If the tick overran, skip missed slots so we do not burst catch-up ticks.
-                long behind = stopwatch.ElapsedTicks - nextDueTicks;
-                if (behind > _targetIntervalTicks)
-                {
-                    long skippedIntervals = behind / _targetIntervalTicks;
-                    nextDueTicks += skippedIntervals * _targetIntervalTicks;
+                    nextDueTicks += _targetIntervalTicks;
+
+                    // If the tick overran, skip missed slots so we do not burst catch-up ticks.
+                    long behind = stopwatch.ElapsedTicks - nextDueTicks;
+                    if (behind > _targetIntervalTicks)
+                    {
+                        long skippedIntervals = behind / _targetIntervalTicks;
+                        nextDueTicks += skippedIntervals * _targetIntervalTicks;
+                    }
                 }
+            }
+            finally
+            {
+                Metrics.TickStallWatch.ReleaseCurrentThread();
             }
         }
 
