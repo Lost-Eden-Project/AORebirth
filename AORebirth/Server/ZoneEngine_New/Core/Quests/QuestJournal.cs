@@ -182,16 +182,17 @@ namespace ZoneEngine_New.Core.Quests
             Dungeons.QuestDungeonParameters? dungeon)
         {
             int target = FourCc(template.Objective.Npc);
+            var objectiveItem = template.IsFindItem ? dungeon?.ObjectiveItem : null;
             DateTime expires = quest.ExpiresAtUtc ?? quest.AssignedAtUtc + DisplayedLifetime;
             uint expiresOnClient = ClientExpiry(player, DateTime.SpecifyKind(expires, DateTimeKind.Utc), DateTime.UtcNow);
 
             return new QuestActionInfo
             {
                 Version = layout.Version,
-                Action = new Identity(),
+                Action = objectiveItem?.Identity ?? new Identity(),
                 UnknownId1 = new Identity(),
-                UnknownId2 = layout.TargetInSlot3 ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = target },
-                UnknownId3 = layout.TargetInSlot3 ? new Identity { Type = 0, Instance = target } : new Identity(),
+                UnknownId2 = template.IsFindItem || layout.TargetInSlot3 ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = target },
+                UnknownId3 = !template.IsFindItem && layout.TargetInSlot3 ? new Identity { Type = 0, Instance = target } : new Identity(),
                 UnknownId4 = new Identity(),
                 UnknownId5 = new Identity(),
                 UnknownId6 = new Identity(),

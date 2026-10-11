@@ -20,6 +20,8 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>Select (target) the objective NPC.</summary>
         public const string TargetNpcAction = "TargetNpc";
 
+        public const string FindItemAction = "FindItem";
+
         public static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true,
@@ -54,6 +56,9 @@ namespace ZoneEngine_New.Core.Quests
         [JsonIgnore]
         public bool IsKill => string.Equals(Action, KillOneAction, StringComparison.Ordinal)
             || string.Equals(Action, KillMultipleAction, StringComparison.Ordinal);
+
+        [JsonIgnore]
+        public bool IsFindItem => string.Equals(Action, FindItemAction, StringComparison.Ordinal);
 
         /// <summary>Flags "NoDelete": the player cannot remove it from the journal.</summary>
         [JsonIgnore]

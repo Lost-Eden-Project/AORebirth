@@ -20,6 +20,7 @@ public sealed class DirectXpRewardPlan
 {
     readonly Dictionary<CharacterStat, int> _stats;
     readonly Identity _owner;
+    bool _questStyle;
     public IReadOnlyDictionary<CharacterStat, int> Stats { get; }
     public int LevelBefore { get; }
     public int LevelAfter { get; }
@@ -36,6 +37,54 @@ public sealed class DirectXpRewardPlan
 
     public static DirectXpRewardPlan Create(Player player, int reward)
         => CreateCore(player, reward, false);
+
+    /// <summary>Plan the current Character.AwardXp(Quest) rules without publishing or mutating the actor.</summary>
+    public static DirectXpRewardPlan CreateQuestReward(Player player, int reward)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (reward < 0) throw new ArgumentOutOfRangeException(nameof(reward));
+        int before = player.Stats.GetOrOne(CharacterStat.Level), level = before;
+        var values = new Dictionary<CharacterStat, int>();
+        if (reward == 0) return new(player, 0, before, before, false, values) { _questStyle = true };
+        var data = player.Playfield?.GetRequiredService<ZoneEngine_New.Core.GameData.IGameData>()
+            ?? throw new InvalidOperationException("Quest XP requires the current GameData owner.");
+        if (!data.TryGetXpLevel(level, out var current))
+            throw new InvalidOperationException("Quest XP has no level data; reward remains pending.");
+        int amount = reward;
+        if (current.NextLevelXp > 0)
+            amount = (int)Math.Min(amount, Math.Max(1L, (long)current.NextLevelXp * Character.QuestXpCapPercent / 100));
+        int xp = checked(player.Stats.GetOrZero(CharacterStat.XP) + amount);
+        while (level < Character.MaxXpLevel && current.NextLevelXp > 0 && (long)xp >= (long)current.FloorXp + current.NextLevelXp)
+        {
+            if (!data.TryGetXpLevel(level + 1, out var next)) break;
+            level = next.Level;
+            current = next;
+        }
+        values[CharacterStat.XP] = xp;
+        values[CharacterStat.Level] = level;
+        values[CharacterStat.LastXP] = current.FloorXp;
+        values[CharacterStat.NextXP] = current.NextLevelXp > 0 ? checked(current.FloorXp + current.NextLevelXp) : 0;
+        if (level > before)
+        {
+            values[CharacterStat.TitleLevel] = Character.TitleLevelFor(level);
+            var projected = player.ProjectLevelUpStats(values);
+            PlanQuestVital(CharacterStat.Health, CharacterStat.MaxHealth, CharacterStat.PercentRemainingHealth);
+            PlanQuestVital(CharacterStat.CurrentNano, CharacterStat.MaxNanoEnergy, CharacterStat.PercentRemainingNano);
+
+            void PlanQuestVital(CharacterStat currentStat, CharacterStat maxStat, CharacterStat percentStat)
+            {
+                int maximum = projected.GetOrZero(maxStat);
+                if (maximum <= 0) return;
+                values[maxStat] = projected.GetOrZero(maxStat, StatDetail.Base);
+                // ApplyLevelVitals writes the full maximum to Base; Character's vital-change
+                // handler then caps a positive current-vital bonus back to that same maximum.
+                int bonus = projected.GetOrZero(currentStat, StatDetail.Bonus);
+                values[currentStat] = checked(maximum - Math.Max(0, bonus));
+                values[percentStat] = (int)Math.Clamp((long)(maximum + Math.Min(0, bonus)) * 100 / maximum, 0, 100);
+            }
+        }
+        return new(player, amount, before, level, false, values) { _questStyle = true };
+    }
 
     /// <summary>
     /// DOJA's accepted path adds a reward to cumulative XP, then normalizes the
@@ -135,7 +184,29 @@ public sealed class DirectXpRewardPlan
     {
         if (player.Identity != _owner) throw new InvalidOperationException("XP projection owner changed.");
         if (_stats.Count == 0) return;
-        foreach (var pair in _stats) player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: false);
+        foreach (var pair in _stats) player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: _questStyle);
+        if (_questStyle)
+        {
+            if (LevelAfter > LevelBefore)
+            {
+                player.Stats.MarkDirty(CharacterStat.IP);
+                player.ApplyLevelVitals();
+                var data = player.Playfield!.GetRequiredService<ZoneEngine_New.Core.GameData.IGameData>();
+                for (int level = LevelBefore + 1; level <= LevelAfter; level++)
+                {
+                    data.TryGetXpLevel(level, out var entry);
+                    player.Session?.Send(new NewLevelMessage
+                    {
+                        Identity = player.Identity, Level = level, Ip = Math.Max(0, player.AvailableIp),
+                        Xp = ExperienceAfter, LastSaveXp = entry.FloorXp,
+                        NextLevelXp = entry.NextLevelXp > 0 ? checked(entry.FloorXp + entry.NextLevelXp) : 0,
+                        Unknown2 = 4, LastXp = RequestedReward
+                    });
+                }
+            }
+            player.FlushDirtyStats();
+            return;
+        }
         if (LevelAfter > LevelBefore)
         {
             player.Rebase();

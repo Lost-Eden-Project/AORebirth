@@ -39,12 +39,15 @@ using ZoneEngine_New.Core.WorldSimulation;
 public sealed class QuestDungeonPlayfield : Playfield
 {
     PlayfieldWorldSimulation? _simulation;
+    readonly MissionItemObjectiveBinding? _objectiveItem;
+    readonly Func<Player, MissionObjectiveItem, bool>? _collectObjective;
 
     public QuestDungeonPlayfield(int playfieldId, string questId, DungeonLayout layout, MissionEntrancePlacement entrance,
         string? targetHash, int quality, IZoneLogger logger, IMessageRouter router, PlayfieldManager manager, PlayerHydrator hydrator, IGameData data,
         IItemBuilder items, HashItemMinter hashItems, IInventoryRepository inventory, IItemInstanceIdAllocator ids,
         InventoryMoveService moves, InventoryFlushService flush, TradeService trades, CharacterSnapshotService snapshot,
-        IPlayfieldMetricsRegistry metrics, IShopDao shopDao)
+        IPlayfieldMetricsRegistry metrics, IShopDao shopDao, MissionItemObjectiveBinding? objectiveItem = null,
+        Func<Player, MissionObjectiveItem, bool>? collectObjective = null)
         : base(new Identity { Type = IdentityType.Playfield, Instance = playfieldId }, logger, router,
             manager, hydrator, data, items, hashItems, inventory, ids, moves, flush, trades, snapshot, metrics, shopDao)
     {
@@ -53,6 +56,11 @@ public sealed class QuestDungeonPlayfield : Playfield
         Entrance = entrance ?? throw new ArgumentNullException(nameof(entrance));
         TargetHash = string.IsNullOrWhiteSpace(targetHash) ? null : targetHash;
         Quality = Math.Max(0, quality);
+        if (objectiveItem != null && (!objectiveItem.IsValid
+            || !string.Equals(objectiveItem.QuestId, QuestId, StringComparison.Ordinal) || collectObjective == null))
+            throw new ArgumentException("Invalid objective for this quest dungeon.", nameof(objectiveItem));
+        _objectiveItem = objectiveItem;
+        _collectObjective = collectObjective;
     }
 
     public string QuestId { get; }
@@ -90,6 +98,7 @@ public sealed class QuestDungeonPlayfield : Playfield
             SpawnDoors(dungeon.Doors, locality);
             SpawnFloorTransitions(locality);
             AddDistrictSpawns(dungeon);
+            SpawnObjectiveItem(dungeon, locality);
         }
 
         MarkBuilt();
@@ -112,7 +121,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         if (placements.Count == 0)
             return;
 
-        PlayfieldDistrictsData? districts = LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style);
+        PlayfieldDistrictsData? districts = LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style, Logger);
         if (districts?.Districts == null)
             return;
 
@@ -209,39 +218,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         List<(AORebirth.World.Collision.DungeonRoomPlacement Placement, PlayfieldDistrictEntry District, List<PlayfieldDistrictSpawnPoint> Points)> rooms,
         HashSpawnSystem spawns)
     {
-        int count = dungeon.Placements.Count;
-        var links = new List<int>[count];
-        for (int i = 0; i < count; i++)
-            links[i] = [];
-        foreach (AORebirth.World.Collision.DungeonDoorPlacement door in dungeon.Doors)
-        {
-            if (door.IsExit || door.Room < 0 || door.Room >= count || door.LinkedRoom < 0 || door.LinkedRoom >= count)
-                continue;
-            links[door.Room].Add(door.LinkedRoom);
-            links[door.LinkedRoom].Add(door.Room);
-        }
-        foreach (var transition in Layout.FloorTransitions)
-        {
-            links[transition.From.RoomIndex].Add(transition.To.RoomIndex);
-            links[transition.To.RoomIndex].Add(transition.From.RoomIndex);
-        }
-
-        var distance = new int[count];
-        Array.Fill(distance, -1);
-        distance[0] = 0;
-        var queue = new Queue<int>();
-        queue.Enqueue(0);
-        while (queue.Count > 0)
-        {
-            int room = queue.Dequeue();
-            foreach (int next in links[room])
-            {
-                if (distance[next] >= 0)
-                    continue;
-                distance[next] = distance[room] + 1;
-                queue.Enqueue(next);
-            }
-        }
+        int[] distance = DungeonObjectivePlacement.RoomDistances(dungeon, Layout);
 
         var roll = new Random(unchecked(Layout.Seed * 31337));
         var byDistance = new List<int>();
@@ -278,13 +255,13 @@ public sealed class QuestDungeonPlayfield : Playfield
         return null;
     }
 
-    PlayfieldDistrictsData? LoadStyleDistricts(string root, int style)
+    internal static PlayfieldDistrictsData? LoadStyleDistricts(string root, int style, IZoneLogger logger)
         => StyleDistricts.GetOrAdd((root, style), key =>
         {
             string path = Path.Combine(key.Root, GameDataPaths.PlayfieldDistrictsRelativePath(key.Style));
             if (!File.Exists(path))
             {
-                Logger.Warn("No Districts.json for dungeon style " + key.Style + " at " + path + "; dungeon has no NPC spawns");
+                logger.Warn("No Districts.json for dungeon style " + key.Style + " at " + path + "; dungeon has no NPC spawns");
                 return null;
             }
 
@@ -294,10 +271,30 @@ public sealed class QuestDungeonPlayfield : Playfield
             }
             catch (Exception exception)
             {
-                Logger.Error(exception, "Failed to read " + path);
+                logger.Error(exception, "Failed to read " + path);
                 return null;
             }
         });
+
+    void SpawnObjectiveItem(AORebirth.World.Collision.DungeonWorldLayout dungeon, PlayfieldLocality locality)
+    {
+        if (_objectiveItem == null)
+            return;
+        if (_objectiveItem.RoomIndex >= dungeon.Placements.Count
+            || DungeonObjectivePlacement.RoomDistances(dungeon, Layout)[_objectiveItem.RoomIndex] <= 0)
+            throw new InvalidDataException("Accepted objective room is unavailable.");
+        var item = new MissionObjectiveItem(_objectiveItem,
+            GetRequiredService<IItemBuilder>().CreateTemplate(_objectiveItem.LowId, _objectiveItem.HighId, _objectiveItem.Quality),
+            _collectObjective!)
+        {
+            Playfield = this,
+            Position = new AORebirth.Core.Vector.Vector3(_objectiveItem.X, _objectiveItem.Y, _objectiveItem.Z),
+            Rotation = new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1)
+        };
+        if (!GetRequiredService<DynelRegistry>().TryRegister(item))
+            throw new InvalidDataException("Accepted objective identity is already registered.");
+        locality.RegisterDynel(item);
+    }
 
     void SpawnFloorTransitions(PlayfieldLocality locality)
     {

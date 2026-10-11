@@ -38,12 +38,15 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _byIdentity[dynel.Identity.Long()] = dynel;
         }
 
-        internal void Untrack(Dynel dynel)
+        internal void Untrack(Dynel dynel, Player? transferredTo = null)
         {
             ulong key = dynel.Identity.Long();
             // A stale object's cleanup must not withdraw its replacement's visibility.
             // PlayfieldLocality still removes the old reference from its own cell/set.
             if (!_byIdentity.TryGetValue(key, out Dynel? current) || !ReferenceEquals(current, dynel)) return;
+            // A pickup transfers this exact client identity into the collector's inventory. Do not delete it there.
+            if (transferredTo != null)
+                RemoveVisibleEntry(transferredTo.Identity.Long(), key);
             if (!NeverDespawns(dynel))
                 DespawnSourceFromObservers(dynel);
             RemoveSourceState(key);

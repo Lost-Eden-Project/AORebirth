@@ -1,0 +1,243 @@
+{
+  "schema": "aorebirth-find-item-pickup-wire-evidence/1",
+  "recordedAuditDate": "2026-10-11",
+  "sourceFiles": "Original raw-packets.csv in the completed captures referenced by the foundation inventory; offsets below are byte offsets in original full packets.",
+  "confidence": "OBSERVED_AND_ORIGINAL_PACKET_SHA256_VERIFIED",
+  "semanticLimit": "ClientGetItem and ContainerAddItem are directly observed. Pickup as the universal cause of quest completion is not established; one capture completes before pickup.",
+  "captures": [
+    {
+      "captureStem": "mission-20261011-001616",
+      "analysisFile": "mission-20261011-001616-analysis/population-lifecycle-review.json",
+      "actorIdentity": {
+        "type": 50000,
+        "instance": 1248653930
+      },
+      "worldIdentity": {
+        "type": 51005,
+        "instance": 1482214240
+      },
+      "catalogReference": {
+        "hash": "COSE",
+        "lowId": 100231,
+        "highId": 100231,
+        "name": "Contained Sensitive Information"
+      },
+      "questAction": {
+        "originalPacketOrdinal": 64,
+        "originalPacketSha256": "a87a60248f9d19f01fa654be90478e921dceca3db98150d41a09fdfa05779ba2",
+        "offset": 670,
+        "byteLength": 136,
+        "hex": "0000000f0000c73d5858cb6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006acd7859000000000000d2f14dd080a000009c50000002360000a76d0000a59543ca083a41b6adcc43afa8ef",
+        "decoded": {
+          "version": 15,
+          "action": {
+            "type": 51005,
+            "instance": 1482214240
+          },
+          "unknownId1Through6": "0:0",
+          "unknownId7": {
+            "type": 54001,
+            "instance": 1305510048
+          },
+          "playfield": {
+            "type": 40016,
+            "instance": 566
+          },
+          "worldOffsetX": 42861,
+          "worldOffsetZ": 42389
+        }
+      },
+      "packets": [
+        {
+          "ordinal": 807,
+          "direction": "OUT",
+          "type": "LookAtIIR",
+          "n3Type": "0x2252445F",
+          "sha256": "3075d01135e2cd65fff0d698a056520cf0b9ae9714850e5818995e3f281373fe",
+          "hex": "0000000A000000004A6CF26A000000022252445F0000C3504A6CF26A000000C73D5858CB6000000000"
+        },
+        {
+          "ordinal": 820,
+          "direction": "OUT",
+          "type": "ClientGetItem",
+          "n3Type": "0x37136C6B",
+          "sha256": "3e18aab9bbb8b2a3beca502d0a071250e6c6ce4319937edff5c79607c40b95ce",
+          "hex": "0000000A000000004A6CF26A0000000237136C6B0000C3504A6CF26A000000C73D5858CB60"
+        },
+        {
+          "ordinal": 821,
+          "direction": "IN",
+          "type": "ContainerAddItem",
+          "n3Type": "0x47537A24",
+          "sha256": "9a72ef6498904750be9376a0831522b00178dbf441eaa65c720c198f511afe19",
+          "hex": "015B000A0001003100000DB74A6CF26A47537A240000C3504A6CF26A000000C73D5858CB60000000000000000000000000"
+        }
+      ],
+      "chronology": "LookAt807 precedes recorded reward/removal. ClientGetItem820 and ContainerAddItem821 follow them."
+    },
+    {
+      "captureStem": "mission-20261011-025629",
+      "analysisFile": "mission-20261011-025629-analysis/population-lifecycle-review.json",
+      "actorIdentity": {
+        "type": 50000,
+        "instance": 1248653930
+      },
+      "worldIdentity": {
+        "type": 51005,
+        "instance": 1482014915
+      },
+      "catalogReference": {
+        "hash": "URSE",
+        "lowId": 100341,
+        "highId": 100341,
+        "name": "Urgent Sensitive Information"
+      },
+      "worldItemObservation": {
+        "originalPacketOrdinal": 3524,
+        "originalPacketSha256": "93cda9be357c1bd841652fc88ab7de46e77f90cc94865d93daf5a4297dd4c4d0",
+        "parentIdentity": {
+          "type": 0,
+          "instance": 0
+        },
+        "position": [
+          68.5999755859375,
+          5.099999904632568,
+          168.4000244140625
+        ],
+        "orientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "stats": {
+          "0": 2147483651,
+          "23": 100341,
+          "412": 1,
+          "491": 1,
+          "701": 1,
+          "702": 100341,
+          "703": 100341
+        }
+      },
+      "questAction": {
+        "originalPacketOrdinal": 240,
+        "originalPacketSha256": "92c2a3c915752808964e65f086d8fdc116e548e92d5a8995ff5bebdf10ac4805",
+        "offset": 678,
+        "byteLength": 136,
+        "hex": "0000000f0000c73d5855c0c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006acd9de7000000000000d2f14dd0b35d00009c50000002b700009c19000069934533a50741203b35453150cb",
+        "decoded": {
+          "version": 15,
+          "action": {
+            "type": 51005,
+            "instance": 1482014915
+          },
+          "unknownId1Through6": "0:0",
+          "unknownId7": {
+            "type": 54001,
+            "instance": 1305523037
+          },
+          "playfield": {
+            "type": 40016,
+            "instance": 695
+          },
+          "worldOffsetX": 39961,
+          "worldOffsetZ": 27027
+        }
+      },
+      "packets": [
+        {
+          "ordinal": 3877,
+          "direction": "OUT",
+          "type": "LookAtIIR",
+          "n3Type": "0x2252445F",
+          "sha256": "a57f662e7cb7641ab69a6ed23db1c041ecf2ba1f45fb7e1286a878bf2e023a73",
+          "hex": "0000000A000000004A6CF26A000000022252445F0000C3504A6CF26A000000C73D5855C0C300000000"
+        },
+        {
+          "ordinal": 3878,
+          "direction": "OUT",
+          "type": "ClientGetItem",
+          "n3Type": "0x37136C6B",
+          "sha256": "6c56937801ed74404ae9b4d2eb3c72341bdd351f478c3162b831c90bd6bf5ddb",
+          "hex": "0000000A000000004A6CF26A0000000237136C6B0000C3504A6CF26A000000C73D5855C0C3"
+        },
+        {
+          "ordinal": 3889,
+          "direction": "IN",
+          "type": "ContainerAddItem",
+          "n3Type": "0x47537A24",
+          "sha256": "a520ec37a3b69ee2cf6195ed2597bc5b7e45604d2e08cbad1c32502ed459fe70",
+          "hex": "0116000A0001003100000DB64A6CF26A47537A240000C3504A6CF26A000000C73D5855C0C3000000000000000000000000"
+        }
+      ],
+      "chronology": "LookAt3877 and ClientGetItem3878 precede reward3883/add3884 and mission removal3887; exact target ContainerAddItem3889 follows. Callback order does not independently establish causal server logic.",
+      "laterParentedItem": {
+        "originalPacketOrdinal": 4185,
+        "originalPacketSha256": "3dc8dc6ff085924c08aa07ebe0c50dcd7572aaac22d36aca1c22d2d852d2280a",
+        "itemIdentity": {
+          "type": 51005,
+          "instance": 1482014915
+        },
+        "parentIdentity": {
+          "type": 50000,
+          "instance": 1248653930
+        }
+      }
+    }
+  ],
+  "publicationAudit": [
+    {
+      "captureStem": "mission-20261011-001616",
+      "windowFirstOrdinal": 820,
+      "windowLastOrdinal": 1247,
+      "outboundClientMoveItemToInventoryCount": 0,
+      "outboundClientContainerAddItemCount": 0,
+      "inventorySnapshotOrdinal": 1247,
+      "inventorySnapshotSha256": "8d80d39af801f6355345aac0118b9fcd7d2fdbd103a697b07a447f2831bac25f",
+      "objectiveInventorySlot": 82,
+      "objectiveItemIdentity": { "type": 51005, "instance": 1482214240 },
+      "objectiveTemplateLow": 100231,
+      "objectiveTemplateHigh": 100231,
+      "objectiveQuality": 1
+    },
+    {
+      "captureStem": "mission-20261011-025629",
+      "windowFirstOrdinal": 3878,
+      "windowLastOrdinal": 4223,
+      "outboundClientMoveItemToInventoryCount": 0,
+      "outboundClientContainerAddItemCount": 0,
+      "prePickupInventorySnapshotOrdinal": 3543,
+      "prePickupMainSlots": [64,65,66,67,68,69,70,71,72,73,74,76,77,78,79,80,85,86,89],
+      "prePickupFirstFreeMainSlot": 75,
+      "inventorySnapshotOrdinal": 4223,
+      "inventorySnapshotSha256": "accb27642df307b284ca13037dd8a16df886d4ad3770a1d1eb2eda2825b2fa4f",
+      "objectiveInventorySlot": 81,
+      "objectiveRecordOffset": 901,
+      "objectiveRecordHex": "00000051002200010000c73d5855c0c3000187f5000187f50000000100000000",
+      "objectiveItemIdentity": { "type": 51005, "instance": 1482014915 },
+      "objectiveTemplateLow": 100341,
+      "objectiveTemplateHigh": 100341,
+      "objectiveQuality": 1,
+      "advertisedRewardInventorySlot": 75,
+      "advertisedRewardTemplateLow": 70562,
+      "advertisedRewardTemplateHigh": 85597,
+      "advertisedRewardQuality": 2,
+      "semantics": "Observed slot sequence is consistent with automatic next-free placement. A zero ContainerAddItem target does not independently establish cursor semantics. No client inventory-move request occurs in the audited window."
+    }
+  ],
+  "containerAddItemDecode": {
+    "sourceContainer": "Exact requested world identity",
+    "target": {
+      "type": 0,
+      "instance": 0
+    },
+    "targetPlacement": 0
+  },
+  "exclusions": [
+    "No private catalog copy",
+    "No retail random selection algorithm claim",
+    "No claim that arbitrary authored FindItem WorldItems are pickup-compatible",
+    "No inference of universal completion causality"
+  ]
+}

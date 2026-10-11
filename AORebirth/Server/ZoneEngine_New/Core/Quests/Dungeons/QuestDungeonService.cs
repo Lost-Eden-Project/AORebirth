@@ -93,6 +93,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly InventoryActionService _inventoryActions;
         readonly Lazy<PlayfieldManager> _playfields;
         readonly IGameData _gameData;
+        readonly HashItemMinter? _hashItems;
         readonly IZoneLogger _logger;
 
         readonly ConcurrentDictionary<string, CachedDungeon> _dungeons = new(StringComparer.Ordinal);
@@ -104,7 +105,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public QuestDungeonService(ICharacterQuestStore store, QuestService quests, MissionDestinationCatalog entrances,
             DungeonLayoutGenerator layouts, IGeneratedMissionDao offers, IItemBuilder items, IItemInstanceIdAllocator ids,
             InventoryFlushService flush, InventoryActionService inventoryActions, Lazy<PlayfieldManager> playfields,
-            IGameData gameData, IZoneLogger logger)
+            IGameData gameData, IZoneLogger logger, HashItemMinter? hashItems = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
@@ -118,6 +119,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             _playfields = playfields ?? throw new ArgumentNullException(nameof(playfields));
             _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _hashItems = hashItems;
 
             _quests.QuestEnded += OnQuestEnded;
             _sweep = new Timer(_ => Sweep(), null, SweepInterval, SweepInterval);
@@ -183,15 +185,23 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     Quality = offer.Quality,
                     MissionIconId = MissionRollPolicy.Current.Icon((MissionRollType)offer.MissionType)
                 };
+                DungeonLayout acceptedLayout;
                 using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.layout", player.Identity.Instance))
                 {
                     // Current offers are solo. Team mode must be carried from the roll request and accepted roster
                     // in the encounter milestone; party membership alone must never change an offered mission's mode.
-                    if (!_layouts.ConfigureNewDungeon(parameters, team: false) || !_layouts.TryGenerate(parameters, out _))
+                    if (!_layouts.ConfigureNewDungeon(parameters, team: false) || !_layouts.TryGenerate(parameters, out acceptedLayout))
                         return "Mission dungeons are unavailable.";
                 }
 
                 QuestTemplate template = BuildTemplate(questId, offer);
+                if (template.IsFindItem)
+                {
+                    if (!TryPrepareObjective(player, questId, acceptedLayout, out var objective, out string objectiveHash))
+                        return "Find Item objective data is unavailable; this offer was not accepted.";
+                    parameters.ObjectiveItem = objective;
+                    template.Objective.WorldItem = objectiveHash;
+                }
                 DateTime expires = now.AddSeconds(MissionRollPolicy.Current.AcceptedLifetimeSeconds);
                 string parametersJson = parameters.ToJson();
 
@@ -310,7 +320,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         return false;
 
                     QuestDungeonPlayfield world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
-                        dungeon.TargetHash, dungeon.Parameters.Quality);
+                        dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective);
                     session.TransferToPlayfield(world, layout.Spawn);
                     return true;
                 }
@@ -397,7 +407,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (!dungeon.Ended && dungeon.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks && dungeon.Parameters.DungeonPlayfield == storedPlayfield
                     && _layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
                     return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
-                        dungeon.Parameters.Quality), layout.Spawn, null);
+                        dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective), layout.Spawn, null);
 
                 PlayfieldAdmission admission = playfields.AcquirePlayfield(entrance.PlayfieldId);
                 return (admission.Playfield, new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ), admission);
@@ -656,7 +666,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         bool TryGetDungeon(string questId, out CachedDungeon dungeon)
         {
-            if (_dungeons.TryGetValue(questId, out dungeon!))
+            // A reward transaction can finish before its publication (or return an unknown commit outcome).
+            // Never let an active cached layout override the durable owner's closed mission state.
+            if (_dungeons.TryGetValue(questId, out dungeon!) && dungeon.Ended)
                 return true;
 
             GeneratedQuestRow? row = _store.LoadGenerated(questId);
@@ -673,7 +685,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 _logger.Error(exception, "Quest " + questId + " has an unreadable definition; its dungeon gets no kill target");
             }
 
-            bool ended = false;
+            bool ended = true;
             foreach (CharacterQuestRow owned in _store.Load(row.OwnerId))
             {
                 if (string.Equals(owned.QuestId, questId, StringComparison.Ordinal))
@@ -692,6 +704,50 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>The NPC hash a kill quest wants, or null for other quests.</summary>
         static string? KillTarget(QuestTemplate? template)
             => template != null && template.IsKill && !string.IsNullOrWhiteSpace(template.Objective?.Npc) ? template.Objective.Npc : null;
+
+        bool TryPrepareObjective(Player player, string questId, DungeonLayout layout,
+            out MissionItemObjectiveBinding objective, out string objectiveHash)
+        {
+            objective = null!;
+            objectiveHash = string.Empty;
+            DungeonFindItemPolicy? policy = _layouts.FindItemPolicy;
+            if (_hashItems == null || policy?.ItemHashes is not { Length: > 0 } || policy.Quality <= 0
+                || policy.QuestInstanceStat < 0 || policy.ItemHashes.Any(string.IsNullOrWhiteSpace)
+                || !DungeonObjectivePlacement.TrySelect(_gameData.RootPath, layout, _logger, out int room, out Vector3 point))
+                return false;
+            var candidates = new List<(string Hash, int Low, int High, int Quality)>();
+            foreach (string hash in policy.ItemHashes.Distinct(StringComparer.Ordinal))
+            {
+                if (!_hashItems.TryRollIds(hash, policy.Quality, out int low, out int high, out int quality))
+                    return false;
+                try { _items.CreateTemplate(low, high, quality); }
+                catch (Exception exception) { _logger.Error(exception, "Find Item template is unavailable: " + hash); return false; }
+                candidates.Add((hash, low, high, quality));
+            }
+            var selected = candidates[RandomNumberGenerator.GetInt32(candidates.Count)];
+            objectiveHash = selected.Hash;
+            objective = new MissionItemObjectiveBinding
+            {
+                QuestId = questId, OwnerId = player.Identity.Instance, IdentityType = (int)IdentityType.Terminal,
+                Instance = _ids.Allocate(), LowId = selected.Low, HighId = selected.High, Quality = selected.Quality,
+                RoomIndex = room, X = point.xf, Y = point.yf, Z = point.zf,
+                QuestInstanceStat = policy.QuestInstanceStat, WorldFlags = policy.WorldFlags
+            };
+            return objective.IsValid;
+        }
+
+        MissionItemObjectiveBinding? UncollectedObjective(QuestDungeonParameters parameters)
+        {
+            MissionItemObjectiveBinding? binding = parameters.ObjectiveItem;
+            if (binding?.IsValid != true)
+                return null;
+            // The layout cache never decides collection state: consult the durable owner row on reconstruction.
+            CharacterQuestRow? row = _store.Load(binding.OwnerId).FirstOrDefault(q => q.QuestId == binding.QuestId);
+            return row is { State: (int)QuestState.Active } && row.Progress < row.RequiredCount ? binding : null;
+        }
+
+        bool TryCollectObjective(Player player, MissionObjectiveItem objective)
+            => _quests.TryCollectFindItem(player, objective);
 
         /// <summary>Keys the player carries: main inventory and bags opened from it.</summary>
         static List<Item> CarriedKeys(Player player)

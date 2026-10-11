@@ -82,6 +82,7 @@ namespace AORebirth.Tools.MissionDaoValidation
                 ValidateStartArea(dao);
                 ValidateHardening(dao, disposable.ApplicationConnectionString);
                 ValidateCutoverReconciliation(disposable.ApplicationConnectionString);
+                ValidateCharacterQuestCompletion(dao, disposable.ApplicationConnectionString);
 
 #if MISSION_DAO_ISOLATED_TESTS
                 Console.WriteLine("MISSION_DAO_TEST_MODE=ISOLATED_PRODUCTION_SOURCES");
@@ -399,7 +400,10 @@ namespace AORebirth.Tools.MissionDaoValidation
                          "generatedmissionbindings.sql",
                          "generatedmissionobjects.sql",
                          "generatedmissionobservations.sql",
-                         "generatedmissionartifacts.sql"
+                         "generatedmissionartifacts.sql",
+                         "characterquests.sql",
+                         "generatedquests.sql",
+                         "questdungeonkeys.sql"
                      })
             {
                 using (var command = new MySqlCommand(File.ReadAllText(Path.Combine(directory, name)), connection))

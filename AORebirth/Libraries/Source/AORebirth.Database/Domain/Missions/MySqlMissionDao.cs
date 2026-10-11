@@ -1458,18 +1458,16 @@ namespace AORebirth.Database.Domain.Missions
                 string rewardType,
                 IList<MissionCharacterStatMutation> mutations,
                 string effectReference,
-                long appliedAtUtcTicks)
+                long appliedAtUtcTicks,
+                bool validatedCharacterQuestCompletion = false)
             {
                 this.ValidateCharacterScope(key.Mission.CharacterId);
                 ValidateRewardKey(key);
                 ValidateText(rewardType, "rewardType", 64, false);
                 ValidateText(effectReference, "effectReference", 255, true);
-                MissionStateRecord mission = QueryMission(
-                    this.connection,
-                    this.transaction,
-                    key.Mission,
-                    true);
-                if (mission == null || mission.State != MissionLifecycleState.Completed)
+                MissionStateRecord mission = validatedCharacterQuestCompletion ? null : QueryMission(
+                    this.connection, this.transaction, key.Mission, true);
+                if (!validatedCharacterQuestCompletion && (mission == null || mission.State != MissionLifecycleState.Completed))
                 {
                     return CreateAtomicResult(
                         MissionAtomicRewardStatus.Rejected,
@@ -1478,7 +1476,7 @@ namespace AORebirth.Database.Domain.Missions
                         "Character stat rewards require a completed authoritative mission.");
                 }
 
-                if (mutations == null || mutations.Count == 0 || appliedAtUtcTicks <= 0)
+                if (mutations == null || (!validatedCharacterQuestCompletion && mutations.Count == 0) || appliedAtUtcTicks <= 0)
                 {
                     return CreateAtomicResult(
                         MissionAtomicRewardStatus.Rejected,

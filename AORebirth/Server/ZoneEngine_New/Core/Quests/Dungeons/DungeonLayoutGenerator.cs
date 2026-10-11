@@ -71,6 +71,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             public int FloorHeight { get; set; }
             public int LockedDoorChancePercent { get; set; }
             public DungeonPopulationPolicy? Population { get; set; }
+            public DungeonFindItemPolicy? FindItem { get; set; }
             public List<GenerationProfile> Profiles { get; set; } = [];
         }
 
@@ -84,6 +85,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             public int MinFloorSize { get; set; }
             public int MaxFloorSize { get; set; }
         }
+
+        internal DungeonFindItemPolicy? FindItemPolicy => _policy?.FindItem;
 
         sealed class DoorStylesFile
         {

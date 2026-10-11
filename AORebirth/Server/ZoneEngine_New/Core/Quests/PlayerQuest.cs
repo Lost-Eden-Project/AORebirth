@@ -58,6 +58,11 @@ namespace ZoneEngine_New.Core.Quests
 
         public bool IsActive => State == QuestState.Active;
 
+        public bool IsRewardPending => IsActive && Progress >= RequiredCount;
+
+        internal long NextRewardRetryUtcTicks { get; set; }
+        internal bool RewardPendingNotified { get; set; }
+
         public int Remaining => Math.Max(0, RequiredCount - Progress);
     }
 

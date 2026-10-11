@@ -1,5 +1,18 @@
 # AORebirth Project State
 
+PROVEN (2026-10-11, Find Item/reward-integrity candidate): based on installed
+`40caa10b8`, `codex/find-item-reward-integrity` connects newly accepted generated
+Find Item missions to exact persisted owner-bound world items and the existing
+pickup/inventory protocol. Existing mission DAO/ledger transactions retain
+earned rewards until all delivery effects commit, with duplicate protection,
+pending-expiry retention, checkpoint ordering and reconnect key reconciliation.
+No schema migration, replacement content system or changes to destination/QL/
+room-generation rules. Approved engine build, 153 focused mission/dungeon cases
+and 320 real-MySQL DAO checks passed; original AO client acceptance is UNVERIFIED.
+Existing unbound accepted Find Item records
+are retained unchanged. Other objectives, team acceptance/bosses and independent
+loot remain separate work. See `docs/reports/FIND_ITEM_REWARD_INTEGRITY.md`.
+
 OBSERVED (2026-10-11, original-client dungeon foundation test): Mike rolled a
 mission and entered its interior, then reported alien-only ordinary enemies.
 PROVEN (population repair candidate): a fixed alien family and omitted requested

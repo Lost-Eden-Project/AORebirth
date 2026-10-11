@@ -170,12 +170,12 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _visibility.DespawnForObservers(source);
         }
 
-        public void UnregisterDynel(Dynel dynel)
+        public void UnregisterDynel(Dynel dynel, Player? transferredTo = null)
         {
             if (dynel == null)
                 return;
 
-            _visibility.Untrack(dynel);
+            _visibility.Untrack(dynel, transferredTo);
             _tracked.Remove(dynel);
             dynel.Cell?.Remove(dynel);
             dynel.Cell = null;

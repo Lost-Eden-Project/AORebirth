@@ -12,7 +12,7 @@ namespace ZoneEngine_New.Core.Entities
     /// Item template spawned into the world from a hash. Sends the world-item stat set seen in retail
     /// SimpleItemFullUpdate captures instead of the full inventory template stats.
     /// </summary>
-    public sealed class WorldItem : StaticDynel
+    public class WorldItem : StaticDynel
     {
         const int WorldItemFlags = (int)(ItemFlags.Visible | ItemFlags.TellCollision | ItemFlags.DisableStatelCollision);
 

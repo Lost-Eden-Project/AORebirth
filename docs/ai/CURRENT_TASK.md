@@ -1,31 +1,24 @@
 # Current Task
 
-Repair the alien-only ordinary mission dungeon population.
+Complete generated Find Item missions and make quest reward delivery durable.
 
-Branch: `codex/mission-dungeon-npc-population`, based on foundation `df44abd0f`.
-OBSERVED: Mike rolled a mission and entered its generated interior in the
-original client, but all ordinary enemies were aliens.
-PROVEN: QuestDungeonPlayfield selected the same temporary alien family at every
-ordinary spawn and did not pass mission QL to the existing NPC resolver.
+Branch: `codex/find-item-reward-integrity`, based on installed `40caa10b8`.
+PROVEN: the base implementation accepted Find Item missions without a bound or
+spawned objective; completion and rewards were separate best-effort writes.
 
-The repair uses an editable Population section in DungeonGeneration.json,
-referencing six existing nonalien NpcTemplates families. Mission QL now reaches
-existing interpolation/clamping through HashSpawnSystem. No duplicate catalog,
-runtime capture loading, DAO/schema edit, or layout/entrance change is introduced.
-The existing objective target remains separate. All ordinary NPCs remain one-shot.
+The candidate freezes an existing GameData item reference and exact owner/quest/
+instance/placement during acceptance, spawns it in a connected room, validates
+ClientGetItem against that binding and atomically records collection. Existing
+mission DAO transactions and reward ledger deliver configured items/cash/XP
+with completion, retain earned pending rewards across expiry/restart and refuse
+duplicate payment. Existing snapshots fence stale writes; reconnect reconciles
+closed-mission keys. No new catalog, capture loading or schema migration.
 
-Approved engine build and 121 focused mission/dungeon tests passed, including
-actual catalog NPC spawning at QL2/3/25/220, configured room spawn points,
-unresolved-hash rejection, existing target separation and preserved layouts.
-Builds still report dependency/security and source warnings. The ordinary full
-test project has previously recorded unrelated compile failures; only the
-existing focused selection was run. DAO tests were not rerun for this repair.
+Approved engine build, 153 focused mission/dungeon cases and 320 real-MySQL DAO
+checks passed. Automated success is separate from original AO client acceptance,
+which remains UNVERIFIED and belongs to Mike. Existing
+accepted Find Item records are unchanged; test with a newly accepted mission.
+The other four objective types and independent dungeon loot remain out of scope.
 
-UNVERIFIED: original-client acceptance of the population repair. Mike performs
-that check after local installation; the agent does not control the client.
-The older catalog has level gaps and upper limits, so requested QL is not a
-guarantee of exact resulting NPC level. Human/high-level coverage, guaranteed
-team bosses, team acceptance, objectives and independent loot remain unfinished.
-
-Evidence, all 23 captured instances and limitations:
-`docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md`.
+Implementation, evidence, validation and limitations:
+`docs/reports/FIND_ITEM_REWARD_INTEGRITY.md`.

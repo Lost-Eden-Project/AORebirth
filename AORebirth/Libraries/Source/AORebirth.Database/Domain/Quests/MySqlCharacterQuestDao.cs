@@ -162,7 +162,26 @@ namespace AORebirth.Database.Domain.Quests
             if (row.CharacterId <= 0 || string.IsNullOrEmpty(row.QuestId))
                 throw new ArgumentException("Character and quest id are required.", nameof(row));
 
-            Execute(
+            Transaction((c, t) =>
+            {
+                using (IDbCommand owner = Prepare(c, t, "SELECT Id FROM characters WHERE Id=@Id FOR UPDATE", new object[] { "@Id", row.CharacterId }))
+                    if (owner.ExecuteScalar() == null)
+                        throw new InvalidOperationException("Quest owner does not exist.");
+                using (IDbCommand current = Prepare(c, t, "SELECT " + CharacterColumns
+                    + " FROM characterquests WHERE CharacterId=@Id AND QuestId=@Quest FOR UPDATE",
+                    new object[] { "@Id", row.CharacterId, "@Quest", row.QuestId }))
+                using (IDataReader reader = current.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        CharacterQuestRow before = ReadCharacter(reader);
+                        if (before.State == 1 && before.RequiredCount > 0 && before.Progress >= before.RequiredCount
+                            && (row.State != 1 || row.Progress < before.RequiredCount || row.RequiredCount != before.RequiredCount
+                                || row.AssignedAtUtcTicks != before.AssignedAtUtcTicks || row.Source != before.Source))
+                            throw new InvalidOperationException("An earned pending quest must be paid atomically before its state or assigned run can change.");
+                    }
+                }
+                return Execute(c, t,
                 "INSERT INTO characterquests (" + CharacterColumns + ") VALUES "
                 + "(@CharacterId,@QuestId,@Source,@State,@Progress,@RequiredCount,@Assigned,@Updated) "
                 + "ON DUPLICATE KEY UPDATE Source=VALUES(Source),State=VALUES(State),Progress=VALUES(Progress),"
@@ -176,6 +195,7 @@ namespace AORebirth.Database.Domain.Quests
                 "@RequiredCount", row.RequiredCount,
                 "@Assigned", row.AssignedAtUtcTicks,
                 "@Updated", row.UpdatedAtUtcTicks);
+            });
         }
 
         /// <summary>Inserts the generated quest or replaces the stored one with the same id.</summary>
@@ -401,6 +421,7 @@ namespace AORebirth.Database.Domain.Quests
             return Query(
                 "SELECT g.QuestId FROM generatedquests g WHERE g.ExpiresAtUtcTicks<=@Now "
                 + "AND EXISTS (SELECT 1 FROM questdungeonkeys k WHERE k.QuestId=g.QuestId) "
+                + "AND NOT EXISTS (SELECT 1 FROM characterquests c WHERE c.QuestId=g.QuestId AND c.State=1 AND c.RequiredCount>0 AND c.Progress>=c.RequiredCount) "
                 + "ORDER BY g.ExpiresAtUtcTicks LIMIT " + Math.Max(1, limit).ToString(System.Globalization.CultureInfo.InvariantCulture),
                 r => r.GetString(0),
                 "@Now", nowUtcTicks);
@@ -418,6 +439,7 @@ namespace AORebirth.Database.Domain.Quests
                 using (IDbCommand command = Prepare(c, t,
                     "SELECT g.QuestId FROM generatedquests g WHERE g.ExpiresAtUtcTicks<@Cutoff "
                     + "AND NOT EXISTS (SELECT 1 FROM questdungeonkeys k WHERE k.QuestId=g.QuestId) "
+                    + "AND NOT EXISTS (SELECT 1 FROM characterquests c WHERE c.QuestId=g.QuestId AND c.State=1 AND c.RequiredCount>0 AND c.Progress>=c.RequiredCount) "
                     + "ORDER BY g.ExpiresAtUtcTicks LIMIT " + Math.Max(1, limit).ToString(System.Globalization.CultureInfo.InvariantCulture)
                     + " FOR UPDATE",
                     new object[] { "@Cutoff", cutoffUtcTicks }))
@@ -441,7 +463,7 @@ namespace AORebirth.Database.Domain.Quests
         /// <summary>Marks every still-active character row of <paramref name="questId"/> with <paramref name="state"/>.</summary>
         public void CloseCharacterQuests(string questId, int state, long nowUtcTicks)
         {
-            Execute("UPDATE characterquests SET State=@State,UpdatedAtUtcTicks=@Now WHERE QuestId=@Quest AND State=1",
+            Execute("UPDATE characterquests SET State=@State,UpdatedAtUtcTicks=@Now WHERE QuestId=@Quest AND State=1 AND (RequiredCount<=0 OR Progress<RequiredCount)",
                 "@State", state, "@Now", nowUtcTicks, "@Quest", questId);
         }
 

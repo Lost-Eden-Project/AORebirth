@@ -18,6 +18,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public DungeonLayoutPlan? LayoutPlan { get; set; }
 
+        /// <summary>The exact Find Item instance and placement selected before acceptance commits.</summary>
+        public MissionItemObjectiveBinding? ObjectiveItem { get; set; }
+
         public bool IsTeam { get; set; }
 
         /// <summary>Playfield2 id of this quest's dungeon (<see cref="QuestDungeonIds"/>).</summary>
@@ -69,6 +72,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 QuestDungeonParameters? parsed = JsonSerializer.Deserialize<QuestDungeonParameters>(json, JsonOptions);
                 if (parsed == null || parsed.GeneratorVersion <= 0 || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
                     || parsed.EntranceType != (int)IdentityType.MissionEntrance
+                    || (parsed.ObjectiveItem != null && !parsed.ObjectiveItem.IsValid)
                     || (parsed.GeneratorVersion == DungeonLayoutGenerator.CurrentVersion
                         && (parsed.LayoutPlan?.IsValid != true || parsed.IsTeam != parsed.LayoutPlan.BossFloor)))
                     return false;

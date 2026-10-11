@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using AORebirth.Core.GameData;
 using AORebirth.Database.Domain.Quests;
+using AORebirth.Enums;
 using AORebirth.Interfaces.Persistence.Missions;
 using AORebirth.Interfaces.Persistence.Shops;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -561,6 +562,167 @@ public sealed class QuestDungeonDestinationTests
         Assert.AreEqual(0, f.Session.Transfers.Count);
     }
 
+    [TestMethod]
+    [DataRow(321)]
+    [DataRow(324)]
+    [DataRow(341)]
+    [DataRow(351)]
+    public void ObjectivePlacementFreezesReachablePointWithoutChangingLayout(int style)
+    {
+        using var f = new Fixture();
+        QuestDungeonPlayfield world = f.CreateWorld(25, style: style);
+        byte[] original = (byte[])world.Layout.GeneratorPayload.Clone();
+        Assert.IsTrue(DungeonObjectivePlacement.TrySelect(RuntimeData.Value.RootPath, world.Layout, new StubLogger(), out int room, out var point));
+        Assert.IsTrue(DungeonObjectivePlacement.TrySelect(RuntimeData.Value.RootPath, world.Layout, new StubLogger(), out int again, out var repeated));
+        Assert.IsTrue(room > 0);
+        Assert.AreEqual(room, again);
+        Assert.AreEqual(BitConverter.SingleToUInt32Bits(point.xf), BitConverter.SingleToUInt32Bits(repeated.xf));
+        Assert.AreEqual(BitConverter.SingleToUInt32Bits(point.yf), BitConverter.SingleToUInt32Bits(repeated.yf));
+        Assert.AreEqual(BitConverter.SingleToUInt32Bits(point.zf), BitConverter.SingleToUInt32Bits(repeated.zf));
+        var dungeon = AORebirth.World.Collision.DungeonCollisionBuilder.BuildLayout(RuntimeData.Value.RootPath, world.Layout.Generator);
+        Assert.IsTrue(DungeonObjectivePlacement.RoomDistances(dungeon, world.Layout)[room] > 0);
+        CollectionAssert.AreEqual(original, world.Layout.Generator.ToByteArray());
+    }
+
+    [TestMethod]
+    public void ObjectiveWorldItemUsesExactBindingAndCollectsOnceOnlyAfterSuccessfulCommit()
+    {
+        using var f = new Fixture();
+        int attempts = 0;
+        bool committed = false;
+        QuestDungeonPlayfield world = f.CreateObjectiveWorld((player, item) =>
+        {
+            attempts++;
+            Assert.IsTrue(worldRegistry(item).TryGet(item.Identity, out var registered));
+            Assert.AreSame(item, registered);
+            Assert.AreEqual(0, f.Session.Sent.OfType<ContainerAddItemMessage>().Count());
+            if (committed)
+                f.PublishObjective(item);
+            return committed;
+        }, out var binding);
+        var objective = world.GetRequiredService<DynelRegistry>().Dynels().OfType<MissionObjectiveItem>().Single();
+        var update = (SimpleItemFullUpdateMessage)objective.BuildSpawnMessage();
+        Assert.AreEqual(binding.Identity, update.Identity);
+        Assert.AreEqual(0, update.Identitytype);
+        Assert.AreEqual(0, update.Instance);
+        Assert.AreEqual(binding.X, update.Coordinate.X);
+        Assert.AreEqual(binding.Y, update.Coordinate.Y);
+        Assert.AreEqual(binding.Z, update.Coordinate.Z);
+        Assert.AreEqual((uint)binding.LowId, update.Stats.Single(row => row.Value1 == CharacterStat.ACGItemTemplateID).Value2);
+        Assert.AreEqual((uint)binding.HighId, update.Stats.Single(row => row.Value1 == CharacterStat.ACGItemTemplateID2).Value2);
+        Assert.AreEqual((uint)binding.Quality, update.Stats.Single(row => row.Value1 == CharacterStat.ACGItemLevel).Value2);
+        Assert.AreEqual(0x80000003U, update.Stats.Single(row => row.Value1 == CharacterStat.Flags).Value2);
+        Assert.AreEqual(1U, update.Stats.Single(row => row.Value1 == CharacterStat.QuestInstance).Value2);
+        f.Player.Playfield = world;
+        f.Player.Position = new Vector3(binding.X, binding.Y, binding.Z);
+        var locality = world.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>();
+        world.GetRequiredService<DynelRegistry>().Register(f.Player);
+        locality.RegisterDynel(f.Player);
+        locality.ActivatePlayerVisibility(f.Player);
+        Assert.IsTrue(locality.IsVisibleTo(objective, f.Player));
+        var observer = TestWorld.CreatePlayer(88);
+        var observerSession = new Session();
+        observer.Session = observerSession;
+        observerSession.BindPlayer(observer);
+        observer.Playfield = world;
+        observer.Position = new Vector3(binding.X, binding.Y, binding.Z);
+        world.GetRequiredService<DynelRegistry>().Register(observer);
+        locality.RegisterDynel(observer);
+        locality.ActivatePlayerVisibility(observer);
+        Assert.IsTrue(locality.IsVisibleTo(objective, observer));
+        f.Session.Sent.Clear();
+        observerSession.Sent.Clear();
+        Assert.IsFalse(objective.TryPickup(f.Player));
+        Assert.AreEqual(1, attempts);
+        Assert.IsTrue(world.GetRequiredService<DynelRegistry>().TryGet(binding.Identity, out _));
+        committed = true;
+        Assert.IsTrue(objective.TryPickup(f.Player));
+        Assert.AreEqual(2, attempts);
+        Assert.IsFalse(objective.TryPickup(f.Player));
+        Assert.AreEqual(2, attempts);
+        Assert.IsFalse(world.GetRequiredService<DynelRegistry>().TryGet(binding.Identity, out _));
+        ContainerAddItemMessage ack = f.Session.Sent.OfType<ContainerAddItemMessage>().Single();
+        Assert.AreEqual(binding.Identity, ack.SourceContainer);
+        Assert.AreEqual(Identity.None, ack.Target);
+        Assert.AreEqual(0, ack.TargetPlacement);
+        Assert.AreEqual(0, f.Session.Sent.OfType<DespawnMessage>().Count(message => message.Identity == binding.Identity));
+        Assert.AreEqual(1, observerSession.Sent.OfType<DespawnMessage>().Count(message => message.Identity == binding.Identity));
+        SimpleItemFullUpdateMessage owned = f.Session.Sent.OfType<SimpleItemFullUpdateMessage>().Single(message => message.Identity == binding.Identity);
+        int slot = f.Player.Inventory.Inventory.Content.Single(pair => pair.Value.Identity == binding.Identity).Key;
+        Assert.AreEqual(f.Player.Identity, owned.Owner);
+        Assert.AreEqual(1, (int)owned.Unknown2);
+        Assert.AreEqual(slot, (int)owned.Unknown3);
+        Assert.AreEqual(0x80000003U, owned.Stats.Single(row => row.Value1 == CharacterStat.Flags).Value2);
+        Assert.IsTrue(f.Session.Sent.IndexOf(ack) < f.Session.Sent.IndexOf(owned));
+        Assert.AreEqual(0, f.Session.Sent.OfType<TemplateActionMessage>().Count());
+
+        static DynelRegistry worldRegistry(MissionObjectiveItem item) => item.Playfield!.GetRequiredService<DynelRegistry>();
+    }
+
+    [TestMethod]
+    public void ObjectiveWithoutAcceptedFlagOverrideRetainsExistingWorldItemFlags()
+    {
+        using var f = new Fixture();
+        var world = f.CreateObjectiveWorld((_, _) => false, out var binding, worldFlags: null);
+        var objective = world.GetRequiredService<DynelRegistry>().Dynels().OfType<MissionObjectiveItem>().Single();
+        var update = (SimpleItemFullUpdateMessage)objective.BuildSpawnMessage();
+        Assert.IsNull(binding.WorldFlags);
+        Assert.AreEqual(unchecked((uint)(ItemFlags.Visible | ItemFlags.TellCollision | ItemFlags.DisableStatelCollision)),
+            update.Stats.Single(row => row.Value1 == CharacterStat.Flags).Value2);
+        var restored = System.Text.Json.JsonSerializer.Deserialize<MissionItemObjectiveBinding>(
+            System.Text.Json.JsonSerializer.Serialize(binding))!;
+        Assert.IsTrue(binding.SameAs(restored));
+        restored.WorldFlags = 0x80000003U;
+        Assert.IsFalse(binding.SameAs(restored));
+    }
+
+    [TestMethod]
+    [DataRow("wrongOwner")]
+    [DataRow("wrongInstance")]
+    [DataRow("distant")]
+    [DataRow("dead")]
+    [DataRow("quarantined")]
+    [DataRow("unregistered")]
+    public void ObjectivePickupRejectsInvalidActorBeforeCollection(string denial)
+    {
+        using var f = new Fixture();
+        int attempts = 0;
+        QuestDungeonPlayfield world = f.CreateObjectiveWorld((_, item) => { attempts++; f.PublishObjective(item); return true; }, out var binding);
+        var objective = world.GetRequiredService<DynelRegistry>().Dynels().OfType<MissionObjectiveItem>().Single();
+        f.Player.Playfield = world;
+        f.Player.Position = new Vector3(binding.X, binding.Y, binding.Z);
+        switch (denial)
+        {
+            case "wrongOwner": binding.OwnerId++; break;
+            case "wrongInstance": f.Player.Playfield = Blank<Playfield>(); break;
+            case "distant": f.Player.Position = new Vector3(binding.X + 100, binding.Y, binding.Z); break;
+            case "dead": typeof(Character).GetField("_deathNotified", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(f.Player, true); break;
+            case "quarantined": f.Player.QuarantinePersistence(); break;
+            case "unregistered": world.GetRequiredService<DynelRegistry>().UnregisterExact(objective); break;
+        }
+        Assert.IsFalse(objective.TryPickup(f.Player));
+        Assert.AreEqual(0, attempts);
+        Assert.AreEqual(0, f.Session.Sent.OfType<ContainerAddItemMessage>().Count());
+    }
+
+    [TestMethod]
+    public void ClientGetItemDispatchRequiresExactPlayerAndWorldItemIdentities()
+    {
+        using var f = new Fixture();
+        int attempts = 0;
+        QuestDungeonPlayfield world = f.CreateObjectiveWorld((_, item) => { attempts++; f.PublishObjective(item); return true; }, out var binding);
+        f.Player.Playfield = world;
+        f.Player.Position = new Vector3(binding.X, binding.Y, binding.Z);
+        var handler = new ZoneEngine_New.Core.MessageHandlers.ClientGetItemMessageHandler();
+        handler.Handle(new ClientGetItemMessage { Identity = Identity.None, Identity1 = binding.Identity }, f.Session);
+        handler.Handle(new ClientGetItemMessage { Identity = f.Player.Identity, Identity1 = Identity.None }, f.Session);
+        Assert.AreEqual(0, attempts);
+        handler.Handle(new ClientGetItemMessage { Identity = f.Player.Identity, Identity1 = binding.Identity }, f.Session);
+        Assert.AreEqual(1, attempts);
+        handler.Handle(new ClientGetItemMessage { Identity = f.Player.Identity, Identity1 = binding.Identity }, f.Session);
+        Assert.AreEqual(1, attempts);
+    }
+
     static string RepositoryRoot()
     {
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
@@ -568,7 +730,7 @@ public sealed class QuestDungeonDestinationTests
         throw new DirectoryNotFoundException("Cannot locate this test build's repository root.");
     }
 
-    sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         internal readonly MissionEntrancePlacement Entrance;
         internal readonly Player Player = TestWorld.CreatePlayer(77);
@@ -581,16 +743,21 @@ public sealed class QuestDungeonDestinationTests
         internal readonly Persistence Persistence = new();
         internal QuestDungeonService Service = null!;
         readonly DiagnosticLogger _logger = new();
-        readonly StubItemBuilder _items = new();
+        readonly IItemBuilder _items;
         readonly StubCatalog _templates = new();
         readonly StubInstanceIdAllocator _ids = new();
         readonly InventoryFlushService _flush;
         readonly InventoryActionService _actions;
         readonly QuestService _quests;
+        internal QuestService Quests => _quests;
+        internal IItemBuilder Items => _items;
+        internal IGameData GameData => RuntimeData.Value;
         readonly Playfield _exterior = Blank<Playfield>();
 
-        internal Fixture()
+        internal Fixture(IMissionDao? completionDao = null, IItemBuilder? items = null, Func<DateTime>? now = null,
+            CharacterSnapshotService? snapshots = null)
         {
+            _items = items ?? new StubItemBuilder();
             Entrance = Catalog.Value.Placements.First(row => row.IdentityInstance > int.MaxValue && Catalog.Value.TryGetWorldPosition(row.Identity, out _));
             Assert.IsTrue(Catalog.Value.TryGetWorldPosition(Entrance.Identity, out var worldPos));
             Offer = new GeneratedMissionOffer
@@ -608,7 +775,8 @@ public sealed class QuestDungeonDestinationTests
             var lazyManager = new Lazy<PlayfieldManager>(() => Manager ?? throw new InvalidOperationException("Fixture manager is not initialized."));
             _flush = new InventoryFlushService(lazyManager, Persistence, _logger);
             _actions = new InventoryActionService(Persistence, _flush, _ids, _logger);
-            _quests = new QuestService(new QuestCatalog(RuntimeData.Value, _logger), Store, _items, _flush, _logger);
+            _quests = new QuestService(new QuestCatalog(RuntimeData.Value, _logger), Store, _items, _flush, _logger,
+                now ?? (() => DateTime.UtcNow), completionDao, snapshots);
             Layouts = new DungeonLayoutGenerator(RuntimeData.Value, _logger);
             Assert.IsTrue(Layouts.IsAvailable, "Existing runtime GameData must contain the configured procedural styles. Root=" + RuntimeData.Value.RootPath + "; " + _logger.Errors);
             var minter = new HashItemMinter(RuntimeData.Value, _templates, _items);
@@ -654,6 +822,39 @@ public sealed class QuestDungeonDestinationTests
         internal QuestDungeonPlayfield CreateTeamWorld(int quality)
             => CreateWorld(quality, team: true);
 
+        internal void PublishObjective(MissionObjectiveItem objective)
+        {
+            var binding = objective.Binding;
+            int slot = Player.Inventory.Inventory.FindFreeSlot();
+            Assert.IsTrue(slot >= 0);
+            Assert.IsTrue(Player.Inventory.Inventory.Add(slot, _items.Create(binding.LowId, binding.HighId, binding.Quality,
+                ItemSource.Quest, instanceId: binding.Instance, identity: binding.Identity)));
+        }
+
+        internal QuestDungeonPlayfield CreateObjectiveWorld(Func<Player, MissionObjectiveItem, bool> collect,
+            out MissionItemObjectiveBinding binding, uint? worldFlags = 0x80000003U)
+        {
+            var parameters = new QuestDungeonParameters
+            {
+                Seed = 42, Quality = 25, EntranceInstance = Offer.EntranceInstance,
+                DungeonPlayfield = QuestDungeonIds.FirstPlayfield + 100
+            };
+            Assert.IsTrue(Layouts.ConfigureNewDungeon(parameters, false));
+            Assert.IsTrue(Layouts.TryGenerate(parameters, out var layout));
+            Assert.IsTrue(DungeonObjectivePlacement.TrySelect(RuntimeData.Value.RootPath, layout, _logger, out int room, out var point));
+            binding = new MissionItemObjectiveBinding
+            {
+                QuestId = "GOBJECTIVE", OwnerId = Player.Identity.Instance,
+                IdentityType = (int)IdentityType.Terminal, Instance = 1234567,
+                LowId = 100341, HighId = 100341, Quality = 1, RoomIndex = room,
+                X = point.xf, Y = point.yf, Z = point.zf, QuestInstanceStat = 1, WorldFlags = worldFlags
+            };
+            Assert.IsNotNull(layout.Doors);
+            _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
+            return Manager.GetOrCreateQuestDungeon(parameters.DungeonPlayfield, binding.QuestId, layout, Entrance,
+                quality: parameters.Quality, objectiveItem: binding, collectObjective: collect);
+        }
+
         internal QuestDungeonPlayfield CreateWorld(int quality, bool team = false, int? style = null, string? targetHash = null)
         {
             var parameters = new QuestDungeonParameters
@@ -678,7 +879,8 @@ public sealed class QuestDungeonDestinationTests
         {
             Service?.Dispose();
             Service = new QuestDungeonService(Store, _quests, Catalog.Value, Layouts, Offers, _items, _ids,
-                _flush, _actions, new Lazy<PlayfieldManager>(() => Manager), RuntimeData.Value, _logger);
+                _flush, _actions, new Lazy<PlayfieldManager>(() => Manager), RuntimeData.Value, _logger,
+                new HashItemMinter(RuntimeData.Value, _templates, _items));
         }
         public void Dispose() { Service?.Dispose(); Manager.Dispose(); _flush.Dispose(); }
     }
@@ -696,11 +898,12 @@ public sealed class QuestDungeonDestinationTests
         public ZoneEngine_New.Core.Logging.IZoneLogger CreateForPlayfield(int playfieldId) => this;
     }
 
-    sealed class Session : IZoneSession
+    internal sealed class Session : IZoneSession
     {
         public SessionState State { get; set; } = SessionState.InPlay;
         public Player? Player { get; private set; }
         internal readonly List<MessageBody> Sent = [];
+        internal Action<MessageBody>? BeforeSend;
         internal readonly List<(Playfield World, Vector3 Position)> Transfers = [];
         public void BindPlayer(Player player) => Player = player;
         public void UnbindPlayer() => Player = null;
@@ -709,13 +912,13 @@ public sealed class QuestDungeonDestinationTests
             => Send(ZoneSession.BuildIntrazoneTeleport(Player!, landing, heading, destinationKey));
         public void Send(byte[] packet) => throw new AssertFailedException("Unexpected raw packet.");
         public void Send(Message message) => Sent.Add(message.Body);
-        public void Send(MessageBody body) => Sent.Add(body);
+        public void Send(MessageBody body) { BeforeSend?.Invoke(body); Sent.Add(body); }
         public void Send(MessageBody body, int sender, int receiver) => Send(body);
         public void SendInitiateCompression() => throw new AssertFailedException();
         public void Close() => State = SessionState.Closed;
     }
 
-    sealed class Persistence : ICharacterCoalesceCommit, IInventoryMutationPersistence, ITradePersistence
+    internal sealed class Persistence : ICharacterCoalesceCommit, IInventoryMutationPersistence, ITradePersistence
     {
         internal Action<InventoryMutationBatch>? BeforeMutation;
         internal int MutationCalls;
@@ -736,7 +939,7 @@ public sealed class QuestDungeonDestinationTests
         public IList<ShopVendorData> ListForPlayfield(int playfieldId) => [];
     }
 
-    sealed class QuestStore : ICharacterQuestStore
+    internal sealed class QuestStore : ICharacterQuestStore
     {
         internal GeneratedMissionOffer Offer = null!;
         internal GeneratedQuestRow? Generated;
@@ -796,7 +999,7 @@ public sealed class QuestDungeonDestinationTests
         public void CloseCharacterQuests(string questId, int state, long nowUtcTicks) => throw new AssertFailedException();
     }
 
-    sealed class OfferDao : IGeneratedMissionDao
+    internal sealed class OfferDao : IGeneratedMissionDao
     {
         internal GeneratedMissionOffer Offer = null!;
         public IList<GeneratedMissionOffer> ReadOffers(int owner) => owner == Offer.OwnerId ? [Offer] : [];
