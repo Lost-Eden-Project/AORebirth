@@ -95,18 +95,6 @@ public sealed class QuestDungeonPlayfield : Playfield
         MarkBuilt();
     }
 
-    /// <summary>
-    /// TEMPORARY: every district spawn point spawns this hash until mission content (type, faction, level) picks what
-    /// lives in the dungeon.
-    /// </summary>
-    const string TemporaryNpcHash = "ZK3X";
-
-    /// <summary>
-    /// TEMPORARY: chance that each district spawn point of a room is used. Every room still gets at least one NPC when
-    /// its district has any spawn point.
-    /// </summary>
-    const int TemporarySpawnPointChancePercent = 35;
-
     static readonly ConcurrentDictionary<(string Root, int Style), PlayfieldDistrictsData?> StyleDistricts = new();
 
     static readonly JsonSerializerOptions DistrictJsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -158,6 +146,13 @@ public sealed class QuestDungeonPlayfield : Playfield
         var spawns = GetRequiredService<HashSpawnSystem>();
         (int Room, PlayfieldDistrictSpawnPoint Point)? target = TargetHash == null ? null : PlaceTarget(dungeon, rooms, spawns);
 
+        DungeonPopulationPolicy population = Layout.Population;
+        if (!population.IsValid(GameData))
+        {
+            Logger.Warn("Quest dungeon " + QuestId + ": ordinary NPC policy is unavailable; no placeholder population selected");
+            return;
+        }
+
         int added = 0;
         int skipped = 0;
         foreach ((AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictEntry district, List<PlayfieldDistrictSpawnPoint> points) in rooms)
@@ -173,7 +168,7 @@ public sealed class QuestDungeonPlayfield : Playfield
             int wanted = 0;
             for (int i = 0; i < candidates.Count; i++)
             {
-                if (roll.Next(100) < TemporarySpawnPointChancePercent)
+                if (roll.Next(100) < population.SpawnPointChancePercent)
                     wanted++;
             }
 
@@ -188,9 +183,10 @@ public sealed class QuestDungeonPlayfield : Playfield
                 float[] position = point.Position;
                 System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
                     new System.Numerics.Vector3(position[0], position[1], position[2]));
-                if (spawns.AddPlacedDistrictPoint(TemporaryNpcHash, district,
+                string hash = population.RegularNpcHashes[roll.Next(population.RegularNpcHashes.Length)];
+                if (spawns.AddPlacedDistrictPoint(hash, district,
                         new AORebirth.Core.Vector.Vector3(placed.X, placed.Y, placed.Z), point.Radius,
-                        useDistrictLevels: false, respawns: false))
+                        useDistrictLevels: false, respawns: false, requestedLevel: Quality > 0 ? Quality : null))
                 {
                     placedInRoom++;
                     added++;
@@ -200,7 +196,8 @@ public sealed class QuestDungeonPlayfield : Playfield
             }
         }
 
-        Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped);
+        Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped
+            + " requestedNpcLevel=" + Quality + " families=" + string.Join(",", population.RegularNpcHashes));
     }
 
     /// <summary>

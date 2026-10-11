@@ -1,29 +1,31 @@
 # Current Task
 
-Implement the shared procedural mission dungeon layout foundation.
+Repair the alien-only ordinary mission dungeon population.
 
-Base: public master `3805aa851` (includes the accepted mission destinations and ordinary playfield unloading).
-Branch: `codex/procedural-dungeon-foundation`.
+Branch: `codex/mission-dungeon-npc-population`, based on foundation `df44abd0f`.
+OBSERVED: Mike rolled a mission and entered its generated interior in the
+original client, but all ordinary enemies were aliens.
+PROVEN: QuestDungeonPlayfield selected the same temporary alien family at every
+ordinary spawn and did not pass mission QL to the existing NPC resolver.
 
-Scope: extend the existing connector-based room assembler, use editable layout
-policies, add connected multi-floor layouts with a separate boss chamber and
-existing world-use/intrazone travel, and preserve accepted version-1/2 layouts.
+The repair uses an editable Population section in DungeonGeneration.json,
+referencing six existing nonalien NpcTemplates families. Mission QL now reaches
+existing interpolation/clamping through HashSpawnSystem. No duplicate catalog,
+runtime capture loading, DAO/schema edit, or layout/entrance change is introduced.
+The existing objective target remains separate. All ordinary NPCs remain one-shot.
 
-New solo acceptance uses the same transaction/key/entrance flow. Team layout
-generation is exercised independently; carrying team mode through offer/roster
-acceptance and populating a guaranteed boss are the next encounter milestone.
-Do not enable a team mission without that boss contract. NPC/content/loot,
-terminal rewards, QL, destinations, DAO and schema are outside this increment.
+Approved engine build and 121 focused mission/dungeon tests passed, including
+actual catalog NPC spawning at QL2/3/25/220, configured room spawn points,
+unresolved-hash rejection, existing target separation and preserved layouts.
+Builds still report dependency/security and source warnings. The ordinary full
+test project has previously recorded unrelated compile failures; only the
+existing focused selection was run. DAO tests were not rerun for this repair.
 
-Evidence inputs are the completed retail capture corpus only. Runtime reads
-GameData, never captures. Generated policy is explicitly AORebirth policy;
-observations do not establish Funcom's random selection probabilities.
+UNVERIFIED: original-client acceptance of the population repair. Mike performs
+that check after local installation; the agent does not control the client.
+The older catalog has level gaps and upper limits, so requested QL is not a
+guarantee of exact resulting NPC level. Human/high-level coverage, guaranteed
+team bosses, team acceptance, objectives and independent loot remain unfinished.
 
-Validation: approved build and 111 focused mission/foundation cases passed,
-including 288 configured-boundary layouts, real collision/floor-travel worlds,
-and legacy byte-for-byte fixtures. Disposable MySQL passed 74 identity and
-275 persistence/rollback/concurrency checks. Mike performs original-client
-acceptance; the agent does not control the client. Services are stopped.
-
-See `docs/evidence/PROCEDURAL_DUNGEON_FOUNDATION_EVIDENCE.md` for capture provenance.
-Implementation and remaining encounter work: `docs/reports/PROCEDURAL_DUNGEON_FOUNDATION.md`.
+Evidence, all 23 captured instances and limitations:
+`docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md`.

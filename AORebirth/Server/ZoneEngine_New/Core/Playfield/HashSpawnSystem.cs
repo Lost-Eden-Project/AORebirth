@@ -476,20 +476,23 @@ namespace ZoneEngine_New.Core.Playfield
         /// Adds one district spawn point that was placed after the playfield loaded (a generated dungeon's rooms move
         /// their style's district points into place). It behaves like a Districts.json point of
         /// <paramref name="district"/>: same respawn chance and timer, unless <paramref name="respawns"/> is false, when its
-        /// NPC spawns once and never again after it is killed. Without district levels the template's level is kept.
+        /// NPC spawns once and never again after it is killed. An explicit requested level overrides district levels;
+        /// otherwise, without district levels the template's level is kept.
         /// </summary>
         internal bool AddPlacedDistrictPoint(string hash, PlayfieldDistrictEntry district, Vector3 centre, float radius,
-            bool useDistrictLevels, bool respawns)
+            bool useDistrictLevels, bool respawns, int? requestedLevel = null)
         {
             ArgumentNullException.ThrowIfNull(district);
+            if (requestedLevel is <= 0)
+                throw new ArgumentOutOfRangeException(nameof(requestedLevel));
             if (string.IsNullOrEmpty(hash))
                 return false;
 
             if (_grid == null)
                 return false;
 
-            int minLevel = useDistrictLevels ? district.NpcMinLevel : 0;
-            int maxLevel = useDistrictLevels ? district.NpcMaxLevel : 0;
+            int minLevel = requestedLevel ?? (useDistrictLevels ? district.NpcMinLevel : 0);
+            int maxLevel = requestedLevel ?? (useDistrictLevels ? district.NpcMaxLevel : 0);
             bool isStatic = _gameData.IsStaticSpawnHash(hash);
             if (!isStatic && !HasSpawnableMob(hash, Math.Max(1, minLevel)))
                 return false;

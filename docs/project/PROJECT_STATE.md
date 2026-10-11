@@ -1,5 +1,18 @@
 # AORebirth Project State
 
+OBSERVED (2026-10-11, original-client dungeon foundation test): Mike rolled a
+mission and entered its interior, then reported alien-only ordinary enemies.
+PROVEN (population repair candidate): a fixed alien family and omitted requested
+level caused that population. `codex/mission-dungeon-npc-population` replaces the
+placeholder with six existing nonalien families configured in DungeonGeneration
+and passes mission QL through existing NPC resolution/interpolation/clamping.
+Approved build and 121 focused cases passed, including actual NPC spawning and
+unchanged layout/entrance payloads. No DAO/schema, mission rolling or target
+behavior changes. The old catalog still limits levels and coverage; human and
+high-level population, team bosses/acceptance, objectives and independent loot
+remain incomplete. Population client acceptance is UNVERIFIED. See
+`docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md`.
+
 PROVEN (2026-10-11, procedural dungeon foundation candidate):
 `codex/procedural-dungeon-foundation`, based on master `3805aa851`, extends the
 existing assembler with editable multi-style solo selection and validated team

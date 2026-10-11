@@ -23,6 +23,7 @@ using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Metrics;
 using ZoneEngine_New.Core.Missions;
+using ZoneEngine_New.Core.Mobs;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Quests;
@@ -358,6 +359,128 @@ public sealed class QuestDungeonDestinationTests
 
     [TestMethod]
     [DataRow(2)]
+    [DataRow(3)]
+    [DataRow(25)]
+    [DataRow(220)]
+    public void OrdinaryMissionPopulationUsesAuthoredCatalogTemplatesAtRequestedQuality(int quality)
+    {
+        using var f = new Fixture();
+        QuestDungeonPlayfield world = f.CreateWorld(quality);
+        Assert.IsNotNull(world.Layout.Population);
+        var hashes = world.Layout.Population.RegularNpcHashes;
+        Assert.IsTrue(hashes.Length > 1, "The ordinary mission pool must not collapse to one placeholder NPC.");
+        Assert.IsFalse(hashes.Contains("ZK3X"), "The previous unconditional alien override is not ordinary mission population.");
+        foreach (string hash in hashes)
+        {
+            Assert.IsTrue(RuntimeData.Value.HasMobTemplate(hash), "Missing authored NPC hash " + hash);
+            Assert.IsTrue(RuntimeData.Value.TryResolveMobTemplate(hash, quality, out MobTemplate template));
+            Assert.IsFalse(template.UnresolvedPlaceholder, hash);
+            Assert.AreNotEqual(MobTemplate.FallbackHash, template.Hash, hash);
+            Assert.IsFalse(template.Has(NpcFeature.NoCombat), hash);
+            Assert.AreNotEqual(220, template.Stats.GetValueOrDefault((int)CharacterStat.NPCFamily), hash + " must not resolve to the alien NPC family.");
+            Assert.IsTrue(template.Stats.TryGetValue((int)CharacterStat.MonsterData, out int monsterData) && monsterData > 0, hash);
+            int expectedLevel = Math.Clamp(quality, template.MinLevel, template.MaxLevel);
+            Assert.AreEqual(expectedLevel, template.Stats[(int)CharacterStat.Level], hash);
+            TestContext.WriteLine("Mission QL={0} hash={1} resolved={2} name={3} level={4} supported={5}-{6} MonsterData={7}",
+                quality, hash, template.Hash, template.Name, expectedLevel, template.MinLevel, template.MaxLevel, monsterData);
+        }
+        f.AssertNoErrors();
+    }
+
+    [TestMethod]
+    public void MissionPopulationRejectsUnresolvedHashesInsteadOfAcceptingNpcPlaceholderFallback()
+    {
+        const string missingHash = "MISSING_MISSION_POPULATION_FIXTURE";
+        Assert.IsTrue(RuntimeData.Value.CanResolveMobHash(missingHash), "The general NPC lookup can use its historical fallback.");
+        Assert.IsFalse(RuntimeData.Value.HasMobTemplate(missingHash));
+        Assert.IsFalse(new DungeonPopulationPolicy
+        {
+            SpawnPointChancePercent = 35, RegularNpcHashes = [missingHash]
+        }.IsValid(RuntimeData.Value), "Mission population requires authored catalog coverage, not the fallback.");
+    }
+
+    [TestMethod]
+    public void OrdinaryPopulationDoesNotReplaceAnExistingMissionKillTarget()
+    {
+        using var f = new Fixture();
+        const string acceptedTarget = "LE01";
+        QuestDungeonPlayfield world = f.CreateWorld(25, targetHash: acceptedTarget);
+        var spawns = world.GetRequiredService<HashSpawnSystem>();
+        var points = (List<HashSpawnPoint>)typeof(HashSpawnSystem)
+            .GetField("_allPoints", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(spawns)!;
+        Assert.AreEqual(acceptedTarget, world.TargetHash);
+        Assert.AreEqual(1, points.Count(point => point.HashText == acceptedTarget));
+        Assert.IsTrue(points.Count > 1);
+        foreach (HashSpawnPoint point in points.Where(point => point.HashText != acceptedTarget))
+        {
+            Assert.IsTrue(world.Layout.Population.RegularNpcHashes.Contains(point.HashText));
+            Assert.AreEqual(25, point.MinLevel);
+            Assert.AreEqual(25, point.MaxLevel);
+        }
+        f.AssertNoErrors();
+    }
+
+    [TestMethod]
+    [DataRow(2, 321)]
+    [DataRow(3, 324)]
+    [DataRow(25, 341)]
+    [DataRow(220, 351)]
+    public void ActualMissionWorldRegistersConfiguredOneShotPopulationAndSpawnsCatalogNpcStats(int quality, int style)
+    {
+        using var f = new Fixture();
+        QuestDungeonPlayfield world = f.CreateWorld(quality, style: style);
+        Assert.IsNotNull(world.Layout.Population);
+        byte[] unchangedLayout = world.Layout.Generator.ToByteArray();
+        var spawns = world.GetRequiredService<HashSpawnSystem>();
+        var points = (List<HashSpawnPoint>)typeof(HashSpawnSystem)
+            .GetField("_allPoints", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(spawns)!;
+        Assert.IsTrue(points.Count > 0, "The generated room districts must register ordinary mission NPCs.");
+        foreach (HashSpawnPoint point in points)
+        {
+            Assert.IsTrue(world.Layout.Population.RegularNpcHashes.Contains(point.HashText), point.HashText);
+            Assert.IsFalse(point.IsStatic);
+            Assert.IsFalse(point.RespawnsAfterDeath);
+            Assert.AreEqual(quality, point.MinLevel);
+            Assert.AreEqual(quality, point.MaxLevel);
+            Assert.AreEqual(quality, point.Source.MinLevel);
+            Assert.AreEqual(quality, point.Source.MaxLevel);
+            Assert.AreEqual(point.CellId, world.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>()
+                .Grid.ResolveCell(point.Sites[0].Centre).Id);
+        }
+        Assert.IsTrue(points.Select(point => point.HashText).Distinct().Count() > 1,
+            "A generated mission should use the editable pool instead of repeating the old alien override.");
+
+        // Exercise the real hash-spawn registration path while skipping only the district's random chance timer.
+        MethodInfo trySpawn = typeof(HashSpawnSystem).GetMethod("TrySpawn", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        foreach (HashSpawnPoint point in points.GroupBy(point => point.HashText).Select(group => group.First()))
+        {
+            point.State = HashSpawnState.Alive;
+            Assert.IsTrue((bool)trySpawn.Invoke(spawns, [point])!, point.HashText);
+            NpcCharacter[] npcs = point.MembersSnapshot().OfType<NpcCharacter>().ToArray();
+            Assert.IsTrue(npcs.Length > 0, point.HashText);
+            foreach (NpcCharacter npc in npcs)
+            {
+                Assert.AreSame(world, npc.Playfield);
+                Assert.AreEqual(point.HashText, npc.SpawnHash);
+                Assert.IsNotNull(npc.MobTemplate);
+                Assert.IsFalse(npc.MobTemplate.UnresolvedPlaceholder);
+                Assert.IsTrue(npc.Attackable);
+                Assert.IsTrue(spawns.TryGetSpawnPoint(npc, out HashSpawnPoint owner));
+                Assert.AreSame(point, owner);
+                Assert.AreEqual(Math.Clamp(quality, npc.MobTemplate.MinLevel, npc.MobTemplate.MaxLevel), npc.Stats.GetOrZero(CharacterStat.Level));
+                Assert.AreEqual(npc.MobTemplate.Stats[(int)CharacterStat.MonsterData], npc.Stats.GetOrZero(CharacterStat.MonsterData));
+                Assert.AreNotEqual(220, npc.Stats.GetOrZero(CharacterStat.NPCFamily));
+                TestContext.WriteLine("Spawn QL={0} style={1} hash={2} name={3} actualLevel={4}",
+                    quality, style, npc.SpawnHash, npc.Name, npc.Stats.GetOrZero(CharacterStat.Level));
+            }
+        }
+        CollectionAssert.AreEqual(unchangedLayout, world.Layout.Generator.ToByteArray());
+        Assert.AreEqual(unchecked((int)f.Entrance.IdentityInstance), world.Layout.Generator.Identity.Instance);
+        f.AssertNoErrors();
+    }
+
+    [TestMethod]
+    [DataRow(2)]
     [DataRow(220)]
     public void ActualTeamWorldBuildsEveryPlatformAndButtonAndUsesBidirectionalIntrazoneTeleports(int quality)
     {
@@ -529,20 +652,25 @@ public sealed class QuestDungeonDestinationTests
             return parameters;
         }
         internal QuestDungeonPlayfield CreateTeamWorld(int quality)
+            => CreateWorld(quality, team: true);
+
+        internal QuestDungeonPlayfield CreateWorld(int quality, bool team = false, int? style = null, string? targetHash = null)
         {
             var parameters = new QuestDungeonParameters
             {
                 Seed = 42, Quality = quality, EntranceInstance = Offer.EntranceInstance,
                 DungeonPlayfield = QuestDungeonIds.FirstPlayfield + 100
             };
-            Assert.IsTrue(Layouts.ConfigureNewDungeon(parameters, team: true));
+            Assert.IsTrue(Layouts.ConfigureNewDungeon(parameters, team));
+            if (style.HasValue)
+                parameters.LayoutPlan!.StyleId = style.Value;
             Assert.IsTrue(Layouts.TryGenerate(parameters, out DungeonLayout layout));
             Assert.IsNotNull(layout.Doors);
             _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
             foreach (var transition in layout.FloorTransitions)
                 foreach (var endpoint in new[] { transition.From, transition.To })
                     _templates.Add(endpoint.PlatformTemplateId, 1).Add(endpoint.ButtonTemplateId, 1);
-            return Manager.GetOrCreateQuestDungeon(parameters.DungeonPlayfield, "GFOUNDATION", layout, Entrance, quality: quality);
+            return Manager.GetOrCreateQuestDungeon(parameters.DungeonPlayfield, "GFOUNDATION", layout, Entrance, targetHash, quality);
         }
         internal void SetExteriorIdentity(int playfield) => typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(_exterior, new Identity { Type = IdentityType.Playfield, Instance = playfield });

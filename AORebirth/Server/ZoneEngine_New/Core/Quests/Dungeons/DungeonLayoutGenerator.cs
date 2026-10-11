@@ -23,6 +23,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     {
         public IReadOnlyList<AORebirth.DungeonGenerator.DungeonFloorTransition> FloorTransitions { get; init; } = [];
         public int? BossRoomIndex { get; init; }
+        public DungeonPopulationPolicy Population { get; init; } = new();
     }
 
     /// <summary>GameData/DungeonDoorStyles.json for one ACG style: door item templates and spawn-state chances.</summary>
@@ -69,6 +70,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         {
             public int FloorHeight { get; set; }
             public int LockedDoorChancePercent { get; set; }
+            public DungeonPopulationPolicy? Population { get; set; }
             public List<GenerationProfile> Profiles { get; set; } = [];
         }
 
@@ -122,7 +124,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 _policy = JsonSerializer.Deserialize<GenerationPolicy>(File.ReadAllText(Path.Combine(gameData.RootPath, GenerationFileName)),
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (_policy == null || _policy.FloorHeight is <= 0 or > 255
+                if (_policy == null || _policy.Population?.IsValid(gameData) != true || _policy.FloorHeight is <= 0 or > 255
                     || _policy.LockedDoorChancePercent is < 0 or > 100 || _policy.Profiles.Count == 0
                     || _policy.Profiles.Any(p => p.MinQuality < 1 || p.MinQuality > p.MaxQuality
                         || p.Styles.Length == 0 || p.Styles.Any(s => s <= 0) || p.Floors < (p.Team ? 2 : 1) || p.Floors > 8
@@ -230,7 +232,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 layout = new DungeonLayout(result.Generator, result.Generator.ToByteArray(),
                     new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z), parameters.Seed, doors)
                 {
-                    FloorTransitions = result.Transitions, BossRoomIndex = result.BossRoomIndex
+                    FloorTransitions = result.Transitions, BossRoomIndex = result.BossRoomIndex,
+                    Population = _policy?.Population ?? new DungeonPopulationPolicy()
                 };
                 return true;
             }
@@ -281,7 +284,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             DungeonDoorStyle? doors = _doorStyles.TryGetValue(generator.Style, out DungeonDoorStyle? style)
                 ? style with { LockedChancePercent = TemporaryLockedDoorChancePercent }
                 : null;
-            layout = new DungeonLayout(generator, generator.ToByteArray(), built.Spawn, seed, doors);
+            layout = new DungeonLayout(generator, generator.ToByteArray(), built.Spawn, seed, doors)
+            {
+                Population = _policy?.Population ?? new DungeonPopulationPolicy()
+            };
             return true;
         }
     }

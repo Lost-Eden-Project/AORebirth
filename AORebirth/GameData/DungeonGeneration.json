@@ -2,6 +2,11 @@
   "_comment": "AORebirth generation policy, not a reconstruction of Funcom selection probabilities. QL2 team captures have two floors; QL220 has five. Intermediate sizes/floor bands are configurable policy. Team layout support reserves a separate boss floor; team acceptance and boss population are a subsequent milestone. Room roles and exact floor-travel anchors live in DungeonEntrances.json.",
   "FloorHeight": 64,
   "LockedDoorChancePercent": 0,
+  "Population": {
+    "_comment": "AORebirth ordinary-NPC policy: references to existing nonalien NpcTemplates families whose leaf name/MonsterData/NPCFamily match captured missions. Not a reconstruction of retail hashes, selection weights, or the full human/high-level population. NPC resolution requests mission QL and uses existing interpolation/clamping; this older catalog has gaps and upper limits (ANDR106, ROLL47, other families85). See docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md. Bosses, objectives and loot are separate.",
+    "SpawnPointChancePercent": 35,
+    "RegularNpcHashes": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"]
+  },
   "Profiles": [
     { "Team": false, "MinQuality": 1, "MaxQuality": 250, "Styles": [321, 324, 341, 351], "Floors": 1, "MinFloorSize": 9, "MaxFloorSize": 16 },
     { "Team": true, "MinQuality": 1, "MaxQuality": 24, "Styles": [324, 341], "Floors": 2, "MinFloorSize": 8, "MaxFloorSize": 12 },
