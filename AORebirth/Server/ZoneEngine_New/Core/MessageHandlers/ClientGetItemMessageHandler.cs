@@ -4,6 +4,7 @@ using System;
 using SmokeLounge.AOtomation.Messaging.Messages;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using ZoneEngine_New.Core.Entities;
+using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Playfield;
 
@@ -19,15 +20,21 @@ public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemM
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(session);
         Player? player = session.Player;
-        // The retained retail pickup body contains only Identity1. Its custom codec leaves
-        // message.Identity unset; the authenticated session supplies the player identity.
         if (session.State != SessionState.InPlay || player == null || player.IsDead || player.IsPersistenceQuarantined
-            || !ReferenceEquals(player.Session, session)
+            || !ReferenceEquals(player.Session, session) || message.Identity != player.Identity
             || player.Playfield is not QuestDungeonPlayfield dungeon)
             return;
 
         if (dungeon.GetRequiredService<DynelRegistry>().TryGet(message.Identity1, out Dynel? dynel)
             && dynel is MissionObjectiveItem objective)
-            objective.TryPickup(player);
+        {
+            double distance = objective.GetEdgeDistanceTo(player);
+            bool collected = objective.TryPickup(player);
+            dungeon.GetService<IZoneLogger>()?.Info($"Mission pickup actor={message.Identity} target={message.Identity1} quest={objective.Binding.QuestId} edgeDistance={distance} collected={collected}");
+        }
+        else
+        {
+            dungeon.GetService<IZoneLogger>()?.Warn($"Mission pickup target unavailable actor={message.Identity} target={message.Identity1} dungeon={dungeon.Identity.Instance}");
+        }
     }
 }

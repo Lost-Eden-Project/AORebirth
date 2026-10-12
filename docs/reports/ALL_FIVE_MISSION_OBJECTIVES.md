@@ -96,12 +96,13 @@ abandonment at 00:17:07.100, without a collection/reward exception. GenericCmd
 Use denials also occur, but those are a separate intentionally unsupported
 pickup path. These failed requests reproduce the reported symptom.
 
-PROVEN source defect: SerializerResolverBuilder registers the custom
+Historical first repair (`fa5dae8aa`, incomplete): SerializerResolverBuilder registers the custom
 ClientGetItemMessageSerializer. It reads only message type and Identity1;
 inherited message.Identity remains 0:0. ZoneSession dispatches it unchanged.
 ClientGetItemMessageHandler incorrectly compared that absent actor field to the
 authenticated player, rejecting every authentic pickup before target lookup.
-The correction removes only that comparison. Session ownership, exact target,
+That repair removed only the comparison. Its claim that the packet itself
+lacked the actor was incorrect; see the raw-byte correction below. Session ownership, exact target,
 mission binding, owner, dungeon, range, inventory capacity and atomic collection
 remain enforced. Retained pickup evidence is in FIND_ITEM_PICKUP_EVIDENCE.md and
 FIND_ITEM_PICKUP_WIRE.json. DAO, schema and reward delivery are unchanged.
@@ -129,6 +130,43 @@ passed. No unit/fixture/regression/DAO suites requested or run. The first
 read-only local mission-row lookup failed before returning a row; it made no
 database changes and is not used as evidence of persisted mission state. The
 registered codec/handler mismatch independently establishes the pickup defect.
+
+## Pickup codec follow-up
+
+OBSERVED after fa5dae8aa: Shade accepted D2086798944, entered PF2088896096 and
+made four ClientGetItem requests at uptime 00:14:18.867 through 00:14:43.842.
+An ordinary Use denial identifies objective Terminal51005:2086798945. No
+collection, completion or DAO exception follows in the inspected log window.
+
+PROVEN from original retained OUT820 and OUT3878 in FIND_ITEM_PICKUP_WIRE.json:
+after the 16-byte transport header, ClientGetItem is 4-byte type, 8-byte player
+Identity, 1-byte Unknown, then 8-byte item Identity1. Both players are
+50000:1248653930; item targets are 51005:1482214240 and 51005:1482014915.
+The custom codec consumed only type and the next identity, assigning the player
+to Identity1, leaving inherited Identity unset and nine bytes unread. This
+caused the original actor-check rejection and, after fa5dae8aa removed that
+check, a lookup for the player instead of the item. The previous wire prose was
+incorrect; captured bytes and their hashes are unchanged.
+
+Correct only ClientGetItem's serializer/deserializer to read/write type,
+Identity, Unknown, Identity1, following the existing N3 contract and observed
+bytes. Restore actor equality with the authenticated session. Add low-frequency
+pickup logging for decoded actor/target, exact quest, distance and outcome, or
+unavailable target. Retain every owner/binding/dungeon/range/inventory and atomic
+completion validation. Preserve the 150-percent size policy, exact accepted
+identities and all reward/DAO mechanics. No schema or content changes.
+
+Inspected current local pickup logs, retained original wire fixture, N3Message,
+custom codec/resolver/dispatch, handler and objective transaction gates. A
+read-only mission-row lookup failed on a missing connector logging assembly
+before opening a connection; no DB changes were made. The raw-byte/codec
+mismatch establishes this repair independently of that unavailable lookup.
+No unit/fixture/regression/DAO suites requested or run. Original-client
+collection/completion/reward verification remains Mike's next step.
+Approved Windows core compilation and git diff --check passed. Offline byte
+inspection confirms both retained request lengths and actor/Unknown/target
+offsets; this is evidence analysis, not a runtime codec test suite. The raw
+wire fixture and installed size/content policy remain unchanged.
 
 ## Validation and limits
 

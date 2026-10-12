@@ -44,9 +44,13 @@ fixture verification did not run a runtime build or test suite.
 
 PROVEN serialized observations:
 
-- Both requests are `ClientGetItem` (`0x37136C6B`), with the exact world identity
-  as their entire identity payload. Existing `ClientGetItemMessage.Identity1`
-  and its serializer already represent that packet.
+- Both requests are `ClientGetItem` (`0x37136C6B`). After the 16-byte transport
+  header, both contain the 4-byte message type, actor identity
+  `50000:1248653930`, one zero `Unknown` byte, then the exact world identity
+  in `ClientGetItemMessage.Identity1`. The actor starts at byte 20, `Unknown`
+  at byte 28, and the world target at byte 29. The previous custom serializer
+  omitted the actor and `Unknown`, so it decoded the actor as the world target.
+  The corrected serializer reads and writes all four fields in that order.
 - Both responses are `ContainerAddItem` (`0x47537A24`). The existing fields
   decode as `SourceContainer = requested world identity`, `Target = 0:0`, and
   `TargetPlacement = 0`. The message header identifies the player.

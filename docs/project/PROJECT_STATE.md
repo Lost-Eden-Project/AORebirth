@@ -1,15 +1,18 @@
 # AORebirth Project State
 
-PROVEN (mission pickup rejection): authentic ClientGetItem decoding leaves the
-inherited actor identity unset, but its handler required it to match the player.
-The scoped repair removes that comparison while retaining the authenticated
-session and exact mission/owner/dungeon/range/transaction checks. Optional
-world-only item scale is now configurable in the existing dungeon policy and
-accepted binding; new Find Item/Return Item objectives request 150 percent.
-Existing accepted identities, collected inventory items and reward persistence
-are unchanged. Original-client pickup, rendering and reward acceptance remain
-UNVERIFIED; no suites requested for this repair.
-Approved Windows core compilation and policy JSON validation passed.
+PROVEN (mission pickup codec defect): original ClientGetItem bytes contain a
+player identity, one Unknown byte, then the objective identity. The custom codec
+read the player into its target and omitted the remaining fields. fa5dae8aa
+removed a first handler rejection but did not fix that target decoding; Mike
+reports pickup still failing. The follow-up corrects this codec's read/write
+order and restores actor validation, preserving all exact owner/dungeon/range/
+transaction checks and adding pickup target/result logging. Optional world-only
+item scale remains 150 percent for new Find Item/Return Item objectives.
+Accepted identities, inventory items and reward persistence are unchanged.
+Original-client pickup/rendering/reward acceptance remains UNVERIFIED; no suites
+requested for this follow-up.
+Approved Windows core compilation, raw-byte inspection and git diff --check
+passed; captured bytes and 150-percent item policy are unchanged.
 
 IMPLEMENTED, CLIENT UNVERIFIED (Find Person boss correction): separate editable
 Find Person boss pool freezes an authored human boss catalog leaf with the

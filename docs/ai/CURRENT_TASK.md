@@ -1,24 +1,27 @@
 # Current Task
 
-Repair mission-objective pickup and increase pickup-objective visibility on
-`codex/all-mission-objectives`, based on installed `25650e666`.
+Correct ClientGetItem decoding on `codex/all-mission-objectives`, based on
+installed `fa5dae8aa`. Mike still cannot collect a new Find Item objective.
 
-OBSERVED: Shade's mission D2086788889 received six ClientGetItem requests but
-did not collect its world item. PROVEN: the registered pickup codec reads only
-the target identity, leaving inherited message.Identity unset. The handler
-incorrectly required that absent field to equal the authenticated player.
-Remove only that comparison, preserving session, exact owner/binding, dungeon,
-range, inventory and transactional validation. No DAO/schema/reward changes.
+OBSERVED: Shade's D2086798944 has four pickup callbacks, no collection or DAO
+error, and an ordinary Use denial for exact target 51005:2086798945.
+PROVEN from retained original request bytes: pickup contains N3 type, player
+Identity, one Unknown byte, then item Identity1. The custom codec previously
+read the player into Identity1 and never consumed the item. The earlier handler
+repair removed a first rejection but left target lookup broken. Its description
+of the wire payload was incorrect and is superseded by the raw-byte analysis.
 
-Add optional WorldScalePercent to the existing item policy and frozen accepted
-binding. Find Item and Return Item use 150 through existing static-dynel Scale
-stats, omitted after collection into inventory. Existing unscaled accepted
-bindings remain valid and are not rewritten; new missions use the size policy.
-No new catalog or packet shape. The original client's rendering and complete
-pickup/reward sequence require Mike's verification. No suites are requested.
+Correct only this codec's read/write field order, restore the actor/session
+identity check and log pickup target/result. Preserve owner/binding, dungeon,
+range, inventory and transactional checks. Keep the installed 150-percent item
+size policy unchanged. No DAO/schema/reward/content changes or test suites.
 
-Approved Windows core compilation, policy JSON parsing and git diff --check
-passed. Install locally with the existing friendly-item overlay preserved,
-then leave the core engines running for Mike's ongoing client testing.
+Compile with the approved wrapper, install with local overlays preserved, and
+restart the core engines for Mike's ongoing client testing. Original-client
+pickup/completion/reward acceptance remains UNVERIFIED until Mike retries.
+
+Approved Windows core compilation and git diff --check passed. Offline byte
+inspection confirms both original pickup requests are 37 bytes with distinct
+actor and item fields. The raw wire fixture is unchanged; no suites run.
 
 Implementation and validation: `docs/reports/ALL_FIVE_MISSION_OBJECTIVES.md`.
