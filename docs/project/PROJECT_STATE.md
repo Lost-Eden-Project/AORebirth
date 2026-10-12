@@ -1,5 +1,14 @@
 # AORebirth Project State
 
+PROVEN (mission reward inventory mismatch, 73c32cdc2): key deletion preceded
+AddTemplate, opening a slot that was occupied when reward placements were
+planned. Shade's token clicks therefore resolved to the reward implant until
+zoning. Correction publishes rewards before key removal and guarantees key
+cleanup in finally. Existing token receipt/use is OBSERVED in the client;
+immediate use after this correction remains CLIENT UNVERIFIED. Approved Windows
+core build and diff validation passed; no suites requested. Existing item data
+gives Shade two token points and is unchanged. See `docs/reports/MISSION_TOKEN_REWARDS.md`.
+
 PROVEN (Find Person token full-clear defect, 34c8d30f9): the live Omni mission
 counted its living inspection target alongside 21 killed enemies, freezing
 21/22 and a losing roll when inspected. The targeted correction excludes Find

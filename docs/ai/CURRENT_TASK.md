@@ -1,17 +1,24 @@
 # Current Task
 
-Repair the proven Find Person token full-clear defect from 34c8d30f9.
-Shade killed all 21 regular enemies, but the living inspection target counted
-as a 22nd kill requirement. Inspection froze a losing 21/22 reward outcome.
+Repair mission rewards that cannot be used until zoning on 73c32cdc2, and
+inspect the existing sided-token point values against Mike's title-level report.
 
-Exclude Find Person targets from effective token-chance counts in both chat
-and reward selection. Preserve Kill Person target contribution, raw population
-persistence and existing frozen completion outcomes. No DAO/schema or content
-changes; no changes to objective completion itself.
+PROVEN: reward slots are planned with the mission key present, but completion
+deletes the key before AddTemplate publication. The client fills that newly
+free slot while the server retains the planned slots. Shade's token clicks
+resolved to the reward implant; zoning restored the token's correct placement.
+
+Publish the committed grant before key retirement, with retirement in finally
+so socket failures cannot skip lifecycle cleanup. Preserve packet semantics,
+reward transactions, token chance and existing data-driven item use.
 
 Use the approved Windows build, install locally and leave the core engines
 running for Mike's testing. No fixture/unit/regression suites were requested.
 Never control the AO client. Approved Windows core build and diff validation
-succeeded; original-client full-clear verification remains pending.
+passed; original-client immediate-use verification remains pending.
+
+The existing item data gives two points at Shade's level and progresses by
+character-level bands up to nine points. Preserve those authoritative values;
+Mike did not choose a replacement title-level policy. No content change.
 
 Evidence and changed files: docs/reports/MISSION_TOKEN_REWARDS.md.

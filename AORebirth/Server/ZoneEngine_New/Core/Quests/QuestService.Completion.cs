@@ -401,9 +401,16 @@ public sealed partial class QuestService
                     StatId = (int)pair.Key, StatValue = pair.Value
                 }).ToArray(), location: null);
                 quest.State = QuestState.Completed;
-                // Durable lifecycle cleanup must not depend on successful socket publication.
-                QuestEnded?.Invoke(player, quest);
-                grant.PublishAfterCommit();
+                // Local playtest: AddTemplate fills the first free client slot, so publish before key deletion opens a hole.
+                try
+                {
+                    grant.PublishAfterCommit();
+                }
+                finally
+                {
+                    // Durable lifecycle cleanup must still run if reward publication fails.
+                    QuestEnded?.Invoke(player, quest);
+                }
                 xp.PublishAfterCommit(player);
                 foreach (var pair in values.Where(pair => !xp.Stats.ContainsKey(pair.Key)))
                     player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);

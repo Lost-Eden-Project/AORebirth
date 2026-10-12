@@ -131,3 +131,40 @@ pending; the observed 95-percent feedback only verifies the earlier message path
 
 The earlier Neutral Find Item mission's separate missing ordinary spawn is not
 the cause of this Omni Find Person failure and is not silently recategorized.
+
+## Immediate token use after completion
+
+OBSERVED on 73c32cdc2: Mike received and used a mission token after zoning.
+The local log records quest D2086848942 awarding an implant and Omni token at
+02:30:42 on 2026-10-12. At 02:30:50 and 02:30:51, the attempted token uses
+address inventory slot 67, which the server resolves to the reward implant.
+After zoning, FullCharacter records the token at slot 69, and its use succeeds
+at 02:31:47. Token delivery and use are now observed; immediate use failed.
+
+PROVEN source defect: InventoryGrantPlan freezes free slots before the mission
+key is removed. QuestService.Completion invoked QuestEnded first, causing
+QuestDungeonService to send the key's DeleteItem before reward AddTemplate
+messages. AddTemplate uses the client's first free slot, so this ordering makes
+the client and committed server placements disagree. Zoning rebuilds the client
+inventory from the authoritative placements and masks the defect.
+
+The scoped repair changes only QuestService.Completion.cs: publish the committed
+grant before invoking QuestEnded. The latter runs in finally, retaining durable
+key cleanup even when publication fails. Existing exception quarantine and
+reconnect recovery remain intact. No packet definitions, inventory planning,
+DAO/schema, token probabilities or GameData are changed.
+
+Inspected: QuestService.Completion.cs, InventoryGrantPlan.cs,
+QuestDungeonService.cs, Playfield.cs, InventoryStacking.cs, TradeService.cs and
+the installed ZoneEngine_New log. Approved Windows core build and
+git diff --check passed. No fixture/unit/regression suites were requested or run.
+Immediate-use original-client verification remains pending.
+
+PROVEN from the existing private items.dat: both sided tokens give 1 point at
+levels 1-14, 2 at 15-49, 3 at 50-74, 4 at 75-99, 5 at 100-124, 6 at 125-149,
+7 at 150-174, 8 at 175-189 and 9 at 190-220. Existing generic item-use functions
+evaluate the character's level when the token is used. Shade receiving 2 points
+at level 32 matches that data. These are level bands, not a strict title-level
+mapping. The existing catalog is preserved; no replacement values were approved.
+ItemTemplateCatalog, ItemsDatReader, DatItemTemplate and Character.TitleLevelFor
+were inspected for this distinction. Private item data is not published.
