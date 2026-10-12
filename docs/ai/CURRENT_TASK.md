@@ -1,31 +1,17 @@
 # Current Task
 
-Repair delayed mission reward delivery on `codex/all-mission-objectives`, based
-on installed runtime e65160c86. Preserve exact Kill Person target binding and
-the existing objective, inventory, reward ledger and persistence owners.
+OBSERVED, CLIENT ACCEPTED: Mike reports "worked got reawrd on kill" on installed
+runtime 08f17b3e4ee2e79f388a574b92fd9aad50e9affd. Logs corroborate exact Kill
+Person objective 50000:2086828890 for Shade / D2086828889, one advertised reward
+item materialization, key cleanup and committed completion at uptime 29:13.136,
+without a second kill or delivery retries.
 
-OBSERVED: Shade's exact MFPB target death starts reward delivery at uptime
-11:55.011. Delivery retries every five seconds and commits at 12:10.112,
-after a second mob causes a level-up at 12:07.589. The second mob is not the
-accepted objective. The rejected attempts did not log their DAO result reason.
+Record this gameplay acceptance only. No runtime/content/DAO/schema changes,
+build, restart or test suites are needed. Leave the current local engines
+running for Mike's testing. No additional implementation task has been started.
 
-PROVEN: a quest XP level-up adds current/max health and nano to its projection.
-Completion sends these runtime-only values to durable stat comparison, although
-the existing checkpoint intentionally excludes them. Shade's stored vital rows
-remain 34/34/28/28. This is a persistence-contract defect; its explanation of
-this particular delayed delivery is INFERRED from the observed event sequence.
-
-Keep the full XP projection for post-commit runtime publication, but exclude
-runtime-only stats from completion's durable expectations, mutations and save
-baseline using the existing StatCollection policy. Persist vital percentages as
-before. Log rejected completion status/reason so future deferrals are visible.
-Do not change DAO/schema, XP amounts, target identity or other mission mechanics.
-
-Use the approved Windows build, preserve local overlays/private catalogs, and
-restart for Mike's standing local-testing request. No suites are requested.
-Original-client verification of a reward that levels the character is pending.
-
-Approved Windows core compilation and git diff --check succeeded. No fixture,
-unit, regression or DAO suites were run.
+This run contains no NewLevelMessage; the specific mission-reward level-up case
+remains UNVERIFIED. The earlier delayed attempt's exact DAO rejection reason
+also remains unrecorded. Acceptance does not erase those evidence limits.
 
 Evidence and validation: `docs/reports/ALL_FIVE_MISSION_OBJECTIVES.md`.

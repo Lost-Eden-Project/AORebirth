@@ -307,3 +307,27 @@ Validation: approved Windows core compilation and git diff --check succeeded.
 No fixture, unit, regression or DAO suites requested or run. Mike's
 original-client verification of a mission
 reward that causes a level-up remains pending; do not describe it as accepted.
+
+## Immediate Kill Person original-client acceptance
+
+OBSERVED on installed runtime 08f17b3e4ee2e79f388a574b92fd9aad50e9affd:
+Mike reports "worked got reawrd on kill". Current ZoneEngine log corroborates:
+
+- Line 127392: Shade / char 66 accepts D2086828889.
+- Lines 127928-127929: exact objective 50000:2086828890, MFPB Mission Contact,
+  level 32, scale 120.
+- Line 128941, uptime 29:13.072: one advertised reward item materialization,
+  Chest Implant: Stamina, Shiny, IDs 109080/109081, QL32.
+- Lines 128947/128953, uptime 29:13.136: one key retired and quest completion
+  with rewards committed; exact-target Die requests follow at the same timestamp.
+- Lines 128965/128967, uptime 29:15.532: target corpse and despawn.
+
+No reward-delivery warning, completion exception, repeated reward materialization
+or NewLevelMessage appears between acceptance and the immediate aftermath.
+This is original-client acceptance of immediate exact-target Kill Person
+completion and reward receipt. It does not demonstrate a mission-reward level-up
+or establish the prior attempt's unlogged rejection reason.
+
+Inspected the current engine log and task/state/report documents. Changed only
+these three documents. No runtime/content/DAO/schema changes, build, restart or
+test suites; local engines remain running. Documentation diff validation only.

@@ -1,5 +1,14 @@
 # AORebirth Project State
 
+OBSERVED, CLIENT ACCEPTED (immediate Kill Person rewards, runtime 08f17b3e4):
+Mike confirms reward receipt on the target kill. Logs corroborate Shade /
+D2086828889, exact MFPB objective 50000:2086828890 at scale 120, one advertised
+reward materialization, key cleanup and committed completion at uptime
+29:13.136, without delivery retries. This accepts the observed target-kill and
+reward sequence. No NewLevelMessage occurs, so the specific mission-reward
+level-up case remains UNVERIFIED. Documentation only; running engines and
+runtime/content/DAO/schema are unchanged. No suites requested or run.
+
 OBSERVED (Kill Person reward delay, runtime e65160c86): the exact MFPB target
 death starts reward delivery immediately; five-second retries commit roughly
 15 seconds later, after an ordinary mob causes a level-up. PROVEN persistence
