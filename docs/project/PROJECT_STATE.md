@@ -1,10 +1,21 @@
 # AORebirth Project State
 
+OBSERVED, CLIENT ACCEPTED (Kill Person completion, runtime 615696581): Mike
+confirms Kill Person works and requests a boss target slightly larger than an
+ordinary NPC. PROVEN: its existing policy selected FECI; the existing boss pool
+uses MFPB at catalog scale 100. Follow-up selects that boss profile through
+NpcHashes and freezes a configurable Kill Person-only scale of 120, applied
+before initial spawn registration. Find Person retains its current size and
+inspection completion. No NPC catalog, DAO/schema, kill-completion or reward
+changes. New boss appearance/selection is CLIENT UNVERIFIED; no suites requested.
+Approved Windows core compilation, policy JSON validation and git diff --check
+passed. Existing NPC catalog content is unchanged.
+
 OBSERVED, CLIENT ACCEPTED (Find Item, runtime 615696581): Mike confirms objective
 pickup and reward receipt in the original AO client. Local logs also confirm
 exact collection for char 66 / D2086798944 / item 51005:2086798945, reward item
 creation, dungeon/key cleanup and committed quest completion. This accepts the
-observed Find Item sequence; item visual scale, other objective types and
+observed Find Item sequence; item visual scale, remaining objective types and
 unexercised recovery cases are not newly verified by this result.
 
 PROVEN (mission pickup codec defect): original ClientGetItem bytes contain a

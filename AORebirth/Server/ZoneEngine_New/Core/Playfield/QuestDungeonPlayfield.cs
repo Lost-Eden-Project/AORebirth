@@ -242,14 +242,24 @@ public sealed class QuestDungeonPlayfield : Playfield
             || (_objectiveNpc.MissionType == 0 && template.Has(NpcFeature.NoCombat)))
             throw new InvalidDataException("Accepted NPC objective template is unavailable.");
 
+        int? objectiveScale = _objectiveNpc.ScalePercent;
         NpcCharacter npc = GetRequiredService<SpawnService>().SpawnMob(template,
             new AORebirth.Core.Vector.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z),
             new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1), _objectiveNpc.Quality,
-            SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash, fixedIdentity: _objectiveNpc.Identity);
+            SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash,
+            configure: actor =>
+            {
+                if (objectiveScale is int scale)
+                {
+                    actor.Stats.Set(CharacterStat.Scale, scale);
+                }
+            },
+            fixedIdentity: _objectiveNpc.Identity);
         Logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-            "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#})",
+            "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#}) scale={8}",
             QuestId, (int)npc.Identity.Type, npc.Identity.Instance, _objectiveNpc.NpcHash,
-            _objectiveNpc.RoomIndex, npc.Position.xf, npc.Position.yf, npc.Position.zf));
+            _objectiveNpc.RoomIndex, npc.Position.xf, npc.Position.yf, npc.Position.zf,
+            npc.Stats.GetOrZero(CharacterStat.Scale)));
     }
 
     /// <summary>

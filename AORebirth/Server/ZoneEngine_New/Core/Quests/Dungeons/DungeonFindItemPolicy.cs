@@ -22,4 +22,5 @@ public sealed class DungeonNpcObjectivePolicy
 {
     public string[] NpcHashes { get; set; } = [];
     public string[] FindPersonNpcHashes { get; set; } = [];
+    public int? KillPersonScalePercent { get; set; }
 }

@@ -29,8 +29,10 @@ tick; no new persistent queue was introduced.
 
 The existing `DungeonGeneration.json` selects references in the existing item
 and NPC catalogs: Find Item `URSE` unchanged; Return `COSE`; Repair `SPPR`/`CRCH`;
-Kill Person `FECI`; Find Person uses its separate `MFPB` human boss pool in the
-existing full NPC catalog, with existing level interpolation. These are editable
+Kill Person and Find Person use their existing pools referencing the `MFPB`
+human boss profile in the full NPC catalog, with existing level interpolation.
+Kill Person adds an accepted scale override of 120; Find Person retains the
+catalog's current scale. These are editable
 AORebirth policies. Cross-QL selection and random NPC target selection are not
 claimed as Funcom probability rules or exact retail target-name reproduction.
 
@@ -42,6 +44,43 @@ the original Find Person accepted action in capture
 Return's action contract uses the established July analysis/current packet
 policy; the absent July raw folders were not presented as newly inspected.
 Runtime does not read capture folders. Private catalogs are not published.
+
+## Kill Person boss correction
+
+OBSERVED: Mike confirms Kill Person completion works on runtime 615696581, but
+requests that its target come from the boss pool and stand out with a modest
+size increase. PROVEN: the existing Kill Person NpcHashes pool selected FECI,
+while FindPersonNpcHashes selected the authored MFPB human boss profile. The
+existing private catalog resolves MFPB at levels 1, 29, 220 and 400 with scale
+100, spawn validation passing, NoCombat absent and growth equipment removed.
+
+The smallest pool correction is editable data: NpcHashes now references MFPB.
+No new NPC catalog, duplicate boss leaf or hardcoded NPC content is introduced.
+The existing item/NPC policy gains optional KillPersonScalePercent=120. The
+existing accepted NPC binding freezes a positive optional ScalePercent and
+compares it with the exact binding. SpawnMob's existing configure callback
+applies the accepted Scale stat before registry/locality publication. Spawn
+logging includes the actual scale. Null preserves older bindings and existing
+Find Person size; new Kill Person targets are 20 percent larger than this
+profile's baseline. This is AORebirth gameplay policy, not a retail scale or
+boss-selection probability claim.
+
+Exact accepted NPC identity/hash/QL/placement and kill completion remain the
+same owners. Existing accepted ordinary targets are not rewritten. Find Person
+inspection, working Find Item pickup/rewards, all destination/QL/layout/key
+mechanics and DAO/reward delivery remain unchanged. Team bosses and loot are
+separate unfinished work. Boss combat-stat parity is not newly established.
+
+Inspected existing NpcObjectives selection, accepted NPC binding/reconstruction,
+QuestDungeonPlayfield spawning, SpawnService's configuration/publication order,
+NpcTemplateCatalog resolution and current private NPC/policy data. Changed
+DungeonFindItemPolicy, MissionNpcObjectiveBinding, QuestDungeonService,
+QuestDungeonPlayfield and existing DungeonGeneration policy, plus task/status/
+report notes. No unit/fixture/regression/DAO suites requested or run. New boss
+selection and size in the original client remain Mike's next verification.
+Approved Windows core compilation, policy JSON validation and git diff --check
+passed. Find/Return pickup policy still requests scale 150. Private NPC catalog
+content is unchanged; no private catalog is published.
 
 ## Find Person boss correction
 

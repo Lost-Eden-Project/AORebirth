@@ -32,9 +32,10 @@
     }
   },
   "NpcObjectives": {
-    "_comment": "AORebirth objective selection policy using the existing NPC catalog. Kill Person uses NpcHashes. Find Person uses its separate boss pool and normal NPC combat behavior; exact inspection still completes the objective. MFPB is an authored human boss variant in the full NpcTemplates catalog: original boss level bands/stats, existing human visuals and base scale 100, without growth-modifier equipment, per local gameplay feedback. The resolved leaf and exact actor identity are frozen at acceptance. This is configurable policy, not a retail target-hash or probability claim.",
-    "NpcHashes": ["FECI"],
-    "FindPersonNpcHashes": ["MFPB"]
+    "_comment": "AORebirth objective selection policy using the existing NPC catalog. Kill Person's NpcHashes and FindPersonNpcHashes select the existing MFPB human boss profile: original boss level bands/stats, existing human visuals and base scale 100 without growth-modifier equipment. KillPersonScalePercent makes only the kill objective 20 percent larger to stand out; Find Person retains its catalog size and inspection completion. Normal attackability and combat AI are preserved. The resolved leaf, exact actor identity and optional objective scale are frozen at acceptance. This is configurable policy, not a retail target-hash or probability claim.",
+    "NpcHashes": ["MFPB"],
+    "FindPersonNpcHashes": ["MFPB"],
+    "KillPersonScalePercent": 120
   },
   "Population": {
     "_comment": "AORebirth ordinary-NPC policy: references to existing nonalien NpcTemplates families whose leaf name/MonsterData/NPCFamily match captured missions. Not a reconstruction of retail hashes, selection weights, or the full human/high-level population. NPC resolution requests mission QL and uses existing interpolation/clamping; this older catalog has gaps and upper limits (ANDR106, ROLL47, other families85). See docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md. Bosses, objectives and loot are separate.",

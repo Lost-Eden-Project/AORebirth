@@ -820,7 +820,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             objective = null!;
             DungeonNpcObjectivePolicy? policy = _layouts.NpcObjectivePolicy;
             string[]? hashes = missionType == (int)MissionRollType.FindPerson ? policy?.FindPersonNpcHashes : policy?.NpcHashes;
-            if (quality <= 0 || hashes is not { Length: > 0 }
+            int? scalePercent = missionType == (int)MissionRollType.KillPerson ? policy?.KillPersonScalePercent : null;
+            if (quality <= 0 || scalePercent is <= 0 || hashes is not { Length: > 0 }
                 || hashes.Any(string.IsNullOrWhiteSpace)
                 || !DungeonObjectivePlacement.TrySelect(_gameData.RootPath, layout, _logger, out int room, out Vector3 point))
                 return false;
@@ -837,7 +838,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             objective = new MissionNpcObjectiveBinding
             {
                 QuestId = questId, OwnerId = player.Identity.Instance, Instance = _ids.Allocate(),
-                NpcHash = selected.Hash, Quality = quality, RoomIndex = room,
+                NpcHash = selected.Hash, Quality = quality, ScalePercent = scalePercent, RoomIndex = room,
                 X = point.xf, Y = point.yf, Z = point.zf, MissionType = missionType
             };
             return objective.IsValid;
