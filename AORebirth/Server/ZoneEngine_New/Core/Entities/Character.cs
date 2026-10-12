@@ -15,6 +15,7 @@ namespace ZoneEngine_New.Core.Entities
 
     using Utility;
 
+    using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Movement;
     using ZoneEngine_New.Core.Metrics;
@@ -744,6 +745,7 @@ namespace ZoneEngine_New.Core.Entities
             if (pool <= 0)
                 return;
 
+            double percentPerLevel = (playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp()).KillPercentPerLevelDifference;
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             List<AwardShare> shares = _killRewards.Divide((int)Math.Min(pool, int.MaxValue), present, AwardCredit.Shared);
             var tooLow = new List<Character>();
@@ -780,10 +782,23 @@ namespace ZoneEngine_New.Core.Entities
                     // A monster the recipient's client shows gray (more than XPKillRange levels below them) is worth 1 XP.
                     if (IsBelowKillRange(recipients[r], victimLevel, gameData))
                         amount = 1;
+                    else
+                        amount = ScaleForLevelDifference(amount, victimLevel, recipients[r].Stats.GetOrOne(CharacterStat.Level), percentPerLevel);
 
                     recipients[r].AwardXp(amount, XpSource.Kill);
                 }
             }
+        }
+
+        /// <summary>
+        /// Relative kill XP: each level the victim is above (or below) the recipient adds (or removes)
+        /// <paramref name="percentPerLevel"/> percent of the award (Gameplay.json xp.killPercentPerLevelDifference).
+        /// The add-XP modifier is applied afterwards in <see cref="AwardXp"/>. Never below 1.
+        /// </summary>
+        static int ScaleForLevelDifference(int amount, int victimLevel, int recipientLevel, double percentPerLevel)
+        {
+            double factor = 1 + percentPerLevel / 100 * (victimLevel - recipientLevel);
+            return Math.Max(1, (int)Math.Round(amount * factor, MidpointRounding.AwayFromZero));
         }
 
         /// <summary>
@@ -1650,6 +1665,7 @@ namespace ZoneEngine_New.Core.Entities
             target.ApplyDamage(this, result.Damage, result.HitType);
             if (weapon != null && !target.IsDead)
                 ApplyOnHitProcs(target, weapon);
+            Nanos.ProcRules.OnWeaponHit(this, target, weapon);
         }
 
         /// <summary>
@@ -2049,6 +2065,9 @@ namespace ZoneEngine_New.Core.Entities
                 Operator.HasNotRunningNano => !_buffs.Any(buff => buff.Id == value),
                 Operator.HasRunningNanoLine => _buffs.Any(buff => buff.NanoStrain == value),
                 Operator.HasNotRunningNanoLine => !_buffs.Any(buff => buff.NanoStrain == value),
+                // Value = nano id among this character's uploaded nanos (a nano crystal's ToUse: HasNotFormula).
+                Operator.HasFormula => UploadedNanoIds.Contains(value),
+                Operator.HasNotFormula => !UploadedNanoIds.Contains(value),
                 _ => null
             };
         }

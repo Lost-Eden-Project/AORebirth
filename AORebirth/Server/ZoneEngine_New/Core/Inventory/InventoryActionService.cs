@@ -37,7 +37,10 @@ namespace ZoneEngine_New.Core.Inventory
                 return;
             if (message.Action == CharacterActionType.DeleteItem)
             {
-                if (!TryResolveOwnedSlot(player, message.Target, out _, out Item item)
+                // The client names the item's template in Parameter1/Parameter2 (live: 85366/85366); a slot holding
+                // anything else is not the item the player chose, and a delete cannot be undone.
+                if (!TryResolveDeleteSlot(player, message.Target, out _, out _, out Item item, out _)
+                    || !IsTemplateOf(item, message.Parameter1) || !IsTemplateOf(item, message.Parameter2)
                     || !TryDelete(player, message.Target, item.InstanceId)) return;
                 player.Session?.Send(new CharacterActionMessage
                 {
@@ -66,9 +69,11 @@ namespace ZoneEngine_New.Core.Inventory
             }
         }
 
+        static bool IsTemplateOf(Item item, int templateId) => templateId == item.LowId || templateId == item.HighId;
+
         public bool TryDelete(Player player, Identity slot, int expectedInstanceId)
         {
-            if (!TryResolveOwnedSlot(player, slot, out Container page, out Item item)
+            if (!TryResolveDeleteSlot(player, slot, out Container page, out int placement, out Item item, out LootableDynel? loot)
                 || item.InstanceId != expectedInstanceId) return false;
             if (InventoryMoveService.IsBagItem(item)
                 && player.Inventory.TryGetBackpackPage(item.Identity, out Container bagPage)
@@ -76,8 +81,10 @@ namespace ZoneEngine_New.Core.Inventory
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
             bool result = TryCommit(player,
                 [new InventoryRowChange(item, graveyard, item.InstanceId, item.StackCount, Retired: true)],
-                () => IsCurrent(page, slot.Instance, item, expectedInstanceId),
-                () => page.Content.Remove(slot.Instance));
+                () => IsCurrent(page, placement, item, expectedInstanceId),
+                () => page.Content.Remove(placement));
+            if (result)
+                loot?.NotifyLootChanged();
             if (result && page.Identity.Type.IsWearPage())
             {
                 player.Rebase();
@@ -171,6 +178,38 @@ namespace ZoneEngine_New.Core.Inventory
                 && player.Inventory.TryGetOwnedBackpackPageByHandle(handle, out page)
                 && page.IsHydrated && page.LinkedItem is { Locked: false }
                 && (page.Flags & ContainerFlags.CanRemove) != 0
+                && placement >= page.Offset && placement < page.Offset + page.Capacity
+                && page.Content.TryGetValue(placement, out item!) && !item.Locked && item.InstanceId > 0;
+        }
+
+        /// <summary>
+        /// The slot a delete names: an owned page slot (inventory, wear pages, bank, overflow), or the packed
+        /// Backpack/Container handle/slot the move path resolves (a carried bag, or loot the player has open), or a
+        /// bag kept in the bank. In-memory loot items are retired without a database row.
+        /// </summary>
+        static bool TryResolveDeleteSlot(Player player, Identity slot, out Container page, out int placement, out Item item,
+            out LootableDynel? loot)
+        {
+            loot = null;
+            if (slot.Type != IdentityType.Backpack && slot.Type != IdentityType.Container)
+            {
+                placement = slot.Instance;
+                return TryResolveOwnedSlot(player, slot, out page, out item);
+            }
+
+            if (player.Inventory.IsHydrated
+                && InventoryMoveService.TryResolveSource(player, slot, out page, out placement, out item, out loot))
+                return !item.Locked && item.InstanceId > 0;
+
+            loot = null;
+            page = null!; item = null!;
+            int handle = InventoryMoveService.DecodeBackpackHandle(slot);
+            placement = InventoryMoveService.DecodeBackpackSlot(slot);
+            return slot.Type == IdentityType.Backpack && handle != 0 && player.Inventory.IsHydrated
+                && player.Inventory.Bank.IsHydrated
+                && player.Inventory.TryGetBackpackPageByHandle(handle, out page)
+                && page.LinkedItem is { Locked: false } bag && player.Inventory.Bank.Content.ContainsValue(bag)
+                && page.IsHydrated && (page.Flags & ContainerFlags.CanRemove) != 0
                 && placement >= page.Offset && placement < page.Offset + page.Capacity
                 && page.Content.TryGetValue(placement, out item!) && !item.Locked && item.InstanceId > 0;
         }

@@ -79,6 +79,9 @@ namespace ZoneEngine_New.Core.Movement
 
         public MovementState State => _state;
 
+        /// <summary>How far the NPC path guide leads the body; within this of a path's end the body brakes.</summary>
+        public float SlowingDistance => _sim.SlowingDistance;
+
         /// <summary>The vehicle itself.</summary>
         public CharVehicleSim Vehicle => _sim;
 

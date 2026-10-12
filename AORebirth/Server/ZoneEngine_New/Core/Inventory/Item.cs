@@ -187,7 +187,8 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>Gates checked when a use starts: <see cref="CanStillUse"/> plus the ToUse requirements.</summary>
         public bool CanBeginUse(Player player, Character? target = null)
             => CanStillUse(player)
-                && Definition.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse, player.ResolvePerkRequirement,
+                && Definition.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse,
+                    ItemTemplate.WithActionTarget(player.ResolvePerkRequirement, player, target ?? player),
                     target == null ? null : stat => target.Stats.Get(stat), target == null ? null : target.ResolveRequirement);
 
         /// <summary>

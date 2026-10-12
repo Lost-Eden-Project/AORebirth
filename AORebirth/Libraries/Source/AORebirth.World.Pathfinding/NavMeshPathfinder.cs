@@ -190,6 +190,32 @@ namespace AORebirth.World.Pathfinding
             return true;
         }
 
+        /// <summary>
+        /// A random navmesh point within <paramref name="radius"/> (XZ) of <paramref name="centre"/>, on polygons
+        /// connected to the one under the centre, so the point can be walked to from there. False when the centre is
+        /// not near the mesh.
+        /// </summary>
+        public bool TryFindRandomPointWithin(Vector3 centre, float radius, Random random, out Vector3 point)
+        {
+            ArgumentNullException.ThrowIfNull(random);
+            point = default;
+            if (radius <= 0f)
+                return false;
+
+            var at = new RcVec3f(centre.X, centre.Y, centre.Z);
+            if (_query.FindNearestPoly(at, _extents, _filter, out long startRef, out RcVec3f nearest, out _).Failed()
+                || startRef == 0)
+                return false;
+
+            if (_query.FindRandomPointWithinCircle(startRef, nearest, radius, _filter, new DotRecast.Core.RcRand(random),
+                    out long randomRef, out RcVec3f randomPt).Failed()
+                || randomRef == 0)
+                return false;
+
+            point = new Vector3(randomPt.X, randomPt.Y, randomPt.Z);
+            return true;
+        }
+
         public bool TryCanReach(Vector3 start, Vector3 end)
         {
             if (!TryResolveEnds(start, end, out PolyEnds ends))

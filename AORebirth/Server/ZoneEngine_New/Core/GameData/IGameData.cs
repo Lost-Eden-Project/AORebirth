@@ -7,6 +7,19 @@ namespace ZoneEngine_New.Core.GameData
 
     using ZoneEngine_New.Core.Mobs;
 
+    /// <summary>MonsterData Features (stat 224) bits the server acts on.</summary>
+    public static class MonsterBodyFeatures
+    {
+        /// <summary>
+        /// Set on bodies that can move. Clear on 155 of the client's 1470 MonsterData records: plants (Parspalum),
+        /// guard machines (Carte Blanche Liberator), towers, turrets, terminals and stationary bosses. The client does
+        /// not animate such a body along a path, so it visibly skips between path points.
+        /// </summary>
+        public const int CanMove = 0x4;
+
+        public static bool IsImmobile(int features) => (features & CanMove) == 0;
+    }
+
     /// <summary>
     /// Runtime view of the checked-in GameData tree under {BaseDirectory}\GameData.
     /// </summary>
@@ -109,6 +122,16 @@ namespace ZoneEngine_New.Core.GameData
         {
             mass = null;
             charRadius = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Features (stat 224) from a MonsterData record. Bit <see cref="MonsterBodyFeatures.CanMove"/> clear: the body
+        /// cannot move (plants, towers, turrets, stationary bosses).
+        /// </summary>
+        bool TryGetMonsterFeatures(int monsterData, out int features)
+        {
+            features = 0;
             return false;
         }
 

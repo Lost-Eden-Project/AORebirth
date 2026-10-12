@@ -186,6 +186,25 @@ namespace ZoneEngine_New.Core.Ai
         }
     }
 
+    /// <summary>A district NPC's idle activity: pause, walk to a random reachable spot near home, repeat.</summary>
+    sealed class WanderNode : BehaviourNode
+    {
+        readonly NpcBrain _brain;
+
+        public WanderNode(NpcBrain brain)
+            : base("wander")
+        {
+            _brain = brain;
+        }
+
+        public override NodeState Evaluate(float deltaTime)
+        {
+            TickStallWatch.Stage("node.wander", _brain.Npc.Identity.Instance);
+            _brain.TickWander();
+            return _nodeState = NodeState.Running;
+        }
+    }
+
     sealed class IdleNode : BehaviourNode
     {
         readonly NpcBrain _brain;

@@ -470,7 +470,7 @@ namespace ZoneEngine_New.Core.Inventory
             return instanceId > 0;
         }
 
-        static bool TryResolveSource(
+        internal static bool TryResolveSource(
             Player player,
             Identity source,
             out Container page,

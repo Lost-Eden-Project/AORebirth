@@ -220,7 +220,7 @@ namespace ZoneEngine_New
                     provider.GetRequiredService<IGameData>().RootPath);
                 var settings = ZoneEngine_New.Core.Configuration.GameplaySettings.Load(path);
                 provider.GetRequiredService<IZoneLogger>().Info(
-                    $"Gameplay config stuckCooldownSeconds={settings.StuckCooldownSeconds} stuckLocation=pf {settings.StuckLocation!.Playfield} ({settings.StuckLocation.X}, {settings.StuckLocation.Y}, {settings.StuckLocation.Z}) from {path}");
+                    $"Gameplay config stuckCooldownSeconds={settings.StuckCooldownSeconds} stuckLocation=pf {settings.StuckLocation!.Playfield} ({settings.StuckLocation.X}, {settings.StuckLocation.Y}, {settings.StuckLocation.Z}) xpKillPercentPerLevelDifference={settings.Xp.KillPercentPerLevelDifference} from {path}");
                 return settings;
             });
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();

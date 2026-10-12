@@ -39,8 +39,19 @@ namespace ZoneEngine_New.Core.Inventory
             NoLineOfSight
         }
 
+        /// <summary>
+        /// The template's Can flags. Stat 371 (SkillTimeOnSelectedTarget) = 1 marks an item used on the selected
+        /// character even without ApplyOnFriendly (Health and Nano Recharger 291082/291083, First Aid Syringe 55695,
+        /// pet Trimmers); unless a hostile flag already aims it, it is treated as ApplyOnFriendly.
+        /// </summary>
         public static CanFlags CanOf(ItemTemplate template)
-            => template.Stats.TryGetValue(CharacterStat.Can, out int value) ? (CanFlags)(uint)value : 0;
+        {
+            CanFlags can = template.Stats.TryGetValue(CharacterStat.Can, out int value) ? (CanFlags)(uint)value : 0;
+            if (!IsHostileTargeted(can)
+                && template.Stats.TryGetValue(CharacterStat.SkillTimeOnSelectedTarget, out int selected) && selected == 1)
+                can |= CanFlags.ApplyOnFriendly;
+            return can;
+        }
 
         public static bool NeedsFightingTarget(CanFlags can) => (can & CanFlags.ApplyOnFightingTarget) != 0;
 

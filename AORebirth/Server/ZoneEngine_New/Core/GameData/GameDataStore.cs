@@ -55,6 +55,7 @@ namespace ZoneEngine_New.Core.GameData
         private readonly Dictionary<int, VendingMachineDefinition> _vendingMachines = new();
         private readonly Dictionary<int, int> _catMeshByMonsterData = new();
         private readonly Dictionary<int, (int? Mass, int? CharRadius)> _bodyStatsByMonsterData = new();
+        private readonly Dictionary<int, int> _featuresByMonsterData = new();
         private readonly Dictionary<int, XpLevelEntry> _xpLevels = new();
         private readonly Dictionary<int, AlienXpLevelEntry> _alienXpLevels = new();
         private readonly Dictionary<int, PlayfieldMetaData?> _playfieldMetaData = new();
@@ -249,6 +250,12 @@ namespace ZoneEngine_New.Core.GameData
             mass = body.Mass;
             charRadius = body.CharRadius;
             return true;
+        }
+
+        public bool TryGetMonsterFeatures(int monsterData, out int features)
+        {
+            features = 0;
+            return monsterData > 0 && _featuresByMonsterData.TryGetValue(monsterData, out features);
         }
 
         public bool TryGetPlayfieldCharacterAppearanceOverride(int playfieldId, out uint monsterData)
@@ -682,6 +689,8 @@ namespace ZoneEngine_New.Core.GameData
                 {
                     if (pairing.MonsterData > 0 && (pairing.Mass != null || pairing.CharRadius != null))
                         _bodyStatsByMonsterData.TryAdd(pairing.MonsterData, (pairing.Mass, pairing.CharRadius));
+                    if (pairing.MonsterData > 0 && pairing.Features is int features)
+                        _featuresByMonsterData.TryAdd(pairing.MonsterData, features);
 
                     // A record without a mesh has body stats only.
                     if (pairing.MonsterData > 0 && pairing.CatMesh <= 0)
@@ -1412,6 +1421,9 @@ namespace ZoneEngine_New.Core.GameData
 
             /// <summary>MonsterData stat 421.</summary>
             public int? CharRadius { get; set; }
+
+            /// <summary>MonsterData stat 224 (Features).</summary>
+            public int? Features { get; set; }
         }
 
         private sealed class XpLevelRow

@@ -121,9 +121,115 @@ namespace ZoneEngine_New.Core.Ai
 
         public NpcCharacter Npc { get; }
 
-        public Vector3? Home { get; }
+        public Vector3? Home { get; private set; }
 
         public bool HasHome => Home is not null;
+
+        // Wandering (district spawns): strolls at walking pace to random navmesh points within the radius of Home,
+        // pausing between them. Combat, leash and evade always run.
+        float _wanderRadius;
+        double _wanderMinPauseSeconds;
+        double _wanderMaxPauseSeconds;
+        Vector3? _wanderDestination;
+        DateTime _wanderPauseUntilUtc;
+        bool _wanderedThisThink;
+
+        public bool WanderEnabled => _wanderRadius > 0f && HasHome && Pet == null && !Npc.IsImmobile;
+
+        /// <summary>
+        /// Makes this NPC wander within <paramref name="radius"/> of <paramref name="anchor"/>, which also becomes its
+        /// home for leashing. The first stroll starts after a random pause so a freshly spawned group does not set off
+        /// together.
+        /// </summary>
+        public void EnableWander(Vector3 anchor, float radius, double minPauseSeconds, double maxPauseSeconds)
+        {
+            if (Pet != null || radius <= 0f || Npc.IsImmobile)
+                return;
+
+            Home = new Vector3(anchor.x, anchor.y, anchor.z);
+            _wanderRadius = radius;
+            _wanderMinPauseSeconds = Math.Max(0, minPauseSeconds);
+            _wanderMaxPauseSeconds = Math.Max(_wanderMinPauseSeconds, maxPauseSeconds);
+            _wanderDestination = null;
+            _wanderPauseUntilUtc = DateTime.UtcNow.AddSeconds(NextWanderPause());
+        }
+
+        double NextWanderPause()
+            => _wanderMinPauseSeconds + Random.Shared.NextDouble() * (_wanderMaxPauseSeconds - _wanderMinPauseSeconds);
+
+        /// <summary>
+        /// One wander think: stand out the pause, then walk to a random reachable point near home, then pause again.
+        /// Always running: wandering is the NPC's idle activity.
+        /// </summary>
+        internal void TickWander()
+        {
+            _wanderedThisThink = true;
+            DateTime now = DateTime.UtcNow;
+            if (_wanderDestination is not Vector3 destination)
+            {
+                if (now < _wanderPauseUntilUtc)
+                    return;
+                if (!TryPickWanderPoint(out destination))
+                {
+                    _wanderPauseUntilUtc = now.AddSeconds(NextWanderPause());
+                    return;
+                }
+
+                _wanderDestination = destination;
+            }
+
+            if (NpcAiRules.IsNearby(Npc.Position, destination, NpcAiRules.ArriveHomeMeters)
+                || (!Npc.Motor.HasPath && _followAnnounced && _segmentReachesDestination && HasReachedSegmentEnd()))
+            {
+                EndStroll(now);
+                return;
+            }
+
+            if (Npc.Motor.State != Movement.MovementState.Walk)
+                Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToWalk);
+            PathTo(destination);
+        }
+
+        void EndStroll(DateTime now)
+        {
+            _wanderDestination = null;
+            _wanderPauseUntilUtc = now.AddSeconds(NextWanderPause());
+            StopPathing();
+        }
+
+        bool TryPickWanderPoint(out Vector3 destination)
+        {
+            destination = default!;
+            NavMeshPathfinder? finder = Npc.Playfield?.Pathfinder;
+            if (finder == null || Home is not Vector3 home)
+                return false;
+
+            var centre = new System.Numerics.Vector3((float)home.x, (float)home.y, (float)home.z);
+            if (!finder.TryFindRandomPointWithin(centre, _wanderRadius, Random.Shared, out System.Numerics.Vector3 point))
+                return false;
+
+            destination = new Vector3(point.X, point.Y, point.Z);
+            return true;
+        }
+
+        /// <summary>
+        /// Anything but a stroll moves at running pace: drops the stroll in progress and leaves walk. Called before the
+        /// tree when the NPC is busy (hate, leash, evade) and after it when another branch took over.
+        /// </summary>
+        void StopWandering()
+        {
+            if (!WanderEnabled)
+                return;
+
+            if (_wanderDestination is not null)
+            {
+                _wanderDestination = null;
+                _wanderPauseUntilUtc = DateTime.UtcNow.AddSeconds(NextWanderPause());
+            }
+
+            if (Npc.Motor.State == Movement.MovementState.Walk)
+                Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
+        }
 
         public HateList Hate { get; }
 
@@ -190,8 +296,15 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             }
 
+            // A wanderer drops its stroll and runs as soon as it has anything to fight or flee.
+            _wanderedThisThink = false;
+            if (!Hate.IsEmpty || _leashing || _evading)
+                StopWandering();
+
             TickStallWatch.Stage("brain.tree", Npc.Identity.Instance);
             _tree.Tick((float)deltaTime);
+            if (!_wanderedThisThink)
+                StopWandering();
             TickStallWatch.Stage("brain.nanos", Npc.Identity.Instance);
             _nanos.Tick(DateTime.UtcNow);
 
@@ -378,6 +491,9 @@ namespace ZoneEngine_New.Core.Ai
         public bool CanPathTo(Character target)
         {
             ArgumentNullException.ThrowIfNull(target);
+            // An immobile NPC only ever has the targets it can hit from where it stands (HasChance: CanAttackNow).
+            if (Npc.IsImmobile)
+                return false;
             NavMeshPathfinder? finder = Npc.Playfield?.Pathfinder;
             if (finder == null)
                 return true;
@@ -462,8 +578,9 @@ namespace ZoneEngine_New.Core.Ai
         public void PathTo(Vector3 destination, float? replanDeltaMeters)
         {
             _replanDeltaMeters = replanDeltaMeters ?? NpcFollowTarget.MinAnnounceDeltaMeters;
-            // Rooted: settle where it stands; the stuck clock restarts once the root is gone.
-            if (Npc.IsRooted)
+            // Rooted, or a body that cannot move at all: settle where it stands; the stuck clock restarts once a root
+            // is gone.
+            if (Npc.IsRooted || Npc.IsImmobile)
             {
                 StopPathing();
                 return;
@@ -484,6 +601,14 @@ namespace ZoneEngine_New.Core.Ai
                     // the walk home that is stuck, give up on walking and let the caller snap home.
                     if (_stuckWarps >= NpcAiRules.MaxStuckWarps)
                     {
+                        // A stroll that cannot go on is just given up; nothing is wrong enough to evade.
+                        if (_wanderDestination is not null)
+                        {
+                            _stuckWarps = 0;
+                            EndStroll(now);
+                            return;
+                        }
+
                         // A pet that cannot walk on rejoins its owner (a player's pet) rather than evading.
                         if (Pet != null)
                         {
@@ -524,8 +649,7 @@ namespace ZoneEngine_New.Core.Ai
                 new System.Numerics.Vector3((float)routeEnd.x, (float)routeEnd.y, (float)routeEnd.z)))
                 return;
 
-            float lookaheadMeters = (float)(Npc.Motor.Vehicle.MaxVel * NpcFollowTarget.PathLookaheadSeconds);
-            bool truncated = TruncateByDistance(_routeScratch, lookaheadMeters, _pathScratch);
+            bool truncated = TruncateByDistance(_routeScratch, SegmentLookaheadMeters(), _pathScratch);
             if (active)
                 Npc.Motor.ReplacePath(_pathScratch);
             else
@@ -712,8 +836,33 @@ namespace ZoneEngine_New.Core.Ai
                        && Npc.Motor.RemainingPathMeters() <= NearSegmentEndMeters;
             }
 
-            double leftSeconds = NpcFollowTarget.PathLookaheadSeconds - NpcFollowTarget.PathReplanSeconds;
-            return Npc.Motor.RemainingPathMeters() <= Npc.Motor.Vehicle.MaxVel * leftSeconds;
+            return Npc.Motor.RemainingPathMeters() <= ReplanRemainingMeters();
+        }
+
+        /// <summary>Clearance kept between the guide's brake zone and the segment end when the next segment is planned.</summary>
+        const float SegmentEndMarginMeters = 1f;
+
+        /// <summary>
+        /// Remaining path at which the next segment replaces the current one: the travel time left after a replan
+        /// interval, but never inside the guide's brake zone. Running (≈6 m/s) is time-bound (3 m); walking (≈1.5 m/s)
+        /// would replan 0.75 m from the end, after the guide had already started braking the body each segment.
+        /// </summary>
+        float ReplanRemainingMeters()
+        {
+            float velocity = Npc.Motor.Vehicle.MaxVel;
+            float timed = (float)(velocity * (NpcFollowTarget.PathLookaheadSeconds - NpcFollowTarget.PathReplanSeconds));
+            return MathF.Max(timed, Npc.Motor.SlowingDistance + SegmentEndMarginMeters);
+        }
+
+        /// <summary>
+        /// Length of each planned segment: the lookahead's travel time, and at least a replan interval of travel past the
+        /// replan point, so a slow NPC still covers a full interval before the next update.
+        /// </summary>
+        float SegmentLookaheadMeters()
+        {
+            float velocity = Npc.Motor.Vehicle.MaxVel;
+            float timed = (float)(velocity * NpcFollowTarget.PathLookaheadSeconds);
+            return MathF.Max(timed, ReplanRemainingMeters() + (float)(velocity * NpcFollowTarget.PathReplanSeconds));
         }
 
         bool IsStuck(DateTime now)

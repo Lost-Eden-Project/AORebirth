@@ -203,24 +203,24 @@ namespace ZoneEngine_New.Core.Inventory
 
             var unmet = new List<UnmetRequirement>();
             bool onTarget = false;
-            ItemRequirement? previous = null;
             foreach (ItemRequirement requirement in action.Requirements)
             {
+                // A link closes the selector's group (see TryEvaluatePostfix).
                 if (IsRequirementLinkOperator(requirement))
+                {
+                    onTarget = false;
                     continue;
+                }
                 if (IsSubjectSelector(requirement))
                 {
                     onTarget = (Operator)requirement.Operator == Operator.OnTarget && getTargetStat != null;
-                    previous = null;
                     continue;
                 }
 
-                if (previous != null && !ContinuesSubject(previous, requirement))
-                    onTarget = false;
-                Func<CharacterStat, int> reader = onTarget ? getTargetStat! : getStat;
-                if (!EvaluateLeaf(requirement, reader, onTarget ? resolveTarget ?? resolve : resolve))
-                    unmet.Add(new UnmetRequirement(requirement, reader((CharacterStat)requirement.StatNumber), onTarget));
-                previous = requirement;
+                bool leafOnTarget = onTarget && !IsEventCriterion(requirement);
+                Func<CharacterStat, int> reader = leafOnTarget ? getTargetStat! : getStat;
+                if (!EvaluateLeaf(requirement, reader, leafOnTarget ? resolveTarget ?? resolve : resolve))
+                    unmet.Add(new UnmetRequirement(requirement, reader((CharacterStat)requirement.StatNumber), leafOnTarget));
                 if (requirement.ChildOperator != 0)
                     onTarget = false;
             }
@@ -340,26 +340,25 @@ namespace ZoneEngine_New.Core.Inventory
 
             var values = new Stack<bool>();
             RequirementSubject? subject = null;
-            ItemRequirement? previous = null;
             foreach (ItemRequirement requirement in requirements)
             {
                 if (IsSubjectSelector(requirement))
                 {
                     subject = SelectSubject(requirement, self, user, target);
-                    previous = null;
                     continue;
                 }
 
                 if (!IsRequirementLinkOperator(requirement))
                 {
-                    if (previous != null && !ContinuesSubject(previous, requirement))
-                        subject = null;
-                    RequirementSubject reader = subject ?? self;
+                    RequirementSubject reader = IsEventCriterion(requirement) ? self : subject ?? self;
                     values.Push(EvaluateLeaf(requirement, reader.GetStat, reader.Resolve));
-                    previous = requirement;
                     continue;
                 }
 
+                // A selector covers every leaf up to the link that combines them, whatever stats they read:
+                // Health and Nano Recharger 291082 [OnTarget, NPCFamily = 0, WaitState = 2, And] (target sitting),
+                // Unicorn Laser Fence [OnUser, NPCFamily, Level < 215, And]. The link closes the group.
+                subject = null;
                 if (values.Count == 0)
                     return true;
                 bool right = values.Pop();
@@ -379,19 +378,18 @@ namespace ZoneEngine_New.Core.Inventory
             return true;
         }
 
-        // A rank block or comparisons of the same stat share the selected subject. Unrelated
-        // leaves return to the default reader, including event criteria such as LastRnd.
-        static bool ContinuesSubject(ItemRequirement previous, ItemRequirement current)
-        {
-            static bool Perk(Operator op) => op is Operator.HasPerk or Operator.HasNotPerk;
-            static bool Nano(Operator op) => op is Operator.HasRunningNano or Operator.HasNotRunningNano;
-            static bool Comparison(Operator op) => op is Operator.EqualTo or Operator.Unequal
-                or Operator.GreaterThan or Operator.LessThan or Operator.BitAnd or Operator.NotBitAnd;
-            var left = (Operator)previous.Operator;
-            var right = (Operator)current.Operator;
-            return (Perk(left) && Perk(right)) || (Nano(left) && Nano(right))
-                || (Comparison(left) && Comparison(right) && previous.StatNumber == current.StatNumber);
-        }
+        /// <summary>
+        /// Event criteria (Rnd, LastRnd, SecondaryItemTemplate) come from the event, not a character, so they
+        /// always read the default subject even inside a selector's group.
+        /// </summary>
+        static bool IsEventCriterion(ItemRequirement requirement)
+            => IsStatComparison(requirement)
+                && (CharacterStat)requirement.StatNumber is CharacterStat.Rnd or CharacterStat.LastRnd
+                    or CharacterStat.SecondaryItemTemplate;
+
+        static bool IsStatComparison(ItemRequirement requirement)
+            => (Operator)requirement.Operator is Operator.EqualTo or Operator.Unequal or Operator.GreaterThan
+                or Operator.LessThan or Operator.BitAnd or Operator.NotBitAnd;
 
         /// <summary>
         /// OnTarget / OnSelf / OnUser / OnCaster rows select the subject for the following check group; they are not checks
@@ -619,6 +617,27 @@ namespace ZoneEngine_New.Core.Inventory
                 && EvaluateRequirement(StatCollection.Normalize(getStat(CharacterStat.Profession)), requirement);
         }
 
+        /// <summary>
+        /// Adds the action's target to <paramref name="resolve"/> for leaves that compare the user with it:
+        /// <list type="bullet">
+        /// <item>IsSameAs: <paramref name="user"/> is <paramref name="target"/>. Every IsSameAs in items.dat is a ToUse
+        /// <c>IsSameAs, Not</c> pair ("not on yourself": Deprive Skills, Red Tape). No target is never the user.</item>
+        /// <item>MustBeCastersPet: <paramref name="target"/> is a pet the user owns (Health and Nano Recharger 291082's
+        /// alternative to a sitting non-NPC target; pet Trimmers).</item>
+        /// </list>
+        /// </summary>
+        public static Func<ItemRequirement, bool?> WithActionTarget(Func<ItemRequirement, bool?>? resolve, object user,
+            object? target)
+        {
+            ArgumentNullException.ThrowIfNull(user);
+            return requirement => (Operator)requirement.Operator switch
+            {
+                Operator.IsSameAs => ReferenceEquals(user, target),
+                Operator.MustBeCastersPet => target is NpcCharacter { Pet: { } pet } && ReferenceEquals(pet.Owner, user),
+                _ => resolve?.Invoke(requirement)
+            };
+        }
+
         public static bool EvaluateRequirement(int statValue, ItemRequirement requirement)
         {
             ArgumentNullException.ThrowIfNull(requirement);
@@ -635,9 +654,22 @@ namespace ZoneEngine_New.Core.Inventory
                 Operator.TestNumPets => Pets.PetTypes.TestNumPets(statValue, required),
                 Operator.True => true,
                 Operator.False => false,
-                // And/Or/Not and other non-comparison ops are requirement links, not checks.
-                _ => true
+                // Fail closed: a check nothing implements (not a comparison here, not answered by the character's
+                // ResolveRequirement) must not pass. Links and subject selectors never reach this.
+                _ => RejectUnimplemented(requirement)
             };
+        }
+
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<int, byte> ReportedUnimplemented = new();
+
+        static bool RejectUnimplemented(ItemRequirement requirement)
+        {
+            if (ReportedUnimplemented.TryAdd(requirement.Operator, 0))
+                Utility.LogUtil.Debug(Utility.DebugInfoDetail.Engine,
+                    "Requirement operator " + (Operator)requirement.Operator + " (" + requirement.Operator
+                    + ") is not implemented; checks using it fail (stat " + requirement.StatNumber + ", value "
+                    + requirement.Value + ").");
+            return false;
         }
     }
 

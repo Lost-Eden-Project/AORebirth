@@ -483,6 +483,10 @@ namespace ZoneEngine_New.Core.Nanos
                 : NanoDelayCalculator.RechargeTimeCentiseconds(spell.RechargeDelayCentiseconds);
             caster.StartNanoRecharge(recharge, nowUtc);
 
+            // A finished hostile cast pulls the NPC whether it lands, is resisted or is refused; a resetting NPC ignores it.
+            if (spell.IsHostile)
+                AddHostileThreat(caster, recipient!);
+
             // Resisted: an evading NPC is untouchable on its way home. The cast is spent; nothing lands.
             if (spell.IsHostile && recipient!.IsEvading)
             {
@@ -542,7 +546,7 @@ namespace ZoneEngine_New.Core.Nanos
             SendNanoDuration(caster, recipient, applied);
             ExecuteOnUseEffects(caster, recipient, spell, skipPassiveModifiers: true);
             if (spell.IsHostile)
-                OnDebuffLanded(caster, recipient, applied);
+                OnDebuffLanded(caster, recipient, applied, addThreat: false);
             LogUtil.Debug(
                 DebugInfoDetail.Engine,
                 string.Format(
@@ -573,7 +577,8 @@ namespace ZoneEngine_New.Core.Nanos
                 RequirementsMet = spell.MeetsActionRequirements(
                     stat => caster.Stats.Get(stat),
                     ActionType.ToUse,
-                    resolve: caster is Player casterPlayer ? casterPlayer.ResolvePerkRequirement : null,
+                    resolve: ItemTemplate.WithActionTarget(
+                        caster is Player casterPlayer ? casterPlayer.ResolvePerkRequirement : null, caster, recipient),
                     getTargetStat: recipient == null ? null : stat => recipient.Stats.Get(stat)),
                 TargetExists = recipient != null,
                 TargetIsDead = recipient?.IsDead == true,
@@ -589,11 +594,19 @@ namespace ZoneEngine_New.Core.Nanos
         /// <summary>
         /// A debuff landing can break crowd control already on the target, and a player's debuff
         /// always puts the player on an NPC's hate list, so debuffing an idle mob pulls it.
-        /// A pacified NPC still ignores that threat.
+        /// A pacified NPC still ignores that threat. <paramref name="addThreat"/> is false when the
+        /// finished cast already added it.
         /// </summary>
-        static void OnDebuffLanded(Character caster, Character recipient, Buff applied)
+        static void OnDebuffLanded(Character caster, Character recipient, Buff applied, bool addThreat = true)
         {
             recipient.RollBuffBreaks(BuffBreakCause.Debuff, caster, except: applied);
+            if (addThreat)
+                AddHostileThreat(caster, recipient);
+        }
+
+        /// <summary>A player's hostile nano puts the player on the NPC's hate list (ignored while resetting or pacified).</summary>
+        static void AddHostileThreat(Character caster, Character recipient)
+        {
             if (recipient is NpcCharacter npc && caster.IsPlayer && !ReferenceEquals(caster, recipient))
                 npc.Brain?.AddThreat(caster.Identity, Ai.NpcAiRules.ProximityHate);
         }
@@ -835,8 +848,6 @@ namespace ZoneEngine_New.Core.Nanos
 
         static void AnnounceBuffRemoved(Character owner, Buff buff)
         {
-            ExecuteBuffEnd(owner, buff);
-
             var message = new BuffMessage
             {
                 Identity = owner.Identity,
@@ -851,6 +862,10 @@ namespace ZoneEngine_New.Core.Nanos
             SessionOf(owner)?.Send(message);
             // Owner already has the direct copy. Everyone else who can see them needs the clear.
             owner.Cell?.Announce(message, exclude: owner);
+
+            // End effects run after the clear: an OnTerminate that recasts the same nano (Minor Regeneration of
+            // Health and Nano 291081) lands a fresh copy the client must not then see removed.
+            ExecuteBuffEnd(owner, buff);
         }
 
         /// <summary>
@@ -966,7 +981,7 @@ namespace ZoneEngine_New.Core.Nanos
             var parts = new List<string>();
             foreach (ItemRequirement requirement in action.Requirements)
             {
-                if (ItemTemplate.IsRequirementLinkOperator(requirement))
+                if (ItemTemplate.IsRequirementLinkOperator(requirement) || ItemTemplate.IsSubjectSelector(requirement))
                     continue;
 
                 int have = caster.Stats.Get((CharacterStat)requirement.StatNumber);

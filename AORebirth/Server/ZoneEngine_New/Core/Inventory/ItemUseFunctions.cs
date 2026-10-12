@@ -117,6 +117,11 @@ namespace ZoneEngine_New.Core.Inventory
                     return NanoCastFunctions.TryExecute(target, source, spell, items, inventoryRepository);
                 case FunctionType.CastChance:
                     return CastChance(target, source, spell, items, inventoryRepository, criteria);
+                case FunctionType.AddOffProc:
+                case FunctionType.AddDefProc:
+                    // Registrations, not effects: ProcRules reads them from the buff, worn item or weapon on each
+                    // weapon hit. Landing the buff (or a weapon's OnHit) must not fire them.
+                    return true;
                 case FunctionType.RemoveNano:
                     return RemoveNano(target, spell);
                 case FunctionType.RemoveNanoStrain:
@@ -190,6 +195,19 @@ namespace ZoneEngine_New.Core.Inventory
             if (acStat == 0)
                 acStat = defaultAcStat;
 
+            var stat = (CharacterStat)statId;
+
+            // Max 0 with a nonzero Min is a percentage of the stat's maximum: Complete Healing [27,100,0,0] heals fully,
+            // Minor Regeneration of Health and Nano [27,5,0,91] / [214,5,0,91] restores 5%, Wall Hacks! [27,-30,0,91]
+            // takes 30%. The damage type still names the hit; caster Add Damage does not apply to a percentage.
+            if (spell.ArgumentCount >= 3 && third == 0 && minHit != 0
+                && TryPercentOfMax(target, stat, minHit, out int percentDelta))
+            {
+                if (stat == CharacterStat.Health)
+                    return ApplyHealthDelta(target, source, percentDelta, acStat, addDamage: false);
+                return ApplyNanoDelta(target, percentDelta);
+            }
+
             if (minHit > maxHit)
             {
                 int swap = minHit;
@@ -201,7 +219,6 @@ namespace ZoneEngine_New.Core.Inventory
                 ? minHit
                 : Random.Shared.Next(minHit, maxHit + 1);
 
-            var stat = (CharacterStat)statId;
             if (stat == CharacterStat.Health)
                 return ApplyHealthDelta(target, source, delta, acStat, addDamage);
 
@@ -374,6 +391,27 @@ namespace ZoneEngine_New.Core.Inventory
             target.Stats.Set(CharacterStat.Health, healed, StatDetail.Base, dirty: true);
             target.Stats.ClearDirty(CharacterStat.Health);
             target.AnnounceHealthDamage(caster, healed, applied, damageTypeStat: 0);
+            return true;
+        }
+
+        /// <summary>
+        /// <paramref name="percent"/> of the target's MaxHealth (Health) or MaxNanoEnergy (CurrentNano / NanoPool),
+        /// at least 1 point either way. False for any other stat, which keeps the flat Hit roll.
+        /// </summary>
+        static bool TryPercentOfMax(Character target, CharacterStat stat, int percent, out int delta)
+        {
+            delta = 0;
+            CharacterStat maxStat;
+            if (stat == CharacterStat.Health)
+                maxStat = CharacterStat.MaxHealth;
+            else if (stat is CharacterStat.CurrentNano or CharacterStat.NanoPool)
+                maxStat = CharacterStat.MaxNanoEnergy;
+            else
+                return false;
+
+            long max = Math.Max(0, target.Stats.GetOrZero(maxStat));
+            long amount = Math.Max(1, max * Math.Abs(percent) / 100);
+            delta = (int)Math.Min(int.MaxValue, amount) * Math.Sign(percent);
             return true;
         }
 

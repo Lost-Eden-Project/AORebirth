@@ -189,9 +189,21 @@ namespace ZoneEngine_New.Core.Helpers
             int healthBefore = target.Stats.GetOrZero(CharacterStat.Health);
             target.RollBuffBreaks(BuffBreakCause.Attack, attacker);
             target.ApplyDamage(attacker, result.Damage, result.HitType);
-            if (target.Stats.GetOrZero(CharacterStat.Health) >= healthBefore)
-                return;
+            if (target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
+                AnnounceSpecialHit(attacker, target, special, slot, bullets, result.Damage);
 
+            // A special is a weapon hit too: offensive and defensive procs roll on it.
+            Nanos.ProcRules.OnWeaponHit(attacker, target, specialItem ?? weapon.Item);
+
+            // A landed Brawl or Dimach also runs its item's OnUse on the struck target (Brawl Item: 20% stun 211405 on
+            // the fighting target).
+            if (specialItem != null && special is CharacterStat.Brawl or CharacterStat.Dimach)
+                RunItemFunctions(attacker, specialItem, target);
+        }
+
+        static void AnnounceSpecialHit(Character attacker, Character target, CharacterStat special, int slot, int bullets,
+            int damage)
+        {
             // Client reader Gamecode.dll FUN_100a1c4f: slot, damage, ammo, target, stat, then a state value the
             // client applies to the target (FUN_1005b1b8); 4 as on a killing AttackInfo.
             attacker.Cell?.Announce(new SpecialAttackInfo
@@ -200,7 +212,7 @@ namespace ZoneEngine_New.Core.Helpers
                 Unknown = 0,
                 // Retail Brawl (capture 2026-10-01): slot 0, ammo -1; the Brawl Item is not a hand weapon.
                 Unknown1 = special == CharacterStat.Brawl ? 0 : slot,
-                Unknown2 = result.Damage,
+                Unknown2 = damage,
                 Unknown3 = bullets,
                 Target = target.Identity,
                 Unknown4 = (int)special,
@@ -342,8 +354,11 @@ namespace ZoneEngine_New.Core.Helpers
             => item.SpellList.TryGetValue(EventType.OnUse, out System.Collections.Generic.List<ItemSpell>? spells)
                 && spells.Exists(spell => spell.Is(FunctionType.Hit) || spell.Is(FunctionType.DrainHit));
 
-        /// <summary>Runs the item's OnUse functions with the attacker as user; Fightingtarget is its fight target.</summary>
-        static void RunItemFunctions(Character attacker, Item item)
+        /// <summary>
+        /// Runs the item's OnUse functions with the attacker as user. Target functions land on
+        /// <paramref name="eventTarget"/> (the attacker when null); Fightingtarget is the attacker's fight target.
+        /// </summary>
+        static void RunItemFunctions(Character attacker, Item item, Character? eventTarget = null)
         {
             var playfield = attacker.Playfield;
             IInventoryRepository? inventory = playfield?.GetService<IInventoryRepository>();
@@ -351,7 +366,7 @@ namespace ZoneEngine_New.Core.Helpers
             if (inventory == null || items == null)
                 return;
 
-            item.Definition.ExecuteOnUseSpells(attacker, inventory, items, source: attacker);
+            item.Definition.ExecuteOnUseSpells(eventTarget ?? attacker, inventory, items, source: attacker);
         }
 
         /// <summary>

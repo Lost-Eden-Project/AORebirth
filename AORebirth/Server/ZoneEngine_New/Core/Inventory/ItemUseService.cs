@@ -132,7 +132,8 @@ namespace ZoneEngine_New.Core.Inventory
                     ClientFeedback.Send(player, ClientFeedback.RequiresFightingTarget);
                 else
                     RequirementFeedback.SendIfUnmet(player, item.Definition, ActionType.ToUse,
-                        resolve: player.ResolvePerkRequirement, getTargetStat: stat => useTarget.Stats.Get(stat),
+                        resolve: ItemTemplate.WithActionTarget(player.ResolvePerkRequirement, player, useTarget),
+                        getTargetStat: stat => useTarget.Stats.Get(stat),
                         resolveTarget: useTarget.ResolveRequirement);
                 return ItemUseStart.Rejected;
             }

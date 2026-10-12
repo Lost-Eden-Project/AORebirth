@@ -194,6 +194,10 @@ namespace ZoneEngine_New.Core.Playfield
                     npc.Stats.Set(CharacterStat.CharRadius, charRadius.Value);
             }
 
+            // Features too: whether the body can move at all (NpcCharacter.IsImmobile).
+            if (_gameData.TryGetMonsterFeatures(npc.Stats.GetOrZero(CharacterStat.MonsterData), out int features))
+                npc.Stats.Set(CharacterStat.Features, features);
+
             Metrics.TickStallWatch.Stage("spawn.equip", identity.Instance);
             ApplyTextures(npc, template);
             npc.SetTextureOverrides(template.TextureOverrides);
@@ -208,7 +212,8 @@ namespace ZoneEngine_New.Core.Playfield
             Metrics.TickStallWatch.Stage("spawn.rebase", identity.Instance);
             npc.Rebase();
             TryAttachShop(npc);
-            if (attachDefaultBrain && npc.Shop == null && npc.Attackable)
+            // Vendors fight back like any NPC; only NoCombat (blue-named or flagged) NPCs stay brainless.
+            if (attachDefaultBrain && npc.Attackable)
                 NpcBrain.Create(npc, new Vector3(at.x, at.y, at.z), NpcAiProfiles.Resolve(template.Hash));
 
             // Anything the first spawn packet has to carry (a pet's PetMaster) goes on before it is registered.

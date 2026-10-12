@@ -1,5 +1,13 @@
 {
   "schemaVersion": 1,
   "stuckCooldownSeconds": 300,
-  "stuckLocation": { "playfield": 566, "x": 440, "y": 29, "z": 285 }
+  "stuckLocation": { "playfield": 566, "x": 440, "y": 29, "z": 285 },
+  "xp": {
+    "killPercentPerLevelDifference": 2.5
+  },
+  "wander": {
+    "radius": 50,
+    "minPauseSeconds": 5,
+    "maxPauseSeconds": 20
+  }
 }

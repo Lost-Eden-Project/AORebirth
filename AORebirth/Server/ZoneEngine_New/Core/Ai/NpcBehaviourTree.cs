@@ -38,6 +38,8 @@ namespace ZoneEngine_New.Core.Ai
 
             root.Conditional(() => _brain.PatrolEnabled, "patrol-enabled")
                 .Attach(new PatrolNode(_brain));
+            root.Conditional(() => _brain.WanderEnabled, "wander-enabled")
+                .Attach(new WanderNode(_brain));
             root.Attach(new IdleNode(_brain));
         }
     }

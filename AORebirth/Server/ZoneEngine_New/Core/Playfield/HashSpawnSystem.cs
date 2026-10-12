@@ -11,6 +11,7 @@ namespace ZoneEngine_New.Core.Playfield
 
     using Utility;
 
+    using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Logging;
@@ -147,6 +148,12 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>False for one-shot points (quest dungeons): once its NPC is killed the point never spawns again.</summary>
         internal bool RespawnsAfterDeath { get; init; } = true;
+
+        /// <summary>
+        /// A Districts.json point: its NPCs are scattered over the navmesh around the point when they spawn and wander
+        /// there (Gameplay.json wander).
+        /// </summary>
+        internal bool Wanders { get; init; }
 
         /// <summary>Accepted mission branches; keep their ordinals through sleep and reconstruction.</summary>
         internal MobTemplate[]? FrozenTemplates { get; init; }
@@ -455,7 +462,10 @@ namespace ZoneEngine_New.Core.Playfield
                             district.NpcMaxLevel,
                             cell.Id,
                             entry,
-                            isStatic);
+                            isStatic)
+                        {
+                            Wanders = !isStatic
+                        };
 
                         if (!_pointsByCell.TryGetValue(cell.Id, out List<HashSpawnPoint>? list))
                         {
@@ -812,6 +822,21 @@ namespace ZoneEngine_New.Core.Playfield
                 site.Centre.zf + (float)(Math.Sin(angle) * distance));
         }
 
+        /// <summary>A random navmesh point within <paramref name="radius"/> of <paramref name="anchor"/>, reachable from it.</summary>
+        private bool TryScatter(Vector3 anchor, float radius, out Vector3 scattered)
+        {
+            scattered = anchor;
+            if (_playfield.Pathfinder is not { } finder)
+                return false;
+
+            var centre = new System.Numerics.Vector3((float)anchor.x, (float)anchor.y, (float)anchor.z);
+            if (!finder.TryFindRandomPointWithin(centre, radius, Random.Shared, out System.Numerics.Vector3 point))
+                return false;
+
+            scattered = new Vector3(point.X, point.Y, point.Z);
+            return true;
+        }
+
         private int SpawnMobBranches(HashSpawnPoint point, int? level)
         {
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("spawn.templates", point.CellId);
@@ -834,13 +859,32 @@ namespace ZoneEngine_New.Core.Playfield
 
                 Metrics.TickStallWatch.Stage("spawn.place", point.CellId);
                 PickSpawnTransform(point, out Vector3 position, out Quaternion heading);
+                Action<NpcCharacter>? configure = null;
+                GameplayWander? wander = point.Wanders ? _playfield.GetService<GameplaySettings>()?.Wander : null;
+                // A body that cannot move (plants, towers, turrets) stays exactly on its point.
+                bool immobile = templates[i].Stats.TryGetValue((int)SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.MonsterData,
+                        out int monsterData)
+                    && _gameData.TryGetMonsterFeatures(monsterData, out int features)
+                    && MonsterBodyFeatures.IsImmobile(features);
+                if (wander is { Radius: > 0f } && !immobile)
+                {
+                    // Scattered over the walkable area around the point, so a district's NPCs are spread out from the
+                    // start; the point itself stays their home to wander around and leash to.
+                    Vector3 anchor = point.Sites[0].Centre;
+                    if (TryScatter(anchor, wander.Radius, out Vector3 scattered))
+                        position = scattered;
+                    configure = npc => npc.Brain?.EnableWander(anchor, wander.Radius, wander.MinPauseSeconds,
+                        wander.MaxPauseSeconds);
+                }
+
                 NpcCharacter character = _spawnService.SpawnMob(
                     templates[i],
                     position,
                     heading,
                     level,
                     SpawnSource.HashSpawn,
-                    spawnHash: point.HashText);
+                    spawnHash: point.HashText,
+                    configure: configure);
                 point.AddMember(character);
                 _pointBySpawned[character] = point;
                 character.Died += OnSpawnedDied;

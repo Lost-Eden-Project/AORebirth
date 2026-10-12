@@ -1,1101 +1,1101 @@
 {
     "1": {
-       "KillAward": 101,
+       "KillAward": 109,
        "NextLevelXp": 1450,
        "XPKillRange": 4
     },
     "2": {
-       "KillAward": 119,
+       "KillAward": 129,
        "NextLevelXp": 2600,
        "XPKillRange": 4
     },
     "3": {
-       "KillAward": 137,
+       "KillAward": 148,
        "NextLevelXp": 3100,
        "XPKillRange": 4
     },
     "4": {
-       "KillAward": 156,
+       "KillAward": 169,
        "NextLevelXp": 4000,
        "XPKillRange": 4
     },
     "5": {
-       "KillAward": 174,
+       "KillAward": 188,
        "NextLevelXp": 4500,
        "XPKillRange": 4
     },
     "6": {
-       "KillAward": 193,
+       "KillAward": 209,
        "NextLevelXp": 5000,
        "XPKillRange": 4
     },
     "7": {
-       "KillAward": 214,
+       "KillAward": 232,
        "NextLevelXp": 5500,
        "XPKillRange": 4
     },
     "8": {
-       "KillAward": 233,
+       "KillAward": 252,
        "NextLevelXp": 6000,
        "XPKillRange": 4
     },
     "9": {
-       "KillAward": 253,
+       "KillAward": 274,
        "NextLevelXp": 6500,
        "XPKillRange": 4
     },
     "10": {
-       "KillAward": 274,
+       "KillAward": 297,
        "NextLevelXp": 7000,
        "XPKillRange": 5
     },
     "11": {
-       "KillAward": 295,
+       "KillAward": 320,
        "NextLevelXp": 7700,
        "XPKillRange": 5
     },
     "12": {
-       "KillAward": 318,
+       "KillAward": 344,
        "NextLevelXp": 8300,
        "XPKillRange": 5
     },
     "13": {
-       "KillAward": 340,
+       "KillAward": 368,
        "NextLevelXp": 8900,
        "XPKillRange": 5
     },
     "14": {
-       "KillAward": 362,
+       "KillAward": 392,
        "NextLevelXp": 9600,
        "XPKillRange": 5
     },
     "15": {
-       "KillAward": 386,
+       "KillAward": 418,
        "NextLevelXp": 10400,
        "XPKillRange": 6
     },
     "16": {
-       "KillAward": 408,
+       "KillAward": 442,
        "NextLevelXp": 11000,
        "XPKillRange": 6
     },
     "17": {
-       "KillAward": 433,
+       "KillAward": 469,
        "NextLevelXp": 11900,
        "XPKillRange": 6
     },
     "18": {
-       "KillAward": 458,
+       "KillAward": 496,
        "NextLevelXp": 12700,
        "XPKillRange": 6
     },
     "19": {
-       "KillAward": 482,
+       "KillAward": 522,
        "NextLevelXp": 13700,
        "XPKillRange": 6
     },
     "20": {
-       "KillAward": 509,
+       "KillAward": 551,
        "NextLevelXp": 15400,
        "XPKillRange": 6
     },
     "21": {
-       "KillAward": 535,
+       "KillAward": 580,
        "NextLevelXp": 16400,
        "XPKillRange": 6
     },
     "22": {
-       "KillAward": 563,
+       "KillAward": 610,
        "NextLevelXp": 17600,
        "XPKillRange": 7
     },
     "23": {
-       "KillAward": 591,
+       "KillAward": 640,
        "NextLevelXp": 18800,
        "XPKillRange": 7
     },
     "24": {
-       "KillAward": 618,
+       "KillAward": 669,
        "NextLevelXp": 20100,
        "XPKillRange": 7
     },
     "25": {
-       "KillAward": 648,
+       "KillAward": 702,
        "NextLevelXp": 21500,
        "XPKillRange": 7
     },
     "26": {
-       "KillAward": 677,
+       "KillAward": 733,
        "NextLevelXp": 22900,
        "XPKillRange": 8
     },
     "27": {
-       "KillAward": 708,
+       "KillAward": 767,
        "NextLevelXp": 24500,
        "XPKillRange": 8
     },
     "28": {
-       "KillAward": 739,
+       "KillAward": 801,
        "NextLevelXp": 26100,
        "XPKillRange": 8
     },
     "29": {
-       "KillAward": 771,
+       "KillAward": 835,
        "NextLevelXp": 27800,
        "XPKillRange": 8
     },
     "30": {
-       "KillAward": 804,
+       "KillAward": 871,
        "NextLevelXp": 30900,
        "XPKillRange": 9
     },
     "31": {
-       "KillAward": 836,
+       "KillAward": 906,
        "NextLevelXp": 33000,
        "XPKillRange": 9
     },
     "32": {
-       "KillAward": 871,
+       "KillAward": 944,
        "NextLevelXp": 35100,
        "XPKillRange": 9
     },
     "33": {
-       "KillAward": 906,
+       "KillAward": 981,
        "NextLevelXp": 37400,
        "XPKillRange": 9
     },
     "34": {
-       "KillAward": 942,
+       "KillAward": 1020,
        "NextLevelXp": 39900,
        "XPKillRange": 10
     },
     "35": {
-       "KillAward": 979,
+       "KillAward": 1061,
        "NextLevelXp": 42400,
        "XPKillRange": 10
     },
     "36": {
-       "KillAward": 1017,
+       "KillAward": 1102,
        "NextLevelXp": 45100,
        "XPKillRange": 10
     },
     "37": {
-       "KillAward": 1056,
+       "KillAward": 1144,
        "NextLevelXp": 47900,
        "XPKillRange": 10
     },
     "38": {
-       "KillAward": 1095,
+       "KillAward": 1186,
        "NextLevelXp": 50900,
        "XPKillRange": 11
     },
     "39": {
-       "KillAward": 1135,
+       "KillAward": 1230,
        "NextLevelXp": 54000,
        "XPKillRange": 11
     },
     "40": {
-       "KillAward": 1178,
+       "KillAward": 1276,
        "NextLevelXp": 57400,
        "XPKillRange": 11
     },
     "41": {
-       "KillAward": 1220,
+       "KillAward": 1322,
        "NextLevelXp": 60900,
        "XPKillRange": 11
     },
     "42": {
-       "KillAward": 1263,
+       "KillAward": 1368,
        "NextLevelXp": 64500,
        "XPKillRange": 12
     },
     "43": {
-       "KillAward": 1309,
+       "KillAward": 1418,
        "NextLevelXp": 68400,
        "XPKillRange": 12
     },
     "44": {
-       "KillAward": 1354,
+       "KillAward": 1467,
        "NextLevelXp": 76400,
        "XPKillRange": 12
     },
     "45": {
-       "KillAward": 1400,
+       "KillAward": 1517,
        "NextLevelXp": 81000,
        "XPKillRange": 12
     },
     "46": {
-       "KillAward": 1448,
+       "KillAward": 1569,
        "NextLevelXp": 85900,
        "XPKillRange": 13
     },
     "47": {
-       "KillAward": 1499,
+       "KillAward": 1624,
        "NextLevelXp": 91000,
        "XPKillRange": 13
     },
     "48": {
-       "KillAward": 1548,
+       "KillAward": 1677,
        "NextLevelXp": 96400,
        "XPKillRange": 13
     },
     "49": {
-       "KillAward": 1601,
+       "KillAward": 1734,
        "NextLevelXp": 101900,
        "XPKillRange": 13
     },
     "50": {
-       "KillAward": 1653,
+       "KillAward": 1791,
        "NextLevelXp": 108000,
        "XPKillRange": 14
     },
     "51": {
-       "KillAward": 1707,
+       "KillAward": 1849,
        "NextLevelXp": 114300,
        "XPKillRange": 14
     },
     "52": {
-       "KillAward": 1764,
+       "KillAward": 1911,
        "NextLevelXp": 120800,
        "XPKillRange": 14
     },
     "53": {
-       "KillAward": 1820,
+       "KillAward": 1972,
        "NextLevelXp": 127700,
        "XPKillRange": 14
     },
     "54": {
-       "KillAward": 1880,
+       "KillAward": 2037,
        "NextLevelXp": 135000,
        "XPKillRange": 15
     },
     "55": {
-       "KillAward": 1941,
+       "KillAward": 2103,
        "NextLevelXp": 142600,
        "XPKillRange": 15
     },
     "56": {
-       "KillAward": 2001,
+       "KillAward": 2168,
        "NextLevelXp": 150700,
        "XPKillRange": 15
     },
     "57": {
-       "KillAward": 2064,
+       "KillAward": 2236,
        "NextLevelXp": 159100,
        "XPKillRange": 15
     },
     "58": {
-       "KillAward": 2129,
+       "KillAward": 2306,
        "NextLevelXp": 167800,
        "XPKillRange": 16
     },
     "59": {
-       "KillAward": 2196,
+       "KillAward": 2379,
        "NextLevelXp": 177100,
        "XPKillRange": 16
     },
     "60": {
-       "KillAward": 2262,
+       "KillAward": 2450,
        "NextLevelXp": 203500,
        "XPKillRange": 16
     },
     "61": {
-       "KillAward": 2331,
+       "KillAward": 2525,
        "NextLevelXp": 214700,
        "XPKillRange": 16
     },
     "62": {
-       "KillAward": 2403,
+       "KillAward": 2603,
        "NextLevelXp": 226700,
        "XPKillRange": 17
     },
     "63": {
-       "KillAward": 2475,
+       "KillAward": 2681,
        "NextLevelXp": 239100,
        "XPKillRange": 17
     },
     "64": {
-       "KillAward": 2551,
+       "KillAward": 2763,
        "NextLevelXp": 251900,
        "XPKillRange": 17
     },
     "65": {
-       "KillAward": 2626,
+       "KillAward": 2845,
        "NextLevelXp": 265700,
        "XPKillRange": 17
     },
     "66": {
-       "KillAward": 2704,
+       "KillAward": 2929,
        "NextLevelXp": 280000,
        "XPKillRange": 18
     },
     "67": {
-       "KillAward": 2785,
+       "KillAward": 3017,
        "NextLevelXp": 294800,
        "XPKillRange": 18
     },
     "68": {
-       "KillAward": 2867,
+       "KillAward": 3106,
        "NextLevelXp": 310600,
        "XPKillRange": 18
     },
     "69": {
-       "KillAward": 2951,
+       "KillAward": 3197,
        "NextLevelXp": 327000,
        "XPKillRange": 18
     },
     "70": {
-       "KillAward": 3036,
+       "KillAward": 3289,
        "NextLevelXp": 344400,
        "XPKillRange": 19
     },
     "71": {
-       "KillAward": 3125,
+       "KillAward": 3385,
        "NextLevelXp": 362300,
        "XPKillRange": 19
     },
     "72": {
-       "KillAward": 3215,
+       "KillAward": 3483,
        "NextLevelXp": 381100,
        "XPKillRange": 19
     },
     "73": {
-       "KillAward": 3306,
+       "KillAward": 3581,
        "NextLevelXp": 401000,
        "XPKillRange": 19
     },
     "74": {
-       "KillAward": 3402,
+       "KillAward": 3685,
        "NextLevelXp": 421600,
        "XPKillRange": 20
     },
     "75": {
-       "KillAward": 3498,
+       "KillAward": 3789,
        "NextLevelXp": 443300,
        "XPKillRange": 20
     },
     "76": {
-       "KillAward": 3596,
+       "KillAward": 3896,
        "NextLevelXp": 508100,
        "XPKillRange": 20
     },
     "77": {
-       "KillAward": 3697,
+       "KillAward": 4005,
        "NextLevelXp": 534200,
        "XPKillRange": 20
     },
     "78": {
-       "KillAward": 3802,
+       "KillAward": 4119,
        "NextLevelXp": 561600,
        "XPKillRange": 21
     },
     "79": {
-       "KillAward": 3907,
+       "KillAward": 4232,
        "NextLevelXp": 590200,
        "XPKillRange": 21
     },
     "80": {
-       "KillAward": 4014,
+       "KillAward": 4348,
        "NextLevelXp": 620000,
        "XPKillRange": 21
     },
     "81": {
-       "KillAward": 4126,
+       "KillAward": 4470,
        "NextLevelXp": 651000,
        "XPKillRange": 21
     },
     "82": {
-       "KillAward": 4238,
+       "KillAward": 4591,
        "NextLevelXp": 683700,
        "XPKillRange": 22
     },
     "83": {
-       "KillAward": 4356,
+       "KillAward": 4719,
        "NextLevelXp": 717900,
        "XPKillRange": 22
     },
     "84": {
-       "KillAward": 4474,
+       "KillAward": 4847,
        "NextLevelXp": 753500,
        "XPKillRange": 22
     },
     "85": {
-       "KillAward": 4593,
+       "KillAward": 4976,
        "NextLevelXp": 790800,
        "XPKillRange": 22
     },
     "86": {
-       "KillAward": 4718,
+       "KillAward": 5111,
        "NextLevelXp": 829400,
        "XPKillRange": 23
     },
     "87": {
-       "KillAward": 4844,
+       "KillAward": 5248,
        "NextLevelXp": 870000,
        "XPKillRange": 23
     },
     "88": {
-       "KillAward": 4973,
+       "KillAward": 5387,
        "NextLevelXp": 912600,
        "XPKillRange": 23
     },
     "89": {
-       "KillAward": 5105,
+       "KillAward": 5530,
        "NextLevelXp": 956800,
        "XPKillRange": 23
     },
     "90": {
-       "KillAward": 5242,
+       "KillAward": 5679,
        "NextLevelXp": 1003000,
        "XPKillRange": 24
     },
     "91": {
-       "KillAward": 5378,
+       "KillAward": 5826,
        "NextLevelXp": 1051300,
        "XPKillRange": 24
     },
     "92": {
-       "KillAward": 5521,
+       "KillAward": 5981,
        "NextLevelXp": 1101500,
        "XPKillRange": 24
     },
     "93": {
-       "KillAward": 5665,
+       "KillAward": 6137,
        "NextLevelXp": 1153900,
        "XPKillRange": 24
     },
     "94": {
-       "KillAward": 5812,
+       "KillAward": 6296,
        "NextLevelXp": 1208800,
        "XPKillRange": 25
     },
     "95": {
-       "KillAward": 5963,
+       "KillAward": 6460,
        "NextLevelXp": 1266000,
        "XPKillRange": 25
     },
     "96": {
-       "KillAward": 6116,
+       "KillAward": 6625,
        "NextLevelXp": 1325500,
        "XPKillRange": 25
     },
     "97": {
-       "KillAward": 6274,
+       "KillAward": 6797,
        "NextLevelXp": 1387700,
        "XPKillRange": 25
     },
     "98": {
-       "KillAward": 6433,
+       "KillAward": 6969,
        "NextLevelXp": 1452300,
        "XPKillRange": 26
     },
     "99": {
-       "KillAward": 6599,
+       "KillAward": 7149,
        "NextLevelXp": 1519900,
        "XPKillRange": 26
     },
     "100": {
-       "KillAward": 6765,
+       "KillAward": 7329,
        "NextLevelXp": 1590300,
        "XPKillRange": 26
     },
     "101": {
-       "KillAward": 6936,
+       "KillAward": 7514,
        "NextLevelXp": 1663500,
        "XPKillRange": 26
     },
     "102": {
-       "KillAward": 7110,
+       "KillAward": 7702,
        "NextLevelXp": 1739900,
        "XPKillRange": 27
     },
     "103": {
-       "KillAward": 7288,
+       "KillAward": 7895,
        "NextLevelXp": 1819600,
        "XPKillRange": 27
     },
     "104": {
-       "KillAward": 7469,
+       "KillAward": 8091,
        "NextLevelXp": 1902200,
        "XPKillRange": 27
     },
     "105": {
-       "KillAward": 7653,
+       "KillAward": 8290,
        "NextLevelXp": 1988900,
        "XPKillRange": 27
     },
     "106": {
-       "KillAward": 7844,
+       "KillAward": 8497,
        "NextLevelXp": 2078600,
        "XPKillRange": 28
     },
     "107": {
-       "KillAward": 8037,
+       "KillAward": 8706,
        "NextLevelXp": 2172100,
        "XPKillRange": 28
     },
     "108": {
-       "KillAward": 8234,
+       "KillAward": 8920,
        "NextLevelXp": 2269800,
        "XPKillRange": 28
     },
     "109": {
-       "KillAward": 8435,
+       "KillAward": 9138,
        "NextLevelXp": 2371100,
        "XPKillRange": 28
     },
     "110": {
-       "KillAward": 8641,
+       "KillAward": 9361,
        "NextLevelXp": 2476600,
        "XPKillRange": 29
     },
     "111": {
-       "KillAward": 8850,
+       "KillAward": 9587,
        "NextLevelXp": 2586600,
        "XPKillRange": 29
     },
     "112": {
-       "KillAward": 9063,
+       "KillAward": 9818,
        "NextLevelXp": 2701000,
        "XPKillRange": 29
     },
     "113": {
-       "KillAward": 9280,
+       "KillAward": 10053,
        "NextLevelXp": 2819800,
        "XPKillRange": 29
     },
     "114": {
-       "KillAward": 9504,
+       "KillAward": 10296,
        "NextLevelXp": 2943600,
        "XPKillRange": 30
     },
     "115": {
-       "KillAward": 9731,
+       "KillAward": 10542,
        "NextLevelXp": 3072400,
        "XPKillRange": 30
     },
     "116": {
-       "KillAward": 9961,
+       "KillAward": 10791,
        "NextLevelXp": 3205800,
        "XPKillRange": 30
     },
     "117": {
-       "KillAward": 10196,
+       "KillAward": 11045,
        "NextLevelXp": 3345200,
        "XPKillRange": 30
     },
     "118": {
-       "KillAward": 10438,
+       "KillAward": 11307,
        "NextLevelXp": 3489700,
        "XPKillRange": 31
     },
     "119": {
-       "KillAward": 10683,
+       "KillAward": 11573,
        "NextLevelXp": 3640200,
        "XPKillRange": 31
     },
     "120": {
-       "KillAward": 10933,
+       "KillAward": 11844,
        "NextLevelXp": 3796500,
        "XPKillRange": 31
     },
     "121": {
-       "KillAward": 11185,
+       "KillAward": 12117,
        "NextLevelXp": 3958900,
        "XPKillRange": 31
     },
     "122": {
-       "KillAward": 11446,
+       "KillAward": 12399,
        "NextLevelXp": 4128000,
        "XPKillRange": 32
     },
     "123": {
-       "KillAward": 11710,
+       "KillAward": 12685,
        "NextLevelXp": 4303400,
        "XPKillRange": 32
     },
     "124": {
-       "KillAward": 11979,
+       "KillAward": 12977,
        "NextLevelXp": 4485700,
        "XPKillRange": 32
     },
     "125": {
-       "KillAward": 12252,
+       "KillAward": 13273,
        "NextLevelXp": 4674800,
        "XPKillRange": 32
     },
     "126": {
-       "KillAward": 12534,
+       "KillAward": 13578,
        "NextLevelXp": 4871700,
        "XPKillRange": 33
     },
     "127": {
-       "KillAward": 12820,
+       "KillAward": 13888,
        "NextLevelXp": 5075700,
        "XPKillRange": 33
     },
     "128": {
-       "KillAward": 13109,
+       "KillAward": 14201,
        "NextLevelXp": 5288100,
        "XPKillRange": 33
     },
     "129": {
-       "KillAward": 13403,
+       "KillAward": 14519,
        "NextLevelXp": 5508200,
        "XPKillRange": 33
     },
     "130": {
-       "KillAward": 13705,
+       "KillAward": 14847,
        "NextLevelXp": 5736800,
        "XPKillRange": 34
     },
     "131": {
-       "KillAward": 14013,
+       "KillAward": 15180,
        "NextLevelXp": 5974600,
        "XPKillRange": 34
     },
     "132": {
-       "KillAward": 14326,
+       "KillAward": 15519,
        "NextLevelXp": 6220700,
        "XPKillRange": 34
     },
     "133": {
-       "KillAward": 14644,
+       "KillAward": 15864,
        "NextLevelXp": 6476500,
        "XPKillRange": 34
     },
     "134": {
-       "KillAward": 14969,
+       "KillAward": 16216,
        "NextLevelXp": 6742200,
        "XPKillRange": 35
     },
     "135": {
-       "KillAward": 15299,
+       "KillAward": 16573,
        "NextLevelXp": 7017500,
        "XPKillRange": 35
     },
     "136": {
-       "KillAward": 15633,
+       "KillAward": 16935,
        "NextLevelXp": 7303700,
        "XPKillRange": 35
     },
     "137": {
-       "KillAward": 15974,
+       "KillAward": 17305,
        "NextLevelXp": 7600100,
        "XPKillRange": 35
     },
     "138": {
-       "KillAward": 16324,
+       "KillAward": 17684,
        "NextLevelXp": 7907600,
        "XPKillRange": 36
     },
     "139": {
-       "KillAward": 16677,
+       "KillAward": 18066,
        "NextLevelXp": 8227000,
        "XPKillRange": 36
     },
     "140": {
-       "KillAward": 17038,
+       "KillAward": 18457,
        "NextLevelXp": 8557700,
        "XPKillRange": 36
     },
     "141": {
-       "KillAward": 17406,
+       "KillAward": 18856,
        "NextLevelXp": 8901000,
        "XPKillRange": 36
     },
     "142": {
-       "KillAward": 17779,
+       "KillAward": 19260,
        "NextLevelXp": 9256800,
        "XPKillRange": 37
     },
     "143": {
-       "KillAward": 18158,
+       "KillAward": 19671,
        "NextLevelXp": 9625800,
        "XPKillRange": 37
     },
     "144": {
-       "KillAward": 18547,
+       "KillAward": 20092,
        "NextLevelXp": 10008600,
        "XPKillRange": 37
     },
     "145": {
-       "KillAward": 18939,
+       "KillAward": 20517,
        "NextLevelXp": 10405300,
        "XPKillRange": 37
     },
     "146": {
-       "KillAward": 19341,
+       "KillAward": 20952,
        "NextLevelXp": 10816600,
        "XPKillRange": 38
     },
     "147": {
-       "KillAward": 19747,
+       "KillAward": 21392,
        "NextLevelXp": 11242500,
        "XPKillRange": 38
     },
     "148": {
-       "KillAward": 20163,
+       "KillAward": 21843,
        "NextLevelXp": 11684300,
        "XPKillRange": 38
     },
     "149": {
-       "KillAward": 20585,
+       "KillAward": 22300,
        "NextLevelXp": 12141900,
        "XPKillRange": 38
     },
     "150": {
-       "KillAward": 21012,
+       "KillAward": 22762,
        "NextLevelXp": 12616200,
        "XPKillRange": 39
     },
     "151": {
-       "KillAward": 21449,
+       "KillAward": 23236,
        "NextLevelXp": 13107200,
        "XPKillRange": 39
     },
     "152": {
-       "KillAward": 21893,
+       "KillAward": 23717,
        "NextLevelXp": 13616100,
        "XPKillRange": 39
     },
     "153": {
-       "KillAward": 22343,
+       "KillAward": 24204,
        "NextLevelXp": 14143600,
        "XPKillRange": 39
     },
     "154": {
-       "KillAward": 22804,
+       "KillAward": 24704,
        "NextLevelXp": 14689700,
        "XPKillRange": 40
     },
     "155": {
-       "KillAward": 23269,
+       "KillAward": 25207,
        "NextLevelXp": 15255300,
        "XPKillRange": 40
     },
     "156": {
-       "KillAward": 23742,
+       "KillAward": 25720,
        "NextLevelXp": 15841000,
        "XPKillRange": 40
     },
     "157": {
-       "KillAward": 24224,
+       "KillAward": 26242,
        "NextLevelXp": 16447900,
        "XPKillRange": 40
     },
     "158": {
-       "KillAward": 24714,
+       "KillAward": 26773,
        "NextLevelXp": 17075800,
        "XPKillRange": 41
     },
     "159": {
-       "KillAward": 25212,
+       "KillAward": 27312,
        "NextLevelXp": 17725900,
        "XPKillRange": 41
     },
     "160": {
-       "KillAward": 25720,
+       "KillAward": 27862,
        "NextLevelXp": 18399400,
        "XPKillRange": 41
     },
     "161": {
-       "KillAward": 26234,
+       "KillAward": 28419,
        "NextLevelXp": 19096100,
        "XPKillRange": 41
     },
     "162": {
-       "KillAward": 26757,
+       "KillAward": 28986,
        "NextLevelXp": 19817500,
        "XPKillRange": 42
     },
     "163": {
-       "KillAward": 27287,
+       "KillAward": 29560,
        "NextLevelXp": 20564100,
        "XPKillRange": 42
     },
     "164": {
-       "KillAward": 27827,
+       "KillAward": 30145,
        "NextLevelXp": 21336600,
        "XPKillRange": 42
     },
     "165": {
-       "KillAward": 28375,
+       "KillAward": 30739,
        "NextLevelXp": 22136100,
        "XPKillRange": 42
     },
     "166": {
-       "KillAward": 28933,
+       "KillAward": 31343,
        "NextLevelXp": 22963600,
        "XPKillRange": 43
     },
     "167": {
-       "KillAward": 29502,
+       "KillAward": 31960,
        "NextLevelXp": 23819700,
        "XPKillRange": 43
     },
     "168": {
-       "KillAward": 30076,
+       "KillAward": 32581,
        "NextLevelXp": 24705200,
        "XPKillRange": 43
     },
     "169": {
-       "KillAward": 30660,
+       "KillAward": 33214,
        "NextLevelXp": 25621100,
        "XPKillRange": 43
     },
     "170": {
-       "KillAward": 31253,
+       "KillAward": 33856,
        "NextLevelXp": 26569000,
        "XPKillRange": 44
     },
     "171": {
-       "KillAward": 31856,
+       "KillAward": 34510,
        "NextLevelXp": 27548800,
        "XPKillRange": 44
     },
     "172": {
-       "KillAward": 32468,
+       "KillAward": 35173,
        "NextLevelXp": 28562900,
        "XPKillRange": 44
     },
     "173": {
-       "KillAward": 33092,
+       "KillAward": 35849,
        "NextLevelXp": 29611100,
        "XPKillRange": 44
     },
     "174": {
-       "KillAward": 33724,
+       "KillAward": 36533,
        "NextLevelXp": 30695300,
        "XPKillRange": 45
     },
     "175": {
-       "KillAward": 34366,
+       "KillAward": 37229,
        "NextLevelXp": 31816300,
        "XPKillRange": 45
     },
     "176": {
-       "KillAward": 35017,
+       "KillAward": 37934,
        "NextLevelXp": 32975100,
        "XPKillRange": 45
     },
     "177": {
-       "KillAward": 35680,
+       "KillAward": 38652,
        "NextLevelXp": 34173500,
        "XPKillRange": 45
     },
     "178": {
-       "KillAward": 36349,
+       "KillAward": 39377,
        "NextLevelXp": 35412500,
        "XPKillRange": 46
     },
     "179": {
-       "KillAward": 37032,
+       "KillAward": 40117,
        "NextLevelXp": 36692500,
        "XPKillRange": 46
     },
     "180": {
-       "KillAward": 37726,
+       "KillAward": 40869,
        "NextLevelXp": 38016500,
        "XPKillRange": 46
     },
     "181": {
-       "KillAward": 38427,
+       "KillAward": 41628,
        "NextLevelXp": 39384400,
        "XPKillRange": 46
     },
     "182": {
-       "KillAward": 39141,
+       "KillAward": 42401,
        "NextLevelXp": 40797700,
        "XPKillRange": 47
     },
     "183": {
-       "KillAward": 39862,
+       "KillAward": 43183,
        "NextLevelXp": 42258500,
        "XPKillRange": 47
     },
     "184": {
-       "KillAward": 40601,
+       "KillAward": 43983,
        "NextLevelXp": 43768300,
        "XPKillRange": 47
     },
     "185": {
-       "KillAward": 41343,
+       "KillAward": 44787,
        "NextLevelXp": 45328100,
        "XPKillRange": 47
     },
     "186": {
-       "KillAward": 42103,
+       "KillAward": 45610,
        "NextLevelXp": 46939900,
        "XPKillRange": 48
     },
     "187": {
-       "KillAward": 42871,
+       "KillAward": 46442,
        "NextLevelXp": 48604900,
        "XPKillRange": 48
     },
     "188": {
-       "KillAward": 43652,
+       "KillAward": 47288,
        "NextLevelXp": 50324600,
        "XPKillRange": 48
     },
     "189": {
-       "KillAward": 44441,
+       "KillAward": 48143,
        "NextLevelXp": 52101200,
        "XPKillRange": 48
     },
     "190": {
-       "KillAward": 45245,
+       "KillAward": 49014,
        "NextLevelXp": 53936300,
        "XPKillRange": 49
     },
     "191": {
-       "KillAward": 46060,
+       "KillAward": 49897,
        "NextLevelXp": 55831600,
        "XPKillRange": 49
     },
     "192": {
-       "KillAward": 46884,
+       "KillAward": 50789,
        "NextLevelXp": 57788700,
        "XPKillRange": 49
     },
     "193": {
-       "KillAward": 47725,
+       "KillAward": 51700,
        "NextLevelXp": 59810000,
        "XPKillRange": 49
     },
     "194": {
-       "KillAward": 48575,
+       "KillAward": 52621,
        "NextLevelXp": 61897000,
        "XPKillRange": 50
     },
     "195": {
-       "KillAward": 49436,
+       "KillAward": 53554,
        "NextLevelXp": 64052200,
        "XPKillRange": 50
     },
     "196": {
-       "KillAward": 50311,
+       "KillAward": 54502,
        "NextLevelXp": 66277200,
        "XPKillRange": 50
     },
     "197": {
-       "KillAward": 51199,
+       "KillAward": 55464,
        "NextLevelXp": 68574400,
        "XPKillRange": 50
     },
     "198": {
-       "KillAward": 52098,
+       "KillAward": 56438,
        "NextLevelXp": 70945700,
        "XPKillRange": 51
     },
     "199": {
-       "KillAward": 53011,
+       "KillAward": 57427,
        "NextLevelXp": 73393900,
        "XPKillRange": 51
     },
     "200": {
-       "KillAward": 53940,
+       "KillAward": 58433,
        "NextLevelXp": 80000,
        "XPKillRange": 51
     },
     "201": {
-       "KillAward": 60000,
+       "KillAward": 64998,
        "NextLevelXp": 96000,
        "XPKillRange": 40
     },
     "202": {
-       "KillAward": 70000,
+       "KillAward": 75831,
        "NextLevelXp": 115200,
        "XPKillRange": 35
     },
     "203": {
-       "KillAward": 80000,
+       "KillAward": 86664,
        "NextLevelXp": 138240,
        "XPKillRange": 30
     },
     "204": {
-       "KillAward": 90000,
+       "KillAward": 97497,
        "NextLevelXp": 165888,
        "XPKillRange": 25
     },
     "205": {
-       "KillAward": 100000,
+       "KillAward": 108330,
        "NextLevelXp": 199066,
        "XPKillRange": 22
     },
     "206": {
-       "KillAward": 110000,
+       "KillAward": 119163,
        "NextLevelXp": 238879,
        "XPKillRange": 20
     },
     "207": {
-       "KillAward": 120000,
+       "KillAward": 129996,
        "NextLevelXp": 286654,
        "XPKillRange": 20
     },
     "208": {
-       "KillAward": 130000,
+       "KillAward": 140829,
        "NextLevelXp": 343985,
        "XPKillRange": 20
     },
     "209": {
-       "KillAward": 140000,
+       "KillAward": 151662,
        "NextLevelXp": 412782,
        "XPKillRange": 20
     },
     "210": {
-       "KillAward": 150000,
+       "KillAward": 162495,
        "NextLevelXp": 495339,
        "XPKillRange": 20
     },
     "211": {
-       "KillAward": 162523,
+       "KillAward": 176061,
        "NextLevelXp": 594407,
        "XPKillRange": 20
     },
     "212": {
-       "KillAward": 165253,
+       "KillAward": 179019,
        "NextLevelXp": 713288,
        "XPKillRange": 20
     },
     "213": {
-       "KillAward": 168020,
+       "KillAward": 182016,
        "NextLevelXp": 855946,
        "XPKillRange": 20
     },
     "214": {
-       "KillAward": 170825,
+       "KillAward": 185055,
        "NextLevelXp": 1027135,
        "XPKillRange": 20
     },
     "215": {
-       "KillAward": 173668,
+       "KillAward": 188135,
        "NextLevelXp": 1232562,
        "XPKillRange": 20
     },
     "216": {
-       "KillAward": 176540,
+       "KillAward": 191246,
        "NextLevelXp": 1479074,
        "XPKillRange": 21
     },
     "217": {
-       "KillAward": 179463,
+       "KillAward": 194412,
        "NextLevelXp": 1774889,
        "XPKillRange": 22
     },
     "218": {
-       "KillAward": 182413,
+       "KillAward": 197608,
        "NextLevelXp": 2129867,
        "XPKillRange": 23
     },
     "219": {
-       "KillAward": 185410,
+       "KillAward": 200855,
        "NextLevelXp": 2555840,
        "XPKillRange": 24
     },
     "220": {
-       "KillAward": 188440,
+       "KillAward": 204137,
        "NextLevelXp": 3067008,
        "XPKillRange": 25
     }

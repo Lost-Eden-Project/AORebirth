@@ -53,6 +53,15 @@ namespace ZoneEngine_New.Core.Entities
         public bool Attackable { get; set; } = true;
 
         /// <summary>
+        /// The NPC's body cannot move: its MonsterData Features (stat 224, copied on at spawn) lack
+        /// <see cref="GameData.MonsterBodyFeatures.CanMove"/>. It never paths, wanders or chases, and fights from where it
+        /// stands. Unknown Features count as mobile.
+        /// </summary>
+        public bool IsImmobile
+            => Stats.TryGetValue(CharacterStat.Features, out int features) && !StatCollection.IsUnset(features)
+                && GameData.MonsterBodyFeatures.IsImmobile(features);
+
+        /// <summary>
         /// Shop backing this NPC when its equipment includes a vending machine item. The machine is
         /// not registered as a world dynel: it exists only as the pane behind this character.
         /// </summary>

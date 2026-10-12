@@ -13,9 +13,9 @@ namespace AORebirth.Tools.RDBDataExtractor
 
     /// <summary>
     /// Exports per-MonsterData body data from RDB MonsterData records: the CatMesh id (stat
-    /// <see cref="StatId.mesh"/>, 12; see docs/reference/enemies/EnemyNpcDllAodbMap.md), Mass (stat 2) and
+    /// <see cref="StatId.mesh"/>, 12; see docs/reference/enemies/EnemyNpcDllAodbMap.md), Mass (stat 2),
     /// CharRadius (stat 421), the radius the client's weapon range check uses (CharRadius * Scale / 100,
-    /// Gamecode.dll 0x10044e56).
+    /// Gamecode.dll 0x10044e56), and Features (stat 224), whose bit 2 says the body can move.
     /// </summary>
     internal sealed class MonsterDataExporter
     {
@@ -100,6 +100,7 @@ namespace AORebirth.Tools.RDBDataExtractor
 
                 uint mass;
                 uint charRadius;
+                uint features;
                 pairings.Add(
                     new MonsterDataCatMeshPairing
                     {
@@ -107,6 +108,7 @@ namespace AORebirth.Tools.RDBDataExtractor
                         CatMesh = (int)catMesh,
                         Mass = record.Stats.TryGetValue((int)StatId.volumemass, out mass) ? (int?)mass : null,
                         CharRadius = record.Stats.TryGetValue((int)StatId.charradius, out charRadius) ? (int?)charRadius : null,
+                        Features = record.Stats.TryGetValue((int)StatId.features, out features) ? (int?)features : null,
                     });
             }
 
@@ -124,6 +126,12 @@ namespace AORebirth.Tools.RDBDataExtractor
 
             /// <summary>Stat 421 (CharRadius).</summary>
             public int? CharRadius { get; set; }
+
+            /// <summary>
+            /// Stat 224 (Features). Bit 2 (0x4) clear marks a body that cannot move (plants, towers, turrets, stationary
+            /// bosses); the client then does not animate it along a path.
+            /// </summary>
+            public int? Features { get; set; }
         }
     }
 }
