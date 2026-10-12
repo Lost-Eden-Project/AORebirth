@@ -6,11 +6,12 @@ using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
+using ZoneEngine_New.Core.Missions;
 using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Playfield.Locality;
 using ZoneEngine_New.Core.Quests.Dungeons;
 
-/// <summary>A persisted, owner-bound objective collected by ClientGetItem, never a template OnUse spell.</summary>
+/// <summary>A persisted, owner-bound mission item, never a template OnUse spell.</summary>
 public sealed class MissionObjectiveItem : WorldItem
 {
     readonly Func<Player, MissionObjectiveItem, bool> _collect;
@@ -35,7 +36,8 @@ public sealed class MissionObjectiveItem : WorldItem
         ArgumentNullException.ThrowIfNull(player);
         lock (_pickupGate)
         {
-            if (_collected || player.IsDead || player.IsPersistenceQuarantined || player.Session == null
+            if (Binding.IsSourceItem || (MissionRollType)Binding.MissionType is not (MissionRollType.FindItem or MissionRollType.FindItemReturn)
+                || _collected || player.IsDead || player.IsPersistenceQuarantined || player.Session == null
                 || player.Identity.Instance != Binding.OwnerId || Playfield is not QuestDungeonPlayfield dungeon
                 || !ReferenceEquals(player.Playfield, dungeon)
                 || !string.Equals(dungeon.QuestId, Binding.QuestId, StringComparison.Ordinal)

@@ -53,7 +53,7 @@ namespace AORebirth.Database.Domain.Quests
         public long UpdatedAtUtcTicks { get; set; }
     }
 
-    /// <summary>A mission key item row to insert together with its <c>questdungeonkeys</c> link.</summary>
+    /// <summary>An accepted mission item row; keys additionally receive a <c>questdungeonkeys</c> link.</summary>
     public sealed class QuestDungeonKeyItemRow
     {
         public int InstanceId { get; set; }
@@ -230,10 +230,22 @@ namespace AORebirth.Database.Domain.Quests
         /// </summary>
         public bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
             CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, long nowUtcTicks)
+            => TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, null, nowUtcTicks);
+
+        /// <summary>The supplied mission tool, when present, is granted in the same transaction as acceptance and the key.</summary>
+        public bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
+            CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow sourceItem, long nowUtcTicks)
         {
             if (quest == null) throw new ArgumentNullException(nameof(quest));
             if (characterRow == null) throw new ArgumentNullException(nameof(characterRow));
             if (key == null) throw new ArgumentNullException(nameof(key));
+            if (sourceItem != null)
+            {
+                ValidateAcceptedQuestItem(key, ownerId);
+                ValidateAcceptedQuestItem(sourceItem, ownerId);
+                if (key.InstanceId == sourceItem.InstanceId || key.ContainerPlacement == sourceItem.ContainerPlacement)
+                    throw new ArgumentException("The mission key and source item must have distinct identities and inventory slots.");
+            }
 
             return Transaction((c, t) =>
             {
@@ -246,6 +258,8 @@ namespace AORebirth.Database.Domain.Quests
                 InsertGenerated(c, t, quest);
                 InsertCharacterQuest(c, t, characterRow);
                 InsertKey(c, t, key, quest.QuestId);
+                if (sourceItem != null)
+                    InsertQuestItem(c, t, sourceItem);
                 return true;
             });
         }
@@ -304,8 +318,16 @@ namespace AORebirth.Database.Domain.Quests
         /// where it was, so online holders can be updated in memory.
         /// </summary>
         public IList<RetiredDungeonKey> EndQuestKeys(string questId)
+            => EndQuestKeys(questId, null);
+
+        /// <summary>Ends keys and an exact unearned mission artifact together, retaining historical item rows.</summary>
+        public IList<RetiredDungeonKey> EndQuestKeys(string questId, QuestDungeonKeyItemRow artifact)
         {
             if (string.IsNullOrEmpty(questId)) throw new ArgumentException("Quest id is required.", nameof(questId));
+            if (artifact != null && (artifact.InstanceId <= 0 || artifact.ContainerInstance <= 0 || artifact.ItemType <= 0
+                || artifact.LowId <= 0 || artifact.HighId <= 0 || artifact.Quality <= 0
+                || artifact.Source < 0 || artifact.Source > byte.MaxValue))
+                throw new ArgumentException("Mission artifact retirement requires its exact identity, owner and item definition.", nameof(artifact));
 
             return Transaction((c, t) =>
             {
@@ -329,6 +351,10 @@ namespace AORebirth.Database.Domain.Quests
                         });
                 }
 
+                RetiredDungeonKey retiredArtifact = artifact == null ? null : ReadQuestArtifact(c, t, questId, artifact);
+                if (retiredArtifact != null)
+                    keys.Add(retiredArtifact);
+
                 if (keys.Count == 0)
                     return keys;
 
@@ -340,6 +366,50 @@ namespace AORebirth.Database.Domain.Quests
                 return keys;
             });
         }
+
+        static RetiredDungeonKey ReadQuestArtifact(IDbConnection c, IDbTransaction t, string questId, QuestDungeonKeyItemRow artifact)
+        {
+            using (IDbCommand owner = Prepare(c, t,
+                "SELECT OwnerId FROM generatedquests WHERE QuestId=@Quest AND OwnerType=0 FOR UPDATE",
+                new object[] { "@Quest", questId }))
+            {
+                object value = owner.ExecuteScalar();
+                if (value == null || value == DBNull.Value || Convert.ToInt32(value) != artifact.ContainerInstance)
+                    throw new InvalidOperationException("The exact mission artifact owner is unavailable or changed.");
+            }
+            using (IDbCommand command = Prepare(c, t,
+                "SELECT i.ContainerType,i.ContainerInstance,p.ContainerType,p.ContainerInstance,"
+                + "i.ItemType,i.LowId,i.HighId,i.Quality,i.Source,i.StackCount "
+                + "FROM item_instances i LEFT JOIN item_instances p ON i.ContainerType=0xC749 AND p.InstanceId=i.ContainerInstance "
+                + "WHERE i.InstanceId=@Id FOR UPDATE",
+                new object[] { "@Id", artifact.InstanceId }))
+            using (IDataReader reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                    return null;
+                var item = new RetiredDungeonKey
+                {
+                    KeyInstanceId = artifact.InstanceId,
+                    ContainerType = reader.GetInt32(0), ContainerInstance = reader.GetInt32(1),
+                    ParentContainerType = reader.IsDBNull(2) ? 0 : reader.GetInt32(2),
+                    ParentContainerInstance = reader.IsDBNull(3) ? 0 : reader.GetInt32(3)
+                };
+                if (reader.GetInt32(4) != artifact.ItemType || reader.GetInt32(5) != artifact.LowId
+                    || reader.GetInt32(6) != artifact.HighId || reader.GetInt32(7) != artifact.Quality
+                    || reader.GetInt32(8) != artifact.Source || reader.GetInt32(9) != 1)
+                    throw new InvalidOperationException("The exact mission artifact item definition changed.");
+                if (item.ContainerType == 0)
+                    return null;
+                if (!(IsCharacterItemPage(item.ContainerType) && item.ContainerInstance == artifact.ContainerInstance)
+                    && !(item.ContainerType == 0xC749 && IsCharacterItemPage(item.ParentContainerType)
+                        && item.ParentContainerInstance == artifact.ContainerInstance))
+                    throw new InvalidOperationException("The mission artifact is no longer held by its exact owner.");
+                return item;
+            }
+        }
+
+        // Existing persisted weapon, armor, implant, inventory, bank, overflow and social pages.
+        static bool IsCharacterItemPage(int type) => type >= 101 && type <= 105 || type == 110 || type == 115;
 
         /// <summary>
         /// Retires those of <paramref name="keyInstanceIds"/> that are mission keys (<paramref name="keyLowId"/>)
@@ -487,12 +557,25 @@ namespace AORebirth.Database.Domain.Quests
 
         static void InsertKey(IDbConnection c, IDbTransaction t, QuestDungeonKeyItemRow key, string questId)
         {
+            InsertQuestItem(c, t, key);
+            Execute(c, t, "INSERT INTO questdungeonkeys (KeyInstanceId,QuestId,CreatedAtUtcTicks) VALUES (@Key,@Quest,@Created)",
+                "@Key", key.InstanceId, "@Quest", questId, "@Created", key.CreatedAtUtcTicks);
+        }
+
+        static void ValidateAcceptedQuestItem(QuestDungeonKeyItemRow item, int ownerId)
+        {
+            if (ownerId <= 0 || item.InstanceId <= 0 || item.ContainerType != 104 || item.ContainerInstance != ownerId
+                || item.ContainerPlacement < 0 || item.ItemType <= 0 || item.LowId <= 0 || item.HighId <= 0
+                || item.Quality <= 0 || item.Source < 0 || item.Source > byte.MaxValue)
+                throw new ArgumentException("Accepted mission items require exact owned main-inventory rows.");
+        }
+
+        static void InsertQuestItem(IDbConnection c, IDbTransaction t, QuestDungeonKeyItemRow key)
+        {
             Execute(c, t, "INSERT INTO item_instances (InstanceId,ContainerType,ContainerInstance,ContainerPlacement,ItemType,LowId,HighId,Quality,StackCount,Source) "
                 + "VALUES (@Id,@Type,@Owner,@Slot,@ItemType,@Low,@High,@Quality,1,@Source)",
                 "@Id", key.InstanceId, "@Type", key.ContainerType, "@Owner", key.ContainerInstance, "@Slot", key.ContainerPlacement,
                 "@ItemType", key.ItemType, "@Low", key.LowId, "@High", key.HighId, "@Quality", key.Quality, "@Source", key.Source);
-            Execute(c, t, "INSERT INTO questdungeonkeys (KeyInstanceId,QuestId,CreatedAtUtcTicks) VALUES (@Key,@Quest,@Created)",
-                "@Key", key.InstanceId, "@Quest", questId, "@Created", key.CreatedAtUtcTicks);
         }
 
         /// <summary>Appends one parameter per value and returns the placeholder list.</summary>

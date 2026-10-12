@@ -62,6 +62,8 @@ namespace ZoneEngine_New.Core.Quests
 
         internal long NextRewardRetryUtcTicks { get; set; }
         internal bool RewardPendingNotified { get; set; }
+        // A validated server-side death is one-shot; retry its transaction while this actor remains loaded.
+        internal bool NpcObjectiveCommitPending { get; set; }
 
         public int Remaining => Math.Max(0, RequiredCount - Progress);
     }

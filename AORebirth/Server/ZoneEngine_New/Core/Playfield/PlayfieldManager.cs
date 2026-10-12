@@ -521,7 +521,8 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.Quests.Dungeons.DungeonLayout layout, Utility.GameData.Missions.MissionEntrancePlacement entrance,
             string? targetHash = null, int quality = 0,
             ZoneEngine_New.Core.Quests.Dungeons.MissionItemObjectiveBinding? objectiveItem = null,
-            Func<Player, MissionObjectiveItem, bool>? collectObjective = null)
+            Func<Player, MissionObjectiveItem, bool>? collectObjective = null,
+            ZoneEngine_New.Core.Quests.Dungeons.MissionNpcObjectiveBinding? npcObjective = null)
         {
             ArgumentNullException.ThrowIfNull(questId);
             ArgumentNullException.ThrowIfNull(layout);
@@ -541,7 +542,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             QuestDungeonPlayfield created = new(playfieldId, questId, layout, entrance, targetHash, quality, _logger.CreateForPlayfield(playfieldId),
                 _router, this, _playerHydrator, _gameData, _items, _hashItems, _inventoryRepository, _instanceIds,
-                _inventoryMoves, _inventoryFlush, _trades, _characterSnapshot, _metricsRegistry, _shopDao, objectiveItem, collectObjective);
+                _inventoryMoves, _inventoryFlush, _trades, _characterSnapshot, _metricsRegistry, _shopDao, objectiveItem, collectObjective, npcObjective);
             try
             {
                 created.Build();

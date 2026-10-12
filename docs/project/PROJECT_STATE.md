@@ -1,5 +1,17 @@
 # AORebirth Project State
 
+IMPLEMENTED, CLIENT UNVERIFIED (all-five solo objective candidate):
+`codex/all-mission-objectives` extends the installed `9f59727bd` lifecycle with
+exact mission NPC kill/inspection, supplied-tool machine interaction and
+two-stage item return. Existing Find Item, rolling, QL, destinations, room layouts,
+keys and reward delivery remain the owners. Objective content references live in
+the existing DungeonGeneration policy and existing item/NPC catalogs; choices
+across QLs are AORebirth policy, not claims of retail selection probabilities.
+Approved Windows core build passed. No schema migration or separate mission/reward framework. No automated test
+suites run for this task; original-client acceptance remains Mike's next step.
+Team acceptance/bosses, independent loot and complete retail NPC parity remain
+unfinished. Earlier objective-status statements below describe prior snapshots.
+
 PROVEN (2026-10-11, Find Item/reward-integrity candidate): based on installed
 `40caa10b8`, `codex/find-item-reward-integrity` connects newly accepted generated
 Find Item missions to exact persisted owner-bound world items and the existing

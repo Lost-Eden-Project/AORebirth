@@ -9,6 +9,30 @@
     "QuestInstanceStat": 1,
     "WorldFlags": 2147483651
   },
+  "ReturnItem": {
+    "_comment": "AORebirth return-objective policy referencing the existing COSE/Contained Sensitive Information item. This is editable objective selection policy, not a claim that every retail Return Item mission uses this item. Collection preserves the mission-specific identity; delivery requires its exact issuing terminal. The advertised reward remains independent.",
+    "ItemHashes": ["COSE"],
+    "Quality": 1,
+    "QuestInstanceStat": 1,
+    "WorldFlags": 2147483651
+  },
+  "RepairMachine": {
+    "_comment": "Existing SPPR/Special Prototype Medicine and CRCH/Cryo Chamber references reproduce the item pair observed in completed capture mission-20261012-004902-7174e861. Its source is QL1 and target QL154; those content qualities are independent of mission QL. Reusing the pair across mission QLs is configurable AORebirth policy, not a retail distribution claim.",
+    "Source": {
+      "ItemHashes": ["SPPR"],
+      "Quality": 1,
+      "QuestInstanceStat": 1
+    },
+    "Target": {
+      "ItemHashes": ["CRCH"],
+      "Quality": 154,
+      "QuestInstanceStat": 1
+    }
+  },
+  "NpcObjectives": {
+    "_comment": "AORebirth Kill Person/Find Person objective selection policy referencing an existing human NPC catalog leaf. FECI has catalog interpolation endpoints at levels 1, 150 and 300. This does not identify retail random-target hashes, names, or probabilities. The resolved leaf and exact mission-specific runtime identity are frozen at acceptance; Find Person uses passive objective behavior.",
+    "NpcHashes": ["FECI"]
+  },
   "Population": {
     "_comment": "AORebirth ordinary-NPC policy: references to existing nonalien NpcTemplates families whose leaf name/MonsterData/NPCFamily match captured missions. Not a reconstruction of retail hashes, selection weights, or the full human/high-level population. NPC resolution requests mission QL and uses existing interpolation/clamping; this older catalog has gaps and upper limits (ANDR106, ROLL47, other families85). See docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md. Bosses, objectives and loot are separate.",
     "SpawnPointChancePercent": 35,

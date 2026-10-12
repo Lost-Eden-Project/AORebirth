@@ -23,6 +23,7 @@ using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Metrics;
+using ZoneEngine_New.Core.Mobs;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Playfield.Locality;
 using ZoneEngine_New.Core.Quests.Dungeons;
@@ -40,6 +41,7 @@ public sealed class QuestDungeonPlayfield : Playfield
 {
     PlayfieldWorldSimulation? _simulation;
     readonly MissionItemObjectiveBinding? _objectiveItem;
+    readonly MissionNpcObjectiveBinding? _objectiveNpc;
     readonly Func<Player, MissionObjectiveItem, bool>? _collectObjective;
 
     public QuestDungeonPlayfield(int playfieldId, string questId, DungeonLayout layout, MissionEntrancePlacement entrance,
@@ -47,7 +49,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         IItemBuilder items, HashItemMinter hashItems, IInventoryRepository inventory, IItemInstanceIdAllocator ids,
         InventoryMoveService moves, InventoryFlushService flush, TradeService trades, CharacterSnapshotService snapshot,
         IPlayfieldMetricsRegistry metrics, IShopDao shopDao, MissionItemObjectiveBinding? objectiveItem = null,
-        Func<Player, MissionObjectiveItem, bool>? collectObjective = null)
+        Func<Player, MissionObjectiveItem, bool>? collectObjective = null, MissionNpcObjectiveBinding? npcObjective = null)
         : base(new Identity { Type = IdentityType.Playfield, Instance = playfieldId }, logger, router,
             manager, hydrator, data, items, hashItems, inventory, ids, moves, flush, trades, snapshot, metrics, shopDao)
     {
@@ -61,6 +63,10 @@ public sealed class QuestDungeonPlayfield : Playfield
             throw new ArgumentException("Invalid objective for this quest dungeon.", nameof(objectiveItem));
         _objectiveItem = objectiveItem;
         _collectObjective = collectObjective;
+        if (npcObjective != null && (!npcObjective.IsValid
+            || !string.Equals(npcObjective.QuestId, QuestId, StringComparison.Ordinal)))
+            throw new ArgumentException("Invalid NPC objective for this quest dungeon.", nameof(npcObjective));
+        _objectiveNpc = npcObjective;
     }
 
     public string QuestId { get; }
@@ -97,6 +103,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         {
             SpawnDoors(dungeon.Doors, locality);
             SpawnFloorTransitions(locality);
+            SpawnObjectiveNpc(dungeon);
             AddDistrictSpawns(dungeon);
             SpawnObjectiveItem(dungeon, locality);
         }
@@ -153,7 +160,8 @@ public sealed class QuestDungeonPlayfield : Playfield
         }
 
         var spawns = GetRequiredService<HashSpawnSystem>();
-        (int Room, PlayfieldDistrictSpawnPoint Point)? target = TargetHash == null ? null : PlaceTarget(dungeon, rooms, spawns);
+        (int Room, PlayfieldDistrictSpawnPoint Point)? target = _objectiveNpc != null || TargetHash == null
+            ? null : PlaceTarget(dungeon, rooms, spawns);
 
         DungeonPopulationPolicy population = Layout.Population;
         if (!population.IsValid(GameData))
@@ -167,8 +175,11 @@ public sealed class QuestDungeonPlayfield : Playfield
         foreach ((AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictEntry district, List<PlayfieldDistrictSpawnPoint> points) in rooms)
         {
             // The target's point is taken; the target counts as that room's NPC.
-            bool holdsTarget = target is { } held && held.Room == placement.Index;
-            var candidates = holdsTarget ? points.FindAll(point => !ReferenceEquals(point, target!.Value.Point)) : new List<PlayfieldDistrictSpawnPoint>(points);
+            bool holdsFrozenTarget = _objectiveNpc?.RoomIndex == placement.Index;
+            bool holdsTarget = holdsFrozenTarget || target is { } held && held.Room == placement.Index;
+            var candidates = points.FindAll(point =>
+                !(target is { } legacyTarget && legacyTarget.Room == placement.Index && ReferenceEquals(point, legacyTarget.Point))
+                && !(holdsFrozenTarget && IsObjectiveNpcPoint(placement, point)));
             if (candidates.Count == 0)
                 continue;
 
@@ -207,6 +218,41 @@ public sealed class QuestDungeonPlayfield : Playfield
 
         Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped
             + " requestedNpcLevel=" + Quality + " families=" + string.Join(",", population.RegularNpcHashes));
+    }
+
+    bool IsObjectiveNpcPoint(AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictSpawnPoint point)
+    {
+        if (_objectiveNpc == null)
+            return false;
+        System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
+            new System.Numerics.Vector3(point.Position[0], point.Position[1], point.Position[2]));
+        return placed.X == _objectiveNpc.X && placed.Y == _objectiveNpc.Y && placed.Z == _objectiveNpc.Z;
+    }
+
+    void SpawnObjectiveNpc(AORebirth.World.Collision.DungeonWorldLayout dungeon)
+    {
+        if (_objectiveNpc == null)
+            return;
+        if (_objectiveNpc.RoomIndex >= dungeon.Placements.Count
+            || DungeonObjectivePlacement.RoomDistances(dungeon, Layout)[_objectiveNpc.RoomIndex] <= 0)
+            throw new InvalidDataException("Accepted NPC objective room is unavailable.");
+        if (!GameData.TryResolveMobTemplate(_objectiveNpc.NpcHash, _objectiveNpc.Quality, out MobTemplate template)
+            || template.UnresolvedPlaceholder || !NpcTemplateValidation.CanSpawn(template)
+            || !string.Equals(template.Hash, _objectiveNpc.NpcHash, StringComparison.Ordinal)
+            || (_objectiveNpc.MissionType == 0 && template.Has(NpcFeature.NoCombat)))
+            throw new InvalidDataException("Accepted NPC objective template is unavailable.");
+
+        bool passive = _objectiveNpc.MissionType == 1;
+        NpcCharacter npc = GetRequiredService<SpawnService>().SpawnMob(template,
+            new AORebirth.Core.Vector.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z),
+            new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1), _objectiveNpc.Quality,
+            SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash,
+            configure: passive ? character => character.Attackable = false : null,
+            attachDefaultBrain: !passive, fixedIdentity: _objectiveNpc.Identity);
+        Logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+            "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#})",
+            QuestId, (int)npc.Identity.Type, npc.Identity.Instance, _objectiveNpc.NpcHash,
+            _objectiveNpc.RoomIndex, npc.Position.xf, npc.Position.yf, npc.Position.zf));
     }
 
     /// <summary>

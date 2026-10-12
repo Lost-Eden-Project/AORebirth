@@ -8,7 +8,7 @@ namespace AORebirth.Database.Domain.Missions
 
     public sealed partial class MySqlMissionDao
     {
-        private sealed partial class MySqlMissionDaoTransaction : ICharacterQuestCompletionTransaction
+        private sealed partial class MySqlMissionDaoTransaction : ICharacterQuestCompletionTransaction, ICharacterQuestObjectiveCollectionTransaction
         {
             private const string CharacterQuestRewardType = "CharacterQuestCompletion";
 
@@ -32,10 +32,45 @@ namespace AORebirth.Database.Domain.Missions
                 catch { this.failed = true; throw; }
             }
 
+            public CharacterQuestCompletionResult TryCollectCharacterQuestItem(CharacterQuestEarnRequest request)
+            {
+                this.EnsureActive();
+                try { return this.CollectCharacterQuestItem(request); }
+                catch { this.failed = true; throw; }
+            }
+
+            private CharacterQuestCompletionResult CollectCharacterQuestItem(CharacterQuestEarnRequest request)
+            {
+                if (request == null) throw new ArgumentNullException(nameof(request));
+                if (request.Grants == null || request.Removals == null) throw new ArgumentNullException("collectionPlan");
+                if (request.Grants.Count != 1 || request.Removals.Count != 0 || request.Grants[0] == null || request.Grants[0].StackCount != 1)
+                    throw new ArgumentException("Return mission collection requires one exact objective item and no removals.");
+                CharacterQuestCompletionSnapshotData quest = this.ReadCharacterQuest(request.QuestId);
+                if (!this.CharacterQuestBindingMatches(quest, request.AssignedAtUtcTicks, request.ExpectedDefinitionJson,
+                    request.ExpectedAcgBuildingGeneratorJson, request.NowUtcTicks)
+                    || quest.Source != 1 || quest.State != 1 || quest.RequiredCount != 2 || quest.ExpiresAtUtcTicks <= request.NowUtcTicks)
+                    return QuestCompletionResult(CharacterQuestCompletionStatus.Rejected, quest, "The exact return mission is unavailable, expired or changed.");
+                if (quest.Progress == 1)
+                    return QuestCompletionResult(CharacterQuestCompletionStatus.AlreadyCollected, quest, "This return mission item was already collected.");
+                if (quest.Progress != 0 || this.GetReward(CharacterQuestRewardKey(quest)) != null)
+                    return QuestCompletionResult(CharacterQuestCompletionStatus.Rejected, quest, "The return mission has a conflicting progress or reward state.");
+
+                this.ApplyInventoryMutationCore(request.Grants, request.Removals);
+                int updated = this.ExecuteWrite(
+                    "UPDATE characterquests SET Progress=1,UpdatedAtUtcTicks=@Now "
+                    + "WHERE CharacterId=@CharacterId AND QuestId=@QuestId AND State=1 AND Progress=0 AND RequiredCount=2 AND AssignedAtUtcTicks=@Assigned",
+                    new { this.CharacterId, quest.QuestId, Now = request.NowUtcTicks, Assigned = quest.AssignedAtUtcTicks }, this.transaction);
+                this.RequireSingleWrite(updated, "return mission item collection", quest.QuestId, 0);
+                quest.Progress = 1;
+                quest.UpdatedAtUtcTicks = request.NowUtcTicks;
+                return QuestCompletionResult(CharacterQuestCompletionStatus.Collected, quest, "The exact item is durable; completion requires return to its terminal.");
+            }
+
             private CharacterQuestCompletionResult EarnCharacterQuest(CharacterQuestEarnRequest request)
             {
                 if (request == null) throw new ArgumentNullException(nameof(request));
                 if (request.Grants == null) throw new ArgumentNullException(nameof(request.Grants));
+                if (request.Removals == null) throw new ArgumentNullException(nameof(request.Removals));
                 CharacterQuestCompletionSnapshotData quest = this.ReadCharacterQuest(request.QuestId);
                 if (!this.CharacterQuestBindingMatches(quest, request.AssignedAtUtcTicks, request.ExpectedDefinitionJson,
                     request.ExpectedAcgBuildingGeneratorJson, request.NowUtcTicks))
@@ -57,7 +92,7 @@ namespace AORebirth.Database.Domain.Missions
                 // The objective item and its durable earned marker share this transaction. A retry never grants it twice.
                 if (!alreadyEarned)
                 {
-                    this.ApplyInventoryMutationCore(request.Grants, new MissionItemInstanceData[0]);
+                    this.ApplyInventoryMutationCore(request.Grants, request.Removals);
                     int updated = this.ExecuteWrite(
                         "UPDATE characterquests SET Progress=RequiredCount,UpdatedAtUtcTicks=@Now "
                         + "WHERE CharacterId=@CharacterId AND QuestId=@QuestId AND State=1 AND AssignedAtUtcTicks=@Assigned",

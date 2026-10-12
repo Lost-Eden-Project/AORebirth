@@ -8,3 +8,16 @@ public sealed class DungeonFindItemPolicy
     public int QuestInstanceStat { get; set; }
     public uint? WorldFlags { get; set; }
 }
+
+/// <summary>Existing item-catalog references for a mission tool and its world target.</summary>
+public sealed class DungeonRepairMachinePolicy
+{
+    public DungeonFindItemPolicy? Source { get; set; }
+    public DungeonFindItemPolicy? Target { get; set; }
+}
+
+/// <summary>Objective candidates resolved through the existing NPC catalog.</summary>
+public sealed class DungeonNpcObjectivePolicy
+{
+    public string[] NpcHashes { get; set; } = [];
+}

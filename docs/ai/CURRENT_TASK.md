@@ -1,24 +1,23 @@
 # Current Task
 
-Complete generated Find Item missions and make quest reward delivery durable.
+Finish all five generated solo mission objectives together on
+`codex/all-mission-objectives`, based on installed `9f59727bd`.
 
-Branch: `codex/find-item-reward-integrity`, based on installed `40caa10b8`.
-PROVEN: the base implementation accepted Find Item missions without a bound or
-spawned objective; completion and rewards were separate best-effort writes.
+Kill Person and Find Person freeze an exact catalog NPC and actor identity.
+Find Item preserves its working pickup path. Repair Machine supplies its exact
+tool at acceptance and consumes it against the bound machine. Return Item
+records collection separately and consumes the item at the issuing terminal.
+All five reuse the existing quest transaction and recoverable reward ledger.
 
-The candidate freezes an existing GameData item reference and exact owner/quest/
-instance/placement during acceptance, spawns it in a connected room, validates
-ClientGetItem against that binding and atomically records collection. Existing
-mission DAO transactions and reward ledger deliver configured items/cash/XP
-with completion, retain earned pending rewards across expiry/restart and refuse
-duplicate payment. Existing snapshots fence stale writes; reconnect reconciles
-closed-mission keys. No new catalog, capture loading or schema migration.
+Approved Windows core compilation passed. No unit/fixture/regression
+suites are requested or run. Mike performs one original-client gameplay pass with
+newly accepted missions. Team acceptance, bosses, independent loot and retail
+random-selection parity remain outside this objective integration.
 
-Approved engine build, 153 focused mission/dungeon cases and 320 real-MySQL DAO
-checks passed. Automated success is separate from original AO client acceptance,
-which remains UNVERIFIED and belongs to Mike. Existing
-accepted Find Item records are unchanged; test with a newly accepted mission.
-The other four objective types and independent dungeon loot remain out of scope.
+Repair/Return items must be used from main inventory, matching the existing
+atomic inventory-consumption contract. Abandonment/expiry retire those exact
+artifacts with the existing key transaction. Failed exact NPC-death commits
+retry while the player remains loaded; a wholly uncommitted event lost during
+an outage/restart can require killing the reconstructed target again.
 
-Implementation, evidence, validation and limitations:
-`docs/reports/FIND_ITEM_REWARD_INTEGRITY.md`.
+Implementation and validation: `docs/reports/ALL_FIVE_MISSION_OBJECTIVES.md`.

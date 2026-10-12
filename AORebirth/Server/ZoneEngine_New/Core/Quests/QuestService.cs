@@ -168,9 +168,9 @@ namespace ZoneEngine_New.Core.Quests
                 return false;
             }
 
-            if (quest.Source == QuestSource.Generated && quest.Template.IsFindItem && !quest.IsRewardPending)
+            if (RequiresBoundObjective(quest) && !quest.IsRewardPending)
             {
-                result = "The accepted mission's exact objective item must be collected first.";
+                result = "The accepted mission's exact objective must be completed first.";
                 return false;
             }
             Complete(player, quest);
@@ -296,6 +296,11 @@ namespace ZoneEngine_New.Core.Quests
                 List<PlayerQuest>? advanced = null;
                 foreach (PlayerQuest quest in GetLog(player).Quests.Values)
                 {
+                    if (quest.IsActive && quest.Template.IsKill && RequiresBoundObjective(quest))
+                    {
+                        TryEarnNpcObjective(player, quest, npc, inspected: false);
+                        continue;
+                    }
                     if (quest.IsActive && quest.Template.IsKill && Matches(npc, quest.Template.Objective.Npc))
                         (advanced ??= new List<PlayerQuest>()).Add(quest);
                 }
@@ -326,6 +331,7 @@ namespace ZoneEngine_New.Core.Quests
             foreach (PlayerQuest quest in GetLog(player).Quests.Values)
             {
                 if (quest.IsActive && string.Equals(quest.Template.Action, action, StringComparison.Ordinal)
+                    && !RequiresBoundObjective(quest)
                     && Matches(npc, quest.Template.Objective.Npc))
                     (found ??= new List<PlayerQuest>()).Add(quest);
             }

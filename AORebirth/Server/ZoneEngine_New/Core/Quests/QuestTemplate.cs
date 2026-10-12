@@ -21,6 +21,8 @@ namespace ZoneEngine_New.Core.Quests
         public const string TargetNpcAction = "TargetNpc";
 
         public const string FindItemAction = "FindItem";
+        public const string ReturnItemAction = "FindItem2";
+        public const string RepairAction = "UseItemOnItem";
 
         public static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -60,6 +62,12 @@ namespace ZoneEngine_New.Core.Quests
         [JsonIgnore]
         public bool IsFindItem => string.Equals(Action, FindItemAction, StringComparison.Ordinal);
 
+        [JsonIgnore]
+        public bool IsReturnItem => string.Equals(Action, ReturnItemAction, StringComparison.Ordinal);
+
+        [JsonIgnore]
+        public bool IsRepair => string.Equals(Action, RepairAction, StringComparison.Ordinal);
+
         /// <summary>Flags "NoDelete": the player cannot remove it from the journal.</summary>
         [JsonIgnore]
         public bool IsNoDelete => Flags.Contains("NoDelete", StringComparison.Ordinal);
@@ -68,7 +76,7 @@ namespace ZoneEngine_New.Core.Quests
         [JsonIgnore]
         public int RequiredCount => string.Equals(Action, KillMultipleAction, StringComparison.Ordinal)
             ? Math.Max(1, Objective.Count ?? 1)
-            : 1;
+            : IsReturnItem ? 2 : 1;
     }
 
     public sealed class QuestObjective

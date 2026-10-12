@@ -21,6 +21,20 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>The exact Find Item instance and placement selected before acceptance commits.</summary>
         public MissionItemObjectiveBinding? ObjectiveItem { get; set; }
 
+        public MissionItemObjectiveBinding? ObjectiveTool { get; set; }
+
+        public MissionNpcObjectiveBinding? ObjectiveNpc { get; set; }
+
+        public int OriginTerminalType { get; set; }
+        public int OriginTerminalInstance { get; set; }
+        public int OriginPlayfield { get; set; }
+        public float OriginX { get; set; }
+        public float OriginY { get; set; }
+        public float OriginZ { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Identity OriginTerminal => new() { Type = (IdentityType)OriginTerminalType, Instance = OriginTerminalInstance };
+
         public bool IsTeam { get; set; }
 
         /// <summary>Playfield2 id of this quest's dungeon (<see cref="QuestDungeonIds"/>).</summary>
@@ -73,6 +87,11 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (parsed == null || parsed.GeneratorVersion <= 0 || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
                     || parsed.EntranceType != (int)IdentityType.MissionEntrance
                     || (parsed.ObjectiveItem != null && !parsed.ObjectiveItem.IsValid)
+                    || (parsed.ObjectiveTool != null && (!parsed.ObjectiveTool.IsValid || !parsed.ObjectiveTool.IsSourceItem))
+                    || (parsed.ObjectiveNpc != null && !parsed.ObjectiveNpc.IsValid)
+                    || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
+                    || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
+                    || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType)
                     || (parsed.GeneratorVersion == DungeonLayoutGenerator.CurrentVersion
                         && (parsed.LayoutPlan?.IsValid != true || parsed.IsTeam != parsed.LayoutPlan.BossFloor)))
                     return false;

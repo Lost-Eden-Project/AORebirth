@@ -72,6 +72,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             public int LockedDoorChancePercent { get; set; }
             public DungeonPopulationPolicy? Population { get; set; }
             public DungeonFindItemPolicy? FindItem { get; set; }
+            public DungeonFindItemPolicy? ReturnItem { get; set; }
+            public DungeonRepairMachinePolicy? RepairMachine { get; set; }
+            public DungeonNpcObjectivePolicy? NpcObjectives { get; set; }
             public List<GenerationProfile> Profiles { get; set; } = [];
         }
 
@@ -87,6 +90,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         }
 
         internal DungeonFindItemPolicy? FindItemPolicy => _policy?.FindItem;
+        internal DungeonFindItemPolicy? ReturnItemPolicy => _policy?.ReturnItem;
+        internal DungeonRepairMachinePolicy? RepairMachinePolicy => _policy?.RepairMachine;
+        internal DungeonNpcObjectivePolicy? NpcObjectivePolicy => _policy?.NpcObjectives;
 
         sealed class DoorStylesFile
         {
