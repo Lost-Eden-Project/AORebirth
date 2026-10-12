@@ -1,5 +1,12 @@
 # AORebirth Project State
 
+OBSERVED, CLIENT ACCEPTED (Find Item, runtime 615696581): Mike confirms objective
+pickup and reward receipt in the original AO client. Local logs also confirm
+exact collection for char 66 / D2086798944 / item 51005:2086798945, reward item
+creation, dungeon/key cleanup and committed quest completion. This accepts the
+observed Find Item sequence; item visual scale, other objective types and
+unexercised recovery cases are not newly verified by this result.
+
 PROVEN (mission pickup codec defect): original ClientGetItem bytes contain a
 player identity, one Unknown byte, then the objective identity. The custom codec
 read the player into its target and omitted the remaining fields. fa5dae8aa
@@ -9,8 +16,8 @@ order and restores actor validation, preserving all exact owner/dungeon/range/
 transaction checks and adding pickup target/result logging. Optional world-only
 item scale remains 150 percent for new Find Item/Return Item objectives.
 Accepted identities, inventory items and reward persistence are unchanged.
-Original-client pickup/rendering/reward acceptance remains UNVERIFIED; no suites
-requested for this follow-up.
+Original-client Find Item pickup/completion/rewards are now accepted as recorded
+above; visual scale remains UNVERIFIED. No suites requested for this follow-up.
 Approved Windows core compilation, raw-byte inspection and git diff --check
 passed; captured bytes and 150-percent item policy are unchanged.
 

@@ -168,6 +168,27 @@ inspection confirms both retained request lengths and actor/Unknown/target
 offsets; this is evidence analysis, not a runtime codec test suite. The raw
 wire fixture and installed size/content policy remain unchanged.
 
+## Find Item original-client acceptance
+
+OBSERVED on installed runtime 61569658195c66af8a6f93bd0474a0b5708c8158: Mike
+reports "picked up and got reawrd now". The local ZoneEngine log corroborates:
+
+- Line 120374, uptime 00:05:09.463: actor CanbeAffected:66, target
+  Terminal:2086798945, quest D2086798944, edge distance 0.5487016531552542,
+  collected=True.
+- Line 120376: advertised reward item creation, Head Implant: Chemistry,
+  Shiny, IDs 105497/105498, QL30.
+- Line 120378: dungeon quest ended, keys=1, evicted=False.
+- Line 120384: "Quest completed and rewards committed char=66
+  quest=D2086798944".
+
+This is original-client Find Item pickup/completion/reward acceptance with
+corroborating server events. It supersedes the pending Find Item acceptance
+notes above. It does not establish exact payout amounts, separately confirm
+the visual size increase, accept other objective types, or exercise every
+duplicate/capacity/disconnect/recovery case. This documentation-only update
+changes no runtime, content or running service and requires no rebuild.
+
 ## Validation and limits
 
 - PROVEN: approved `cmd /d /c tools\build_aorebirth_debug.cmd` succeeded for
@@ -176,7 +197,8 @@ wire fixture and installed size/content policy remain unchanged.
 - PROVEN: `git diff --check` and policy JSON parsing succeeded.
 - No unit, fixture, regression, fault-injection or DAO test suites run for this
   task. Previous Find Item test counts are not this candidate's validation.
-- Original-client all-five gameplay is UNVERIFIED. Test newly accepted missions;
+- Find Item pickup/completion/rewards are client-accepted as recorded above.
+  Original-client all-five gameplay is not fully verified. Test newly accepted missions;
   older unbound accepted contracts are not rewritten.
 - Repair/Return use requires main inventory; move the item out of a backpack.
 - An uncommitted kill event lost during a database outage plus disconnect or
