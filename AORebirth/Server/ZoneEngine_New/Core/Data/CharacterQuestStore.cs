@@ -1,5 +1,6 @@
 namespace ZoneEngine_New.Core.Data
 {
+    using System;
     using System.Collections.Generic;
 
     using AORebirth.Database.Domain.Quests;
@@ -23,11 +24,21 @@ namespace ZoneEngine_New.Core.Data
         bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
             CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, long nowUtcTicks);
 
+        bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
+            CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow? sourceItem, long nowUtcTicks)
+            => sourceItem == null
+                ? TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, nowUtcTicks)
+                : throw new NotSupportedException("The quest store does not support atomic mission source-item acceptance.");
+
         string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks);
 
         IDictionary<int, string> LoadKeyQuests(IReadOnlyCollection<int> keyInstanceIds);
 
         IList<RetiredDungeonKey> EndQuestKeys(string questId);
+
+        IList<RetiredDungeonKey> EndQuestKeys(string questId, QuestDungeonKeyItemRow? artifact)
+            => artifact == null ? EndQuestKeys(questId)
+                : throw new NotSupportedException("The quest store does not support atomic mission artifact retirement.");
 
         IList<int> RetireUnlinkedKeys(IReadOnlyCollection<int> keyInstanceIds, int keyLowId);
 
@@ -67,6 +78,10 @@ namespace ZoneEngine_New.Core.Data
             CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, long nowUtcTicks)
             => Run(() => _dao.TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, nowUtcTicks), _logger);
 
+        public bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
+            CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow? sourceItem, long nowUtcTicks)
+            => Run(() => _dao.TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, sourceItem, nowUtcTicks), _logger);
+
         public string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks)
             => Run(() => _dao.TryAddDuplicateKey(sourceKeyInstanceId, copy, maxKeys, nowUtcTicks), _logger);
 
@@ -74,6 +89,9 @@ namespace ZoneEngine_New.Core.Data
             => Run(() => _dao.LoadKeyQuests(keyInstanceIds), _logger);
 
         public IList<RetiredDungeonKey> EndQuestKeys(string questId) => Run(() => _dao.EndQuestKeys(questId), _logger);
+
+        public IList<RetiredDungeonKey> EndQuestKeys(string questId, QuestDungeonKeyItemRow? artifact)
+            => Run(() => _dao.EndQuestKeys(questId, artifact), _logger);
 
         public IList<int> RetireUnlinkedKeys(IReadOnlyCollection<int> keyInstanceIds, int keyLowId)
             => Run(() => _dao.RetireUnlinkedKeys(keyInstanceIds, keyLowId), _logger);

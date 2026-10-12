@@ -15,7 +15,7 @@ namespace AORebirth.DungeonGenerator
 
         public int Seed { get; init; }
 
-        /// <summary>Floors (1-8). Each is its own cluster of rooms; the client lays floors side by side.</summary>
+        /// <summary>Floors (1-8), including the dedicated boss floor when requested.</summary>
         public int FloorCount { get; init; } = 1;
 
         /// <summary>
@@ -29,7 +29,23 @@ namespace AORebirth.DungeonGenerator
 
         /// <summary>Building identity instance stamped into the generator (the ACG entrance it is entered from).</summary>
         public int BuildingInstance { get; init; }
+
+        /// <summary>Reserve the final floor for a separate, original boss chamber.</summary>
+        public bool BossFloor { get; init; }
+
+        /// <summary>Explicit client floor separation; zero preserves the original generator's layout policy.</summary>
+        public int FloorHeight { get; init; }
+
+        public bool DescendingFloors { get; init; }
+
+        /// <summary>Use the style's editable, capture-backed floor platform roles and validate whole-instance reachability.</summary>
+        public bool UseFloorTransitions { get; init; }
     }
+
+    public sealed record DungeonTransitionEndpoint(int RoomIndex, Vector3 Position, int PlatformTemplateId, int ButtonTemplateId);
+
+    /// <summary>A bidirectional connection. Each endpoint carries its own original platform/button presentation.</summary>
+    public sealed record DungeonFloorTransition(DungeonTransitionEndpoint From, DungeonTransitionEndpoint To);
 
     /// <summary>A generated dungeon: the generator the client builds from, plus the placed rooms for tools and checks.</summary>
     public sealed class DungeonGenerationResult
@@ -51,6 +67,10 @@ namespace AORebirth.DungeonGenerator
         public int Attempts { get; init; }
 
         public required DungeonValidation Validation { get; init; }
+
+        public int? BossRoomIndex { get; init; }
+
+        public IReadOnlyList<DungeonFloorTransition> Transitions { get; init; } = [];
     }
 
     /// <summary>Deterministic door locks for a generated dungeon: the same seed, door and chance always agree.</summary>
@@ -81,8 +101,8 @@ namespace AORebirth.DungeonGenerator
     /// floors start from a start room in the middle. Rooms with two or more doors are fitted onto random open
     /// doorways until the floor reaches its size; then every remaining doorway is capped with a one-door room where
     /// one fits. A candidate fits only when its footprint is free, none of its doors face out of the grid, and every
-    /// door it touches pairs up. Floors are placed side by side by the client (generator floor height 0); moving
-    /// between them (teleporters) is not placed here.
+    /// door it touches pairs up. The original path leaves floors side by side. The explicit floor-transition path
+    /// uses the requested separation and mapped platforms, with a separate boss chamber when requested.
     /// </para>
     /// </summary>
     public sealed class DungeonGenerator
@@ -115,17 +135,25 @@ namespace AORebirth.DungeonGenerator
         public DungeonGenerationResult Generate(DungeonGenerationRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
+            if (request.FloorHeight < 0 || request.FloorHeight > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(request.FloorHeight));
+            if (request.BossFloor && (!request.UseFloorTransitions || request.FloorCount < 2))
+                throw new ArgumentException("A boss floor requires at least two floors and floor transitions.", nameof(request));
+            if (request.UseFloorTransitions && request.FloorCount > 1 && request.FloorHeight == 0)
+                throw new ArgumentException("Floor transitions require a positive floor separation.", nameof(request));
             int floors = Math.Clamp(request.FloorCount, 1, MaxFloors);
             int floorSize = Math.Clamp(request.FloorSize, MinFloorSize, MaxFloorSize);
             int grid = GridSize(floorSize);
             StyleRoomSet style = LoadStyle(request.StyleId);
+            if (request.UseFloorTransitions && floors > 1)
+                style.ValidateTransitionRoles(floors, request.BossFloor);
 
             DungeonGenerationResult? best = null;
             for (int attempt = 0; attempt < MaxAttempts; attempt++)
             {
                 var random = new Random(unchecked(request.Seed + (attempt * 7919)));
                 var builder = new LayoutBuilder(style, grid, grid, random);
-                if (!builder.TryBuild(floors, floorSize))
+                if (!builder.TryBuild(floors, floorSize, request.UseFloorTransitions, request.BossFloor))
                     continue;
 
                 DungeonValidation validation = DungeonLayoutValidator.Validate(builder.Rooms, grid, grid);
@@ -133,6 +161,11 @@ namespace AORebirth.DungeonGenerator
                     continue;
 
                 best = Complete(request, style, builder, grid, attempt + 1, validation);
+                if (!best.Validation.IsValid)
+                {
+                    best = null;
+                    continue;
+                }
                 break;
             }
 
@@ -147,9 +180,13 @@ namespace AORebirth.DungeonGenerator
             int grid, int attempts, DungeonValidation validation)
         {
             // Live generators list rooms breadth first from the entrance: by floor, then by depth. The entrance stays first.
-            List<PlacedRoom> ordered = Enumerable.Range(0, builder.Rooms.Count)
+            List<int> order = Enumerable.Range(0, builder.Rooms.Count)
                 .OrderBy(i => builder.Rooms[i].Floor).ThenBy(i => builder.Depths[i]).ThenBy(i => i)
-                .Select(i => builder.Rooms[i]).ToList();
+                .ToList();
+            List<PlacedRoom> ordered = order.Select(i => builder.Rooms[i]).ToList();
+            if (request.DescendingFloors)
+                ordered = ordered.Select(room => new PlacedRoom(room.Shape, -room.Floor,
+                    room.BlockX, room.BlockZ, room.Rotation)).ToList();
             var infos = new BuildingRoomInfo[ordered.Count];
             for (int i = 0; i < infos.Length; i++)
             {
@@ -172,9 +209,9 @@ namespace AORebirth.DungeonGenerator
                 Version = 3,
                 Width = (ushort)grid,
                 Height = (ushort)grid,
-                // The client uses this as the floor height. Live single-floor dungeons send 64; with more floors it
-                // stays 0 so the client lays each floor beside the previous one rather than above it.
-                RoomsPerFloor = (ushort)(request.FloorCount > 1 ? 0 : 64),
+                // The field is client floor separation. Existing requests retain the side-by-side multi-floor policy;
+                // captured team layouts use an explicit separation supplied by the editable generation policy.
+                RoomsPerFloor = (ushort)(request.FloorHeight > 0 ? request.FloorHeight : request.FloorCount > 1 ? 0 : 64),
                 Style = request.StyleId,
                 AmbientRed = 100,
                 AmbientGreen = 100,
@@ -187,6 +224,51 @@ namespace AORebirth.DungeonGenerator
             (int dx, int dz) = Geometry.Direction((way.Facing + 2) & 3);
             const float Inside = 2.5f;
             var spawn = new Vector3(way.X + (dx * Inside), entrance.Shape.Template.TemplatePos.Y + 0.01f, way.Z + (dz * Inside));
+            int minFloor = ordered.Min(room => room.Floor);
+            if (request.DescendingFloors)
+            {
+                if (generator.RoomsPerFloor == 0)
+                    spawn.X += (entrance.Floor - minFloor) * (grid * DungeonRoomPlacer.BlockWorldSize + 100);
+                else
+                    spawn.Y += (entrance.Floor - minFloor) * generator.RoomsPerFloor;
+            }
+
+            var transitions = new List<DungeonFloorTransition>();
+            if (request.UseFloorTransitions)
+            {
+                for (int floor = 0; floor < builder.FloorArrivals.Count - 1; floor++)
+                {
+                    int fromIndex = order.IndexOf(builder.FloorDepartures[floor]);
+                    int toIndex = order.IndexOf(builder.FloorArrivals[floor + 1]);
+                    bool toBoss = builder.BossRoomIndex == builder.FloorArrivals[floor + 1];
+                    DungeonTransitionRoom from = style.Transitions!.DepartureRooms.Single(row => row.Room == ordered[fromIndex].Shape.RoomId);
+                    DungeonTransitionRoom to = (toBoss ? style.Transitions.BossRooms : style.Transitions.ArrivalRooms)
+                        .Single(row => row.Room == ordered[toIndex].Shape.RoomId);
+                    transitions.Add(new DungeonFloorTransition(Endpoint(fromIndex, from, toBoss), Endpoint(toIndex, to, false)));
+                }
+
+                validation = DungeonLayoutValidator.ValidateConnected(ordered, grid, grid, transitions);
+            }
+
+            DungeonTransitionEndpoint Endpoint(int index, DungeonTransitionRoom role, bool toBoss)
+            {
+                BuildingRoomInfo info = infos[index];
+                var spec = new DungeonRoomSpec { RoomId = info.RoomId, Floor = info.Floor,
+                    GridX = info.GridX, GridZ = info.GridZ, Facing = info.Facing };
+                var template = ordered[index].Shape.Template;
+                Vector3 placed = DungeonRoomPlacer.Place(template, spec, 2f, grid, grid, generator.RoomsPerFloor, minFloor);
+                Vector3 position = placed + DungeonRoomPlacer.RotateY(role.LocalPosition,
+                    (info.Facing - template.TemplateFacing) & 3);
+                DungeonRoomBounds bounds = DungeonRoomBounds.FromPlaced(index, template, placed, info.Facing,
+                    2f, generator.RoomsPerFloor);
+                int localX = (int)MathF.Floor(position.X / DungeonRoomPlacer.BlockWorldSize);
+                int localZ = (int)MathF.Floor(position.Z / DungeonRoomPlacer.BlockWorldSize);
+                if (!bounds.Contains(position) || !ordered[index].Cells.Contains((localX, localZ)))
+                    throw new InvalidDataException("Floor platform is outside its room footprint for style "
+                        + request.StyleId + ", room " + template.InstanceId + ".");
+                int button = toBoss && role.BossButtonTemplateId > 0 ? role.BossButtonTemplateId : role.ButtonTemplateId;
+                return new DungeonTransitionEndpoint(index, position, role.PlatformTemplateId, button);
+            }
 
             return new DungeonGenerationResult
             {
@@ -197,7 +279,9 @@ namespace AORebirth.DungeonGenerator
                 GridHeight = grid,
                 Spawn = spawn,
                 Attempts = attempts,
-                Validation = validation
+                Validation = validation,
+                BossRoomIndex = builder.BossRoomIndex is int boss ? order.IndexOf(boss) : null,
+                Transitions = transitions.AsReadOnly()
             };
         }
 
@@ -234,7 +318,13 @@ namespace AORebirth.DungeonGenerator
             /// <summary>Index of the entrance room's way-in door.</summary>
             public int WayInDoor { get; private set; } = -1;
 
-            public bool TryBuild(int floors, int floorSize)
+            public int? BossRoomIndex { get; private set; }
+
+            public List<int> FloorArrivals { get; } = [];
+
+            public List<int> FloorDepartures { get; } = [];
+
+            public bool TryBuild(int floors, int floorSize, bool transitions, bool bossFloor)
             {
                 for (int floor = 0; floor < floors; floor++)
                 {
@@ -246,12 +336,26 @@ namespace AORebirth.DungeonGenerator
                     _open.Add([]);
 
                     int first = _rooms.Count;
-                    if (!(floor == 0 ? TryPlaceEntrance() : TryPlaceStart(floor)) || !TryPlaceMainHalls(floor, first, floorSize))
+                    if (bossFloor && floor == floors - 1)
+                    {
+                        if (!TryPlaceStart(floor, _style.TransitionBosses))
+                            return false;
+                        BossRoomIndex = first;
+                        FloorArrivals.Add(first);
+                        continue;
+                    }
+
+                    if (!(floor == 0 ? TryPlaceEntrance() : TryPlaceStart(floor, transitions ? _style.TransitionArrivals : null)))
                         return false;
+                    if (!TryPlaceMainHalls(floor, first, floorSize, transitions, out int hallQuota))
+                        return false;
+                    FloorArrivals.Add(first);
 
                     Grow(floor, first, floorSize);
+                    if (transitions && floor < floors - 1 && !TryPlaceDeparture(floor, first))
+                        return false;
                     Cap(floor);
-                    if (MainHallsOn(floor, first) != MainHallQuota(floorSize))
+                    if (MainHallsOn(floor, first) != hallQuota)
                         return false;
                 }
 
@@ -310,8 +414,9 @@ namespace AORebirth.DungeonGenerator
             /// The first room past the floor's first room is always a main hall (on floor 0 every inward doorway of the
             /// entrance opens into one), and the floor's other main halls hang off that first one, as in live layouts.
             /// </summary>
-            bool TryPlaceMainHalls(int floor, int root, int floorSize)
+            bool TryPlaceMainHalls(int floor, int root, int floorSize, bool preserveEntranceHalls, out int quota)
             {
+                quota = MainHallQuota(floorSize);
                 var rootSlots = SlotsOf(floor, root);
                 if (rootSlots.Count == 0)
                     return false;
@@ -329,7 +434,11 @@ namespace AORebirth.DungeonGenerator
                         firstHall = _rooms.Count - 1;
                 }
 
-                int quota = MainHallQuota(floorSize);
+                // Some original entrances have two inward doorways. Their required adjacent halls cannot also
+                // satisfy a one-hall size target; the connected-generation path retains both geometric constraints.
+                // Seed-only legacy layouts keep their original quota/retry behavior.
+                if (preserveEntranceHalls)
+                    quota = Math.Max(quota, MainHallsOn(floor, root));
                 while (firstHall >= 0 && MainHallsOn(floor, root) < quota)
                 {
                     var slots = SlotsOf(floor, firstHall);
@@ -344,9 +453,9 @@ namespace AORebirth.DungeonGenerator
             List<(int X, int Z, int Facing)> SlotsOf(int floor, int room)
                 => _open[floor].Where(pair => pair.Value.Room == room).Select(pair => pair.Key).ToList();
 
-            bool TryPlaceStart(int floor)
+            bool TryPlaceStart(int floor, IReadOnlyList<RoomShape>? requested = null)
             {
-                var pool = _style.Starts.Count > 0 ? _style.Starts : _style.Growth;
+                var pool = requested ?? (_style.Starts.Count > 0 ? _style.Starts : _style.Growth);
                 var options = new List<(RoomShape Shape, int Rotation)>();
                 foreach (RoomShape shape in pool)
                     for (int rotation = 0; rotation < 4; rotation++)
@@ -358,6 +467,30 @@ namespace AORebirth.DungeonGenerator
                     if (TryFit(floor, shape, rotation, (_width - w) / 2, (_height - h) / 2, wayInDoor: -1, out Fit fit))
                     {
                         Commit(fit);
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            bool TryPlaceDeparture(int floor, int first)
+            {
+                int existing = Enumerable.Range(first, _rooms.Count - first)
+                    .Where(i => _style.TransitionDepartures.Contains(_rooms[i].Shape))
+                    .OrderByDescending(i => _depths[i]).FirstOrDefault(-1);
+                if (existing >= 0)
+                {
+                    FloorDepartures.Add(existing);
+                    return true;
+                }
+
+                var slots = _open[floor].Keys.OrderByDescending(slot => _depths[_open[floor][slot].Room]).ToList();
+                foreach (var slot in slots)
+                {
+                    if (TryFillSlot(floor, slot, _style.TransitionDepartures))
+                    {
+                        FloorDepartures.Add(_rooms.Count - 1);
                         return true;
                     }
                 }
@@ -526,7 +659,7 @@ namespace AORebirth.DungeonGenerator
     /// <summary>A style playfield's rooms sorted by what the generator uses them for.</summary>
     public sealed class StyleRoomSet
     {
-        StyleRoomSet(int styleId, IReadOnlyList<RoomShape> all, IReadOnlySet<int> mainHalls)
+        StyleRoomSet(int styleId, IReadOnlyList<RoomShape> all, IReadOnlySet<int> mainHalls, DungeonTransitionMap? transitions)
         {
             StyleId = styleId;
             All = all;
@@ -541,6 +674,14 @@ namespace AORebirth.DungeonGenerator
 
             // Live single-floor layouts use start rooms as ordinary hubs too.
             Hubs = Growth.Concat(Starts).ToList();
+            Transitions = transitions;
+            TransitionArrivals = Resolve(transitions?.ArrivalRooms);
+            TransitionDepartures = Resolve(transitions?.DepartureRooms);
+            TransitionBosses = Resolve(transitions?.BossRooms);
+
+            IReadOnlyList<RoomShape> Resolve(IReadOnlyList<DungeonTransitionRoom>? roles)
+                => roles == null ? [] : roles.Select(role => all.SingleOrDefault(room => room.RoomId == role.Room)
+                    ?? throw new InvalidDataException("Transition room " + role.Room + " is absent from style " + styleId + ".")).ToList();
         }
 
         public int StyleId { get; }
@@ -561,6 +702,27 @@ namespace AORebirth.DungeonGenerator
         /// <summary>Main halls (GameData/DungeonEntrances.json): the room past the entrance is always one of these.</summary>
         public IReadOnlyList<RoomShape> MainHalls { get; }
 
+        public DungeonTransitionMap? Transitions { get; }
+
+        internal IReadOnlyList<RoomShape> TransitionArrivals { get; }
+        internal IReadOnlyList<RoomShape> TransitionDepartures { get; }
+        internal IReadOnlyList<RoomShape> TransitionBosses { get; }
+
+        internal void ValidateTransitionRoles(int floors, bool bossFloor)
+        {
+            bool regularArrivalNeeded = floors > (bossFloor ? 2 : 1);
+            if (Transitions == null || TransitionDepartures.Count == 0
+                || (regularArrivalNeeded && TransitionArrivals.Count == 0)
+                || (bossFloor && TransitionBosses.Count == 0))
+                throw new InvalidDataException("Style " + StyleId + " does not define the requested floor platform roles.");
+            foreach (RoomShape room in TransitionArrivals.Concat(TransitionDepartures).Concat(TransitionBosses))
+            {
+                if (!room.Template.IsAcgSizeValid || room.FootprintBlocks == 0
+                    || (TransitionBosses.Contains(room) ? room.Doors.Count != 0 : room.Doors.Count == 0))
+                    throw new InvalidDataException("Invalid floor transition room geometry for style " + StyleId + ", room " + room.RoomId + ".");
+            }
+        }
+
         public bool IsMainHall(RoomShape shape) => MainHalls.Contains(shape);
 
         public static StyleRoomSet Load(string gameDataRoot, int styleId)
@@ -570,7 +732,7 @@ namespace AORebirth.DungeonGenerator
             var shapes = catalog.Rooms
                 .Select(room => RoomShape.FromTemplate(room, catalog.Dcga, catalog.MapWidth, catalog.MapHeight).WithEntranceMap(map.ExitDoors))
                 .ToList();
-            var set = new StyleRoomSet(styleId, shapes, map.MainHalls);
+            var set = new StyleRoomSet(styleId, shapes, map.MainHalls, map.Transitions);
             if (set.Entrances.Count == 0 || set.MainHalls.Count == 0 || set.Growth.Count == 0 || set.Terminators.Count == 0)
                 throw new InvalidDataException("Style " + styleId + " has no entrance or main hall (" + DungeonEntranceMap.FileName
                     + "), growth or one-door rooms to build with.");

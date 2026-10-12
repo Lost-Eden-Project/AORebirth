@@ -946,11 +946,14 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Applies the OnWear stat functions of every perk template as bonuses.</summary>
         void RebasePerks()
+            => RebasePerks(Stats);
+
+        void RebasePerks(StatCollection stats)
         {
             foreach (ItemTemplate perk in _perkTemplates)
             {
                 if (perk.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear))
-                    StatModifierSpells.Apply(wear, Stats);
+                    StatModifierSpells.Apply(wear, stats);
             }
         }
 
@@ -1029,6 +1032,9 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             TickPerkLocks();
+            if (QuestLog?.Quests.Values.Any(quest => quest.IsRewardPending
+                || quest.IsActive && quest.NpcObjectiveCommitPending) == true)
+                Playfield?.GetService<Quests.QuestService>()?.RetryPendingRewards(this);
             if (!_respawnPending)
                 return;
 
@@ -1405,6 +1411,52 @@ namespace ZoneEngine_New.Core.Entities
             ApplyTimedEffectBonuses();
             ApplyLevelIpBonus();
             SkillCatalog.ApplyTrickle(Stats);
+        }
+
+        /// <summary>Prospective level-up bonus layers, without changing worn items or the live actor.</summary>
+        internal StatCollection ProjectLevelUpStats(IReadOnlyDictionary<CharacterStat, int> values)
+        {
+            var projected = new StatCollection();
+            foreach (var entry in Stats.GetEntries())
+                projected.Set(entry.Stat, entry.Base);
+            foreach (var pair in values)
+                projected.Set(pair.Key, pair.Value);
+
+            Container[] pages = Inventory.IsHydrated
+                ? [Inventory.Equipment, Inventory.Armor, Inventory.Implant] : [];
+            var overEquip = new Dictionary<Item, int>();
+            ApplyLayers();
+            bool anyOverEquip = false;
+            foreach (Container page in pages)
+                foreach (var slot in page.EnumerateSlots())
+                {
+                    int level = OverEquip.ComputeLevel(slot.Value, page.Identity.Type, slot.Key, projected);
+                    overEquip[slot.Value] = level;
+                    anyOverEquip |= level > 0;
+                }
+            if (anyOverEquip)
+                ApplyLayers();
+
+            if (MaxHealthCalculator.TryCompute(projected, out int health))
+                projected.Set(CharacterStat.MaxHealth, health);
+            if (MaxNanoCalculator.TryCompute(projected, out int nano))
+                projected.Set(CharacterStat.MaxNanoEnergy, nano);
+            return projected;
+
+            void ApplyLayers()
+            {
+                projected.ClearBonuses();
+                foreach (Container page in pages)
+                    foreach (var slot in page.EnumerateSlots())
+                        if (slot.Value.Definition != null)
+                            WearBonusApplier.ApplyItem(slot.Value, page == Inventory.Equipment, projected,
+                                overEquip.TryGetValue(slot.Value, out int level) ? level : 0);
+                RebasePerks(projected);
+                ApplyBuffStatBonuses(projected);
+                ApplyTimedEffectBonuses(projected);
+                projected.AddBonus(CharacterStat.IP, TotalIpEarnedAtLevel(projected.GetOrOne(CharacterStat.Level)));
+                SkillCatalog.ApplyTrickle(projected);
+            }
         }
 
         /// <summary>True while a combined-MA weapon is in either hand: the MA fist swings beside the weapons.</summary>

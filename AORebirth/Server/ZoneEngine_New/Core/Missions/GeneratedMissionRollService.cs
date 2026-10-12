@@ -27,10 +27,10 @@ internal static class GeneratedMissionRollService
         if (!MissionRollSliders.TryCreate(request, out var sliders, out var error)) throw new ArgumentException(error, nameof(request));
         int level = MissionLevelRuntime.ClampCharacterLevel(characterLevel);
         int quality = MissionLevelRuntime.GetMissionQuality(characterLevel, request.LevelSlider);
-        // Prefer observed terminal-playfield/QL destinations, with same-QL fallback for uncaptured origins.
-        // These pools describe observations; unobserved conditions are not proven exclusions.
+        // The catalog owns exact-QL selection and the optional nearest-QL origin policy.
+        // The selected pool never changes mission QL; fallback eligibility is provisional.
         if (!catalog.TryGetDestinations(terminalPlayfield, quality, out var destinationPool, out _) || destinationPool.Count == 0)
-            throw new NotSupportedException("No mission destinations have been observed at expected QL " + quality + ".");
+            throw new NotSupportedException("No configured mission destinations are available at expected QL " + quality + ".");
         var random = new Random(seed);
         var policy = MissionRollPolicy.Current;
         var response = GeneratedMissionWire.Read(GeneratedMissionWire.CapturedBody((int)((uint)nonce % (uint)GeneratedMissionWire.CapturedCount)));

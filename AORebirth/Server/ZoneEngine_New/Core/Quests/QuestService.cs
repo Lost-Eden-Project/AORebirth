@@ -21,9 +21,9 @@ namespace ZoneEngine_New.Core.Quests
     /// Assigns quests to players and runs them. Template quests come from Quests.json and never expire;
     /// generated quests live once in <c>generatedquests</c> (definition, expiry, ACG data) and can be shared.
     /// Each player's state is a <c>characterquests</c> row, written straight away on every change. A player's log is only touched on that player's playfield.
-    /// Kill and KillMultiple objectives advance from NPC kill credit; other actions are held but not driven yet.
+    /// Existing NPC objectives retain their triggers; generated Find Item advances only from its exact bound pickup.
     /// </summary>
-    public sealed class QuestService
+    public sealed partial class QuestService
     {
         readonly QuestCatalog _catalog;
         readonly ICharacterQuestStore _store;
@@ -31,14 +31,18 @@ namespace ZoneEngine_New.Core.Quests
         readonly InventoryFlushService _flush;
         readonly IZoneLogger _logger;
         readonly Func<DateTime> _now;
+        readonly AORebirth.Interfaces.Persistence.Missions.IMissionDao? _completionDao;
+        readonly ZoneEngine_New.Core.Characters.CharacterSnapshotService? _snapshot;
 
         public QuestService(
             QuestCatalog catalog,
             ICharacterQuestStore store,
             IItemBuilder items,
             InventoryFlushService flush,
-            IZoneLogger logger)
-            : this(catalog, store, items, flush, logger, () => DateTime.UtcNow)
+            IZoneLogger logger,
+            AORebirth.Interfaces.Persistence.Missions.IMissionDao? completionDao = null,
+            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null)
+            : this(catalog, store, items, flush, logger, () => DateTime.UtcNow, completionDao, snapshot)
         {
         }
 
@@ -48,7 +52,9 @@ namespace ZoneEngine_New.Core.Quests
             IItemBuilder items,
             InventoryFlushService flush,
             IZoneLogger logger,
-            Func<DateTime> now)
+            Func<DateTime> now,
+            AORebirth.Interfaces.Persistence.Missions.IMissionDao? completionDao = null,
+            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -56,6 +62,8 @@ namespace ZoneEngine_New.Core.Quests
             _flush = flush ?? throw new ArgumentNullException(nameof(flush));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _now = now ?? throw new ArgumentNullException(nameof(now));
+            _completionDao = completionDao;
+            _snapshot = snapshot;
         }
 
         public QuestCatalog Catalog => _catalog;
@@ -91,8 +99,12 @@ namespace ZoneEngine_New.Core.Quests
                     continue;
 
                 // NoDelete quests are blocked in the client already (flag 0x400); refuse a crafted request too.
-                if (quest.Template.IsNoDelete)
+                if (quest.Template.IsNoDelete || quest.IsRewardPending)
+                {
+                    if (quest.IsRewardPending)
+                        ClientFeedback.Send(player, "Your earned mission reward is pending. Make inventory space; delivery will retry automatically.");
                     return true;
+                }
 
                 quest.State = QuestState.Abandoned;
                 Save(player, quest);
@@ -110,10 +122,14 @@ namespace ZoneEngine_New.Core.Quests
         public void Restore(Player player)
         {
             ArgumentNullException.ThrowIfNull(player);
+            RetryPendingRewards(player, force: true);
             foreach (PlayerQuest quest in GetLog(player).Quests.Values)
             {
                 if (quest.IsActive)
                     QuestJournal.Send(player, quest, announce: false);
+                else if (quest.Source == QuestSource.Generated)
+                    // A crash/uncertain commit may have paid the quest before its keys were retired.
+                    QuestEnded?.Invoke(player, quest);
             }
         }
 
@@ -152,10 +168,14 @@ namespace ZoneEngine_New.Core.Quests
                 return false;
             }
 
-            quest.Progress = quest.RequiredCount;
+            if (RequiresBoundObjective(quest) && !quest.IsRewardPending)
+            {
+                result = "The accepted mission's exact objective must be completed first.";
+                return false;
+            }
             Complete(player, quest);
-            result = string.Format(CultureInfo.InvariantCulture, "Completed quest {0} ({1}) for {2}.", quest.QuestId, quest.Template.Name, player.Name);
-            return true;
+            result = quest.State == QuestState.Completed ? "Quest completed." : "Mission reward remains pending delivery.";
+            return quest.State == QuestState.Completed;
         }
 
         /// <summary>
@@ -270,12 +290,22 @@ namespace ZoneEngine_New.Core.Quests
             ArgumentNullException.ThrowIfNull(npc);
             ArgumentNullException.ThrowIfNull(players);
 
+            // Objective kills contribute before their exact objective transaction freezes the reward chance.
+            if (npc.Playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon
+                && dungeon.TokenProgress?.RecordKill(npc, players) == false)
+                return;
+
             for (int p = 0; p < players.Count; p++)
             {
                 Player player = players[p];
                 List<PlayerQuest>? advanced = null;
                 foreach (PlayerQuest quest in GetLog(player).Quests.Values)
                 {
+                    if (quest.IsActive && quest.Template.IsKill && RequiresBoundObjective(quest))
+                    {
+                        TryEarnNpcObjective(player, quest, npc, inspected: false);
+                        continue;
+                    }
                     if (quest.IsActive && quest.Template.IsKill && Matches(npc, quest.Template.Objective.Npc))
                         (advanced ??= new List<PlayerQuest>()).Add(quest);
                 }
@@ -306,6 +336,7 @@ namespace ZoneEngine_New.Core.Quests
             foreach (PlayerQuest quest in GetLog(player).Quests.Values)
             {
                 if (quest.IsActive && string.Equals(quest.Template.Action, action, StringComparison.Ordinal)
+                    && !RequiresBoundObjective(quest)
                     && Matches(npc, quest.Template.Objective.Npc))
                     (found ??= new List<PlayerQuest>()).Add(quest);
             }
@@ -343,90 +374,6 @@ namespace ZoneEngine_New.Core.Quests
             Complete(player, quest);
         }
 
-        void Complete(Player player, PlayerQuest quest)
-        {
-            quest.State = QuestState.Completed;
-            Save(player, quest);
-            if (quest.Template.MissionBit is int bit && MissionBits.IsValid(bit))
-                MissionBits.Set(player.Stats, bit);
-            QuestJournal.Delete(player, quest);
-            ClientFeedback.Send(player, "Feedback_MissionAccomplished");
-            GrantReward(player, quest.Template);
-            QuestEnded?.Invoke(player, quest);
-
-            _logger.Info(string.Format(CultureInfo.InvariantCulture, "Quest completed char={0} quest={1} ({2})",
-                player.Identity.Instance, quest.QuestId, quest.Template.Name));
-
-            string? next = quest.Template.NextStep;
-            if (!string.IsNullOrEmpty(next) && _catalog.TryGet(next, out _))
-                TryAssignTemplate(player, next, out _);
-        }
-
-        /// <summary>
-        /// Credits and XP (already zeroed for NoCash/NoXp in the data), then one item record: the records are
-        /// alternatives, so one is picked at random and all its items are given together.
-        /// </summary>
-        void GrantReward(Player player, QuestTemplate template)
-        {
-            QuestReward? reward = template.Reward;
-            if (reward == null)
-                return;
-
-            if (reward.Credits > 0)
-            {
-                long cash = (long)player.Stats.GetOrZero(CharacterStat.Cash) + reward.Credits;
-                player.Stats.Set(CharacterStat.Cash, (int)Math.Min(int.MaxValue, cash), StatDetail.Base, dirty: true);
-                player.FlushDirtyStats();
-            }
-
-            if (reward.Xp > 0)
-            {
-                // The completing kill's XP is still pending; send it first so the client reports the two gains separately.
-                player.FlushDirtyStats();
-                player.AwardXp(reward.Xp, XpSource.Quest);
-                player.FlushDirtyStats();
-            }
-
-            if (reward.Records is not { Count: > 0 })
-                return;
-
-            List<QuestRewardItem> record = reward.Records[Random.Shared.Next(reward.Records.Count)];
-            for (int i = 0; i < record.Count; i++)
-                GiveItem(player, record[i]);
-        }
-
-        void GiveItem(Player player, QuestRewardItem reward)
-        {
-            if (!player.Inventory.IsHydrated || reward.Id <= 0)
-                return;
-
-            int slot = player.Inventory.Inventory.FindFreeSlot();
-            if (slot < 0)
-            {
-                _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Quest reward {0} not given to char={1}: inventory full",
-                    reward.Id, player.Identity.Instance));
-                return;
-            }
-
-            Item item = _items.CreateWithNewInstance(reward.Id, reward.HighId ?? reward.Id, Math.Max(1, reward.Quality), ItemSource.Quest);
-            if (InventoryStacking.TryGrantOntoStack(player, item, _flush))
-                return;
-
-            if (!player.Inventory.Inventory.Add(slot, item))
-                return;
-
-            player.Inventory.MarkDirty(item, player.Inventory.Inventory, slot);
-            _flush.NotifyDirty(player);
-            player.Session?.Send(new AddTemplateMessage
-            {
-                Identity = player.Identity,
-                HighId = item.HighId,
-                LowId = item.LowId,
-                Quality = item.Quality,
-                Count = item.StackCount
-            });
-        }
-
         PlayerQuest Assign(Player player, QuestLog log, string questId, QuestSource source, QuestTemplate template,
             DateTime? expiresAtUtc, string? acgJson)
         {
@@ -455,7 +402,7 @@ namespace ZoneEngine_New.Core.Quests
             DateTime now = _now();
             foreach (PlayerQuest quest in log.Quests.Values)
             {
-                if (!quest.IsActive || quest.ExpiresAtUtc is not DateTime expires || now < expires)
+                if (!quest.IsActive || quest.IsRewardPending || quest.ExpiresAtUtc is not DateTime expires || now < expires)
                     continue;
 
                 quest.State = QuestState.Expired;
@@ -507,6 +454,17 @@ namespace ZoneEngine_New.Core.Quests
                     ExpiresAtUtc = definition != null ? new DateTime(definition.ExpiresAtUtcTicks, DateTimeKind.Utc) : null,
                     AcgBuildingGeneratorJson = definition?.AcgBuildingGeneratorJson
                 };
+                PlayerQuest loaded = log.Quests[row.QuestId];
+                // Recover the crash gap between a durable target death and earning its exact objective.
+                if (_completionDao != null && loaded.IsActive && !loaded.IsRewardPending && loaded.Template.IsKill
+                    && Dungeons.QuestDungeonParameters.TryParse(loaded.AcgBuildingGeneratorJson, out var parameters)
+                    && parameters.MissionType == 0 && parameters.TokenReward != null
+                    && parameters.ObjectiveNpc is { IsValid: true } objective
+                    && objective.OwnerId == characterId && objective.QuestId == loaded.QuestId)
+                {
+                    loaded.NpcObjectiveCommitPending = _completionDao.Execute(characterId, null!, tx =>
+                        Dungeons.MissionTokenProgress.IsObjectiveKilled(tx, loaded.QuestId, loaded.AssignedAtUtc.Ticks));
+                }
             }
 
             return log;

@@ -307,6 +307,7 @@ namespace ZoneEngine_New
             AddMessageHandler<FollowTargetMessageHandler>(services);
             AddMessageHandler<GenericCmdMessageHandler>(services);
             AddMessageHandler<ClientMoveItemToInventoryMessageHandler>(services);
+            AddMessageHandler<ClientGetItemMessageHandler>(services);
             AddMessageHandler<ClientContainerAddItemMessageHandler>(services);
             AddMessageHandler<TradeMessageHandler>(services);
             AddMessageHandler<KnuBotOpenChatWindowMessageHandler>(services);

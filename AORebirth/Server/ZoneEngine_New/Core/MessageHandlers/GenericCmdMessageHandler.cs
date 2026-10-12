@@ -117,6 +117,19 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
 
                 case GenericCmdAction.UseItemOnItem:
+                    if (message.Target is { Length: >= 2 } && _dungeons != null)
+                    {
+                        bool committed = _dungeons.TryUseGeneratedMissionItem(player, message.Target[0], message.Target[1], out bool handled);
+                        if (handled)
+                        {
+                            // Retail action 5 acknowledges the original source slot and exact target unchanged.
+                            if (committed)
+                                Acknowledge(session, message, Identity.None);
+                            else if (!player.IsPersistenceQuarantined && session.State == SessionState.InPlay)
+                                Deny(session, message, player, "accepted mission item/target is not eligible");
+                            break;
+                        }
+                    }
                     if (message.Target is { Length: >= 2 } && playfield.GetRequiredService<QuestPropService>().ClaimsItemTarget(message.Target[1]))
                     {
                         if (!playfield.GetRequiredService<QuestPropService>().TryUseItemOnProp(session, message.Target[0], message.Target[1],

@@ -117,7 +117,8 @@ namespace ZoneEngine_New.Core.Quests
             // because the action carries the waypoint to the dungeon entrance.
             bool isDungeon = Dungeons.QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out Dungeons.QuestDungeonParameters dungeon);
             if (isDungeon)
-                layout ??= new ActionLayout(DungeonActionVersion(dungeon.MissionType), DefaultIconId, 0xD2FC, TargetInSlot3: false);
+                layout = new ActionLayout(MissionRollPolicy.Current.Action((MissionRollType)dungeon.MissionType),
+                    DefaultIconId, dungeon.MissionType == (int)MissionRollType.FindPerson ? 0xD2F1 : 0xD2FC, TargetInSlot3: false);
 
             // Retail's per-quest slot pair: the action's UnknownId7 instance and UnknownArray1's entry share their low
             // 27 bits. Their meaning is unknown; any stable value per quest is sent.
@@ -161,7 +162,10 @@ namespace ZoneEngine_New.Core.Quests
                     ? template.RequiredCount : 0,
                 Unknown24 = template.QasInstance,
                 UnknownId3 = new Identity(),
-                QuestIdentities = [],
+                // Original Find Person capture 20261011-215642, IN32: the exact person is also listed with flag 64.
+                QuestIdentities = isDungeon && dungeon.MissionType == (int)MissionRollType.FindPerson && dungeon.ObjectiveNpc != null
+                    ? [new QuestIdentity { Unknown1 = dungeon.ObjectiveNpc.Identity, Unknown2 = 64 }]
+                    : [],
                 Unknown27 = 7,
                 FactionInfos = [],
                 Unknown28 = announce ? (byte)1 : (byte)0
@@ -175,23 +179,54 @@ namespace ZoneEngine_New.Core.Quests
             };
         }
 
-        /// <summary>Quest action version the generated-mission journal used per terminal roll type.</summary>
-        static int DungeonActionVersion(int missionType) => missionType switch { 2 => 15, 4 => 8, _ => 16 };
-
         static QuestActionInfo Action(Player player, ActionLayout layout, QuestTemplate template, PlayerQuest quest, int slot,
             Dungeons.QuestDungeonParameters? dungeon)
         {
             int target = FourCc(template.Objective.Npc);
+            var objectiveItem = template.IsFindItem ? dungeon?.ObjectiveItem : null;
+            Identity actionIdentity = objectiveItem?.Identity ?? new Identity();
+            Identity destinationIdentity = new();
+            Identity npcIdentity = template.IsFindItem || layout.TargetInSlot3
+                ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = target };
+            if (dungeon != null)
+            {
+                switch ((MissionRollType)dungeon.MissionType)
+                {
+                    // Completed Kill Person and accepted Find Person captures bind the concrete NPC in slot 2.
+                    case MissionRollType.KillPerson:
+                    case MissionRollType.FindPerson:
+                        if (dungeon.ObjectiveNpc != null)
+                        {
+                            npcIdentity = dungeon.ObjectiveNpc.Identity;
+                        }
+                        break;
+                    case MissionRollType.FindItem:
+                        npcIdentity = new Identity();
+                        break;
+                    // Retail UseItemOnItem has the source tool in Action and exact world target in slot 1.
+                    case MissionRollType.RepairMachine:
+                        actionIdentity = dungeon.ObjectiveTool?.Identity ?? new Identity();
+                        destinationIdentity = dungeon.ObjectiveItem?.Identity ?? new Identity();
+                        npcIdentity = new Identity();
+                        break;
+                    // Existing captured Return Item action projects the mission item and issuing terminal.
+                    case MissionRollType.FindItemReturn:
+                        actionIdentity = dungeon.ObjectiveItem?.Identity ?? new Identity();
+                        destinationIdentity = dungeon.OriginTerminal;
+                        npcIdentity = new Identity();
+                        break;
+                }
+            }
             DateTime expires = quest.ExpiresAtUtc ?? quest.AssignedAtUtc + DisplayedLifetime;
             uint expiresOnClient = ClientExpiry(player, DateTime.SpecifyKind(expires, DateTimeKind.Utc), DateTime.UtcNow);
 
             return new QuestActionInfo
             {
                 Version = layout.Version,
-                Action = new Identity(),
-                UnknownId1 = new Identity(),
-                UnknownId2 = layout.TargetInSlot3 ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = target },
-                UnknownId3 = layout.TargetInSlot3 ? new Identity { Type = 0, Instance = target } : new Identity(),
+                Action = actionIdentity,
+                UnknownId1 = destinationIdentity,
+                UnknownId2 = npcIdentity,
+                UnknownId3 = !template.IsFindItem && layout.TargetInSlot3 ? new Identity { Type = 0, Instance = target } : new Identity(),
                 UnknownId4 = new Identity(),
                 UnknownId5 = new Identity(),
                 UnknownId6 = new Identity(),

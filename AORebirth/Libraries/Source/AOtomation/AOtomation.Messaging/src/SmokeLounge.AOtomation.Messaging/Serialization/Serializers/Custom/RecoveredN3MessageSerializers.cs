@@ -268,6 +268,8 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             return new ClientGetItemMessage
                        {
                            N3MessageType = (N3MessageType)streamReader.ReadInt32(),
+                           Identity = streamReader.ReadIdentity(),
+                           Unknown = streamReader.ReadByte(),
                            Identity1 = streamReader.ReadIdentity()
                        };
         }
@@ -283,6 +285,8 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
         {
             var message = (ClientGetItemMessage)value;
             streamWriter.WriteInt32((int)message.N3MessageType);
+            streamWriter.WriteIdentity(message.Identity);
+            streamWriter.WriteByte(message.Unknown);
             streamWriter.WriteIdentity(message.Identity1);
         }
 

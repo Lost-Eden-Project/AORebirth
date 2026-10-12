@@ -63,7 +63,7 @@ namespace ZoneEngine_New.Core.Entities
     /// </summary>
     public abstract class Character : Dynel
     {
-        const int MaxXpLevel = 220;
+        internal const int MaxXpLevel = 220;
         const int KillXpCapPercent = 10;
 
         /// <summary>NPCFamily of alien NPCs; only these grant alien XP.</summary>
@@ -71,7 +71,7 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Damage shares are split out of this so each killer's fraction survives integer math.</summary>
         const int AlienShareBasis = 10000;
-        const int QuestXpCapPercent = 20;
+        internal const int QuestXpCapPercent = 20;
 
         protected Character(Identity identity)
             : base(identity)
@@ -177,9 +177,12 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Rebase bonus layer: every running TimedEffect.</summary>
         protected void ApplyTimedEffectBonuses()
+            => ApplyTimedEffectBonuses(Stats);
+
+        protected void ApplyTimedEffectBonuses(StatCollection stats)
         {
             foreach (TimedStatEffect effect in _timedEffects)
-                Stats.AddBonus(effect.Stat, effect.Amount, dirty: true);
+                stats.AddBonus(effect.Stat, effect.Amount, dirty: true);
         }
 
         void TickTimedEffects(DateTime nowUtc)
@@ -540,7 +543,7 @@ namespace ZoneEngine_New.Core.Entities
             FlushDirtyStats();
         }
 
-        void ApplyLevelVitals()
+        internal void ApplyLevelVitals()
         {
             Rebase();
             int maxHealth = Stats.GetOrZero(CharacterStat.MaxHealth);
@@ -2509,19 +2512,24 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         protected void ApplyBuffBonuses()
         {
-            // VisualProfession shows the real profession unless a buff (e.g. False Profession) changes it.
-            int profession = Stats.GetOrZero(CharacterStat.Profession, StatDetail.Base);
-            if (Stats.Get(CharacterStat.VisualProfession, StatDetail.Base) != profession)
-                Stats.Set(CharacterStat.VisualProfession, profession, StatDetail.Base, dirty: true);
-
-            for (int i = 0; i < _buffs.Count; i++)
-                StatModifierSpells.Apply(_buffs[i].ModifierSpells, Stats);
+            ApplyBuffStatBonuses(Stats);
 
             CombatRestricted = HasCombatRestriction;
 
             // Every buff change rebases, so a root landing stops the character here.
             if (IsRooted)
                 StopForRoot();
+        }
+
+        protected void ApplyBuffStatBonuses(StatCollection stats)
+        {
+            // VisualProfession shows the real profession unless a buff (e.g. False Profession) changes it.
+            int profession = stats.GetOrZero(CharacterStat.Profession, StatDetail.Base);
+            if (stats.Get(CharacterStat.VisualProfession, StatDetail.Base) != profession)
+                stats.Set(CharacterStat.VisualProfession, profession, StatDetail.Base, dirty: true);
+
+            for (int i = 0; i < _buffs.Count; i++)
+                StatModifierSpells.Apply(_buffs[i].ModifierSpells, stats);
         }
 
         /// <summary>

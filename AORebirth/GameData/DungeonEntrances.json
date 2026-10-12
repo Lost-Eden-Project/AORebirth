@@ -22,7 +22,31 @@
         {"Room": 35, "Name": "clanstronghold_entrance", "ExitDoor": 0, "Source": "geometry, live"},
         {"Room": 43, "Name": "militaryc_entrance", "ExitDoor": 0, "Source": "geometry"}
       ],
-      "MainHalls": [47, 48, 49, 50, 51, 52, 53, 54]
+      "MainHalls": [47, 48, 49, 50, 51, 52, 53, 54],
+      "FloorTransitions": {
+        "_comment": "Captured role/anchor examples, chosen as configurable generation policy, not universal retail positions. PF324 has two-floor team evidence; no ordinary arrival anchor is promoted. See docs/evidence/PROCEDURAL_DUNGEON_FOUNDATION_EVIDENCE.md. Platform and button share the recorded position and world identity orientation.",
+        "DescendingFloors": false,
+        "ArrivalRooms": [],
+        "DepartureRooms": [
+          {
+            "Room": 6,
+            "Position": [-4.5, 0.0100016593933105, -4.79998779296875],
+            "PlatformTemplateId": 159867,
+            "ButtonTemplateId": 159864,
+            "BossButtonTemplateId": 159864,
+            "Source": "mission-20261011-062013; packets 303/304; room 12; normalized from facing 3"
+          }
+        ],
+        "BossRooms": [
+          {
+            "Room": 45,
+            "Position": [-9.9900054931640625, 2.01000213623046875, 7.70001220703125],
+            "PlatformTemplateId": 159867,
+            "ButtonTemplateId": 159863,
+            "Source": "mission-20261011-062013; packets 968/969; room 16; facing 0"
+          }
+        ]
+      }
     },
     {
       "Style": 331,
@@ -39,7 +63,39 @@
         {"Room": 20, "Name": "Mine_Entrance_Small_11", "ExitDoor": 1, "Source": "live"},
         {"Room": 64, "Name": "WildCave_Entrance_Small_03", "ExitDoor": 1, "Source": "live"}
       ],
-      "MainHalls": [96, 97, 98, 99, 100, 101, 102]
+      "MainHalls": [96, 97, 98, 99, 100, 101, 102],
+      "FloorTransitions": {
+        "_comment": "Captured role/anchor examples, chosen as configurable generation policy. Boss room 93 has an exact visited platform; QL220's room 94 has no visited-platform anchor and is not substituted. See docs/evidence/PROCEDURAL_DUNGEON_FOUNDATION_EVIDENCE.md. Platform and button share the recorded position and world identity orientation.",
+        "DescendingFloors": true,
+        "ArrivalRooms": [
+          {
+            "Room": 52,
+            "Position": [-13.70001220703125, 0.0099945068359375, -12.899993896484375],
+            "PlatformTemplateId": 159865,
+            "ButtonTemplateId": 159869,
+            "Source": "mission-20261011-074410-e3d8cee1; packet 3768; template 52; facing 0"
+          }
+        ],
+        "DepartureRooms": [
+          {
+            "Room": 11,
+            "Position": [1.21405029296875, 0.010009765625, 1.258819580078125],
+            "PlatformTemplateId": 159865,
+            "ButtonTemplateId": 159863,
+            "BossButtonTemplateId": 159864,
+            "Source": "mission-20261011-074410-e3d8cee1; packet 1564; template 11; facing 0. Boss button 159864 observed in mission-20261011-053902."
+          }
+        ],
+        "BossRooms": [
+          {
+            "Room": 93,
+            "Position": [6.1240692138671875, 0.01073724776506424, -4.22479248046875],
+            "PlatformTemplateId": 159865,
+            "ButtonTemplateId": 159869,
+            "Source": "mission-20261011-053902; packets 724/725; room 8; facing 0"
+          }
+        ]
+      }
     },
     {
       "Style": 351,

@@ -23,6 +23,7 @@ using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Metrics;
+using ZoneEngine_New.Core.Mobs;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Playfield.Locality;
 using ZoneEngine_New.Core.Quests.Dungeons;
@@ -39,12 +40,18 @@ using ZoneEngine_New.Core.WorldSimulation;
 public sealed class QuestDungeonPlayfield : Playfield
 {
     PlayfieldWorldSimulation? _simulation;
+    readonly MissionItemObjectiveBinding? _objectiveItem;
+    readonly MissionNpcObjectiveBinding? _objectiveNpc;
+    readonly bool _spawnNpcObjective;
+    readonly Func<Player, MissionObjectiveItem, bool>? _collectObjective;
 
     public QuestDungeonPlayfield(int playfieldId, string questId, DungeonLayout layout, MissionEntrancePlacement entrance,
         string? targetHash, int quality, IZoneLogger logger, IMessageRouter router, PlayfieldManager manager, PlayerHydrator hydrator, IGameData data,
         IItemBuilder items, HashItemMinter hashItems, IInventoryRepository inventory, IItemInstanceIdAllocator ids,
         InventoryMoveService moves, InventoryFlushService flush, TradeService trades, CharacterSnapshotService snapshot,
-        IPlayfieldMetricsRegistry metrics, IShopDao shopDao)
+        IPlayfieldMetricsRegistry metrics, IShopDao shopDao, MissionItemObjectiveBinding? objectiveItem = null,
+        Func<Player, MissionObjectiveItem, bool>? collectObjective = null, MissionNpcObjectiveBinding? npcObjective = null,
+        MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true)
         : base(new Identity { Type = IdentityType.Playfield, Instance = playfieldId }, logger, router,
             manager, hydrator, data, items, hashItems, inventory, ids, moves, flush, trades, snapshot, metrics, shopDao)
     {
@@ -53,11 +60,25 @@ public sealed class QuestDungeonPlayfield : Playfield
         Entrance = entrance ?? throw new ArgumentNullException(nameof(entrance));
         TargetHash = string.IsNullOrWhiteSpace(targetHash) ? null : targetHash;
         Quality = Math.Max(0, quality);
+        if (objectiveItem != null && (!objectiveItem.IsValid
+            || !string.Equals(objectiveItem.QuestId, QuestId, StringComparison.Ordinal) || collectObjective == null))
+            throw new ArgumentException("Invalid objective for this quest dungeon.", nameof(objectiveItem));
+        _objectiveItem = objectiveItem;
+        _collectObjective = collectObjective;
+        if (npcObjective != null && (!npcObjective.IsValid
+            || !string.Equals(npcObjective.QuestId, QuestId, StringComparison.Ordinal)))
+            throw new ArgumentException("Invalid NPC objective for this quest dungeon.", nameof(npcObjective));
+        _objectiveNpc = npcObjective;
+        _spawnNpcObjective = spawnNpcObjective;
+        TokenProgress = tokenProgress;
+        TokenProgress?.Attach(this, logger);
     }
 
     public string QuestId { get; }
 
     public DungeonLayout Layout { get; }
+
+    public MissionTokenProgress? TokenProgress { get; }
 
     /// <summary>Where the dungeon is entered from, and where its occupants return to.</summary>
     public MissionEntrancePlacement Entrance { get; }
@@ -74,6 +95,8 @@ public sealed class QuestDungeonPlayfield : Playfield
         var locality = GetRequiredService<PlayfieldLocality>();
         AORebirth.World.Collision.DungeonWorldLayout? dungeon = DungeonPlayfieldBinder.TryBuild(
             GameData.RootPath, Identity.Instance, Layout.Generator, Logger);
+        if (dungeon == null && TokenProgress != null)
+            throw new InvalidDataException("Mission token population cannot initialize without dungeon geometry.");
         if (dungeon != null)
             locality.ApplyDungeonRooms(dungeon);
 
@@ -88,23 +111,20 @@ public sealed class QuestDungeonPlayfield : Playfield
         if (dungeon != null)
         {
             SpawnDoors(dungeon.Doors, locality);
+            SpawnFloorTransitions(locality);
+            if (_objectiveNpc != null)
+            {
+                TokenProgress?.RegisterObjective(_objectiveNpc, GameData);
+            }
+            SpawnObjectiveNpc(dungeon);
             AddDistrictSpawns(dungeon);
+            SpawnObjectiveItem(dungeon, locality);
         }
+
+        TokenProgress?.Seal();
 
         MarkBuilt();
     }
-
-    /// <summary>
-    /// TEMPORARY: every district spawn point spawns this hash until mission content (type, faction, level) picks what
-    /// lives in the dungeon.
-    /// </summary>
-    const string TemporaryNpcHash = "ZK3X";
-
-    /// <summary>
-    /// TEMPORARY: chance that each district spawn point of a room is used. Every room still gets at least one NPC when
-    /// its district has any spawn point.
-    /// </summary>
-    const int TemporarySpawnPointChancePercent = 35;
 
     static readonly ConcurrentDictionary<(string Root, int Style), PlayfieldDistrictsData?> StyleDistricts = new();
 
@@ -123,7 +143,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         if (placements.Count == 0)
             return;
 
-        PlayfieldDistrictsData? districts = LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style);
+        PlayfieldDistrictsData? districts = LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style, Logger);
         if (districts?.Districts == null)
             return;
 
@@ -155,15 +175,26 @@ public sealed class QuestDungeonPlayfield : Playfield
         }
 
         var spawns = GetRequiredService<HashSpawnSystem>();
-        (int Room, PlayfieldDistrictSpawnPoint Point)? target = TargetHash == null ? null : PlaceTarget(dungeon, rooms, spawns);
+        (int Room, PlayfieldDistrictSpawnPoint Point)? target = _objectiveNpc != null || TargetHash == null
+            ? null : PlaceTarget(dungeon, rooms, spawns);
+
+        DungeonPopulationPolicy population = Layout.Population;
+        if (!population.IsValid(GameData))
+        {
+            Logger.Warn("Quest dungeon " + QuestId + ": ordinary NPC policy is unavailable; no placeholder population selected");
+            return;
+        }
 
         int added = 0;
         int skipped = 0;
         foreach ((AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictEntry district, List<PlayfieldDistrictSpawnPoint> points) in rooms)
         {
             // The target's point is taken; the target counts as that room's NPC.
-            bool holdsTarget = target is { } held && held.Room == placement.Index;
-            var candidates = holdsTarget ? points.FindAll(point => !ReferenceEquals(point, target!.Value.Point)) : new List<PlayfieldDistrictSpawnPoint>(points);
+            bool holdsFrozenTarget = _objectiveNpc?.RoomIndex == placement.Index;
+            bool holdsTarget = holdsFrozenTarget || target is { } held && held.Room == placement.Index;
+            var candidates = points.FindAll(point =>
+                !(target is { } legacyTarget && legacyTarget.Room == placement.Index && ReferenceEquals(point, legacyTarget.Point))
+                && !(holdsFrozenTarget && IsObjectiveNpcPoint(placement, point)));
             if (candidates.Count == 0)
                 continue;
 
@@ -172,7 +203,7 @@ public sealed class QuestDungeonPlayfield : Playfield
             int wanted = 0;
             for (int i = 0; i < candidates.Count; i++)
             {
-                if (roll.Next(100) < TemporarySpawnPointChancePercent)
+                if (roll.Next(100) < population.SpawnPointChancePercent)
                     wanted++;
             }
 
@@ -187,10 +218,28 @@ public sealed class QuestDungeonPlayfield : Playfield
                 float[] position = point.Position;
                 System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
                     new System.Numerics.Vector3(position[0], position[1], position[2]));
-                if (spawns.AddPlacedDistrictPoint(TemporaryNpcHash, district,
-                        new AORebirth.Core.Vector.Vector3(placed.X, placed.Y, placed.Z), point.Radius,
-                        useDistrictLevels: false, respawns: false))
+                string hash = population.RegularNpcHashes[roll.Next(population.RegularNpcHashes.Length)];
+                string pointKey = "r" + placement.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "p" + Array.IndexOf(district.SpawnPoints!, point).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                MissionTokenProgress.SpawnPoint? frozenPoint = null;
+                if (TokenProgress != null && district.RespawnChance > 0)
                 {
+                    frozenPoint = TokenProgress.ResolvePoint(pointKey, hash, Math.Max(1, Quality), GameData);
+                    if (frozenPoint == null)
+                        continue;
+                    hash = frozenPoint.Hash;
+                }
+                if (spawns.AddPlacedDistrictPoint(hash, district,
+                        new AORebirth.Core.Vector.Vector3(placed.X, placed.Y, placed.Z), point.Radius,
+                        useDistrictLevels: false, respawns: false, requestedLevel: frozenPoint?.Level ?? (Quality > 0 ? Quality : null),
+                        frozenTemplates: frozenPoint?.Templates,
+                        onBranchSpawned: frozenPoint == null ? null : (actor, branch) => TokenProgress!.BindActor(pointKey, actor, branch),
+                        isBranchKilled: frozenPoint == null ? null : branch => TokenProgress!.IsKilled(pointKey, branch)))
+                {
+                    if (frozenPoint != null)
+                    {
+                        TokenProgress!.RegisterPoint(frozenPoint);
+                    }
                     placedInRoom++;
                     added++;
                 }
@@ -199,7 +248,51 @@ public sealed class QuestDungeonPlayfield : Playfield
             }
         }
 
-        Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped);
+        Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped
+            + " requestedNpcLevel=" + Quality + " families=" + string.Join(",", population.RegularNpcHashes));
+    }
+
+    bool IsObjectiveNpcPoint(AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictSpawnPoint point)
+    {
+        if (_objectiveNpc == null)
+            return false;
+        System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
+            new System.Numerics.Vector3(point.Position[0], point.Position[1], point.Position[2]));
+        return placed.X == _objectiveNpc.X && placed.Y == _objectiveNpc.Y && placed.Z == _objectiveNpc.Z;
+    }
+
+    void SpawnObjectiveNpc(AORebirth.World.Collision.DungeonWorldLayout dungeon)
+    {
+        if (_objectiveNpc == null || !_spawnNpcObjective || TokenProgress?.IsKilled("objective", 0) == true)
+            return;
+        if (_objectiveNpc.RoomIndex >= dungeon.Placements.Count
+            || DungeonObjectivePlacement.RoomDistances(dungeon, Layout)[_objectiveNpc.RoomIndex] <= 0)
+            throw new InvalidDataException("Accepted NPC objective room is unavailable.");
+        if (!GameData.TryResolveMobTemplate(_objectiveNpc.NpcHash, _objectiveNpc.Quality, out MobTemplate template)
+            || template.UnresolvedPlaceholder || !NpcTemplateValidation.CanSpawn(template)
+            || !string.Equals(template.Hash, _objectiveNpc.NpcHash, StringComparison.Ordinal)
+            || (_objectiveNpc.MissionType == 0 && template.Has(NpcFeature.NoCombat)))
+            throw new InvalidDataException("Accepted NPC objective template is unavailable.");
+
+        int? objectiveScale = _objectiveNpc.ScalePercent;
+        NpcCharacter npc = GetRequiredService<SpawnService>().SpawnMob(template,
+            new AORebirth.Core.Vector.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z),
+            new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1), _objectiveNpc.Quality,
+            SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash,
+            configure: actor =>
+            {
+                if (objectiveScale is int scale)
+                {
+                    actor.Stats.Set(CharacterStat.Scale, scale);
+                }
+            },
+            fixedIdentity: _objectiveNpc.Identity);
+        TokenProgress?.BindActor("objective", npc, 0);
+        Logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+            "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#}) scale={8}",
+            QuestId, (int)npc.Identity.Type, npc.Identity.Instance, _objectiveNpc.NpcHash,
+            _objectiveNpc.RoomIndex, npc.Position.xf, npc.Position.yf, npc.Position.zf,
+            npc.Stats.GetOrZero(CharacterStat.Scale)));
     }
 
     /// <summary>
@@ -211,34 +304,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         List<(AORebirth.World.Collision.DungeonRoomPlacement Placement, PlayfieldDistrictEntry District, List<PlayfieldDistrictSpawnPoint> Points)> rooms,
         HashSpawnSystem spawns)
     {
-        int count = dungeon.Placements.Count;
-        var links = new List<int>[count];
-        for (int i = 0; i < count; i++)
-            links[i] = [];
-        foreach (AORebirth.World.Collision.DungeonDoorPlacement door in dungeon.Doors)
-        {
-            if (door.IsExit || door.Room < 0 || door.Room >= count || door.LinkedRoom < 0 || door.LinkedRoom >= count)
-                continue;
-            links[door.Room].Add(door.LinkedRoom);
-            links[door.LinkedRoom].Add(door.Room);
-        }
-
-        var distance = new int[count];
-        Array.Fill(distance, -1);
-        distance[0] = 0;
-        var queue = new Queue<int>();
-        queue.Enqueue(0);
-        while (queue.Count > 0)
-        {
-            int room = queue.Dequeue();
-            foreach (int next in links[room])
-            {
-                if (distance[next] >= 0)
-                    continue;
-                distance[next] = distance[room] + 1;
-                queue.Enqueue(next);
-            }
-        }
+        int[] distance = DungeonObjectivePlacement.RoomDistances(dungeon, Layout);
 
         var roll = new Random(unchecked(Layout.Seed * 31337));
         var byDistance = new List<int>();
@@ -275,13 +341,13 @@ public sealed class QuestDungeonPlayfield : Playfield
         return null;
     }
 
-    PlayfieldDistrictsData? LoadStyleDistricts(string root, int style)
+    internal static PlayfieldDistrictsData? LoadStyleDistricts(string root, int style, IZoneLogger logger)
         => StyleDistricts.GetOrAdd((root, style), key =>
         {
             string path = Path.Combine(key.Root, GameDataPaths.PlayfieldDistrictsRelativePath(key.Style));
             if (!File.Exists(path))
             {
-                Logger.Warn("No Districts.json for dungeon style " + key.Style + " at " + path + "; dungeon has no NPC spawns");
+                logger.Warn("No Districts.json for dungeon style " + key.Style + " at " + path + "; dungeon has no NPC spawns");
                 return null;
             }
 
@@ -291,10 +357,60 @@ public sealed class QuestDungeonPlayfield : Playfield
             }
             catch (Exception exception)
             {
-                Logger.Error(exception, "Failed to read " + path);
+                logger.Error(exception, "Failed to read " + path);
                 return null;
             }
         });
+
+    void SpawnObjectiveItem(AORebirth.World.Collision.DungeonWorldLayout dungeon, PlayfieldLocality locality)
+    {
+        if (_objectiveItem == null)
+            return;
+        if (_objectiveItem.RoomIndex >= dungeon.Placements.Count
+            || DungeonObjectivePlacement.RoomDistances(dungeon, Layout)[_objectiveItem.RoomIndex] <= 0)
+            throw new InvalidDataException("Accepted objective room is unavailable.");
+        var item = new MissionObjectiveItem(_objectiveItem,
+            GetRequiredService<IItemBuilder>().CreateTemplate(_objectiveItem.LowId, _objectiveItem.HighId, _objectiveItem.Quality),
+            _collectObjective!)
+        {
+            Playfield = this,
+            Position = new AORebirth.Core.Vector.Vector3(_objectiveItem.X, _objectiveItem.Y, _objectiveItem.Z),
+            Rotation = new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1)
+        };
+        if (!GetRequiredService<DynelRegistry>().TryRegister(item))
+            throw new InvalidDataException("Accepted objective identity is already registered.");
+        locality.RegisterDynel(item);
+    }
+
+    void SpawnFloorTransitions(PlayfieldLocality locality)
+    {
+        var registry = GetRequiredService<DynelRegistry>();
+        foreach (var transition in Layout.FloorTransitions)
+        {
+            SpawnEndpoint(transition.From, transition.To);
+            SpawnEndpoint(transition.To, transition.From);
+        }
+
+        void SpawnEndpoint(AORebirth.DungeonGenerator.DungeonTransitionEndpoint source,
+            AORebirth.DungeonGenerator.DungeonTransitionEndpoint target)
+        {
+            foreach (int templateId in new[] { source.PlatformTemplateId, source.ButtonTemplateId })
+            {
+                if (!ItemTemplates.TryGet(templateId, out ItemTemplate? template) || template == null)
+                    throw new InvalidDataException("Dungeon floor transition item template is unavailable: " + templateId);
+                var dynel = new DungeonFloorTransitionDynel(registry.AllocateStaticDynelIdentity(),
+                    template, new AORebirth.Core.Vector.Vector3(target.Position.X, target.Position.Y, target.Position.Z))
+                {
+                    Playfield = this,
+                    Position = new AORebirth.Core.Vector.Vector3(source.Position.X, source.Position.Y, source.Position.Z),
+                    // Platform/button updates retain world identity heading even in rotated captured rooms.
+                    Rotation = new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1)
+                };
+                registry.Register(dynel);
+                locality.RegisterDynel(dynel);
+            }
+        }
+    }
 
     /// <summary>First door instance; doors are numbered in layout order, exit first, as live dungeons do.</summary>
     const int FirstDoorInstance = 0x10000001;

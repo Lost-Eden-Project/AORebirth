@@ -22,6 +22,7 @@
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/Domain/Accounts/**/*.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Missions/**/*.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/Domain/Missions/**/*.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/Domain/Quests/**/*.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/DatabaseDaoFactory.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/Dao/NewCharacterStartAreaSelectionDao.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/Dao/CharacterOnlineOwnershipGuard.cs" />

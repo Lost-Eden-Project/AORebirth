@@ -20,6 +20,162 @@ unchanged. Approved Windows core build and 52 focused tests passed. The normal
 test-project compile still reports six unrelated missing mission-test types;
 no full-suite pass is claimed. Two-client acceptance and obstructed LOS geometry
 remain UNVERIFIED. No master merge or deployment. See `docs/ai/CURRENT_TASK.md`.
+OBSERVED (Find Item visibility): Mike could not find the objective, deleted the
+mission, and requested 200-percent scale. Existing FindItem.WorldScalePercent
+changes from 150 to 200 for newly accepted missions. This reuses world-only
+scale publication; item identity, placement, pickup and rewards are unchanged.
+No missing-spawn cause is proven. Original-client visibility verification at
+200 percent is pending; no automated suites requested.
+
+PROVEN (QL34 roll rejection): the captured corpus contains no expected QL34.
+Mike approved configurable nearest-QL fallback within the same originating
+terminal playfield. Exact-QL behavior remains first; the optional policy reuses
+existing pools without changing requested mission QL, rewards or observation
+records. Borealis QL34 selects its QL35 pool of 184 entrances. Approved Windows
+core build, data comparison and diff validation passed; client verification
+pending. No suites requested. See `docs/reports/MISSION_DESTINATION_QL_FALLBACK.md`.
+
+PROVEN (mission reward inventory mismatch, 73c32cdc2): key deletion preceded
+AddTemplate, opening a slot that was occupied when reward placements were
+planned. Shade's token clicks therefore resolved to the reward implant until
+zoning. Correction publishes rewards before key removal and guarantees key
+cleanup in finally. Existing token receipt/use is OBSERVED in the client;
+immediate use after this correction remains CLIENT UNVERIFIED. Approved Windows
+core build and diff validation passed; no suites requested. Existing item data
+gives Shade two token points and is unchanged. See `docs/reports/MISSION_TOKEN_REWARDS.md`.
+
+PROVEN (Find Person token full-clear defect, 34c8d30f9): the live Omni mission
+counted its living inspection target alongside 21 killed enemies, freezing
+21/22 and a losing roll when inspected. The targeted correction excludes Find
+Person targets from effective token counts while retaining their population
+and death persistence. Kill Person targets remain counted. Runtime chat and
+award chance share eligible counts; full eligible clearance reaches 100 percent.
+Approved Windows core build and diff validation succeeded for this correction;
+original-client full-clear verification remains pending. No suites requested
+or run. Evidence: `docs/reports/MISSION_TOKEN_REWARDS.md`.
+
+IMPLEMENTED, CLIENT UNVERIFIED (generated mission sided tokens): retained capture chance feedback
+is now reconciled against original CSV packets and client text. Objective kills
+count; partial-clearance token award attempts are proven. Integration reuses
+existing mission flags/observations and reward transactions, with editable
+DungeonGeneration policy and no schema change. Exact retail population
+eligibility remains unproven. Approved Windows core build and diff validation
+succeeded; no suites were requested or run. Local installation and original-client
+verification follow. See `docs/reports/MISSION_TOKEN_REWARDS.md`.
+
+OBSERVED, CLIENT ACCEPTED (immediate Kill Person rewards, runtime 08f17b3e4):
+Mike confirms reward receipt on the target kill. Logs corroborate Shade /
+D2086828889, exact MFPB objective 50000:2086828890 at scale 120, one advertised
+reward materialization, key cleanup and committed completion at uptime
+29:13.136, without delivery retries. This accepts the observed target-kill and
+reward sequence. No NewLevelMessage occurs, so the specific mission-reward
+level-up case remains UNVERIFIED. Documentation only; running engines and
+runtime/content/DAO/schema are unchanged. No suites requested or run.
+
+OBSERVED (Kill Person reward delay, runtime e65160c86): the exact MFPB target
+death starts reward delivery immediately; five-second retries commit roughly
+15 seconds later, after an ordinary mob causes a level-up. PROVEN persistence
+defect: quest XP level-up projections include runtime-only health/nano, which
+completion incorrectly compares against durable rows excluded by checkpointing.
+The scoped repair uses existing StatCollection.IsRuntimeOnly to exclude them
+from durable reward expectations, mutations and saved baselines while retaining
+the full runtime projection and durable vital percentages. Rejected DAO results
+now log status/reason. The prior log lacks that reason, so attribution of this
+specific delay remains INFERRED; original-client level-up reward verification
+is pending. Exact objective binding, reward ledger, DAO/schema and content are
+unchanged. No suites requested.
+Approved Windows core compilation and git diff --check succeeded for this repair.
+
+OBSERVED, CLIENT ACCEPTED (Kill Person completion, runtime 615696581): Mike
+confirms Kill Person works and requests a boss target slightly larger than an
+ordinary NPC. PROVEN: its existing policy selected FECI; the existing boss pool
+uses MFPB at catalog scale 100. Follow-up selects that boss profile through
+NpcHashes and freezes a configurable Kill Person-only scale of 120, applied
+before initial spawn registration. Find Person retains its current size and
+inspection completion. No NPC catalog, DAO/schema, kill-completion or reward
+changes. New boss appearance/selection is CLIENT UNVERIFIED; no suites requested.
+Approved Windows core compilation, policy JSON validation and git diff --check
+passed. Existing NPC catalog content is unchanged.
+
+OBSERVED, CLIENT ACCEPTED (Find Item, runtime 615696581): Mike confirms objective
+pickup and reward receipt in the original AO client. Local logs also confirm
+exact collection for char 66 / D2086798944 / item 51005:2086798945, reward item
+creation, dungeon/key cleanup and committed quest completion. This accepts the
+observed Find Item sequence; item visual scale, remaining objective types and
+unexercised recovery cases are not newly verified by this result.
+
+PROVEN (mission pickup codec defect): original ClientGetItem bytes contain a
+player identity, one Unknown byte, then the objective identity. The custom codec
+read the player into its target and omitted the remaining fields. fa5dae8aa
+removed a first handler rejection but did not fix that target decoding; Mike
+reports pickup still failing. The follow-up corrects this codec's read/write
+order and restores actor validation, preserving all exact owner/dungeon/range/
+transaction checks and adding pickup target/result logging. Optional world-only
+item scale remains 150 percent for new Find Item/Return Item objectives.
+Accepted identities, inventory items and reward persistence are unchanged.
+Original-client Find Item pickup/completion/rewards are now accepted as recorded
+above; visual scale remains UNVERIFIED. No suites requested for this follow-up.
+Approved Windows core compilation, raw-byte inspection and git diff --check
+passed; captured bytes and 150-percent item policy are unchanged.
+
+IMPLEMENTED, CLIENT UNVERIFIED (Find Person boss correction): separate editable
+Find Person boss pool freezes an authored human boss catalog leaf with the
+exact accepted actor and reuses existing NPC spawning. Original boss bands/stats,
+human visuals and persistent base scale live in the existing full NPC catalog.
+Mike reports the boss is better but too large and should be attackable. Follow-up
+uses base scale 100 without growth equipment and normal NPC combat AI; exact
+inspection still completes Find Person. Existing accepted contracts, Kill Person
+and other objectives are preserved. Approved follow-up compilation passed; no suites requested.
+Boss combat-stat parity and team bosses remain separate unfinished work.
+
+IMPLEMENTED, CLIENT UNVERIFIED (all-five solo objective candidate):
+`codex/all-mission-objectives` extends the installed `9f59727bd` lifecycle with
+exact mission NPC kill/inspection, supplied-tool machine interaction and
+two-stage item return. Existing Find Item, rolling, QL, destinations, room layouts,
+keys and reward delivery remain the owners. Objective content references live in
+the existing DungeonGeneration policy and existing item/NPC catalogs; choices
+across QLs are AORebirth policy, not claims of retail selection probabilities.
+Approved Windows core build passed. No schema migration or separate mission/reward framework. No automated test
+suites run for this task; original-client acceptance remains Mike's next step.
+Team acceptance/bosses, independent loot and complete retail NPC parity remain
+unfinished. Earlier objective-status statements below describe prior snapshots.
+
+PROVEN (2026-10-11, Find Item/reward-integrity candidate): based on installed
+`40caa10b8`, `codex/find-item-reward-integrity` connects newly accepted generated
+Find Item missions to exact persisted owner-bound world items and the existing
+pickup/inventory protocol. Existing mission DAO/ledger transactions retain
+earned rewards until all delivery effects commit, with duplicate protection,
+pending-expiry retention, checkpoint ordering and reconnect key reconciliation.
+No schema migration, replacement content system or changes to destination/QL/
+room-generation rules. Approved engine build, 153 focused mission/dungeon cases
+and 320 real-MySQL DAO checks passed; original AO client acceptance is UNVERIFIED.
+Existing unbound accepted Find Item records
+are retained unchanged. Other objectives, team acceptance/bosses and independent
+loot remain separate work. See `docs/reports/FIND_ITEM_REWARD_INTEGRITY.md`.
+
+OBSERVED (2026-10-11, original-client dungeon foundation test): Mike rolled a
+mission and entered its interior, then reported alien-only ordinary enemies.
+PROVEN (population repair candidate): a fixed alien family and omitted requested
+level caused that population. `codex/mission-dungeon-npc-population` replaces the
+placeholder with six existing nonalien families configured in DungeonGeneration
+and passes mission QL through existing NPC resolution/interpolation/clamping.
+Approved build and 121 focused cases passed, including actual NPC spawning and
+unchanged layout/entrance payloads. No DAO/schema, mission rolling or target
+behavior changes. The old catalog still limits levels and coverage; human and
+high-level population, team bosses/acceptance, objectives and independent loot
+remain incomplete. Population client acceptance is UNVERIFIED. See
+`docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md`.
+
+PROVEN (2026-10-11, procedural dungeon foundation candidate):
+`codex/procedural-dungeon-foundation`, based on master `3805aa851`, extends the
+existing assembler with editable multi-style solo selection and validated team
+floor/boss-chamber geometry. Version-1/2 accepted layouts remain byte-identical;
+new version-3 plans use existing quest JSON persistence. Approved build,
+111 focused cases (including 288 configured-boundary layouts), 74 real-MySQL
+identity checks and 275 persistence checks passed. Team acceptance/boss NPCs,
+objective population and independent loot remain the next milestone; original
+client acceptance of the new layouts is UNVERIFIED. No runtime capture loading,
+DAO/schema change or deployment. See `docs/reports/PROCEDURAL_DUNGEON_FOUNDATION.md`.
 
 UNVERIFIED (2026-10-11, ordinary empty-playfield unload candidate):
 `codex/idle-playfield-unload`, based on public master

@@ -1,0 +1,59 @@
+{
+  "_comment": "AORebirth generation policy, not a reconstruction of Funcom selection probabilities. QL2 team captures have two floors; QL220 has five. Intermediate sizes/floor bands are configurable policy. Team layout support reserves a separate boss floor; team acceptance and boss population are a subsequent milestone. Room roles and exact floor-travel anchors live in DungeonEntrances.json.",
+  "FloorHeight": 64,
+  "LockedDoorChancePercent": 0,
+  "TokenReward": {
+    "_comment": "Sided token policy for newly accepted generated missions. The existing item catalog owns these Unique token items and their level-dependent points when used. Capture feedback proves rising killed/total chance, first displayed after five kills, and includes objective NPCs. AORebirth counts the frozen generated ordinary and objective NPC population; exact retail denominator eligibility and chance below five kills remain unproven. Linear chance applies from the first kill, empty populations grant no token, and no gray-NPC exclusion is invented. This is configurable gameplay policy, not a claim of complete retail equivalence.",
+    "SidedItems": { "1": 96350, "2": 96349 },
+    "ItemQuality": 1,
+    "FeedbackStartingKill": 5,
+    "FeedbackMessageId": 79979934
+  },
+  "FindItem": {
+    "_comment": "AORebirth pickup-objective policy referencing the existing ItemTemplates catalog. URSE is the Urgent Sensitive Information item observed in the completed Find Item capture. QuestInstanceStat is the captured world-item marker; it is not a generated quest ID or a reward. Selection is configurable policy, not a retail probability claim.",
+    "ItemHashes": ["URSE"],
+    "Quality": 1,
+    "QuestInstanceStat": 1,
+    "WorldFlags": 2147483651,
+    "WorldScalePercent": 200
+  },
+  "ReturnItem": {
+    "_comment": "AORebirth return-objective policy referencing the existing COSE/Contained Sensitive Information item. This is editable objective selection policy, not a claim that every retail Return Item mission uses this item. Collection preserves the mission-specific identity; delivery requires its exact issuing terminal. The advertised reward remains independent.",
+    "ItemHashes": ["COSE"],
+    "Quality": 1,
+    "QuestInstanceStat": 1,
+    "WorldFlags": 2147483651,
+    "WorldScalePercent": 150
+  },
+  "RepairMachine": {
+    "_comment": "Existing SPPR/Special Prototype Medicine and CRCH/Cryo Chamber references reproduce the item pair observed in completed capture mission-20261012-004902-7174e861. Its source is QL1 and target QL154; those content qualities are independent of mission QL. Reusing the pair across mission QLs is configurable AORebirth policy, not a retail distribution claim.",
+    "Source": {
+      "ItemHashes": ["SPPR"],
+      "Quality": 1,
+      "QuestInstanceStat": 1
+    },
+    "Target": {
+      "ItemHashes": ["CRCH"],
+      "Quality": 154,
+      "QuestInstanceStat": 1
+    }
+  },
+  "NpcObjectives": {
+    "_comment": "AORebirth objective selection policy using the existing NPC catalog. Kill Person's NpcHashes and FindPersonNpcHashes select the existing MFPB human boss profile: original boss level bands/stats, existing human visuals and base scale 100 without growth-modifier equipment. KillPersonScalePercent makes only the kill objective 20 percent larger to stand out; Find Person retains its catalog size and inspection completion. Normal attackability and combat AI are preserved. The resolved leaf, exact actor identity and optional objective scale are frozen at acceptance. This is configurable policy, not a retail target-hash or probability claim.",
+    "NpcHashes": ["MFPB"],
+    "FindPersonNpcHashes": ["MFPB"],
+    "KillPersonScalePercent": 120
+  },
+  "Population": {
+    "_comment": "AORebirth ordinary-NPC policy: references to existing nonalien NpcTemplates families whose leaf name/MonsterData/NPCFamily match captured missions. Not a reconstruction of retail hashes, selection weights, or the full human/high-level population. NPC resolution requests mission QL and uses existing interpolation/clamping; this older catalog has gaps and upper limits (ANDR106, ROLL47, other families85). See docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md. Bosses, objectives and loot are separate.",
+    "SpawnPointChancePercent": 35,
+    "RegularNpcHashes": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"]
+  },
+  "Profiles": [
+    { "Team": false, "MinQuality": 1, "MaxQuality": 250, "Styles": [321, 324, 341, 351], "Floors": 1, "MinFloorSize": 9, "MaxFloorSize": 16 },
+    { "Team": true, "MinQuality": 1, "MaxQuality": 24, "Styles": [324, 341], "Floors": 2, "MinFloorSize": 8, "MaxFloorSize": 12 },
+    { "Team": true, "MinQuality": 25, "MaxQuality": 99, "Styles": [341], "Floors": 3, "MinFloorSize": 9, "MaxFloorSize": 14 },
+    { "Team": true, "MinQuality": 100, "MaxQuality": 179, "Styles": [341], "Floors": 4, "MinFloorSize": 9, "MaxFloorSize": 14 },
+    { "Team": true, "MinQuality": 180, "MaxQuality": 250, "Styles": [341], "Floors": 5, "MinFloorSize": 10, "MaxFloorSize": 14 }
+  ]
+}

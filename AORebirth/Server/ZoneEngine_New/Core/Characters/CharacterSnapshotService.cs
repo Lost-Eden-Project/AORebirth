@@ -79,6 +79,32 @@ namespace ZoneEngine_New.Core.Characters
             }
         }
 
+        /// <summary>Flushes the live aggregate before an atomic reward projection without releasing online ownership.</summary>
+        public void CommitOnline(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            lock (player.PersistenceGate)
+            {
+                if (player.IsPersistenceQuarantined)
+                    throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
+                long sequence = player.SaveState.NextSequence();
+                var location = CaptureResumableLocation(player);
+                var stats = CaptureBaseStats(player);
+                try
+                {
+                    if (!_characters.SaveOnlineCheckpoint(player.Identity.Instance, location, stats))
+                        throw new InvalidOperationException("Reward checkpoint requires the current online character owner.");
+                    player.SaveState.MarkCommitted(sequence, stats, location);
+                }
+                catch (DatabaseCommitOutcomeUnknownException)
+                {
+                    player.QuarantinePersistence();
+                    player.Session?.Close();
+                    throw;
+                }
+            }
+        }
+
         private (CharacterRecord Location, List<StatRecord> Stats)? CommitCore(Player player)
         {
             int characterId = player.Identity.Instance;

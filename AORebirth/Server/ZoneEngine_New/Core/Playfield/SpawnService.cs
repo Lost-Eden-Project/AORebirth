@@ -149,17 +149,23 @@ namespace ZoneEngine_New.Core.Playfield
             SpawnSource spawnSource = SpawnSource.None,
             string? spawnHash = null,
             Action<NpcCharacter>? configure = null,
-            bool attachDefaultBrain = true)
+            bool attachDefaultBrain = true,
+            Identity? fixedIdentity = null)
         {
             ArgumentNullException.ThrowIfNull(template);
             ArgumentNullException.ThrowIfNull(position);
+            if (fixedIdentity is { } acceptedIdentity
+                && (acceptedIdentity.Type != IdentityType.CanbeAffected || acceptedIdentity.Instance <= 0))
+                throw new ArgumentException("A fixed NPC identity must be a positive SimpleChar identity.", nameof(fixedIdentity));
 
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("spawn.stats", 0);
             NpcTemplateValidation.RequireSpawnable(template);
             int? spawnLevel = NpcTemplateLevelPolicy.ClampRequestedLevel(template, level);
             var resolvedStats = _gameData.ComposeNpcStats(template, spawnLevel);
             NpcTemplateLevelPolicy.RequireExactLevel(template, spawnLevel, resolvedStats);
-            Identity identity = _registry.AllocateNpcIdentity();
+            Identity identity = fixedIdentity ?? _registry.AllocateNpcIdentity();
+            if (fixedIdentity != null && _registry.TryGet(identity, out _))
+                throw new InvalidOperationException("The accepted NPC identity is already registered.");
             Metrics.TickStallWatch.Stage("spawn.snap", identity.Instance);
             Vector3 at = _playfield.SnapNpcSpawn(position);
             Metrics.TickStallWatch.Stage("spawn.build", identity.Instance);
@@ -209,7 +215,10 @@ namespace ZoneEngine_New.Core.Playfield
             configure?.Invoke(npc);
 
             Metrics.TickStallWatch.Stage("spawn.register", identity.Instance);
-            _registry.Register(npc);
+            if (fixedIdentity == null)
+                _registry.Register(npc);
+            else if (!_registry.TryRegister(npc))
+                throw new InvalidOperationException("The accepted NPC identity is already registered.");
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(npc);
 
             Metrics.TickStallWatch.Stage("spawn.log", identity.Instance);

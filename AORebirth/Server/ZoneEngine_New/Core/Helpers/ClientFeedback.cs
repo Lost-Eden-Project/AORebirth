@@ -94,6 +94,7 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>
         /// Category 110 feedback text the client formats itself. Retail quest kill progress (capture 2026-09-27):
         /// Unknown1 0, then "~&" + base-85 category + base-85 message id, then each argument as 'i' + base-85 int,
+        /// 'f' + base-85 IEEE754 bits for a float (retail mission token chance),
         /// 'R' + base-85 category + base-85 id for a <see cref="TextReference"/>, or 's' + (length + 1) + text.
         /// </summary>
         public static void SendFormatted(Character character, int messageId, params object[] args)
@@ -106,6 +107,8 @@ namespace ZoneEngine_New.Core.Helpers
             {
                 if (arg is int number)
                     text.Append('i').Append(Base85(number));
+                else if (arg is float percentage)
+                    text.Append('f').Append(Base85(System.BitConverter.SingleToInt32Bits(percentage)));
                 else if (arg is TextReference reference)
                     text.Append('R').Append(Base85(reference.Category)).Append(Base85(reference.MessageId));
                 else
