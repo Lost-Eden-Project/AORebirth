@@ -15,8 +15,8 @@ namespace ZoneEngine_New.Core.Inventory
     /// <item><see cref="CanFlags.ApplyOnFightingTarget"/>: only the character the user is fighting right now.</item>
     /// <item><see cref="CanFlags.ApplyOnHostile"/>: any combat-enabled character the user may attack (selected, else
     /// the fighting target), without having to be fighting it; using it does not start auto-attack.</item>
-    /// <item><see cref="CanFlags.ApplyOnFriendly"/>: the selected character; no selection or explicit self selection
-    /// uses the user only with <see cref="CanFlags.ApplyOnSelf"/>. Hostile flags retain precedence.</item>
+    /// <item><see cref="CanFlags.ApplyOnFriendly"/>: the selected character; no selection, self selection or a
+    /// non-character selection uses the user. Hostile flags retain precedence.</item>
     /// </list>
     /// Templates with none of these flags keep their own targeting.
     /// </summary>
@@ -62,26 +62,12 @@ namespace ZoneEngine_New.Core.Inventory
             if (AppliesToFriendly(can))
             {
                 Identity selected = user.Target;
-                if (selected.Instance == 0 || selected == user.Identity)
-                {
-                    if ((can & CanFlags.ApplyOnSelf) == 0)
-                    {
-                        failure = Failure.NoFriendlyTarget;
-                        return false;
-                    }
-                }
-                else
-                {
-                    // An invalid selection must not silently redirect a consumable to its user.
-                    if (user.Playfield == null
-                        || !user.Playfield.GetRequiredService<DynelRegistry>().TryGet(selected, out Dynel? dynel)
-                        || dynel is not Character chosenFriendly)
-                    {
-                        failure = Failure.NoFriendlyTarget;
-                        return false;
-                    }
+                // A selected character receives it; no selection, self or a non-character selection uses the user.
+                // Friendly kits, stims and rechargers rarely carry ApplyOnSelf.
+                if (selected.Instance != 0 && selected != user.Identity && user.Playfield != null
+                    && user.Playfield.GetRequiredService<DynelRegistry>().TryGet(selected, out Dynel? dynel)
+                    && dynel is Character chosenFriendly)
                     target = chosenFriendly;
-                }
 
                 failure = Revalidate(user, can, target) ?? Failure.None;
                 return failure == Failure.None;
