@@ -7,7 +7,7 @@ Base: installed `9f59727bd`; branch: `codex/all-mission-objectives`.
 | Type | Accepted contract and completion event |
 |---|---|
 | Kill Person | Frozen catalog leaf, owner, exact NPC identity and reachable placement; that actor's server-side death with existing present kill-credit participants earns completion. |
-| Find Person | Frozen passive NPC; visible exact actor inspection (`InfoRequest`) within interaction range and line of sight earns completion. Ordinary targeting does not. |
+| Find Person | Frozen boss NPC with normal combat behavior; visible exact actor inspection (`InfoRequest`) within interaction range and line of sight earns completion. Ordinary targeting does not. |
 | Find Item | Existing owner-bound world-item pickup, exact inventory grant and durable completion remain in place. |
 | Repair Machine | Tool and key granted in the same acceptance transaction; exact tool applied to the exact registered machine in the owned dungeon is consumed atomically with earning. |
 | Return Item | Exact world-item collection grants the item and persists progress 0 to 1 without earning rewards; use against the exact originating terminal consumes it and earns progress 2. |
@@ -53,7 +53,7 @@ in the existing full NPC catalog uses original `BEMC` boss bands/stats at levels
 1/200/400, existing `FECI` human appearance/equipment and base scale 125 observed
 on the retail Find Person target. No invented HP multiplier or stat-growth rule.
 Existing catalog interpolation supports the mission QL; completion still
-requires exact actor inspection and the target remains passive.
+requires exact actor inspection. The initial candidate made the target passive.
 
 No replacement NPC catalog, binding format, schema change or raid-boss substitution. The source
 Find Person capture's Monte Laurence is not claimed as an identified catalog
@@ -73,6 +73,19 @@ Approved core compilation, policy/catalog JSON parsing and `git diff --check`
 passed. Existing private NPC records remain byte-identical before the appended
 leaf; a local backup preserves the complete original catalog. No suites or AO
 client control performed. Actual boss appearance awaits Mike's client pass.
+
+OBSERVED follow-up: Mike reports the boss target is better, but too large and
+must be attackable. Its base scale is now 100 and the optional KZ15 growth item
+is removed from the existing private leaf. The spawn code no longer overrides
+attackability or suppresses the normal NPC brain. Find Person inspection
+completion, exact actor binding and other mission objectives remain unchanged;
+killing the target is not substituted for the Find Person completion event.
+Changed `QuestDungeonPlayfield`, the existing public/private policy documentation
+and private `NpcTemplates` data, plus task/status notes. Approved follow-up core
+compilation and policy/catalog validation passed; no suites requested or AO client
+actions performed. The copied human equipment has an existing SIW1 monster-weapon
+bridge covering QL1–400. Inspect before killing: killing alone does not earn
+Find Person, and a target killed beforehand returns on dungeon reconstruction.
 
 ## Validation and limits
 

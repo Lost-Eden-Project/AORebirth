@@ -242,13 +242,10 @@ public sealed class QuestDungeonPlayfield : Playfield
             || (_objectiveNpc.MissionType == 0 && template.Has(NpcFeature.NoCombat)))
             throw new InvalidDataException("Accepted NPC objective template is unavailable.");
 
-        bool passive = _objectiveNpc.MissionType == 1;
         NpcCharacter npc = GetRequiredService<SpawnService>().SpawnMob(template,
             new AORebirth.Core.Vector.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z),
             new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1), _objectiveNpc.Quality,
-            SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash,
-            configure: passive ? character => character.Attackable = false : null,
-            attachDefaultBrain: !passive, fixedIdentity: _objectiveNpc.Identity);
+            SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash, fixedIdentity: _objectiveNpc.Identity);
         Logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
             "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#})",
             QuestId, (int)npc.Identity.Type, npc.Identity.Instance, _objectiveNpc.NpcHash,

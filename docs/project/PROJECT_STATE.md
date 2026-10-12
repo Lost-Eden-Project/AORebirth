@@ -3,9 +3,11 @@
 IMPLEMENTED, CLIENT UNVERIFIED (Find Person boss correction): separate editable
 Find Person boss pool freezes an authored human boss catalog leaf with the
 exact accepted actor and reuses existing NPC spawning. Original boss bands/stats,
-human visuals and persistent base scale live in the existing full NPC catalog. Passive inspection
-completion remains unchanged. Existing accepted contracts, Kill Person and the
-other objectives are preserved. Approved core compilation passed; no suites requested.
+human visuals and persistent base scale live in the existing full NPC catalog.
+Mike reports the boss is better but too large and should be attackable. Follow-up
+uses base scale 100 without growth equipment and normal NPC combat AI; exact
+inspection still completes Find Person. Existing accepted contracts, Kill Person
+and other objectives are preserved. Approved follow-up compilation passed; no suites requested.
 Boss combat-stat parity and team bosses remain separate unfinished work.
 
 IMPLEMENTED, CLIENT UNVERIFIED (all-five solo objective candidate):

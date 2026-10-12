@@ -1,11 +1,14 @@
 # Current Task
 
-Correct Find Person target selection on `codex/all-mission-objectives`, based
-on installed `573ea3b63`. Mike's client test found a regular enemy profile.
+Adjust Find Person size and combat on `codex/all-mission-objectives`, based on
+installed `4b4d1907f`. Mike reports the boss target is better but too large and
+must be attackable.
 
 Find Person now has a separate editable boss NPC pool. The full existing NPC
-catalog contains an authored human boss variant using original boss bands/stats,
-existing human visuals and the captured target's persistent base scale 125.
+catalog contains an authored human boss variant using original boss bands/stats
+and existing human visuals. Set its base scale to 100 and remove its growth
+modifier equipment. Spawn through normal NPC attackability and combat AI instead
+of forcing Find Person passive. Exact inspection remains the completion event.
 Freeze its catalog leaf with the exact accepted actor through existing binding
 and reconstruction. Kill Person and all other objective, reward, destination
 and layout mechanics stay unchanged. No second catalog or new binding format.

@@ -30,7 +30,7 @@
     }
   },
   "NpcObjectives": {
-    "_comment": "AORebirth objective selection policy using the existing NPC catalog. Kill Person uses NpcHashes. Find Person uses its separate boss pool, retaining passive inspection behavior. MFPB is an authored human boss variant in the full NpcTemplates catalog: original boss level bands/stats, existing human visuals and persistent base scale 125 observed on the captured Find Person target. The resolved leaf and exact actor identity are frozen at acceptance. This is configurable policy, not a retail target-hash or probability claim.",
+    "_comment": "AORebirth objective selection policy using the existing NPC catalog. Kill Person uses NpcHashes. Find Person uses its separate boss pool and normal NPC combat behavior; exact inspection still completes the objective. MFPB is an authored human boss variant in the full NpcTemplates catalog: original boss level bands/stats, existing human visuals and base scale 100, without growth-modifier equipment, per local gameplay feedback. The resolved leaf and exact actor identity are frozen at acceptance. This is configurable policy, not a retail target-hash or probability claim.",
     "NpcHashes": ["FECI"],
     "FindPersonNpcHashes": ["MFPB"]
   },
