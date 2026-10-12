@@ -53,9 +53,6 @@ public sealed class MissionNpcObjectiveBinding
     public int Instance { get; set; }
     public string NpcHash { get; set; } = string.Empty;
     public int Quality { get; set; }
-    public int BossModifierLowId { get; set; }
-    public int BossModifierHighId { get; set; }
-    public int BossModifierQuality { get; set; }
     public int RoomIndex { get; set; }
     public float X { get; set; }
     public float Y { get; set; }
@@ -66,22 +63,15 @@ public sealed class MissionNpcObjectiveBinding
     public Identity Identity => new() { Type = (SmokeLounge.AOtomation.Messaging.GameData.IdentityType)IdentityType, Instance = Instance };
 
     [JsonIgnore]
-    public bool HasBossModifier => BossModifierLowId > 0 && BossModifierHighId > 0 && BossModifierQuality > 0;
-
-    [JsonIgnore]
     public bool IsValid => !string.IsNullOrWhiteSpace(QuestId) && OwnerId > 0
         && IdentityType == (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.CanbeAffected
         && Instance > 0 && !string.IsNullOrWhiteSpace(NpcHash) && Quality > 0 && RoomIndex > 0
-        && MissionType is 0 or 1 && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z)
-        && (BossModifierLowId == 0 && BossModifierHighId == 0 && BossModifierQuality == 0
-            || MissionType == 1 && HasBossModifier);
+        && MissionType is 0 or 1 && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z);
 
     public bool SameAs(MissionNpcObjectiveBinding? other) => other != null
         && string.Equals(QuestId, other.QuestId, StringComparison.Ordinal) && OwnerId == other.OwnerId
         && IdentityType == other.IdentityType && Instance == other.Instance && NpcHash == other.NpcHash
         && Quality == other.Quality && RoomIndex == other.RoomIndex && MissionType == other.MissionType
-        && BossModifierLowId == other.BossModifierLowId && BossModifierHighId == other.BossModifierHighId
-        && BossModifierQuality == other.BossModifierQuality
         && BitConverter.SingleToUInt32Bits(X) == BitConverter.SingleToUInt32Bits(other.X)
         && BitConverter.SingleToUInt32Bits(Y) == BitConverter.SingleToUInt32Bits(other.Y)
         && BitConverter.SingleToUInt32Bits(Z) == BitConverter.SingleToUInt32Bits(other.Z);

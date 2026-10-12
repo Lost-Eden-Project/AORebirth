@@ -29,8 +29,8 @@ tick; no new persistent queue was introduced.
 
 The existing `DungeonGeneration.json` selects references in the existing item
 and NPC catalogs: Find Item `URSE` unchanged; Return `COSE`; Repair `SPPR`/`CRCH`;
-Kill Person `FECI`; Find Person uses its separate `FECI` base pool with original
-`KZ15` boss equipment, with existing level interpolation. These are editable
+Kill Person `FECI`; Find Person uses its separate `MFPB` human boss pool in the
+existing full NPC catalog, with existing level interpolation. These are editable
 AORebirth policies. Cross-QL selection and random NPC target selection are not
 claimed as Funcom probability rules or exact retail target-name reproduction.
 
@@ -47,25 +47,32 @@ Runtime does not read capture folders. Private catalogs are not published.
 
 OBSERVED: Mike's Find Person client test spawned a regular enemy profile. The
 shared NPC objective pool supplied the same unmodified `FECI` to both NPC types.
-Find Person now freezes a modifier pair and quality alongside its accepted actor
-in existing dungeon JSON. The configured `KZ15`/Damage Shield Boss family covers
-QL1–400; its original OnWear casts apply Orange glow and Increase size by 40
-through existing equipment, nano and buff handling. Passive behavior is applied
-after those casts; completion still requires exact actor inspection.
+Find Person now selects a separate boss pool and freezes its resolved leaf using
+the unchanged accepted NPC binding. The authored `MFPB`/Mission Contact variant
+in the existing full NPC catalog uses original `BEMC` boss bands/stats at levels
+1/200/400, existing `FECI` human appearance/equipment and base scale 125 observed
+on the retail Find Person target. No invented HP multiplier or stat-growth rule.
+Existing catalog interpolation supports the mission QL; completion still
+requires exact actor inspection and the target remains passive.
 
-No replacement NPC catalog, schema change or raid-boss substitution. The source
+No replacement NPC catalog, binding format, schema change or raid-boss substitution. The source
 Find Person capture's Monte Laurence is not claimed as an identified catalog
-hash. Generic direct OnWear combat-stat modifiers remain outside this repair;
-only supported cast-nano effects are claimed. Existing accepted actors are
+hash. Boss modifier nanos alone were rejected as the permanent solution because
+their existing size/glow effects expire after 100 seconds. Persistent appearance
+comes from the boss variant's base data. Generic direct OnWear combat-stat
+modifiers remain outside this repair. Existing accepted actors are
 preserved; test a newly accepted Find Person mission.
 
 Inspected existing `NpcTemplateCatalog`, `NpcCharacter`, `SpawnService`,
 `WearCastNano`, `NanoRuntime`, `StatModifierSpells`, objective binding/spawning
 and completion owners, private NPC/item catalogs and the original Find Person
-capture. Changed `DungeonFindItemPolicy`, `MissionItemObjectiveBinding`,
-`QuestDungeonService`, `QuestDungeonPlayfield`, the existing DungeonGeneration
-policy and task/status documentation. Approved core compilation, JSON parsing
-and `git diff --check` passed; no suites or AO client control performed.
+capture. Final runtime changes are `DungeonFindItemPolicy`, `QuestDungeonService`
+and existing DungeonGeneration policy. Added one private NPC catalog leaf;
+private catalogs are not published. Task/status documentation records the change.
+Approved core compilation, policy/catalog JSON parsing and `git diff --check`
+passed. Existing private NPC records remain byte-identical before the appended
+leaf; a local backup preserves the complete original catalog. No suites or AO
+client control performed. Actual boss appearance awaits Mike's client pass.
 
 ## Validation and limits
 

@@ -1,8 +1,9 @@
 # AORebirth Project State
 
 IMPLEMENTED, CLIENT UNVERIFIED (Find Person boss correction): separate editable
-Find Person target/modifier pools now freeze original boss equipment with the
-exact accepted actor and reuse equipment/nano/buff spawning. Passive inspection
+Find Person boss pool freezes an authored human boss catalog leaf with the
+exact accepted actor and reuses existing NPC spawning. Original boss bands/stats,
+human visuals and persistent base scale live in the existing full NPC catalog. Passive inspection
 completion remains unchanged. Existing accepted contracts, Kill Person and the
 other objectives are preserved. Approved core compilation passed; no suites requested.
 Boss combat-stat parity and team bosses remain separate unfinished work.
