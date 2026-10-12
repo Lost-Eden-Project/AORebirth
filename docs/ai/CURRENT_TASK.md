@@ -1,23 +1,22 @@
 # Current Task
 
-Enable Mike's explicitly approved configurable nearest-QL destination fallback
-after Shade's level-34 centered rolls failed with zero destination candidates.
+Increase Find Item objective visibility using Mike's requested 200-percent scale.
+He could not locate the objective and deleted that mission. Its missing or
+occluded rendering is not proven; this is the requested appearance adjustment.
 
-PROVEN: the retained 93185-offer corpus has no expected-QL34 records. The two
-runtime files still contain 2242 placements, 812 supported identities and 45
-observed QLs. This was the earlier exact-observation restriction, not data loss.
+Change only DungeonGeneration.json FindItem.WorldScalePercent from 150 to 200
+in the public policy and selected private runtime policy. Existing acceptance
+freezes this value; newly accepted Find Item missions use 200 percent, while
+existing bindings remain unchanged. MissionObjectiveItem sends the scale only
+for its world representation and omits it after inventory collection.
 
-Preserve exact terminal/QL selection, then exact QL-wide fallback. Only when
-both fail and AllowNearestTerminalQlFallback is true, use the nearest recorded
-pool for the same originating terminal playfield; ties use the lower QL.
-Do not change mission QL/rewards, entrance identities, coordinates or observed
-coverage. No cross-origin nearest-QL fallback. Log requested and source QLs;
-cross-QL eligibility remains unproven gameplay policy.
+Inspected DungeonGeneration.json, MissionItemObjectiveBinding.cs,
+MissionObjectiveItem.cs, QuestDungeonService.cs, DungeonObjectivePlacement.cs,
+QuestDungeonPlayfield.cs, WorldItem.cs, StaticDynel.cs and the installed log.
+Runtime code, placement, item identity, pickup, rewards and other objectives
+remain unchanged. Preserve local overlays, token data and destination policy.
 
-Use the approved Windows build, install locally, preserve existing overlays
-and private item-data repairs, and leave core engines running for Mike's test.
-No fixture/unit/regression suites requested. Never control the AO client.
-Approved Windows core build, catalog data comparison and diff validation passed.
-Original-client QL34 verification remains pending.
-
-Details: docs/reports/MISSION_DESTINATION_QL_FALLBACK.md.
+Validate the scoped JSON change, rebuild/restart through the approved wrapper,
+and leave core engines running for Mike's test. No fixture/unit/regression
+suites requested or run. Never control the AO client. Client visibility at
+200 percent remains pending.

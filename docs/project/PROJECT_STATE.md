@@ -1,5 +1,12 @@
 # AORebirth Project State
 
+OBSERVED (Find Item visibility): Mike could not find the objective, deleted the
+mission, and requested 200-percent scale. Existing FindItem.WorldScalePercent
+changes from 150 to 200 for newly accepted missions. This reuses world-only
+scale publication; item identity, placement, pickup and rewards are unchanged.
+No missing-spawn cause is proven. Original-client visibility verification at
+200 percent is pending; no automated suites requested.
+
 PROVEN (QL34 roll rejection): the captured corpus contains no expected QL34.
 Mike approved configurable nearest-QL fallback within the same originating
 terminal playfield. Exact-QL behavior remains first; the optional policy reuses

@@ -15,7 +15,7 @@
     "Quality": 1,
     "QuestInstanceStat": 1,
     "WorldFlags": 2147483651,
-    "WorldScalePercent": 150
+    "WorldScalePercent": 200
   },
   "ReturnItem": {
     "_comment": "AORebirth return-objective policy referencing the existing COSE/Contained Sensitive Information item. This is editable objective selection policy, not a claim that every retail Return Item mission uses this item. Collection preserves the mission-specific identity; delivery requires its exact issuing terminal. The advertised reward remains independent.",
