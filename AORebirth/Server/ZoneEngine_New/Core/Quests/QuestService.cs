@@ -290,6 +290,11 @@ namespace ZoneEngine_New.Core.Quests
             ArgumentNullException.ThrowIfNull(npc);
             ArgumentNullException.ThrowIfNull(players);
 
+            // Objective kills contribute before their exact objective transaction freezes the reward chance.
+            if (npc.Playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon
+                && dungeon.TokenProgress?.RecordKill(npc, players) == false)
+                return;
+
             for (int p = 0; p < players.Count; p++)
             {
                 Player player = players[p];
@@ -449,6 +454,17 @@ namespace ZoneEngine_New.Core.Quests
                     ExpiresAtUtc = definition != null ? new DateTime(definition.ExpiresAtUtcTicks, DateTimeKind.Utc) : null,
                     AcgBuildingGeneratorJson = definition?.AcgBuildingGeneratorJson
                 };
+                PlayerQuest loaded = log.Quests[row.QuestId];
+                // Recover the crash gap between a durable target death and earning its exact objective.
+                if (_completionDao != null && loaded.IsActive && !loaded.IsRewardPending && loaded.Template.IsKill
+                    && Dungeons.QuestDungeonParameters.TryParse(loaded.AcgBuildingGeneratorJson, out var parameters)
+                    && parameters.MissionType == 0 && parameters.TokenReward != null
+                    && parameters.ObjectiveNpc is { IsValid: true } objective
+                    && objective.OwnerId == characterId && objective.QuestId == loaded.QuestId)
+                {
+                    loaded.NpcObjectiveCommitPending = _completionDao.Execute(characterId, null!, tx =>
+                        Dungeons.MissionTokenProgress.IsObjectiveKilled(tx, loaded.QuestId, loaded.AssignedAtUtc.Ticks));
+                }
             }
 
             return log;

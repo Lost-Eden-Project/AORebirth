@@ -148,6 +148,13 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>False for one-shot points (quest dungeons): once its NPC is killed the point never spawns again.</summary>
         internal bool RespawnsAfterDeath { get; init; } = true;
 
+        /// <summary>Accepted mission branches; keep their ordinals through sleep and reconstruction.</summary>
+        internal MobTemplate[]? FrozenTemplates { get; init; }
+
+        internal Action<NpcCharacter, int>? OnBranchSpawned { get; init; }
+
+        internal Func<int, bool>? IsBranchKilled { get; init; }
+
         /// <summary>A one-shot point whose NPC was killed.</summary>
         internal bool Retired { get; set; }
 
@@ -477,14 +484,20 @@ namespace ZoneEngine_New.Core.Playfield
         /// their style's district points into place). It behaves like a Districts.json point of
         /// <paramref name="district"/>: same respawn chance and timer, unless <paramref name="respawns"/> is false, when its
         /// NPC spawns once and never again after it is killed. An explicit requested level overrides district levels;
-        /// otherwise, without district levels the template's level is kept.
+        /// otherwise, without district levels the template's level is kept. Optional frozen mission branches retain
+        /// their supplied ordinals; killed branches still reserve this point without spawning replacements.
         /// </summary>
         internal bool AddPlacedDistrictPoint(string hash, PlayfieldDistrictEntry district, Vector3 centre, float radius,
-            bool useDistrictLevels, bool respawns, int? requestedLevel = null)
+            bool useDistrictLevels, bool respawns, int? requestedLevel = null, MobTemplate[]? frozenTemplates = null,
+            Action<NpcCharacter, int>? onBranchSpawned = null, Func<int, bool>? isBranchKilled = null)
         {
             ArgumentNullException.ThrowIfNull(district);
             if (requestedLevel is <= 0)
                 throw new ArgumentOutOfRangeException(nameof(requestedLevel));
+            if (frozenTemplates != null && respawns)
+                throw new ArgumentException("Frozen mission branches must be one-shot points.", nameof(respawns));
+            if (frozenTemplates == null && (onBranchSpawned != null || isBranchKilled != null))
+                throw new ArgumentException("Mission branch callbacks require frozen templates.", nameof(frozenTemplates));
             if (string.IsNullOrEmpty(hash))
                 return false;
 
@@ -494,7 +507,17 @@ namespace ZoneEngine_New.Core.Playfield
             int minLevel = requestedLevel ?? (useDistrictLevels ? district.NpcMinLevel : 0);
             int maxLevel = requestedLevel ?? (useDistrictLevels ? district.NpcMaxLevel : 0);
             bool isStatic = _gameData.IsStaticSpawnHash(hash);
-            if (!isStatic && !HasSpawnableMob(hash, Math.Max(1, minLevel)))
+            if (frozenTemplates != null)
+            {
+                if (isStatic || frozenTemplates.Length == 0)
+                    return false;
+                foreach (MobTemplate template in frozenTemplates)
+                {
+                    if (template == null || !NpcTemplateValidation.CanSpawn(template))
+                        return false;
+                }
+            }
+            else if (!isStatic && !HasSpawnableMob(hash, Math.Max(1, minLevel)))
                 return false;
             if (!_grid.TryResolveCell(centre, out Cell cell))
                 return false;
@@ -522,8 +545,15 @@ namespace ZoneEngine_New.Core.Playfield
                 entry,
                 isStatic)
             {
-                RespawnsAfterDeath = respawns
+                RespawnsAfterDeath = respawns,
+                FrozenTemplates = frozenTemplates == null ? null : (MobTemplate[])frozenTemplates.Clone(),
+                OnBranchSpawned = onBranchSpawned,
+                IsBranchKilled = isBranchKilled
             };
+            if (AllFrozenBranchesKilled(point))
+            {
+                point.Retired = true;
+            }
 
             if (!_pointsByCell.TryGetValue(cell.Id, out List<HashSpawnPoint>? list))
             {
@@ -640,10 +670,28 @@ namespace ZoneEngine_New.Core.Playfield
             if (point.MemberCount > 0)
                 return false;
 
+            if (AllFrozenBranchesKilled(point))
+            {
+                point.Retired = true;
+                return false;
+            }
+
             if (point.State == HashSpawnState.Alive)
                 return true;
 
             return now >= point.NextSpawnTime;
+        }
+
+        private static bool AllFrozenBranchesKilled(HashSpawnPoint point)
+        {
+            if (point.FrozenTemplates == null || point.IsBranchKilled == null)
+                return false;
+            for (int i = 0; i < point.FrozenTemplates.Length; i++)
+            {
+                if (!point.IsBranchKilled(i))
+                    return false;
+            }
+            return true;
         }
 
         private bool TrySpawn(HashSpawnPoint point)
@@ -767,12 +815,21 @@ namespace ZoneEngine_New.Core.Playfield
         private int SpawnMobBranches(HashSpawnPoint point, int? level)
         {
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("spawn.templates", point.CellId);
-            var templates = new List<MobTemplate>();
-            _gameData.CollectMobSpawns(point.HashText, level, templates);
+            IReadOnlyList<MobTemplate> templates;
+            if (point.FrozenTemplates != null)
+            {
+                templates = point.FrozenTemplates;
+            }
+            else
+            {
+                var resolved = new List<MobTemplate>();
+                _gameData.CollectMobSpawns(point.HashText, level, resolved);
+                templates = resolved;
+            }
             int spawned = 0;
             for (int i = 0; i < templates.Count; i++)
             {
-                if (!NpcTemplateValidation.CanSpawn(templates[i]))
+                if (point.IsBranchKilled?.Invoke(i) == true || !NpcTemplateValidation.CanSpawn(templates[i]))
                     continue;
 
                 Metrics.TickStallWatch.Stage("spawn.place", point.CellId);
@@ -787,6 +844,7 @@ namespace ZoneEngine_New.Core.Playfield
                 point.AddMember(character);
                 _pointBySpawned[character] = point;
                 character.Died += OnSpawnedDied;
+                point.OnBranchSpawned?.Invoke(character, i);
                 LogSpawn("spawn", point, character.Identity.Instance, character.Name, position);
                 spawned++;
             }

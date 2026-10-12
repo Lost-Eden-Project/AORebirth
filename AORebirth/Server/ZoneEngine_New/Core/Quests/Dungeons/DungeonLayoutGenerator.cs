@@ -29,6 +29,27 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     /// <summary>GameData/DungeonDoorStyles.json for one ACG style: door item templates and spawn-state chances.</summary>
     public sealed record DungeonDoorStyle(int DoorTemplate, int ExitTemplate, int OpenChancePercent, int LockedChancePercent);
 
+    /// <summary>Editable mission token content, frozen with each newly accepted dungeon.</summary>
+    public sealed class MissionTokenRewardPolicy
+    {
+        public Dictionary<int, int> SidedItems { get; set; } = [];
+        public int ItemQuality { get; set; }
+        public int FeedbackStartingKill { get; set; }
+        public int FeedbackMessageId { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsValid => SidedItems != null && SidedItems.Count == 2
+            && SidedItems.TryGetValue((int)Side.Clan, out int clan) && clan > 0
+            && SidedItems.TryGetValue((int)Side.Omni, out int omni) && omni > 0 && clan != omni
+            && ItemQuality > 0 && FeedbackStartingKill > 0 && FeedbackMessageId > 0;
+
+        public MissionTokenRewardPolicy Clone() => new()
+        {
+            SidedItems = new Dictionary<int, int>(SidedItems), ItemQuality = ItemQuality,
+            FeedbackStartingKill = FeedbackStartingKill, FeedbackMessageId = FeedbackMessageId
+        };
+    }
+
     /// <summary>
     /// Builds a quest dungeon's ACG building generator from its stored seed and frozen layout plan. The same plan, seed, generator version and
     /// building identity always give the same layout, so a dungeon released while empty comes back identical.
@@ -75,6 +96,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             public DungeonFindItemPolicy? ReturnItem { get; set; }
             public DungeonRepairMachinePolicy? RepairMachine { get; set; }
             public DungeonNpcObjectivePolicy? NpcObjectives { get; set; }
+            public MissionTokenRewardPolicy? TokenReward { get; set; }
             public List<GenerationProfile> Profiles { get; set; } = [];
         }
 
@@ -134,6 +156,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 _policy = JsonSerializer.Deserialize<GenerationPolicy>(File.ReadAllText(Path.Combine(gameData.RootPath, GenerationFileName)),
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (_policy == null || _policy.Population?.IsValid(gameData) != true || _policy.FloorHeight is <= 0 or > 255
+                    || (_policy.TokenReward != null && !_policy.TokenReward.IsValid)
                     || _policy.LockedDoorChancePercent is < 0 or > 100 || _policy.Profiles.Count == 0
                     || _policy.Profiles.Any(p => p.MinQuality < 1 || p.MinQuality > p.MaxQuality
                         || p.Styles.Length == 0 || p.Styles.Any(s => s <= 0) || p.Floors < (p.Team ? 2 : 1) || p.Floors > 8
@@ -201,6 +224,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 var rooms = _generator.LoadStyle(style);
                 parameters.GeneratorVersion = CurrentVersion;
                 parameters.IsTeam = team;
+                parameters.TokenReward = _policy.TokenReward?.Clone();
                 parameters.LayoutPlan = new DungeonLayoutPlan
                 {
                     StyleId = style, FloorCount = profile.Floors,

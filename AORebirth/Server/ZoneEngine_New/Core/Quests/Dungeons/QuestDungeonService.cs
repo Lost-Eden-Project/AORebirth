@@ -81,7 +81,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// A quest's dungeon: its parameters, expiry, the NPC hash a kill-target quest wants (null otherwise), and whether
         /// the quest is over (completed): an ended dungeon keeps whoever is inside but can no longer be entered or rebuilt.
         /// </summary>
-        sealed record CachedDungeon(QuestDungeonParameters Parameters, long ExpiresAtUtcTicks, string? TargetHash, bool Ended = false);
+        sealed record CachedDungeon(QuestDungeonParameters Parameters, long ExpiresAtUtcTicks, string? TargetHash, bool Ended = false,
+            int OwnerId = 0, long AssignedAtUtcTicks = 0);
 
         readonly ICharacterQuestStore _store;
         readonly QuestService _quests;
@@ -274,7 +275,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         return "That mission is no longer offered.";
 
                     _dungeons[questId] = new CachedDungeon(parameters, expires.Ticks,
-                        parameters.ObjectiveNpc == null ? KillTarget(template) : null);
+                        parameters.ObjectiveNpc == null ? KillTarget(template) : null,
+                        OwnerId: player.Identity.Instance, AssignedAtUtcTicks: now.Ticks);
                     plan.PublishAfterCommit(notify: false);
                     SendKey(player, key, plan.Rows[0].ContainerPlacement, parameters.EntranceName);
                     if (sourceItem != null)
@@ -373,9 +375,20 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     if (!_layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
                         return false;
 
+                    if (_playfields.Value.TryGetQuestDungeon(dungeon.Parameters.DungeonPlayfield, out QuestDungeonPlayfield previous)
+                        && previous.TokenProgress?.RequiresReconstruction == true
+                        && !_playfields.Value.TryReleaseQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId))
+                    {
+                        SendText(player, "The mission dungeon is recovering. Everyone inside must leave before you can re-enter.");
+                        return false;
+                    }
+
+                    MissionTokenProgress? tokenProgress = CreateTokenProgress(questId, dungeon);
+                    MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
                     QuestDungeonPlayfield world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
                         dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                        UnfinishedNpc(dungeon.Parameters));
+                        tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
+                        spawnNpcObjective: unfinishedNpc != null);
                     session.TransferToPlayfield(world, layout.Spawn);
                     return true;
                 }
@@ -454,16 +467,29 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 throw new ArgumentOutOfRangeException(nameof(storedPlayfield));
 
             if (playfields.TryGetQuestDungeon(storedPlayfield, out QuestDungeonPlayfield live))
-                return (live, null, null);
+            {
+                if (live.TokenProgress?.RequiresReconstruction != true)
+                    return (live, null, null);
+                if (!playfields.TryReleaseQuestDungeon(storedPlayfield, questId))
+                {
+                    PlayfieldAdmission outside = playfields.AcquirePlayfield(live.Entrance.PlayfieldId);
+                    return (outside.Playfield, new Vector3(live.Entrance.LocalX, live.Entrance.LocalY, live.Entrance.LocalZ), outside);
+                }
+            }
 
             if (TryGetDungeon(questId, out CachedDungeon dungeon)
                 && _entrances.TryGetByIdentity(unchecked((uint)dungeon.Parameters.EntranceType), unchecked((uint)dungeon.Parameters.EntranceInstance), out MissionEntrancePlacement entrance))
             {
                 if (!dungeon.Ended && dungeon.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks && dungeon.Parameters.DungeonPlayfield == storedPlayfield
                     && _layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
+                {
+                    MissionTokenProgress? tokenProgress = CreateTokenProgress(questId, dungeon);
+                    MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
                     return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
                         dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                        UnfinishedNpc(dungeon.Parameters)), layout.Spawn, null);
+                        tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
+                        spawnNpcObjective: unfinishedNpc != null), layout.Spawn, null);
+                }
 
                 PlayfieldAdmission admission = playfields.AcquirePlayfield(entrance.PlayfieldId);
                 return (admission.Playfield, new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ), admission);
@@ -757,21 +783,26 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             }
 
             bool ended = true;
+            long assignedAtUtcTicks = 0;
             foreach (CharacterQuestRow owned in _store.Load(row.OwnerId))
             {
                 if (string.Equals(owned.QuestId, questId, StringComparison.Ordinal))
                 {
                     ended = owned.State != (int)QuestState.Active;
+                    assignedAtUtcTicks = owned.AssignedAtUtcTicks;
                     break;
                 }
             }
 
             dungeon = new CachedDungeon(parameters, row.ExpiresAtUtcTicks,
-                parameters.ObjectiveNpc == null ? KillTarget(template) : null, ended);
+                parameters.ObjectiveNpc == null ? KillTarget(template) : null, ended, row.OwnerId, assignedAtUtcTicks);
             if (row.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks)
                 _dungeons[questId] = dungeon;
             return true;
         }
+
+        MissionTokenProgress? CreateTokenProgress(string questId, CachedDungeon dungeon)
+            => _quests.CreateTokenProgress(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters.TokenReward);
 
         /// <summary>The NPC hash a kill quest wants, or null for other quests.</summary>
         static string? KillTarget(QuestTemplate? template)

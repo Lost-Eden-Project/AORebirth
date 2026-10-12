@@ -157,7 +157,7 @@ public sealed partial class QuestService
                     || durable.ToJson() != parameters.ToJson()
                     || quest.Template.IsReturnItem && stored.Progress != 1)
                     throw new InvalidOperationException("Mission objective is no longer collectible.");
-                return completion.TryEarnCharacterQuest(new()
+                return EarnWithToken(tx, completion, player, quest, new()
                 {
                     QuestId = quest.QuestId, AssignedAtUtcTicks = stored.AssignedAtUtcTicks,
                     ExpectedDefinitionJson = stored.DefinitionJson,
@@ -232,7 +232,7 @@ public sealed partial class QuestService
                         ? (tx as ICharacterQuestObjectiveCollectionTransaction
                             ?? throw new InvalidOperationException("Mission DAO cannot persist partial objective collection."))
                             .TryCollectCharacterQuestItem(request)
-                        : completion.TryEarnCharacterQuest(request);
+                        : EarnWithToken(tx, completion, player, quest, request);
                 });
                 if (result.Status != (quest.Template.IsReturnItem ? CharacterQuestCompletionStatus.Collected : CharacterQuestCompletionStatus.Earned))
                     return false;
@@ -290,6 +290,7 @@ public sealed partial class QuestService
             {
                 _flush.HardFlush(player);
                 // Earning is durable even when capacity, content availability or delivery fails later.
+                FrozenMissionTokenReward? tokenReward = null;
                 var earned = _completionDao.Execute(player.Identity.Instance, null!, tx =>
                 {
                     var completion = RequireCompletion(tx);
@@ -297,12 +298,17 @@ public sealed partial class QuestService
                     RequireCurrent(stored, quest, player);
                     if (RequiresBoundObjective(quest) && stored.Progress < stored.RequiredCount)
                         throw new InvalidOperationException("Mission completion requires its committed exact objective event.");
-                    return completion.TryEarnCharacterQuest(new()
+                    var result = EarnWithToken(tx, completion, player, quest, new()
                     {
                         QuestId = quest.QuestId, AssignedAtUtcTicks = stored.AssignedAtUtcTicks,
                         ExpectedDefinitionJson = stored.DefinitionJson,
                         ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson, NowUtcTicks = _now().Ticks
                     });
+                    if (result.Status is CharacterQuestCompletionStatus.Earned or CharacterQuestCompletionStatus.AlreadyEarned)
+                    {
+                        tokenReward = ReadTokenReward(tx, player, quest, result.Quest);
+                    }
+                    return result;
                 });
                 if (earned.Status == CharacterQuestCompletionStatus.AlreadyApplied)
                 {
@@ -322,7 +328,11 @@ public sealed partial class QuestService
                         ?? throw new InvalidOperationException("Stored reward definition is unavailable.")
                     : quest.Template;
                 var reward = rewardTemplate.Reward;
-                var definitions = SelectRewardRecord(quest, reward);
+                var definitions = SelectRewardRecord(quest, reward).ToList();
+                if (tokenReward?.Won == true)
+                {
+                    definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
+                }
                 var items = new List<Item>();
                 foreach (var definition in definitions)
                 {
@@ -333,7 +343,7 @@ public sealed partial class QuestService
                     if (ZoneEngine_New.Core.Trade.TradeRules.IsUnique(item) && (ZoneEngine_New.Core.Trade.TradeRules.WouldDuplicateUnique(player, item.LowId, item.HighId)
                         || items.Any(existing => existing.LowId == item.LowId || existing.HighId == item.HighId)))
                     {
-                        NotifyPending(player, quest);
+                        NotifyPending(player, quest, uniqueConflict: true);
                         return;
                     }
                     items.Add(item);
@@ -400,7 +410,9 @@ public sealed partial class QuestService
                 player.FlushDirtyStats();
                 QuestJournal.Delete(player, quest);
                 ClientFeedback.Send(player, "Feedback_MissionAccomplished");
-                _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId);
+                _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId
+                    + (tokenReward == null ? string.Empty : " tokenWon=" + tokenReward.Won + " tokenItem=" + tokenReward.ItemId
+                        + " tokenKills=" + tokenReward.Killed + "/" + tokenReward.Total));
                 if (!string.IsNullOrEmpty(rewardTemplate.NextStep) && _catalog.TryGet(rewardTemplate.NextStep, out _))
                     TryAssignTemplate(player, rewardTemplate.NextStep, out _);
             }
@@ -426,11 +438,13 @@ public sealed partial class QuestService
         => transaction as ICharacterQuestCompletionTransaction
             ?? throw new InvalidOperationException("Mission DAO does not support atomic character quest rewards.");
 
-    static void NotifyPending(Player player, PlayerQuest quest)
+    static void NotifyPending(Player player, PlayerQuest quest, bool uniqueConflict = false)
     {
         if (quest.RewardPendingNotified) return;
         quest.RewardPendingNotified = true;
-        ClientFeedback.Send(player, "Mission objective complete. Your reward is saved and pending delivery. Make inventory space; delivery retries automatically and after reconnect.");
+        ClientFeedback.SendFormatted(player, ClientFeedback.PlainText, uniqueConflict
+            ? "Mission objective complete. Your reward is saved. Use or remove the matching Unique item you already hold and keep inventory space free; delivery retries automatically and after reconnect."
+            : "Mission objective complete. Your reward is saved and pending delivery. Make inventory space; delivery retries automatically and after reconnect.");
     }
 
     static void RequireCurrent(CharacterQuestCompletionSnapshotData stored, PlayerQuest quest, Player player)

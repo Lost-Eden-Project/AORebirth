@@ -42,6 +42,7 @@ public sealed class QuestDungeonPlayfield : Playfield
     PlayfieldWorldSimulation? _simulation;
     readonly MissionItemObjectiveBinding? _objectiveItem;
     readonly MissionNpcObjectiveBinding? _objectiveNpc;
+    readonly bool _spawnNpcObjective;
     readonly Func<Player, MissionObjectiveItem, bool>? _collectObjective;
 
     public QuestDungeonPlayfield(int playfieldId, string questId, DungeonLayout layout, MissionEntrancePlacement entrance,
@@ -49,7 +50,8 @@ public sealed class QuestDungeonPlayfield : Playfield
         IItemBuilder items, HashItemMinter hashItems, IInventoryRepository inventory, IItemInstanceIdAllocator ids,
         InventoryMoveService moves, InventoryFlushService flush, TradeService trades, CharacterSnapshotService snapshot,
         IPlayfieldMetricsRegistry metrics, IShopDao shopDao, MissionItemObjectiveBinding? objectiveItem = null,
-        Func<Player, MissionObjectiveItem, bool>? collectObjective = null, MissionNpcObjectiveBinding? npcObjective = null)
+        Func<Player, MissionObjectiveItem, bool>? collectObjective = null, MissionNpcObjectiveBinding? npcObjective = null,
+        MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true)
         : base(new Identity { Type = IdentityType.Playfield, Instance = playfieldId }, logger, router,
             manager, hydrator, data, items, hashItems, inventory, ids, moves, flush, trades, snapshot, metrics, shopDao)
     {
@@ -67,11 +69,16 @@ public sealed class QuestDungeonPlayfield : Playfield
             || !string.Equals(npcObjective.QuestId, QuestId, StringComparison.Ordinal)))
             throw new ArgumentException("Invalid NPC objective for this quest dungeon.", nameof(npcObjective));
         _objectiveNpc = npcObjective;
+        _spawnNpcObjective = spawnNpcObjective;
+        TokenProgress = tokenProgress;
+        TokenProgress?.Attach(this, logger);
     }
 
     public string QuestId { get; }
 
     public DungeonLayout Layout { get; }
+
+    public MissionTokenProgress? TokenProgress { get; }
 
     /// <summary>Where the dungeon is entered from, and where its occupants return to.</summary>
     public MissionEntrancePlacement Entrance { get; }
@@ -88,6 +95,8 @@ public sealed class QuestDungeonPlayfield : Playfield
         var locality = GetRequiredService<PlayfieldLocality>();
         AORebirth.World.Collision.DungeonWorldLayout? dungeon = DungeonPlayfieldBinder.TryBuild(
             GameData.RootPath, Identity.Instance, Layout.Generator, Logger);
+        if (dungeon == null && TokenProgress != null)
+            throw new InvalidDataException("Mission token population cannot initialize without dungeon geometry.");
         if (dungeon != null)
             locality.ApplyDungeonRooms(dungeon);
 
@@ -103,10 +112,16 @@ public sealed class QuestDungeonPlayfield : Playfield
         {
             SpawnDoors(dungeon.Doors, locality);
             SpawnFloorTransitions(locality);
+            if (_objectiveNpc != null)
+            {
+                TokenProgress?.RegisterObjective(_objectiveNpc, GameData);
+            }
             SpawnObjectiveNpc(dungeon);
             AddDistrictSpawns(dungeon);
             SpawnObjectiveItem(dungeon, locality);
         }
+
+        TokenProgress?.Seal();
 
         MarkBuilt();
     }
@@ -204,10 +219,27 @@ public sealed class QuestDungeonPlayfield : Playfield
                 System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
                     new System.Numerics.Vector3(position[0], position[1], position[2]));
                 string hash = population.RegularNpcHashes[roll.Next(population.RegularNpcHashes.Length)];
+                string pointKey = "r" + placement.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "p" + Array.IndexOf(district.SpawnPoints!, point).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                MissionTokenProgress.SpawnPoint? frozenPoint = null;
+                if (TokenProgress != null && district.RespawnChance > 0)
+                {
+                    frozenPoint = TokenProgress.ResolvePoint(pointKey, hash, Math.Max(1, Quality), GameData);
+                    if (frozenPoint == null)
+                        continue;
+                    hash = frozenPoint.Hash;
+                }
                 if (spawns.AddPlacedDistrictPoint(hash, district,
                         new AORebirth.Core.Vector.Vector3(placed.X, placed.Y, placed.Z), point.Radius,
-                        useDistrictLevels: false, respawns: false, requestedLevel: Quality > 0 ? Quality : null))
+                        useDistrictLevels: false, respawns: false, requestedLevel: frozenPoint?.Level ?? (Quality > 0 ? Quality : null),
+                        frozenTemplates: frozenPoint?.Templates,
+                        onBranchSpawned: frozenPoint == null ? null : (actor, branch) => TokenProgress!.BindActor(pointKey, actor, branch),
+                        isBranchKilled: frozenPoint == null ? null : branch => TokenProgress!.IsKilled(pointKey, branch)))
                 {
+                    if (frozenPoint != null)
+                    {
+                        TokenProgress!.RegisterPoint(frozenPoint);
+                    }
                     placedInRoom++;
                     added++;
                 }
@@ -231,7 +263,7 @@ public sealed class QuestDungeonPlayfield : Playfield
 
     void SpawnObjectiveNpc(AORebirth.World.Collision.DungeonWorldLayout dungeon)
     {
-        if (_objectiveNpc == null)
+        if (_objectiveNpc == null || !_spawnNpcObjective || TokenProgress?.IsKilled("objective", 0) == true)
             return;
         if (_objectiveNpc.RoomIndex >= dungeon.Placements.Count
             || DungeonObjectivePlacement.RoomDistances(dungeon, Layout)[_objectiveNpc.RoomIndex] <= 0)
@@ -255,6 +287,7 @@ public sealed class QuestDungeonPlayfield : Playfield
                 }
             },
             fixedIdentity: _objectiveNpc.Identity);
+        TokenProgress?.BindActor("objective", npc, 0);
         Logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
             "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#}) scale={8}",
             QuestId, (int)npc.Identity.Type, npc.Identity.Instance, _objectiveNpc.NpcHash,

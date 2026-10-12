@@ -1032,7 +1032,8 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             TickPerkLocks();
-            if (QuestLog?.Quests.Values.Any(quest => quest.IsRewardPending) == true)
+            if (QuestLog?.Quests.Values.Any(quest => quest.IsRewardPending
+                || quest.IsActive && quest.NpcObjectiveCommitPending) == true)
                 Playfield?.GetService<Quests.QuestService>()?.RetryPendingRewards(this);
             if (!_respawnPending)
                 return;

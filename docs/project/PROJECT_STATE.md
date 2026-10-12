@@ -1,5 +1,14 @@
 # AORebirth Project State
 
+IMPLEMENTED, CLIENT UNVERIFIED (generated mission sided tokens): retained capture chance feedback
+is now reconciled against original CSV packets and client text. Objective kills
+count; partial-clearance token award attempts are proven. Integration reuses
+existing mission flags/observations and reward transactions, with editable
+DungeonGeneration policy and no schema change. Exact retail population
+eligibility remains unproven. Approved Windows core build and diff validation
+succeeded; no suites were requested or run. Local installation and original-client
+verification follow. See `docs/reports/MISSION_TOKEN_REWARDS.md`.
+
 OBSERVED, CLIENT ACCEPTED (immediate Kill Person rewards, runtime 08f17b3e4):
 Mike confirms reward receipt on the target kill. Logs corroborate Shade /
 D2086828889, exact MFPB objective 50000:2086828890 at scale 120, one advertised
