@@ -1,5 +1,19 @@
 # AORebirth Project State
 
+OBSERVED (Kill Person reward delay, runtime e65160c86): the exact MFPB target
+death starts reward delivery immediately; five-second retries commit roughly
+15 seconds later, after an ordinary mob causes a level-up. PROVEN persistence
+defect: quest XP level-up projections include runtime-only health/nano, which
+completion incorrectly compares against durable rows excluded by checkpointing.
+The scoped repair uses existing StatCollection.IsRuntimeOnly to exclude them
+from durable reward expectations, mutations and saved baselines while retaining
+the full runtime projection and durable vital percentages. Rejected DAO results
+now log status/reason. The prior log lacks that reason, so attribution of this
+specific delay remains INFERRED; original-client level-up reward verification
+is pending. Exact objective binding, reward ledger, DAO/schema and content are
+unchanged. No suites requested.
+Approved Windows core compilation and git diff --check succeeded for this repair.
+
 OBSERVED, CLIENT ACCEPTED (Kill Person completion, runtime 615696581): Mike
 confirms Kill Person works and requests a boss target slightly larger than an
 ordinary NPC. PROVEN: its existing policy selected FECI; the existing boss pool

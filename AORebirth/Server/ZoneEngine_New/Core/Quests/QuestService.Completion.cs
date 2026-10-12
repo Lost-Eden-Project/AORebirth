@@ -344,7 +344,9 @@ public sealed partial class QuestService
                     return;
                 }
                 var xp = DirectXpRewardPlan.CreateQuestReward(player, Math.Max(0, reward?.Xp ?? 0));
-                var values = xp.Stats.ToDictionary(pair => pair.Key, pair => pair.Value);
+                // Runtime vitals are published by the full XP plan; only durable stats belong in the reward transaction.
+                var values = xp.Stats.Where(pair => !StatCollection.IsRuntimeOnly(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
                 if (reward?.Credits > 0)
                     values[CharacterStat.Cash] = (int)Math.Min(int.MaxValue,
                         (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + reward.Credits);
@@ -373,6 +375,8 @@ public sealed partial class QuestService
                 }));
                 if (result.Status != CharacterQuestCompletionStatus.Applied)
                 {
+                    _logger.Warn("Quest reward delivery not applied char=" + player.Identity.Instance
+                        + " quest=" + quest.QuestId + " status=" + result.Status + " reason=" + result.Reason);
                     if (result.Status == CharacterQuestCompletionStatus.AlreadyApplied)
                     {
                         player.QuarantinePersistence();

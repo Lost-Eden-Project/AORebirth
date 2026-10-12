@@ -248,3 +248,62 @@ changes no runtime, content or running service and requires no rebuild.
 
 Rolling, mission QL, destination pools, room generation and advertised rewards
 were not redesigned. No other objective frameworks or content catalogs added.
+
+## Kill Person completion delay and level-up reward persistence
+
+OBSERVED on installed runtime e65160c865c86c6de79c3b3ef74bc3c62c59419b:
+Mike killed the objective but saw completion only after killing another mob.
+The existing ZoneEngine log for char 66 / D2086818891 records:
+
+| Log line | Uptime | Event |
+|---|---|---|
+| 124904 | 11:07.790 | Exact objective 50000:2086818892, MFPB Mission Contact, scale 120. |
+| 125758 | 11:55.011 | Advertised reward item materialization begins at target death. |
+| 125760-125762 | 11:55.035 | Death requests identify the exact accepted objective. |
+| 125814 | 12:00.041 | Reward delivery retry. |
+| 125820 | 12:05.041 | Reward delivery retry. |
+| 125853 | 12:07.589 | Player receives NewLevelMessage during ordinary mob combat. |
+| 125869 | 12:10.063 | Reward delivery retry. |
+| 125877 | 12:10.112 | Quest completed and rewards committed. |
+| 125881 | 12:10.112 | Ordinary SH10 mob 1000021 becomes a corpse. |
+
+The correct objective was recognized before the second kill. A read-only lookup
+confirms the completed assignment has progress 1/1 and its frozen reward is
+1731 XP, 7770 credits and item 110392/110393 QL31. This lookup did not modify any
+rows. No additional captures were made.
+
+PROVEN defect: DirectXpRewardPlan.CreateQuestReward includes Health, MaxHealth,
+CurrentNano and MaxNanoEnergy only when its XP causes a level-up. Completion
+incorrectly included those values in the DAO's exact durable stat expectations,
+mutations and saved baseline. CharacterSnapshotService correctly excludes all
+four using StatCollection.IsRuntimeOnly; their durable representation is the
+existing health/nano percentage stats. Shade's stored runtime-vital rows remain
+34/34/28/28, so they are not a synchronized source for reward comparisons.
+MySqlMissionDao rejects any stale expected value without paying the reward.
+
+INFERRED incident relationship: an ordinary kill leveling the character can
+make the subsequent mission reward stop crossing a level boundary, removing
+those runtime-only comparisons and permitting delivery. This fits the recorded
+retry/level-up/commit sequence. The original log records neither DAO rejection
+reasons nor numeric player XP/vitals, so it cannot independently prove the exact
+failed stat comparison from those attempts.
+
+Correction: filter completion's durable projection with the existing
+StatCollection.IsRuntimeOnly policy. Keep the full XP projection for publication
+after commit, including the level-up refill, and persist health/nano percentages.
+Log non-applied completion status/reason instead of silently returning. Keep
+the atomic inventory/stats/quest/reward-ledger transaction, expected durable
+stat comparisons, publication fence and duplicate-payment handling unchanged.
+No DAO/schema, content, objective, XP calculation or target-selection changes.
+
+Inspected: local engine log; QuestService and QuestService.Completion;
+PlayerQuest and Player tick; Character kill/death ordering; DirectXpRewardPlan;
+InventoryGrantPlan; StatCollection; CharacterSnapshotService; MaxHealthCalculator;
+MySqlMissionDao.CharacterQuests and its ReadStatValue; completion contracts;
+existing project/task/workflow documentation. Changed: QuestService.Completion
+and these current task/state/report documents. No private catalog changes.
+
+Validation: approved Windows core compilation and git diff --check succeeded.
+No fixture, unit, regression or DAO suites requested or run. Mike's
+original-client verification of a mission
+reward that causes a level-up remains pending; do not describe it as accepted.
