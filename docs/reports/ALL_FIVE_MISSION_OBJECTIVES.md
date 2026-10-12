@@ -87,6 +87,49 @@ actions performed. The copied human equipment has an existing SIW1 monster-weapo
 bridge covering QL1–400. Inspect before killing: killing alone does not earn
 Find Person, and a target killed beforehand returns on dungeon reconstruction.
 
+## Pickup rejection and item visibility
+
+OBSERVED: Shade (character 66) accepted D2086788889, entered PF2088886041 and
+interacted with objective Terminal51005:2086788890. The local log records six
+ClientGetItem requests between uptime 00:15:45.652 and 00:16:50.083, then
+abandonment at 00:17:07.100, without a collection/reward exception. GenericCmd
+Use denials also occur, but those are a separate intentionally unsupported
+pickup path. These failed requests reproduce the reported symptom.
+
+PROVEN source defect: SerializerResolverBuilder registers the custom
+ClientGetItemMessageSerializer. It reads only message type and Identity1;
+inherited message.Identity remains 0:0. ZoneSession dispatches it unchanged.
+ClientGetItemMessageHandler incorrectly compared that absent actor field to the
+authenticated player, rejecting every authentic pickup before target lookup.
+The correction removes only that comparison. Session ownership, exact target,
+mission binding, owner, dungeon, range, inventory capacity and atomic collection
+remain enforced. Retained pickup evidence is in FIND_ITEM_PICKUP_EVIDENCE.md and
+FIND_ITEM_PICKUP_WIRE.json. DAO, schema and reward delivery are unchanged.
+
+WorldScalePercent is optional in the existing item policy and accepted binding,
+with exact equality and positive-value validation. New Find Item and Return
+Item objectives request 150 through the existing SIFU stat array. Scale 360 is
+already a percent for placed static dynels (IGameData, GameDataStore and
+PlayfieldWorldSimulation); no new packet field or catalog is introduced. The
+authoritative items.dat entries URSE/100341 and COSE/100231 contain no Scale
+override, so their normal baseline is 100 and the configured 150 adds 50 percent.
+The override is omitted from the parented inventory update after collection.
+Existing bindings without the field remain valid and keep their original look.
+Client rendering of these particular meshes remains UNVERIFIED, as does the
+complete repaired pickup/reward sequence; Mike performs live verification.
+
+Inspected the registered pickup codec/resolver, ZoneSession dispatch, pickup
+handler, MissionObjectiveItem, WorldItem/StaticDynel, binding/acceptance/spawning,
+QuestService.Completion, existing DAO contracts and static-dynel scale owners,
+original pickup evidence and current local mission logs. Changed only the
+handler, item entity, existing policy/binding/acceptance and DungeonGeneration
+policy, plus task/status/report notes. Private catalogs are not published.
+Approved Windows core compilation, policy JSON parsing and git diff --check
+passed. No unit/fixture/regression/DAO suites requested or run. The first
+read-only local mission-row lookup failed before returning a row; it made no
+database changes and is not used as evidence of persisted mission state. The
+registered codec/handler mismatch independently establishes the pickup defect.
+
 ## Validation and limits
 
 - PROVEN: approved `cmd /d /c tools\build_aorebirth_debug.cmd` succeeded for

@@ -20,6 +20,7 @@ public sealed class MissionItemObjectiveBinding
     public float Z { get; set; }
     public int QuestInstanceStat { get; set; }
     public uint? WorldFlags { get; set; }
+    public int? WorldScalePercent { get; set; }
     public int MissionType { get; set; } = 2;
     public bool IsSourceItem { get; set; }
 
@@ -28,7 +29,8 @@ public sealed class MissionItemObjectiveBinding
         && MissionType is 2 or 3 or 4 && (!IsSourceItem || MissionType == 3)
         && IdentityType == (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.Terminal
         && Instance > 0 && LowId > 0 && HighId > 0 && Quality > 0 && (IsSourceItem ? RoomIndex == 0 : RoomIndex > 0)
-        && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z) && QuestInstanceStat >= 0;
+        && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z) && QuestInstanceStat >= 0
+        && (WorldScalePercent == null || WorldScalePercent > 0);
 
     [JsonIgnore]
     public Identity Identity => new() { Type = (SmokeLounge.AOtomation.Messaging.GameData.IdentityType)IdentityType, Instance = Instance };
@@ -41,6 +43,7 @@ public sealed class MissionItemObjectiveBinding
             && BitConverter.SingleToUInt32Bits(Y) == BitConverter.SingleToUInt32Bits(other.Y)
             && BitConverter.SingleToUInt32Bits(Z) == BitConverter.SingleToUInt32Bits(other.Z)
             && QuestInstanceStat == other.QuestInstanceStat && WorldFlags == other.WorldFlags
+            && WorldScalePercent == other.WorldScalePercent
             && MissionType == other.MissionType && IsSourceItem == other.IsSourceItem;
 }
 

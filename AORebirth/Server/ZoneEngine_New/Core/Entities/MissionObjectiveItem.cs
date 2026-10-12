@@ -92,10 +92,18 @@ public sealed class MissionObjectiveItem : WorldItem
             foreach (var stat in stats)
                 if (stat.Value1 == CharacterStat.Flags)
                     stat.Value2 = Binding.WorldFlags.Value;
-        if (Binding.QuestInstanceStat <= 0)
-            return stats;
-        Array.Resize(ref stats, stats.Length + 1);
-        stats[^1] = new() { Value1 = CharacterStat.QuestInstance, Value2 = (uint)Binding.QuestInstanceStat };
+        if (Binding.QuestInstanceStat > 0)
+        {
+            Array.Resize(ref stats, stats.Length + 1);
+            stats[^1] = new() { Value1 = CharacterStat.QuestInstance, Value2 = (uint)Binding.QuestInstanceStat };
+        }
+        // Static dynel Scale is a percentage. Keep this world-only override out of
+        // the parented inventory update built after the committed pickup.
+        if (!_collected && Binding.WorldScalePercent is int scale)
+        {
+            Array.Resize(ref stats, stats.Length + 1);
+            stats[^1] = new() { Value1 = CharacterStat.Scale, Value2 = (uint)scale };
+        }
         return stats;
     }
 }

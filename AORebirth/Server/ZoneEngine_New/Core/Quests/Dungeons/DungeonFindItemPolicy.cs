@@ -7,6 +7,7 @@ public sealed class DungeonFindItemPolicy
     public int Quality { get; set; }
     public int QuestInstanceStat { get; set; }
     public uint? WorldFlags { get; set; }
+    public int? WorldScalePercent { get; set; }
 }
 
 /// <summary>Existing item-catalog references for a mission tool and its world target.</summary>

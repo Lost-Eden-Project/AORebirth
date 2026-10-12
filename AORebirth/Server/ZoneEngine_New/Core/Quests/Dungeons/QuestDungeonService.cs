@@ -784,7 +784,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             objective = null!;
             objectiveHash = string.Empty;
             if (_hashItems == null || policy?.ItemHashes is not { Length: > 0 } || policy.Quality <= 0
-                || policy.QuestInstanceStat < 0 || policy.ItemHashes.Any(string.IsNullOrWhiteSpace))
+                || policy.QuestInstanceStat < 0 || policy.WorldScalePercent <= 0 || policy.ItemHashes.Any(string.IsNullOrWhiteSpace))
                 return false;
             int room = 0;
             Vector3 point = new();
@@ -808,6 +808,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 Instance = _ids.Allocate(), LowId = selected.Low, HighId = selected.High, Quality = selected.Quality,
                 RoomIndex = room, X = point.xf, Y = point.yf, Z = point.zf,
                 QuestInstanceStat = policy.QuestInstanceStat, WorldFlags = policy.WorldFlags,
+                WorldScalePercent = policy.WorldScalePercent,
                 MissionType = missionType, IsSourceItem = sourceItem
             };
             return objective.IsValid;

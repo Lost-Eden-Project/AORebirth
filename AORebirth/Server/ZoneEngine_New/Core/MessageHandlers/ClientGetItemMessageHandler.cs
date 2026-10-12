@@ -19,8 +19,10 @@ public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemM
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(session);
         Player? player = session.Player;
+        // The retained retail pickup body contains only Identity1. Its custom codec leaves
+        // message.Identity unset; the authenticated session supplies the player identity.
         if (session.State != SessionState.InPlay || player == null || player.IsDead || player.IsPersistenceQuarantined
-            || !ReferenceEquals(player.Session, session) || message.Identity != player.Identity
+            || !ReferenceEquals(player.Session, session)
             || player.Playfield is not QuestDungeonPlayfield dungeon)
             return;
 

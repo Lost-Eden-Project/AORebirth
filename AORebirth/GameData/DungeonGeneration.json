@@ -7,14 +7,16 @@
     "ItemHashes": ["URSE"],
     "Quality": 1,
     "QuestInstanceStat": 1,
-    "WorldFlags": 2147483651
+    "WorldFlags": 2147483651,
+    "WorldScalePercent": 150
   },
   "ReturnItem": {
     "_comment": "AORebirth return-objective policy referencing the existing COSE/Contained Sensitive Information item. This is editable objective selection policy, not a claim that every retail Return Item mission uses this item. Collection preserves the mission-specific identity; delivery requires its exact issuing terminal. The advertised reward remains independent.",
     "ItemHashes": ["COSE"],
     "Quality": 1,
     "QuestInstanceStat": 1,
-    "WorldFlags": 2147483651
+    "WorldFlags": 2147483651,
+    "WorldScalePercent": 150
   },
   "RepairMachine": {
     "_comment": "Existing SPPR/Special Prototype Medicine and CRCH/Cryo Chamber references reproduce the item pair observed in completed capture mission-20261012-004902-7174e861. Its source is QL1 and target QL154; those content qualities are independent of mission QL. Reusing the pair across mission QLs is configurable AORebirth policy, not a retail distribution claim.",

@@ -1,5 +1,16 @@
 # AORebirth Project State
 
+PROVEN (mission pickup rejection): authentic ClientGetItem decoding leaves the
+inherited actor identity unset, but its handler required it to match the player.
+The scoped repair removes that comparison while retaining the authenticated
+session and exact mission/owner/dungeon/range/transaction checks. Optional
+world-only item scale is now configurable in the existing dungeon policy and
+accepted binding; new Find Item/Return Item objectives request 150 percent.
+Existing accepted identities, collected inventory items and reward persistence
+are unchanged. Original-client pickup, rendering and reward acceptance remain
+UNVERIFIED; no suites requested for this repair.
+Approved Windows core compilation and policy JSON validation passed.
+
 IMPLEMENTED, CLIENT UNVERIFIED (Find Person boss correction): separate editable
 Find Person boss pool freezes an authored human boss catalog leaf with the
 exact accepted actor and reuses existing NPC spawning. Original boss bands/stats,
