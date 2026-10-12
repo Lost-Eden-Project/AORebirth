@@ -1,12 +1,13 @@
 # AORebirth Project State
 
-OBSERVED (2026-10-11, friendly-item two-client test): healing reaches the selected
-recipient; the stim visual appears on the user. The scoped follow-up retains
+OBSERVED (2026-10-11, friendly-item two-client acceptance): Mike confirms healing
+and the corrected stim visual reach the selected recipient. The follow-up retains
 the accepted recipient in TemplateAction's recipient fields while preserving
 the user and inventory slot. Official other-recipient inventory-use capture
 confirms this field layout. Approved Windows core build and 37 focused tests
 passed; the candidate is installed locally and core listeners are verified.
-Engines remain running for Mike's testing; client visual acceptance is UNVERIFIED.
+Engines remain running for Mike's testing. Mike authorized integration into
+Windows/public master and the private Linux build; production deployment is separate.
 Actual stim ApplyOnFriendly-without-ApplyOnSelf compatibility is a separate
 unresolved finding; no self-use flag policy change is included.
 

@@ -1,6 +1,13 @@
 # Current Task
 
-Fix friendly-targeted inventory item use in ZoneEngine_New.
+Integrate the client-accepted friendly-item recipient and visual repair into
+Windows/public master, then reconcile that authoritative source into the
+private Linux repository through its normal build/package/push workflow.
+Production deployment has not been requested.
+
+OBSERVED acceptance (2026-10-11): Mike confirms both healing and the corrected
+visual work on the selected other character. Windows build and focused tests
+passed before this client acceptance; the accepted runtime is 78e0b302f.
 
 Visual follow-up (2026-10-11): Mike's two-client test confirms that the healing
 reaches the selected recipient, but the stim effect appears on the user.
@@ -8,8 +15,8 @@ PROVEN by source: ExecuteUse passes the recipient to effects, then drops it
 when AnnounceUsed fills TemplateAction's recipient fields with the user.
 The scoped candidate passes the already accepted recipient into AnnounceUsed,
 preserving performer Identity and the user's inventory Placement. It follows
-the captured inventory-use performer/recipient layout; client visual
-acceptance remains UNVERIFIED until Mike tests the rebuilt local server.
+the captured inventory-use performer/recipient layout. Mike has now confirmed
+the corrected visual in the local two-client test.
 Focused message assertions cover self, another recipient, delayed target
 changes and rejection without an announcement.
 
@@ -21,8 +28,8 @@ snapshot independently correlate the item, user and recipient. The complete
 available raw-CSV corpus under the private capture root yielded 802
 TemplateActions, including 56 Use actions; other distinct-recipient offensive
 uses agree with this layout. No 291043 Use appeared in that scan. The captured
-friendly example is an NPC recipient, so exact player-to-player visual
-acceptance is still Mike's live check. No capture data was copied into runtime.
+friendly example is an NPC recipient; Mike's live test separately accepts the
+player-to-player visual. No capture data was copied into runtime.
 
 Visual follow-up validation: PASS approved Windows core build; PASS all 37
 FriendlyItemUseTests, including the added announcement assertions. No broader
@@ -101,9 +108,10 @@ cmd /d /c dotnet test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests
 ```
 
 OBSERVED: Mike confirms two-client healing reaches the selected recipient.
-UNVERIFIED: corrected client visual, nano/self/hostile gameplay acceptance and
+UNVERIFIED: nano/self/hostile gameplay acceptance and
 obstructed LOS geometry. Automated cases use server fixtures, not live clients.
 Actual stim data has ApplyOnFriendly without ApplyOnSelf; the current self-use
 flag rule can reject that real template with no selection or explicit self.
 That compatibility finding is separate from this visual-only follow-up and
-has not been changed. No client control, master merge or production deployment.
+has not been changed. No client control or production deployment. Windows
+master integration and private Linux reconciliation are explicitly authorized.
