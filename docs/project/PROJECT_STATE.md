@@ -1,5 +1,15 @@
 # AORebirth Project State
 
+PROVEN (Find Person token full-clear defect, 34c8d30f9): the live Omni mission
+counted its living inspection target alongside 21 killed enemies, freezing
+21/22 and a losing roll when inspected. The targeted correction excludes Find
+Person targets from effective token counts while retaining their population
+and death persistence. Kill Person targets remain counted. Runtime chat and
+award chance share eligible counts; full eligible clearance reaches 100 percent.
+Approved Windows core build and diff validation succeeded for this correction;
+original-client full-clear verification remains pending. No suites requested
+or run. Evidence: `docs/reports/MISSION_TOKEN_REWARDS.md`.
+
 IMPLEMENTED, CLIENT UNVERIFIED (generated mission sided tokens): retained capture chance feedback
 is now reconciled against original CSV packets and client text. Objective kills
 count; partial-clearance token award attempts are proven. Integration reuses

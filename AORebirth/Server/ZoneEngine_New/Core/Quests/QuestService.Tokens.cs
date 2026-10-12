@@ -58,7 +58,8 @@ public sealed partial class QuestService
         string flagKey = TokenRewardFlag(stored.AssignedAtUtcTicks);
         if (transaction.GetFlag(key, flagKey) != null)
             throw new InvalidOperationException("An unearned mission already has a frozen token result.");
-        var (killed, total) = MissionTokenProgress.ReadCounts(transaction, quest.QuestId, stored.AssignedAtUtcTicks);
+        var (killed, total) = MissionTokenProgress.ReadEligibleCounts(transaction, quest.QuestId,
+            stored.AssignedAtUtcTicks, parameters);
         if (killed < 0 || total < 0 || killed > total)
             throw new InvalidOperationException("Mission token progress is invalid.");
         int side = player.Stats.GetOrZero(CharacterStat.Side);

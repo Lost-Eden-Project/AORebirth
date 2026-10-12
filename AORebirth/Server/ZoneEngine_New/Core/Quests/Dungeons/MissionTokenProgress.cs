@@ -40,6 +40,7 @@ public sealed class MissionTokenProgress
     QuestDungeonPlayfield? _world;
     IZoneLogger? _logger;
     bool _sealed;
+    bool _excludeObjectiveFromChance;
 
     public bool RequiresReconstruction { get; private set; }
 
@@ -172,6 +173,7 @@ public sealed class MissionTokenProgress
             || point.Level != binding.Quality)
             throw new InvalidDataException("The exact accepted mission objective NPC is unavailable.");
         RegisterPoint(point);
+        _excludeObjectiveFromChance = binding.MissionType == 1;
     }
 
     internal bool IsKilled(string point, int branch) => _killed.Contains(Slot(point, branch));
@@ -295,12 +297,15 @@ public sealed class MissionTokenProgress
             _killed.Add(slot);
             _slotsByActor.Remove(npc);
             _actorsBySlot.Remove(slot);
-            _logger?.Info("Mission token progress quest=" + _questId + " killed=" + killed + " total=" + total);
-            if (killed >= _policy.FeedbackStartingKill && total > 0 && _policy.SidedItems.ContainsKey(owner.Stats.GetOrZero(CharacterStat.Side)))
+            (int eligibleKilled, int eligibleTotal) = EligibleCounts(killed, total, _excludeObjectiveFromChance, _killed.Contains(ObjectiveSlot));
+            _logger?.Info("Mission token progress quest=" + _questId + " killed=" + killed + " total=" + total
+                + " eligibleKilled=" + eligibleKilled + " eligibleTotal=" + eligibleTotal);
+            if (!(_excludeObjectiveFromChance && slot == ObjectiveSlot) && eligibleKilled >= _policy.FeedbackStartingKill
+                && eligibleTotal > 0 && _policy.SidedItems.ContainsKey(owner.Stats.GetOrZero(CharacterStat.Side)))
             {
                 try
                 {
-                    ClientFeedback.SendFormatted(owner, _policy.FeedbackMessageId, (float)(100.0 * killed / total));
+                    ClientFeedback.SendFormatted(owner, _policy.FeedbackMessageId, (float)(100.0 * eligibleKilled / eligibleTotal));
                 }
                 catch (Exception exception)
                 {
@@ -320,6 +325,38 @@ public sealed class MissionTokenProgress
             || progress.RequiredCount < 0 || progress.Progress > progress.RequiredCount)
             throw new InvalidDataException("The mission has no valid sealed token population.");
         return (progress.Progress, progress.RequiredCount);
+    }
+
+    /// <summary>Finding a person leaves that objective alive; it is not an enemy required for full clearance.</summary>
+    public static (int Killed, int Total) ReadEligibleCounts(IMissionDaoTransaction tx, string questId, long assignedAtTicks,
+        QuestDungeonParameters parameters)
+    {
+        (int killed, int total) = ReadCounts(tx, questId, assignedAtTicks);
+        if (parameters.MissionType != 1 || parameters.ObjectiveNpc is not { MissionType: 1 } binding)
+            return (killed, total);
+        if (!binding.IsValid || binding.OwnerId != tx.CharacterId || binding.QuestId != questId)
+            throw new InvalidDataException("The Find Person token objective binding is invalid.");
+        MissionFlagData? flag = tx.GetFlag(new MissionKeyData(tx.CharacterId, questId),
+            RunPrefix(assignedAtTicks) + "spawn:" + ObjectiveSlot);
+        PopulationBranch? objective = flag == null ? null : JsonSerializer.Deserialize<PopulationBranch>(flag.Value ?? string.Empty);
+        if (objective == null || objective.Slot != ObjectiveSlot || objective.Hash != binding.NpcHash || objective.Level != binding.Quality)
+            throw new InvalidDataException("The Find Person objective is absent from the frozen population.");
+        return EligibleCounts(killed, total, excludeObjective: true, IsObjectiveKilled(tx, questId, assignedAtTicks));
+    }
+
+    static (int Killed, int Total) EligibleCounts(int killed, int total, bool excludeObjective, bool objectiveKilled)
+    {
+        if (excludeObjective)
+        {
+            total--;
+            if (objectiveKilled)
+            {
+                killed--;
+            }
+        }
+        if (killed < 0 || total < 0 || killed > total)
+            throw new InvalidDataException("The mission token eligibility counts are invalid.");
+        return (killed, total);
     }
 
     public static bool IsObjectiveKilled(IMissionDaoTransaction tx, string questId, long assignedAtTicks)

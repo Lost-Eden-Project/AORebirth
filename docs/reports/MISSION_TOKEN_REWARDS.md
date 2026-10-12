@@ -44,8 +44,10 @@ item requirements, use effects and consumption remain the owner of that behavior
 
 CONFIGURABLE AORebirth policy: `DungeonGeneration.json` owns the side-to-item
 mapping, quality and feedback settings. Chance is the fraction of the frozen
-generated ordinary/objective NPC population killed, including the objective
-actor. It applies from the first kill, displays captured feedback from kill
+generated eligible NPC population killed, including Kill Person targets but
+excluding Find Person targets whose objective requires inspection. The complete
+population/death census remains intact for reconstruction. Chance applies from
+the first eligible kill, displays captured feedback from kill
 five, and is zero for an empty population. Neutral characters have no sided
 item. These choices do not claim complete retail denominator eligibility:
 memory-visible NPC counts differ from the captured denominators. No invented
@@ -89,10 +91,43 @@ were inspected and reused. DAO/schema, NPC catalogs and item definitions are
 unchanged. The player tick now includes pending exact-target earning retries;
 pending reward feedback uses the existing plain-text protocol correctly.
 
-UNVERIFIED: original-client token progress/delivery/recovery for this new code;
+OBSERVED: Mike saw token-chance feedback up to 95 percent after Shade became
+Omni. Token delivery/recovery and the corrected full-clear path remain CLIENT
+UNVERIFIED;
 retail chance below five kills, exact denominator membership, gray-NPC rules,
 empty-population behavior and mixed-level team eligibility. Current generated
 mission acceptance remains solo; this change does not complete team missions.
 
 Ignored local receipts preserve source rows, ordinals and relevant packet bytes
 under `build-verify/mission-token-*`; captures are not copied into runtime data.
+
+## Find Person full-clear correction
+
+PROVEN local defect on 34c8d30f9: Shade's Find Person mission D2086840384
+persisted 21 ordinary NPC deaths and a census of 22. The sole remaining entry
+was the exact Find Person target, MFPB 50000:2086840385. At 02:10:31 local time
+the inspection completed the mission while that target was alive. The frozen
+Omni outcome used 21/22 and drew 21, so it awarded no token. Killing the target
+after completion could not change the already-frozen result.
+
+The correction excludes the non-kill objective from token chance, including
+both the denominator and any recorded death of that actor. Chat feedback and
+reward selection use the same eligible counts. Clearing these 21 enemies now
+means 21/21 and a guaranteed winning roll upon objective completion. Kill
+Person targets still contribute, preserving the original capture evidence.
+This is an AORebirth objective-eligibility rule satisfying the requested
+full-clear behavior, not newly proven retail Find Person denominator logic.
+
+Raw population flags, unique deaths and fingerprints remain unchanged. Existing
+uncompleted token-enabled missions can use the correction without a census
+migration. Previously frozen completion outcomes remain immutable. No DAO,
+schema, content, loot, packet or quest-objective mechanics change. The scoped
+runtime files are MissionTokenProgress.cs and QuestService.Tokens.cs.
+
+Validation: approved Windows core build and `git diff --check` succeeded.
+No fixture/unit/regression suites were requested or run. Original-client
+verification of the corrected full-clear percentage and token delivery remains
+pending; the observed 95-percent feedback only verifies the earlier message path.
+
+The earlier Neutral Find Item mission's separate missing ordinary spawn is not
+the cause of this Omni Find Person failure and is not silently recategorized.
