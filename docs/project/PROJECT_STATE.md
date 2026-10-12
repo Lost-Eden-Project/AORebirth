@@ -1,5 +1,13 @@
 # AORebirth Project State
 
+PROVEN (QL34 roll rejection): the captured corpus contains no expected QL34.
+Mike approved configurable nearest-QL fallback within the same originating
+terminal playfield. Exact-QL behavior remains first; the optional policy reuses
+existing pools without changing requested mission QL, rewards or observation
+records. Borealis QL34 selects its QL35 pool of 184 entrances. Approved Windows
+core build, data comparison and diff validation passed; client verification
+pending. No suites requested. See `docs/reports/MISSION_DESTINATION_QL_FALLBACK.md`.
+
 PROVEN (mission reward inventory mismatch, 73c32cdc2): key deletion preceded
 AddTemplate, opening a slot that was occupied when reward placements were
 planned. Shade's token clicks therefore resolved to the reward implant until

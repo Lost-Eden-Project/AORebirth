@@ -33,9 +33,12 @@ namespace Utility.GameData.Missions
         private readonly Dictionary<MissionPlacementIdentity, MissionDestinationWorldPosition> worldPositions =
             new Dictionary<MissionPlacementIdentity, MissionDestinationWorldPosition>();
         private readonly HashSet<MissionPlacementIdentity> pooledIdentities = new HashSet<MissionPlacementIdentity>();
+        private readonly bool allowNearestTerminalQlFallback;
 
-        private MissionDestinationCatalog(PlacementData[] placementRows, MissionDestinationPoolData[] poolRows)
+        private MissionDestinationCatalog(PlacementData[] placementRows, MissionDestinationPoolData[] poolRows,
+            bool allowNearestTerminalQlFallback)
         {
+            this.allowNearestTerminalQlFallback = allowNearestTerminalQlFallback;
             var placementList = new List<MissionEntrancePlacement>();
             foreach (PlacementData row in placementRows)
             {
@@ -102,6 +105,7 @@ namespace Utility.GameData.Missions
         public int TerminalPoolCount { get { return terminalPools.Count; } }
         public int ObservedWorldPositionCount { get { return worldPositions.Count; } }
         public bool DestinationUniquenessWithinCohortRequired { get { return false; } }
+        public bool AllowNearestTerminalQlFallback { get { return allowNearestTerminalQlFallback; } }
 
         /// <summary>
         /// Loads the two runtime catalogs from the caller's selected GameData root.
@@ -121,23 +125,54 @@ namespace Utility.GameData.Missions
                 "Unsupported destination schema or catalog kind.");
             Require(placements.Placements != null && placements.Placements.Length > 0, "Placement catalog is empty.");
             Require(destinations.Pools != null && destinations.Pools.Length > 0, "Destination catalog is empty.");
-            return new MissionDestinationCatalog(placements.Placements, destinations.Pools);
+            return new MissionDestinationCatalog(placements.Placements, destinations.Pools,
+                destinations.AllowNearestTerminalQlFallback);
         }
 
         /// <summary>
         /// Uses the terminal playfield's exact-QL pool when present, otherwise the union at that same QL.
-        /// Missing QLs remain unsupported; no neighboring-QL or all-placement fallback is used.
+        /// An explicit gameplay policy may reuse the nearest observed QL pool from the same terminal playfield.
+        /// This does not establish observed eligibility at the requested QL.
         /// </summary>
         public bool TryGetDestinations(int terminalPlayfield, int expectedQl,
             out IReadOnlyList<MissionEntrancePlacement> destinations, out bool usedQlFallback)
         {
+            return TryGetDestinations(terminalPlayfield, expectedQl, out destinations, out usedQlFallback, out _);
+        }
+
+        public bool TryGetDestinations(int terminalPlayfield, int expectedQl,
+            out IReadOnlyList<MissionEntrancePlacement> destinations, out bool usedQlFallback, out int selectedPoolQl)
+        {
             usedQlFallback = false;
+            selectedPoolQl = expectedQl;
             if (terminalPools.TryGetValue(new TerminalQlKey(terminalPlayfield, expectedQl), out destinations))
                 return true;
             if (expectedMissionQls.TryGetValue(expectedQl, out destinations))
             {
                 usedQlFallback = true;
                 return true;
+            }
+            selectedPoolQl = 0;
+            if (allowNearestTerminalQlFallback && expectedQl > 0)
+            {
+                long nearestDistance = long.MaxValue;
+                foreach (var pool in terminalPools)
+                {
+                    if (pool.Key.TerminalPlayfield != terminalPlayfield)
+                        continue;
+                    long distance = Math.Abs((long)pool.Key.ExpectedMissionQl - expectedQl);
+                    if (distance > nearestDistance
+                        || (distance == nearestDistance && pool.Key.ExpectedMissionQl >= selectedPoolQl))
+                        continue;
+                    nearestDistance = distance;
+                    selectedPoolQl = pool.Key.ExpectedMissionQl;
+                    destinations = pool.Value;
+                }
+                if (selectedPoolQl > 0)
+                {
+                    usedQlFallback = true;
+                    return true;
+                }
             }
             destinations = EmptyPlacements;
             return false;
@@ -216,6 +251,7 @@ namespace Utility.GameData.Missions
             }
 
             public int ExpectedMissionQl { get; }
+            public int TerminalPlayfield { get { return terminalPlayfield; } }
 
             public bool Equals(TerminalQlKey other)
             {

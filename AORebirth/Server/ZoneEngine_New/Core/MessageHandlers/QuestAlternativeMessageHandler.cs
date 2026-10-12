@@ -44,10 +44,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
             { Feedback(session, player, "The mission terminal rejected unsupported slider settings. No credits were deducted."); return; }
             int breed = player.Stats.Get(CharacterStat.Breed);
             int profession = player.Stats.Get(CharacterStat.Profession);
-            bool supported = _destinations.TryGetDestinations(playfield.Identity.Instance, quality, out var destinationPool, out bool usedQlFallback);
-            string destinationSelection = !supported ? "UNSUPPORTED" : usedQlFallback ? "QL_FALLBACK" : "ORIGIN_SPECIFIC";
+            bool supported = _destinations.TryGetDestinations(playfield.Identity.Instance, quality,
+                out var destinationPool, out bool usedQlFallback, out int selectedPoolQl);
+            string destinationSelection = !supported ? "UNSUPPORTED" : selectedPoolQl != quality
+                ? "NEAREST_ORIGIN_QL_FALLBACK" : usedQlFallback ? "QL_FALLBACK" : "ORIGIN_SPECIFIC";
             player.Logger.Info(FormattableString.Invariant(
-                $"Mission destination selection policy=TERMINAL_PLAYFIELD_EXPECTED_QL_WITH_QL_FALLBACK selection={destinationSelection} crossConditionEligibility=UNPROVEN owner={player.Identity.Instance} level={level} expectedQl={quality} difficulty={message.LevelSlider} faction={(int)side} breed={breed} profession={profession} terminalType={(uint)message.MissionTerminalIdentity.Type:X8} terminalInstance={unchecked((uint)message.MissionTerminalIdentity.Instance):X8} terminalPf={playfield.Identity.Instance} terminalX={terminal.Position.xf:R} terminalY={terminal.Position.yf:R} terminalZ={terminal.Position.zf:R} sliders=[{message.GoodBadSlider},{message.OrderChaosSlider},{message.OpenHiddenSlider},{message.PhysicalMysticalSlider},{message.HeadOnStealthSlider},{message.MoneyExperienceSlider}] physical={_destinations.Count} observed={_destinations.ObservedDestinations.Count} validWorldPos={_destinations.ObservedWorldPositionCount} destinationCandidates={destinationPool.Count}"));
+                $"Mission destination selection policy=TERMINAL_PLAYFIELD_EXPECTED_QL_WITH_QL_FALLBACK selection={destinationSelection} poolQl={selectedPoolQl} nearestTerminalQlFallback={_destinations.AllowNearestTerminalQlFallback} crossConditionEligibility=UNPROVEN crossQlEligibility=UNPROVEN owner={player.Identity.Instance} level={level} expectedQl={quality} difficulty={message.LevelSlider} faction={(int)side} breed={breed} profession={profession} terminalType={(uint)message.MissionTerminalIdentity.Type:X8} terminalInstance={unchecked((uint)message.MissionTerminalIdentity.Instance):X8} terminalPf={playfield.Identity.Instance} terminalX={terminal.Position.xf:R} terminalY={terminal.Position.yf:R} terminalZ={terminal.Position.zf:R} sliders=[{message.GoodBadSlider},{message.OrderChaosSlider},{message.OpenHiddenSlider},{message.PhysicalMysticalSlider},{message.HeadOnStealthSlider},{message.MoneyExperienceSlider}] physical={_destinations.Count} observed={_destinations.ObservedDestinations.Count} validWorldPos={_destinations.ObservedWorldPositionCount} destinationCandidates={destinationPool.Count}"));
             try
             {
                 DateTime now = DateTime.UtcNow;
@@ -73,7 +75,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     }
                     catch (NotSupportedException)
                     {
-                        Feedback(session, player, $"No mission destinations have been observed at expected QL {quality}. No credits were deducted.");
+                        Feedback(session, player, $"No configured mission destinations are available at expected QL {quality}. No credits were deducted.");
                         return;
                     }
                     batch = GeneratedMissionRollProjection.Create(message, response, playfield.Identity.Instance,

@@ -1,5 +1,6 @@
 {
   "CatalogKind": "MISSION_DESTINATIONS",
+  "AllowNearestTerminalQlFallback": true,
   "Pools": [
     {
       "DestinationIdentities": [

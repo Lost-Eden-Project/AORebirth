@@ -45,6 +45,7 @@ namespace Utility.GameData.Missions
     {
         [DataMember(IsRequired = true)] public int SchemaVersion { get; set; }
         [DataMember(IsRequired = true)] public string CatalogKind { get; set; }
+        [DataMember] public bool AllowNearestTerminalQlFallback { get; set; }
         [DataMember(IsRequired = true)] public MissionDestinationPoolData[] Pools { get; set; }
     }
 

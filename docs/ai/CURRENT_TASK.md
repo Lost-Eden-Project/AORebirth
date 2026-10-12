@@ -1,24 +1,23 @@
 # Current Task
 
-Repair mission rewards that cannot be used until zoning on 73c32cdc2, and
-inspect the existing sided-token point values against Mike's title-level report.
+Enable Mike's explicitly approved configurable nearest-QL destination fallback
+after Shade's level-34 centered rolls failed with zero destination candidates.
 
-PROVEN: reward slots are planned with the mission key present, but completion
-deletes the key before AddTemplate publication. The client fills that newly
-free slot while the server retains the planned slots. Shade's token clicks
-resolved to the reward implant; zoning restored the token's correct placement.
+PROVEN: the retained 93185-offer corpus has no expected-QL34 records. The two
+runtime files still contain 2242 placements, 812 supported identities and 45
+observed QLs. This was the earlier exact-observation restriction, not data loss.
 
-Publish the committed grant before key retirement, with retirement in finally
-so socket failures cannot skip lifecycle cleanup. Preserve packet semantics,
-reward transactions, token chance and existing data-driven item use.
+Preserve exact terminal/QL selection, then exact QL-wide fallback. Only when
+both fail and AllowNearestTerminalQlFallback is true, use the nearest recorded
+pool for the same originating terminal playfield; ties use the lower QL.
+Do not change mission QL/rewards, entrance identities, coordinates or observed
+coverage. No cross-origin nearest-QL fallback. Log requested and source QLs;
+cross-QL eligibility remains unproven gameplay policy.
 
-Use the approved Windows build, install locally and leave the core engines
-running for Mike's testing. No fixture/unit/regression suites were requested.
-Never control the AO client. Approved Windows core build and diff validation
-passed; original-client immediate-use verification remains pending.
+Use the approved Windows build, install locally, preserve existing overlays
+and private item-data repairs, and leave core engines running for Mike's test.
+No fixture/unit/regression suites requested. Never control the AO client.
+Approved Windows core build, catalog data comparison and diff validation passed.
+Original-client QL34 verification remains pending.
 
-The existing item data gives two points at Shade's level and progresses by
-character-level bands up to nine points. Preserve those authoritative values;
-Mike did not choose a replacement title-level policy. No content change.
-
-Evidence and changed files: docs/reports/MISSION_TOKEN_REWARDS.md.
+Details: docs/reports/MISSION_DESTINATION_QL_FALLBACK.md.
