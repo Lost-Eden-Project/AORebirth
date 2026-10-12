@@ -41,6 +41,7 @@ public sealed class FriendlyItemUseTests
         AssertVitals(h.User, 50 + HealthRestored, 40 + NanoRestored);
         Assert.IsTrue(h.User.SkillLocks.IsLocked((int)CharacterStat.FirstAid, DateTime.UtcNow));
         Assert.AreEqual(2, stim.StackCount);
+        AssertUseAnnouncement(h, stim, h.User);
     }
 
     [TestMethod]
@@ -62,6 +63,7 @@ public sealed class FriendlyItemUseTests
         Assert.IsTrue(h.User.SkillLocks.IsLocked((int)CharacterStat.FirstAid, DateTime.UtcNow));
         Assert.IsFalse(patient.SkillLocks.IsLocked((int)CharacterStat.FirstAid, DateTime.UtcNow));
         Assert.AreEqual(2, stim.StackCount);
+        AssertUseAnnouncement(h, stim, patient);
         HealthDamageMessage heal = h.Session(patient).Messages.OfType<HealthDamageMessage>().Single();
         Assert.AreEqual(patient.Identity, heal.Identity);
         Assert.AreEqual(h.User.Identity, heal.Target);
@@ -87,6 +89,8 @@ public sealed class FriendlyItemUseTests
         h.User.SetTarget(nextSelection.Identity);
         h.Uses.Tick(0.5);
         AssertVitals(patient, 50, 40);
+        Assert.IsFalse(h.UserSession.Messages.OfType<TemplateActionMessage>()
+            .Any(message => message.Action == TemplateActionType.Use));
         h.Uses.Tick(0.6);
         h.Uses.Tick(2);
 
@@ -96,8 +100,7 @@ public sealed class FriendlyItemUseTests
         Assert.AreEqual(2, stim.StackCount);
         Assert.IsFalse(stim.Locked);
         Assert.IsFalse(h.Uses.HasPending(h.User.Identity.Instance));
-        Assert.AreEqual(1, h.UserSession.Messages.OfType<TemplateActionMessage>()
-            .Count(message => message.Action == TemplateActionType.Use));
+        AssertUseAnnouncement(h, stim, patient);
     }
 
     [TestMethod]
@@ -121,6 +124,8 @@ public sealed class FriendlyItemUseTests
         Assert.AreEqual(3, stim.StackCount);
         Assert.IsFalse(stim.Locked);
         Assert.IsFalse(h.User.SkillLocks.IsLocked((int)CharacterStat.FirstAid, DateTime.UtcNow));
+        Assert.IsFalse(h.UserSession.Messages.OfType<TemplateActionMessage>()
+            .Any(message => message.Action == TemplateActionType.Use));
     }
 
     [TestMethod]
@@ -147,6 +152,8 @@ public sealed class FriendlyItemUseTests
         Assert.IsFalse(h.Uses.HasPending(h.User.Identity.Instance));
         Assert.IsFalse(h.User.SkillLocks.IsLocked((int)CharacterStat.FirstAid, DateTime.UtcNow));
         Assert.IsFalse(patient.SkillLocks.IsLocked((int)CharacterStat.FirstAid, DateTime.UtcNow));
+        Assert.IsFalse(h.UserSession.Messages.OfType<TemplateActionMessage>()
+            .Any(message => message.Action == TemplateActionType.Use));
     }
 
     [TestMethod]
@@ -457,6 +464,20 @@ public sealed class FriendlyItemUseTests
     }
 
     static Identity Slot(int placement) => new() { Type = IdentityType.Inventory, Instance = placement };
+
+    static void AssertUseAnnouncement(Harness h, Item item, Character recipient)
+    {
+        TemplateActionMessage used = h.UserSession.Messages.OfType<TemplateActionMessage>()
+            .Single(message => message.Action == TemplateActionType.Use);
+        Assert.AreEqual(h.User.Identity, used.Identity);
+        Assert.AreEqual(Slot(64), used.Placement);
+        Assert.AreEqual(item.LowId, used.ItemLowId);
+        Assert.AreEqual(item.HighId, used.ItemHighId);
+        Assert.AreEqual(item.Quality, used.Quality);
+        Assert.AreEqual(1, used.Unknown1);
+        Assert.AreEqual((int)recipient.Identity.Type, used.Unknown3);
+        Assert.AreEqual(recipient.Identity.Instance, used.Unknown4);
+    }
 
     static void AssertVitals(Character character, int health, int nano)
     {

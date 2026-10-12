@@ -1,5 +1,15 @@
 # AORebirth Project State
 
+OBSERVED (2026-10-11, friendly-item two-client test): healing reaches the selected
+recipient; the stim visual appears on the user. The scoped follow-up retains
+the accepted recipient in TemplateAction's recipient fields while preserving
+the user and inventory slot. Official other-recipient inventory-use capture
+confirms this field layout. Approved Windows core build and 37 focused tests
+passed; the candidate is installed locally and core listeners are verified.
+Engines remain running for Mike's testing; client visual acceptance is UNVERIFIED.
+Actual stim ApplyOnFriendly-without-ApplyOnSelf compatibility is a separate
+unresolved finding; no self-use flag policy change is included.
+
 PROVEN (2026-10-11, friendly inventory item recipient repair):
 `codex/friendly-item-targeting`, based on public master `3805aa851fcbe9ba81a9147954a9f1bf26e4fa8f`,
 resolves ApplyOnFriendly from selection before ToUse checks, preserves permitted

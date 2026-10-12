@@ -235,18 +235,19 @@ namespace ZoneEngine_New.Core.Inventory
                     source: player,
                     criteria: new SpellCriteria { Subject = this, SubjectSlot = slotIdentity }))
                 return false;
-            AnnounceUsed(player, slotIdentity);
+            AnnounceUsed(player, slotIdentity, target ?? player);
             if (Can(CanFlags.Consume))
                 ConsumeCharge(player, slotIdentity);
             return true;
         }
 
         /// <summary>
-        /// TemplateAction Use after the OnUse functions ran, as live sends it (Health and Nano Stim, capture
-        /// 2026-10-02T15:43:13Z): low/high, QL, Unknown1 1, Action 3, Placement = the used slot, Unknown3/Unknown4 =
-        /// the user. The client plays the item's use effect (its GfxEffect) from it.
+        /// TemplateAction Use after OnUse: official other-target Health Regeneration Stim capture
+        /// 2026-09-23T02:59:57.5534400Z has performer Identity, the user's inventory Placement, and recipient
+        /// Unknown3/Unknown4. The self-use Health and Nano Stim capture 2026-10-02T15:43:13Z has the same layout.
+        /// The client plays the item's use effect (its GfxEffect) from this announcement.
         /// </summary>
-        void AnnounceUsed(Player player, Identity slotIdentity)
+        void AnnounceUsed(Player player, Identity slotIdentity, Character target)
         {
             var used = new TemplateActionMessage
             {
@@ -257,8 +258,8 @@ namespace ZoneEngine_New.Core.Inventory
                 Unknown1 = 1,
                 Action = TemplateActionType.Use,
                 Placement = slotIdentity,
-                Unknown3 = (int)player.Identity.Type,
-                Unknown4 = player.Identity.Instance
+                Unknown3 = (int)target.Identity.Type,
+                Unknown4 = target.Identity.Instance
             };
             player.Playfield?.GetRequiredService<PlayfieldLocality>().Announce(player, used, includeSelf: true);
         }

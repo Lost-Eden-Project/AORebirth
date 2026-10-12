@@ -2,6 +2,36 @@
 
 Fix friendly-targeted inventory item use in ZoneEngine_New.
 
+Visual follow-up (2026-10-11): Mike's two-client test confirms that the healing
+reaches the selected recipient, but the stim effect appears on the user.
+PROVEN by source: ExecuteUse passes the recipient to effects, then drops it
+when AnnounceUsed fills TemplateAction's recipient fields with the user.
+The scoped candidate passes the already accepted recipient into AnnounceUsed,
+preserving performer Identity and the user's inventory Placement. It follows
+the captured inventory-use performer/recipient layout; client visual
+acceptance remains UNVERIFIED until Mike tests the rebuilt local server.
+Focused message assertions cover self, another recipient, delayed target
+changes and rejection without an announcement.
+
+PROVEN capture evidence: official inventory Use at
+2026-09-23T02:59:57.5534400Z, item 297044, keeps user 50000:1248653930 in
+Identity and user inventory 104:78 in Placement, while Unknown3/Unknown4
+identify the friendly recipient 50000:2052536079. The request/ack and world
+snapshot independently correlate the item, user and recipient. The complete
+available raw-CSV corpus under the private capture root yielded 802
+TemplateActions, including 56 Use actions; other distinct-recipient offensive
+uses agree with this layout. No 291043 Use appeared in that scan. The captured
+friendly example is an NPC recipient, so exact player-to-player visual
+acceptance is still Mike's live check. No capture data was copied into runtime.
+
+Visual follow-up validation: PASS approved Windows core build; PASS all 37
+FriendlyItemUseTests, including the added announcement assertions. No broader
+suite was rerun. Local source matches the isolated candidate, local config is
+unchanged, and core process/listener ownership passed after startup. Chat,
+Login and ZoneEngine_New are left running under Mike's explicit testing request.
+No restoration amount, effect function, skill lock, requirement or consumption
+behavior changed in this visual follow-up. No client was controlled.
+
 Base: public master `3805aa851fcbe9ba81a9147954a9f1bf26e4fa8f`.
 Branch: `codex/friendly-item-targeting`.
 
@@ -70,8 +100,10 @@ cmd /d /c dotnet test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests
 cmd /d /c dotnet test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests.csproj -p:FriendlyItemUseFocusedTests=true --no-build --no-restore --filter FullyQualifiedName~RequirementExpressionTests
 ```
 
-UNVERIFIED: two-client health/nano/self/hostile gameplay acceptance and obstructed
-LOS geometry. The read-only local status check found no running core backend or
-open core listeners; no two-client session was available. Automated cases use
-server fixtures, not live clients. No engines were started, no client was
-controlled and no master merge or production deployment is included.
+OBSERVED: Mike confirms two-client healing reaches the selected recipient.
+UNVERIFIED: corrected client visual, nano/self/hostile gameplay acceptance and
+obstructed LOS geometry. Automated cases use server fixtures, not live clients.
+Actual stim data has ApplyOnFriendly without ApplyOnSelf; the current self-use
+flag rule can reject that real template with no selection or explicit self.
+That compatibility finding is separate from this visual-only follow-up and
+has not been changed. No client control, master merge or production deployment.
