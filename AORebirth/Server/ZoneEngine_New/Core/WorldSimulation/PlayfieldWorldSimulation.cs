@@ -487,8 +487,9 @@
         /// <summary>
         /// True when the character's recorded entrance is a real door in the recorded playfield, so any exit here may send
         /// them back out through it. The record itself is the proof: only a return-recording proxy writes it, at the
-        /// moment it moves the character into a playfield, and every other way of changing playfield clears it (GM
-        /// jumps, /stuck, teleport items, cross-playfield death respawn).
+        /// moment it moves the character into a playfield (or a GM jump into an interior, which records the door nearest
+        /// its departure), and every other way of changing playfield clears it (/stuck, teleport items,
+        /// cross-playfield death respawn).
         /// Re-deriving the entrance from the door's walk-in portal data failed for doors that teleport from their
         /// OnTargetInVicinity event (655 door C000028F into 1702, 566 door C0070236 into 1137): those carry no walk-in
         /// portal, so the character was told the exit's destination is unknown although the return was recorded.

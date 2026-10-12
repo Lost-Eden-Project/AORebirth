@@ -11,6 +11,7 @@ namespace ZoneEngine_New.Core.Commands
     using ZoneEngine_New.Core.Playfield;
 
     using CharacterStat = SmokeLounge.AOtomation.Messaging.GameData.CharacterStat;
+    using IdentityType = SmokeLounge.AOtomation.Messaging.GameData.IdentityType;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     public sealed class TeleportCommand : IGmCommand
@@ -173,7 +174,7 @@ namespace ZoneEngine_New.Core.Commands
             }
 
             Vector3 landing = new Vector3(context.Player.Position.xf, context.Player.Position.yf, context.Player.Position.zf);
-            Relocate(context, subject, destination, landing, subject.Name);
+            Relocate(context, subject, destination, landing, subject.Name, context.Player);
         }
 
         /// <summary>
@@ -219,7 +220,7 @@ namespace ZoneEngine_New.Core.Commands
 
             Vector3 at = target.Position;
             Vector3 landing = new Vector3(at.xf, at.yf, at.zf);
-            Relocate(context, context.Player, destination, landing, "self");
+            Relocate(context, context.Player, destination, landing, "self", target);
         }
 
         /// <summary>
@@ -227,7 +228,7 @@ namespace ZoneEngine_New.Core.Commands
         /// transfer to another playfield, or a position update announced where they are. Tells the issuer and, when it
         /// is someone else, the subject.
         /// </summary>
-        void Relocate(GmCommandContext context, Player subject, Playfield destination, Vector3 landing, string who)
+        void Relocate(GmCommandContext context, Player subject, Playfield destination, Vector3 landing, string who, Player? returnFrom = null)
         {
             Playfield? current = subject.Playfield;
             if (current == null)
@@ -250,10 +251,7 @@ namespace ZoneEngine_New.Core.Commands
                     return;
                 }
 
-                // A GM jump is not a proxy entry, so it leaves no way back: exit proxies in the
-                // destination will decline until the player walks in through a real door.
-                subject.Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
-                subject.Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
+                SetExitReturn(subject, current, destination, returnFrom);
 
                 GmCommandFeedback.Send(context.Session, context.Player, toIssuer);
                 if (!ReferenceEquals(subject, context.Player))
@@ -269,6 +267,64 @@ namespace ZoneEngine_New.Core.Commands
             GmCommandFeedback.Send(context.Session, context.Player, toIssuer);
             if (!ReferenceEquals(subject, context.Player) && subject.Session != null)
                 GmCommandFeedback.Send(subject.Session, subject, toSubject);
+        }
+
+        /// <summary>
+        /// Gives a GM jump the exit-proxy return a door entry would have recorded, so the destination's exits lead
+        /// somewhere instead of declining. Joining <paramref name="returnFrom"/> (already in the destination) shares
+        /// their way out; otherwise the way out is the door nearest the subject's departure point. Outdoor
+        /// destinations (playfield metadata) clear it, so a stale door cannot pull the character back later.
+        /// </summary>
+        void SetExitReturn(Player subject, Playfield source, Playfield destination, Player? returnFrom)
+        {
+            int returnPlayfield = 0;
+            int returnDoor = 0;
+            int destinationId = destination.Identity.Instance;
+            if (_gameData.GetPlayfieldMetaData(destinationId) == null)
+            {
+                int sharedPlayfield = returnFrom?.Stats.GetOrZero(CharacterStat.ExternalPlayfieldInstance) ?? 0;
+                int sharedDoor = returnFrom?.Stats.GetOrZero(CharacterStat.ExternalDoorInstance) ?? 0;
+                if (sharedPlayfield > 0 && sharedPlayfield != destinationId && sharedDoor != 0)
+                {
+                    returnPlayfield = sharedPlayfield;
+                    returnDoor = sharedDoor;
+                }
+                else if (TryFindNearestDoor(source.Identity.Instance, subject.Position, out int door))
+                {
+                    returnPlayfield = source.Identity.Instance;
+                    returnDoor = door;
+                }
+            }
+
+            subject.Stats.Set(CharacterStat.ExternalPlayfieldInstance, returnPlayfield, StatDetail.Base, dirty: true);
+            subject.Stats.Set(CharacterStat.ExternalDoorInstance, returnDoor, StatDetail.Base, dirty: true);
+        }
+
+        bool TryFindNearestDoor(int playfieldId, Vector3 position, out int doorInstance)
+        {
+            doorInstance = 0;
+            var dynels = _gameData.GetPlayfieldGeometry(playfieldId).Dynels?.Dynels;
+            if (dynels == null)
+                return false;
+
+            float best = float.MaxValue;
+            foreach (var d in dynels)
+            {
+                if (d.IdentityType != (int)IdentityType.Door)
+                    continue;
+
+                float dx = d.Position.X - position.xf;
+                float dy = d.Position.Y - position.yf;
+                float dz = d.Position.Z - position.zf;
+                float distanceSquared = dx * dx + dy * dy + dz * dz;
+                if (distanceSquared < best)
+                {
+                    best = distanceSquared;
+                    doorInstance = d.IdentityInstance;
+                }
+            }
+
+            return doorInstance != 0;
         }
     }
 }
