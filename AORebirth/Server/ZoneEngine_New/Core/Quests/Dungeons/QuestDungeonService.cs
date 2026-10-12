@@ -818,12 +818,13 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         {
             objective = null!;
             DungeonNpcObjectivePolicy? policy = _layouts.NpcObjectivePolicy;
-            if (quality <= 0 || policy?.NpcHashes is not { Length: > 0 }
-                || policy.NpcHashes.Any(string.IsNullOrWhiteSpace)
+            string[]? hashes = missionType == (int)MissionRollType.FindPerson ? policy?.FindPersonNpcHashes : policy?.NpcHashes;
+            if (quality <= 0 || hashes is not { Length: > 0 }
+                || hashes.Any(string.IsNullOrWhiteSpace)
                 || !DungeonObjectivePlacement.TrySelect(_gameData.RootPath, layout, _logger, out int room, out Vector3 point))
                 return false;
             var candidates = new List<MobTemplate>();
-            foreach (string hash in policy.NpcHashes.Distinct(StringComparer.Ordinal))
+            foreach (string hash in hashes.Distinct(StringComparer.Ordinal))
             {
                 if (!_gameData.HasMobTemplate(hash) || !_gameData.TryResolveMobTemplate(hash, quality, out MobTemplate template)
                     || template.UnresolvedPlaceholder || !NpcTemplateValidation.CanSpawn(template)
@@ -832,10 +833,38 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 candidates.Add(template);
             }
             MobTemplate selected = candidates[RandomNumberGenerator.GetInt32(candidates.Count)];
+            (int Low, int High, int Quality) modifier = default;
+            if (missionType == (int)MissionRollType.FindPerson)
+            {
+                if (_hashItems == null || policy?.FindPersonBossModifierHashes is not { Length: > 0 }
+                    || policy.FindPersonBossModifierHashes.Any(string.IsNullOrWhiteSpace))
+                    return false;
+                var modifiers = new List<(int Low, int High, int Quality)>();
+                int npcLevel = selected.Stats[(int)CharacterStat.Level];
+                foreach (string hash in policy.FindPersonBossModifierHashes.Distinct(StringComparer.Ordinal))
+                {
+                    if (!_hashItems.TryRollIds(hash, npcLevel, out int low, out int high, out int modifierQuality)
+                        || modifierQuality != npcLevel)
+                        return false;
+                    try
+                    {
+                        if (!_items.CreateTemplate(low, high, modifierQuality).Name.StartsWith("Boss Modifier Item", StringComparison.OrdinalIgnoreCase))
+                            return false;
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger.Error(exception, "Find Person boss modifier is unavailable: " + hash);
+                        return false;
+                    }
+                    modifiers.Add((low, high, modifierQuality));
+                }
+                modifier = modifiers[RandomNumberGenerator.GetInt32(modifiers.Count)];
+            }
             objective = new MissionNpcObjectiveBinding
             {
                 QuestId = questId, OwnerId = player.Identity.Instance, Instance = _ids.Allocate(),
                 NpcHash = selected.Hash, Quality = quality, RoomIndex = room,
+                BossModifierLowId = modifier.Low, BossModifierHighId = modifier.High, BossModifierQuality = modifier.Quality,
                 X = point.xf, Y = point.yf, Z = point.zf, MissionType = missionType
             };
             return objective.IsValid;

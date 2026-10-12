@@ -243,6 +243,20 @@ public sealed class QuestDungeonPlayfield : Playfield
             throw new InvalidDataException("Accepted NPC objective template is unavailable.");
 
         bool passive = _objectiveNpc.MissionType == 1;
+        if (_objectiveNpc.HasBossModifier)
+        {
+            IItemBuilder items = GetRequiredService<IItemBuilder>();
+            int level = template.Stats[(int)CharacterStat.Level];
+            if (_objectiveNpc.BossModifierQuality != level
+                || !items.CreateTemplate(_objectiveNpc.BossModifierLowId, _objectiveNpc.BossModifierHighId, level)
+                    .Name.StartsWith("Boss Modifier Item", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Accepted Find Person boss modifier is unavailable.");
+            // Resolution returns a fresh template. Freeze one modifier rather than rerolling catalog alternatives.
+            template.Equipment.RemoveAll(pair => pair.Count > 0 && pair[0] > 0
+                && items.CreateTemplate(pair[0], pair.Count > 1 && pair[1] > 0 ? pair[1] : pair[0], level)
+                    .Name.StartsWith("Boss Modifier Item", StringComparison.OrdinalIgnoreCase));
+            template.Equipment.Add([_objectiveNpc.BossModifierLowId, _objectiveNpc.BossModifierHighId]);
+        }
         NpcCharacter npc = GetRequiredService<SpawnService>().SpawnMob(template,
             new AORebirth.Core.Vector.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z),
             new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1), _objectiveNpc.Quality,
@@ -250,9 +264,11 @@ public sealed class QuestDungeonPlayfield : Playfield
             configure: passive ? character => character.Attackable = false : null,
             attachDefaultBrain: !passive, fixedIdentity: _objectiveNpc.Identity);
         Logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-            "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#})",
+            "Quest dungeon {0} objective NPC {1}:{2} hash={3} in room {4} at ({5:0.#}, {6:0.#}, {7:0.#}) bossModifier={8}/{9} QL{10} scale={11}",
             QuestId, (int)npc.Identity.Type, npc.Identity.Instance, _objectiveNpc.NpcHash,
-            _objectiveNpc.RoomIndex, npc.Position.xf, npc.Position.yf, npc.Position.zf));
+            _objectiveNpc.RoomIndex, npc.Position.xf, npc.Position.yf, npc.Position.zf,
+            _objectiveNpc.BossModifierLowId, _objectiveNpc.BossModifierHighId, _objectiveNpc.BossModifierQuality,
+            npc.Stats.GetOrZero(CharacterStat.Scale)));
     }
 
     /// <summary>

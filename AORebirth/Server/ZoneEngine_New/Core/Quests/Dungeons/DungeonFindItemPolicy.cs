@@ -20,4 +20,6 @@ public sealed class DungeonRepairMachinePolicy
 public sealed class DungeonNpcObjectivePolicy
 {
     public string[] NpcHashes { get; set; } = [];
+    public string[] FindPersonNpcHashes { get; set; } = [];
+    public string[] FindPersonBossModifierHashes { get; set; } = [];
 }

@@ -29,7 +29,8 @@ tick; no new persistent queue was introduced.
 
 The existing `DungeonGeneration.json` selects references in the existing item
 and NPC catalogs: Find Item `URSE` unchanged; Return `COSE`; Repair `SPPR`/`CRCH`;
-NPC objectives `FECI`, with existing level interpolation. These are editable
+Kill Person `FECI`; Find Person uses its separate `FECI` base pool with original
+`KZ15` boss equipment, with existing level interpolation. These are editable
 AORebirth policies. Cross-QL selection and random NPC target selection are not
 claimed as Funcom probability rules or exact retail target-name reproduction.
 
@@ -41,6 +42,30 @@ the original Find Person accepted action in capture
 Return's action contract uses the established July analysis/current packet
 policy; the absent July raw folders were not presented as newly inspected.
 Runtime does not read capture folders. Private catalogs are not published.
+
+## Find Person boss correction
+
+OBSERVED: Mike's Find Person client test spawned a regular enemy profile. The
+shared NPC objective pool supplied the same unmodified `FECI` to both NPC types.
+Find Person now freezes a modifier pair and quality alongside its accepted actor
+in existing dungeon JSON. The configured `KZ15`/Damage Shield Boss family covers
+QL1–400; its original OnWear casts apply Orange glow and Increase size by 40
+through existing equipment, nano and buff handling. Passive behavior is applied
+after those casts; completion still requires exact actor inspection.
+
+No replacement NPC catalog, schema change or raid-boss substitution. The source
+Find Person capture's Monte Laurence is not claimed as an identified catalog
+hash. Generic direct OnWear combat-stat modifiers remain outside this repair;
+only supported cast-nano effects are claimed. Existing accepted actors are
+preserved; test a newly accepted Find Person mission.
+
+Inspected existing `NpcTemplateCatalog`, `NpcCharacter`, `SpawnService`,
+`WearCastNano`, `NanoRuntime`, `StatModifierSpells`, objective binding/spawning
+and completion owners, private NPC/item catalogs and the original Find Person
+capture. Changed `DungeonFindItemPolicy`, `MissionItemObjectiveBinding`,
+`QuestDungeonService`, `QuestDungeonPlayfield`, the existing DungeonGeneration
+policy and task/status documentation. Approved core compilation, JSON parsing
+and `git diff --check` passed; no suites or AO client control performed.
 
 ## Validation and limits
 

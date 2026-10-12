@@ -30,8 +30,10 @@
     }
   },
   "NpcObjectives": {
-    "_comment": "AORebirth Kill Person/Find Person objective selection policy referencing an existing human NPC catalog leaf. FECI has catalog interpolation endpoints at levels 1, 150 and 300. This does not identify retail random-target hashes, names, or probabilities. The resolved leaf and exact mission-specific runtime identity are frozen at acceptance; Find Person uses passive objective behavior.",
-    "NpcHashes": ["FECI"]
+    "_comment": "AORebirth objective selection policy using existing catalogs. Kill Person uses NpcHashes. Find Person uses its separate human pool plus an original boss modifier, retaining passive inspection behavior. FECI covers levels 1/150/300; KZ15 is Damage Shield Boss with original orange-glow and size +40 nanos. The NPC leaf, exact actor identity and selected modifier IDs/quality are frozen at acceptance. This is configurable policy, not a retail target-hash, probability or combat-stat parity claim.",
+    "NpcHashes": ["FECI"],
+    "FindPersonNpcHashes": ["FECI"],
+    "FindPersonBossModifierHashes": ["KZ15"]
   },
   "Population": {
     "_comment": "AORebirth ordinary-NPC policy: references to existing nonalien NpcTemplates families whose leaf name/MonsterData/NPCFamily match captured missions. Not a reconstruction of retail hashes, selection weights, or the full human/high-level population. NPC resolution requests mission QL and uses existing interpolation/clamping; this older catalog has gaps and upper limits (ANDR106, ROLL47, other families85). See docs/evidence/MISSION_DUNGEON_NPC_POPULATION_EVIDENCE.md. Bosses, objectives and loot are separate.",
