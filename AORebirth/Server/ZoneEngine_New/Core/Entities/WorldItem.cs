@@ -1,5 +1,7 @@
 namespace ZoneEngine_New.Core.Entities
 {
+    using System;
+
     using AORebirth.Enums;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
@@ -31,6 +33,27 @@ namespace ZoneEngine_New.Core.Entities
         public int Quality { get; }
 
         /// <summary>
+        /// Who may pick it up besides anyone at all: None for a world spawn (Carbonrich Rock), the dropping player for a
+        /// dropped item. Pickup also needs the template's Carry flag (<see cref="CanBePickedUpBy"/>).
+        /// </summary>
+        public Identity Owner { get; init; } = Identity.None;
+
+        public int StackCount { get; init; } = 1;
+
+        /// <summary>When a temporary item (a player drop) leaves the world; null for world spawns.</summary>
+        public DateTime? ExpiresAtUtc { get; init; }
+
+        public bool IsExpired(DateTime nowUtc) => ExpiresAtUtc is DateTime expires && nowUtc >= expires;
+
+        /// <summary>Carry-flagged, and either ownerless (world spawn) or owned by <paramref name="player"/> (their drop).</summary>
+        public bool CanBePickedUpBy(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            CanFlags can = Template.Stats.TryGetValue(CharacterStat.Can, out int value) ? (CanFlags)(uint)value : 0;
+            return (can & CanFlags.Carry) != 0 && (Owner.Instance == 0 || Owner == player.Identity);
+        }
+
+        /// <summary>
         /// The owner fields must be 0:0; the codec only writes Coordinate/Heading for an ownerless item,
         /// and the client has no Dynels.dat position for a runtime instance.
         /// </summary>
@@ -52,7 +75,7 @@ namespace ZoneEngine_New.Core.Entities
                 Stat(CharacterStat.ACGItemLevel, Quality),
                 Stat(CharacterStat.ACGItemTemplateID, LowId),
                 Stat(CharacterStat.ACGItemTemplateID2, HighId),
-                Stat(CharacterStat.MultipleCount, 1)
+                Stat(CharacterStat.MultipleCount, Math.Max(1, StackCount))
             ];
         }
 

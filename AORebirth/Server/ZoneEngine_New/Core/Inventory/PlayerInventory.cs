@@ -900,6 +900,14 @@ namespace ZoneEngine_New.Core.Inventory
             return false;
         }
 
+        /// <summary>Every equipped item: weapons, armor and implants (not social clothing).</summary>
+        public IEnumerable<Item> WornItems()
+        {
+            foreach (Container page in WornPages())
+                foreach (Item item in page.Content.Values)
+                    yield return item;
+        }
+
         /// <summary>Pages whose items count as equipped (stats, over-equipping, worn checks); social clothing is cosmetic.</summary>
         IEnumerable<Container> WornPages()
         {

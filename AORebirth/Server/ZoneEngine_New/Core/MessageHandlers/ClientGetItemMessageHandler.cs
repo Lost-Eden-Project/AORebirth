@@ -4,13 +4,24 @@ using System;
 using SmokeLounge.AOtomation.Messaging.Messages;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using ZoneEngine_New.Core.Entities;
+using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Playfield;
 
-/// <summary>Retail world-item pickup; the accepted objective owns eligibility and its atomic transfer.</summary>
+/// <summary>
+/// Retail world-item pickup. An accepted mission objective owns its own eligibility and atomic transfer; any other world
+/// item (a world spawn, a player's drop) goes through <see cref="WorldItemTransfers.TryPickup"/>.
+/// </summary>
 public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemMessage>
 {
+    readonly InventoryActionService _inventoryActions;
+
+    public ClientGetItemMessageHandler(InventoryActionService inventoryActions)
+    {
+        _inventoryActions = inventoryActions ?? throw new ArgumentNullException(nameof(inventoryActions));
+    }
+
     public Type MessageBodyType => typeof(ClientGetItemMessage);
 
     public void Handle(MessageBody body, IZoneSession session) => Handle((ClientGetItemMessage)body, session);
@@ -22,19 +33,25 @@ public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemM
         Player? player = session.Player;
         if (session.State != SessionState.InPlay || player == null || player.IsDead || player.IsPersistenceQuarantined
             || !ReferenceEquals(player.Session, session) || message.Identity != player.Identity
-            || player.Playfield is not QuestDungeonPlayfield dungeon)
+            || player.Playfield is not Playfield playfield)
             return;
 
-        if (dungeon.GetRequiredService<DynelRegistry>().TryGet(message.Identity1, out Dynel? dynel)
-            && dynel is MissionObjectiveItem objective)
+        IZoneLogger? logger = playfield.GetService<IZoneLogger>();
+        if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Identity1, out Dynel? dynel))
+        {
+            logger?.Warn($"Pickup target unavailable actor={message.Identity} target={message.Identity1} playfield={playfield.Identity.Instance}");
+            return;
+        }
+
+        if (dynel is MissionObjectiveItem objective)
         {
             double distance = objective.GetEdgeDistanceTo(player);
-            bool collected = objective.TryPickup(player);
-            dungeon.GetService<IZoneLogger>()?.Info($"Mission pickup actor={message.Identity} target={message.Identity1} quest={objective.Binding.QuestId} edgeDistance={distance} collected={collected}");
+            bool collected = playfield is QuestDungeonPlayfield && objective.TryPickup(player);
+            logger?.Info($"Mission pickup actor={message.Identity} target={message.Identity1} quest={objective.Binding.QuestId} edgeDistance={distance} collected={collected}");
+            return;
         }
-        else
-        {
-            dungeon.GetService<IZoneLogger>()?.Warn($"Mission pickup target unavailable actor={message.Identity} target={message.Identity1} dungeon={dungeon.Identity.Instance}");
-        }
+
+        if (dynel is WorldItem worldItem && playfield.GetService<IItemBuilder>() is { } items)
+            WorldItemTransfers.TryPickup(player, worldItem, _inventoryActions, items, logger);
     }
 }

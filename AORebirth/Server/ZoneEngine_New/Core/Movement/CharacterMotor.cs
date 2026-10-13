@@ -23,12 +23,17 @@ namespace ZoneEngine_New.Core.Movement
     using Vector3 = AORebirth.Core.Vector.Vector3;
     using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
     using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using CharMovement = N3Lite.AORules.CharMovement;
+    using CharMovementRules = N3Lite.AORules.CharMovementRules;
+    using MovementStats = N3Lite.AORules.MovementStats;
+    using RulesStatus = N3Lite.AORules.CharMovementStatus;
 
     /// <summary>
-    /// Server locomotion on N3Lite's vehicle: a <see cref="CharVehicleSim"/> for players and an
-    /// <see cref="NpcVehicleSim"/> for NPCs, colliding against the playfield's <see cref="ISurface"/>.
-    /// The client-position gates, movement-mode speed curves, flight authority and navmesh planning
-    /// stay here; the integrator and the surfaces are the package.
+    /// Server locomotion: one <see cref="CharMovement"/> (N3Lite.AORules) per character, the game's own movement state
+    /// machine, speed curves, jump, flight and turn rates. A player is driven by the wire's movement actions through
+    /// <see cref="CharMovement.Act"/>; an NPC takes no Act input, only states and the follow paths it announces to
+    /// observers (<see cref="CharMovement.SetFollowPath"/>), so it moves along them the way their clients move it. The
+    /// client-position gates, flight authority and navmesh planning stay here.
     /// </summary>
     public sealed class CharacterMotor
     {
@@ -39,47 +44,45 @@ namespace ZoneEngine_New.Core.Movement
         const MovementFlags TurnFlags = MovementFlags.TurnLeft | MovementFlags.TurnRight;
 
         readonly Character _character;
+        readonly CharMovement _move;
         readonly CharVehicleSim _sim;
-        readonly ServerNpcVehicleSim? _npc;
+        readonly NpcVehicleSim? _npc;
         readonly List<Vector3> _path = new();
+        readonly List<Vec3> _followScratch = new();
         readonly List<Vector3> _navigateScratch = new();
         readonly List<System.Numerics.Vector3> _navMeshScratch = new();
 
-        MovementFlags _flags;
-        MovementState _state = MovementState.Run;
-        MovementState _lastSpeedMode = MovementState.Run;
-
         Quaternion? _syncedRotation;
         int _playerPathIndex = -1;
-        int _jumpStrength;
-        int _jumpAgility;
-        int _jumpGmLevel;
         bool _voidWarned;
+        bool _holdingOverVoid;
+        bool _hadFlightAuthority;
 
         public CharacterMotor(Character character)
         {
             _character = character ?? throw new ArgumentNullException(nameof(character));
-            _npc = character.IsPlayer
-                ? null
-                : new ServerNpcVehicleSim { InstantAcceleration = !MovementConfig.NpcAccelerationEnabled };
-            _sim = _npc ?? new CharVehicleSim();
-            _sim.Mass = MovementConfig.Mass;
-            _sim.MaxForce = MovementConfig.InitialMaxForce;
-            _sim.MaxVel = MovementConfig.InitialMaxVel;
-            _sim.NearProbeOffset = MovementConfig.BodyRadius;
-            _sim.SlowingDistance = MovementConfig.InitialSlowingDistance;
-            _sim.BodyHeight = 2f;
-            _sim.JumpLanded += OnJumpLanded;
-            _sim.DisableSurfaceHug();
-            _sim.UseSurfaceNormal();
-            ApplyMotionConstraints();
+            _move = new CharMovement(isNpc: !character.IsPlayer, MovementConfig.Mass, MovementConfig.BodyRadius);
+            _sim = _move.Core.Vehicle;
+            _npc = _move.Core.Npc;
+            _move.FlagsSet += flag => SetCharacterFlag(flag, true);
+            _move.FlagsCleared += flag => SetCharacterFlag(flag, false);
+            _move.Core.JumpStarted += () => Jumped?.Invoke();
+            // Status.LastSpeedMode starts at Walk inside the package; a fresh body is a standing runner.
+            _move.ApplyStatus(RulesStatus.Fields.Default, (int)MovementState.Run);
         }
 
-        public MovementFlags MovementFlags => _flags;
+        public MovementFlags MovementFlags => CurrentFlags;
 
-        public MovementState State => _state;
+        public MovementState State => (MovementState)_move.State;
 
-        /// <summary>How far the NPC path guide leads the body; within this of a path's end the body brakes.</summary>
+        bool IsPlayer => _npc == null;
+
+        bool IsPlayerFlying => IsPlayer && _move.State == (int)MovementState.Fly;
+
+        /// <summary>The input flags, from the movement status (N3Lite's flags share our bit layout).</summary>
+        MovementFlags CurrentFlags => (MovementFlags)(int)_move.Core.Flags;
+
+        /// <summary>The body's arrive brake distance at its current top speed.</summary>
         public float SlowingDistance => _sim.SlowingDistance;
 
         /// <summary>The vehicle itself.</summary>
@@ -88,46 +91,95 @@ namespace ZoneEngine_New.Core.Movement
         bool Jumping => _sim.JumpHeight != 0f;
 
         public CharMovementStatus BuildMovementStatus()
-        {
-            bool onPath = HasPath;
-            bool forward = onPath || (_flags & MovementFlags.Forward) != 0;
-            bool backward = !onPath && (_flags & MovementFlags.Backward) != 0;
-            bool strafeLeft = (_flags & MovementFlags.StrafeLeft) != 0;
-            bool strafeRight = (_flags & MovementFlags.StrafeRight) != 0;
-            bool turnLeft = (_flags & MovementFlags.TurnLeft) != 0;
-            bool turnRight = (_flags & MovementFlags.TurnRight) != 0;
-            bool elevateUp = (_flags & MovementFlags.ElevateUp) != 0;
-            bool elevateDown = (_flags & MovementFlags.ElevateDown) != 0;
-            bool jumping = Jumping || (_flags & MovementFlags.Jump) != 0;
+            => IsPlayer ? BuildPlayerMovementStatus() : BuildNpcMovementStatus();
 
-            if (_state == MovementState.Sit)
+        /// <summary>
+        /// A player's status is the movement state machine's own fields. A server-driven path shows as forward.
+        /// Players carry their world velocity (and speed factor 1.0) the way retail sends them: observers that spawn a
+        /// player mid-run move him from this, and a zero velocity left him animating in place, snapping on updates. The
+        /// 0x1A float goes out only while a translation is held, since on a standing player it set the client running
+        /// at login.
+        /// </summary>
+        CharMovementStatus BuildPlayerMovementStatus()
+        {
+            RulesStatus.Fields f = _move.Status.Current;
+            if (HasPath)
             {
-                forward = false;
-                backward = false;
-                strafeLeft = false;
-                strafeRight = false;
-                jumping = false;
+                f.FwdState = RulesStatus.Active;
+                f.FwdDir = RulesStatus.DirForward;
             }
 
-            MovementState lastSpeed = _state == MovementState.Walk || _state == MovementState.Run
-                ? _state
-                : _lastSpeedMode;
+            bool forward = f.FwdState == RulesStatus.Active && f.FwdDir == RulesStatus.DirForward;
+            bool backward = f.FwdState == RulesStatus.Active && f.FwdDir == RulesStatus.DirReverse;
+            bool moving = f.FwdState == RulesStatus.Active || f.StrafeState == RulesStatus.Active;
+            ComputeSpawnVelocity(forward, backward, out float velocityX, out float velocityY, out float velocityZ);
 
             return new CharMovementStatus
             {
-                Header = _character.IsPlayer ? (byte)0x80 : (byte)0,
-                ModeId = (byte)_state,
-                FwdState = (byte)(forward || backward ? 2 : 1),
-                FwdDir = (byte)(forward ? 1 : backward ? 2 : 0),
-                StrafeState = (byte)(strafeLeft || strafeRight ? 2 : 1),
-                StrafeDir = (byte)(strafeLeft && !strafeRight ? 3 : strafeRight && !strafeLeft ? 4 : 0),
-                ElevateState = (byte)(elevateUp || elevateDown ? 2 : 1),
-                ElevateDir = (byte)(elevateUp ? 5 : 0),
-                TurnState = (byte)(turnLeft || turnRight ? 4 : 1),
-                TurnDir = (byte)(turnLeft && !turnRight ? 3 : turnRight && !turnLeft ? 4 : 0),
-                JumpState = (byte)(jumping ? 3 : 1),
+                VelocityX = velocityX,
+                VelocityY = velocityY,
+                VelocityZ = velocityZ,
+                PlayerSpeedFactor = moving ? 1f : 0f,
+                Header = 0x80,
+                ModeId = (byte)f.Mode,
+                FwdState = (byte)f.FwdState,
+                FwdDir = (byte)f.FwdDir,
+                StrafeState = (byte)f.StrafeState,
+                StrafeDir = (byte)f.StrafeDir,
+                ElevateState = (byte)f.ElevState,
+                ElevateDir = (byte)f.ElevDir,
+                TurnState = (byte)f.TurnState,
+                TurnDir = (byte)f.TurnDir,
+                JumpState = (byte)f.JumpState,
+                LastSpeedMode = (byte)_move.LastSpeedMode
+            };
+        }
+
+        /// <summary>An NPC moves only along its follow path, which shows as forward; no velocity block.</summary>
+        CharMovementStatus BuildNpcMovementStatus()
+        {
+            int mode = _move.State;
+            bool forward = HasPath && mode != (int)MovementState.Sit;
+            int lastSpeed = mode is (int)MovementState.Walk or (int)MovementState.Run ? mode : _move.LastSpeedMode;
+            return new CharMovementStatus
+            {
+                Header = 0,
+                ModeId = (byte)mode,
+                FwdState = (byte)(forward ? RulesStatus.Active : RulesStatus.Idle),
+                FwdDir = (byte)(forward ? RulesStatus.DirForward : 0),
+                StrafeState = RulesStatus.Idle,
+                StrafeDir = 0,
+                ElevateState = RulesStatus.Idle,
+                ElevateDir = 0,
+                TurnState = RulesStatus.Idle,
+                TurnDir = 0,
+                JumpState = (byte)(Jumping ? RulesStatus.Airborne : RulesStatus.Idle),
                 LastSpeedMode = (byte)lastSpeed
             };
+        }
+
+        /// <summary>
+        /// The body's velocity. Until it has picked up speed, a held forward/back key counts as full speed along the
+        /// heading (retail: Aagent's (0.852, 0, -7.13) is his heading's forward axis times his run speed), so a player who
+        /// just pressed forward is never sent as standing still.
+        /// </summary>
+        void ComputeSpawnVelocity(bool forward, bool backward, out float x, out float y, out float z)
+        {
+            Vec3 velocity = _sim.Velocity;
+            x = velocity.X;
+            y = velocity.Y;
+            z = velocity.Z;
+            if ((x * x) + (z * z) >= 0.01f || forward == backward)
+                return;
+
+            // Heading forward axis: the unit Z axis rotated by the character's quaternion.
+            Quaternion q = _character.Rotation;
+            float dirX = 2f * ((q.xf * q.zf) + (q.wf * q.yf));
+            float dirZ = 1f - (2f * ((q.xf * q.xf) + (q.yf * q.yf)));
+            float speed = _sim.MaxVel * (forward ? 1f : -1f);
+            x = dirX * speed;
+            y = 0f;
+            z = dirZ * speed;
         }
 
         /// <summary>
@@ -137,31 +189,31 @@ namespace ZoneEngine_New.Core.Movement
         /// </summary>
         public List<CharDCMoveMessage> BuildSpawnMoves()
         {
-            var actions = new List<MovementAction>(4);
-            bool forward = HasPath || (_flags & MovementFlags.Forward) != 0;
-            bool backward = !HasPath && (_flags & MovementFlags.Backward) != 0;
-            if (forward)
-                actions.Add(MovementAction.ForwardStart);
-            if (backward)
-                actions.Add(MovementAction.BackwardStart);
-            if ((_flags & MovementFlags.StrafeLeft) != 0)
-                actions.Add(MovementAction.StrafeLeftStart);
-            if ((_flags & MovementFlags.StrafeRight) != 0)
-                actions.Add(MovementAction.StrafeRightStart);
-            if ((_flags & MovementFlags.TurnLeft) != 0)
-                actions.Add(MovementAction.TurnLeftStart);
-            if ((_flags & MovementFlags.TurnRight) != 0)
-                actions.Add(MovementAction.TurnRightStart);
-            if ((_flags & MovementFlags.ElevateUp) != 0)
-                actions.Add(MovementAction.ElevateUpStart);
-            if ((_flags & MovementFlags.ElevateDown) != 0)
-                actions.Add(MovementAction.ElevateDownStart);
-            if (Jumping || (_flags & MovementFlags.Jump) != 0)
-                actions.Add(MovementAction.JumpStart);
+            var messages = new List<CharDCMoveMessage>(4);
+            if (!IsPlayer)
+            {
+                if (HasPath)
+                    messages.Add(CreateMove(MovementAction.ForwardStart));
+                return messages;
+            }
 
-            var messages = new List<CharDCMoveMessage>(actions.Count);
-            foreach (MovementAction action in actions)
-                messages.Add(CreateMove(action));
+            RulesStatus.Fields f = _move.Status.Current;
+            if (HasPath || (f.FwdState == RulesStatus.Active && f.FwdDir == RulesStatus.DirForward))
+                messages.Add(CreateMove(MovementAction.ForwardStart));
+            else if (f.FwdState == RulesStatus.Active && f.FwdDir == RulesStatus.DirReverse)
+                messages.Add(CreateMove(MovementAction.BackwardStart));
+            if (f.StrafeState == RulesStatus.Active && f.StrafeDir == RulesStatus.DirLeft)
+                messages.Add(CreateMove(MovementAction.StrafeLeftStart));
+            else if (f.StrafeState == RulesStatus.Active && f.StrafeDir == RulesStatus.DirRight)
+                messages.Add(CreateMove(MovementAction.StrafeRightStart));
+            if (f.TurnState == RulesStatus.Turning && f.TurnDir == RulesStatus.DirLeft)
+                messages.Add(CreateMove(MovementAction.TurnLeftStart));
+            else if (f.TurnState == RulesStatus.Turning && f.TurnDir == RulesStatus.DirRight)
+                messages.Add(CreateMove(MovementAction.TurnRightStart));
+            if (f.ElevState == RulesStatus.Active && f.ElevDir == RulesStatus.DirUp)
+                messages.Add(CreateMove(MovementAction.ElevateUpStart));
+            if (f.JumpState == RulesStatus.Airborne)
+                messages.Add(CreateMove(MovementAction.JumpStart));
             return messages;
         }
 
@@ -193,8 +245,9 @@ namespace ZoneEngine_New.Core.Movement
             };
         }
 
+        /// <summary>An NPC is following its announced path; a player body is on a server-driven path.</summary>
         public bool HasPath => _npc != null
-            ? !_npc.Path.Empty
+            ? _npc.HasFollowTarget
             : _playerPathIndex >= 0 && _playerPathIndex < _path.Count;
 
         /// <summary>
@@ -202,7 +255,7 @@ namespace ZoneEngine_New.Core.Movement
         /// Ranged weapon ticks use this so a held run key and residual slide both pause fire.
         /// </summary>
         public bool IsMoving =>
-            (_flags & TranslationFlags) != 0
+            (CurrentFlags & TranslationFlags) != 0
             || HasPath
             || _sim.Speed > MovementConfig.SpeedStopEpsilon;
 
@@ -211,21 +264,39 @@ namespace ZoneEngine_New.Core.Movement
         /// <summary>Raised when a jump actually starts (not a failed sit/unarmed attempt).</summary>
         public event Action? Jumped;
 
-        /// <summary>
-        /// The run-speed stat drives the whole speed curve. N3Lite takes the resulting max speed;
-        /// the stance curves stay here.
-        /// </summary>
-        public void RefreshFromStats()
-        {
-            ApplyFlagsToAxes();
-            RefreshJumpStats();
-        }
+        /// <summary>The movement rules' stats: <see cref="CharMovement.SetStats"/> takes the whole struct each time.</summary>
+        public void RefreshFromStats() => _move.SetStats(BuildMovementStats());
 
-        public void RefreshJumpStats()
+        /// <summary>The full (buffed) values of the stats the movement rules read.</summary>
+        MovementStats BuildMovementStats() => new()
         {
-            _jumpStrength = _character.Stats.GetOrZero(CharacterStat.Strength);
-            _jumpAgility = _character.Stats.GetOrZero(CharacterStat.Agility);
-            _jumpGmLevel = _character.Stats.GetOrZero(CharacterStat.GmLevel);
+            RunSpeed = _character.Stats.GetOrZero(CharacterStat.RunSpeed),
+            Strength = _character.Stats.GetOrZero(CharacterStat.Strength),
+            Agility = _character.Stats.GetOrZero(CharacterStat.Agility),
+            GmLevel = _character.Stats.GetOrZero(CharacterStat.GmLevel),
+            Features = ResolveFeatures(),
+            OrientationMode = _character.Stats.GetOrZero(CharacterStat.OrientationMode),
+            TurnSpeed = _character.Stats.GetOrZero(CharacterStat.TurnSpeed),
+            MechData = _character.Stats.GetOrZero(CharacterStat.MechData),
+            Scale = _character.Stats.GetOrZero(CharacterStat.Scale)
+        };
+
+        /// <summary>
+        /// Features (stat 224) is the body's MonsterData record: an NPC has it copied on at spawn, a player never stores
+        /// it. Bit 0x4 (can move) gates sitting and standing in the state machine and an NPC's following at all, so an
+        /// unresolved body counts as mobile.
+        /// </summary>
+        int ResolveFeatures()
+        {
+            if (_character.Stats.TryGetValue(CharacterStat.Features, out int stored) && !StatCollection.IsUnset(stored))
+                return stored;
+
+            int monsterData = _character.Stats.GetOrZero(CharacterStat.MonsterData);
+            if (_character.Playfield?.GetService<GameData.IGameData>() is { } gameData
+                && gameData.TryGetMonsterFeatures(monsterData, out int features))
+                return features;
+
+            return GameData.MonsterBodyFeatures.CanMove;
         }
 
         public void OnStatChanged(CharacterStat stat, int previous, int next, bool isInitialSet)
@@ -233,25 +304,31 @@ namespace ZoneEngine_New.Core.Movement
             switch (stat)
             {
                 case CharacterStat.RunSpeed:
-                    RefreshFromStats();
-                    break;
                 case CharacterStat.Strength:
                 case CharacterStat.Agility:
                 case CharacterStat.GmLevel:
-                    RefreshJumpStats();
+                case CharacterStat.Features:
+                case CharacterStat.MonsterData:
+                case CharacterStat.OrientationMode:
+                case CharacterStat.TurnSpeed:
+                case CharacterStat.MechData:
+                case CharacterStat.Scale:
+                    RefreshFromStats();
                     break;
             }
         }
 
-        /// <summary>
-        /// Starts a new path. Without NPC acceleration the guide starts one slowing distance in, so the
-        /// body is at full speed from the first tick, as observers show it.
-        /// </summary>
+        /// <summary>Starts a new path from where the character stands.</summary>
         public void SetPath(IReadOnlyList<Vector3> waypoints)
         {
             ClearPath();
-            StopAllFlags();
-            CopyWaypoints(waypoints, _npc != null && _npc.InstantAcceleration ? _sim.SlowingDistance : 0f);
+            if (IsPlayer)
+            {
+                _move.Apply((int)MovementAction.FullStop);
+                CopyPlayerWaypoints(waypoints);
+            }
+            else
+                FollowPath(waypoints);
         }
 
         /// <summary>
@@ -268,53 +345,46 @@ namespace ZoneEngine_New.Core.Movement
         }
 
         /// <summary>
-        /// Updates the final path point without clearing velocity. False when there is no active path.
-        /// When a navmesh is loaded, returns false so the caller repaths through <see cref="NavigateTo"/>.
-        /// </summary>
-        public bool TryRetargetFinalWaypoint(Vector3 destination, float minDeltaMeters)
-        {
-            if (_character.Playfield?.Pathfinder != null)
-                return false;
-            if (!HasPath || _path.Count == 0)
-                return false;
-
-            Vector3 current = _path[_path.Count - 1];
-            if (Vector3.Abs(destination - current) < minDeltaMeters)
-                return true;
-
-            _navigateScratch.Clear();
-            _navigateScratch.Add(new Vector3(destination.x, destination.y, destination.z));
-            ReplacePath(_navigateScratch);
-            return true;
-        }
-
-        /// <summary>
-        /// Remaining path points for SCFU. Empty when idle so HasWaypoints stays clear. For an NPC these
-        /// are the waypoints its guide has not yet passed, i.e. what the vehicle is still steering along.
+        /// Remaining path points for SCFU. Empty when idle so HasWaypoints stays clear. For an NPC these are the
+        /// follow points it has not yet reached, i.e. what it is still steering along.
         /// </summary>
         public MsgVector3[] CopyRemainingWaypoints()
         {
             if (!HasPath)
                 return [];
 
-            int first = _npc != null ? FirstWaypointAheadOfGuide() : _playerPathIndex;
-            if (first >= _path.Count)
-                first = _path.Count - 1;
+            if (_npc != null)
+            {
+                IReadOnlyList<Vec3> queue = _npc.FollowQueue;
+                var points = new MsgVector3[queue.Count];
+                for (int i = 0; i < queue.Count; i++)
+                    points[i] = new MsgVector3 { X = queue[i].X, Y = queue[i].Y, Z = queue[i].Z };
+                return points;
+            }
 
-            var remaining = new MsgVector3[_path.Count - first];
-            for (int i = first; i < _path.Count; i++)
-                remaining[i - first] = new MsgVector3 { X = _path[i].xf, Y = _path[i].yf, Z = _path[i].zf };
+            var remaining = new MsgVector3[_path.Count - _playerPathIndex];
+            for (int i = _playerPathIndex; i < _path.Count; i++)
+                remaining[i - _playerPathIndex] = new MsgVector3 { X = _path[i].xf, Y = _path[i].yf, Z = _path[i].zf };
             return remaining;
         }
 
-        /// <summary>Flat meters of path still ahead: of the NPC guide, or of a player body. Zero when idle.</summary>
+        /// <summary>Flat meters of path still ahead of the body. Zero when idle.</summary>
         public float RemainingPathMeters()
         {
             if (!HasPath)
                 return 0f;
 
             if (_npc != null)
-                return Math.Max(0f, _npc.Path.TotalLength - (_npc.Guide.Time * _npc.Guide.MaxSpeed));
+            {
+                IReadOnlyList<Vec3> queue = _npc.FollowQueue;
+                if (queue.Count == 0)
+                    return 0f;
+
+                float ahead = FlatDistance(_sim.Position, queue[0]);
+                for (int i = 1; i < queue.Count; i++)
+                    ahead += FlatDistance(queue[i - 1], queue[i]);
+                return ahead;
+            }
 
             float remaining = FlatDistance(_character.Position, _path[_playerPathIndex]);
             for (int i = _playerPathIndex + 1; i < _path.Count; i++)
@@ -322,39 +392,68 @@ namespace ZoneEngine_New.Core.Movement
             return remaining;
         }
 
-        /// <summary>The first kept waypoint the guide has not reached, measured along the flat path.</summary>
-        int FirstWaypointAheadOfGuide()
-        {
-            float consumed = _npc!.Guide.Time * _npc.Guide.MaxSpeed;
-            float along = 0f;
-            for (int i = 1; i < _path.Count; i++)
-            {
-                along += FlatDistance(_path[i - 1], _path[i]);
-                if (along > consumed)
-                    return i;
-            }
-
-            return _path.Count - 1;
-        }
-
         public void ClearPath()
         {
             bool had = HasPath || _path.Count > 0;
             _path.Clear();
             _playerPathIndex = -1;
-            _npc?.Path.Clear();
+            if (_npc != null && _npc.HasFollowTarget)
+                _move.Core.ClearPath();
             if (!had)
                 return;
 
-            ApplyFlagsToAxes();
+            if (IsPlayer)
+            {
+                // The path follower drove the body directly; the status (stopped since SetPath) takes it back.
+                _move.OnWaypointPath = false;
+                _sim.SetForwardDrive(0f);
+                _sim.Halt();
+                _sim.SetDirection(1);
+            }
+
             PathCompleted?.Invoke();
         }
 
         /// <summary>
-        /// Keeps the full waypoint list (with Y) for SCFU and fills the vehicle's path. An NPC gets
-        /// stock's <c>Path_t</c> + guide; a player body keeps Lost-Eden's point-and-drive follower.
+        /// Swaps the active path without clearing velocity or raising <see cref="PathCompleted"/>: the body keeps its
+        /// speed into the new path.
         /// </summary>
-        void CopyWaypoints(IReadOnlyList<Vector3> waypoints, float guideLeadMeters = 0f)
+        public void ReplacePath(IReadOnlyList<Vector3> waypoints)
+        {
+            if (!IsPlayer)
+            {
+                FollowPath(waypoints);
+                return;
+            }
+
+            _path.Clear();
+            _playerPathIndex = -1;
+            _move.OnWaypointPath = false;
+            CopyPlayerWaypoints(waypoints);
+        }
+
+        /// <summary>
+        /// An NPC's path is the coordinate list its FollowTarget announces (<see cref="NpcFollowTarget.AnnounceCoordinatePath"/>):
+        /// where it stands, then the waypoints. The follower snaps to that start and queues the rest, the way an
+        /// observing client does, so both move it alike, up to the same <see cref="CharMovement.FollowPathCapacity"/>.
+        /// </summary>
+        void FollowPath(IReadOnlyList<Vector3> waypoints)
+        {
+            if (waypoints == null || waypoints.Count == 0)
+                return;
+
+            _followScratch.Clear();
+            Vector3 start = _character.Position;
+            _followScratch.Add(ToVec3(start));
+            for (int i = 0; i < waypoints.Count; i++)
+                _followScratch.Add(ToVec3(waypoints[i]));
+
+            _move.SetFollowPath(_followScratch, snapToStart: true);
+            _character.Position = ToVector3(_sim.Position);
+        }
+
+        /// <summary>A player body's server-driven path: Lost-Eden's point-and-drive follower, with Act locked out.</summary>
+        void CopyPlayerWaypoints(IReadOnlyList<Vector3> waypoints)
         {
             if (waypoints == null || waypoints.Count == 0)
                 return;
@@ -375,45 +474,8 @@ namespace ZoneEngine_New.Core.Movement
                 _path.Add(new Vector3(point.x, point.y, point.z));
             }
 
-            if (_npc != null)
-            {
-                _npc.Path.Clear();
-                for (int i = 0; i < _path.Count; i++)
-                    _npc.Path.AddWaypoint(ToVec3(_path[i]));
-                _npc.RestartPath();
-                if (guideLeadMeters > 0f && _npc.MaxVel > 0f)
-                    _npc.Guide.RestartGuide(_npc.Path, _npc.MaxVel, guideLeadMeters / _npc.MaxVel);
-                return;
-            }
-
             _playerPathIndex = 1;
-        }
-
-        /// <summary>
-        /// Swaps the active path without clearing velocity or raising <see cref="PathCompleted"/>. An NPC's
-        /// guide keeps its lead over the body: the arrive steering runs about one slowing distance behind
-        /// the guide at full speed, so restarting the guide at the body would brake it on every swap.
-        /// </summary>
-        public void ReplacePath(IReadOnlyList<Vector3> waypoints)
-        {
-            float lead = CurrentGuideLead();
-            _path.Clear();
-            _playerPathIndex = -1;
-            _npc?.Path.Clear();
-            CopyWaypoints(waypoints, lead);
-        }
-
-        /// <summary>Flat distance from the body to the NPC guide, capped at the steady-state slowing distance.</summary>
-        float CurrentGuideLead()
-        {
-            if (_npc == null || !HasPath)
-                return 0f;
-
-            Vec3 guide = _npc.Guide.GuidePos;
-            float dx = guide.X - (float)_character.Position.x;
-            float dz = guide.Z - (float)_character.Position.z;
-            float lead = MathF.Sqrt((dx * dx) + (dz * dz));
-            return Math.Min(lead, _sim.SlowingDistance);
+            _move.OnWaypointPath = HasPath;
         }
 
         void PlanIntoScratch(Vector3 destination)
@@ -458,9 +520,10 @@ namespace ZoneEngine_New.Core.Movement
         /// </summary>
         public bool StopForRoot()
         {
-            bool moving = HasPath || _flags != MovementFlags.None || _sim.Speed > MovementConfig.SpeedStopEpsilon;
+            bool moving = HasPath || CurrentFlags != MovementFlags.None || _sim.Speed > MovementConfig.SpeedStopEpsilon;
             ClearPath();
-            StopAllFlags();
+            if (IsPlayer)
+                _move.Apply((int)MovementAction.FullStop);
             _sim.Halt();
             return moving;
         }
@@ -470,7 +533,11 @@ namespace ZoneEngine_New.Core.Movement
             // Key releases on the old/loading connection may never reach this motor.
             // The destination must not inherit input or a path from the previous world.
             ClearPath();
-            StopAllFlags();
+            // A full status, no transition: standing still in the current mode.
+            RulesStatus.Fields fields = RulesStatus.Fields.Default;
+            fields.Mode = _move.State;
+            _move.ApplyStatus(fields, _move.LastSpeedMode);
+            SyncModeStats();
             Warp(position);
         }
 
@@ -482,6 +549,7 @@ namespace ZoneEngine_New.Core.Movement
         {
             _character.Position = position;
             _sim.Position = ToVec3(position);
+            _holdingOverVoid = false;
             if (rotation != null)
             {
                 _character.Rotation = rotation;
@@ -498,8 +566,8 @@ namespace ZoneEngine_New.Core.Movement
         }
 
         /// <summary>
-        /// Applies an inbound move. Returns false when the position is rejected;
-        /// rejected moves do not change path, action, heading, or position.
+        /// Applies an inbound move. Returns false when the position is rejected, which changes nothing, or when the
+        /// movement rules refuse the action, which keeps the position and heading; either way observers are not told.
         /// </summary>
         public bool Consume(CharDCMoveMessage message)
         {
@@ -511,9 +579,11 @@ namespace ZoneEngine_New.Core.Movement
                 return false;
 
             ClearPath();
-            ApplyAction((MovementAction)message.MoveType);
+            var action = (MovementAction)message.MoveType;
+            // A position update carries no transition, so it never goes through the state machine.
+            bool accepted = action == MovementAction.Update || ApplyAction(action);
             ApplyClientHeading(message);
-            return true;
+            return accepted;
         }
 
         /// <summary>A rooted client that reported a position this far off gets pulled back.</summary>
@@ -637,6 +707,22 @@ namespace ZoneEngine_New.Core.Movement
         {
             _syncedRotation = heading;
             Vec3 forward = ToQuat(heading) * Vec3.ReferenceForward;
+            if (IsPlayerFlying)
+            {
+                // Flying moves along the pitched heading, as the client does (live: heading forward (0.115, 0.426, 0.897)
+                // climbed 19 m in 3 s). LookRotation projects the forward onto the plane normal to its up, so the up
+                // given is already perpendicular to the forward; ReferenceUp would flatten the pitch away.
+                if (forward.LengthSquared < 1e-8f)
+                    return;
+                forward /= forward.Length;
+                if (Math.Abs(forward.Y) < 0.999f)
+                {
+                    Vec3 up = Vec3.ReferenceUp - (forward * forward.Y);
+                    _sim.SetRelRot(Quat.LookRotation(forward, up / up.Length));
+                    return;
+                }
+            }
+
             forward.Y = 0f;
             if (forward.LengthSquared < 1e-8f)
                 return;
@@ -644,106 +730,133 @@ namespace ZoneEngine_New.Core.Movement
             _sim.SetRelRot(Quat.LookRotation(forward / forward.Length, _sim.SurfaceNormal));
         }
 
+        /// <summary>
+        /// One step of the movement rules' body against the playfield surface, from where the character stands. Over a
+        /// hole in the playfield's collision the body holds where it is instead of free-falling. With no surface at all
+        /// a player holds (its client places it), while an NPC still follows its path at its altitude; gravity itself
+        /// stays the rules' own either way.
+        /// </summary>
         public void Tick(double deltaTime)
         {
             RefreshFlightAuthority();
+            if (IsPlayer)
+                RefreshAiControl();
             float dt = (float)deltaTime;
             if (dt <= 0f)
                 return;
 
-            BindSurface();
+            ISurface? surface = BindSurface();
             _sim.Position = ToVec3(_character.Position);
-            if (_character.Rotation != null && !ReferenceEquals(_character.Rotation, _syncedRotation))
+            // Flying, the body re-pitches itself along its velocity every step; the client's heading steers it, so it
+            // goes back on every tick.
+            if (_character.Rotation != null
+                && (IsPlayerFlying || !ReferenceEquals(_character.Rotation, _syncedRotation)))
                 ApplyHeadingToSim(_character.Rotation);
 
             if (_npc != null)
                 SettleNpcVehicle();
+            else if (surface == null)
+                return;
 
             bool idle = !HasPath
-                && (_flags & (TranslationFlags | TurnFlags)) == 0
+                && (CurrentFlags & (TranslationFlags | TurnFlags)) == 0
+                && _move.State != (int)MovementState.Fly
                 && !_sim.Airborne
                 && _sim.Speed <= VehicleSim.MovingSpeedEpsilon
                 && _sim.VerticalVelocity == 0f;
             if (idle)
                 return;
 
+            if (surface != null && HoldOverVoid())
+                return;
+
             if (HasPath)
             {
                 TickStallWatch.Stage("motor.path", _character.Identity.Instance);
-                if (_npc != null)
-                {
-                    // N3Lite 0.1.9's AdvanceGuide no longer re-reads MaxVel; keep the guide at the current speed.
-                    _npc.Guide.UpdateMaxSpeed(_npc.MaxVel);
-                    _npc.AdvanceGuide(dt);
-                    HoldGuideAtCorner();
-                }
-                else
+                if (IsPlayer)
                     SteerAlongPlayerPath();
             }
 
-            HoldAltitudeOverVoid();
-
-            _sim.Run(dt);
+            if (surface != null)
+                _move.Tick(dt);
+            else
+                TickAtAltitude(dt);
 
             _character.Position = ToVector3(_sim.Position);
             PullHeading();
 
-            if (_npc != null && _path.Count > 0 && (_npc.Path.Empty || NpcPathFinished()))
+            if (_npc != null && _npc.HasFollowTarget && _npc.FollowQueue.Count == 0
+                && _sim.Speed <= VehicleSim.MovingSpeedEpsilon)
                 ClearPath();
         }
 
+        /// <summary>No ground to find: the step's horizontal travel only, the body landed where it was.</summary>
+        void TickAtAltitude(float dt)
+        {
+            float y = _sim.Position.Y;
+            _move.Tick(dt);
+            Vec3 position = _sim.Position;
+            position.Y = y;
+            _sim.Position = position;
+            _sim.LandNow(y);
+        }
+
+        ISurface? BindSurface()
+        {
+            ISurface? surface = _character.Playfield?.WorldAccess.Instance?.Surface;
+            _move.Core.Surface = surface;
+            return surface;
+        }
+
         /// <summary>
-        /// Keeps the motor in step with N3Lite's NPC vehicle between ticks. The vehicle clears its own path when the
-        /// body halts within reach of the end (<c>NpcVehicleSim.OnHalt</c>), so ours finishes with it and raises
-        /// <see cref="PathCompleted"/>. With no path the vehicle only integrates while airborne
-        /// (<c>NpcVehicleSim.IsRunEnabled</c>), so leftover ground speed it can no longer brake off is dropped.
+        /// With no path the NPC vehicle only integrates while airborne (<c>NpcVehicleSim.IsRunEnabled</c>), so leftover
+        /// ground speed it can no longer brake off is dropped.
         /// </summary>
         void SettleNpcVehicle()
         {
-            if (_path.Count > 0 && _npc!.Path.Empty)
-                ClearPath();
-
             if (!HasPath && !_sim.Airborne && _sim.Speed > 0f)
                 _sim.Halt();
         }
 
         /// <summary>
-        /// The guide follows the whole route, but it stops at a sharp turn until the body gets there.
-        /// Otherwise it runs around the corner and the body steers back through the wall.
+        /// Falling with nothing at all underneath means the playfield is missing collision: the body stays where it
+        /// is until there is geometry below it again.
         /// </summary>
-        void HoldGuideAtCorner()
+        bool HoldOverVoid()
         {
-            if (_path.Count < 3 || _npc!.Guide.MaxSpeed <= 0f)
-                return;
+            if (!_holdingOverVoid && !(_sim.Airborne && _sim.FallingEnabled))
+                return false;
 
-            float guideDistance = _npc.Guide.Time * _npc.Guide.MaxSpeed;
-            float bodyDistance = NpcBrain.DistanceAlongPath(_path, _character.Position.x, _character.Position.z, guideDistance);
-            float corner = NpcBrain.DistanceUntilTurn(_path, NpcFollowTarget.PathCornerTurnDegrees, bodyDistance);
-            float clamped = NpcBrain.ClampGuideDistance(guideDistance, bodyDistance, corner);
-            if (clamped < guideDistance - 0.01f)
-                _npc.Guide.UpdateTime(clamped / _npc.Guide.MaxSpeed);
+            if (HasGeometryBelow())
+            {
+                _holdingOverVoid = false;
+                return false;
+            }
+
+            _holdingOverVoid = true;
+            _sim.LandNow(_sim.Position.Y);
+            WarnNoGeometryBelow();
+            return true;
         }
 
         /// <summary>
-        /// The guide has consumed the whole path and the body has arrived, or has stopped trying. A halt near the end
-        /// already cleared the vehicle's path (<c>NpcVehicleSim.OnHalt</c>); this catches the rest, such as a wall
-        /// stopping the body further out. Call only while the vehicle still has a path.
+        /// The character faces where its body faces: keyboard turns, strafing, the client's heading and an NPC's travel
+        /// alike. Flying keeps the client's pitched heading, except while a keyboard turn swings the body.
         /// </summary>
-        bool NpcPathFinished()
+        void PullHeading()
         {
-            if (_npc!.Guide.Time * _npc.Guide.MaxSpeed < _npc.Path.TotalLength)
-                return false;
+            if (IsPlayerFlying && (CurrentFlags & TurnFlags) == 0)
+                return;
 
-            Vec3 last = _npc.Path.GetWaypoint(_npc.Path.Size - 1);
-            float dx = last.X - _sim.Position.X;
-            float dz = last.Z - _sim.Position.Z;
-            return (dx * dx) + (dz * dz) <= MovementConfig.PathArrivalRadius * MovementConfig.PathArrivalRadius
-                || _sim.Speed <= VehicleSim.MovingSpeedEpsilon;
+            SetYawFrom(_sim.BodyRotation * Vec3.ReferenceForward);
         }
+
+        /// <summary>Fear (53121) and Mind Control (53232) take the controls from the player.</summary>
+        void RefreshAiControl() => _move.AiControlled = _character.IsAiControlled;
 
         /// <summary>
         /// Unported Lost-Eden glue (<c>N3CharVehicle.SteerAlongPath</c>): point a player body at the next
-        /// waypoint and drive forward. Stock's follow-target branch is not recovered.
+        /// waypoint and drive forward.
         /// </summary>
         void SteerAlongPlayerPath()
         {
@@ -773,34 +886,8 @@ namespace ZoneEngine_New.Core.Movement
             }
         }
 
-        /// <summary>
-        /// Binds the playfield's surface. With none the vehicle cannot find the ground, so falling is off
-        /// and it holds its altitude; Fly (vehicle state 7) turns falling off by itself.
-        /// </summary>
-        void BindSurface()
+        void WarnNoGeometryBelow()
         {
-            ISurface? surface = _character.Playfield?.WorldAccess.Instance?.Surface;
-            _sim.Surface = surface;
-            bool falling = surface != null && _state != MovementState.Fly;
-            if (falling == _sim.FallingEnabled)
-                return;
-
-            if (falling)
-                _sim.EnableFalling();
-            else
-                _sim.DisableFalling();
-        }
-
-        /// <summary>
-        /// Falling with nothing at all underneath means the playfield is missing collision, not that the
-        /// character walked off the world. Hold position and say so once.
-        /// </summary>
-        void HoldAltitudeOverVoid()
-        {
-            if (!_sim.FallingEnabled || !_sim.Airborne || HasGeometryBelow())
-                return;
-
-            _sim.DisableFalling();
             if (_voidWarned || _character is not Player voidPlayer)
                 return;
 
@@ -815,19 +902,8 @@ namespace ZoneEngine_New.Core.Movement
                     _character.Position.z));
         }
 
-        /// <summary>
-        /// The dynel keeps the heading only; the body's surface tilt stays inside the vehicle
-        /// (<c>N3CharVehicle.PullSimToTransform</c>). A moving body faces along its velocity, flipped when
-        /// backing up, which is what orientation mode 1 does whenever the surface is bound.
-        /// </summary>
-        void PullHeading()
+        void SetYawFrom(Vec3 forward)
         {
-            Vec3 forward = _sim.GetBodyForward();
-            float vx = _sim.Velocity.X;
-            float vz = _sim.Velocity.Z;
-            if ((vx * vx) + (vz * vz) > 1e-8f)
-                forward = new Vec3(vx * _sim.Direction, 0f, vz * _sim.Direction);
-
             if (Math.Abs(forward.X) < 1e-5f && Math.Abs(forward.Z) < 1e-5f)
                 return;
 
@@ -840,224 +916,206 @@ namespace ZoneEngine_New.Core.Movement
             _syncedRotation = _character.Rotation;
         }
 
-        public void ApplyAction(MovementAction action)
+        /// <summary>
+        /// Applies a movement action. False when it was refused. A player's go through the movement rules
+        /// (<see cref="CharMovement.Act"/>), which refuse what the mode or the controls refuse; an NPC takes no Act
+        /// input, only its mode switches.
+        /// </summary>
+        public bool ApplyAction(MovementAction action)
+            => IsPlayer ? ActPlayer(action) : ApplyNpcAction(action);
+
+        bool ActPlayer(MovementAction action)
         {
             RefreshFlightAuthority();
+            RefreshAiControl();
+            switch (action)
+            {
+                case MovementAction.SwitchToFly when !HasFlightAuthority():
+                    LogRefusedAction(action, "no flight authority");
+                    return false;
+                case MovementAction.SwitchToWalk or MovementAction.SwitchToRun when !HasWalkRunSpecialAction():
+                    LogRefusedAction(action, "no walk/run special action");
+                    return false;
+            }
+
+            ISurface? surface = BindSurface();
+            if (!_move.Act((int)action))
+            {
+                LogRefusedAction(action, "movement rules");
+                return false;
+            }
+
             switch (action)
             {
                 case MovementAction.ForwardStart:
-                    SetFlags(_flags | MovementFlags.Forward);
-                    _character.InterruptTimedActions(TimedActionInterrupt.Movement);
-                    break;
-                case MovementAction.ForwardStop:
-                    SetFlags(_flags & ~MovementFlags.Forward);
-                    break;
                 case MovementAction.BackwardStart:
-                    SetFlags(_flags | MovementFlags.Backward);
-                    _character.InterruptTimedActions(TimedActionInterrupt.Movement);
-                    break;
-                case MovementAction.BackwardStop:
-                    SetFlags(_flags & ~MovementFlags.Backward);
-                    break;
                 case MovementAction.StrafeLeftStart:
-                    SetFlags(_flags | MovementFlags.StrafeLeft);
-                    _character.InterruptTimedActions(TimedActionInterrupt.Movement);
-                    break;
-                case MovementAction.StrafeLeftStop:
-                    SetFlags(_flags & ~MovementFlags.StrafeLeft);
-                    break;
                 case MovementAction.StrafeRightStart:
-                    SetFlags(_flags | MovementFlags.StrafeRight);
-                    _character.InterruptTimedActions(TimedActionInterrupt.Movement);
-                    break;
-                case MovementAction.StrafeRightStop:
-                    SetFlags(_flags & ~MovementFlags.StrafeRight);
-                    break;
-                case MovementAction.TurnLeftStart:
-                    SetFlags((_flags | MovementFlags.TurnLeft) & ~MovementFlags.TurnRight);
-                    break;
-                case MovementAction.TurnLeftMouse:
-                case MovementAction.TurnRightMouse:
-                    // Heading only: the packet's quaternion is authoritative, so no turn rate is simulated.
-                    break;
-                case MovementAction.TurnLeftStop:
-                    SetFlags(_flags & ~MovementFlags.TurnLeft);
-                    break;
-                case MovementAction.TurnRightStart:
-                    SetFlags((_flags | MovementFlags.TurnRight) & ~MovementFlags.TurnLeft);
-                    break;
-                case MovementAction.TurnRightStop:
-                    SetFlags(_flags & ~MovementFlags.TurnRight);
-                    break;
-                case MovementAction.JumpStart:
-                    SetFlags(_flags | MovementFlags.Jump);
-                    TryStartJump();
-                    break;
-                case MovementAction.JumpStop:
-                    SetFlags(_flags & ~MovementFlags.Jump);
-                    break;
                 case MovementAction.ElevateUpStart:
-                    SetFlags((_flags | MovementFlags.ElevateUp) & ~MovementFlags.ElevateDown);
                     _character.InterruptTimedActions(TimedActionInterrupt.Movement);
                     break;
-                case MovementAction.ElevateUpStop:
-                    SetFlags(_flags & ~MovementFlags.ElevateUp);
+                case MovementAction.JumpStart when surface == null:
+                    // No ground to leave: the jump lands at once, which runs its end in the status.
+                    _sim.LandNow(_sim.Position.Y);
                     break;
-                case MovementAction.ElevateDownStart:
-                    SetFlags((_flags | MovementFlags.ElevateDown) & ~MovementFlags.ElevateUp);
-                    _character.InterruptTimedActions(TimedActionInterrupt.Movement);
-                    break;
-                case MovementAction.ElevateDownStop:
-                    SetFlags(_flags & ~MovementFlags.ElevateDown);
-                    break;
+            }
+
+            SyncModeStats();
+            return true;
+        }
+
+        /// <summary>An NPC's mode switches into the rules' states; its movement itself is the follow path.</summary>
+        bool ApplyNpcAction(MovementAction action)
+        {
+            switch (action)
+            {
                 case MovementAction.FullStop:
-                    StopAllFlags();
-                    Halt();
-                    break;
+                    _sim.Halt();
+                    return true;
                 case MovementAction.SwitchToFrozen:
-                    EnterMovementState(MovementState.Rooted);
+                    _move.EnterState((int)MovementState.Rooted);
                     break;
                 case MovementAction.SwitchToWalk:
-                    EnterMovementState(MovementState.Walk);
+                    _move.EnterState((int)MovementState.Walk);
                     break;
                 case MovementAction.SwitchToRun:
-                    EnterMovementState(MovementState.Run);
+                    _move.EnterState((int)MovementState.Run);
                     break;
                 case MovementAction.SwitchToSwim:
-                    EnterMovementState(MovementState.Swim);
+                    _move.EnterState((int)MovementState.Swim);
                     break;
                 case MovementAction.SwitchToCrawl:
-                    EnterMovementState(MovementState.Crawl);
+                    _move.EnterState((int)MovementState.Crawl);
                     break;
                 case MovementAction.SwitchToSneak:
-                    EnterMovementState(MovementState.Sneak);
+                    _move.EnterState((int)MovementState.Sneak);
                     break;
                 case MovementAction.SwitchToFly:
-                    if (HasFlightAuthority()) EnterMovementState(MovementState.Fly);
+                    if (!HasFlightAuthority())
+                        return false;
+                    _move.EnterState((int)MovementState.Fly);
                     break;
                 case MovementAction.SwitchToSit:
-                    EnterMovementState(MovementState.Sit);
+                    _move.EnterState((int)MovementState.Sit);
                     break;
                 case MovementAction.SwitchToSleep:
-                    EnterMovementState(MovementState.Sleep);
+                    _move.EnterState((int)MovementState.Sleep);
                     break;
                 case MovementAction.SwitchToLounge:
-                    EnterMovementState(MovementState.Lounge);
+                    _move.EnterState((int)MovementState.Lounge);
+                    break;
+                case MovementAction.LeaveFly:
+                    if (_move.State != (int)MovementState.Fly)
+                        return false;
+                    _move.LeaveFly();
                     break;
                 case MovementAction.LeaveSwim:
                 case MovementAction.LeaveSneak:
                 case MovementAction.LeaveSit:
                 case MovementAction.LeaveFrozen:
-                case MovementAction.LeaveFly:
                 case MovementAction.LeaveCrawl:
                 case MovementAction.LeaveSleep:
                 case MovementAction.LeaveLounge:
-                    LeaveMovementState();
+                    _move.LeaveState();
                     break;
+                default:
+                    return false;
             }
+
+            SyncModeStats();
+            return true;
         }
 
-        // The accepted CanFly effect explicitly grants IsVehicle=1 outside Shadowlands. A
-        // client mode request cannot grant this authority. Check after whole owner operations,
-        // not each transient Bonus clear during equipment/nano rebasing.
-        bool HasFlightAuthority() => _character.Stats.GetOrZero(CharacterStat.IsVehicle) == 1
-            && (_character.Playfield != null
-                ? _character.Playfield.Identity.Instance is < 4000 or > 4999
-                : _character.Stats.GetOrZero((CharacterStat)531) == 0);
-
-        public void RefreshFlightAuthority()
+        void LogRefusedAction(MovementAction action, string reason)
         {
-            if (_state != MovementState.Fly || HasFlightAuthority()) return;
-            _flags &= ~(MovementFlags.ElevateUp | MovementFlags.ElevateDown);
-            LeaveMovementState();
-        }
-
-        void SetFlags(MovementFlags flags)
-        {
-            _flags = flags;
-            ApplyFlagsToAxes();
-        }
-
-        void StopAllFlags() => SetFlags(MovementFlags.None);
-
-        /// <summary>
-        /// Input flags into the four axes. An NPC body has none, and the release branch's halt
-        /// would fight the path guide, so NPC flags stay flags. Speeds are applied either way:
-        /// a rooted NPC still has to brake.
-        /// </summary>
-        void ApplyFlagsToAxes()
-        {
-            ApplyMotionConstraints();
-            if (_npc != null)
+            if (_character is not Player player)
                 return;
 
-            float drive = 0f;
-            if ((_flags & MovementFlags.Forward) != 0)
-                drive += 1f;
-            if ((_flags & MovementFlags.Backward) != 0)
-                drive -= 1f;
-
-            // forward SetDirection(1) then drive, backward drive then SetDirection(-1),
-            // release drive 0, halt, then SetDirection(1). Both the halt and the direction
-            // are required.
-            if (drive != _sim.ForwardDrive)
-            {
-                if (drive > 0f)
-                {
-                    _sim.SetDirection(1);
-                    _sim.SetForwardDrive(drive);
-                }
-                else if (drive < 0f)
-                {
-                    _sim.SetForwardDrive(drive);
-                    _sim.SetDirection(-1);
-                }
-                else
-                {
-                    _sim.SetForwardDrive(0f);
-                    _sim.Halt();
-                    _sim.SetDirection(1);
-                }
-            }
-
-            float strafe = 0f;
-            if ((_flags & MovementFlags.StrafeRight) != 0)
-                strafe += 1f;
-            if ((_flags & MovementFlags.StrafeLeft) != 0)
-                strafe -= 1f;
-            _sim.SetStrafe(strafe);
-
-            float turn = 0f;
-            if ((_flags & MovementFlags.TurnRight) != 0)
-                turn += 1f;
-            if ((_flags & MovementFlags.TurnLeft) != 0)
-                turn -= 1f;
-            _sim.SetTurnRate(turn * GetTurnRateRadians());
+            RulesStatus.Fields f = _move.Status.Current;
+            player.Logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Refused movement action={0}(0x{1:X2}) reason={2} character={3} mode={4} fwd={5}/{6} jump={7} ai={8} path={9} isVehicle={10}",
+                    action,
+                    (int)action,
+                    reason,
+                    _character.Identity.Instance,
+                    f.Mode,
+                    f.FwdState,
+                    f.FwdDir,
+                    f.JumpState,
+                    _move.AiControlled,
+                    _move.OnWaypointPath,
+                    _character.Stats.GetOrZero(CharacterStat.IsVehicle)));
         }
 
-        /// <summary>Unported Lost-Eden glue: these two rates are not stock.</summary>
-        float GetTurnRateRadians() => IsMoving
-            ? MovementConfig.TurnRateRadiansMoving
-            : MovementConfig.TurnRateRadiansStopped;
+        /// <summary>
+        /// The walk and run toggles are special actions (0x11 / 0x12); the client sends SwitchToWalk / SwitchToRun only
+        /// while the character has them, which it does not while it is a vehicle.
+        /// </summary>
+        bool HasWalkRunSpecialAction() => _character.Stats.GetOrZero(CharacterStat.IsVehicle) == 0;
 
-        void EnterMovementState(MovementState state)
+        /// <summary>
+        /// CurrentMovementMode and WaitState follow the mode. WaitState as the client keeps it for itself: entering Sit
+        /// (mode 8) sets 2 (Gamecode.dll 0x1006d4bc), leaving a mode sets 0 (0x1006e032). Item criteria such as the
+        /// Health and Nano Recharger's [WaitState EqualTo 2] ("You must be sitting") read it. The flying flag is the
+        /// rules' own; one left over (a stored Flags stat) is cleared outside Fly.
+        /// </summary>
+        void SyncModeStats()
         {
-            if (_state == MovementState.Walk || _state == MovementState.Run)
-                _lastSpeedMode = _state;
+            int mode = _move.State;
+            if (_character.Stats.GetOrZero(CharacterStat.CurrentMovementMode) != mode)
+            {
+                _character.Stats.Set(CharacterStat.CurrentMovementMode, mode, StatDetail.Base, dirty: true);
+                _character.Stats.Set(CharacterStat.WaitState, mode == (int)MovementState.Sit ? 2 : 0, StatDetail.Base);
+            }
 
-            if (state == MovementState.Sit)
-                StopAllFlags();
+            if (mode != (int)MovementState.Fly)
+                SetCharacterFlag(CharMovementRules.FlagFlying, false);
+        }
 
-            _state = state;
-            if (state == MovementState.Fly)
-                _sim.DisableFalling();
-            ApplyFlagsToAxes();
-            SyncMovementModeStat();
+        /// <summary>The rules' <see cref="CharMovement.FlagsSet"/> / <see cref="CharMovement.FlagsCleared"/> into stat 0.</summary>
+        void SetCharacterFlag(int flag, bool set)
+        {
+            int flags = _character.Stats.GetOrZero(CharacterStat.Flags);
+            int updated = set ? flags | flag : flags & ~flag;
+            if (updated != flags)
+                _character.Stats.Set(CharacterStat.Flags, updated, StatDetail.Base, dirty: true);
+        }
 
-            // WaitState as the client keeps it for itself: entering Sit (mode 8) sets 2 (Gamecode.dll 0x1006d4bc),
-            // leaving a mode sets 0 (0x1006e032). Item criteria such as the Health and Nano Recharger's
-            // [WaitState EqualTo 2] ("You must be sitting") read it.
-            _character.Stats.Set(CharacterStat.WaitState, state == MovementState.Sit ? 2 : 0, StatDetail.Base);
+        // A running CanFly effect (StatModifierSpells: IsVehicle reads 1 while the nano runs or the item is worn) on a
+        // playfield that allows flying (the FlyingAllowed criterion: metadata no-fly bit clear, which covers all of the
+        // Shadowlands). A client mode request cannot grant this authority. Checked every tick and on each movement
+        // action, not on each transient Bonus clear during equipment/nano rebasing.
+        bool HasFlightAuthority() => _character.Stats.GetOrZero(CharacterStat.IsVehicle) == 1
+            && (_character.Playfield != null
+                ? PlayfieldEntryFlags.IsFlyingAllowed(_character.Playfield.MetaData)
+                : _character.Stats.GetOrZero(CharacterStat.ExpansionPlayfield) == 0);
+
+        /// <summary>
+        /// The server is the flight authority. The client switches itself into Fly when a CanFly effect starts (no
+        /// SwitchToFly arrives) and out of it when the effect ends; a player follows the same edges. Only the edges: a
+        /// player who lands while the effect still runs stays landed. Any character in Fly without authority lands.
+        /// </summary>
+        public void RefreshFlightAuthority()
+        {
+            bool authority = HasFlightAuthority();
+            bool gained = authority && !_hadFlightAuthority;
+            _hadFlightAuthority = authority;
+            bool flying = _move.State == (int)MovementState.Fly;
+            if (IsPlayer && gained && !flying)
+                _move.Apply((int)MovementAction.SwitchToFly);
+            else if (!authority && flying)
+            {
+                if (IsPlayer)
+                    _move.Apply((int)MovementAction.LeaveFly);
+                else
+                    _move.LeaveFly();
+            }
+            else
+                return;
+
+            SyncModeStats();
         }
 
         /// <summary>
@@ -1066,20 +1124,14 @@ namespace ZoneEngine_New.Core.Movement
         /// </summary>
         public void StandUp()
         {
-            if (_state == MovementState.Sit)
-                LeaveMovementState();
-        }
+            if (_move.State != (int)MovementState.Sit)
+                return;
 
-        void LeaveMovementState()
-        {
-            EnterMovementState(_lastSpeedMode is MovementState.Walk or MovementState.Run
-                ? _lastSpeedMode
-                : MovementState.Run);
-        }
-
-        void SyncMovementModeStat()
-        {
-            _character.Stats.Set(CharacterStat.CurrentMovementMode, (int)_state, StatDetail.Base, dirty: true);
+            if (IsPlayer)
+                _move.Apply((int)MovementAction.LeaveSit);
+            else
+                _move.LeaveState();
+            SyncModeStats();
         }
 
         bool HasGeometryBelow()
@@ -1091,7 +1143,7 @@ namespace ZoneEngine_New.Core.Movement
             if (playfield.TrySnapFeetToFloor(_character.Position, out _))
                 return true;
 
-            WorldSimulation.PlayfieldWorldSimulation? world = playfield.WorldAccess.Instance;
+            PlayfieldWorldSimulation? world = playfield.WorldAccess.Instance;
             if (world == null)
                 return false;
 
@@ -1101,25 +1153,6 @@ namespace ZoneEngine_New.Core.Movement
                 _character.Position.z);
             return world.TryRaycastDown(from, MovementConfig.VoidProbeDepth, out _);
         }
-
-        /// <summary>
-        /// <c>JumpStartTransitionAction_t</c>: the owner's jump height into <see cref="CharVehicleSim.Jump"/>.
-        /// With no surface bound there is no ground to leave, so only the event is raised.
-        /// </summary>
-        bool TryStartJump()
-        {
-            if (_state == MovementState.Sit || Jumping)
-                return false;
-
-            if (_sim.Surface != null
-                && !_sim.Jump(JumpHeightFromStats(_jumpStrength, _jumpAgility, _jumpGmLevel)))
-                return false;
-
-            Jumped?.Invoke();
-            return true;
-        }
-
-        void OnJumpLanded() => _flags &= ~MovementFlags.Jump;
 
         float GetYawRadians()
         {
@@ -1145,6 +1178,13 @@ namespace ZoneEngine_New.Core.Movement
             return MathF.Sqrt((dx * dx) + (dz * dz));
         }
 
+        static float FlatDistance(Vec3 a, Vec3 b)
+        {
+            float dx = b.X - a.X;
+            float dz = b.Z - a.Z;
+            return MathF.Sqrt((dx * dx) + (dz * dz));
+        }
+
         static Vec3 ToVec3(Vector3 v) => new((float)v.x, (float)v.y, (float)v.z);
 
         static Vector3 ToVector3(Vec3 v) => new(v.X, v.Y, v.Z);
@@ -1156,139 +1196,6 @@ namespace ZoneEngine_New.Core.Movement
 
             var quat = new Quat(q.xf, q.yf, q.zf, q.wf);
             return quat.Length < 1e-6f ? Quat.Identity : quat.Normalized;
-        }
-
-        /// <summary>
-        /// Writes N3Lite's max speed, strafe speed and drive lock from the current stance.
-        /// Backing up selects the reverse curve. Rooted, sit and rooted-can-sit refuse a player's
-        /// drive; only rooted brakes an NPC, which is how <c>NpcVehicleSim</c> treats a locked drive.
-        /// </summary>
-        void ApplyMotionConstraints()
-        {
-            float drive = 0f;
-            if ((_flags & MovementFlags.Forward) != 0)
-                drive += 1f;
-            if ((_flags & MovementFlags.Backward) != 0)
-                drive -= 1f;
-
-            int state = (int)_state;
-            SpeedCurve curve = SpeedCurve.For(state, drive < 0f ? 2 : 1);
-            float runSpeed = _character.Stats.GetOrZero(CharacterStat.RunSpeed);
-            _sim.UpdateMotionConstraints(curve.MaxSpeed(runSpeed));
-            _sim.StrafeSpeed = curve.Strafe(state, runSpeed);
-            _sim.DriveLocked = _npc != null
-                ? _state == MovementState.Rooted
-                : _state is MovementState.Rooted or MovementState.Sit or MovementState.RootedCanSit;
-        }
-
-        /// <summary>
-        /// Jump height from Strength, Agility and GmLevel: <c>(str + agi) / 200 + 1</c>, at least 0.5.
-        /// Past 800 in total a non-GM counts as exactly 800.
-        /// </summary>
-        static float JumpHeightFromStats(int strength, int agility, int gmLevel)
-        {
-            float str = strength;
-            float agi = agility;
-            if (800f < agi + str && gmLevel == 0)
-            {
-                str = 800f;
-                agi = 0f;
-            }
-
-            float height = (float)((agi + str) / 200.0 + 1.0);
-            if (height < 0.5f)
-                height = 0.5f;
-            return height;
-        }
-
-        struct SpeedCurve
-        {
-            public float Divisor;
-            public float Base;
-            public float Max;
-            public float Min;
-            public bool Constant;
-
-            public static SpeedCurve For(int state, int direction)
-            {
-                switch (state)
-                {
-                    case 3:
-                        return direction == 2
-                            ? new SpeedCurve { Divisor = 275f / 0.7f, Base = 3f, Max = 9.099999f, Min = 1.05f }
-                            : new SpeedCurve { Divisor = 275f, Base = 5f, Max = 13f, Min = 1.5f };
-                    case 4:
-                        return new SpeedCurve { Divisor = 275f / 0.625f, Base = 3f, Max = 8f, Min = 1.5f };
-                    case 7:
-                        return new SpeedCurve { Divisor = 275f, Base = 7f, Max = 15f, Min = 1.5f };
-                    case 5:
-                        return new SpeedCurve { Base = 1f, Constant = true };
-                    default:
-                        return new SpeedCurve { Base = 1.5f, Constant = true };
-                }
-            }
-
-            public float MaxSpeed(float runSpeedStat)
-            {
-                if (Constant)
-                {
-                    float v = Base;
-                    if (v < 0.01f)
-                        v = 0.1f;
-                    return v;
-                }
-
-                float speed = runSpeedStat / Divisor + Base;
-                if (speed > Max)
-                    speed = Max;
-                if (speed < Min)
-                    speed = Min;
-                return speed;
-            }
-
-            public float Strafe(int state, float runSpeedStat)
-            {
-                const float Scale = 0.5f;
-                const float Floor = 0.75f;
-                if (state == 2)
-                    return Math.Max(Floor, 1.5f);
-
-                if (Constant)
-                    return Math.Max(Floor, Base);
-
-                float v = Scale * runSpeedStat / Divisor + Scale * Base;
-                float max = Scale * Max;
-                if (v > max)
-                    v = max;
-                if (v < Floor)
-                    v = Floor;
-                return v;
-            }
-        }
-
-        /// <summary>
-        /// N3Lite's NPC vehicle with an optional instant-acceleration mode: the body takes the arrive
-        /// behaviour's desired velocity at once instead of accelerating toward it through the
-        /// MaxForce-limited integrator.
-        /// </summary>
-        sealed class ServerNpcVehicleSim : NpcVehicleSim
-        {
-            public bool InstantAcceleration { get; init; }
-
-            /// <summary>
-            /// Arrive steers with <c>(desired - Velocity) * Mass * 4</c>, so the desired velocity is recovered
-            /// from the force and set directly; the zeroed force then leaves it unchanged.
-            /// </summary>
-            protected override SteeringResult CalcSteering(out Vec3 force)
-            {
-                SteeringResult result = base.CalcSteering(out force);
-                if (!InstantAcceleration || result != SteeringResult.Force)
-                    return result;
-
-                Velocity += force / (Mass * 4f);
-                force = Vec3.Zero;
-                return result;
-            }
         }
     }
 }

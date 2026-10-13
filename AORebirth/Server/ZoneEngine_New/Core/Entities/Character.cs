@@ -2075,6 +2075,9 @@ namespace ZoneEngine_New.Core.Entities
                 // Value = nano id among this character's uploaded nanos (a nano crystal's ToUse: HasNotFormula).
                 Operator.HasFormula => UploadedNanoIds.Contains(value),
                 Operator.HasNotFormula => !UploadedNanoIds.Contains(value),
+                // Gamecode.dll FUN_100065d8 case 0x70: fails when the playfield forbids flying
+                // ("FlyingMustMeAllowedOnThePlayfield"). Hoverboards (Phasefront 281569), Yalmahas, wings.
+                Operator.FlyingAllowed => PlayfieldEntryFlags.IsFlyingAllowed(Playfield?.MetaData),
                 _ => null
             };
         }
@@ -2096,6 +2099,20 @@ namespace ZoneEngine_New.Core.Entities
         /// and the latest transition wins; with no event order here, dead beats casting beats fighting beats moving.
         /// Runtime only, never sent: item criteria such as [CharState = 10] read it.
         /// </summary>
+        /// <summary>
+        /// The stats the client sets for itself on entering a playfield (Gamecode.dll FUN_1005975f), so requirements read
+        /// the same values here: PlayfieldProxy (589) = playfield id, PlayfieldType (438) = dungeon | battle-station bits,
+        /// ExpansionPlayfield (531) = 1 in the Shadowlands (<see cref="PlayfieldEntryFlags"/>). Runtime only (never
+        /// stored) and not sent: the client keeps its own copy.
+        /// </summary>
+        protected override void OnEnteredPlayfield(ZoneEngine_New.Core.Playfield.Playfield playfield)
+        {
+            int id = playfield.Identity.Instance;
+            Stats.Set(CharacterStat.PlayfieldProxy, id, StatDetail.Base);
+            Stats.Set(CharacterStat.PlayfieldType, PlayfieldEntryFlags.PlayfieldType(id, playfield.MetaData), StatDetail.Base);
+            Stats.Set(CharacterStat.ExpansionPlayfield, PlayfieldEntryFlags.ExpansionPlayfield(playfield.MetaData), StatDetail.Base);
+        }
+
         public void SyncCharState()
         {
             int state = IsDead ? 11
@@ -2126,19 +2143,52 @@ namespace ZoneEngine_New.Core.Entities
                 spell => spell.TryReadInt(0, out int restricted) && (restricted & RestrictMovementBit) != 0)
                 || HasBuffFunction(FunctionType.Stun);
 
+        /// <summary>A running Fear (53121) or Mind Control (53232) has taken the character's controls.</summary>
+        public bool IsAiControlled => HasBuffFunction(FunctionType.Fear) || HasBuffFunction(FunctionType.MindControl);
+
         /// <summary>RestrictAction bit that forbids fighting (e.g. 304935 Immortal).</summary>
         public const int RestrictFightingBit = 2;
 
         /// <summary>
-        /// A running buff holds RestrictAction with the fighting bit: this character cannot attack. Others can still
-        /// attack it. Refreshed on every rebase (<see cref="ApplyBuffBonuses"/>), so it lifts when the buff ends.
+        /// A running buff or a worn item holds RestrictAction with the fighting bit: this character cannot attack. Others
+        /// can still attack it. Flight sets it (hoverboard 281569 and Sparrow Flight on OnUse, Yalmahas on OnWear, all
+        /// RestrictAction [2]), as does 304935 Immortal. Refreshed on every rebase (<see cref="ApplyBuffBonuses"/>), which
+        /// buff changes and equipping both trigger, so it lifts when the buff ends or the item comes off.
         /// </summary>
         public bool CombatRestricted { get; private set; }
 
         bool HasCombatRestriction
-            => HasBuffFunction(
-                FunctionType.RestrictAction,
-                spell => spell.TryReadInt(0, out int restricted) && (restricted & RestrictFightingBit) != 0);
+            => HasBuffFunction(FunctionType.RestrictAction, RestrictsFighting)
+                || HasWornFunction(FunctionType.RestrictAction, RestrictsFighting);
+
+        static bool RestrictsFighting(ItemSpell spell)
+            => spell.TryReadInt(0, out int restricted) && (restricted & RestrictFightingBit) != 0;
+
+        /// <summary>An equipped item's OnWear holds <paramref name="function"/> (matching <paramref name="match"/>).</summary>
+        bool HasWornFunction(FunctionType function, Func<ItemSpell, bool> match)
+        {
+            IEnumerable<Item>? worn = this switch
+            {
+                Player player when player.Inventory.IsHydrated => player.Inventory.WornItems(),
+                NpcCharacter npc => npc.Equipment.Content.Values,
+                _ => null
+            };
+            if (worn == null)
+                return false;
+
+            foreach (Item item in worn)
+            {
+                if (!item.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? spells))
+                    continue;
+                for (int s = 0; s < spells.Count; s++)
+                {
+                    if (spells[s].Is(function) && match(spells[s]))
+                        return true;
+                }
+            }
+
+            return false;
+        }
 
         /// <summary>A running buff holds Pacify (e.g. 100429 Wandering Mind): no aggression, no hate.</summary>
         public bool IsPacified => HasBuffFunction(FunctionType.Pacify);

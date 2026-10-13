@@ -359,6 +359,47 @@ namespace ZoneEngine_New.Core.Playfield
             return dynel;
         }
 
+        /// <summary>
+        /// Places a dropped inventory item in the world as a temporary <see cref="WorldItem"/> only
+        /// <paramref name="owner"/> can pick up, removed after <paramref name="lifetime"/>.
+        /// </summary>
+        public WorldItem SpawnDroppedItem(Item item, Vector3 position, Quaternion rotation, Identity owner, TimeSpan lifetime)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            ArgumentNullException.ThrowIfNull(position);
+
+            ItemTemplate template = item.Definition ?? _items.CreateTemplate(item.LowId, item.HighId, item.Quality);
+            Identity identity = _registry.AllocateStaticDynelIdentity();
+            var dynel = new WorldItem(identity, template, item.LowId, item.HighId, item.Quality)
+            {
+                Playfield = _playfield,
+                Position = position,
+                Rotation = rotation,
+                SpawnSource = SpawnSource.None,
+                Owner = owner,
+                StackCount = Math.Max(1, item.StackCount),
+                ExpiresAtUtc = DateTime.UtcNow + lifetime
+            };
+
+            _registry.Register(dynel);
+            _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(dynel);
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Dropped item name={0} id={1} template={2}/{3} ql={4} count={5} owner={6} at ({7},{8},{9})",
+                    template.Name,
+                    identity.Instance,
+                    item.LowId,
+                    item.HighId,
+                    item.Quality,
+                    dynel.StackCount,
+                    owner.Instance,
+                    position.xf,
+                    position.yf,
+                    position.zf));
+            return dynel;
+        }
+
         /// <summary>Removes a hash-spawned static dynel from the playfield (visibility + registry).</summary>
         public void DespawnStatic(StaticDynel dynel)
         {
@@ -603,6 +644,24 @@ namespace ZoneEngine_New.Core.Playfield
             DespawnExpiredLinkDeadPlayers();
             DespawnExpiredCorpses();
             DespawnEmptyLootables();
+            DespawnExpiredWorldItems();
+        }
+
+        /// <summary>Temporary world items (player drops) leave once their lifetime is up.</summary>
+        void DespawnExpiredWorldItems()
+        {
+            DateTime now = DateTime.UtcNow;
+            List<WorldItem>? expired = null;
+            foreach (Dynel dynel in _registry.Dynels())
+            {
+                if (dynel is WorldItem item && item.IsExpired(now))
+                    (expired ??= new List<WorldItem>()).Add(item);
+            }
+
+            if (expired == null)
+                return;
+            foreach (WorldItem item in expired)
+                DespawnStatic(item);
         }
 
         void DespawnExpiredCorpses()

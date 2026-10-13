@@ -46,7 +46,26 @@ namespace ZoneEngine_New.Core.Entities
 
         public StatCollection Stats { get; }
 
-        public Playfield? Playfield { get; set; }
+        Playfield? _playfield;
+
+        /// <summary>The playfield this dynel is in. Entering one runs <see cref="OnEnteredPlayfield"/>.</summary>
+        public Playfield? Playfield
+        {
+            get => _playfield;
+            set
+            {
+                if (ReferenceEquals(_playfield, value))
+                    return;
+                _playfield = value;
+                if (value != null)
+                    OnEnteredPlayfield(value);
+            }
+        }
+
+        /// <summary>Runs on every playfield entry: login, zoning, instanced and dungeon transitions, spawns.</summary>
+        protected virtual void OnEnteredPlayfield(Playfield playfield)
+        {
+        }
 
         public Cell? Cell { get; internal set; }
 

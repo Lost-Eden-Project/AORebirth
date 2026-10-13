@@ -256,6 +256,56 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
         }
     }
 
+    public class DropTemplateMessageSerializer : ISerializer
+    {
+        public Type Type
+        {
+            get { return typeof(DropTemplateMessage); }
+        }
+
+        public object Deserialize(StreamReader streamReader, SerializationContext serializationContext, PropertyMetaData propertyMetaData = null)
+        {
+            return new DropTemplateMessage
+                       {
+                           N3MessageType = (N3MessageType)streamReader.ReadInt32(),
+                           Identity = streamReader.ReadIdentity(),
+                           Unknown = streamReader.ReadByte(),
+                           Item = streamReader.ReadIdentity(),
+                           Position = new Vector3
+                                      {
+                                          X = streamReader.ReadSingle(),
+                                          Y = streamReader.ReadSingle(),
+                                          Z = streamReader.ReadSingle()
+                                      }
+                       };
+        }
+
+        public Expression DeserializerExpression(ParameterExpression streamReaderExpression, ParameterExpression serializationContextExpression, Expression assignmentTargetExpression, PropertyMetaData propertyMetaData)
+        {
+            MethodInfo method = ReflectionHelper.GetMethodInfo<DropTemplateMessageSerializer, Func<StreamReader, SerializationContext, PropertyMetaData, object>>(o => o.Deserialize);
+            MethodCallExpression call = Expression.Call(Expression.New(this.GetType()), method, streamReaderExpression, serializationContextExpression, Expression.Constant(propertyMetaData, typeof(PropertyMetaData)));
+            return Expression.Assign(assignmentTargetExpression, Expression.TypeAs(call, assignmentTargetExpression.Type));
+        }
+
+        public void Serialize(StreamWriter streamWriter, SerializationContext serializationContext, object value, PropertyMetaData propertyMetaData = null)
+        {
+            var message = (DropTemplateMessage)value;
+            streamWriter.WriteInt32((int)message.N3MessageType);
+            streamWriter.WriteIdentity(message.Identity);
+            streamWriter.WriteByte(message.Unknown);
+            streamWriter.WriteIdentity(message.Item);
+            streamWriter.WriteSingle(message.Position.X);
+            streamWriter.WriteSingle(message.Position.Y);
+            streamWriter.WriteSingle(message.Position.Z);
+        }
+
+        public Expression SerializerExpression(ParameterExpression streamWriterExpression, ParameterExpression serializationContextExpression, Expression valueExpression, PropertyMetaData propertyMetaData)
+        {
+            MethodInfo method = ReflectionHelper.GetMethodInfo<DropTemplateMessageSerializer, Action<StreamWriter, SerializationContext, object, PropertyMetaData>>(o => o.Serialize);
+            return Expression.Call(Expression.New(this.GetType()), method, streamWriterExpression, serializationContextExpression, valueExpression, Expression.Constant(propertyMetaData, typeof(PropertyMetaData)));
+        }
+    }
+
     public class ClientGetItemMessageSerializer : ISerializer
     {
         public Type Type

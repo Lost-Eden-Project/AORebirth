@@ -569,7 +569,8 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
 
             if (spell.Is(FunctionType.Modify) || spell.Is(FunctionType.ScalingModify) || spell.Is(FunctionType.Skill)
-                || spell.Is(FunctionType.ModifyPercentage) || spell.Is(FunctionType.MonsterShape))
+                || spell.Is(FunctionType.ModifyPercentage) || spell.Is(FunctionType.MonsterShape)
+                || spell.Is(FunctionType.CanFly))
             {
                 if (skipPassiveModifiers)
                     return true;

@@ -225,6 +225,7 @@
     <Compile Include="Messages\N3Messages\ClientGetItemMessage.cs" />
     <Compile Include="Messages\N3Messages\DespawnMessage.cs" />
     <Compile Include="Messages\N3Messages\DropDynelMessage.cs" />
+    <Compile Include="Messages\N3Messages\DropTemplateMessage.cs" />
     <Compile Include="Messages\N3Messages\LocalityUpdateMessage.cs" />
     <Compile Include="Messages\N3Messages\RelocateDynelsMessage.cs" />
     <Compile Include="Messages\N3Messages\ToClientQuitMessage.cs" />

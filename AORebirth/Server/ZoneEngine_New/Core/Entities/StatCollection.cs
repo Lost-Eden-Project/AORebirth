@@ -68,14 +68,16 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Runtime stats rebuilt every session and never stored: fight bookkeeping, taken pet slots, the
-        /// equipped weapon type criteria the client derives from the weapon page, and the vitals. Max health and
-        /// max nano are recomputed on rebase, and current health and nano are set from the stored
-        /// PercentRemainingHealth / PercentRemainingNano, so a stale or buff-inflated value is never loaded back.
+        /// equipped weapon type criteria the client derives from the weapon page, the playfield-entry flags
+        /// (Character.OnEnteredPlayfield), and the vitals. Max health and max nano are recomputed on rebase, and
+        /// current health and nano are set from the stored PercentRemainingHealth / PercentRemainingNano, so a stale
+        /// or buff-inflated value is never loaded back.
         /// </summary>
         public static bool IsRuntimeOnly(CharacterStat stat)
             => stat is CharacterStat.NumberOfFightingOpponents or CharacterStat.Pets
                 or CharacterStat.EquippedWeapons or CharacterStat.EquippedRHWeapon or CharacterStat.WaitState
                 or CharacterStat.CharState or CharacterStat.XPKillRange or CharacterStat.LastPerkResetTime
+                or CharacterStat.PlayfieldType or CharacterStat.ExpansionPlayfield or CharacterStat.PlayfieldProxy
                 or CharacterStat.Health or CharacterStat.CurrentNano
                 or CharacterStat.MaxHealth or CharacterStat.MaxNanoEnergy;
 

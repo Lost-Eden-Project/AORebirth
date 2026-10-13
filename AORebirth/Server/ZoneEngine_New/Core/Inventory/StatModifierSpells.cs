@@ -28,12 +28,22 @@ namespace ZoneEngine_New.Core.Inventory
                 bool setFlag = spell.Is(FunctionType.SetFlag);
                 bool changeVariable = spell.Is(FunctionType.ChangeVariable);
                 bool percentage = spell.Is(FunctionType.ModifyPercentage);
-                if (!shape && !setFlag && !changeVariable && !percentage
+                bool canFly = spell.Is(FunctionType.CanFly);
+                if (!shape && !setFlag && !changeVariable && !percentage && !canFly
                     && !spell.Is(FunctionType.Modify) && !spell.Is(FunctionType.ScalingModify)
                     && !spell.Is(FunctionType.Skill))
                     continue;
                 if (!spell.MeetsRequirements(stats))
                     continue;
+                if (canFly)
+                {
+                    // CanFly (no arguments; hoverboards, Sparrow Flight, Yalmahas, wings): IsVehicle reads 1 while the
+                    // nano runs or the item is worn. CharacterMotor's flight authority reads it, so the client's switch
+                    // to Fly is accepted only then and is undone when the source goes.
+                    stats.Set(CharacterStat.IsVehicle, 1 - stats.GetOrZero(CharacterStat.IsVehicle, StatDetail.Base),
+                        StatDetail.Bonus);
+                    continue;
+                }
                 if (shape)
                 {
                     if (spell.TryReadInt(0, out int monsterData))

@@ -237,6 +237,81 @@
         }
 
         /// <summary>
+        /// A small sphere swept from <paramref name="from"/> to <paramref name="to"/> against the terrain and static meshes.
+        /// N3Lite has line queries only, so it is the nearest hit of five parallel rays (the centre line and four offset
+        /// by <paramref name="radius"/> around it). On a hit, <paramref name="rest"/> is where the sphere comes to rest:
+        /// the contact point pushed out along the surface normal by the radius.
+        /// </summary>
+        public bool TrySphereCast(AoVector3 from, AoVector3 to, float radius, out AoVector3 rest, out AoVector3 normal)
+        {
+            rest = to;
+            normal = new AoVector3(0, 1, 0);
+            if (Surface == null)
+                return false;
+
+            Vec3 start = ToVec3(from);
+            Vec3 end = ToVec3(to);
+            float dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
+            float length = MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            if (length < 1e-4f)
+                return false;
+            dx /= length;
+            dy /= length;
+            dz /= length;
+
+            // Two unit vectors perpendicular to the ray: u = dir x reference, v = dir x u.
+            (float rx, float ry, float rz) = MathF.Abs(dy) < 0.9f ? (0f, 1f, 0f) : (1f, 0f, 0f);
+            float ux = (dy * rz) - (dz * ry), uy = (dz * rx) - (dx * rz), uz = (dx * ry) - (dy * rx);
+            float ul = MathF.Sqrt((ux * ux) + (uy * uy) + (uz * uz));
+            ux /= ul;
+            uy /= ul;
+            uz /= ul;
+            float vx = (dy * uz) - (dz * uy), vy = (dz * ux) - (dx * uz), vz = (dx * uy) - (dy * ux);
+
+            Span<(float X, float Y, float Z)> offsets =
+            [
+                (0f, 0f, 0f),
+                (ux * radius, uy * radius, uz * radius),
+                (-ux * radius, -uy * radius, -uz * radius),
+                (vx * radius, vy * radius, vz * radius),
+                (-vx * radius, -vy * radius, -vz * radius)
+            ];
+
+            bool found = false;
+            float best = float.MaxValue;
+            Vec3 bestHit = default;
+            Vec3 bestNormal = default;
+            foreach ((float ox, float oy, float oz) in offsets)
+            {
+                var a = new Vec3(start.X + ox, start.Y + oy, start.Z + oz);
+                var b = new Vec3(end.X + ox, end.Y + oy, end.Z + oz);
+                if (!Surface.GetLineIntersection(a, b, out Vec3 hit, out Vec3 n, false, null))
+                    continue;
+
+                float along = ((hit.X - a.X) * dx) + ((hit.Y - a.Y) * dy) + ((hit.Z - a.Z) * dz);
+                if (along >= best)
+                    continue;
+
+                best = along;
+                // Back onto the centre line, so an offset ray's contact stands for the sphere's.
+                bestHit = new Vec3(hit.X - ox, hit.Y - oy, hit.Z - oz);
+                bestNormal = n;
+                found = true;
+            }
+
+            if (!found)
+                return false;
+
+            float nl = MathF.Sqrt((bestNormal.X * bestNormal.X) + (bestNormal.Y * bestNormal.Y) + (bestNormal.Z * bestNormal.Z));
+            float nx = nl > 1e-6f ? bestNormal.X / nl : 0f;
+            float ny = nl > 1e-6f ? bestNormal.Y / nl : 1f;
+            float nz = nl > 1e-6f ? bestNormal.Z / nl : 0f;
+            normal = new AoVector3(nx, ny, nz);
+            rest = new AoVector3(bestHit.X + (nx * radius), bestHit.Y + (ny * radius), bestHit.Z + (nz * radius));
+            return true;
+        }
+
+        /// <summary>
         /// Surfaces are one-sided, so the segment is tested both ways: a wall blocks sight
         /// from whichever side it is seen.
         /// </summary>

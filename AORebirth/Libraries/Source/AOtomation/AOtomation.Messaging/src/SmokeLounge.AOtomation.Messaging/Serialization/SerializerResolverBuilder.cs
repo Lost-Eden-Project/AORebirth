@@ -89,6 +89,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization
                                        { typeof(LocalityUpdateMessage), new LocalityUpdateMessageSerializer() },
                                        { typeof(ClientContainerAddItemMessage), new ClientContainerAddItemMessageSerializer() },
                                        { typeof(ClientGetItemMessage), new ClientGetItemMessageSerializer() },
+                                       { typeof(DropTemplateMessage), new DropTemplateMessageSerializer() },
                                        { typeof(StartLogoutMessage), new IdentityOnlyN3MessageSerializer(typeof(StartLogoutMessage)) },
                                        { typeof(StopLogoutMessage), new IdentityOnlyN3MessageSerializer(typeof(StopLogoutMessage)) }
                                    };

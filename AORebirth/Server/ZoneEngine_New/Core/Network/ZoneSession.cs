@@ -607,10 +607,12 @@ namespace ZoneEngine_New.Core.Network
                                 _logger.Warn(
                                     string.Format(
                                         CultureInfo.InvariantCulture,
-                                        "Unknown or empty zone message id={0} ({0:X8}) from {1} header={2}",
+                                        "Unknown or empty zone message id={0} ({0:X8}) from {1} length={2} bytes={3}",
                                         TryReadN3MessageId(packet),
                                         RemoteEndPoint(),
-                                        Convert.ToHexString(packet, 0, Math.Min(packet.Length, 24))));
+                                        packet.Length,
+                                        // Whole packet (capped) so an unimplemented client request can be decoded from the log.
+                                        Convert.ToHexString(packet, 0, Math.Min(packet.Length, 256))));
                                 continue;
                             }
 

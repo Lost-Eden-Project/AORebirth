@@ -91,8 +91,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         break;
                     }
 
-                    player.Motor.ApplyAction(MovementAction.SwitchToSneak);
-                    AnnounceAction(player, CharacterActionType.StartedSneaking);
+                    if (player.Motor.ApplyAction(MovementAction.SwitchToSneak))
+                        AnnounceAction(player, CharacterActionType.StartedSneaking);
                     break;
 
                 case CharacterActionType.StopSneaking: //TODO: Wire in cooldown on sneak
