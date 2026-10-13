@@ -1915,7 +1915,7 @@ namespace ZoneEngine_New.Core.Entities
             CharacterStat._1hEdged,
             CharacterStat._1hBlunt,
             CharacterStat.MartialArts,
-            // CharacterStat.MetaType,
+            CharacterStat.MetaType,
             CharacterStat.TitleLevel,
             CharacterStat.GmLevel,
             CharacterStat.FireAC,
