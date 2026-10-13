@@ -54,6 +54,7 @@ namespace ZoneEngine_New.Core.Nanos
                     FunctionType.AreaCastNano => AreaCastNano(caster, target, spell, items, inventory, nowUtc),
                     FunctionType.TeamCastNano => TeamCastNano(caster, spell, items, inventory, nowUtc),
                     FunctionType.PlayfieldNano => PlayfieldNano(caster, spell, items, inventory, nowUtc),
+                    FunctionType.CastOnPets => CastOnPets(caster, spell, items, inventory, nowUtc),
                     _ => false
                 };
             }
@@ -230,6 +231,37 @@ namespace ZoneEngine_New.Core.Nanos
                     continue;
 
                 NanoRuntime.TryApplyImmediate(caster, candidate, nanoId, items, inventory, nowUtc);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// CastOnPets [nano id]: the child nano lands on each of the caster's living pets whose stats meet the child's
+        /// ToUse criteria (Channel Rage 227693's tiers 227683-227692: NPCFamily = 97, the Metaphysicist's demon). With no
+        /// such pet it does nothing, successfully.
+        /// </summary>
+        static bool CastOnPets(
+            Character caster,
+            ItemSpell spell,
+            IItemBuilder items,
+            IInventoryRepository inventory,
+            DateTime nowUtc)
+        {
+            if (!spell.TryReadInt(0, out int nanoId) || nanoId <= 0)
+                return false;
+            if (!TryResolveChild(items, nanoId, out NanoSpell? child) || child == null)
+                return false;
+
+            NpcCharacter[] pets = [.. caster.OwnedPets.All];
+            foreach (NpcCharacter pet in pets)
+            {
+                if (pet.IsDead || !ReferenceEquals(pet.Playfield, caster.Playfield))
+                    continue;
+                if (!child.MeetsActionRequirements(stat => pet.Stats.Get(stat), ActionType.ToUse, pet.ResolveRequirement))
+                    continue;
+
+                NanoRuntime.TryApplyImmediate(caster, pet, nanoId, items, inventory, nowUtc);
             }
 
             return true;

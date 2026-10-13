@@ -93,6 +93,7 @@ namespace ZoneEngine_New.Core.Inventory
                 case FunctionType.AreaCastNano:
                 case FunctionType.TeamCastNano:
                 case FunctionType.PlayfieldNano:
+                case FunctionType.CastOnPets:
                     return NanoCastFunctions.TryExecute(target, source, spell, items, inventoryRepository);
                 case FunctionType.Teleport:
                     return target is Player teleportPlayer && Teleport(teleportPlayer, spell);

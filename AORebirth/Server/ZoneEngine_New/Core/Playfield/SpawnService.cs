@@ -1317,7 +1317,11 @@ namespace ZoneEngine_New.Core.Playfield
                 // Return offered items before the snapshot so a logout mid-trade cannot eat them.
                 _trades.Cancel(player, "logged out");
                 if (player.Inventory.IsHydrated)
+                {
+                    // Buffs stop running while the character is offline: they are saved with the time they have left.
+                    player.SnapshotActiveNanosForLogout();
                     _flush.HardFlush(player);
+                }
 
                 _snapshot.Commit(player);
             }

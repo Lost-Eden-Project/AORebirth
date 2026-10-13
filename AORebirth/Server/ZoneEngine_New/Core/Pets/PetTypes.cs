@@ -25,19 +25,25 @@ namespace ZoneEngine_New.Core.Pets
         /// <summary>How many pets of the value's slot may be owned.</summary>
         public static int MaxOwned(int value) => Math.Max(0, value) % 1000;
 
-        /// <summary>The Pets stat (251) bit that records a pet of this type's slot is owned.</summary>
-        public static int Flag(int petType)
-        {
-            int slot = Slot(petType);
-            return slot < 31 ? 1 << slot : 0;
-        }
+        /// <summary>
+        /// The Pets stat (251) holds a 4-bit count of owned pets per slot: slot n in bits 4n..4n+3 (Gamecode.dll
+        /// 0x10007cbb reads <c>(Pets &gt;&gt; ((value / 1000 &amp; 7) * 4)) &amp; 0xF</c>). This is what one pet of
+        /// <paramref name="petType"/> adds.
+        /// </summary>
+        public static int CountUnit(int petType) => 1 << ((Slot(petType) & 7) * 4);
+
+        /// <summary>How many pets of <paramref name="value"/>'s slot the Pets stat records.</summary>
+        public static int OwnedInSlot(int petsStat, int value) => (petsStat >> ((Slot(value) & 7) * 4)) & 0xF;
 
         /// <summary>
-        /// Operator TestNumPets on the Pets stat: passes while the value's slot has room. The stat records only
-        /// whether a slot is taken, and players own one pet per slot, so an owned slot is full.
+        /// Operator TestNumPets on the Pets stat, as the client runs it: passes while the value's slot holds fewer
+        /// pets than the value allows; a negative value inverts the test.
         /// </summary>
         public static bool TestNumPets(int petsStat, int value)
-            => MaxOwned(value) > 0 && (petsStat & Flag(value)) == 0;
+        {
+            bool room = OwnedInSlot(petsStat, Math.Abs(value)) < MaxOwned(Math.Abs(value));
+            return value >= 0 ? room : !room;
+        }
     }
 
     /// <summary>PetCommand codes (Gamecode.dll 0x1005408d builds them from the /pet words).</summary>

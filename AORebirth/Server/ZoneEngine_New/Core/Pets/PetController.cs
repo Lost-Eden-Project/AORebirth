@@ -157,14 +157,14 @@ namespace ZoneEngine_New.Core.Pets
             return null;
         }
 
-        /// <summary>The Pets stat value for these pets: one bit per occupied slot.</summary>
+        /// <summary>The Pets stat value for these pets: a 4-bit count per slot (<see cref="PetTypes.CountUnit"/>).</summary>
         public int Flags()
         {
             int flags = 0;
             foreach (NpcCharacter pet in _pets)
             {
-                if (pet.Pet != null)
-                    flags |= PetTypes.Flag(pet.Pet.Type);
+                if (pet.Pet != null && PetTypes.OwnedInSlot(flags, pet.Pet.Type) < 0xF)
+                    flags += PetTypes.CountUnit(pet.Pet.Type);
             }
 
             return flags;

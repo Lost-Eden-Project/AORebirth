@@ -205,12 +205,9 @@ namespace ZoneEngine_New.Core.Inventory
             bool onTarget = false;
             foreach (ItemRequirement requirement in action.Requirements)
             {
-                // A link closes the selector's group (see TryEvaluatePostfix).
+                // A selector holds until the next selector (see TryEvaluatePostfix).
                 if (IsRequirementLinkOperator(requirement))
-                {
-                    onTarget = false;
                     continue;
-                }
                 if (IsSubjectSelector(requirement))
                 {
                     onTarget = (Operator)requirement.Operator == Operator.OnTarget && getTargetStat != null;
@@ -355,10 +352,9 @@ namespace ZoneEngine_New.Core.Inventory
                     continue;
                 }
 
-                // A selector covers every leaf up to the link that combines them, whatever stats they read:
-                // Health and Nano Recharger 291082 [OnTarget, NPCFamily = 0, WaitState = 2, And] (target sitting),
-                // Unicorn Laser Fence [OnUser, NPCFamily, Level < 215, And]. The link closes the group.
-                subject = null;
+                // A selector holds until the next selector; links do not reset it (Gamecode.dll 0x100065d8 case 0x12
+                // sets the subject and only another selector changes it). Instill With Malign Intent 116814:
+                // [..., OnTarget, Breed = 7, And, NPCFamily = 97, And] reads both from the target.
                 if (values.Count == 0)
                     return true;
                 bool right = values.Pop();

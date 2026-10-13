@@ -850,7 +850,7 @@ namespace AORebirth.Enums
 
         /// <summary>
         /// </summary>
-        Undefined = 53240,
+        CastOnPets = 53240,
 
         /// <summary>
         /// </summary>

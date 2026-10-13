@@ -1508,9 +1508,11 @@ namespace ZoneEngine_New.Core.Entities
                     breed,
                     bodyDevelopment,
                     Stats.GetOrZero(CharacterStat.HealDelta)),
-                PassiveRegenCalculator.ComputeHealthIntervalSeconds(
-                    Stats.GetOrZero(CharacterStat.Stamina),
-                    sitting),
+                IsRestingPet
+                    ? PetRestHealIntervalSeconds
+                    : PassiveRegenCalculator.ComputeHealthIntervalSeconds(
+                        Stats.GetOrZero(CharacterStat.Stamina),
+                        sitting),
                 CharacterStat.Health,
                 CharacterStat.MaxHealth);
 
@@ -1527,6 +1529,15 @@ namespace ZoneEngine_New.Core.Entities
                 CharacterStat.CurrentNano,
                 CharacterStat.MaxNanoEnergy);
         }
+
+        /// <summary>Seconds between health ticks for a pet that is not attacking.</summary>
+        const double PetRestHealIntervalSeconds = 1;
+
+        /// <summary>Attacking something (a fighting target) or being attacked (on someone's attacker list).</summary>
+        public bool IsInCombat => !IsDead && (FightingTarget.Instance != 0 || _attackers.Count > 0);
+
+        /// <summary>A pet heals every second while it has no fighting target, even if something is attacking it.</summary>
+        bool IsRestingPet => this is NpcCharacter { PetOwner: not null } && FightingTarget.Instance == 0;
 
         void TickOneRegen(
             ref double elapsed,
@@ -2501,15 +2512,27 @@ namespace ZoneEngine_New.Core.Entities
         /// Snapshots NCU for the write-behind flush, which runs off the tick thread and so must
         /// never walk the live buff list. Only players persist NCU.
         /// </summary>
-        void SnapshotActiveNanosForPersistence()
+        void SnapshotActiveNanosForPersistence() => SnapshotActiveNanosForPersistence(paused: false);
+
+        /// <summary>
+        /// Logging out: NCU is saved with each buff's remaining lifetime instead of its deadline, so buffs do not run
+        /// while the character is offline (<see cref="ActiveNanoRecord.ResolveExpiry"/>). Call before the final flush.
+        /// </summary>
+        public void SnapshotActiveNanosForLogout() => SnapshotActiveNanosForPersistence(paused: true);
+
+        void SnapshotActiveNanosForPersistence(bool paused)
         {
             if (this is not Player player)
                 return;
 
+            DateTime nowUtc = DateTime.UtcNow;
             var snapshot = new List<ActiveNanoRecord>(_buffs.Count);
             for (int i = 0; i < _buffs.Count; i++)
             {
                 Buff buff = _buffs[i];
+                if (paused && buff.IsExpired(nowUtc))
+                    continue;
+
                 snapshot.Add(
                     new ActiveNanoRecord
                     {
@@ -2517,7 +2540,9 @@ namespace ZoneEngine_New.Core.Entities
                         Strain = buff.NanoStrain,
                         NanoInstance = buff.NanoInstance,
                         DurationCentiseconds = buff.DurationCentiseconds,
-                        ExpiresAtUtcTicks = buff.ExpiresAtUtc.Ticks
+                        ExpiresAtUtcTicks = paused
+                            ? ActiveNanoRecord.Paused(buff.ExpiresAtUtc - nowUtc)
+                            : buff.ExpiresAtUtc.Ticks
                     });
             }
 

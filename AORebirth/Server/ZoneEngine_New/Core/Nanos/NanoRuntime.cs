@@ -943,7 +943,7 @@ namespace ZoneEngine_New.Core.Nanos
 
             string reqDetail = string.Empty;
             if (refusal == NanoCastRefusal.RequirementsNotMet && spell != null)
-                reqDetail = DescribeFailedRequirements(caster, spell);
+                reqDetail = DescribeFailedRequirements(caster, spell, ResolveTarget(caster, target));
 
             LogUtil.Debug(
                 DebugInfoDetail.Engine,
@@ -963,7 +963,8 @@ namespace ZoneEngine_New.Core.Nanos
                     detail != null ? " detail=" + detail : string.Empty));
         }
 
-        static string DescribeFailedRequirements(Character caster, NanoSpell spell)
+        /// <summary>Failing leaves, each read from the subject its selector picked (OnTarget: the target).</summary>
+        static string DescribeFailedRequirements(Character caster, NanoSpell spell, Character? recipient)
         {
             ItemAction? action = null;
             foreach (ItemAction candidate in spell.Actions)
@@ -979,25 +980,33 @@ namespace ZoneEngine_New.Core.Nanos
                 return " failedReqs=(no ToUse action)";
 
             var parts = new List<string>();
+            Character subject = caster;
             foreach (ItemRequirement requirement in action.Requirements)
             {
-                if (ItemTemplate.IsRequirementLinkOperator(requirement) || ItemTemplate.IsSubjectSelector(requirement))
+                if (ItemTemplate.IsRequirementLinkOperator(requirement))
                     continue;
+                if (ItemTemplate.IsSubjectSelector(requirement))
+                {
+                    subject = (Operator)requirement.Operator == Operator.OnTarget ? recipient ?? caster : caster;
+                    continue;
+                }
 
-                int have = caster.Stats.Get((CharacterStat)requirement.StatNumber);
-                if (ItemTemplate.EvaluateLeaf(requirement, stat => caster.Stats.Get(stat)))
+                Character reader = subject;
+                int have = reader.Stats.Get((CharacterStat)requirement.StatNumber);
+                if (ItemTemplate.EvaluateLeaf(requirement, stat => reader.Stats.Get(stat)))
                     continue;
 
                 parts.Add(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "stat={0}({1}) have={2} op={3} need={4} child={5}",
+                        "stat={0}({1}) have={2} op={3} need={4} child={5}{6}",
                         (CharacterStat)requirement.StatNumber,
                         requirement.StatNumber,
                         have,
                         requirement.Operator,
                         requirement.Value,
-                        requirement.ChildOperator));
+                        requirement.ChildOperator,
+                        ReferenceEquals(reader, caster) ? string.Empty : " onTarget"));
             }
 
             return parts.Count == 0

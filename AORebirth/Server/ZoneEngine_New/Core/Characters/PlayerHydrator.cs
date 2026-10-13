@@ -77,18 +77,19 @@ namespace ZoneEngine_New.Core.Characters
         }
 
         /// <summary>
-        /// Puts stored NCU back. Buffs whose deadline passed while the character was offline are
-        /// simply not restored, and the next flush drops their rows.
+        /// Puts stored NCU back. A buff saved at logout resumes with the time it had left; one saved with a deadline
+        /// (the character never logged out cleanly) keeps it, and is not restored once that has passed. The next flush
+        /// drops the rows of buffs that were not restored.
         /// </summary>
         void RestoreActiveNanos(Player player, CharacterHydrationResult hydration)
         {
             DateTime nowUtc = DateTime.UtcNow;
             foreach (ActiveNanoRecord record in hydration.ActiveNanos)
             {
-                if (record.NanoId <= 0)
+                if (record.NanoId <= 0 || record.ExpiresAtUtcTicks <= 0)
                     continue;
 
-                var expiresAtUtc = new DateTime(record.ExpiresAtUtcTicks, DateTimeKind.Utc);
+                DateTime expiresAtUtc = record.ResolveExpiry(nowUtc);
                 if (expiresAtUtc <= nowUtc)
                     continue;
 

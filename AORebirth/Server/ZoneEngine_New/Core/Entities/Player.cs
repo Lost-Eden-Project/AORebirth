@@ -349,21 +349,17 @@ namespace ZoneEngine_New.Core.Entities
 
         static bool InCombatWithPets(Character character)
         {
-            if (IsInCombat(character))
+            if (character.IsInCombat)
                 return true;
 
             foreach (NpcCharacter pet in character.OwnedPets.All)
             {
-                if (IsInCombat(pet))
+                if (pet.IsInCombat)
                     return true;
             }
 
             return false;
         }
-
-        /// <summary>Attacking something (a fighting target) or being attacked (on someone's attacker list).</summary>
-        static bool IsInCombat(Character character)
-            => !character.IsDead && (character.FightingTarget.Instance != 0 || character.Attackers.Count > 0);
 
         ItemTemplate[] _perkTemplates = [];
         PerkAction[] _perkActions = [];

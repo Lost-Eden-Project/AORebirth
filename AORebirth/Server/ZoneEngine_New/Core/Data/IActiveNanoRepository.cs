@@ -1,10 +1,18 @@
 namespace ZoneEngine_New.Core.Data
 {
+    using System;
     using System.Collections.Generic;
 
-    /// <summary>One persisted NCU entry. Expiry is stored absolute so a relog cannot refresh it.</summary>
+    /// <summary>
+    /// One persisted NCU entry. <see cref="ExpiresAtUtcTicks"/> is either a UTC deadline (a buff saved while its owner
+    /// was online, so a crash never refunds time) or, for a buff saved at logout, the lifetime it had left: buffs do
+    /// not run while their owner is offline. A deadline is never before 2000, and a buff never has more than its
+    /// 100-hour ceiling left, so the two cannot be mistaken for each other.
+    /// </summary>
     public sealed class ActiveNanoRecord
     {
+        static readonly long PausedLimitTicks = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
+
         public int NanoId { get; init; }
 
         public int Strain { get; init; }
@@ -14,6 +22,14 @@ namespace ZoneEngine_New.Core.Data
         public int DurationCentiseconds { get; init; }
 
         public long ExpiresAtUtcTicks { get; init; }
+
+        /// <summary>The stored value for a buff paused at logout with <paramref name="remaining"/> left.</summary>
+        public static long Paused(TimeSpan remaining) => Math.Clamp(remaining.Ticks, 1, PausedLimitTicks - 1);
+
+        /// <summary>When the buff runs out, counting a paused buff's remaining lifetime from <paramref name="nowUtc"/>.</summary>
+        public DateTime ResolveExpiry(DateTime nowUtc) => ExpiresAtUtcTicks < PausedLimitTicks
+            ? nowUtc + TimeSpan.FromTicks(ExpiresAtUtcTicks)
+            : new DateTime(ExpiresAtUtcTicks, DateTimeKind.Utc);
     }
 
     public interface IActiveNanoRepository
