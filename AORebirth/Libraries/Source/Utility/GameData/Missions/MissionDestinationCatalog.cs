@@ -107,6 +107,11 @@ namespace Utility.GameData.Missions
         public bool DestinationUniquenessWithinCohortRequired { get { return false; } }
         public bool AllowNearestTerminalQlFallback { get { return allowNearestTerminalQlFallback; } }
 
+        public bool HasTerminalPools(int terminalPlayfield)
+        {
+            return terminalPools.Keys.Any(key => key.TerminalPlayfield == terminalPlayfield);
+        }
+
         /// <summary>
         /// Loads the two runtime catalogs from the caller's selected GameData root.
         /// Captures, analysis artifacts and source manifests are not runtime dependencies.
@@ -132,6 +137,7 @@ namespace Utility.GameData.Missions
         /// <summary>
         /// Uses the terminal playfield's exact-QL pool when present, otherwise the union at that same QL.
         /// An explicit gameplay policy may reuse the nearest observed QL pool from the same terminal playfield.
+        /// For a terminal without recorded pools, that policy uses the nearest QL-wide observed pool instead.
         /// This does not establish observed eligibility at the requested QL.
         /// </summary>
         public bool TryGetDestinations(int terminalPlayfield, int expectedQl,
@@ -166,6 +172,23 @@ namespace Utility.GameData.Missions
                         continue;
                     nearestDistance = distance;
                     selectedPoolQl = pool.Key.ExpectedMissionQl;
+                    destinations = pool.Value;
+                }
+                if (selectedPoolQl > 0)
+                {
+                    usedQlFallback = true;
+                    return true;
+                }
+                // No pools were recorded for this terminal. Reuse the QL-wide observations
+                // provisionally; never invent origin observations or change the requested QL.
+                foreach (var pool in expectedMissionQls)
+                {
+                    long distance = Math.Abs((long)pool.Key - expectedQl);
+                    if (distance > nearestDistance
+                        || (distance == nearestDistance && pool.Key >= selectedPoolQl))
+                        continue;
+                    nearestDistance = distance;
+                    selectedPoolQl = pool.Key;
                     destinations = pool.Value;
                 }
                 if (selectedPoolQl > 0)

@@ -1,5 +1,16 @@
 # AORebirth Project State
 
+COMPILED, CLIENT VERIFICATION PENDING (2026-10-13, uncaptured-terminal destinations):
+Live terminal playfield 566 has no recorded origin pools, so the existing optional
+nearest same-origin QL policy cannot serve its unobserved QLs. Mike approved a
+nearest QL-wide fallback only for terminals without recorded pools. Exact-QL and
+captured-origin behavior retain priority; ties select the lower observed QL.
+The existing flag governs the extension. Requested QL, rewards, exact entrance
+data and persistence are unchanged. Selection is logged as NEAREST_QL_FALLBACK
+with cross-origin and cross-QL eligibility still unproven. Approved Windows core
+compilation passed. Client verification is pending; no automated suites or client
+launch were requested or run.
+
 COMPILED, CLIENT VERIFICATION PENDING (2026-10-12, vicinity chat internal address):
 ZoneEngine_New's existing ISCom chat link now prefers configured ISCommLocalIP,
 retaining ChatIP and loopback as its compatibility fallback. Shared configuration
