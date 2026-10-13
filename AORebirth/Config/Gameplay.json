@@ -6,6 +6,10 @@
     "killPercentPerLevelDifference": 2.5,
     "sideBonusPercent": 10
   },
+  "pvp": {
+    "damagePercent": 50,
+    "critChancePercent": 50
+  },
   "wander": {
     "radius": 50,
     "minPauseSeconds": 5,

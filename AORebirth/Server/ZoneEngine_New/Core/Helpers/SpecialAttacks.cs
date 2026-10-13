@@ -188,9 +188,10 @@ namespace ZoneEngine_New.Core.Helpers
 
             int healthBefore = target.Stats.GetOrZero(CharacterStat.Health);
             target.RollBuffBreaks(BuffBreakCause.Attack, attacker);
-            target.ApplyDamage(attacker, result.Damage, result.HitType);
+            int damage = attacker.ScaleOutgoingDamage(target, result.Damage);
+            target.ApplyDamage(attacker, damage, result.HitType);
             if (target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
-                AnnounceSpecialHit(attacker, target, special, slot, bullets, result.Damage);
+                AnnounceSpecialHit(attacker, target, special, slot, bullets, damage);
 
             // A special is a weapon hit too: offensive and defensive procs roll on it.
             Nanos.ProcRules.OnWeaponHit(attacker, target, specialItem ?? weapon.Item);

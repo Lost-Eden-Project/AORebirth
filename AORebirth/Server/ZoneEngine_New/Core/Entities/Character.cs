@@ -1665,13 +1665,14 @@ namespace ZoneEngine_New.Core.Entities
             // The hit is announced before the damage lands: a killing hit runs the target's death (stop fight,
             // death action) inside ApplyDamage, and a client that already saw the death drops the AttackInfo,
             // so its damage line never showed.
-            bool killingHit = result.Damage >= Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
+            int damage = ScaleOutgoingDamage(target, result.Damage);
+            bool killingHit = damage >= Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
             Cell?.Announce(
                 new AttackInfoMessage
                 {
                     Identity = Identity,
                     Target = target.Identity,
-                    Unknown1 = result.Damage,
+                    Unknown1 = damage,
                     Unknown2 = AttackInfoRules.ResolveAmmoCount(characterWeapon, weapon, IsPlayer),
                     Unknown3 = attackInfoSlot,
                     Unknown4 = killingHit ? 4 : 0,
@@ -1680,7 +1681,7 @@ namespace ZoneEngine_New.Core.Entities
                 });
             // Weapon/unarmed auto-attacks stay AttackInfo-only. HealthDamage is for Hit/nano/status.
 
-            target.ApplyDamage(this, result.Damage, result.HitType);
+            target.ApplyDamage(this, damage, result.HitType);
             if (weapon != null && !target.IsDead)
                 ApplyOnHitProcs(target, weapon);
             Nanos.ProcRules.OnWeaponHit(this, target, weapon);
@@ -1711,6 +1712,14 @@ namespace ZoneEngine_New.Core.Entities
                 items,
                 source: this);
         }
+
+        /// <summary>
+        /// Damage this character deals to <paramref name="target"/> after the PvP rules (Gameplay.json pvp.damagePercent:
+        /// a player hitting a player, itself included). Applied before the hit is announced, so the shown number is the
+        /// damage taken.
+        /// </summary>
+        public int ScaleOutgoingDamage(Character target, int damage)
+            => Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp.ScaleDamage(this, target, damage) ?? damage;
 
         /// <summary>
         /// Applies hit-point damage. Returns true when this hit killed the character.

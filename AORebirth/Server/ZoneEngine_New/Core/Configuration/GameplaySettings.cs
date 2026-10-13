@@ -35,6 +35,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>How district-spawned NPCs wander around their spawn point.</summary>
         public GameplayWander Wander { get; init; } = new();
 
+        /// <summary>Rules for a player fighting a player.</summary>
+        public GameplayPvp Pvp { get; init; } = new();
+
         public static string ResolvePath(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
@@ -92,7 +95,46 @@ namespace ZoneEngine_New.Core.Configuration
             if (!double.IsFinite(Wander.MinPauseSeconds) || !double.IsFinite(Wander.MaxPauseSeconds)
                 || Wander.MinPauseSeconds < 0 || Wander.MaxPauseSeconds < Wander.MinPauseSeconds)
                 throw new InvalidDataException(path + ": wander pause seconds must be non-negative with min <= max.");
+            if (Pvp == null || !double.IsFinite(Pvp.DamagePercent) || Pvp.DamagePercent < 0)
+                throw new InvalidDataException(path + ": pvp.damagePercent must be a finite, non-negative number.");
+            if (!double.IsFinite(Pvp.CritChancePercent) || Pvp.CritChancePercent < 0)
+                throw new InvalidDataException(path + ": pvp.critChancePercent must be a finite, non-negative number.");
         }
+    }
+
+    /// <summary>
+    /// The pvp section of Gameplay.json: a player's attack on a player, its own included (self damage counts). 100 leaves
+    /// a value as it is.
+    /// </summary>
+    public sealed class GameplayPvp
+    {
+        /// <summary>Percent of its rolled amount that a player's damage to a player deals.</summary>
+        public double DamagePercent { get; init; } = 100;
+
+        /// <summary>Percent of a player's critical chance (CriticalIncrease) that applies against a player.</summary>
+        public double CritChancePercent { get; init; } = 100;
+
+        static bool IsPvp(Entities.Character? source, Entities.Character target)
+            => source is Entities.Player && target is Entities.Player;
+
+        /// <summary>
+        /// <paramref name="damage"/> as <paramref name="source"/> deals it to <paramref name="target"/>: scaled in PvP,
+        /// rounded half up and never below 1 while there was any.
+        /// </summary>
+        public int ScaleDamage(Entities.Character? source, Entities.Character target, int damage)
+        {
+            if (damage <= 0 || DamagePercent == 100 || !IsPvp(source, target))
+                return damage;
+            if (DamagePercent == 0)
+                return 0;
+
+            double scaled = Math.Round(damage * DamagePercent / 100, MidpointRounding.AwayFromZero);
+            return (int)Math.Clamp(scaled, 1, int.MaxValue);
+        }
+
+        /// <summary>The percent chance to crit, <paramref name="critChance"/>, scaled in PvP.</summary>
+        public double ScaleCritChance(Entities.Character source, Entities.Character target, double critChance)
+            => IsPvp(source, target) ? critChance * CritChancePercent / 100 : critChance;
     }
 
     /// <summary>The wander section of Gameplay.json.</summary>

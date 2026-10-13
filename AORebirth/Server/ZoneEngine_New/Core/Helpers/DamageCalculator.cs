@@ -155,8 +155,11 @@ namespace ZoneEngine_New.Core.Helpers
 
             HitType hitType = HitType.Normal;
             bool isBurst = specialAttackStat == CharacterStat.Burst;
-            int critIncrease = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.CriticalIncrease));
-            if (canCrit && !isBurst && NextInt(0, 100) < critIncrease)
+            double critChance = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.CriticalIncrease));
+            // PvP rules (Gameplay.json pvp.critChancePercent) scale the chance against a player.
+            critChance = attacker.Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp
+                .ScaleCritChance(attacker, target, critChance) ?? critChance;
+            if (canCrit && !isBurst && NextInt(0, 100) < critChance)
             {
                 hitType = HitType.Critical;
                 minDamage = maxDamage + weaponCritBonus;

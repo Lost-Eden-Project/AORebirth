@@ -369,7 +369,7 @@ namespace ZoneEngine_New.Core.Inventory
                 }
 
                 int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
-                target.ApplyDamage(caster, -delta, HitType.Normal);
+                target.ApplyDamage(caster, caster.ScaleOutgoingDamage(target, -delta), HitType.Normal);
 
                 int after = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
                 int actual = before - after;
