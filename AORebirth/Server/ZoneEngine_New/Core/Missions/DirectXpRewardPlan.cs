@@ -50,7 +50,7 @@ public sealed class DirectXpRewardPlan
             ?? throw new InvalidOperationException("Quest XP requires the current GameData owner.");
         if (!data.TryGetXpLevel(level, out var current))
             throw new InvalidOperationException("Quest XP has no level data; reward remains pending.");
-        int amount = reward;
+        int amount = player.ApplySideXpBonus(reward);
         if (current.NextLevelXp > 0)
             amount = (int)Math.Min(amount, Math.Max(1L, (long)current.NextLevelXp * Character.QuestXpCapPercent / 100));
         int xp = checked(player.Stats.GetOrZero(CharacterStat.XP) + amount);

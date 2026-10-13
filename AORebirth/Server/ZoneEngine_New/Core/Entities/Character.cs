@@ -416,6 +416,7 @@ namespace ZoneEngine_New.Core.Entities
                     return;
             }
 
+            amount = ApplySideXpBonus(amount);
             int capPercent = source == XpSource.Kill ? KillXpCapPercent : QuestXpCapPercent;
             if (current.NextLevelXp > 0)
             {
@@ -902,6 +903,12 @@ namespace ZoneEngine_New.Core.Entities
                 }
             }
         }
+
+        double SideXpBonusPercent => Playfield?.GetService<GameplaySettings>()?.Xp.SideBonusPercent ?? 0;
+
+        /// <summary>Regular XP only; mission callers include this in their durable reward projection.</summary>
+        internal int ApplySideXpBonus(int amount)
+            => amount <= 0 ? 0 : (int)Math.Clamp(amount + amount * SideXpBonusPercent / 100, 0, int.MaxValue);
 
         /// <summary>Kill and alien XP scaled by the XPModifier percentage, before the per-grant cap.</summary>
         int ApplyXpModifier(int amount)
@@ -3394,7 +3401,8 @@ namespace ZoneEngine_New.Core.Entities
                     Level = ClampToByte(level),
                     TitleLevel = ClampToByte(Stats.GetOrOne(CharacterStat.TitleLevel)),
                     VisualProfession = (Profession)visualProfession,
-                    SideXp = 0,
+                    // Retail GUI.dll divides this field by 100 before formatting "%.02f%%".
+                    SideXp = IsPlayer ? checked((short)Math.Round(SideXpBonusPercent * 100, MidpointRounding.AwayFromZero)) : (short)0,
                     Health = health,
                     MaxHealth = maxHealth,
                     BreedHostility = 0,

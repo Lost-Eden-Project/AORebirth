@@ -29,7 +29,7 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Where /stuck sends a player.</summary>
         public GameplayLocation? StuckLocation { get; init; }
 
-        /// <summary>Kill XP rules.</summary>
+        /// <summary>XP rules.</summary>
         public GameplayXp Xp { get; init; } = new();
 
         /// <summary>How district-spawned NPCs wander around their spawn point.</summary>
@@ -82,6 +82,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": stuckLocation needs a positive playfield and finite x, y, z.");
             if (Xp == null || !double.IsFinite(Xp.KillPercentPerLevelDifference) || Xp.KillPercentPerLevelDifference < 0)
                 throw new InvalidDataException(path + ": xp.killPercentPerLevelDifference must be a finite, non-negative number.");
+            if (!double.IsFinite(Xp.SideBonusPercent) || Xp.SideBonusPercent < 0 || Xp.SideBonusPercent > short.MaxValue / 100d)
+                throw new InvalidDataException(path + ": xp.sideBonusPercent must fit the non-negative, hundredths-of-percent InfoPacket field.");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
@@ -109,6 +111,9 @@ namespace ZoneEngine_New.Core.Configuration
     /// <summary>The xp section of Gameplay.json.</summary>
     public sealed class GameplayXp
     {
+        /// <summary>Flat Side XP bonus for every player's regular kill and quest XP. 0 disables it.</summary>
+        public double SideBonusPercent { get; init; }
+
         /// <summary>
         /// Percent of the victim's KillAward added per level the victim is above the recipient (removed per level below).
         /// </summary>
