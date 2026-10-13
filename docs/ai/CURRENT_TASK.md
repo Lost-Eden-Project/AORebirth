@@ -1,14 +1,19 @@
 # Current Task
 
-CHATENGINE CONFIGURATION CLEANUP (2026-10-12).
+VICINITY CHAT INTERNAL CONNECTION REPAIR (2026-10-12).
 
-Mike authorized applying the reviewed ChatEngine XML cleanup to public master,
-the derived private Linux repository, his local installation and live configuration.
-Keep the eight active ChatEngine settings in a dedicated editable XML template.
-Reuse the existing AO_REBIRTH_CONFIG_PATH override and project content-copy rules.
-Preserve shared configuration required by LoginEngine, ZoneEngine_New and WebEngine,
-explicit caller overrides, local preferences, credentials and unrelated work.
+Mike authorized fixing the observed live vicinity-chat failure. The existing
+ZoneEngine_New ISCom link used the public ChatIP even when ChatEngine's internal
+listener used a different address. Prefer the existing ISCommLocalIP setting for
+that internal connection, preserving ChatIP and loopback as the prior fallback.
+Publish the same-host loopback setting in shared Config.xml and Config.example.xml.
 
-No runtime C#, gameplay, database, authentication or FTP-account changes are in scope.
-Validate XML, retained values and configuration wiring. No automated test suites,
-binary rebuild, service restart or AO client launch is requested.
+Preserve client ChatServerInfo advertisement, the dedicated eight-setting ChatEngine
+template, communication port, message routing and unrelated systems. Build public
+Windows source first, then reconcile that exact public source into the private Linux
+build and prepare its package. Deployment requires the documented package approval.
+Keep private deployment details private.
+
+Approved Windows core compilation, XML validation and the secret scan passed.
+Linux package and live connection verification are pending. Mike performs original-client
+acceptance. No automated test suites or AO client launch were requested.

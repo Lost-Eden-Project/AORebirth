@@ -50,7 +50,12 @@ namespace ZoneEngine_New.Core.Chat
             Config config = ConfigReadWrite.Instance.CurrentConfig
                 ?? throw new InvalidOperationException("Config is not loaded.");
 
-            string chatIp = string.IsNullOrWhiteSpace(config.ChatIP) ? "127.0.0.1" : config.ChatIP;
+            // ChatIP is advertised to clients; the internal link can use a different address.
+            string chatIp = config.ISCommLocalIP;
+            if (string.IsNullOrWhiteSpace(chatIp))
+            {
+                chatIp = string.IsNullOrWhiteSpace(config.ChatIP) ? "127.0.0.1" : config.ChatIP;
+            }
             int port = config.CommPort > 0 ? config.CommPort : 6996;
 
             IPAddress address = IPAddress.Parse(chatIp);

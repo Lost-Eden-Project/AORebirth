@@ -1,5 +1,13 @@
 # AORebirth Project State
 
+COMPILED, CLIENT VERIFICATION PENDING (2026-10-12, vicinity chat internal address):
+ZoneEngine_New's existing ISCom chat link now prefers configured ISCommLocalIP,
+retaining ChatIP and loopback as its compatibility fallback. Shared configuration
+templates provide a same-host loopback address. Client ChatServerInfo continues
+to advertise ChatIP; chat message mechanics and the dedicated ChatEngine template
+are unchanged. Approved Windows core compilation, XML validation and the secret
+scan passed. Linux package and original-client verification remain pending.
+
 PROVEN (2026-10-12, ChatEngine configuration ownership): ChatEngine uses a
 dedicated eight-setting ChatEngine.Config.xml through the existing configuration
 path override. Windows stages it separately because ChatEngine and LoginEngine

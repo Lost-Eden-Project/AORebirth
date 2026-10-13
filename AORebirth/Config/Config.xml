@@ -8,6 +8,8 @@
   <ZonePort>7501</ZonePort>
   <LoginPort>7500</LoginPort>
   <CommPort>6996</CommPort>
+  <!-- Internal ZoneEngine_New-to-ChatEngine connection; ChatIP remains the client address. -->
+  <ISCommLocalIP>127.0.0.1</ISCommLocalIP>
   <!-- Playfield simulation ticks per second (default 32) -->
   <PlayfieldTickRate>32</PlayfieldTickRate>
   <!-- Seconds a disconnected player stays visible (LinkDead) before despawn (default 60) -->
