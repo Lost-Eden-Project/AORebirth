@@ -43,7 +43,8 @@ if (-not [string]::IsNullOrEmpty($processPath)) {
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $engineDir = Join-Path $root "AORebirth\Built\Debug"
 $configPath = $env:AO_REBIRTH_CONFIG_PATH
-if ([string]::IsNullOrWhiteSpace($configPath)) {
+$useDefaultConfigPath = [string]::IsNullOrWhiteSpace($configPath)
+if ($useDefaultConfigPath) {
     $configPath = Join-Path $root "AORebirth\Config\Config.xml"
 }
 $configPath = [System.IO.Path]::GetFullPath($configPath)
@@ -341,11 +342,21 @@ foreach ($engine in $engines) {
     }
 
     $workingDirectory = Split-Path -Parent $exePath
-    if ($Visible) {
-        $process = Start-Process -FilePath $exePath -ArgumentList $arguments -WorkingDirectory $workingDirectory -WindowStyle $windowStyle -PassThru
+    $inheritedConfigPath = $env:AO_REBIRTH_CONFIG_PATH
+    try {
+        if ($useDefaultConfigPath -and $processName -eq "ChatEngine") {
+            $env:AO_REBIRTH_CONFIG_PATH = Join-Path $root "AORebirth\Config\ChatEngine.Config.xml"
+        }
+
+        if ($Visible) {
+            $process = Start-Process -FilePath $exePath -ArgumentList $arguments -WorkingDirectory $workingDirectory -WindowStyle $windowStyle -PassThru
+        }
+        else {
+            $process = Start-HiddenEngineProcess -ExePath $exePath -Arguments $arguments -WorkingDirectory $workingDirectory
+        }
     }
-    else {
-        $process = Start-HiddenEngineProcess -ExePath $exePath -Arguments $arguments -WorkingDirectory $workingDirectory
+    finally {
+        $env:AO_REBIRTH_CONFIG_PATH = $inheritedConfigPath
     }
 
     $metadata = [ordered]@{

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Config>
+  <ListenIP>0.0.0.0</ListenIP>
+  <ChatPort>7012</ChatPort>
+  <CommPort>6996</CommPort>
+  <LogChat>false</LogChat>
+  <Motd>www.ao-rebirth.com</Motd>
+  <SQLType>MySql</SQLType>
+  <MysqlConnection>Server=localhost;Database=cellao_codex_clean;Uid=cellaodbuser;Pwd=REPLACE_WITH_LOCAL_PASSWORD</MysqlConnection>
+  <Locale>en</Locale>
+</Config>

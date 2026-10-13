@@ -1,5 +1,12 @@
 # AORebirth Project State
 
+PROVEN (2026-10-12, ChatEngine configuration ownership): ChatEngine uses a
+dedicated eight-setting ChatEngine.Config.xml through the existing configuration
+path override. Windows stages it separately because ChatEngine and LoginEngine
+share an output directory. Other engines retain the shared Config.xml. Explicit
+caller configuration overrides remain authoritative. This is a configuration
+cleanup; runtime mechanics and credentials are unchanged.
+
 OBSERVED (2026-10-11, friendly-item two-client acceptance): Mike confirms healing
 and the corrected stim visual reach the selected recipient. The follow-up retains
 the accepted recipient in TemplateAction's recipient fields while preserving

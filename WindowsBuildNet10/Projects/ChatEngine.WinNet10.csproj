@@ -45,6 +45,7 @@
 
   <ItemGroup>
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Config/Config.xml" Link="Config.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Config/ChatEngine.Config.xml" Link="ChatEngine.Config.xml" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/GameData/Teams/LevelEligibility.json" Link="GameData/Teams/LevelEligibility.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
