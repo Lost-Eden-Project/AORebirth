@@ -66,6 +66,8 @@ namespace AORebirth.Core.GameData
 
         public const string PerkActionsFileName = "PerkActions.json";
 
+        public const string ResearchFileName = "Research.json";
+
         public const string ItemsFileName = "items.dat";
 
         public const string WallsFileName = "Walls.dat";

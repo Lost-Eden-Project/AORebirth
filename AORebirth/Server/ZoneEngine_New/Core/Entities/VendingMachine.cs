@@ -78,6 +78,40 @@ namespace ZoneEngine_New.Core.Entities
         public int SellModifier => Stats.GetOrZero(CharacterStat.SellModifier);
 
         /// <summary>
+        /// The stat a purchase here is paid in: the machine's stat 156 names it (a VP shop: 669, Victory Points), else
+        /// Cash. The client prices the shop the same way (Gamecode.dll 0x100998c1, read by N3Msg_TradeAddItem for its
+        /// "N extra VP is needed" check). Stat 156 is RunSpeed on a character; on a vending machine it is the currency.
+        /// </summary>
+        /// <summary>Stat 346, TradeLimit: the most this shop pays for one item.</summary>
+        const CharacterStat TradeLimitStat = (CharacterStat)346;
+
+        /// <summary>The client's default TradeLimit for a vending machine (Gamecode.dll 0x10099a06).</summary>
+        const int DefaultTradeLimit = 10_000_000;
+
+        /// <summary>
+        /// The most this shop pays for one item; the client refuses to sell it anything worth more (Gamecode.dll
+        /// 0x1006701d).
+        /// </summary>
+        public int TradeLimit => Stats.TryGetValue(TradeLimitStat, out int limit) && !StatCollection.IsUnset(limit)
+            ? limit
+            : DefaultTradeLimit;
+
+        /// <summary>
+        /// Whether the shop buys items. Only a credit shop does: the client refuses every item dropped on a shop priced
+        /// in any other currency (Gamecode.dll 0x1006701d: not a Cash shop, no sale).
+        /// </summary>
+        public bool BuysItems => CurrencyStat == CharacterStat.Cash;
+
+        public CharacterStat CurrencyStat
+        {
+            get
+            {
+                int stat = Stats.GetOrZero(CharacterStat.RunSpeed);
+                return stat > 0 && !StatCollection.IsUnset(stat) ? (CharacterStat)stat : CharacterStat.Cash;
+            }
+        }
+
+        /// <summary>
         /// The client binds a shop pane to the machine dynel it was told about in
         /// <see cref="VendingMachineFullUpdateMessage"/>, so shop and trade frames are always keyed to
         /// this machine even when an NPC owns it. The NPC is only the Use entry point.

@@ -68,6 +68,7 @@ namespace ZoneEngine_New.Core.Characters
             RestoreActiveNanos(player, hydration);
 
             player.LoadTrainedPerks(hydration.TrainedPerkIds);
+            player.LoadResearch(hydration.Research);
 
             DateTime nowUtc = DateTime.UtcNow;
             foreach (SkillLockRecord record in hydration.SkillLocks)

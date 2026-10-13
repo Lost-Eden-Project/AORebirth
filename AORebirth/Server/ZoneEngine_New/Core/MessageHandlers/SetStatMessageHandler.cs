@@ -11,8 +11,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Network;
 
     /// <summary>
-    /// Client agg/def slider. Writes only <see cref="CharacterStat.AggDef"/>,
-    /// clamped to <see cref="NanoDelayCalculator.AggDefMin"/>..<see cref="NanoDelayCalculator.AggDefMax"/>.
+    /// Client stat requests. Writes only <see cref="CharacterStat.AggDef"/> (the agg/def slider, clamped to
+    /// <see cref="NanoDelayCalculator.AggDefMin"/>..<see cref="NanoDelayCalculator.AggDefMax"/>) and the personal
+    /// research slider and goal (<see cref="CharacterStat.PersonalResearchLevel"/>, <see cref="CharacterStat.PersonalResearchGoal"/>),
+    /// which the player validates.
     /// </summary>
     public sealed class SetStatMessageHandler : IMessageHandler<SetStatMessage>
     {
@@ -33,8 +35,22 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
             Player? player = session.Player;
             if (player == null || !ReferenceEquals(player.Session, session) || player.IsPersistenceQuarantined
-                || message.Identity != player.Identity || message.Stat != CharacterStat.AggDef)
+                || message.Identity != player.Identity)
                 return;
+
+            switch (message.Stat)
+            {
+                case CharacterStat.PersonalResearchLevel:
+                    player.SetPersonalResearchShare(message.Value);
+                    return;
+                case CharacterStat.PersonalResearchGoal:
+                    player.TrySelectPersonalResearch(message.Value);
+                    return;
+                case CharacterStat.AggDef:
+                    break;
+                default:
+                    return;
+            }
 
             int clamped = Math.Clamp(message.Value, NanoDelayCalculator.AggDefMin, NanoDelayCalculator.AggDefMax);
             int before = player.Stats.GetOrZero(CharacterStat.AggDef, StatDetail.Base);

@@ -76,7 +76,8 @@ namespace AORebirth.Database.Domain.Characters
         {
             if (mutation == null) throw new ArgumentNullException(nameof(mutation));
             if (mutation.Characters.Count < 1 || mutation.Characters.Count > 2
-                || mutation.Characters.Any(c => c.CharacterId <= 0 || c.Cash < 0)
+                || mutation.Characters.Any(c => c.CharacterId <= 0 || c.Cash < 0
+                    || c.Currencies.Any(s => s.StatId == (int)CharacterStat.Cash || s.StatValue < 0))
                 || mutation.Characters.Select(c => c.CharacterId).Distinct().Count() != mutation.Characters.Count)
                 throw new ArgumentException("One or two distinct positive character ids and nonnegative cash are required.", nameof(mutation));
             Transaction((c, t) =>
@@ -86,7 +87,9 @@ namespace AORebirth.Database.Domain.Characters
                 foreach (var character in mutation.Characters.OrderBy(x => x.CharacterId))
                 {
                     WriteUploadedNanos(c, t, character.CharacterId, character.UploadedNanoIds);
-                    WriteStats(c, t, character.CharacterId, new[] { new CharacterStatData { StatId = (int)CharacterStat.Cash, StatValue = character.Cash } });
+                    WriteStats(c, t, character.CharacterId,
+                        new[] { new CharacterStatData { StatId = (int)CharacterStat.Cash, StatValue = character.Cash } }
+                            .Concat(character.Currencies).ToArray());
                 }
                 return 0;
             });

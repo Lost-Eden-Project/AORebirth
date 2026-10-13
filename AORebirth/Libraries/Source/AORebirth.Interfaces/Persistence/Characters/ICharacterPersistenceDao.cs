@@ -28,6 +28,10 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<PersistedPerkLockData> LoadPerkLocks(int characterId);
         /// <summary>Replaces the character's perk locks in one transaction.</summary>
         void SavePerkLocks(int characterId, IList<PersistedPerkLockData> perkLocks);
+        /// <summary>Personal research tiers in progress (characterresearch).</summary>
+        IList<PersistedResearchData> LoadResearch(int characterId);
+        /// <summary>Replaces the character's research progress in one transaction.</summary>
+        void SaveResearch(int characterId, IList<PersistedResearchData> research);
         int LeaseItemInstanceIds(int count);
         void SaveLocation(CharacterStateData character, int online);
         void SaveSnapshot(CharacterStateData character, int online, IList<CharacterStatData> stats);

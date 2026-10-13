@@ -202,6 +202,30 @@ namespace AORebirth.Database.Domain.Characters
             });
         }
 
+        public IList<PersistedResearchData> LoadResearch(int characterId)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            return Query("SELECT ResearchId,RemainingXp FROM characterresearch WHERE CharacterId=@Id ORDER BY ResearchId",
+                r => new PersistedResearchData { ResearchId = r.GetInt32(0), RemainingXp = r.GetInt32(1) }, "@Id", characterId);
+        }
+
+        public void SaveResearch(int characterId, IList<PersistedResearchData> research)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (research == null) throw new ArgumentNullException(nameof(research));
+            if (research.Any(r => r.ResearchId <= 0 || r.RemainingXp <= 0)
+                || research.Select(r => r.ResearchId).Distinct().Count() != research.Count)
+                throw new ArgumentException("Invalid or duplicate research progress.", nameof(research));
+            Transaction((c, t) =>
+            {
+                Execute(c, t, "DELETE FROM characterresearch WHERE CharacterId=@Id", "@Id", characterId);
+                foreach (var row in research)
+                    Execute(c, t, "INSERT INTO characterresearch (CharacterId,ResearchId,RemainingXp) VALUES (@Id,@Research,@Remaining)",
+                        "@Id", characterId, "@Research", row.ResearchId, "@Remaining", row.RemainingXp);
+                return 0;
+            });
+        }
+
         public void SaveLocation(CharacterStateData character, int online)
         {
             ValidateCharacter(character);

@@ -45,6 +45,7 @@ namespace ZoneEngine_New.Core.Entities
         private readonly bool _ownerWoreRobe;
 
         private readonly IGameData _gameData;
+        private readonly double _collisionRadius;
         private bool _cashClaimed;
 
         public Corpse(Identity identity, Character dead, IGameData gameData)
@@ -56,6 +57,7 @@ namespace ZoneEngine_New.Core.Entities
             _gameData = gameData;
             _ownerIsPlayer = dead.IsPlayer;
             _ownerWoreRobe = dead.WearsRobeShape;
+            _collisionRadius = dead.GetCollisionRadius();
             Owner = dead.Identity;
             Name = string.IsNullOrEmpty(dead.Name)
                 ? "Remains"
@@ -75,6 +77,13 @@ namespace ZoneEngine_New.Core.Entities
             CopySourceStats(dead);
             OwnerTextures = dead.BuildWireTextures();
         }
+
+        /// <summary>
+        /// The body radius of the character that died. The client's use range (Gamecode.dll 0x10059fc7) is 5 m between the
+        /// two bounding spheres (center distance minus both radii), and the corpse keeps its body's size. With a radius
+        /// of 0 the server measured a corpse farther away than the client did, and closed loot the client could still open.
+        /// </summary>
+        public override double GetCollisionRadius() => _collisionRadius;
 
         public Identity LootWinner { get; set; } = Identity.None;
 

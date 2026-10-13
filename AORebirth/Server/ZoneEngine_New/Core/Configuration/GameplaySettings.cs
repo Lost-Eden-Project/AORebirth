@@ -87,6 +87,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.killPercentPerLevelDifference must be a finite, non-negative number.");
             if (!double.IsFinite(Xp.SideBonusPercent) || Xp.SideBonusPercent < 0 || Xp.SideBonusPercent > short.MaxValue / 100d)
                 throw new InvalidDataException(path + ": xp.sideBonusPercent must fit the non-negative, hundredths-of-percent InfoPacket field.");
+            if (Xp.Caps == null || !Xp.Caps.IsValid)
+                throw new InvalidDataException(path + ": xp.caps killXp, quest and research must be finite, non-negative percents.");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
@@ -160,6 +162,38 @@ namespace ZoneEngine_New.Core.Configuration
         /// Percent of the victim's KillAward added per level the victim is above the recipient (removed per level below).
         /// </summary>
         public double KillPercentPerLevelDifference { get; init; } = 2.5;
+
+        /// <summary>Per-grant caps, in percent of the current level's XP bar.</summary>
+        public GameplayXpCaps Caps { get; init; } = new();
+    }
+
+    /// <summary>
+    /// The xp.caps section of Gameplay.json: the most one grant may give, in percent of the current level's XP bar
+    /// (NextLevelXp; the alien level's bar for alien XP), never below 1.
+    /// </summary>
+    public sealed class GameplayXpCaps
+    {
+        public static GameplayXpCaps Default { get; } = new();
+
+        /// <summary>Kill XP, and alien XP.</summary>
+        public double KillXp { get; init; } = 10;
+
+        /// <summary>Quest XP rewards.</summary>
+        public double Quest { get; init; } = 20;
+
+        /// <summary>
+        /// The personal research share of one grant, in percent of the XP the selected research tier needs in all (not of
+        /// the level bar). Taken before the XP caps; the rest of the share stays XP.
+        /// </summary>
+        public double Research { get; init; } = 10;
+
+        internal bool IsValid => IsPercent(KillXp) && IsPercent(Quest) && IsPercent(Research);
+
+        /// <summary><paramref name="percent"/> of <paramref name="levelBar"/>, rounded down, at least 1.</summary>
+        public static long Of(double percent, long levelBar)
+            => (long)Math.Clamp(Math.Floor(levelBar * percent / 100), 1, int.MaxValue);
+
+        static bool IsPercent(double value) => double.IsFinite(value) && value >= 0;
     }
 
     /// <summary>A playfield and position in Gameplay.json.</summary>

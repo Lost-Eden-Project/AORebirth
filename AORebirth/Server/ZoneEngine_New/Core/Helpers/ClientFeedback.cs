@@ -74,6 +74,16 @@ namespace ZoneEngine_New.Core.Helpers
         /// </summary>
         public const int AllTeamMembersCanLootRemains = 0x03940D94;
 
+        /// <summary>
+        /// "%u of your XP were allocated to your personal research." (category 110, 0x004DA1E0). Live sends it on a kill
+        /// whose XP went to research, with FormatFeedback Unknown1 <see cref="ResearchAllocatedChannel"/>, before the
+        /// PerkUpdate (capture 2026-10-13 22:48:10).
+        /// </summary>
+        public const int XpAllocatedToResearch = 5087712;
+
+        /// <summary>FormatFeedback Unknown1 live uses for <see cref="XpAllocatedToResearch"/>.</summary>
+        public const int ResearchAllocatedChannel = 0x4200001C;
+
         /// <summary>"evaded" (category 110), the verb live puts in <see cref="TargetVerbYourAction"/>.</summary>
         public const int Evaded = 114064052;
 
@@ -98,6 +108,10 @@ namespace ZoneEngine_New.Core.Helpers
         /// 'R' + base-85 category + base-85 id for a <see cref="TextReference"/>, or 's' + (length + 1) + text.
         /// </summary>
         public static void SendFormatted(Character character, int messageId, params object[] args)
+            => SendFormattedWithUnknown1(character, 0, messageId, args);
+
+        /// <summary><see cref="SendFormatted"/> with the FormatFeedback Unknown1 live uses for that message.</summary>
+        public static void SendFormattedWithUnknown1(Character character, int unknown1, int messageId, params object[] args)
         {
             if (character is not Player player || player.Session == null)
                 return;
@@ -124,7 +138,7 @@ namespace ZoneEngine_New.Core.Helpers
             {
                 Identity = player.Identity,
                 Unknown = 1,
-                Unknown1 = 0,
+                Unknown1 = unknown1,
                 Unknown2 = 0,
                 FormattedMessage = text.ToString()
             });

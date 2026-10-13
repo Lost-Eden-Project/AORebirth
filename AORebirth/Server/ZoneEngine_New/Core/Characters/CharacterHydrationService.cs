@@ -19,6 +19,7 @@ namespace ZoneEngine_New.Core.Characters
         private readonly ISkillLockRepository _skillLocks;
         private readonly ITrainedPerkRepository? _trainedPerks;
         private readonly IPerkLockRepository? _perkLocks;
+        private readonly IResearchRepository? _research;
         private readonly IZoneLogger _logger;
 
         public CharacterHydrationService(
@@ -30,7 +31,8 @@ namespace ZoneEngine_New.Core.Characters
             ISkillLockRepository skillLocks,
             IZoneLogger logger,
             ITrainedPerkRepository? trainedPerks = null,
-            IPerkLockRepository? perkLocks = null)
+            IPerkLockRepository? perkLocks = null,
+            IResearchRepository? research = null)
         {
             ArgumentNullException.ThrowIfNull(skillLocks);
             ArgumentNullException.ThrowIfNull(characters);
@@ -48,6 +50,7 @@ namespace ZoneEngine_New.Core.Characters
             _skillLocks = skillLocks;
             _trainedPerks = trainedPerks;
             _perkLocks = perkLocks;
+            _research = research;
             _logger = logger;
         }
 
@@ -69,7 +72,8 @@ namespace ZoneEngine_New.Core.Characters
                 ActiveNanos = _activeNanos.GetForCharacter(characterId),
                 SkillLocks = _skillLocks.GetForCharacter(characterId),
                 TrainedPerkIds = _trainedPerks?.GetForCharacter(characterId) ?? [],
-                PerkLocks = _perkLocks?.GetForCharacter(characterId) ?? []
+                PerkLocks = _perkLocks?.GetForCharacter(characterId) ?? [],
+                Research = _research?.GetForCharacter(characterId) ?? []
             };
 
             CharacterHydrationValidationResult validation = CharacterHydrationValidator.Validate(result);

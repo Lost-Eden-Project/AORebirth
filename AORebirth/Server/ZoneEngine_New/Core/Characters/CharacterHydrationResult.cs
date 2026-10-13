@@ -26,6 +26,9 @@ namespace ZoneEngine_New.Core.Characters
         /// <summary>Stored LockPerk cooldowns (StatId = perk id). Expired entries are dropped on apply.</summary>
         public IReadOnlyList<SkillLockRecord> PerkLocks { get; init; } = [];
 
+        /// <summary>Personal research tiers in progress from characterresearch.</summary>
+        public IReadOnlyList<ResearchProgressRecord> Research { get; init; } = [];
+
         public bool IsSpawnReady => CharacterHydrationValidator.Validate(this).IsValid;
     }
 }

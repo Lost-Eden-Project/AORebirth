@@ -24,6 +24,7 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly ICharacterCoalesceCommit _persist;
         private readonly ITrainedPerkRepository? _trainedPerks;
         private readonly IPerkLockRepository? _perkLocks;
+        private readonly IResearchRepository? _research;
         private readonly IZoneLogger _logger;
         private readonly object _scheduleGate = new();
         private readonly Dictionary<int, long> _dueAtMs = new();
@@ -36,7 +37,8 @@ namespace ZoneEngine_New.Core.Inventory
             ICharacterCoalesceCommit persist,
             IZoneLogger logger,
             ITrainedPerkRepository? trainedPerks = null,
-            IPerkLockRepository? perkLocks = null)
+            IPerkLockRepository? perkLocks = null,
+            IResearchRepository? research = null)
         {
             ArgumentNullException.ThrowIfNull(playfieldManager);
             ArgumentNullException.ThrowIfNull(persist);
@@ -46,6 +48,7 @@ namespace ZoneEngine_New.Core.Inventory
             _persist = persist;
             _trainedPerks = trainedPerks;
             _perkLocks = perkLocks;
+            _research = research;
             _logger = logger;
 
             _writer = new Thread(WriterLoop)
@@ -211,8 +214,9 @@ namespace ZoneEngine_New.Core.Inventory
                 List<SkillLockRecord>? skillLocks = player.SkillLocks.TakeDirty(DateTime.UtcNow);
                 int[]? trainedPerks = _trainedPerks == null ? null : player.TrainedPerks.TakeDirty();
                 List<SkillLockRecord>? perkLocks = _perkLocks == null ? null : player.PerkLocks.TakeDirty(DateTime.UtcNow);
+                ResearchProgressRecord[]? research = _research == null ? null : player.Research.TakeDirty();
                 if (inventory == null && nanos.Length == 0 && activeNanos == null && skillLocks == null && trainedPerks == null
-                    && perkLocks == null)
+                    && perkLocks == null && research == null)
                     return;
 
                 try
@@ -243,6 +247,7 @@ namespace ZoneEngine_New.Core.Inventory
                     // Not attempted: the perk sets stay dirty for the next flush.
                     player.TrainedPerks.RestoreDirty(trainedPerks);
                     player.PerkLocks.RestoreDirty(perkLocks);
+                    player.Research.RestoreDirty(research);
                     _logger.Error(
                         exception,
                         string.Format(
@@ -255,22 +260,31 @@ namespace ZoneEngine_New.Core.Inventory
                 // The coalesced transaction is committed. The perk sets are independent full replacements, so a
                 // failed or uncertain write is safe to repeat: it only leaves that set dirty for a retry and never
                 // hands the already committed inventory back to the queue.
-                SaveReplacementSet(player, trainedPerks, perks => _trainedPerks!.Save(player.Identity.Instance, perks),
+                bool perksSaved = SaveReplacementSet(player, trainedPerks,
+                    perks => _trainedPerks!.Save(player.Identity.Instance, perks),
                     () => player.TrainedPerks.RestoreDirty(trainedPerks), "trained perks");
                 SaveReplacementSet(player, perkLocks, locks => _perkLocks!.Save(player.Identity.Instance, locks),
                     () => player.PerkLocks.RestoreDirty(perkLocks), "perk locks");
+                // A finished research tier leaves its progress row only once it is a stored trained perk: never write
+                // the research set ahead of a trained-perk set that failed, or the tier would be lost on a restart.
+                if (perksSaved)
+                    SaveReplacementSet(player, research, rows => _research!.Save(player.Identity.Instance, rows),
+                        () => player.Research.RestoreDirty(research), "research");
+                else
+                    player.Research.RestoreDirty(research);
             }
         }
 
-        void SaveReplacementSet<T>(Player player, T? snapshot, Action<T> save, Action restoreDirty, string what)
+        bool SaveReplacementSet<T>(Player player, T? snapshot, Action<T> save, Action restoreDirty, string what)
             where T : class
         {
             if (snapshot == null)
-                return;
+                return true;
 
             try
             {
                 save(snapshot);
+                return true;
             }
             catch (Exception exception)
             {
@@ -283,12 +297,14 @@ namespace ZoneEngine_New.Core.Inventory
                         what,
                         player.Identity.Instance));
                 NotifyDirty(player);
+                return false;
             }
         }
 
         static bool HasDirtyState(Player player)
             => player.Inventory.HasDirtyEntries || player.HasDirtyUploadedNanos || player.HasDirtyActiveNanos
-                || player.SkillLocks.IsDirty || player.TrainedPerks.IsDirty || player.PerkLocks.IsDirty;
+                || player.SkillLocks.IsDirty || player.TrainedPerks.IsDirty || player.PerkLocks.IsDirty
+                || player.Research.IsDirty;
 
         public void Dispose()
         {

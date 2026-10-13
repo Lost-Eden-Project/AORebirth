@@ -718,7 +718,8 @@ namespace ZoneEngine_New.Core.Trade
         sealed record Delivery(Item Item, Player Receiver, Container Page, int Slot, Item? MergeTarget = null, int MergeSlot = 0);
 
         void PersistPlan(Player first, int firstCash, Player? second, int secondCash,
-            List<Delivery> deliveries, IReadOnlyList<Item> retired, Identity graveyard)
+            List<Delivery> deliveries, IReadOnlyList<Item> retired, Identity graveyard,
+            CharacterStat firstCurrency = CharacterStat.Cash, int firstCurrencyValue = 0)
         {
             var players = second == null ? new[] { first } : new[] { first, second };
             var pending = players.Select(p => p.Inventory.TakeDirty()).ToArray();
@@ -774,7 +775,12 @@ namespace ZoneEngine_New.Core.Trade
                     updates.Remove(item.InstanceId);
                     if (item.IsPersisted) Place(item, graveyard, item.InstanceId);
                 }
-                var characters = new List<TradeCharacterWrite> { new(first.Identity.Instance, firstCash, nanos[0]) };
+                var characters = new List<TradeCharacterWrite>
+                {
+                    firstCurrency != CharacterStat.Cash
+                        ? new(first.Identity.Instance, firstCash, nanos[0], (int)firstCurrency, firstCurrencyValue)
+                        : new(first.Identity.Instance, firstCash, nanos[0])
+                };
                 if (second != null) characters.Add(new(second.Identity.Instance, secondCash, nanos[1]));
                 _persistence.Persist(new TradePersistenceBatch(inserts.Values.ToArray(), updates.Values.ToArray(), characters));
                 foreach (var flush in pending) flush?.MarkNewlyPersisted();
@@ -858,6 +864,12 @@ namespace ZoneEngine_New.Core.Trade
             TradeOffer offer = session.InitiatorOffer;
             int skillSteps = TradeRules.PricingSkillSteps(player, machine.PricingSkill);
 
+            // Purchases are paid in the shop's currency (a VP shop: Victory Points); what the shop buys from the player
+            // is paid in credits either way. The pricing skill (Computer Literacy) only discounts credit prices.
+            CharacterStat currency = machine.CurrencyStat;
+            bool payInCash = currency == CharacterStat.Cash;
+            int buySkillSteps = payInCash ? skillSteps : 0;
+
             // Price the purchase off the live stock list: a slot may have been re-rolled since the
             // client picked it, and the shopper must pay for what they will actually receive.
             var purchases = new List<Purchase>(session.ShopPicks.Count);
@@ -870,9 +882,17 @@ namespace ZoneEngine_New.Core.Trade
                 int price = TradeRules.BuyPrice(
                     TradeRules.ItemValue(_catalog, stock.LowId, stock.HighId, stock.Quality),
                     machine.SellModifier,
-                    skillSteps);
+                    buySkillSteps);
                 purchases.Add(new Purchase(stock, price));
                 buyTotal += price;
+            }
+
+            // The client's own sell gates (Gamecode.dll 0x1006701d), enforced here so a modified client cannot get
+            // around them: only a credit shop buys, never a NoDrop item, and never one worth more than its TradeLimit.
+            if (offer.Count > 0 && !machine.BuysItems)
+            {
+                Tell(player, "This shop does not buy items.");
+                return;
             }
 
             long sellTotal = 0;
@@ -884,16 +904,28 @@ namespace ZoneEngine_New.Core.Trade
                     return;
                 }
 
-                sellTotal += TradeRules.SellPrice(
+                int sellPrice = TradeRules.SellPrice(
                     TradeRules.StackValue(item, TradeRules.ItemValue(_catalog, item.LowId, item.HighId, item.Quality)),
                     machine.BuyModifier,
                     skillSteps);
+                if (sellPrice > machine.TradeLimit)
+                {
+                    Tell(player, "This shop will not pay that much for an item.");
+                    return;
+                }
+
+                sellTotal += sellPrice;
             }
 
-            long finalCash = (long)player.Stats.GetOrZero(CharacterStat.Cash) - buyTotal + sellTotal;
-            if (finalCash < 0)
+            long finalCash = (long)player.Stats.GetOrZero(CharacterStat.Cash) + sellTotal - (payInCash ? buyTotal : 0);
+            long finalCurrency = payInCash ? 0 : (long)player.Stats.GetOrZero(currency) - buyTotal;
+            if (finalCash < 0 || finalCurrency < 0)
             {
-                ClientFeedback.Send(player, "Feedback_NotEnoughCredits");
+                if (payInCash)
+                    ClientFeedback.Send(player, "Feedback_NotEnoughCredits");
+                else
+                    Tell(player, string.Format(CultureInfo.InvariantCulture,
+                        "You can not afford this. {0} extra {1} is needed.", -finalCurrency, currency));
                 return;
             }
 
@@ -945,10 +977,13 @@ namespace ZoneEngine_New.Core.Trade
                 {
                     var deliveries = new List<Delivery>();
                     PlanDeliveries(bought, player, deliveries);
-                    PersistPlan(player, checked((int)finalCash), null, 0, deliveries, offer.Items.Values.ToArray(), machine.Identity);
+                    PersistPlan(player, checked((int)finalCash), null, 0, deliveries, offer.Items.Values.ToArray(), machine.Identity,
+                        currency, payInCash ? 0 : checked((int)finalCurrency));
                     durable = true;
                     offer.DrainAll();
                     ApplyDeliveries(deliveries);
+                    if (!payInCash)
+                        player.Stats.Set(currency, (int)finalCurrency, StatDetail.Base, dirty: true);
                     SetCash(player, finalCash);
                     foreach (Delivery delivery in deliveries) SendDelivery(delivery);
                 });
@@ -968,13 +1003,14 @@ namespace ZoneEngine_New.Core.Trade
             _logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "Shop trade completed player={0} machine={1} bought={2} sold={3} charged={4} sellTotal={5}",
+                    "Shop trade completed player={0} machine={1} bought={2} sold={3} charged={4} {6} sellTotal={5}",
                     player.Identity.Instance,
                     shopIdentity.Instance,
                     minted.Count,
                     soldCount,
                     buyTotal,
-                    sellTotal));
+                    sellTotal,
+                    currency));
         }
 
         /// <summary>
@@ -1422,8 +1458,10 @@ namespace ZoneEngine_New.Core.Trade
             session.Committing = true;
 
             // Live player-trade decline sends only the Decline frame; the client puts its own offered
-            // items back. Granting them again here showed a client-side duplicate.
-            bool clientRestores = session.Kind == TradeKind.Player;
+            // items back. Granting them again here showed a client-side duplicate. A shop window closes
+            // with the same Decline frame and the client restores its offer the same way (2026-10-13: a
+            // declined shop trade showed the offered item twice).
+            bool clientRestores = session.Kind is TradeKind.Player or TradeKind.Shop;
 
             ReturnOffer(session.Initiator, session.InitiatorOffer, clientRestores);
             Unregister(session.Initiator);

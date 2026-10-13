@@ -353,8 +353,16 @@ namespace ZoneEngine_New.Core.Inventory
             return result;
         }
 
+        /// <summary>
+        /// QL blend of two values, rounded to even as before and clamped to Int32. Done in double: `high - low` in int
+        /// wraps for far-apart values (a stat near the Int32 limit on one end), and the blend then overflowed the cast,
+        /// throwing out of corpse loot creation (2026-10-13: Stim Fiend loot left the NPC dead and never swapped).
+        /// </summary>
         private static int LerpInt(int low, int high, float factor)
-            => Convert.ToInt32(low + (factor * (high - low)));
+        {
+            double value = Math.Round(low + (factor * ((double)high - low)));
+            return (int)Math.Clamp(value, int.MinValue, int.MaxValue);
+        }
 
         private static void ApplyStatsBlob(ItemTemplate definition, byte[]? statsBlob)
         {

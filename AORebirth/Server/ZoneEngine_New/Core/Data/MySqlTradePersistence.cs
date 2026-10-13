@@ -17,7 +17,13 @@ namespace ZoneEngine_New.Core.Data
         public void Persist(TradePersistenceBatch batch) => Run(() => _persistence.CommitItemCredits(new ItemCreditMutationData
         {
             Inserts = batch.Inserts.Select(Map).ToArray(), Locations = batch.Updates.Select(Map).ToArray(),
-            Characters = batch.Characters.Select(c => new CharacterCreditData { CharacterId = c.CharacterId, Cash = c.Cash, UploadedNanoIds = c.UploadedNanoIds.ToArray() }).ToArray()
+            Characters = batch.Characters.Select(c => new CharacterCreditData
+            {
+                CharacterId = c.CharacterId, Cash = c.Cash, UploadedNanoIds = c.UploadedNanoIds.ToArray(),
+                Currencies = c.CurrencyStat != 0
+                    ? new[] { new CharacterStatData { StatId = c.CurrencyStat, StatValue = c.CurrencyValue } }
+                    : Array.Empty<CharacterStatData>()
+            }).ToArray()
         }));
     }
 }

@@ -9,7 +9,12 @@ namespace ZoneEngine_New.Core.Data
         void Persist(TradePersistenceBatch batch);
     }
 
-    public sealed record TradeCharacterWrite(int CharacterId, int Cash, IReadOnlyList<int> UploadedNanoIds);
+    /// <summary>
+    /// A participant's final state. <paramref name="CurrencyStat"/> / <paramref name="CurrencyValue"/>: another currency
+    /// (a VP shop's Victory Points) committed with the cash; 0 when none.
+    /// </summary>
+    public sealed record TradeCharacterWrite(int CharacterId, int Cash, IReadOnlyList<int> UploadedNanoIds,
+        int CurrencyStat = 0, int CurrencyValue = 0);
 
     public sealed record TradePersistenceBatch(
         IReadOnlyList<ItemInstanceRecord> Inserts,

@@ -13,6 +13,7 @@ namespace ZoneEngine_New.Core.Entities
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Characters;
+    using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Helpers;
@@ -461,7 +462,8 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public bool TryUntrainPerk(int perkId, Action? confirm = null)
         {
-            if (!TrainedPerks.Contains(perkId))
+            // Research is earned with research XP and permanent: it is never reset like a perk.
+            if (!TrainedPerks.Contains(perkId) || PerkCatalog.IsResearch(perkId))
                 return false;
             foreach (int trained in TrainedPerks.Snapshot())
             {
@@ -487,6 +489,168 @@ namespace ZoneEngine_New.Core.Entities
             FlushDirtyStats();
             return true;
         }
+
+        /// <summary>Personal research tiers (Research.json).</summary>
+        public ResearchCatalog ResearchCatalog { get; init; } = ResearchCatalog.Default;
+
+        /// <summary>Personal research tiers in progress and the research XP each still needs (characterresearch).</summary>
+        public ResearchProgress Research { get; } = new();
+
+        /// <summary>Login: the stored progress, minus any tier already trained (a crash between the two writes).</summary>
+        public void LoadResearch(IEnumerable<ResearchProgressRecord> rows)
+        {
+            ArgumentNullException.ThrowIfNull(rows);
+            Research.Restore(rows);
+            Research.DropFinished(TrainedPerks);
+        }
+
+        /// <summary>
+        /// The client's research slider (SetStat PersonalResearchLevel 263): the share of earned XP that goes to personal
+        /// research, 0-100. The client applies it locally first; a value out of range is clamped and sent back.
+        /// </summary>
+        public void SetPersonalResearchShare(int percent)
+        {
+            int clamped = Math.Clamp(percent, 0, 100);
+            if (Stats.Get(CharacterStat.PersonalResearchLevel, StatDetail.Base) != clamped)
+                Stats.Set(CharacterStat.PersonalResearchLevel, clamped, StatDetail.Base);
+            if (clamped != percent)
+                SendOwnStat(CharacterStat.PersonalResearchLevel, clamped);
+        }
+
+        /// <summary>
+        /// The client's research choice (SetStat PersonalResearchGoal 265): the research id to train, or 0 for none. The
+        /// tier must be one this character may research now (<see cref="CanResearch"/>); otherwise the stored goal stands
+        /// and goes back to the client. An accepted goal is answered with its PerkUpdate, which gives the client the tier's
+        /// progress entry.
+        /// </summary>
+        public bool TrySelectPersonalResearch(int researchId)
+        {
+            if (researchId != 0 && !CanResearch(researchId))
+            {
+                SendOwnStat(CharacterStat.PersonalResearchGoal, Math.Max(0, Stats.GetOrZero(CharacterStat.PersonalResearchGoal)));
+                return false;
+            }
+
+            if (Stats.Get(CharacterStat.PersonalResearchGoal, StatDetail.Base) != researchId)
+                Stats.Set(CharacterStat.PersonalResearchGoal, researchId, StatDetail.Base);
+            if (researchId != 0 && ResearchCatalog.TryGet(researchId, out ResearchTier tier))
+                SendPerkUpdate(researchId, researchId, Research.TryGetRemaining(researchId, out int remaining) ? remaining : tier.Xp);
+            return true;
+        }
+
+        /// <summary>
+        /// A personal research tier this character may train now: a known tier for its profession, not yet finished,
+        /// whose previous tier is finished and whose minimum level is reached. Rechecked whenever research XP lands, so a
+        /// goal that stopped qualifying earns nothing.
+        /// </summary>
+        public bool CanResearch(int researchId)
+            => ResearchCatalog.TryGet(researchId, out ResearchTier tier)
+                && tier.AllowsProfession(Stats.GetOrZero(CharacterStat.Profession))
+                && !TrainedPerks.Contains(researchId)
+                && (tier.PreviousId == 0 || TrainedPerks.Contains(tier.PreviousId))
+                && Stats.GetOrOne(CharacterStat.Level) >= tier.MinLevel;
+
+        /// <summary>
+        /// The research share of an XP grant: PersonalResearchLevel percent of <paramref name="amount"/>, rounded down,
+        /// when a research goal is selected and may still be trained; otherwise nothing.
+        /// </summary>
+        internal long ResearchShareOf(long amount)
+        {
+            if (amount <= 0 || !CanResearch(Stats.GetOrZero(CharacterStat.PersonalResearchGoal)))
+                return 0;
+
+            int percent = Math.Clamp(Stats.GetOrZero(CharacterStat.PersonalResearchLevel), 0, 100);
+            long share = amount * percent / 100;
+            // Gameplay.json xp.caps.research: one grant's research share is capped at a percent of the XP the selected
+            // tier needs in all.
+            if (share > 0 && ResearchCatalog.TryGet(Stats.GetOrZero(CharacterStat.PersonalResearchGoal), out ResearchTier tier))
+                share = Math.Min(share, GameplayXpCaps.Of(XpCaps.Research, tier.Xp));
+            return share;
+        }
+
+        /// <summary>
+        /// Without changing anything: the research XP a grant of <paramref name="amount"/> would put into the selected goal,
+        /// its <see cref="ResearchShareOf"/> share capped at what the tier still needs. Planned rewards (missions, quests)
+        /// take this off their XP and hand it to <see cref="ApplyResearchXp"/> once committed.
+        /// </summary>
+        internal long PlanResearchXp(long amount)
+        {
+            long share = ResearchShareOf(amount);
+            int goal = Stats.GetOrZero(CharacterStat.PersonalResearchGoal);
+            if (share <= 0 || !ResearchCatalog.TryGet(goal, out ResearchTier tier))
+                return 0;
+
+            int remaining = Research.TryGetRemaining(goal, out int stored) ? stored : tier.Xp;
+            return Math.Min(share, remaining);
+        }
+
+        /// <summary>
+        /// Puts <paramref name="amount"/> research XP into the selected goal and returns what it did not use: everything
+        /// when there is no trainable goal, the excess past a finished tier otherwise. A finished tier becomes a trained
+        /// perk (permanent; its item's bonuses apply) and the goal moves to the next tier when that one may be trained.
+        /// The client hears every change as a PerkUpdate (research id, new goal, XP still needed); at 0 it shows the
+        /// tier as researched.
+        /// </summary>
+        internal long ApplyResearchXp(long amount)
+        {
+            int goal = Stats.GetOrZero(CharacterStat.PersonalResearchGoal);
+            if (amount <= 0 || !CanResearch(goal) || !ResearchCatalog.TryGet(goal, out ResearchTier tier))
+                return Math.Max(0, amount);
+
+            int remaining = Research.TryGetRemaining(goal, out int stored) ? stored : tier.Xp;
+            // Live: the allocation line, then the PerkUpdate (capture 2026-10-13 22:48:10).
+            ClientFeedback.SendFormattedWithUnknown1(this, ClientFeedback.ResearchAllocatedChannel,
+                ClientFeedback.XpAllocatedToResearch, (int)Math.Min(amount, remaining));
+            if (amount < remaining)
+            {
+                remaining -= (int)amount;
+                Research.Set(goal, remaining);
+                SendPerkUpdate(goal, goal, remaining);
+                Playfield?.GetService<InventoryFlushService>()?.NotifyDirty(this);
+                return 0;
+            }
+
+            long excess = amount - remaining;
+            if (!TrainedPerks.Add(goal))
+                return amount;
+
+            Research.Set(goal, 0);
+            int next = tier.NextId != 0 && CanResearch(tier.NextId) ? tier.NextId : 0;
+            Stats.Set(CharacterStat.PersonalResearchGoal, next, StatDetail.Base);
+            SendPerkUpdate(goal, next, 0);
+            OnTrainedPerksChanged(null);
+            Logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Research finished character={0} research={1} ({2} tier {3}) next={4}",
+                Identity.Instance, goal, tier.LineName, tier.Tier, next));
+            return excess;
+        }
+
+        /// <summary>
+        /// PerkUpdate (PerkUpdateIIR, Gamecode.dll 0x10063c68): research id, the new PersonalResearchGoal, the research
+        /// XP still needed. The client adds the tier to its research list, sets the goal stat and, at 0, marks it
+        /// researched ("got_tech").
+        /// </summary>
+        void SendPerkUpdate(int researchId, int goal, int remaining)
+        {
+            if (Session?.State != SessionState.InPlay)
+                return;
+
+            Session.Send(new PerkUpdateMessage
+            {
+                Identity = Identity,
+                Unknown1 = researchId,
+                Unknown2 = goal,
+                Unknown3 = Math.Max(0, remaining)
+            });
+        }
+
+        /// <summary>One of this player's own stats, to its client only.</summary>
+        void SendOwnStat(CharacterStat stat, int value)
+            => Session?.Send(new StatMessage
+            {
+                Identity = Identity,
+                Stats = [new GameTuple<CharacterStat, uint> { Value1 = stat, Value2 = unchecked((uint)value) }]
+            });
 
         /// <summary>
         /// LastPerkResetTime (577) for the client's perk reset timer (GUI.dll 0x10060d7e), which shows
@@ -623,9 +787,26 @@ namespace ZoneEngine_New.Core.Entities
         /// version marker 0xFFFFFF00, the perk id and a value the client keeps only for research perks.
         /// </summary>
         public PerkMapEntry[] BuildPerkMap()
-            => TrainedPerks.Snapshot()
+        {
+            // Research tiers in progress ride along with the research XP they still need: the client keeps that value
+            // only for research (0x10052b7d) and treats a research entry as researched only at 0.
+            var entries = TrainedPerks.Snapshot()
                 .Select(perkId => new PerkMapEntry { Key = perkId, Marker = PerkMapEntry.VersionZero, PerkId = perkId })
-                .ToArray();
+                .ToList();
+            foreach ((int researchId, int remaining) in Research.Snapshot())
+            {
+                if (remaining > 0 && !TrainedPerks.Contains(researchId))
+                    entries.Add(new PerkMapEntry
+                    {
+                        Key = researchId,
+                        Marker = PerkMapEntry.VersionZero,
+                        PerkId = researchId,
+                        Value = remaining
+                    });
+            }
+
+            return entries.ToArray();
+        }
 
         /// <summary>
         /// A perk action use waiting out its AttackDelay: the resolved template (low/high pair at Quality) and

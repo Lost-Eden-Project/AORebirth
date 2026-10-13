@@ -117,6 +117,7 @@ namespace ZoneEngine_New.Core.Playfield
                     catch (Exception e)
                     {
                         LogUtil.ErrorException(e, false, "Playfield heartbeat failed for {0}", _playfieldIdentity);
+                        Metrics.WatchdogFeed.PublishTickFailure(_playfieldIdentity.Instance, e);
                     }
 
                     nextDueTicks += _targetIntervalTicks;

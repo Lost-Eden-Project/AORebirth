@@ -70,6 +70,9 @@ namespace ZoneEngine_New.Core.GameData
             return (perk.Flags & AlienFlag) != 0 || (perk.Flags & SpecialFlag) == 0;
         }
 
+        /// <summary>Research (0x40 personal, 0x80 global): earned with research XP, never trained or reset as a perk.</summary>
+        public bool IsResearch(int perkId) => (GetFlags(perkId) & ResearchFlags) != 0;
+
         /// <summary>Paid with regular perk points: neither alien nor research (client mask 0xC2).</summary>
         public bool CostsPerkPoint(int perkId) => (GetFlags(perkId) & (AlienFlag | ResearchFlags)) == 0;
 

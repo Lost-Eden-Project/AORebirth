@@ -65,14 +65,15 @@ namespace ZoneEngine_New.Core.Entities
     public abstract class Character : Dynel
     {
         internal const int MaxXpLevel = 220;
-        const int KillXpCapPercent = 10;
 
         /// <summary>NPCFamily of alien NPCs; only these grant alien XP.</summary>
         const int AlienNpcFamily = 220;
 
         /// <summary>Damage shares are split out of this so each killer's fraction survives integer math.</summary>
         const int AlienShareBasis = 10000;
-        internal const int QuestXpCapPercent = 20;
+
+        /// <summary>Gameplay.json xp.caps: per-grant XP caps in percent of the level bar.</summary>
+        internal GameplayXpCaps XpCaps => Playfield?.GetService<GameplaySettings>()?.Xp.Caps ?? GameplayXpCaps.Default;
 
         protected Character(Identity identity)
             : base(identity)
@@ -394,7 +395,7 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Adds XP and levels from <c>Xp.json</c> NextLevelXp. One grant is capped at
-        /// 10% (kill) or 20% (quest) of the current level bar.
+        /// Gameplay.json xp.caps percent (killXp or quest) of the current level bar, after the research share.
         /// </summary>
         public void AwardXp(int amount, XpSource source)
         {
@@ -417,14 +418,23 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             amount = ApplySideXpBonus(amount);
-            int capPercent = source == XpSource.Kill ? KillXpCapPercent : QuestXpCapPercent;
+
+            // Personal research takes its PersonalResearchLevel share of the whole grant, before the per-grant cap; what
+            // the research goal does not use (none selected, or the excess past a finished tier) stays XP. Only the XP
+            // that remains is capped.
+            if (this is Player researcher)
+            {
+                long research = researcher.ResearchShareOf(amount);
+                if (research > 0)
+                    amount = (int)Math.Clamp(amount - research + researcher.ApplyResearchXp(research), 0, amount);
+                if (amount <= 0)
+                    return;
+            }
+
             if (current.NextLevelXp > 0)
             {
-                int cap = current.NextLevelXp * capPercent / 100;
-                if (cap < 1)
-                    cap = 1;
-                if (amount > cap)
-                    amount = cap;
+                double capPercent = source == XpSource.Kill ? XpCaps.KillXp : XpCaps.Quest;
+                amount = (int)Math.Min(amount, GameplayXpCaps.Of(capPercent, current.NextLevelXp));
             }
 
             int levelBefore = level;
@@ -930,7 +940,7 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Adds alien XP. AlienXP is progress inside the current alien level; AlienNextXP is the
-        /// AlienXp.json step to the next level. One grant is capped at 10% of that step. Levels up through
+        /// AlienXp.json step to the next level. One grant is capped at xp.caps.killXp percent of that step. Levels up through
         /// the table while the progress covers it.
         /// </summary>
         public void AwardAlienXp(int amount)
@@ -948,12 +958,10 @@ namespace ZoneEngine_New.Core.Entities
 
             int alienLevel = Stats.GetOrZero(CharacterStat.AlienLevel);
 
-            // Like kill XP, one grant is capped at 10% of the current alien level's bar.
+            // Like kill XP, one grant is capped at xp.caps.killXp percent of the current alien level's bar.
             if (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry current) && current.NextLevelXp > 0)
             {
-                int cap = Math.Max(1, current.NextLevelXp * KillXpCapPercent / 100);
-                if (amount > cap)
-                    amount = cap;
+                amount = (int)Math.Min(amount, GameplayXpCaps.Of(XpCaps.KillXp, current.NextLevelXp));
             }
 
             long progress = (long)Stats.GetOrZero(CharacterStat.AlienXP) + amount;
@@ -1002,7 +1010,18 @@ namespace ZoneEngine_New.Core.Entities
 
             _corpseSwapPending = false;
 
-            SpawnDeathCorpse();
+            // The corpse (and its loot) is best effort: a failure there must not leave a dead body in the world that
+            // nobody can fight, loot or see die, with its spawn point never told to respawn it.
+            try
+            {
+                SpawnDeathCorpse();
+            }
+            catch (Exception exception)
+            {
+                LogUtil.ErrorException(exception, false, "Corpse spawn failed for {0}; finishing the death without it", Identity);
+                Metrics.WatchdogFeed.PublishTickFailure(Playfield?.Identity.Instance ?? 0, exception);
+            }
+
             ClearKillRewards();
             Died?.Invoke(this);
             RemoveFromWorldAfterDeath();

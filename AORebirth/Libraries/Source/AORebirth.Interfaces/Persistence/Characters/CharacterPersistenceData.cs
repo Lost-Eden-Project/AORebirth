@@ -76,6 +76,9 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public int CharacterId { get; set; }
         public int Cash { get; set; }
         public IList<int> UploadedNanoIds { get; set; } = new List<int>();
+
+        /// <summary>Other currency stats (a VP shop's Victory Points) written in the same transaction as the cash.</summary>
+        public IList<CharacterStatData> Currencies { get; set; } = new List<CharacterStatData>();
     }
 
     public sealed class ItemCreditMutationData
@@ -105,6 +108,13 @@ namespace AORebirth.Interfaces.Persistence.Characters
     {
         public int PerkId { get; set; }
         public long ExpiresAtUtcTicks { get; set; }
+    }
+
+    /// <summary>One personal research tier in progress: its research (perk) id and the research XP it still needs.</summary>
+    public sealed class PersistedResearchData
+    {
+        public int ResearchId { get; set; }
+        public int RemainingXp { get; set; }
     }
 
     public sealed class CharacterActiveNanoData

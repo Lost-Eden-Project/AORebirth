@@ -224,7 +224,7 @@ namespace ZoneEngine_New.Core.Entities
             if (!IsOpen || Playfield == null)
                 return;
 
-            // TODO: properly implement open-range / distance close
+            // Closes past the client's use range: 5 m between the bodies (edge distance, Gamecode.dll 0x10059fc7).
             if (!Playfield.GetRequiredService<DynelRegistry>().TryGet(OpenerIdentity, out Dynel? dynel)
                 || dynel is not Player opener
                 || GetEdgeDistanceTo(opener) > OpenRange)

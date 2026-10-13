@@ -7,6 +7,7 @@ using System.Linq;
 using AORebirth.Stats.SpecialStats;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using ZoneEngine_New.Core.Configuration;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Helpers;
 
@@ -27,6 +28,14 @@ public sealed class DirectXpRewardPlan
     public int ExperienceAfter { get; }
     public int RequestedReward { get; }
     public bool IsShadowKnowledge { get; }
+
+    /// <summary>
+    /// The reward's personal research share (Player.PlanResearchXp), already taken off its XP. Put into the research goal
+    /// once the reward is committed, by <see cref="PublishAfterCommit"/>.
+    /// </summary>
+    public long ResearchXp { get; private init; }
+
+    bool _researchPublished;
 
     DirectXpRewardPlan(Player player, int reward, int before, int after, bool shadow, Dictionary<CharacterStat, int> stats)
     {
@@ -51,8 +60,12 @@ public sealed class DirectXpRewardPlan
         if (!data.TryGetXpLevel(level, out var current))
             throw new InvalidOperationException("Quest XP has no level data; reward remains pending.");
         int amount = player.ApplySideXpBonus(reward);
+        // As Character.AwardXp: personal research takes its share of the whole reward, before the cap; only the XP
+        // that remains is capped.
+        long research = player.PlanResearchXp(amount);
+        amount = checked(amount - (int)research);
         if (current.NextLevelXp > 0)
-            amount = (int)Math.Min(amount, Math.Max(1L, (long)current.NextLevelXp * Character.QuestXpCapPercent / 100));
+            amount = (int)Math.Min(amount, GameplayXpCaps.Of(player.XpCaps.Quest, current.NextLevelXp));
         int xp = checked(player.Stats.GetOrZero(CharacterStat.XP) + amount);
         while (level < Character.MaxXpLevel && current.NextLevelXp > 0 && (long)xp >= (long)current.FloorXp + current.NextLevelXp)
         {
@@ -83,7 +96,7 @@ public sealed class DirectXpRewardPlan
                 values[percentStat] = (int)Math.Clamp((long)(maximum + Math.Min(0, bonus)) * 100 / maximum, 0, 100);
             }
         }
-        return new(player, amount, before, level, false, values) { _questStyle = true };
+        return new(player, amount, before, level, false, values) { _questStyle = true, ResearchXp = research };
     }
 
     /// <summary>
@@ -106,6 +119,10 @@ public sealed class DirectXpRewardPlan
         if (reward == 0 || before == 220) return new(player, reward, before, before, before >= 200, values);
         bool shadow = before >= 200;
         if (shadow && persistedTotal) throw new InvalidOperationException("Persisted DOJA reward normalization is an RK progression path.");
+        // Personal research takes its share of an XP reward (not of Shadowlands SK); the rest is the XP the plan adds.
+        long research = shadow ? 0 : player.PlanResearchXp(reward);
+        int requested = reward;
+        reward = checked(reward - (int)research);
         if (shadow)
         {
             uint raw = Raw(player, CharacterStat.SK), floor = SkFloor(before);
@@ -145,7 +162,7 @@ public sealed class DirectXpRewardPlan
             values[CharacterStat.TitleLevel] = Character.TitleLevelFor(level);
             PlanRefill(player, values);
         }
-        return new(player, reward, before, level, shadow, values);
+        return new(player, requested, before, level, shadow, values) { ResearchXp = research };
     }
 
     static void PlanRefill(Player player, Dictionary<CharacterStat, int> values)
@@ -183,6 +200,13 @@ public sealed class DirectXpRewardPlan
     public void PublishAfterCommit(Player player)
     {
         if (player.Identity != _owner) throw new InvalidOperationException("XP projection owner changed.");
+        // Once, after the commit. Anything the goal no longer takes (it finished or changed meanwhile) is not refunded
+        // as XP: the committed XP stands as planned.
+        if (ResearchXp > 0 && !_researchPublished)
+        {
+            _researchPublished = true;
+            player.ApplyResearchXp(ResearchXp);
+        }
         if (_stats.Count == 0) return;
         foreach (var pair in _stats) player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: _questStyle);
         if (_questStyle)

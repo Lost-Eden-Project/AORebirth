@@ -17,14 +17,15 @@ namespace ZoneEngine_New.Core.Commands
     {
         static readonly (string Name, PlayerDebugFlags Flag, string Description)[] Channels =
         [
-            ("watchdog", PlayerDebugFlags.Watchdog, "slow tick, stall and recovery notices in chat")
+            ("watchdog", PlayerDebugFlags.Watchdog, "slow tick, stall and recovery notices in chat"),
+            ("tick", PlayerDebugFlags.Tick, "playfield ticks that crash, with the exception and where it was thrown")
         ];
 
         public string Name => "debug";
 
         public int RequiredGmLevel => 1;
 
-        public string Usage => ".debug [watchdog] [on|off]";
+        public string Usage => ".debug [watchdog|tick] [on|off]";
 
         public void Execute(GmCommandContext context)
         {
