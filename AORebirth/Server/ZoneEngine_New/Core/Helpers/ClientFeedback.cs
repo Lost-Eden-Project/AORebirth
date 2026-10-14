@@ -84,6 +84,30 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>FormatFeedback Unknown1 live uses for <see cref="XpAllocatedToResearch"/>.</summary>
         public const int ResearchAllocatedChannel = 0x4200001C;
 
+        /// <summary>"You need a Reset Point in order to reset a skill!" (category 110).</summary>
+        public const int NeedResetPoint = 142566068;
+
+        /// <summary>"You can't reset Map Navigation!" (category 110).</summary>
+        public const int CantResetMapNavigation = 54233262;
+
+        /// <summary>
+        /// "All items must be unequipped before performing a skill reset!" (category 110, 0x04A7B8B4). Live sends it as
+        /// Feedback to a reset with items equipped (capture 2026-10-14T00:07:22Z).
+        /// </summary>
+        public const int UnequipBeforeSkillReset = 78100660;
+
+        /// <summary>"You can't reset this skill! You need to have spent some IP on the skill first." (category 110).</summary>
+        public const int NoIpSpentOnSkill = 72805276;
+
+        /// <summary>
+        /// "%d IP have been returned to you for the reset of %s!" (category 110, 0x0D7C0C34). Live: FormatFeedback with the
+        /// refund and the skill name, after the RP and IP/skill stats (capture 2026-10-14T00:07:33Z).
+        /// </summary>
+        public const int SkillResetIpReturned = 226232628;
+
+        /// <summary>text.mdb category of the client's skill and stat names (id = stat id, e.g. 155 "Evade-ClsC").</summary>
+        public const int StatNameCategory = 2003;
+
         /// <summary>"evaded" (category 110), the verb live puts in <see cref="TargetVerbYourAction"/>.</summary>
         public const int Evaded = 114064052;
 

@@ -129,6 +129,11 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
         RemovePerkAction = 0x000000B6,
 
         /// <summary>
+        /// Client→server: reset a skill (Parameter2 = skill stat id), spending a Reset Point. Capture 2026-10-14T00:07:22Z.
+        /// </summary>
+        ResetSkill = 0x0000009A,
+
+        /// <summary>
         /// Client↔server: train a perk by PacketID (Parameter2). Capture 20260715-194155.
         /// </summary>
         TrainPerk = 0x000000BB,

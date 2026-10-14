@@ -9,6 +9,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
     using Utility;
 
+    using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
@@ -43,6 +44,52 @@ namespace ZoneEngine_New.Core.MessageHandlers
         public void Handle(MessageBody body, IZoneSession session)
         {
             Handle((CharacterActionMessage)body, session);
+        }
+
+        /// <summary>
+        /// Client skill reset (Parameter2 = skill stat id). Live on success (capture 2026-10-14T00:07:33Z): Stat RP, then
+        /// Stat IP + the skill's base, then FormatFeedback "%d IP have been returned to you for the reset of %s!"; on a
+        /// refusal only the Feedback line. The skill name goes as a text reference the client resolves to the same name
+        /// live sends as plain text.
+        /// </summary>
+        static void ResetSkill(Player player, IZoneSession session, int statId)
+        {
+            var skill = (CharacterStat)statId;
+            if (!SkillTraining.TryReset(player, skill, player.SkillCatalog, out int refund, out SkillTraining.ResetRefusal refusal))
+            {
+                int feedback = refusal switch
+                {
+                    SkillTraining.ResetRefusal.MapNavigation => ClientFeedback.CantResetMapNavigation,
+                    SkillTraining.ResetRefusal.NoResetPoint => ClientFeedback.NeedResetPoint,
+                    SkillTraining.ResetRefusal.ItemsEquipped => ClientFeedback.UnequipBeforeSkillReset,
+                    SkillTraining.ResetRefusal.NothingSpent => ClientFeedback.NoIpSpentOnSkill,
+                    _ => 0
+                };
+                if (feedback != 0)
+                    ClientFeedback.Send(player, feedback);
+                LogUtil.Debug(DebugInfoDetail.Network, string.Format(CultureInfo.InvariantCulture,
+                    "Skill reset refused character={0} skill={1} reason={2}", player.Identity.Instance, statId, refusal));
+                return;
+            }
+
+            session.Send(OwnStats(player, (CharacterStat.RP, player.Stats.GetOrZero(CharacterStat.RP, StatDetail.Base))));
+            session.Send(OwnStats(player,
+                (CharacterStat.IP, Math.Max(0, player.AvailableIp)),
+                (skill, player.Stats.GetOrZero(skill, StatDetail.Base))));
+            ClientFeedback.SendFormatted(player, ClientFeedback.SkillResetIpReturned, refund,
+                new ClientFeedback.TextReference(ClientFeedback.StatNameCategory, statId));
+            player.FlushDirtyStats();
+            LogUtil.Debug(DebugInfoDetail.Network, string.Format(CultureInfo.InvariantCulture,
+                "Skill reset character={0} skill={1} refund={2} ip={3} rp={4}", player.Identity.Instance, skill, refund,
+                player.AvailableIp, player.Stats.GetOrZero(CharacterStat.RP, StatDetail.Base)));
+        }
+
+        static StatMessage OwnStats(Player player, params (CharacterStat Stat, int Value)[] stats)
+        {
+            var tuples = new GameTuple<CharacterStat, uint>[stats.Length];
+            for (int i = 0; i < stats.Length; i++)
+                tuples[i] = new GameTuple<CharacterStat, uint> { Value1 = stats[i].Stat, Value2 = unchecked((uint)stats[i].Value) };
+            return new StatMessage { Identity = player.Identity, Stats = tuples };
         }
 
         public void Handle(CharacterActionMessage message, IZoneSession session)
@@ -139,6 +186,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     // Client untrain request: Parameter2 = perk id. The accepted request goes back unchanged;
                     // client case 0x49 (Gamecode.dll 0x10053362) then removes the perk from its map.
                     player.TryUntrainPerk(message.Parameter2, () => session.Send(message));
+                    break;
+
+                case CharacterActionType.ResetSkill:
+                    ResetSkill(player, session, message.Parameter2);
                     break;
 
                 case CharacterActionType.InfoRequest:

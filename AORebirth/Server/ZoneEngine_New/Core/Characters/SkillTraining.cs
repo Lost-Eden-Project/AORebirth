@@ -7,6 +7,7 @@ namespace ZoneEngine_New.Core.Characters
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.GameData;
+    using ZoneEngine_New.Core.Inventory;
 
     /// <summary>
     /// Applies a client SkillMessage: absolute ability and skill bases, paid from the stored IP balance.
@@ -103,6 +104,66 @@ namespace ZoneEngine_New.Core.Characters
             stats.Set(CharacterStat.UsedIP, stats.GetOrZero(CharacterStat.UsedIP, StatDetail.Base) + (int)cost, StatDetail.Base);
             player.RebaseStats();
             return true;
+        }
+
+        /// <summary>Why <see cref="TryReset"/> refused, for the client's feedback line.</summary>
+        public enum ResetRefusal
+        {
+            None,
+            NotResettable,
+            MapNavigation,
+            NoResetPoint,
+            ItemsEquipped,
+            NothingSpent
+        }
+
+        /// <summary>
+        /// Skill reset (CharacterAction ResetSkill): costs one Reset Point (<see cref="CharacterStat.RP"/>), needs every
+        /// equipment page empty, puts the skill's base back to <see cref="SkillCatalog.SkillFloor"/> and returns the IP
+        /// that buying it from there costs. Prices depend only on profession and skill, so that is what was paid; the
+        /// refund is still capped at <see cref="CharacterStat.UsedIP"/>, so no reset can make IP. Abilities are not
+        /// reset, and nothing changes unless every check passes.
+        /// </summary>
+        public static bool TryReset(Player player, CharacterStat skill, SkillCatalog catalog, out int refund, out ResetRefusal refusal)
+        {
+            refund = 0;
+            refusal = ResetRefusal.None;
+            if (skill == CharacterStat.MapNavigation)
+                return Refuse(out refusal, ResetRefusal.MapNavigation);
+            if (!SkillCatalog.IsSkill(skill))
+                return Refuse(out refusal, ResetRefusal.NotResettable);
+
+            StatCollection stats = player.Stats;
+            int resetPoints = stats.GetOrZero(CharacterStat.RP, StatDetail.Base);
+            if (resetPoints <= 0)
+                return Refuse(out refusal, ResetRefusal.NoResetPoint);
+
+            PlayerInventory inventory = player.Inventory;
+            if (!inventory.IsHydrated || inventory.Equipment.Content.Count > 0 || inventory.Armor.Content.Count > 0
+                || inventory.Implant.Content.Count > 0 || inventory.Social.Content.Count > 0)
+                return Refuse(out refusal, ResetRefusal.ItemsEquipped);
+
+            var breed = (Breed)stats.GetOrZero(CharacterStat.Breed, StatDetail.Base);
+            var profession = (Profession)stats.GetOrZero(CharacterStat.Profession, StatDetail.Base);
+            int current = CurrentBase(stats, skill);
+            int used = stats.GetOrZero(CharacterStat.UsedIP, StatDetail.Base);
+            if (current <= SkillCatalog.SkillFloor
+                || !catalog.TryGetRaiseCost(breed, profession, skill, SkillCatalog.SkillFloor, current, out long cost)
+                || cost <= 0 || used <= 0)
+                return Refuse(out refusal, ResetRefusal.NothingSpent);
+
+            refund = (int)Math.Min(cost, used);
+            stats.Set(skill, SkillCatalog.SkillFloor, StatDetail.Base);
+            stats.Set(CharacterStat.UsedIP, used - refund, StatDetail.Base);
+            stats.Set(CharacterStat.RP, resetPoints - 1, StatDetail.Base);
+            player.RebaseStats();
+            return true;
+        }
+
+        static bool Refuse(out ResetRefusal refusal, ResetRefusal reason)
+        {
+            refusal = reason;
+            return false;
         }
 
         /// <summary>
