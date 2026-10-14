@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 
 // Copyright (c) 2005-2014, CellAO Team
 // 
@@ -54,8 +54,7 @@ namespace ChatEngine.PacketHandlers
         public static void Read(Client client, ref byte[] packet)
         {
             client.Server.Debug(client, "{0} >> PrivGrpKickEveryone", client.Character.characterName);
-
-            // this packet should have no data
+            client.ChatServer().KickEveryoneFromPrivateGroup(client);
         }
 
         #endregion

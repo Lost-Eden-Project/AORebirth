@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 
 // Copyright (c) 2005-2014, CellAO Team
 // 
@@ -82,6 +82,7 @@ namespace ChatEngine.PacketHandlers
                 this.playerid,
                 this.message);
             reader.Finish();
+            client.ChatServer().SendPrivateGroupMessage(client, this.playerid, this.message);
         }
 
         #endregion

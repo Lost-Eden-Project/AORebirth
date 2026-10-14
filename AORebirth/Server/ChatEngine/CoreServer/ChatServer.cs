@@ -136,6 +136,7 @@ namespace ChatEngine.CoreServer
         public void OnClientDisconnect(IClient client, bool forced)
         {
             Client cl = (Client)client;
+            this.RemoveClientFromPrivateGroup(cl);
             this.clientOwnership.Disconnect(cl.Character.CharacterId, cl,
                 id => CharacterOnlineOwnershipGuard.TryClearLoginOwnership(unchecked((int)id), CharacterDao.Instance.SetOffline),
                 LftRegistry.Remove);
@@ -150,7 +151,208 @@ namespace ChatEngine.CoreServer
             return this.clientOwnership.Register(client.Character.CharacterId, client, acquireOwnership);
         }
 
+        internal void InvitePrivateGroupPlayer(Client inviter, uint invitedPlayerId)
+        {
+            Client invitee;
+            if (invitedPlayerId == 0
+                || !this.ConnectedClients.TryGetValue(invitedPlayerId, out invitee)
+                || invitee == null
+                || inviter.Character == null
+                || inviter.Character.CharacterId == 0)
+            {
+                inviter.Send(PlayerIdUnknown.Create(invitedPlayerId));
+                return;
+            }
+
+            uint privateGroupId = inviter.PrivateGroupId;
+            if (privateGroupId == 0)
+            {
+                privateGroupId = inviter.Character.CharacterId;
+                inviter.PrivateGroupId = privateGroupId;
+            }
+
+            if (invitee.PrivateGroupId == privateGroupId)
+            {
+                return;
+            }
+
+            this.SendKnownClient(invitee, inviter);
+            invitee.AddPrivateGroupInvitation(privateGroupId);
+            invitee.Send(PrivateGroupInvitation.Create(privateGroupId));
+        }
+
+        internal void JoinPrivateGroup(Client joiningClient, uint privateGroupId)
+        {
+            if (joiningClient.Character == null || privateGroupId == 0)
+            {
+                return;
+            }
+
+            uint joiningPlayerId = joiningClient.Character.CharacterId;
+            if (joiningClient.PrivateGroupId == privateGroupId)
+            {
+                joiningClient.ConsumePrivateGroupInvitation(privateGroupId);
+                return;
+            }
+
+            bool groupIsOnline = this.ConnectedClients.Values.Any(
+                connected => connected != null && connected.PrivateGroupId == privateGroupId);
+            bool isGroupOwner = joiningPlayerId == privateGroupId;
+            if (!groupIsOnline && !isGroupOwner)
+            {
+                joiningClient.Send(PlayerIdUnknown.Create(privateGroupId));
+                return;
+            }
+
+            if (!isGroupOwner && !joiningClient.ConsumePrivateGroupInvitation(privateGroupId))
+            {
+                return;
+            }
+
+            if (joiningClient.PrivateGroupId != 0)
+            {
+                this.LeavePrivateGroup(joiningClient, joiningClient.PrivateGroupId);
+            }
+
+            Client[] existingMembers = this.ConnectedClients.Values
+                .Where(connected => connected != null
+                    && connected != joiningClient
+                    && connected.PrivateGroupId == privateGroupId)
+                .ToArray();
+
+            joiningClient.PrivateGroupId = privateGroupId;
+
+            foreach (Client member in existingMembers)
+            {
+                this.SendKnownClient(joiningClient, member);
+                joiningClient.Send(PrivateGroupPlayerJoined.Create(privateGroupId, member.Character.CharacterId));
+            }
+
+            byte[] joinedPacket = PrivateGroupPlayerJoined.Create(privateGroupId, joiningPlayerId);
+            foreach (Client member in this.ConnectedClients.Values.Where(
+                connected => connected != null && connected.PrivateGroupId == privateGroupId).ToArray())
+            {
+                if (member != joiningClient)
+                {
+                    this.SendKnownClient(member, joiningClient);
+                }
+
+                member.Send(joinedPacket);
+            }
+        }
+
+        internal void LeavePrivateGroup(Client leavingClient, uint privateGroupId)
+        {
+            if (leavingClient.Character == null || privateGroupId == 0
+                || leavingClient.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            leavingClient.PrivateGroupId = 0;
+            byte[] leftPacket = PrivateGroupPlayerLeft.Create(privateGroupId, leavingClient.Character.CharacterId);
+            foreach (Client member in this.ConnectedClients.Values.Where(
+                connected => connected != null && connected != leavingClient
+                    && connected.PrivateGroupId == privateGroupId).ToArray())
+            {
+                member.Send(leftPacket);
+            }
+        }
+
+        internal void SendPrivateGroupMessage(Client sender, uint privateGroupId, string message)
+        {
+            if (sender.Character == null || sender.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            byte[] packet = PrivateGroupMessage.Create(
+                privateGroupId,
+                sender.Character.CharacterId,
+                message,
+                string.Empty);
+            foreach (Client member in this.ConnectedClients.Values.Where(
+                connected => connected != null && connected.PrivateGroupId == privateGroupId).ToArray())
+            {
+                member.Send(packet);
+            }
+        }
+
+        internal void KickPrivateGroupPlayer(Client kicker, uint kickedPlayerId)
+        {
+            uint privateGroupId = kicker.PrivateGroupId;
+            Client kickedClient;
+            if (privateGroupId == 0
+                || kicker.Character == null
+                || kicker.Character.CharacterId != privateGroupId
+                || !this.ConnectedClients.TryGetValue(kickedPlayerId, out kickedClient)
+                || kickedClient == null
+                || kickedClient.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            kickedClient.PrivateGroupId = 0;
+            kickedClient.Send(PrivateGroupKicked.Create(privateGroupId));
+            byte[] leftPacket = PrivateGroupPlayerLeft.Create(privateGroupId, kickedPlayerId);
+            foreach (Client member in this.ConnectedClients.Values.Where(
+                connected => connected != null && connected != kickedClient
+                    && connected.PrivateGroupId == privateGroupId).ToArray())
+            {
+                member.Send(leftPacket);
+            }
+        }
+
+        internal void KickEveryoneFromPrivateGroup(Client kicker)
+        {
+            uint privateGroupId = kicker.PrivateGroupId;
+            if (privateGroupId == 0
+                || kicker.Character == null
+                || kicker.Character.CharacterId != privateGroupId)
+            {
+                return;
+            }
+
+            foreach (Client member in this.ConnectedClients.Values.Where(
+                connected => connected != null && connected != kicker
+                    && connected.PrivateGroupId == privateGroupId).ToArray())
+            {
+                member.PrivateGroupId = 0;
+                member.Send(PrivateGroupKicked.Create(privateGroupId));
+            }
+        }
+
         #endregion
+
+        private void RemoveClientFromPrivateGroup(Client client)
+        {
+            if (client == null || client.PrivateGroupId == 0 || client.Character == null)
+            {
+                return;
+            }
+
+            uint privateGroupId = client.PrivateGroupId;
+            client.PrivateGroupId = 0;
+            byte[] leftPacket = PrivateGroupPlayerLeft.Create(privateGroupId, client.Character.CharacterId);
+            foreach (Client member in this.ConnectedClients.Values.Where(
+                connected => connected != null && connected != client
+                    && connected.PrivateGroupId == privateGroupId).ToArray())
+            {
+                member.Send(leftPacket);
+            }
+        }
+
+        private void SendKnownClient(Client receiver, Client subject)
+        {
+            uint characterId = subject.Character.CharacterId;
+            if (receiver == subject || receiver.KnownClients.Contains(characterId))
+            {
+                return;
+            }
+
+            receiver.Send(PlayerName.Create(subject, characterId));
+            receiver.KnownClients.Add(characterId);
+        }
 
         #region Methods
 

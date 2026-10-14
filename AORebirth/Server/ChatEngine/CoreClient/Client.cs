@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 
 // Copyright (c) 2005-2014, CellAO Team
 // 
@@ -65,6 +65,12 @@ namespace ChatEngine.CoreClient
         /// </summary>
         private readonly List<uint> knownClients;
 
+        private readonly object privateGroupSync = new object();
+
+        private readonly HashSet<uint> privateGroupInvitations = new HashSet<uint>();
+
+        private uint privateGroupId;
+
         /// <summary>
         /// </summary>
         private ushort packetNumber = 1;
@@ -119,6 +125,41 @@ namespace ChatEngine.CoreClient
             get
             {
                 return this.knownClients;
+            }
+        }
+
+        internal uint PrivateGroupId
+        {
+            get
+            {
+                lock (this.privateGroupSync)
+                {
+                    return this.privateGroupId;
+                }
+            }
+
+            set
+            {
+                lock (this.privateGroupSync)
+                {
+                    this.privateGroupId = value;
+                }
+            }
+        }
+
+        internal void AddPrivateGroupInvitation(uint privateGroupId)
+        {
+            lock (this.privateGroupSync)
+            {
+                this.privateGroupInvitations.Add(privateGroupId);
+            }
+        }
+
+        internal bool ConsumePrivateGroupInvitation(uint privateGroupId)
+        {
+            lock (this.privateGroupSync)
+            {
+                return this.privateGroupInvitations.Remove(privateGroupId);
             }
         }
 
