@@ -205,7 +205,7 @@ namespace ZoneEngine_New.Core.Inventory
                 && TryPercentOfMax(target, stat, minHit, out int percentDelta))
             {
                 if (stat == CharacterStat.Health)
-                    return ApplyHealthDelta(target, source, percentDelta, acStat, addDamage: false);
+                    return ApplyHealthDelta(target, source, percentDelta, acStat, addDamage: false, direct: addDamage);
                 return ApplyNanoDelta(target, percentDelta);
             }
 
@@ -221,7 +221,7 @@ namespace ZoneEngine_New.Core.Inventory
                 : Random.Shared.Next(minHit, maxHit + 1);
 
             if (stat == CharacterStat.Health)
-                return ApplyHealthDelta(target, source, delta, acStat, addDamage);
+                return ApplyHealthDelta(target, source, delta, acStat, addDamage, direct: addDamage);
 
             if (stat == CharacterStat.CurrentNano || stat == CharacterStat.NanoPool)
                 return ApplyNanoDelta(target, delta);
@@ -248,11 +248,12 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
 
             int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
-            ApplyHealthDelta(target, source, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage);
+            ApplyHealthDelta(target, source, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage);
             int dealt = before - Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
             int drained = (int)((long)dealt * Math.Clamp(percent, 0, 100) / 100);
+            // The drain returns a share of the damage dealt; healing efficiency and reactivity do not change it.
             if (drained > 0 && !source.IsDead)
-                ApplyHealthDelta(source, source, drained, 0);
+                ApplyHealthDelta(source, source, drained, 0, healModifiers: false);
             return true;
         }
 
@@ -287,7 +288,7 @@ namespace ZoneEngine_New.Core.Inventory
                     || !Helpers.CombatRules.CanAttack(caster, candidate))
                     continue;
 
-                ApplyHealthDelta(candidate, caster, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage);
+                ApplyHealthDelta(candidate, caster, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage);
             }
 
             return true;
@@ -352,7 +353,15 @@ namespace ZoneEngine_New.Core.Inventory
             }
         }
 
-        static bool ApplyHealthDelta(Character target, Character? source, int delta, int acStat, bool addDamage = false)
+        /// <summary>
+        /// A Hit on Health. <paramref name="direct"/> is a landing hit rather than a timed tick; <paramref name="addDamage"/>
+        /// lets the caster's Add Damage in (not for a percentage hit). Nano or item alike: direct damage on someone else gains
+        /// the caster's Direct Nano Damage Efficiency (536) percent before Add Damage, a direct heal the caster's Healing
+        /// Efficiency (535) percent, and every heal, ticks included, the recipient's Heal Reactivity (689) percent.
+        /// <paramref name="healModifiers"/> false (a drain's own heal) leaves a heal as it is.
+        /// </summary>
+        static bool ApplyHealthDelta(Character target, Character? source, int delta, int acStat, bool addDamage = false,
+            bool direct = false, bool healModifiers = true)
         {
             Character caster = source ?? target;
 
@@ -363,13 +372,21 @@ namespace ZoneEngine_New.Core.Inventory
                 {
                     target.RollBuffBreaks(BuffBreakCause.SpellAttack, caster);
 
+                    if (direct)
+                        delta = -ScaleByPercent(-delta, caster, CharacterStat.NanoDamageMultiplier);
+
                     // Direct hits (nukes, DrainHit, AreaHit) gain the caster's Add Damage for their damage type.
                     if (addDamage && Helpers.DamageCalculator.TryGetAddDamageStat(acStat, out CharacterStat addDamageStat))
                         delta -= Math.Max(0, StatCollection.Normalize(caster.Stats.GetOrZero(addDamageStat)));
                 }
 
+                // The target's reflect for the hit's damage type (its AC stat id) applies to nano damage too; a damage
+                // shield answers weapon hits only.
+                int damage = DamageReturn.Resolve(caster, target, caster.ScaleOutgoingDamage(target, -delta), acStat, shield: false,
+                    out DamageReturn.Returned returned);
+                DamageReturn.Announce(caster, target, returned);
                 int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
-                target.ApplyDamage(caster, caster.ScaleOutgoingDamage(target, -delta), HitType.Normal);
+                target.ApplyDamage(caster, damage, HitType.Normal);
 
                 int after = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
                 int actual = before - after;
@@ -379,7 +396,15 @@ namespace ZoneEngine_New.Core.Inventory
                 if (actual > 0)
                     target.AnnounceHealthDamage(caster, after, -actual, acStat);
 
+                DamageReturn.Apply(caster, target, returned);
                 return true;
+            }
+
+            if (healModifiers)
+            {
+                if (direct)
+                    delta = ScaleByPercent(delta, caster, CharacterStat.HealMultiplier);
+                delta = ScaleByPercent(delta, target, CharacterStat.HealReactivity);
             }
 
             int maxHealth = Math.Max(1, target.Stats.GetOrZero(CharacterStat.MaxHealth));
@@ -393,6 +418,13 @@ namespace ZoneEngine_New.Core.Inventory
             target.Stats.ClearDirty(CharacterStat.Health);
             target.AnnounceHealthDamage(caster, healed, applied, damageTypeStat: 0);
             return true;
+        }
+
+        /// <summary><paramref name="amount"/> raised (or lowered) by <paramref name="owner"/>'s percent stat; never below 0.</summary>
+        static int ScaleByPercent(int amount, Character owner, CharacterStat percentStat)
+        {
+            int percent = StatCollection.Normalize(owner.Stats.GetOrZero(percentStat));
+            return percent == 0 ? amount : (int)Math.Max(0, (long)amount * (100 + percent) / 100);
         }
 
         /// <summary>

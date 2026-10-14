@@ -188,13 +188,21 @@ namespace ZoneEngine_New.Core.Helpers
 
             int healthBefore = target.Stats.GetOrZero(CharacterStat.Health);
             target.RollBuffBreaks(BuffBreakCause.Attack, attacker);
-            int damage = attacker.ScaleOutgoingDamage(target, result.Damage);
+            // The special hits as the item it was rolled from; the target's reflect for that type applies.
+            Item? damageItem = special == CharacterStat.Dimach ? specialItem
+                : special == CharacterStat.Brawl ? specialItem ?? item
+                : item;
+            int damageType = DamageCalculator.ResolveDamageType(attacker, damageItem);
+            int damage = DamageReturn.Resolve(attacker, target, attacker.ScaleOutgoingDamage(target, result.Damage), damageType,
+                shield: true, out DamageReturn.Returned returned);
+            DamageReturn.Announce(attacker, target, returned);
             target.ApplyDamage(attacker, damage, result.HitType);
             if (target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
                 AnnounceSpecialHit(attacker, target, special, slot, bullets, damage);
 
             // A special is a weapon hit too: offensive and defensive procs roll on it.
             Nanos.ProcRules.OnWeaponHit(attacker, target, specialItem ?? weapon.Item);
+            DamageReturn.Apply(attacker, target, returned);
 
             // A landed Brawl or Dimach also runs its item's OnUse on the struck target (Brawl Item: 20% stun 211405 on
             // the fighting target).

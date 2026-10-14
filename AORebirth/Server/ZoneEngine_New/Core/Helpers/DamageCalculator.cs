@@ -252,6 +252,65 @@ namespace ZoneEngine_New.Core.Helpers
 
         const int MeleeDamageType = 91;
 
+        /// <summary>
+        /// The damage type (90-97, the AC stat ids) a swing with <paramref name="weapon"/> deals, as
+        /// <see cref="CalculateFromWeapon"/> resolves it: the weapon's DamageType, melee for a weapon without one, and the
+        /// attacker's DamageOverrideType over either. 0 with no weapon and no override.
+        /// </summary>
+        internal static int ResolveDamageType(Character attacker, Item? weapon)
+        {
+            ArgumentNullException.ThrowIfNull(attacker);
+            int rawDamageType = 0;
+            if (weapon != null && weapon.LowId > 0)
+            {
+                rawDamageType = NormalizeStat(weapon.GetStat(CharacterStat.DamageType));
+                if (rawDamageType == 0)
+                    rawDamageType = MeleeDamageType;
+            }
+
+            int overrideType = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.DamageOverrideType));
+            return overrideType > 0 ? overrideType : rawDamageType;
+        }
+
+        /// <summary>
+        /// The defender's Reflect AC (share of the damage turned back, in percent) and Max Reflected Damage (most the
+        /// attacker takes back) for a damage type (90-97).
+        /// </summary>
+        internal static bool TryGetReflectStats(int rawDamageType, out CharacterStat reflectStat, out CharacterStat maxReflectedStat)
+        {
+            (reflectStat, maxReflectedStat) = rawDamageType switch
+            {
+                90 => (CharacterStat.ReflectProjectileAC, CharacterStat.MaxReflectedProjectileDmg),
+                91 => (CharacterStat.ReflectMeleeAC, CharacterStat.MaxReflectedMeleeDmg),
+                92 => (CharacterStat.ReflectEnergyAC, CharacterStat.MaxReflectedEnergyDmg),
+                93 => (CharacterStat.ReflectChemicalAC, CharacterStat.MaxReflectedChemicalDmg),
+                94 => (CharacterStat.ReflectRadiationAC, CharacterStat.MaxReflectedRadiationDmg),
+                95 => (CharacterStat.ReflectColdAC, CharacterStat.MaxReflectedColdDmg),
+                96 => (CharacterStat.ReflectPoisonAC, CharacterStat.MaxReflectedPoisonDmg),
+                97 => (CharacterStat.ReflectFireAC, CharacterStat.MaxReflectedFireDmg),
+                _ => ((CharacterStat)0, (CharacterStat)0)
+            };
+            return reflectStat != 0;
+        }
+
+        /// <summary>The defender's Shield AC (damage every hit of the type costs the attacker) for a damage type (90-97).</summary>
+        internal static bool TryGetShieldStat(int rawDamageType, out CharacterStat shieldStat)
+        {
+            shieldStat = rawDamageType switch
+            {
+                90 => CharacterStat.ShieldProjectileAC,
+                91 => CharacterStat.ShieldMeleeAC,
+                92 => CharacterStat.ShieldEnergyAC,
+                93 => CharacterStat.ShieldChemicalAC,
+                94 => CharacterStat.ShieldRadiationAC,
+                95 => CharacterStat.ShieldColdAC,
+                96 => CharacterStat.ShieldPoisonAC,
+                97 => CharacterStat.ShieldFireAC,
+                _ => 0
+            };
+            return shieldStat != 0;
+        }
+
         /// <summary>The attacker's "Add. X Dam." stat for a damage type (90-97, the same ids as the AC stats).</summary>
         internal static bool TryGetAddDamageStat(int rawDamageType, out CharacterStat addDamageStat)
         {

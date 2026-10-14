@@ -1106,6 +1106,16 @@ namespace ZoneEngine_New.Core.Playfield
             // Pets zone with their owner: they leave here and are summoned again on arrival.
             _playfield.GetRequiredService<Pets.PetService>().StashForTransfer(player);
 
+            // Zoning ends the fight on the client too. Retail sends the leaving player two StopFights before the
+            // N3Teleport (capture 2026-10-14T20:12:33Z: Attack, then StopFight x2, then N3Teleport to 3089); without
+            // them the client keeps attacking in the new zone. Observers see it stop once.
+            if (player.FightingTarget.Instance != 0)
+            {
+                var stop = new StopFightMessage { Identity = player.Identity, Unknown = 0, Unknown1 = 1 };
+                player.Cell?.Announce(stop);
+                player.Session?.Send(stop);
+            }
+
             player.SetFightingTarget(Identity.None);
             player.SetTarget(Identity.None);
 

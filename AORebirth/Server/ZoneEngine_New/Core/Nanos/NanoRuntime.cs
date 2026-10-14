@@ -394,6 +394,10 @@ namespace ZoneEngine_New.Core.Nanos
 
                 if (spell.IsHostile && target.IsEvading)
                     return false;
+
+                // A proc or a nano's child resists by strain like a cast does.
+                if (spell.IsHostile && target.ResistsNanoStrain(spell.NanoStrain))
+                    return false;
             }
 
             AnnounceImmediateLand(source, target, spell.Id);
@@ -499,6 +503,23 @@ namespace ZoneEngine_New.Core.Nanos
                         caster.Identity.Instance,
                         spell.Id,
                         cast.Target.Instance));
+                return;
+            }
+
+            // Resisted: the target's Resist Nano for this strain (e.g. 10% Snare) won the roll.
+            if (spell.IsHostile && recipient!.ResistsNanoStrain(spell.NanoStrain))
+            {
+                ClientFeedback.Send(caster, ClientFeedback.TargetResisted);
+                LogUtil.Debug(
+                    DebugInfoDetail.Engine,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Nano resisted by strain caster={0} nano={1} target={2} strain={3} chance={4}%",
+                        caster.Identity.Instance,
+                        spell.Id,
+                        cast.Target.Instance,
+                        spell.NanoStrain,
+                        recipient.NanoStrainResistPercent(spell.NanoStrain)));
                 return;
             }
 

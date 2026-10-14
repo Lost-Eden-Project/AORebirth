@@ -1693,7 +1693,12 @@ namespace ZoneEngine_New.Core.Entities
             // The hit is announced before the damage lands: a killing hit runs the target's death (stop fight,
             // death action) inside ApplyDamage, and a client that already saw the death drops the AttackInfo,
             // so its damage line never showed.
-            int damage = ScaleOutgoingDamage(target, result.Damage);
+            // The target's reflect takes its share off before the hit is shown. Reflect and damage shield are announced
+            // ahead of the AttackInfo, as live does, and taken off this attacker once the hit has landed.
+            int damageType = DamageCalculator.ResolveDamageType(this, characterWeapon.DamageItem);
+            int damage = DamageReturn.Resolve(this, target, ScaleOutgoingDamage(target, result.Damage), damageType, shield: true,
+                out DamageReturn.Returned returned);
+            DamageReturn.Announce(this, target, returned);
             bool killingHit = damage >= Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
             Cell?.Announce(
                 new AttackInfoMessage
@@ -1713,6 +1718,7 @@ namespace ZoneEngine_New.Core.Entities
             if (weapon != null && !target.IsDead)
                 ApplyOnHitProcs(target, weapon);
             Nanos.ProcRules.OnWeaponHit(this, target, weapon);
+            DamageReturn.Apply(this, target, returned);
         }
 
         /// <summary>
@@ -2212,15 +2218,64 @@ namespace ZoneEngine_New.Core.Entities
         static bool RestrictsFighting(ItemSpell spell)
             => spell.TryReadInt(0, out int restricted) && (restricted & RestrictFightingBit) != 0;
 
+        /// <summary>
+        /// Percent chance, 0-100, to resist a hostile nano of <paramref name="strain"/>: every ResistNanoStrain
+        /// [strain, percent] on a running buff or a worn item's OnWear, added up (70300: 10% Snare 145, 10% Root 146).
+        /// </summary>
+        public int NanoStrainResistPercent(int strain)
+        {
+            if (strain <= 0)
+                return 0;
+
+            int total = 0;
+            for (int i = 0; i < _buffs.Count; i++)
+                total += StrainResist(_buffs[i].ModifierSpells, strain);
+
+            if (WornItems() is { } worn)
+            {
+                foreach (Item item in worn)
+                {
+                    if (item.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? spells))
+                        total += StrainResist(spells, strain);
+                }
+            }
+
+            return Math.Clamp(total, 0, 100);
+        }
+
+        /// <summary>Rolls <see cref="NanoStrainResistPercent"/>: true when a hostile nano of <paramref name="strain"/> is resisted.</summary>
+        public bool ResistsNanoStrain(int strain)
+        {
+            int percent = NanoStrainResistPercent(strain);
+            return percent > 0 && Random.Shared.Next(100) < percent;
+        }
+
+        static int StrainResist(IReadOnlyList<ItemSpell> spells, int strain)
+        {
+            int total = 0;
+            for (int s = 0; s < spells.Count; s++)
+            {
+                if (spells[s].Is(FunctionType.ResistNanoStrain)
+                    && spells[s].TryReadInt(0, out int resisted) && resisted == strain
+                    && spells[s].TryReadInt(1, out int percent))
+                    total += percent;
+            }
+
+            return total;
+        }
+
+        /// <summary>Equipped items: a hydrated player's worn items or an NPC's equipment; null for anything else.</summary>
+        IEnumerable<Item>? WornItems() => this switch
+        {
+            Player player when player.Inventory.IsHydrated => player.Inventory.WornItems(),
+            NpcCharacter npc => npc.Equipment.Content.Values,
+            _ => null
+        };
+
         /// <summary>An equipped item's OnWear holds <paramref name="function"/> (matching <paramref name="match"/>).</summary>
         bool HasWornFunction(FunctionType function, Func<ItemSpell, bool> match)
         {
-            IEnumerable<Item>? worn = this switch
-            {
-                Player player when player.Inventory.IsHydrated => player.Inventory.WornItems(),
-                NpcCharacter npc => npc.Equipment.Content.Values,
-                _ => null
-            };
+            IEnumerable<Item>? worn = WornItems();
             if (worn == null)
                 return false;
 
