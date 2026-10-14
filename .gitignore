@@ -141,6 +141,7 @@ tools-temp/AOSharpCaptureAnalyzer/snapshots/
 tools-temp/AOSharpCaptureAnalyzer/reviewed/
 tools-temp/db-backups/
 .local/
+.github/
 /diagnostics/
 /tools-temp/ProcDump/
 /tools-temp/_tmp*

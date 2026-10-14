@@ -43,7 +43,8 @@ namespace ChatEngine.CoreServer
             }
         }
 
-        public bool Disconnect(uint characterId, TClient client, Action<uint> clearOnline, Action<uint> removeLocalState)
+        public bool Disconnect(uint characterId, TClient client, Action<uint> clearOnline, Action<uint> removeLocalState,
+            Action<uint> beforeDisconnect = null)
         {
             if (client == null) throw new ArgumentNullException("client");
             lock (this.sync)
@@ -64,6 +65,8 @@ namespace ChatEngine.CoreServer
                         }
                     if (!found) return false;
                 }
+
+                if (beforeDisconnect != null) beforeDisconnect(characterId);
 
                 // Registration cannot publish a replacement or mark it online while this
                 // cleanup runs. The caller additionally guards any live zone ownership.

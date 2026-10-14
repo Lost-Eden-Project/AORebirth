@@ -152,17 +152,28 @@ namespace AORebirth.Database.Entities
         public List<int> GetBuddiesIds()
         {
             List<int> buddiesIds = new List<int>();
-            foreach (string strId in this.BuddyList.Split(','))
+            foreach (string strId in (this.BuddyList ?? string.Empty).Split(','))
             {
-                buddiesIds.Add(int.Parse(strId));
+                if (!string.IsNullOrEmpty(strId))
+                {
+                    buddiesIds.Add(int.Parse(strId));
+                }
             }
+
             return buddiesIds;
         }
 
         public void AddBuddy(int buddyId)
         {
             List<string> buddies = new List<string>();
-            buddies.AddRange(this.BuddyList.Split(','));
+            foreach (string existingBuddy in (this.BuddyList ?? string.Empty).Split(','))
+            {
+                if (!string.IsNullOrEmpty(existingBuddy))
+                {
+                    buddies.Add(existingBuddy);
+                }
+            }
+
             if (!buddies.Contains(buddyId.ToString()))
             {
                 buddies.Add(buddyId.ToString());
@@ -174,7 +185,14 @@ namespace AORebirth.Database.Entities
         public void RemoveBuddy(int buddyId)
         {
             List<string> buddies = new List<string>();
-            buddies.AddRange(this.BuddyList.Split(','));
+            foreach (string existingBuddy in (this.BuddyList ?? string.Empty).Split(','))
+            {
+                if (!string.IsNullOrEmpty(existingBuddy))
+                {
+                    buddies.Add(existingBuddy);
+                }
+            }
+
             if (buddies.Contains(buddyId.ToString()))
             {
                 buddies.Remove(buddyId.ToString());

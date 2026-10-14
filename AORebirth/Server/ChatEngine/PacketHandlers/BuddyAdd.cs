@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 
 // Copyright (c) 2005-2014, CellAO Team
 // 
@@ -33,7 +33,10 @@ namespace ChatEngine.PacketHandlers
 {
     #region Usings ...
 
+    using AORebirth.Database.Dao;
+
     using ChatEngine.CoreClient;
+    using ChatEngine.Packets;
 
     #endregion
 
@@ -70,6 +73,87 @@ namespace ChatEngine.PacketHandlers
                 unknown1,
                 unknown2);
             reader.Finish();
+
+            if (playerId == 0 || playerId > int.MaxValue || client.Character == null)
+            {
+                client.Server.Debug(
+                    client,
+                    "{0} << BuddyAdd rejected: invalid PlayerID {1}",
+                    client.Character == null ? string.Empty : client.Character.characterName,
+                    playerId);
+                client.Send(PlayerIdUnknown.Create(playerId));
+                return;
+            }
+
+            string buddyName = CharacterDao.Instance.GetCharacterNameById((int)playerId);
+            if (string.IsNullOrWhiteSpace(buddyName))
+            {
+                client.Server.Debug(
+                    client,
+                    "{0} << BuddyAdd rejected: no character found for PlayerID {1}",
+                    client.Character.characterName,
+                    playerId);
+                client.Send(PlayerIdUnknown.Create(playerId));
+                return;
+            }
+
+            bool persisted = CharacterDao.Instance.AddBuddy(
+                (int)client.Character.CharacterId, (int)playerId);
+            if (!persisted)
+            {
+                client.Server.Debug(
+                    client,
+                    "{0} << BuddyAdd persistence verification failed: OwnerCharacterID {1} BuddyID {2}",
+                    client.Character.characterName,
+                    client.Character.CharacterId,
+                    playerId);
+                return;
+            }
+
+            client.Send(PlayerName.Create(playerId, buddyName));
+            if (!client.KnownClients.Contains(playerId))
+            {
+                client.KnownClients.Add(playerId);
+            }
+
+            uint online = 0;
+            Client connectedBuddy;
+            if (client.ChatServer().ConnectedClients.TryGetValue(playerId, out connectedBuddy)
+                && connectedBuddy != null)
+            {
+                online = 1;
+            }
+            else
+            {
+                try
+                {
+                    online = CharacterDao.Instance.IsOnline((int)playerId) > 0 ? 1u : 0u;
+                }
+                catch
+                {
+                    online = 0;
+                }
+            }
+
+            byte[] requestFlags =
+            {
+                (byte)(unknown1 >> 8),
+                (byte)unknown1,
+                unknown2
+            };
+            client.SetBuddyStatusFlags(playerId, requestFlags);
+            client.Send(BuddyOnlineStatus.Create(playerId, online, requestFlags));
+            client.Server.Debug(
+                client,
+                "{0} << BuddyAdd processed: OwnerCharacterID {1} PlayerID {2} Name {3} Online {4} Persisted {5} Flags {6:X4}/{7:X2}",
+                client.Character.characterName,
+                client.Character.CharacterId,
+                playerId,
+                buddyName,
+                online,
+                persisted,
+                unknown1,
+                unknown2);
         }
 
         #endregion

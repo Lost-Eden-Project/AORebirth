@@ -65,6 +65,10 @@ namespace ChatEngine.CoreClient
         /// </summary>
         private readonly List<uint> knownClients;
 
+        private readonly Dictionary<uint, byte[]> buddyStatusFlags = new Dictionary<uint, byte[]>();
+
+        private readonly object buddyStatusSync = new object();
+
         private readonly object privateGroupSync = new object();
 
         private readonly HashSet<uint> privateGroupInvitations = new HashSet<uint>();
@@ -125,6 +129,30 @@ namespace ChatEngine.CoreClient
             get
             {
                 return this.knownClients;
+            }
+        }
+
+        internal void SetBuddyStatusFlags(uint buddyId, byte[] statusFlags)
+        {
+            if (statusFlags == null || statusFlags.Length != 3)
+            {
+                return;
+            }
+
+            lock (this.buddyStatusSync)
+            {
+                this.buddyStatusFlags[buddyId] = (byte[])statusFlags.Clone();
+            }
+        }
+
+        internal byte[] GetBuddyStatusFlags(uint buddyId)
+        {
+            lock (this.buddyStatusSync)
+            {
+                byte[] statusFlags;
+                return this.buddyStatusFlags.TryGetValue(buddyId, out statusFlags)
+                    ? (byte[])statusFlags.Clone()
+                    : new byte[] { 0x00, 0x01, 0x01 };
             }
         }
 

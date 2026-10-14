@@ -650,6 +650,7 @@ namespace ChatEngine
                 Colouring.Push(ConsoleColor.Red);
                 Console.WriteLine(locales.ServerConsoleServerIsRunning);
                 Colouring.Pop();
+                return;
             }
 
             chatServer.Start(TcpEnable, UdpEnable);
@@ -887,7 +888,7 @@ namespace ChatEngine
             }
             #endif
 
-            return "Config.xml";
+            return Config.ResolvedConfigPath;
         }
 
         private static Utility.Config.Config LoadStrictConfiguration()
@@ -1118,6 +1119,7 @@ namespace ChatEngine
         {
             ChatServer validationChatServer = null;
             ISComV2Server validationISCom = null;
+            bool loggingInitialized = false;
 
             try
             {
@@ -1145,6 +1147,7 @@ namespace ChatEngine
                 }
 
                 LogUtil.SetupConsoleLogging(LogLevel.Debug);
+                loggingInitialized = true;
                 LogManager.GetCurrentClassLogger().Debug("ChatEngine startup logging validation.");
                 LogManager.Flush();
 
@@ -1171,7 +1174,10 @@ namespace ChatEngine
                     validationChatServer.Dispose();
                 }
 
-                LogManager.Shutdown();
+                if (loggingInitialized)
+                {
+                    LogManager.Shutdown();
+                }
             }
         }
 
@@ -1421,6 +1427,7 @@ namespace ChatEngine
                     return RunHeadless(args) ? 0 : 1;
                 }
 
+                StartServer(null);
                 StartShutdownFileWatcher(args);
                 CommandLoop(args);
                 return 0;

@@ -141,14 +141,112 @@ namespace ChatEngine.CoreServer
         public void OnClientDisconnect(IClient client, bool forced)
         {
             Client cl = (Client)client;
-            if (this.ConnectedClients.Values.Any(connected => ReferenceEquals(connected, cl)))
-            {
-                this.RemoveClientFromPrivateGroup(cl);
-            }
-
             this.clientOwnership.Disconnect(cl.Character.CharacterId, cl,
                 id => CharacterOnlineOwnershipGuard.TryClearLoginOwnership(unchecked((int)id), CharacterDao.Instance.SetOffline),
-                LftRegistry.Remove);
+                LftRegistry.Remove,
+                id =>
+                {
+                    this.NotifyBuddyOffline(id);
+                    this.RemoveClientFromPrivateGroup(cl);
+                });
+        }
+
+        private void NotifyBuddyOffline(uint characterId)
+        {
+            this.NotifyBuddyStatus(characterId, 0);
+        }
+
+        internal void InitializeBuddyPresence(Client client)
+        {
+            if (client == null || client.Character == null)
+            {
+                return;
+            }
+
+            List<int> buddyIds;
+            try
+            {
+                buddyIds = BuddyList.LoadBuddyList(unchecked((int)client.Character.CharacterId));
+            }
+            catch (Exception exception)
+            {
+                LogUtil.Debug(DebugInfoDetail.Error,
+                    string.Format("Could not load buddy list for character {0}: {1}",
+                        client.Character.CharacterId, exception));
+                return;
+            }
+
+            client.Server.Debug(
+                client,
+                "{0} << BuddyList restored: CharacterID {1} BuddyIDs {2}",
+                client.Character.characterName,
+                client.Character.CharacterId,
+                string.Join(",", buddyIds));
+
+            foreach (int buddyId in buddyIds)
+            {
+                if (buddyId <= 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    string buddyName = CharacterDao.Instance.GetCharacterNameById(buddyId);
+                    if (string.IsNullOrWhiteSpace(buddyName))
+                    {
+                        continue;
+                    }
+
+                    uint buddyCharacterId = unchecked((uint)buddyId);
+                    client.Send(PlayerName.Create(buddyCharacterId, buddyName));
+                    if (!client.KnownClients.Contains(buddyCharacterId))
+                    {
+                        client.KnownClients.Add(buddyCharacterId);
+                    }
+
+                    uint online = this.ConnectedClients.ContainsKey(buddyCharacterId)
+                        || CharacterDao.Instance.IsOnline(buddyId) > 0
+                            ? 1u
+                            : 0u;
+                    client.Send(BuddyOnlineStatus.Create(
+                        buddyCharacterId, online, client.GetBuddyStatusFlags(buddyCharacterId)));
+                }
+                catch (Exception exception)
+                {
+                    LogUtil.Debug(DebugInfoDetail.Error,
+                        string.Format("Could not restore buddy {0} for character {1}: {2}",
+                            buddyId, client.Character.CharacterId, exception));
+                }
+            }
+
+            this.NotifyBuddyStatus(client.Character.CharacterId, 1);
+        }
+
+        private void NotifyBuddyStatus(uint characterId, uint online)
+        {
+            foreach (Client recipient in this.ConnectedClients.Values.ToArray())
+            {
+                if (recipient == null || recipient.Character == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (BuddyList.LoadBuddyList(unchecked((int)recipient.Character.CharacterId)).Contains(unchecked((int)characterId)))
+                    {
+                        recipient.Send(BuddyOnlineStatus.Create(
+                            characterId, online, recipient.GetBuddyStatusFlags(characterId)));
+                    }
+                }
+                catch (Exception exception)
+                {
+                    LogUtil.Debug(DebugInfoDetail.Error,
+                        string.Format("Could not notify buddy status for character {0} to {1}: {2}",
+                            characterId, recipient.Character.characterName, exception));
+                }
+            }
         }
 
         internal bool RegisterClient(Client client)

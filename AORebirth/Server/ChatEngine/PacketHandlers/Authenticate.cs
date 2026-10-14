@@ -204,6 +204,8 @@ namespace ChatEngine.PacketHandlers
 
             client.Send(anonv);
 
+            client.ChatServer().InitializeBuddyPresence(client);
+
             /*
              * Add client to channels.
              */

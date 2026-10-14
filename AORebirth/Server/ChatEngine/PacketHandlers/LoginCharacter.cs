@@ -113,7 +113,7 @@ namespace ChatEngine.PacketHandlers
                     string.Empty);
                 client.Send(anonv);
 
-                // TODO: Add Buddies List/BuddyOnlineStatus messages
+                client.ChatServer().InitializeBuddyPresence(client);
 
                 foreach (ChannelBase channel in client.Channels)
                 {

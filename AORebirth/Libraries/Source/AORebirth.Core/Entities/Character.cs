@@ -564,7 +564,24 @@ namespace AORebirth.Core.Entities
             LogUtil.Debug(
                 DebugInfoDetail.Database,
                 "Saving char " + temp.Name + " to coords " + temp.X + "/" + temp.Y + "/" + temp.Z + "/" + temp.Playfield);
-            CharacterDao.Instance.Save(this.GetDBCharacter());
+            CharacterDao.Instance.Save(
+                temp,
+                new
+                {
+                    temp.Id,
+                    temp.FirstName,
+                    temp.LastName,
+                    temp.HeadingW,
+                    temp.HeadingX,
+                    temp.HeadingY,
+                    temp.HeadingZ,
+                    temp.X,
+                    temp.Y,
+                    temp.Z,
+                    temp.Name,
+                    temp.Online,
+                    temp.Playfield
+                });
 
             CharacterDao.Instance.SetPlayfield(
                 this.Identity.Instance,
