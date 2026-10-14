@@ -72,6 +72,11 @@ namespace ChatEngine.CoreServer
         /// </summary>
         private readonly ChatSessionOwnership<Client> clientOwnership = new ChatSessionOwnership<Client>();
 
+        private readonly object privateGroupReconnectSync = new object();
+
+        private readonly Dictionary<uint, HashSet<uint>> privateGroupReconnectMembers =
+            new Dictionary<uint, HashSet<uint>>();
+
         public IReadOnlyDictionary<uint, Client> ConnectedClients { get { return this.clientOwnership.Clients; } }
 
         /// <summary>
@@ -136,7 +141,11 @@ namespace ChatEngine.CoreServer
         public void OnClientDisconnect(IClient client, bool forced)
         {
             Client cl = (Client)client;
-            this.RemoveClientFromPrivateGroup(cl);
+            if (this.ConnectedClients.Values.Any(connected => ReferenceEquals(connected, cl)))
+            {
+                this.RemoveClientFromPrivateGroup(cl);
+            }
+
             this.clientOwnership.Disconnect(cl.Character.CharacterId, cl,
                 id => CharacterOnlineOwnershipGuard.TryClearLoginOwnership(unchecked((int)id), CharacterDao.Instance.SetOffline),
                 LftRegistry.Remove);
@@ -149,6 +158,58 @@ namespace ChatEngine.CoreServer
                     unchecked((int)client.Character.CharacterId), CharacterDao.Instance.SetOnline))
                 : null;
             return this.clientOwnership.Register(client.Character.CharacterId, client, acquireOwnership);
+        }
+
+        internal void RestorePrivateGroupInvitations(Client client)
+        {
+            if (client == null || client.Character == null)
+            {
+                return;
+            }
+
+            uint characterId = client.Character.CharacterId;
+            if (client.IsBot)
+            {
+                uint[] previousMembers;
+                lock (this.privateGroupReconnectSync)
+                {
+                    HashSet<uint> memberIds;
+                    if (!this.privateGroupReconnectMembers.TryGetValue(characterId, out memberIds))
+                    {
+                        return;
+                    }
+
+                    previousMembers = memberIds.ToArray();
+                }
+
+                client.PrivateGroupId = characterId;
+                foreach (uint memberId in previousMembers)
+                {
+                    this.InvitePrivateGroupPlayer(client, memberId);
+                }
+
+                return;
+            }
+
+            uint[] groupIds;
+            lock (this.privateGroupReconnectSync)
+            {
+                groupIds = this.privateGroupReconnectMembers
+                    .Where(group => group.Value.Contains(characterId))
+                    .Select(group => group.Key)
+                    .ToArray();
+            }
+
+            foreach (uint groupId in groupIds)
+            {
+                Client bot;
+                if (this.ConnectedClients.TryGetValue(groupId, out bot)
+                    && bot != null
+                    && bot.IsBot)
+                {
+                    this.InvitePrivateGroupPlayer(bot, characterId);
+                }
+            }
         }
 
         internal void InvitePrivateGroupPlayer(Client inviter, uint invitedPlayerId)
@@ -169,6 +230,11 @@ namespace ChatEngine.CoreServer
             {
                 privateGroupId = inviter.Character.CharacterId;
                 inviter.PrivateGroupId = privateGroupId;
+            }
+
+            if (inviter.IsBot && privateGroupId == inviter.Character.CharacterId)
+            {
+                this.RememberPrivateGroupMember(privateGroupId, invitedPlayerId);
             }
 
             if (invitee.PrivateGroupId == privateGroupId)
@@ -222,6 +288,14 @@ namespace ChatEngine.CoreServer
 
             joiningClient.PrivateGroupId = privateGroupId;
 
+            Client groupOwner;
+            if (this.ConnectedClients.TryGetValue(privateGroupId, out groupOwner)
+                && groupOwner != null
+                && groupOwner.IsBot)
+            {
+                this.RememberPrivateGroupMember(privateGroupId, joiningPlayerId);
+            }
+
             foreach (Client member in existingMembers)
             {
                 this.SendKnownClient(joiningClient, member);
@@ -250,6 +324,7 @@ namespace ChatEngine.CoreServer
             }
 
             leavingClient.PrivateGroupId = 0;
+            this.ForgetPrivateGroupMember(privateGroupId, leavingClient.Character.CharacterId);
             byte[] leftPacket = PrivateGroupPlayerLeft.Create(privateGroupId, leavingClient.Character.CharacterId);
             foreach (Client member in this.ConnectedClients.Values.Where(
                 connected => connected != null && connected != leavingClient
@@ -293,6 +368,7 @@ namespace ChatEngine.CoreServer
             }
 
             kickedClient.PrivateGroupId = 0;
+            this.ForgetPrivateGroupMember(privateGroupId, kickedPlayerId);
             kickedClient.Send(PrivateGroupKicked.Create(privateGroupId));
             byte[] leftPacket = PrivateGroupPlayerLeft.Create(privateGroupId, kickedPlayerId);
             foreach (Client member in this.ConnectedClients.Values.Where(
@@ -320,6 +396,11 @@ namespace ChatEngine.CoreServer
                 member.PrivateGroupId = 0;
                 member.Send(PrivateGroupKicked.Create(privateGroupId));
             }
+
+            lock (this.privateGroupReconnectSync)
+            {
+                this.privateGroupReconnectMembers.Remove(privateGroupId);
+            }
         }
 
         #endregion
@@ -333,12 +414,65 @@ namespace ChatEngine.CoreServer
 
             uint privateGroupId = client.PrivateGroupId;
             client.PrivateGroupId = 0;
+
+            if (client.IsBot && client.Character.CharacterId == privateGroupId)
+            {
+                Client[] members = this.ConnectedClients.Values.Where(
+                    connected => connected != null && connected != client
+                        && connected.PrivateGroupId == privateGroupId).ToArray();
+                foreach (Client member in members)
+                {
+                    this.RememberPrivateGroupMember(privateGroupId, member.Character.CharacterId);
+                    member.PrivateGroupId = 0;
+                    member.Send(PrivateGroupKicked.Create(privateGroupId));
+                }
+
+                return;
+            }
+
+            this.ForgetPrivateGroupMember(privateGroupId, client.Character.CharacterId);
             byte[] leftPacket = PrivateGroupPlayerLeft.Create(privateGroupId, client.Character.CharacterId);
             foreach (Client member in this.ConnectedClients.Values.Where(
                 connected => connected != null && connected != client
                     && connected.PrivateGroupId == privateGroupId).ToArray())
             {
                 member.Send(leftPacket);
+            }
+        }
+
+        private void RememberPrivateGroupMember(uint privateGroupId, uint memberId)
+        {
+            if (privateGroupId == 0 || memberId == 0 || memberId == privateGroupId)
+            {
+                return;
+            }
+
+            lock (this.privateGroupReconnectSync)
+            {
+                HashSet<uint> memberIds;
+                if (!this.privateGroupReconnectMembers.TryGetValue(privateGroupId, out memberIds))
+                {
+                    memberIds = new HashSet<uint>();
+                    this.privateGroupReconnectMembers.Add(privateGroupId, memberIds);
+                }
+
+                memberIds.Add(memberId);
+            }
+        }
+
+        private void ForgetPrivateGroupMember(uint privateGroupId, uint memberId)
+        {
+            lock (this.privateGroupReconnectSync)
+            {
+                HashSet<uint> memberIds;
+                if (this.privateGroupReconnectMembers.TryGetValue(privateGroupId, out memberIds))
+                {
+                    memberIds.Remove(memberId);
+                    if (memberIds.Count == 0)
+                    {
+                        this.privateGroupReconnectMembers.Remove(privateGroupId);
+                    }
+                }
             }
         }
 

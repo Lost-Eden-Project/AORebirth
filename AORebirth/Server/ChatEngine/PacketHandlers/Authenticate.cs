@@ -208,6 +208,7 @@ namespace ChatEngine.PacketHandlers
              * Add client to channels.
              */
             client.ChatServer().AddClientToChannels(client);
+            client.ChatServer().RestorePrivateGroupInvitations(client);
         }
 
         #endregion

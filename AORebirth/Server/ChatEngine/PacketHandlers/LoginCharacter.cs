@@ -129,6 +129,8 @@ namespace ChatEngine.PacketHandlers
                 // add yourself to that list
                 client.KnownClients.Add(client.Character.CharacterId);
             }
+
+            client.ChatServer().RestorePrivateGroupInvitations(client);
         }
 
         #endregion
