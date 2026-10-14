@@ -72,6 +72,13 @@ namespace ZoneEngine_New.Core.Helpers
 
         static bool CanAttackNonPlayer(Character target) => target is not NpcCharacter npc || npc.Attackable;
 
+        /// <summary>A player other players may attack: a running buff sets PvPEnabled or PvPEnabled_Tower.</summary>
+        public static bool IsPvpEnabled(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            return (player.ActionRestrictionFlags & PlayerAttackable) != 0;
+        }
+
         /// <summary>
         /// A blue-named NPC (Flags stat bit <see cref="SmokeLounge.AOtomation.Messaging.GameData.CharacterFlags.HasBlueName"/>):
         /// the friendly, non-combat NPCs (receptionists, recruiters, vendors, quest givers). They are not attackable.

@@ -950,6 +950,15 @@ namespace ZoneEngine_New.Core.Entities
                 return false;
             }
 
+            // A hostile perk action aimed at a player, or a friendly one on a PvP-enabled player, flags this player for PvP.
+            if (!ReferenceEquals(target, this))
+            {
+                if (IsHostilePerkAction(template) || UseTargetRules.IsHostileTargeted(UseTargetRules.CanOf(template)))
+                    PvpAttackerFlag.OnHostileAction(this, target);
+                else
+                    PvpAttackerFlag.OnFriendlyAction(this, target);
+            }
+
             use = candidate;
             return true;
         }

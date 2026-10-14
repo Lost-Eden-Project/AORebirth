@@ -172,6 +172,15 @@ namespace ZoneEngine_New.Core.Nanos
                 caster.Stats.GetOrZero(CharacterStat.AggDef),
                 caster.Stats.GetOrZero(CharacterStat.NanoCInit));
 
+            // A hostile cast at a player, or a friendly one at a PvP-enabled player, flags the caster for PvP.
+            if (caster is Player castingPlayer)
+            {
+                if (spell.IsHostile)
+                    PvpAttackerFlag.OnHostileAction(castingPlayer, recipient!);
+                else
+                    PvpAttackerFlag.OnFriendlyAction(castingPlayer, recipient!);
+            }
+
             Identity resolvedTarget = recipient!.Identity;
             var cast = new PendingNanoCast(spell, resolvedTarget, nanoCost, attackTime, nowUtc);
             caster.BeginNanoCast(cast);
@@ -398,6 +407,10 @@ namespace ZoneEngine_New.Core.Nanos
                 // A proc or a nano's child resists by strain like a cast does.
                 if (spell.IsHostile && target.ResistsNanoStrain(spell.NanoStrain))
                     return false;
+
+                // Team buffs, auras and other nanos a player's nano lands: helping a PvP-enabled player flags them.
+                if (!spell.IsHostile && source is Player helper)
+                    PvpAttackerFlag.OnFriendlyAction(helper, target);
             }
 
             AnnounceImmediateLand(source, target, spell.Id);

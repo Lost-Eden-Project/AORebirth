@@ -101,6 +101,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.damagePercent must be a finite, non-negative number.");
             if (!double.IsFinite(Pvp.CritChancePercent) || Pvp.CritChancePercent < 0)
                 throw new InvalidDataException(path + ": pvp.critChancePercent must be a finite, non-negative number.");
+            if (Pvp.AttackerFlagNano < 0)
+                throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
         }
     }
 
@@ -115,6 +117,12 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Percent of a player's critical chance (CriticalIncrease) that applies against a player.</summary>
         public double CritChancePercent { get; init; } = 100;
+
+        /// <summary>
+        /// The nano a player gets for starting a fight with, or aiming a hostile action at, a player (214879, the PvP
+        /// flag). Landed only while the player does not already have it running. 0 turns it off.
+        /// </summary>
+        public int AttackerFlagNano { get; init; }
 
         static bool IsPvp(Entities.Character? source, Entities.Character target)
             => source is Entities.Player && target is Entities.Player;

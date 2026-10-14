@@ -51,6 +51,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (target != null && CombatRules.CanAttack(player, target))
             {
                 player.StartFighting(target.Identity, message.Action);
+                PvpAttackerFlag.OnHostileAction(player, target);
                 return;
             }
 

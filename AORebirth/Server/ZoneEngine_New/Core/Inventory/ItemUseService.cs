@@ -145,6 +145,12 @@ namespace ZoneEngine_New.Core.Inventory
                 return ItemUseStart.Rejected;
             }
 
+            // A hostile use aimed at a player, or a friendly one on a PvP-enabled player, flags the user for PvP.
+            if (UseTargetRules.IsHostileTargeted(can) && !ReferenceEquals(useTarget, player))
+                Helpers.PvpAttackerFlag.OnHostileAction(player, useTarget);
+            else if (UseTargetRules.AppliesToFriendly(can) && !ReferenceEquals(useTarget, player))
+                Helpers.PvpAttackerFlag.OnFriendlyAction(player, useTarget);
+
             int instanceId = item.InstanceId;
             var pending = new PendingItemUse(
                 player,
