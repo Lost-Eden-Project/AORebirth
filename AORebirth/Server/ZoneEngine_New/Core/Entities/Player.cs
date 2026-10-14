@@ -490,6 +490,21 @@ namespace ZoneEngine_New.Core.Entities
             return true;
         }
 
+        /// <summary>
+        /// GM setup: the trained perks become exactly <paramref name="perkIds"/> (regular, alien and finished research),
+        /// with no perk point, requirement or reset rules, and research in progress and the research goal are dropped.
+        /// Refreshes the perk templates and actions and rebases.
+        /// </summary>
+        public void ReplacePerksAndResearch(IEnumerable<int> perkIds)
+        {
+            ArgumentNullException.ThrowIfNull(perkIds);
+            TrainedPerks.Replace(perkIds);
+            Research.Clear();
+            if (Stats.Get(CharacterStat.PersonalResearchGoal, StatDetail.Base) != 0)
+                Stats.Set(CharacterStat.PersonalResearchGoal, 0, StatDetail.Base);
+            OnTrainedPerksChanged(null);
+        }
+
         /// <summary>Personal research tiers (Research.json).</summary>
         public ResearchCatalog ResearchCatalog { get; init; } = ResearchCatalog.Default;
 
@@ -738,7 +753,11 @@ namespace ZoneEngine_New.Core.Entities
             _perkActions = actions.ToArray();
         }
 
-        /// <summary>Login / FullCharacter: every held perk action and running perk lock goes to the client.</summary>
+        /// <summary>
+        /// Login / zone / FullCharacter: every held perk action, running perk lock and running skill lock goes to the
+        /// client. The client keeps its cooldown timers only for the playfield it built them in, so a lock started before
+        /// a zone change is shown again with its remaining seconds.
+        /// </summary>
         public void SendPerkActions()
         {
             AnnouncePerkActionChanges([], _perkActions);
@@ -746,6 +765,46 @@ namespace ZoneEngine_New.Core.Entities
             DateTime nowUtc = DateTime.UtcNow;
             foreach ((int perkId, TimeSpan remaining) in PerkLocks.Active(nowUtc))
                 AnnouncePerkLock(perkId, (int)Math.Ceiling(remaining.TotalSeconds), nowUtc);
+
+            // The client gets running skill locks in FullCharacter (BuildSkillLockEntries); here the server's own
+            // SpecialAvailable for each is scheduled again, which a login has no record of.
+            foreach ((int statId, TimeSpan remaining) in SkillLocks.Active(nowUtc))
+            {
+                if (IsClientSkillLock(statId))
+                    ScheduleSpecialAvailable(statId, nowUtc + remaining);
+            }
+        }
+
+        /// <summary>
+        /// Skill locks the client shows as a cooldown. LastPerkResetTime has its own stat timer and the /stuck Stability
+        /// lock is never shown.
+        /// </summary>
+        static bool IsClientSkillLock(int statId)
+            => statId is not ((int)CharacterStat.LastPerkResetTime or (int)CharacterStat.Stability);
+
+        /// <summary>
+        /// FullCharacter's skill lock list (the first FullCharacterSub2 array): per running lock 1, Identity (0, stat id),
+        /// the seconds it was locked for, the seconds left. Live after a Dimach and a zone change: 1, (0, 144), 1800, 1798
+        /// (capture 2026-10-14T00:26:23Z); retail sends no SpecialUsed for it again.
+        /// </summary>
+        FullCharacterSub2[] BuildSkillLockEntries()
+        {
+            var entries = new List<FullCharacterSub2>();
+            foreach ((int statId, int duration, int remaining) in SkillLocks.ActiveWithDuration(DateTime.UtcNow))
+            {
+                if (!IsClientSkillLock(statId))
+                    continue;
+
+                entries.Add(new FullCharacterSub2
+                {
+                    Unknown1 = 1,
+                    Unknown2 = new Identity { Type = (IdentityType)0, Instance = statId },
+                    Unknown3 = duration,
+                    Unknown4 = remaining
+                });
+            }
+
+            return [.. entries];
         }
 
         /// <summary>
@@ -2221,7 +2280,7 @@ namespace ZoneEngine_New.Core.Entities
                 UploadedNanoIds = [.. UploadedNanoIds],
                 Unknown2 = [],
                 Unknown3 = 1,
-                Unknown4 = [],
+                Unknown4 = BuildSkillLockEntries(),
                 UnknownI2 = 1,
                 Unknown5 = [],
                 UnknownI3 = 1,

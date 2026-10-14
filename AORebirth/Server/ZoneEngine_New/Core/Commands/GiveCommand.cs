@@ -283,7 +283,11 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            if (!NanoRuntime.TryApplyImmediate(context.Player, subject, nanoId, _items, _inventory, DateTime.UtcNow, gmApply: true))
+            // A self-only nano is only ever cast by its own holder, and its User / Wearer functions act on the caster:
+            // the subject casts it on themselves, so a team launcher (223199 -> 217788) reaches the subject's team
+            // rather than the GM.
+            Character caster = spell.IsSelfOnly ? subject : context.Player;
+            if (!NanoRuntime.TryApplyImmediate(caster, subject, nanoId, _items, _inventory, DateTime.UtcNow, gmApply: true))
             {
                 GmCommandFeedback.Send(
                     context.Session,

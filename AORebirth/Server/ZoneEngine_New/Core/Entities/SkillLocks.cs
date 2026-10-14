@@ -6,13 +6,15 @@ namespace ZoneEngine_New.Core.Entities
     using ZoneEngine_New.Core.Data;
 
     /// <summary>
-    /// LockSkill cooldowns keyed by stat id, each with an absolute UTC expiry. Mutated on the
-    /// playfield tick; the flush writer only ever sees a copied snapshot.
+    /// LockSkill cooldowns keyed by stat id, each with an absolute UTC expiry and the length it was locked for. Mutated
+    /// on the playfield tick; the flush writer only ever sees a copied snapshot. Only the expiry is stored, so a lock
+    /// restored at login counts its remaining time as its length.
     /// </summary>
     public sealed class SkillLocks
     {
         readonly object _gate = new();
         readonly Dictionary<int, DateTime> _expiresAtUtc = new();
+        readonly Dictionary<int, int> _durationSeconds = new();
         bool _dirty;
 
         public bool IsDirty
@@ -30,9 +32,16 @@ namespace ZoneEngine_New.Core.Entities
             lock (_gate)
             {
                 if (durationSeconds <= 0)
+                {
                     _expiresAtUtc.Remove(statId);
+                    _durationSeconds.Remove(statId);
+                }
                 else
+                {
                     _expiresAtUtc[statId] = nowUtc.AddSeconds(durationSeconds);
+                    _durationSeconds[statId] = durationSeconds;
+                }
+
                 _dirty = true;
             }
         }
@@ -44,7 +53,10 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             lock (_gate)
+            {
                 _expiresAtUtc[statId] = expiresAtUtc;
+                _durationSeconds[statId] = (int)Math.Ceiling((expiresAtUtc - nowUtc).TotalSeconds);
+            }
         }
 
         public TimeSpan Remaining(int statId, DateTime nowUtc)
@@ -71,6 +83,26 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     if (entry.Value > nowUtc)
                         active.Add((entry.Key, entry.Value - nowUtc));
+                }
+
+                return active;
+            }
+        }
+
+        /// <summary>Every unexpired lock with the seconds it was locked for and the seconds left (rounded up).</summary>
+        public List<(int Id, int DurationSeconds, int RemainingSeconds)> ActiveWithDuration(DateTime nowUtc)
+        {
+            lock (_gate)
+            {
+                var active = new List<(int, int, int)>(_expiresAtUtc.Count);
+                foreach (KeyValuePair<int, DateTime> entry in _expiresAtUtc)
+                {
+                    if (entry.Value <= nowUtc)
+                        continue;
+
+                    int remaining = (int)Math.Ceiling((entry.Value - nowUtc).TotalSeconds);
+                    int duration = _durationSeconds.TryGetValue(entry.Key, out int seconds) ? seconds : remaining;
+                    active.Add((entry.Key, Math.Max(duration, remaining), remaining));
                 }
 
                 return active;

@@ -26,7 +26,10 @@ namespace ZoneEngine_New.Core.WorldSimulation
         DestinationLine,
 
         /// <summary>Stand on the middle of a numbered line in Destinations.dat. Used by TeleportProxy2.</summary>
-        DestinationMidpoint
+        DestinationMidpoint,
+
+        /// <summary>Stand at the coordinates the function names. Used by Teleport.</summary>
+        Coordinates
     }
 
     /// <summary>
@@ -65,6 +68,9 @@ namespace ZoneEngine_New.Core.WorldSimulation
         /// <summary>How far in front of the target door to place the character.</summary>
         public float DoorClearance { get; init; }
 
+        /// <summary>Where the character lands when <see cref="Kind"/> is Coordinates.</summary>
+        public Vector3? Landing { get; init; }
+
         /// <summary>
         /// True when the destination door becomes a way back out. Only TeleportProxy does this;
         /// TeleportProxy2 clears the return instead, so its destinations are one-way.
@@ -92,6 +98,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
     /// <c>packed &gt;&gt; 16</c> and a <c>destPlayfieldId</c> of 0 means the door's own playfield.
     /// The landing is that line's midpoint pushed <see cref="LineLandingOffset"/> units to its
     /// left, which is the same data wall borders land on.</item>
+    /// <item><b>Teleport</b> names the landing outright: <c>{x, y, z, destPlayfieldId}</c>.</item>
     /// </list>
     /// <para>
     /// The low 16 bits of <c>packed</c> happen to repeat the destination playfield, which makes the
@@ -139,7 +146,8 @@ namespace ZoneEngine_New.Core.WorldSimulation
                     continue;
 
                 if (TryReadProxyPortal(modifier, out destination)
-                    || TryReadLinePortal(modifier, out destination))
+                    || TryReadLinePortal(modifier, out destination)
+                    || TryReadCoordinatePortal(modifier, out destination))
                 {
                     return true;
                 }
@@ -429,6 +437,51 @@ namespace ZoneEngine_New.Core.WorldSimulation
                     continue;
 
                 if (TryParseLineDestination(values, out destination))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Reads a Teleport argument list of the form <c>{x, y, z, destPlayfieldId}</c>, as on 7013's "Exit to
+        /// Borealis" door: <c>{685, 67, 590, 800}</c>. Only a named other playfield is a portal; a playfield of 0
+        /// (this one) moves within the zone and is not baked.
+        /// </summary>
+        public static bool TryParseCoordinateDestination(IList? arguments, out PortalDestination destination)
+        {
+            destination = default;
+            if (arguments == null || arguments.Count < 4)
+                return false;
+
+            int playfieldId = ToInt(arguments[3]);
+            if (playfieldId <= 0 || playfieldId > 0xFFFF)
+                return false;
+
+            destination = new PortalDestination
+            {
+                PlayfieldId = playfieldId,
+                Kind = PortalLandingKind.Coordinates,
+                Landing = new Vector3(ToInt(arguments[0]), ToInt(arguments[1]), ToInt(arguments[2]))
+            };
+            return true;
+        }
+
+        static bool TryReadCoordinatePortal(Modifier modifier, out PortalDestination destination)
+        {
+            destination = default;
+            if (!TryGetArgumentSets(
+                    modifier,
+                    AodbFunctionType.Teleport,
+                    out List<Dictionary<AodbFunctionOperator, object>>? sets))
+                return false;
+
+            for (int s = 0; s < sets!.Count; s++)
+            {
+                if (!TryGetArgumentList(sets[s], out IList? values))
+                    continue;
+
+                if (TryParseCoordinateDestination(values, out destination))
                     return true;
             }
 

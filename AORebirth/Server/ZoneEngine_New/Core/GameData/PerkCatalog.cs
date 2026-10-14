@@ -31,8 +31,14 @@ namespace ZoneEngine_New.Core.GameData
             LoadOrEmpty(GameDataPaths.ResolveRuntimeRoot()));
 
         readonly Dictionary<int, PerkEntry> _perks;
+        readonly Dictionary<int, int> _perkIdsByItemId = new();
 
-        PerkCatalog(Dictionary<int, PerkEntry> perks) => _perks = perks;
+        PerkCatalog(Dictionary<int, PerkEntry> perks)
+        {
+            _perks = perks;
+            foreach ((int perkId, PerkEntry perk) in perks)
+                _perkIdsByItemId.TryAdd(perk.ItemId, perkId);
+        }
 
         readonly record struct PerkEntry(int ItemId, int PreviousId, int Flags);
 
@@ -49,6 +55,9 @@ namespace ZoneEngine_New.Core.GameData
             itemId = perk.ItemId;
             return found;
         }
+
+        /// <summary>The perk whose item is <paramref name="itemId"/>; aosetups lists perks and research by item id.</summary>
+        public bool TryGetPerkId(int itemId, out int perkId) => _perkIdsByItemId.TryGetValue(itemId, out perkId);
 
         /// <summary>The previous tier of <paramref name="perkId"/>'s line, which must be trained first; false for tier 1.</summary>
         public bool TryGetPreviousId(int perkId, out int previousId)

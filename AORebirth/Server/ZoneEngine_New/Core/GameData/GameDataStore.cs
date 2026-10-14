@@ -888,7 +888,8 @@ namespace ZoneEngine_New.Core.GameData
                             {
                                 Level = level,
                                 NextLevelXp = row.NextLevelXp,
-                                FloorXp = floorXp
+                                FloorXp = floorXp,
+                                MinLevel = row.MinLevel
                             }))
                     {
                         skipped++;
@@ -1438,6 +1439,8 @@ namespace ZoneEngine_New.Core.GameData
         private sealed class AlienXpLevelRow
         {
             public int NextLevelXp { get; set; }
+
+            public int MinLevel { get; set; }
         }
     }
 }

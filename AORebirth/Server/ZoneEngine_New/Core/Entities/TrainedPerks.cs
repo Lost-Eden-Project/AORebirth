@@ -49,6 +49,22 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
+        /// <summary>GM setup: replaces the whole set, research included, and marks it dirty.</summary>
+        public void Replace(IEnumerable<int> perkIds)
+        {
+            lock (_gate)
+            {
+                _perkIds.Clear();
+                foreach (int perkId in perkIds)
+                {
+                    if (perkId > 0)
+                        _perkIds.Add(perkId);
+                }
+
+                _dirty = true;
+            }
+        }
+
         public bool Add(int perkId)
         {
             lock (_gate)

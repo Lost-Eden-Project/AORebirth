@@ -72,6 +72,19 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
+        /// <summary>GM setup: forgets every tier in progress.</summary>
+        public void Clear()
+        {
+            lock (_gate)
+            {
+                if (_remaining.Count == 0)
+                    return;
+
+                _remaining.Clear();
+                _dirty = true;
+            }
+        }
+
         /// <summary>Drops progress rows for tiers that are already trained (a crash between the two writes).</summary>
         public void DropFinished(TrainedPerks trained)
         {

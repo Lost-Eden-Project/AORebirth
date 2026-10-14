@@ -661,6 +661,12 @@
         bool TryResolvePortalLanding(ZoneTriggerVolume portal, out AoVector3 landing, out AoQuaternion? heading)
         {
             heading = null;
+            if (portal.LandingKind == PortalLandingKind.Coordinates)
+            {
+                landing = portal.Landing!;
+                return portal.Landing != null;
+            }
+
             if (portal.LandingKind == PortalLandingKind.DestinationLine)
             {
                 return PortalDoorLandingResolver.TryResolveLineLanding(
@@ -723,12 +729,18 @@
                 _logger.Info(
                     $"Zone trigger transfer character={id} from={source.Identity.Instance} to={destPlayfieldId}");
 
+                // A Teleport's coordinates are whole units, so its landing settles onto the floor as the item use does.
+                AoVector3 landing = crossing.Trigger.LandingKind == PortalLandingKind.Coordinates
+                                    && crossing.Trigger.Kind == ZoneTriggerKind.PortalDynel
+                    ? destination.SnapFeetToFloor(crossing.Landing)
+                    : crossing.Landing;
+
                 // Door and explicit LineTeleport arrivals face along their landing clearance; borders keep
                 // the character's current heading rather than imposing a global compass direction.
                 if (crossing.Heading is { } heading)
-                    current.TransferToPlayfield(destination, crossing.Landing, heading);
+                    current.TransferToPlayfield(destination, landing, heading);
                 else
-                    current.TransferToPlayfield(destination, crossing.Landing);
+                    current.TransferToPlayfield(destination, landing);
             });
         }
 
@@ -1290,7 +1302,8 @@
                         DestDoorInstance = portal.DoorInstance,
                         DoorClearance = portal.DoorClearance,
                         DestIndex = portal.DestinationIndex,
-                        RecordsReturn = portal.RecordsReturn
+                        RecordsReturn = portal.RecordsReturn,
+                        Landing = portal.Landing
                     };
                 ApplyClientSphere(door, d, x, y, z,
                     d.IdentityType == (int)IdentityType.Door ? DoorRotation(d) : null);

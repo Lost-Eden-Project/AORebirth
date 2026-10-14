@@ -16,7 +16,8 @@ public sealed record AoSetup(
     IReadOnlyList<AoSetupImplant> Implants,
     IReadOnlyList<AoSetupSymbiant> Symbiants,
     IReadOnlyList<AoSetupSkill> Skills,
-    IReadOnlyList<int> Buffs);
+    IReadOnlyList<int> Buffs,
+    IReadOnlyList<int> Perks);
 
 /// <summary>A weapon-page or armor-page item: aosetups stores only its high id and QL.</summary>
 public sealed record AoSetupItem(bool Weapon, string Slot, int HighId, int Quality);
@@ -163,8 +164,16 @@ public sealed class AoSetupsClient
                 buffs.Add(aoid);
         }
 
+        // Every trained tier by its perk item id: regular and alien perks and personal research alike.
+        var perks = new List<int>();
+        foreach (JsonElement perk in Array(root, "perks"))
+        {
+            if (perk.ValueKind == JsonValueKind.Object && TryInt(perk, "aoid", out int aoid) && aoid > 0)
+                perks.Add(aoid);
+        }
+
         string setupName = TryString(root, "name", out string value) ? value : string.Empty;
-        return new AoSetup(setupName, level, profession, items, implants, symbiants, skills, buffs);
+        return new AoSetup(setupName, level, profession, items, implants, symbiants, skills, buffs, perks);
     }
 
     static void ReadItems(JsonElement root, string property, bool weapon, List<AoSetupItem> into)

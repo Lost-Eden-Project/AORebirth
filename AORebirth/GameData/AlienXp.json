@@ -1,92 +1,122 @@
 {
     "1": {
-       "NextLevelXp": 1500
+       "NextLevelXp": 1500,
+       "MinLevel": 5
     },
     "2": {
-       "NextLevelXp": 9000
+       "NextLevelXp": 9000,
+       "MinLevel": 15
     },
     "3": {
-       "NextLevelXp": 22500
+       "NextLevelXp": 22500,
+       "MinLevel": 25
     },
     "4": {
-       "NextLevelXp": 42000
+       "NextLevelXp": 42000,
+       "MinLevel": 35
     },
     "5": {
-       "NextLevelXp": 67500
+       "NextLevelXp": 67500,
+       "MinLevel": 45
     },
     "6": {
-       "NextLevelXp": 99000
+       "NextLevelXp": 99000,
+       "MinLevel": 55
     },
     "7": {
-       "NextLevelXp": 136500
+       "NextLevelXp": 136500,
+       "MinLevel": 65
     },
     "8": {
-       "NextLevelXp": 180000
+       "NextLevelXp": 180000,
+       "MinLevel": 75
     },
     "9": {
-       "NextLevelXp": 229500
+       "NextLevelXp": 229500,
+       "MinLevel": 85
     },
     "10": {
-       "NextLevelXp": 285000
+       "NextLevelXp": 285000,
+       "MinLevel": 95
     },
     "11": {
-       "NextLevelXp": 346500
+       "NextLevelXp": 346500,
+       "MinLevel": 105
     },
     "12": {
-       "NextLevelXp": 414000
+       "NextLevelXp": 414000,
+       "MinLevel": 110
     },
     "13": {
-       "NextLevelXp": 487500
+       "NextLevelXp": 487500,
+       "MinLevel": 115
     },
     "14": {
-       "NextLevelXp": 567000
+       "NextLevelXp": 567000,
+       "MinLevel": 120
     },
     "15": {
-       "NextLevelXp": 697410
+       "NextLevelXp": 697410,
+       "MinLevel": 125
     },
     "16": {
-       "NextLevelXp": 857814
+       "NextLevelXp": 857814,
+       "MinLevel": 130
     },
     "17": {
-       "NextLevelXp": 1055112
+       "NextLevelXp": 1055112,
+       "MinLevel": 135
     },
     "18": {
-       "NextLevelXp": 1297787
+       "NextLevelXp": 1297787,
+       "MinLevel": 140
     },
     "19": {
-       "NextLevelXp": 1596278
+       "NextLevelXp": 1596278,
+       "MinLevel": 145
     },
     "20": {
-       "NextLevelXp": 1931497
+       "NextLevelXp": 1931497,
+       "MinLevel": 150
     },
     "21": {
-       "NextLevelXp": 2298481
+       "NextLevelXp": 2298481,
+       "MinLevel": 155
     },
     "22": {
-       "NextLevelXp": 2689223
+       "NextLevelXp": 2689223,
+       "MinLevel": 160
     },
     "23": {
-       "NextLevelXp": 3092606
+       "NextLevelXp": 3092606,
+       "MinLevel": 165
     },
     "24": {
-       "NextLevelXp": 3494645
+       "NextLevelXp": 3494645,
+       "MinLevel": 170
     },
     "25": {
-       "NextLevelXp": 3879056
+       "NextLevelXp": 3879056,
+       "MinLevel": 175
     },
     "26": {
-       "NextLevelXp": 4228171
+       "NextLevelXp": 4228171,
+       "MinLevel": 180
     },
     "27": {
-       "NextLevelXp": 4608707
+       "NextLevelXp": 4608707,
+       "MinLevel": 185
     },
     "28": {
-       "NextLevelXp": 5023490
+       "NextLevelXp": 5023490,
+       "MinLevel": 190
     },
     "29": {
-       "NextLevelXp": 5475604
+       "NextLevelXp": 5475604,
+       "MinLevel": 195
     },
     "30": {
-       "NextLevelXp": 5968409
+       "NextLevelXp": 5968409,
+       "MinLevel": 200
     }
  }

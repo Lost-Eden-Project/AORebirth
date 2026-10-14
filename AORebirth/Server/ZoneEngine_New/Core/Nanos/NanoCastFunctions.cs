@@ -52,7 +52,7 @@ namespace ZoneEngine_New.Core.Nanos
                     FunctionType.CastNanoIfPossibleOnFightTarget => CastNanoOnFightTarget(caster, spell, items, inventory, nowUtc),
                     FunctionType.NpcCastNanoIfPossibleOnFightTarget => CastNanoOnFightTarget(caster, spell, items, inventory, nowUtc),
                     FunctionType.AreaCastNano => AreaCastNano(caster, target, spell, items, inventory, nowUtc),
-                    FunctionType.TeamCastNano => TeamCastNano(caster, spell, items, inventory, nowUtc),
+                    FunctionType.TeamCastNano => TeamCastNano(caster, target, spell, items, inventory, nowUtc),
                     FunctionType.PlayfieldNano => PlayfieldNano(caster, spell, items, inventory, nowUtc),
                     FunctionType.CastOnPets => CastOnPets(caster, spell, items, inventory, nowUtc),
                     _ => false
@@ -161,8 +161,15 @@ namespace ZoneEngine_New.Core.Nanos
             return true;
         }
 
+        /// <summary>
+        /// Casts the child on the team of the character the function applies to, still from
+        /// <paramref name="caster"/>. A self-cast team nano names its caster (User / Wearer); one aimed at a
+        /// Target, such as 90449 (child 90445), buffs that target's team. Without a team only that character
+        /// gets it.
+        /// </summary>
         static bool TeamCastNano(
             Character caster,
+            Character recipient,
             ItemSpell spell,
             IItemBuilder items,
             IInventoryRepository inventory,
@@ -171,10 +178,10 @@ namespace ZoneEngine_New.Core.Nanos
             if (!spell.TryReadInt(0, out int nanoId) || nanoId <= 0)
                 return false;
 
-            if (caster is not Player player)
+            if (recipient is not Player player)
             {
-                if (!caster.IsDead)
-                    NanoRuntime.TryApplyImmediate(caster, caster, nanoId, items, inventory, nowUtc);
+                if (!recipient.IsDead)
+                    NanoRuntime.TryApplyImmediate(caster, recipient, nanoId, items, inventory, nowUtc);
                 return true;
             }
 
@@ -185,7 +192,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (team == null || manager == null)
             {
                 if (!player.IsDead)
-                    NanoRuntime.TryApplyImmediate(player, player, nanoId, items, inventory, nowUtc);
+                    NanoRuntime.TryApplyImmediate(caster, player, nanoId, items, inventory, nowUtc);
                 return true;
             }
 
@@ -194,7 +201,7 @@ namespace ZoneEngine_New.Core.Nanos
                 if (!manager.FindPlayer(team.MemberIds[i], out Player? mate) || mate == null || mate.IsDead)
                     continue;
 
-                NanoRuntime.TryApplyImmediate(player, mate, nanoId, items, inventory, nowUtc);
+                NanoRuntime.TryApplyImmediate(caster, mate, nanoId, items, inventory, nowUtc);
             }
 
             return true;

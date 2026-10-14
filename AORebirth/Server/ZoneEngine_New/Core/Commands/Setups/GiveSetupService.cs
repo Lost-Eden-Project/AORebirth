@@ -25,7 +25,8 @@ using ZoneEngine_New.Core.Playfield;
 
 /// <summary>
 /// <c>.give setup &lt;url&gt;</c>: makes the issuer's worn weapons, armor, implants and symbiants exactly the aosetups setup,
-/// sets the setup's profession and level, sets abilities and skills to the setup's IP raises, applies its buffs, then reloads the issuer in place so
+/// sets the setup's profession and level and the AI level that level allows, sets abilities and skills to the setup's IP
+/// raises, replaces trained perks and research with the setup's, applies its buffs, then reloads the issuer in place so
 /// the client rebuilds from a full update. The web fetch runs off the tick; everything else runs on the
 /// issuer's playfield owner, and nothing is changed unless the setup resolved.
 /// </summary>
@@ -201,6 +202,8 @@ public sealed class GiveSetupService(
             skills.Add((stat, start + Math.Max(0, skill.PointsFromIp)));
         }
 
+        List<int> perks = ResolvePerks(player.PerkCatalog, setup.Perks, skipped);
+
         // Worn gear is replaced, not kept: the result is exactly the setup.
         var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
         int removed = 0;
@@ -234,8 +237,18 @@ public sealed class GiveSetupService(
         if (setup.Level > 0 && !levelSet)
             skipped.Add("level " + setup.Level + ": not set");
 
+        // aosetups keeps no AI level: it allows the highest one the character level reaches (AlienXp.json MinLevel).
+        int alienLevel = MaxAlienLevel(player.Stats.GetOrOne(CharacterStat.Level));
+        bool alienLevelSet = player.TrySetAlienLevel(alienLevel);
+        if (!alienLevelSet)
+            skipped.Add("AI level " + alienLevel + ": not set");
+
         foreach ((CharacterStat stat, int value) in skills)
             player.Stats.Set(stat, value, StatDetail.Base);
+
+        // Perks and research are replaced, not kept: whatever was trained or being researched before is gone.
+        player.ReplacePerksAndResearch(perks);
+        int research = perks.Count(player.PerkCatalog.IsResearch);
 
         player.Rebase();
         foreach (Placement placement in placements.Values.Where(placement => placement.Page.Identity.Type != IdentityType.SocialPage))
@@ -255,11 +268,14 @@ public sealed class GiveSetupService(
 
         playfield.GetRequiredService<SpawnService>().ReloadInPlace(player);
 
-        logger.Info(string.Format(CultureInfo.InvariantCulture, "aosetups applied char={0} setup='{1}' profession={2} level={3} equipped={4} removed={5} skills={6} buffs={7} skipped={8}",
-            player.Identity.Instance, setup.Name, profession?.ToString() ?? "unchanged", levelSet ? setup.Level : 0, placements.Count, removed, skills.Count, buffs, skipped.Count));
+        logger.Info(string.Format(CultureInfo.InvariantCulture, "aosetups applied char={0} setup='{1}' profession={2} level={3} aiLevel={4} equipped={5} removed={6} skills={7} perks={8} research={9} buffs={10} skipped={11}",
+            player.Identity.Instance, setup.Name, profession?.ToString() ?? "unchanged", levelSet ? setup.Level : 0, alienLevelSet ? alienLevel : -1,
+            placements.Count, removed, skills.Count, perks.Count - research, research, buffs, skipped.Count));
         GmCommandFeedback.Send(session, player, string.Format(CultureInfo.InvariantCulture,
-            "Applied setup '{0}': {1}, level {2}, {3} items equipped, {4} removed, {5} skills set, {6}/{7} buffs.",
-            setup.Name, profession?.ToString() ?? "profession unchanged", levelSet ? setup.Level.ToString(CultureInfo.InvariantCulture) : "unchanged", placements.Count, removed, skills.Count, buffs, setup.Buffs.Count));
+            "Applied setup '{0}': {1}, level {2}, AI level {3}, {4} items equipped, {5} removed, {6} skills set, {7} perks, {8} research, {9}/{10} buffs.",
+            setup.Name, profession?.ToString() ?? "profession unchanged", levelSet ? setup.Level.ToString(CultureInfo.InvariantCulture) : "unchanged",
+            alienLevelSet ? alienLevel.ToString(CultureInfo.InvariantCulture) : "unchanged", placements.Count, removed, skills.Count,
+            perks.Count - research, research, buffs, setup.Buffs.Count));
         foreach (string reason in skipped)
             GmCommandFeedback.Send(session, player, "Skipped " + reason);
     }
@@ -284,6 +300,51 @@ public sealed class GiveSetupService(
 
         int slot = page.Offset + relative - 1;
         placements[(page.Identity.Type, slot)] = new Placement(page, slot, item, label);
+    }
+
+    /// <summary>
+    /// aosetups perk item ids to perk ids (Perks.json), regular, alien and research alike. A tier whose previous tier is
+    /// not in the setup too is left out, as the client would never have trained it.
+    /// </summary>
+    static List<int> ResolvePerks(PerkCatalog perkCatalog, IReadOnlyList<int> itemIds, List<string> skipped)
+    {
+        var perkIds = new HashSet<int>();
+        foreach (int itemId in itemIds)
+        {
+            if (perkCatalog.TryGetPerkId(itemId, out int perkId))
+                perkIds.Add(perkId);
+            else
+                skipped.Add(string.Format(CultureInfo.InvariantCulture, "perk item {0}: not in Perks.json", itemId));
+        }
+
+        // Dropping a tier can orphan the one after it, so repeat until nothing more drops.
+        bool dropped = true;
+        while (dropped)
+        {
+            dropped = false;
+            foreach (int perkId in perkIds.ToArray())
+            {
+                if (perkCatalog.TryGetPreviousId(perkId, out int previousId) && !perkIds.Contains(previousId))
+                {
+                    perkIds.Remove(perkId);
+                    skipped.Add(string.Format(CultureInfo.InvariantCulture, "perk {0}: previous tier {1} not in the setup", perkId, previousId));
+                    dropped = true;
+                }
+            }
+        }
+
+        return perkIds.Order().ToList();
+    }
+
+    /// <summary>The highest alien level whose AlienXp.json MinLevel <paramref name="level"/> reaches; 0 when none does.</summary>
+    int MaxAlienLevel(int level)
+    {
+        int alienLevel = 0;
+        while (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry? entry) && entry != null
+            && entry.MinLevel > 0 && entry.MinLevel <= level)
+            alienLevel++;
+
+        return alienLevel;
     }
 
     /// <summary>"Martial Artist", "Nano-Technician", "Meta-Physicist": letters only, matched against player professions.</summary>

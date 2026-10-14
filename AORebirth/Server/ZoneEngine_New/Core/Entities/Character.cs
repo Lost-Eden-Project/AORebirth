@@ -966,11 +966,20 @@ namespace ZoneEngine_New.Core.Entities
 
             long progress = (long)Stats.GetOrZero(CharacterStat.AlienXP) + amount;
             int next = 0;
+            int level = Stats.GetOrOne(CharacterStat.Level);
             while (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry step) && step.NextLevelXp > 0)
             {
                 next = step.NextLevelXp;
                 if (progress < next)
                     break;
+
+                // An alien level above what the character level allows (AlienXp.json MinLevel) is not reached: the bar
+                // stays full and the rest of the grant is lost.
+                if (step.MinLevel > level)
+                {
+                    progress = next;
+                    break;
+                }
 
                 progress -= next;
                 alienLevel++;

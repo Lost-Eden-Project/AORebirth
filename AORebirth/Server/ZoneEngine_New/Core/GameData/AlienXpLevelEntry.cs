@@ -12,5 +12,8 @@ namespace ZoneEngine_New.Core.GameData
         public int NextLevelXp { get; init; }
 
         public int FloorXp { get; init; }
+
+        /// <summary>The character level this alien level needs; 0 when the row does not say.</summary>
+        public int MinLevel { get; init; }
     }
 }
