@@ -8,7 +8,7 @@ namespace ZoneEngine_New.Core.Mobs
 
     /// <summary>
     /// GameData/MonsterCombatRules.json: combat behaviour keyed by mob hash, e.g.
-    /// <c>{ "ASSU": { "Pets": { "Item": 202638, "MaxPets": 2, ... } } }</c>. Loaded once per GameData root.
+    /// <c>{ "ASSU": { "Pets": { "MaxPets": 2 } } }</c>. Loaded once per GameData root.
     /// </summary>
     public sealed class MonsterCombatRulesCatalog
     {
@@ -71,14 +71,12 @@ namespace ZoneEngine_New.Core.Mobs
     }
 
     /// <summary>
-    /// Pets the NPC raises with an equipped pet-creation item ("NPC Pet Creation Item") while it fights. The item's
-    /// OnUse names the pet's mob hash and level. Pets leave when the NPC resets, dies or despawns.
+    /// Pets the NPC raises while it fights with the "NPC Pet Creation Item" in its equipment (the first, by slot); the
+    /// item's OnUse names the pet's mob hash and level. Every NPC with that item uses these defaults unless its hash
+    /// overrides them. Pets leave when the NPC resets, dies or despawns.
     /// </summary>
     public sealed class MonsterPetRule
     {
-        /// <summary>Template id of the equipped item whose OnUse SpawnMonster2 / SummonPet gives the pet hash and level.</summary>
-        public int Item { get; set; }
-
         /// <summary>Most pets alive at once.</summary>
         public int MaxPets { get; set; } = 1;
 

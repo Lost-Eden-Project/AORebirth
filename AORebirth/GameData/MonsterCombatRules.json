@@ -1,10 +1,7 @@
 {
   "ASSU": {
     "Pets": {
-      "Item": 202638,
-      "MaxPets": 2,
-      "SummonIntervalSeconds": 1,
-      "RespawnDelaySeconds": 10
+      "MaxPets": 2
     }
   }
 }

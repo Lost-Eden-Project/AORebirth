@@ -37,35 +37,48 @@ namespace ZoneEngine_New.Core.Ai
             _level = level;
         }
 
+        /// <summary>Name of the equipment item whose OnUse raises an NPC's combat pets (one template per pet kind).</summary>
+        public const string PetCreationItemName = "NPC Pet Creation Item";
+
         /// <summary>
-        /// The NPC's pet rule when its hash has one and its equipment holds the rule's item with a pet spawn on use;
-        /// otherwise null.
+        /// Combat pets for an NPC whose equipment holds a <see cref="PetCreationItemName"/> (the first, by slot, when it
+        /// has several) with a pet spawn on use; otherwise null. The NPC's hash may override the
+        /// <see cref="MonsterPetRule"/> defaults in MonsterCombatRules.json.
         /// </summary>
         public static NpcPetSummons? TryCreate(NpcCharacter npc, string gameDataRoot)
         {
-            string? hash = npc.MobTemplate?.Hash ?? npc.SpawnHash;
-            if (!MonsterCombatRulesCatalog.For(gameDataRoot).TryGet(hash, out MonsterCombatRules rules)
-                || rules.Pets is not MonsterPetRule rule || rule.MaxPets <= 0 || rule.Item <= 0)
+            Item? creator = null;
+            int creatorSlot = int.MaxValue;
+            foreach (KeyValuePair<int, Item> slot in npc.Equipment.Content)
+            {
+                if (slot.Key >= creatorSlot
+                    || !string.Equals(slot.Value.Name, PetCreationItemName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                creator = slot.Value;
+                creatorSlot = slot.Key;
+            }
+
+            if (creator == null || !creator.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells))
                 return null;
 
-            foreach (Item item in npc.Equipment.Content.Values)
+            string? hash = npc.MobTemplate?.Hash ?? npc.SpawnHash;
+            MonsterPetRule rule = MonsterCombatRulesCatalog.For(gameDataRoot).TryGet(hash, out MonsterCombatRules rules)
+                && rules.Pets is MonsterPetRule overridden
+                    ? overridden
+                    : new MonsterPetRule();
+            if (rule.MaxPets <= 0)
+                return null;
+
+            foreach (ItemSpell spell in spells)
             {
-                if (item.LowId != rule.Item && item.HighId != rule.Item)
+                if (!spell.Is(FunctionType.SpawnMonster2) && !spell.Is(FunctionType.SummonPet))
                     continue;
-                if (!item.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells))
+                if (!spell.TryReadString(0, out string petHash) || petHash.Length == 0)
                     continue;
+                if (!spell.TryReadInt(1, out int level))
+                    level = 0;
 
-                foreach (ItemSpell spell in spells)
-                {
-                    if (!spell.Is(FunctionType.SpawnMonster2) && !spell.Is(FunctionType.SummonPet))
-                        continue;
-                    if (!spell.TryReadString(0, out string petHash) || petHash.Length == 0)
-                        continue;
-                    if (!spell.TryReadInt(1, out int level))
-                        level = 0;
-
-                    return new NpcPetSummons(npc, rule, petHash.Trim(), level);
-                }
+                return new NpcPetSummons(npc, rule, petHash.Trim(), level);
             }
 
             return null;
