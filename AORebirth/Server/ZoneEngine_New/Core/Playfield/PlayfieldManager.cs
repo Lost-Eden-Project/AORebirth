@@ -84,11 +84,13 @@ namespace ZoneEngine_New.Core.Playfield
             Quests.QuestService? quests = null,
             ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService? questDungeons = null,
             ZoneEngine_New.Core.Knubot.KnubotService? knubot = null,
-            ZoneEngine_New.Core.Configuration.GameplaySettings? gameplay = null)
+            ZoneEngine_New.Core.Configuration.GameplaySettings? gameplay = null,
+            ZoneEngine_New.Core.Modules.ZoneModuleHost? modules = null)
         {
             QuestDungeons = questDungeons;
             Knubot = knubot;
             Gameplay = gameplay;
+            ModuleEvents = modules?.Count > 0 ? modules.Events : null;
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(router);
             ArgumentNullException.ThrowIfNull(playerHydrator);
@@ -145,6 +147,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Root Gameplay.json settings, forwarded into every playfield container.</summary>
         public ZoneEngine_New.Core.Configuration.GameplaySettings? Gameplay { get; }
+
+        /// <summary>External module event handlers, forwarded into every playfield container; null when no module is loaded.</summary>
+        public ZoneEngine_New.Core.Modules.ZoneModuleEvents? ModuleEvents { get; }
 
         public static TimeSpan ResolveLinkDeadTimeout()
         {

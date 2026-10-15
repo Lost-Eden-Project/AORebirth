@@ -10,13 +10,17 @@ namespace ZoneEngine_New.Core.Network
 
     using Utility.Config;
 
+    using AORebirth.Modules.Network;
+
     using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Modules;
 
     public sealed class ZoneNetworkHost : IAsyncDisposable
     {
         private readonly ZoneMessageCodec _codec;
         private readonly ZoneMessageDispatcher _dispatcher;
         private readonly IZoneLogger _logger;
+        private readonly ZoneModuleHost? _modules;
         private readonly ConcurrentDictionary<Guid, ZoneSession> _sessions = new();
         private readonly CancellationTokenSource _cts = new();
         private Socket? _listener;
@@ -27,7 +31,8 @@ namespace ZoneEngine_New.Core.Network
         public ZoneNetworkHost(
             ZoneMessageCodec codec,
             ZoneMessageDispatcher dispatcher,
-            IZoneLogger logger)
+            IZoneLogger logger,
+            ZoneModuleHost? modules = null)
         {
             ArgumentNullException.ThrowIfNull(codec);
             ArgumentNullException.ThrowIfNull(dispatcher);
@@ -36,6 +41,7 @@ namespace ZoneEngine_New.Core.Network
             _codec = codec;
             _dispatcher = dispatcher;
             _logger = logger;
+            _modules = modules;
         }
 
         public void Start()
@@ -120,12 +126,16 @@ namespace ZoneEngine_New.Core.Network
                 {
                     Socket socket = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
                     Guid sessionId = Guid.NewGuid();
+                    if (!TryCreateConnectionFilter(sessionId, socket, out IConnectionFilter? filter))
+                        continue;
+
                     ZoneSession session = new ZoneSession(
                         sessionId,
                         socket,
                         _codec,
                         _dispatcher,
-                        _logger);
+                        _logger,
+                        filter);
 
                     _sessions[sessionId] = session;
 
@@ -153,6 +163,29 @@ namespace ZoneEngine_New.Core.Network
                 {
                     _logger.Error(exception, "AcceptLoop error.");
                 }
+            }
+        }
+
+        /// <summary>A module connection filter for the new socket; a provider failure refuses only this connection.</summary>
+        private bool TryCreateConnectionFilter(Guid sessionId, Socket socket, out IConnectionFilter? filter)
+        {
+            filter = null;
+            if (_modules == null)
+                return true;
+
+            EndPoint? remote = null;
+            try
+            {
+                remote = socket.RemoteEndPoint;
+                filter = _modules.CreateConnectionFilter(sessionId, remote);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Module connection filter refused connection from " + (remote?.ToString() ?? "unknown") + ".");
+                try { socket.Close(); }
+                catch { }
+                return false;
             }
         }
 

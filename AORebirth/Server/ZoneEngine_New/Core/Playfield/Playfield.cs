@@ -793,6 +793,8 @@ namespace ZoneEngine_New.Core.Playfield
                 services.AddSingleton(_playfieldManager.Knubot.Catalog);
             if (_playfieldManager.Gameplay != null)
                 services.AddSingleton(_playfieldManager.Gameplay);
+            if (_playfieldManager.ModuleEvents != null)
+                services.AddSingleton(_playfieldManager.ModuleEvents);
             services.AddSingleton(_playfieldManager.ItemTemplates);
             services.AddSingleton(_playerHydrator);
             services.AddSingleton(_gameData);

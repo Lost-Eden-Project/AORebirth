@@ -47,6 +47,7 @@ namespace ZoneEngine_New
         private static DebugMcpHost? debugMcp;
         private static PlayfieldManager? playfieldManager;
         private static IChatEngineLink? chatEngineLink;
+        private static ZoneEngine_New.Core.Modules.ZoneModuleHost? modules;
         private static int shutdownStarted;
         private static volatile bool shutdownFailed;
         private static readonly ManualResetEventSlim shutdownCompleted = new(false);
@@ -98,6 +99,8 @@ namespace ZoneEngine_New
                         gameData.HashTemplateCount,
                         gameData.HashInstanceCount,
                         gameData.MonsterDataCount));
+                // External modules load before any playfield or connection can raise into them.
+                modules = rootServices.GetRequiredService<ZoneEngine_New.Core.Modules.ZoneModuleHost>();
                 chatEngineLink = rootServices.GetRequiredService<IChatEngineLink>();
                 chatEngineLink.Start();
                 playfieldManager = rootServices.GetRequiredService<PlayfieldManager>();
@@ -224,6 +227,8 @@ namespace ZoneEngine_New
                     $"Gameplay config stuckCooldownSeconds={settings.StuckCooldownSeconds} stuckLocation=pf {settings.StuckLocation!.Playfield} ({settings.StuckLocation.X}, {settings.StuckLocation.Y}, {settings.StuckLocation.Z}) xpKillPercentPerLevelDifference={settings.Xp.KillPercentPerLevelDifference} sideXpBonusPercent={settings.Xp.SideBonusPercent} from {path}");
                 return settings;
             });
+            services.AddSingleton(provider => ZoneEngine_New.Core.Modules.ZoneModuleHost.Load(
+                provider.GetRequiredService<IGameData>().RootPath, provider.GetRequiredService<IZoneLogger>()));
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
             services.AddSingleton<HashItemMinter>();
             services.AddSingleton<PlayerHydrator>();
@@ -386,6 +391,8 @@ namespace ZoneEngine_New
             Cleanup(() => rootServices?.GetService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>()?.Dispose());
             Cleanup(() => playfieldManager?.Dispose());
             playfieldManager = null;
+            Cleanup(() => modules?.Shutdown());
+            modules = null;
             Cleanup(() => rootServices?.GetRequiredService<TeamService>().Shutdown());
             Cleanup(() => chatEngineLink?.Dispose());
             chatEngineLink = null;

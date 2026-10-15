@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Network
 {
     using System;
+    using System.Buffers;
     using System.Buffers.Binary;
     using System.Collections.Generic;
     using System.Globalization;
@@ -13,6 +14,7 @@ namespace ZoneEngine_New.Core.Network
     using System.Threading.Tasks;
 
     using AORebirth.Database.Dao;
+    using AORebirth.Modules.Network;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages;
@@ -60,6 +62,10 @@ namespace ZoneEngine_New.Core.Network
         private readonly ZoneMessageCodec _codec;
         private readonly ZoneMessageDispatcher _dispatcher;
         private readonly IZoneLogger _logger;
+        // Module byte filter between the socket and the AO protocol; null keeps the stock wire path.
+        private readonly IConnectionFilter? _filter;
+        private readonly ArrayBufferWriter<byte>? _filteredInbound;
+        private readonly ArrayBufferWriter<byte>? _filteredOutbound;
         private readonly Channel<byte[]> _sendQueue = Channel.CreateUnbounded<byte[]>(
             new UnboundedChannelOptions
             {
@@ -86,7 +92,8 @@ namespace ZoneEngine_New.Core.Network
             Socket socket,
             ZoneMessageCodec codec,
             ZoneMessageDispatcher dispatcher,
-            IZoneLogger logger)
+            IZoneLogger logger,
+            IConnectionFilter? filter = null)
         {
             ArgumentNullException.ThrowIfNull(socket);
             ArgumentNullException.ThrowIfNull(codec);
@@ -98,6 +105,12 @@ namespace ZoneEngine_New.Core.Network
             _codec = codec;
             _dispatcher = dispatcher;
             _logger = logger;
+            _filter = filter;
+            if (filter != null)
+            {
+                _filteredInbound = new ArrayBufferWriter<byte>(ReceiveChunkSize);
+                _filteredOutbound = new ArrayBufferWriter<byte>(MaxPacketSize);
+            }
         }
 
         public Guid Id { get; }
@@ -557,6 +570,13 @@ namespace ZoneEngine_New.Core.Network
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                 }
+
+                // Both loops have ended, so nothing is inside the filter any more.
+                if (_filter is IDisposable disposable)
+                {
+                    try { disposable.Dispose(); }
+                    catch (Exception exception) { _logger.Error(exception, "Connection filter failed to dispose."); }
+                }
             }
         }
 
@@ -583,8 +603,16 @@ namespace ZoneEngine_New.Core.Network
                         break;
                     }
 
-                    for (int i = 0; i < read; i++)
-                        _receiveBuffer.Add(chunk[i]);
+                    if (_filter == null)
+                    {
+                        for (int i = 0; i < read; i++)
+                            _receiveBuffer.Add(chunk[i]);
+                    }
+                    else if (!AppendFiltered(chunk.AsSpan(0, read)))
+                    {
+                        Close();
+                        return;
+                    }
 
                     while (!_closed && TryPopPacket(out byte[] packet, out bool invalidPacket))
                     {
@@ -638,6 +666,32 @@ namespace ZoneEngine_New.Core.Network
                     _logger.Error(exception, "ZoneSession socket read failed.");
                 }
             }
+        }
+
+        /// <summary>Runs raw socket bytes through the module filter and appends the AO bytes it yields.</summary>
+        private bool AppendFiltered(ReadOnlySpan<byte> raw)
+        {
+            ArrayBufferWriter<byte> plaintext = _filteredInbound!;
+            plaintext.ResetWrittenCount();
+            try
+            {
+                if (!_filter!.Inbound(raw, plaintext))
+                {
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "Connection filter dropped connection from {0}", RemoteEndPoint()));
+                    return false;
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Connection filter failed on inbound bytes from " + RemoteEndPoint() + ".");
+                return false;
+            }
+
+            ReadOnlySpan<byte> written = plaintext.WrittenSpan;
+            for (int i = 0; i < written.Length; i++)
+                _receiveBuffer.Add(written[i]);
+            return true;
         }
 
         /// <summary>
@@ -748,11 +802,20 @@ namespace ZoneEngine_New.Core.Network
 
         private async Task SendExactAsync(byte[] packet, CancellationToken cancellationToken)
         {
+            // Filtered into the session's own buffer, never in place: queued packets can be shared arrays.
+            ReadOnlyMemory<byte> wire = packet;
+            if (_filter != null)
+            {
+                _filteredOutbound!.ResetWrittenCount();
+                _filter.Outbound(packet, _filteredOutbound);
+                wire = _filteredOutbound.WrittenMemory;
+            }
+
             int offset = 0;
-            while (offset < packet.Length)
+            while (offset < wire.Length)
             {
                 int sent = await _socket.SendAsync(
-                        packet.AsMemory(offset, packet.Length - offset),
+                        wire[offset..],
                         SocketFlags.None,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -772,7 +835,7 @@ namespace ZoneEngine_New.Core.Network
 
             // Server→Client zlib only. Do NOT wrap the live socket in NetworkStream — that races
             // with Socket.ReceiveAsync on Client→Server plaintext and corrupts the receive buffer.
-            _sendStream = new SocketSendStream(_socket);
+            _sendStream = new SocketSendStream(_socket, _filter);
             _zStream = new ZLibStream(_sendStream, CompressionLevel.Fastest, leaveOpen: true);
             _packetNumber = 1;
             _outboundCompressed = true;
@@ -846,10 +909,15 @@ namespace ZoneEngine_New.Core.Network
         private sealed class SocketSendStream : Stream
         {
             private readonly Socket _socket;
+            private readonly IConnectionFilter? _filter;
+            private readonly ArrayBufferWriter<byte>? _filtered;
 
-            public SocketSendStream(Socket socket)
+            public SocketSendStream(Socket socket, IConnectionFilter? filter)
             {
                 _socket = socket;
+                _filter = filter;
+                if (filter != null)
+                    _filtered = new ArrayBufferWriter<byte>(MaxPacketSize);
             }
 
             public override bool CanRead => false;
@@ -877,10 +945,19 @@ namespace ZoneEngine_New.Core.Network
 
             public override void Write(byte[] buffer, int offset, int count)
             {
-                int sent = 0;
-                while (sent < count)
+                ReadOnlySpan<byte> wire = buffer.AsSpan(offset, count);
+                if (_filter != null)
                 {
-                    int n = _socket.Send(buffer, offset + sent, count - sent, SocketFlags.None);
+                    // zlib output goes through the module filter after compression, in wire order.
+                    _filtered!.ResetWrittenCount();
+                    _filter.Outbound(wire, _filtered);
+                    wire = _filtered.WrittenSpan;
+                }
+
+                int sent = 0;
+                while (sent < wire.Length)
+                {
+                    int n = _socket.Send(wire[sent..], SocketFlags.None);
                     if (n <= 0)
                         throw new IOException("Socket closed during compressed send.");
                     sent += n;

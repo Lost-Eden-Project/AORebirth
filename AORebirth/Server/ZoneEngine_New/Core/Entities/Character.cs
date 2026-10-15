@@ -341,7 +341,44 @@ namespace ZoneEngine_New.Core.Entities
             _corpseSwapPending = true;
             _corpseSwapRemainingSeconds = CorpseSpawnDelayMilliseconds / 1000.0;
 
-            AwardKillRewards();
+            List<int>? credited = AwardKillRewards();
+            RaiseModuleDeathEvents(killer, credited);
+        }
+
+        /// <summary>
+        /// External module death notifications. Without a loaded module the playfield has no
+        /// <see cref="Modules.ZoneModuleEvents"/>, and with no subscriber no event is built.
+        /// </summary>
+        void RaiseModuleDeathEvents(Character? killer, List<int>? credited)
+        {
+            if (Playfield?.GetService<Modules.ZoneModuleEvents>() is not Modules.ZoneModuleEvents events)
+                return;
+
+            int playfieldId = Playfield!.Identity.Instance;
+            if (IsPlayer)
+            {
+                if (events.PlayerDied.HasHandlers)
+                    events.PlayerDied.Raise(new AORebirth.Modules.Events.PlayerDiedEvent
+                    {
+                        PlayfieldId = playfieldId,
+                        PlayerInstance = Identity.Instance,
+                        KillerInstance = killer?.Identity.Instance ?? 0,
+                        KilledByPlayer = killer?.IsPlayer == true
+                    });
+                return;
+            }
+
+            if (this is NpcCharacter npc && events.NpcKilled.HasHandlers)
+                events.NpcKilled.Raise(new AORebirth.Modules.Events.NpcKilledEvent
+                {
+                    PlayfieldId = playfieldId,
+                    NpcInstance = Identity.Instance,
+                    NpcHash = npc.MobTemplate?.Hash ?? string.Empty,
+                    NpcName = Name ?? npc.MobTemplate?.Name ?? string.Empty,
+                    NpcLevel = Stats.GetOrOne(CharacterStat.Level),
+                    KillerInstance = killer?.Identity.Instance ?? 0,
+                    CreditedPlayers = credited != null ? credited.ToArray() : Array.Empty<int>()
+                });
         }
 
         /// <summary>
@@ -673,20 +710,22 @@ namespace ZoneEngine_New.Core.Entities
             return earned + 1500 + (remaining - 1) * 4000;
         }
 
-        void AwardKillRewards()
+        /// <summary>Returns the players present with kill credit, or null when there were none.</summary>
+        List<int>? AwardKillRewards()
         {
             Playfield? playfield = Playfield;
             if (playfield == null)
-                return;
+                return null;
 
             List<int> present = CollectPresentQualifiers(playfield);
             if (present.Count == 0)
-                return;
+                return null;
 
             AwardRegularXp(playfield, present);
             AwardAlienXp(playfield, present);
             AwardPvpTitle(present);
             AdvanceKillQuests(playfield, present);
+            return present;
         }
 
         /// <summary>
