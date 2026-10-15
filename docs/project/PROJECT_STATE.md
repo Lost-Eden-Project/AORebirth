@@ -1,6 +1,11 @@
 # AORebirth Project State
 
-PROVEN SOURCE REPAIR, WINDOWS CLIENT PENDING (2026-10-15, XP off/research active):
+OBSERVED WINDOWS CLIENT ACCEPTANCE (2026-10-15, XP off/research active): Mike
+confirmed repair 3d7239a24708e4e33995b0ce304b12d98ff1dddf works and authorized
+integration into public master. The integration is a fast-forward from the
+unchanged base; runtime bytes retain their approved build and accepted behavior.
+
+PROVEN SOURCE REPAIR (2026-10-15, XP off/research active):
 codex/xp-off-research accepts the previously unhandled DisableXP action. Original
 client code proves Parameter2 carries AutoAttackFlags stat 349 and bit 0x10
 disables normal XP while research remains active. Existing stat persistence and
@@ -9,7 +14,8 @@ before suppressing normal progression; DOJA's independent rewards and idempotent
 ledger are preserved without DAO/schema changes. Enabled XP, research caps,
 SK/alien-XP and GameData are unchanged. Approved Windows core build and scoped
 source/diff review passed. No automated suites or client control. Windows gameplay
-acceptance remains UNVERIFIED; no master merge or Linux deployment.
+acceptance is recorded above; individual edge-case results remain UNVERIFIED.
+No Linux deployment is authorized by the master-merge request.
 
 COMPILED, CLIENT VERIFICATION PENDING (2026-10-13, uncaptured-terminal destinations):
 Live terminal playfield 566 has no recorded origin pools, so the existing optional

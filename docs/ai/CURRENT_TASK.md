@@ -7,8 +7,8 @@ paths while preserving personal research. Base: public master
 5ce47adc4e14253884415e5c0a107e6d21ad8113. Work is isolated from the dirty local
 installation on codex/xp-off-research.
 
-OBSERVED: live logs contain unhandled DisableXP(165) requests. PROVEN: current
-master lacks the handler and applies normal XP after research without a disabled-XP
+OBSERVED: live logs contain unhandled DisableXP(165) requests. PROVEN: the
+starting master lacked the handler and applied normal XP after research without a disabled-XP
 check, including independent quest/DOJA projections.
 
 PROVEN client encoding: DisableXPGain uses AutoAttackFlags (stat 349), bit 0x10.
@@ -27,10 +27,12 @@ Reuse existing stats, persistence and reward APIs; no action-echo mechanism.
 Preserve research/caps, independent quest rewards, reward-ledger transactions and
 existing enabled-XP behavior. No schema or GameData changes. Compile through the
 approved Windows wrapper; no automated suites or client control are requested.
-Windows client acceptance is Mike's responsibility. No master merge or Linux
-deployment is authorized for this candidate yet.
+OBSERVED WINDOWS ACCEPTANCE (2026-10-15): Mike confirmed repair
+3d7239a24708e4e33995b0ce304b12d98ff1dddf works and authorized merging it into
+Windows/public master. Fetched master remains the original base, so integration
+is a fast-forward with no runtime merge changes. Linux deployment is separate.
 
-IMPLEMENTED, CLIENT VERIFICATION PENDING: CharacterAction 165 stores the complete
+IMPLEMENTED, CLIENT ACCEPTED: CharacterAction 165 stores the complete
 AutoAttackFlags word through the existing authoritative stats/save path. Login
 publication includes stat 349. Normal kill and quest XP is suppressed after
 research allocation. Quest/DOJA projections capture the preference at planning
@@ -43,6 +45,7 @@ path review and git diff --check PASS. No automated suites or client launch.
 The Codex process PATH exceeded CMD's limit; the unchanged approved wrapper ran
 successfully with a short child-process PATH. No build-system files changed.
 Build log: build-verify/xp-off-research/build.log (private, not committed).
-Mike verifies XP-off/research-active, re-enabling XP, research cap/finish and
-zoning/relog persistence on Windows before promotion. Quest/DOJA live acceptance
-and broader SK/alien-XP toggle semantics remain UNVERIFIED.
+Mike's general repair acceptance is recorded without claiming a separate result
+for every edge case. Explicit quest/DOJA live acceptance and broader SK/alien-XP
+toggle semantics remain UNVERIFIED. No rebuild, suites, service or database
+actions are required for this documentation-only integration step.
