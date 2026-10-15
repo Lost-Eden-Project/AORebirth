@@ -244,6 +244,75 @@ namespace ZoneEngine_New.Core.DebugMcp
             return Json(new { playfieldId, dynel = ZoneDebugSnapshots.ProjectDynel(dynel) });
         }
 
+        [McpServerTool(Name = "get_npc_brain")]
+        [System.ComponentModel.Description("One NPC's AI state by instance: health, hate list (threat and edge distance to each entry), current and fighting target, evading/leashing, pacified, casting, immobile, path, home and last think time. Read-only snapshot; values can be one tick stale.")]
+        public string GetNpcBrain(int playfieldId, int instance)
+        {
+            if (!TryPlayfield(playfieldId, out Playfield? playfield, out string? error))
+                return Error(error!);
+
+            DynelRegistry registry = playfield!.GetRequiredService<DynelRegistry>();
+            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = instance };
+            if (!registry.TryGet(identity, out Dynel? dynel) || dynel is not NpcCharacter npc)
+                return Error("NPC not found.");
+
+            Ai.NpcBrain? brain = npc.Brain;
+            var hate = new List<object>();
+            if (brain != null)
+            {
+                Ai.HateEntry[] entries;
+                try
+                {
+                    entries = brain.Hate.Entries.ToArray();
+                }
+                catch (InvalidOperationException)
+                {
+                    // Changed by the playfield tick mid-copy; ask again.
+                    entries = [];
+                }
+
+                foreach (Ai.HateEntry entry in entries)
+                {
+                    Character? target = registry.TryGet(entry.Identity, out Dynel? other) ? other as Character : null;
+                    hate.Add(new
+                    {
+                        identity = entry.Identity.Type + ":" + entry.Identity.Instance.ToString(CultureInfo.InvariantCulture),
+                        name = target?.Name,
+                        threat = entry.Threat,
+                        edgeDistance = target == null ? (double?)null : Math.Round(npc.GetEdgeDistanceTo(target), 1),
+                        dead = target?.IsDead
+                    });
+                }
+            }
+
+            return Json(new
+            {
+                playfieldId,
+                instance,
+                name = npc.Name,
+                health = npc.Stats.GetOrZero(CharacterStat.Health),
+                maxHealth = npc.Stats.GetOrZero(CharacterStat.MaxHealth),
+                dead = npc.IsDead,
+                attackable = npc.Attackable,
+                hasBrain = brain != null,
+                hate,
+                currentTarget = brain?.CurrentTarget.Instance,
+                fightingTarget = npc.FightingTarget.Instance,
+                evading = brain?.IsEvading,
+                leashing = brain?.IsLeashing,
+                pacified = npc.IsPacified,
+                casting = npc.IsCastingNano,
+                immobile = npc.IsImmobile,
+                hasPath = npc.Motor.HasPath,
+                collisionRadius = npc.GetCollisionRadius(),
+                home = brain?.Home is { } home ? new { home.x, home.y, home.z } : null,
+                wanderEnabled = brain?.WanderEnabled,
+                lastThinkSecondsAgo = brain == null || brain.LastThinkUtc == default
+                    ? (double?)null
+                    : Math.Round((DateTime.UtcNow - brain.LastThinkUtc).TotalSeconds, 2)
+            });
+        }
+
         [McpServerTool(Name = "get_inventory")]
         [System.ComponentModel.Description("One online player's inventory pages: page, slot, low id, high id, quality, stack, and name. Capped at 100 slots.")]
         public string GetInventory(int characterId = 0, string name = "")

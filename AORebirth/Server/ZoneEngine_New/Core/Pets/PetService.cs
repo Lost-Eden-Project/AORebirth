@@ -45,10 +45,11 @@ namespace ZoneEngine_New.Core.Pets
         /// <summary>
         /// FunctionType.SummonPet: summons <paramref name="hash"/> at <paramref name="level"/> for
         /// <paramref name="owner"/>, lasting <paramref name="durationSeconds"/> (0 or less: until dismissed).
-        /// A pet already in the same slot is dismissed first.
+        /// A pet already in the same slot is dismissed first, unless <paramref name="replaceSameSlot"/> is false (an NPC's
+        /// combat pets, which keep several of one kind: MonsterCombatRules.json).
         /// </summary>
         public NpcCharacter? Summon(Character owner, string hash, int level, int durationSeconds,
-            IReadOnlyList<ItemRequirement>? summonRequirements = null)
+            IReadOnlyList<ItemRequirement>? summonRequirements = null, bool replaceSameSlot = true)
         {
             ArgumentNullException.ThrowIfNull(owner);
             if (string.IsNullOrWhiteSpace(hash) || owner.IsDead || !ReferenceEquals(owner.Playfield, _playfield))
@@ -59,11 +60,11 @@ namespace ZoneEngine_New.Core.Pets
             DateTime? expires = durationSeconds > 0 ? DateTime.UtcNow.AddSeconds(durationSeconds) : null;
             int type = Types.TypeOf(hash.Trim());
             return Spawn(owner, hash.Trim(), type, level, expires, DefaultMode(type), healthPercent: 100, nanoPercent: 100,
-                summonRequirements ?? []);
+                summonRequirements ?? [], replaceSameSlot);
         }
 
         NpcCharacter? Spawn(Character owner, string hash, int type, int level, DateTime? expires, PetMode mode, int healthPercent,
-            int nanoPercent, IReadOnlyList<ItemRequirement> summonRequirements)
+            int nanoPercent, IReadOnlyList<ItemRequirement> summonRequirements, bool replaceSameSlot = true)
         {
             if (!_gameData.TryResolveMobTemplate(hash, level > 0 ? level : null, out MobTemplate template)
                 || !NpcTemplateValidation.CanSpawn(template))
@@ -72,7 +73,7 @@ namespace ZoneEngine_New.Core.Pets
                 return null;
             }
 
-            if (owner.OwnedPets.InSlotOf(type) is NpcCharacter previous)
+            if (replaceSameSlot && owner.OwnedPets.InSlotOf(type) is NpcCharacter previous)
                 Dismiss(previous, "replaced");
 
             var controller = new PetController(owner, type, hash, level, expires, summonRequirements);

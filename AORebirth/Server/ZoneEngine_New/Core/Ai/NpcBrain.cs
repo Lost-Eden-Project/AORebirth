@@ -70,7 +70,12 @@ namespace ZoneEngine_New.Core.Ai
             _nanos = new NpcNanoCaster(this);
             _isEngageable = IsEngageable;
             _thinkElapsed = ThinkPhase(npc);
+            if (npc.Playfield?.GetService<GameData.IGameData>()?.RootPath is string root && root.Length > 0)
+                _petSummons = NpcPetSummons.TryCreate(npc, root);
         }
+
+        /// <summary>Combat pets from GameData MonsterCombatRules.json; null for NPCs without a pet rule.</summary>
+        readonly NpcPetSummons? _petSummons;
 
         /// <summary>A summoned pet's brain: the pet tree instead of the roaming-NPC one, and no home to leash to.</summary>
         NpcBrain(NpcCharacter npc, Pets.PetController pet)
@@ -248,6 +253,15 @@ namespace ZoneEngine_New.Core.Ai
         /// </summary>
         public bool IsEvading => _evading;
 
+        /// <summary>Diagnostics (debug MCP get_npc_brain): the brain committed to leashing home on its last think.</summary>
+        public bool IsLeashing => _leashing;
+
+        /// <summary>Diagnostics: the target the combat branch last selected.</summary>
+        public Identity CurrentTarget => _currentTarget;
+
+        /// <summary>Diagnostics: when the brain last thought; stale means its cell is not ticking.</summary>
+        public DateTime LastThinkUtc { get; private set; }
+
         public static NpcBrain Create(NpcCharacter npc, Vector3? home = null, NpcAiProfile? profile = null)
         {
             ArgumentNullException.ThrowIfNull(npc);
@@ -269,6 +283,7 @@ namespace ZoneEngine_New.Core.Ai
             deltaTime = _thinkElapsed;
             _thinkElapsed = 0;
             _thinkSerial++;
+            LastThinkUtc = DateTime.UtcNow;
 
             if (_treeResetPending)
             {
@@ -288,6 +303,9 @@ namespace ZoneEngine_New.Core.Ai
             // A pet picks its fights from its owner, never from who happens to walk by.
             if (Pet == null)
                 ScanProximity();
+
+            // Before the casting check: a cast roots the NPC but does not hold back its pets.
+            _petSummons?.Tick(Npc.FightingTarget.Instance != 0 && !_evading, DateTime.UtcNow);
 
             // Channelling a cast roots the caster (pets too): no chasing or following until the cast ends.
             if (Npc.IsCastingNano)

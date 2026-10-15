@@ -757,6 +757,39 @@ namespace ZoneEngine_New.Core.Entities
                 quests.OnNpcKilled(npc, players);
         }
 
+        /// <summary>
+        /// Living players on this playfield with any recorded damage. No contribution test here: XP pools a team's damage
+        /// first (<see cref="KillRewardResolver.DivideByGroup"/>), so two teammates at 15% each still count as 30%.
+        /// </summary>
+        List<int> CollectPresentDamagers(DynelRegistry registry)
+        {
+            List<int> damagers = _killRewards.GetDamagerInstances();
+            var present = new List<int>(damagers.Count);
+            for (int i = 0; i < damagers.Count; i++)
+            {
+                if (!_killRewards.TryGetIdentity(damagers[i], out Identity identity)
+                    || !registry.TryGet(identity, out Dynel? dynel) || dynel is not Character killer)
+                    continue;
+                if (!killer.IsPlayer || killer.IsDead || ReferenceEquals(killer, this))
+                    continue;
+
+                present.Add(damagers[i]);
+            }
+
+            return present;
+        }
+
+        /// <summary>XP award group: the player's team, or the player alone. Team keys sit above every player instance.</summary>
+        static long AwardGroupOf(int instance, Playfield playfield, DynelRegistry registry)
+        {
+            if (registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = instance }, out Dynel? dynel)
+                && dynel is Player player
+                && playfield.GetService<TeamService>()?.GetTeam(player) is TeamSnapshot team)
+                return (1L << 32) | (uint)team.TeamId;
+
+            return instance;
+        }
+
         List<int> CollectPresentQualifiers(Playfield playfield)
         {
             var present = new List<int>();
@@ -797,15 +830,20 @@ namespace ZoneEngine_New.Core.Entities
 
             double percentPerLevel = (playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp()).KillPercentPerLevelDifference;
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
-            List<AwardShare> shares = _killRewards.Divide((int)Math.Min(pool, int.MaxValue), present, AwardCredit.Shared);
+            // One share per team (or solo player), split evenly between the team's nearby members, so every member gets
+            // the same cut whatever they dealt and each player gets one grant per kill (the per-grant cap applies once).
+            List<GroupShare> shares = _killRewards.DivideByGroup(
+                (int)Math.Min(pool, int.MaxValue),
+                CollectPresentDamagers(registry),
+                instance => AwardGroupOf(instance, playfield, registry));
             var tooLow = new List<Character>();
             var told = new HashSet<int>();
             for (int i = 0; i < shares.Count; i++)
             {
-                AwardShare share = shares[i];
+                GroupShare share = shares[i];
                 if (share.Amount <= 0)
                     continue;
-                if (!_killRewards.TryGetIdentity(share.PlayerInstance, out Identity identity))
+                if (!_killRewards.TryGetIdentity(share.LeadInstance, out Identity identity))
                     continue;
                 if (!registry.TryGet(identity, out Dynel? dynel) || dynel is not Character killer)
                     continue;
@@ -822,10 +860,9 @@ namespace ZoneEngine_New.Core.Entities
                     continue;
 
                 int each = share.Amount / recipients.Count;
-                int leftover = share.Amount - each * recipients.Count;
                 for (int r = 0; r < recipients.Count; r++)
                 {
-                    int amount = r == 0 ? each + leftover : each;
+                    int amount = each;
                     if (amount <= 0)
                         continue;
 
@@ -922,7 +959,7 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// Alien kills (NPCFamily 220). Each damage share is that killer's fraction of their solo AXP,
+        /// Alien kills (NPCFamily 220). Each team's (or solo player's) damage share is a fraction of the solo AXP,
         /// computed per recipient level, then split evenly with the nearby team like regular XP.
         /// </summary>
         void AwardAlienXp(Playfield playfield, IReadOnlyList<int> present)
@@ -932,11 +969,14 @@ namespace ZoneEngine_New.Core.Entities
 
             int monsterLevel = Stats.GetOrOne(CharacterStat.Level);
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
-            List<AwardShare> shares = _killRewards.Divide(AlienShareBasis, present, AwardCredit.Shared);
+            List<GroupShare> shares = _killRewards.DivideByGroup(
+                AlienShareBasis,
+                CollectPresentDamagers(registry),
+                instance => AwardGroupOf(instance, playfield, registry));
             for (int i = 0; i < shares.Count; i++)
             {
-                AwardShare share = shares[i];
-                if (share.Amount <= 0 || !_killRewards.TryGetIdentity(share.PlayerInstance, out Identity identity))
+                GroupShare share = shares[i];
+                if (share.Amount <= 0 || !_killRewards.TryGetIdentity(share.LeadInstance, out Identity identity))
                     continue;
                 if (!registry.TryGet(identity, out Dynel? dynel) || dynel is not Character killer)
                     continue;
@@ -1814,7 +1854,16 @@ namespace ZoneEngine_New.Core.Entities
             if (hpRemoved > 0 && credited.IsPlayer && !ReferenceEquals(credited, this))
                 _killRewards.Record(credited.Identity, hpRemoved);
 
-            Stats.Set(CharacterStat.Health, newHealth, StatDetail.Base, dirty: true);
+            // The kill below names the attacker; the Health hook must not die first without one.
+            _applyingDamage = true;
+            try
+            {
+                Stats.Set(CharacterStat.Health, newHealth, StatDetail.Base, dirty: true);
+            }
+            finally
+            {
+                _applyingDamage = false;
+            }
 
             if (hpRemoved > 0)
                 OnDamaged(attacker, hpRemoved, hitType);
@@ -1979,6 +2028,8 @@ namespace ZoneEngine_New.Core.Entities
 
         bool _applyingVitalFromPercent;
 
+        bool _applyingDamage;
+
         void OnStatChanged(CharacterStat stat, int previous, int next, bool isInitialSet)
         {
             // Hydration loads stats in no fixed order, so only live writes are capped.
@@ -1986,6 +2037,11 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             Motor.OnStatChanged(stat, previous, next, isInitialSet);
+
+            // Any live write that takes Health to 0 or below kills, e.g. an item function Set Health 0 on an NPC.
+            // ApplyDamage handles its own kill so the attacker gets the credit.
+            if (stat == CharacterStat.Health && !isInitialSet && !_applyingDamage && previous > 0 && next <= 0)
+                OnDeath();
 
             if (stat == CharacterStat.NumberOfFightingOpponents)
             {

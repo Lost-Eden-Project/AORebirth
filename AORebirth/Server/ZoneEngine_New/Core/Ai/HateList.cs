@@ -163,11 +163,14 @@ namespace ZoneEngine_New.Core.Ai
         }
 
         /// <summary>
-        /// A new target must be within <see cref="NearbyRange"/>. The target already being chased keeps
-        /// out to <see cref="MaxLeashRange"/>: a route around a wall can carry the NPC past
-        /// <see cref="NearbyRange"/>, and dropping it there leashes, walks back into range and chases again.
+        /// A new target must be within <see cref="NearbyRange"/>, or the longest weapon reach
+        /// (<see cref="Entities.CharacterWeapon.MaxAttackRange"/>) if that is further: a ranged attacker hitting from
+        /// 31-40 m must not go unanswered. The target already being chased keeps out to <see cref="MaxLeashRange"/>:
+        /// a route around a wall can carry the NPC past that range, and dropping it there leashes, walks back into
+        /// range and chases again.
         /// </summary>
-        public static float EngageRange(bool isCurrentTarget) => isCurrentTarget ? MaxLeashRange : NearbyRange;
+        public static float EngageRange(bool isCurrentTarget)
+            => isCurrentTarget ? MaxLeashRange : Math.Max(NearbyRange, Entities.CharacterWeapon.MaxAttackRange);
 
         public static bool IsNearby(Vector3 from, Vector3 to, float range)
             => Vector3.Abs(to - from) <= range;

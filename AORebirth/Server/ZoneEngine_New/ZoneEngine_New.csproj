@@ -251,6 +251,9 @@
     <Compile Include="..\..\Libraries\Source\AORebirth.Enums\CanFlags.cs">
       <Link>Enums\CanFlags.cs</Link>
     </Compile>
+    <Compile Include="..\..\Libraries\Source\AORebirth.Enums\AmmoType.cs">
+      <Link>Enums\AmmoType.cs</Link>
+    </Compile>
     <Compile Include="..\..\Libraries\Source\AORebirth.Enums\FunctionType.cs">
       <Link>Enums\FunctionType.cs</Link>
     </Compile>

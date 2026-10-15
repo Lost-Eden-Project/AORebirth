@@ -181,8 +181,17 @@ namespace ZoneEngine_New.Core.Playfield
                 SpawnSource = spawnSource
             };
 
+            // The playfield-entry stats were set when the NPC entered this playfield (Character.OnEnteredPlayfield);
+            // a template's captured values (PlayfieldProxy 800 on Senior Subjugator) must not replace them, or
+            // playfield criteria such as Pandemonium 2's [PlayfieldProxy = 4329] portal spawn never match.
             foreach (var entry in resolvedStats)
-                npc.Stats.Set((CharacterStat)entry.Key, entry.Value);
+            {
+                var stat = (CharacterStat)entry.Key;
+                if (stat is CharacterStat.PlayfieldProxy or CharacterStat.PlayfieldType or CharacterStat.ExpansionPlayfield)
+                    continue;
+
+                npc.Stats.Set(stat, entry.Value);
+            }
 
             // The client writes the MonsterData record's stats onto an NPC (Gamecode.dll 0x100523d3); Mass and
             // CharRadius (its weapon-range body radius) come from there, not the template.
@@ -281,13 +290,15 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>
         /// Spawns every branch of <paramref name="hash"/> as a world item.
         /// A parent with SpawnAll creates one dynel per branch; any other hash creates one dynel.
+        /// A <paramref name="lifetime"/> makes each one temporary; null keeps them until despawned.
         /// </summary>
         public IReadOnlyList<StaticDynel> SpawnStaticBranches(
             string hash,
             Vector3 position,
             Quaternion? heading = null,
             int? level = null,
-            SpawnSource spawnSource = SpawnSource.None)
+            SpawnSource spawnSource = SpawnSource.None,
+            TimeSpan? lifetime = null)
         {
             ArgumentException.ThrowIfNullOrEmpty(hash);
             ArgumentNullException.ThrowIfNull(position);
@@ -303,7 +314,8 @@ namespace ZoneEngine_New.Core.Playfield
                     heading,
                     level,
                     spawnSource,
-                    instances[i].Hash);
+                    instances[i].Hash,
+                    lifetime);
                 if (dynel != null)
                     spawned.Add(dynel);
             }
@@ -313,6 +325,7 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>
         /// Spawns one resolved item family as a world dynel. Returns null when the quality band cannot be selected.
+        /// A <paramref name="lifetime"/> makes it temporary; null keeps it until despawned.
         /// </summary>
         public StaticDynel? SpawnStaticInstance(
             HashInstance instance,
@@ -320,7 +333,8 @@ namespace ZoneEngine_New.Core.Playfield
             Quaternion? heading = null,
             int? level = null,
             SpawnSource spawnSource = SpawnSource.None,
-            string? logHash = null)
+            string? logHash = null,
+            TimeSpan? lifetime = null)
         {
             ArgumentNullException.ThrowIfNull(instance);
             ArgumentNullException.ThrowIfNull(position);
@@ -336,7 +350,8 @@ namespace ZoneEngine_New.Core.Playfield
                 Playfield = _playfield,
                 Position = position,
                 Rotation = heading ?? new Quaternion(),
-                SpawnSource = spawnSource
+                SpawnSource = spawnSource,
+                ExpiresAtUtc = lifetime is TimeSpan life ? DateTime.UtcNow + life : null
             };
 
             _registry.Register(dynel);

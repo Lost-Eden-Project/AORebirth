@@ -593,18 +593,41 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
+        /// How long an item SpawnItem places in the world stays there. Nothing in the catalog carries it: the
+        /// function has no duration argument and the spawned template (Energy Vortex 281513, from 245411's
+        /// OnTerminate) has no TimeExist.
+        /// TODO: 2 minutes is a placeholder default; verify the retail lifetime.
+        /// </summary>
+        static readonly TimeSpan WorldSpawnItemLifetime = TimeSpan.FromMinutes(2);
+
+        /// <summary>
         /// Catalog shape: hash, quality, and a 0/1 third integer. Both third values grant one item
-        /// into inventory. Any other third value is refused.
+        /// into a player's inventory. Any other third value is refused. On a non-player target (an NPC's
+        /// OnTerminate on death) the item is placed in the world at the target for <see cref="WorldSpawnItemLifetime"/>.
         /// </summary>
         static bool SpawnItem(Character target, ItemSpell spell)
         {
-            if (target is not Player player || player.Playfield == null || player.Session == null)
-                return false;
             if (!spell.TryReadString(0, out string hash) || hash.Length == 0)
                 return false;
             if (!spell.TryReadInt(1, out int quality) || quality <= 0)
                 return false;
             if (spell.TryReadInt(2, out int mode) && mode is not 0 and not 1)
+                return false;
+
+            if (target is not Player player)
+            {
+                if (target.Playfield?.GetService<SpawnService>() is not SpawnService spawn)
+                    return false;
+
+                return spawn.SpawnStaticBranches(
+                    hash,
+                    target.Position,
+                    target.Rotation,
+                    quality,
+                    lifetime: WorldSpawnItemLifetime).Count > 0;
+            }
+
+            if (player.Playfield == null || player.Session == null)
                 return false;
 
             if (!player.Playfield.GetRequiredService<HashItemMinter>().TryMint(hash, quality, ItemSource.Other, out Item item))

@@ -1,5 +1,6 @@
 namespace ZoneEngine_New.Core.Helpers
 {
+    using System;
     using System.Collections.Generic;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
@@ -116,6 +117,105 @@ namespace ZoneEngine_New.Core.Helpers
         public bool TryGetIdentity(int playerInstance, out Identity identity)
             => _identities.TryGetValue(playerInstance, out identity);
 
+        /// <summary>Every player with recorded damage.</summary>
+        public List<int> GetDamagerInstances() => new(_damage.Keys);
+
+        /// <summary>
+        /// Splits <paramref name="pool"/> between award groups: a team pools its members' damage, a player outside a team
+        /// is a group of one (<paramref name="groupOf"/> gives the key). Only <paramref name="present"/> damagers count
+        /// toward their group, but the <see cref="MinimumContributionPercent"/> test is against all damage dealt. With no
+        /// group over it, the highest group takes the pool. Each group is named by its highest damager; the caller
+        /// splits a group's amount between its members, so a teammate's own damage does not change their cut.
+        /// </summary>
+        public List<GroupShare> DivideByGroup(int pool, IReadOnlyList<int> present, Func<int, long> groupOf)
+        {
+            ArgumentNullException.ThrowIfNull(present);
+            ArgumentNullException.ThrowIfNull(groupOf);
+
+            var shares = new List<GroupShare>();
+            if (pool <= 0 || present.Count == 0)
+                return shares;
+
+            long total = 0;
+            foreach (int damage in _damage.Values)
+                total += damage;
+            if (total <= 0)
+                return shares;
+
+            // Group key -> pooled damage and its highest damager (ties to the earliest).
+            var groups = new Dictionary<long, (long Damage, int Lead, int LeadDamage, int LeadOrder)>();
+            for (int i = 0; i < present.Count; i++)
+            {
+                int instance = present[i];
+                if (!_damage.TryGetValue(instance, out int damage) || damage <= 0)
+                    continue;
+
+                int order = _firstCreditOrder.TryGetValue(instance, out int recorded) ? recorded : int.MaxValue;
+                long key = groupOf(instance);
+                if (!groups.TryGetValue(key, out var group))
+                {
+                    groups[key] = (damage, instance, damage, order);
+                    continue;
+                }
+
+                bool leads = damage > group.LeadDamage || (damage == group.LeadDamage && order < group.LeadOrder);
+                groups[key] = leads
+                    ? (group.Damage + damage, instance, damage, order)
+                    : (group.Damage + damage, group.Lead, group.LeadDamage, group.LeadOrder);
+            }
+
+            if (groups.Count == 0)
+                return shares;
+
+            long highestKey = 0;
+            long highestDamage = -1;
+            foreach (KeyValuePair<long, (long Damage, int Lead, int LeadDamage, int LeadOrder)> pair in groups)
+            {
+                if (pair.Value.Damage > highestDamage)
+                {
+                    highestDamage = pair.Value.Damage;
+                    highestKey = pair.Key;
+                }
+            }
+
+            var qualifying = new List<long>();
+            long qualifyingDamage = 0;
+            foreach (KeyValuePair<long, (long Damage, int Lead, int LeadDamage, int LeadOrder)> pair in groups)
+            {
+                if (pair.Value.Damage * 100 < total * MinimumContributionPercent)
+                    continue;
+                qualifying.Add(pair.Key);
+                qualifyingDamage += pair.Value.Damage;
+            }
+
+            if (qualifying.Count == 0)
+            {
+                qualifying.Add(highestKey);
+                qualifyingDamage = highestDamage;
+            }
+
+            int assigned = 0;
+            int highestIndex = -1;
+            for (int i = 0; i < qualifying.Count; i++)
+            {
+                var group = groups[qualifying[i]];
+                int amount = (int)(pool * group.Damage / qualifyingDamage);
+                if (qualifying[i] == highestKey)
+                    highestIndex = shares.Count;
+                shares.Add(new GroupShare(group.Lead, amount));
+                assigned += amount;
+            }
+
+            int leftover = pool - assigned;
+            if (leftover > 0)
+            {
+                int index = highestIndex >= 0 ? highestIndex : 0;
+                shares[index] = new GroupShare(shares[index].LeadInstance, shares[index].Amount + leftover);
+            }
+
+            return shares;
+        }
+
         public List<AwardShare> Divide(int pool, IReadOnlyList<int> recipients, AwardCredit credit)
         {
             if (credit == AwardCredit.Full)
@@ -201,6 +301,20 @@ namespace ZoneEngine_New.Core.Helpers
 
             return shares;
         }
+    }
+
+    /// <summary>An award group's amount, named by the group's highest damager.</summary>
+    public readonly struct GroupShare
+    {
+        public GroupShare(int leadInstance, int amount)
+        {
+            LeadInstance = leadInstance;
+            Amount = amount;
+        }
+
+        public int LeadInstance { get; }
+
+        public int Amount { get; }
     }
 
     public readonly struct AwardShare

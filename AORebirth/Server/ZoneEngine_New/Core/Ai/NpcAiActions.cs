@@ -201,7 +201,10 @@ namespace ZoneEngine_New.Core.Ai
         {
             TickStallWatch.Stage("node.wander", _brain.Npc.Identity.Instance);
             _brain.TickWander();
-            return _nodeState = NodeState.Running;
+            // Success, like IdleNode: the root Selector resumes a Running child on the next tick and skips the
+            // branches before it, so a Running wander never re-checked leash or hate and a hit NPC kept strolling.
+            // The wander's own state lives in the brain, so ending the node each think loses nothing.
+            return _nodeState = NodeState.Success;
         }
     }
 

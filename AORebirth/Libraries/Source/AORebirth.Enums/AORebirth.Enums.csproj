@@ -43,6 +43,7 @@
       <Link>Properties\SolutionAssemblyInfo.cs</Link>
     </Compile>
     <Compile Include="ActionType.cs" />
+    <Compile Include="AmmoType.cs" />
     <Compile Include="ArmorSlots.cs" />
     <Compile Include="CanFlags.cs" />
     <Compile Include="CharacterState.cs" />
