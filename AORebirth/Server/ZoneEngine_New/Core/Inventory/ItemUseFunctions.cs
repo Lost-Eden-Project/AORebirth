@@ -822,10 +822,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (samePlayfield)
             {
                 Vector3 local = source.SnapFeetToFloor(new Vector3(x, y, z));
-                if (playfieldId == 0)
-                    FinishIntrazoneLineTeleport(player, source, local, source.Identity.Instance);
-                else
-                    FinishSamePlayfieldMove(player, source, local, heading: null);
+                FinishSamePlayfieldMove(player, source, local, heading: null, source.Identity.Instance);
                 return true;
             }
 
@@ -889,7 +886,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             if (playfieldId == source.Identity.Instance)
             {
-                FinishSamePlayfieldMove(player, source, landing, heading);
+                FinishSamePlayfieldMove(player, source, landing, heading, destination.DestinationKey);
                 return true;
             }
 
@@ -908,14 +905,18 @@ namespace ZoneEngine_New.Core.Inventory
             player.Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
         }
 
-        static void FinishSamePlayfieldMove(Player player, Playfield source, Vector3 landing, Quaternion? heading)
+        /// <summary>
+        /// A teleport that names the playfield the character is already on. It stays a soft in-place move: the
+        /// zone-change N3Teleport (ChangePlayfield set) would make the client unload and reload the zone.
+        /// </summary>
+        static void FinishSamePlayfieldMove(Player player, Playfield source, Vector3 landing, Quaternion? heading, int destinationKey)
         {
             if (heading != null)
                 player.Motor.Warp(landing, heading);
             else
                 player.Motor.Warp(landing);
 
-            player.Session!.SendSamePlayfieldRespawnTeleport(landing);
+            player.Session!.SendIntrazoneTeleport(landing, player.Rotation, destinationKey);
             AnnounceArrival(player, source, landing);
         }
 
