@@ -51,6 +51,9 @@ namespace ZoneEngine_New.Core.Inventory
             int resolvedStack = stackCount;
             if (instanceId == 0 && definition.MintStackCount > 1)
                 resolvedStack = definition.MintStackCount;
+            // Weapons minted while the clip size was taken as the count were stored with it; they are single items.
+            else if (definition.IsClipWeapon)
+                resolvedStack = 1;
 
             Item item = new()
             {
@@ -140,7 +143,7 @@ namespace ZoneEngine_New.Core.Inventory
                     identity);
                 // Template MultipleCount controls minting defaults, never an already persisted stack.
                 if (row.StackCount <= 0) throw new InvalidOperationException("Persisted item has an invalid stack count.");
-                item.StackCount = row.StackCount;
+                item.StackCount = item.Definition.IsClipWeapon ? 1 : row.StackCount;
                 item.IsPersisted = true;
                 item.ApplyContainerIdentityIfBag();
                 return true;

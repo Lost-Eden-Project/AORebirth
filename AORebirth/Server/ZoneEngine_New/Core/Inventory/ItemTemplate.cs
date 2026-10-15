@@ -75,12 +75,21 @@ namespace ZoneEngine_New.Core.Inventory
 
         /// <summary>
         /// The count a freshly minted item starts with: MaxEnergy when set, otherwise MultipleCount, otherwise 1.
-        /// Only a new mint takes it; a stored item keeps its own (possibly spent) count.
+        /// Only a new mint takes it; a stored item keeps its own (possibly spent) count. A weapon's MaxEnergy is
+        /// its clip size, not a count (see <see cref="IsClipWeapon"/>).
         /// </summary>
         public int MintStackCount
-            => Stats.TryGetValue(CharacterStat.MaxEnergy, out int maxEnergy) && maxEnergy > 0 ? maxEnergy
+            => !IsClipWeapon && Stats.TryGetValue(CharacterStat.MaxEnergy, out int maxEnergy) && maxEnergy > 0 ? maxEnergy
                 : Stats.TryGetValue(CharacterStat.MultipleCount, out int multipleCount) && multipleCount > 0 ? multipleCount
                 : 1;
+
+        /// <summary>
+        /// A non-stackable weapon that fires ammo: its MaxEnergy is the clip size. Given that as its count the
+        /// client sees a stack and will neither loot nor equip it.
+        /// </summary>
+        public bool IsClipWeapon
+            => Stats.TryGetValue(CharacterStat.AmmoType, out int ammoType) && ammoType >= 1
+                && !(Stats.TryGetValue(CharacterStat.Can, out int can) && ((CanFlags)(uint)can & CanFlags.Stackable) != 0);
 
         /// <summary>
         /// The client's weapon type bitmask (Gamecode.dll 0x1009c8e1, weapon object +0x1F0), which feeds the
