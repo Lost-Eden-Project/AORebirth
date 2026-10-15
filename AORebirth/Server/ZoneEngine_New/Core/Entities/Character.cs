@@ -274,6 +274,9 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Teammates farther than this from the victim get no kill XP share. Server choice, not capture-backed.</summary>
         const double TeamShareRange = 100.0;
 
+        /// <summary>MonsterScale sent for a character with no Scale stat: full size.</summary>
+        const int DefaultMonsterScale = 100;
+
         /// <summary>Current auto-attack target; <see cref="Identity.None"/> when not fighting.</summary>
         public Identity FightingTarget { get; private set; } = Identity.None;
 
@@ -3721,7 +3724,13 @@ namespace ZoneEngine_New.Core.Entities
             int maxHealth = Stats.GetOrZero(CharacterStat.MaxHealth);
             int currentHealth = Stats.GetOrZero(CharacterStat.Health);
             int monsterData = Stats.Get(CharacterStat.MonsterData);
-            int monsterScale = Stats.GetOrZero(CharacterStat.Scale);
+            // No Scale stat is full size (100). MonsterScale is at least 1 and fits the wire field: a shrink buff on a small
+            // body (Super Cool Lizard 295697, Scale -90 on a base of 50) took it to -40, and the spawn validator refused
+            // the player's login over it.
+            int scale = Stats.TryGetValue(CharacterStat.Scale, out int heldScale) && !StatCollection.IsUnset(heldScale)
+                ? Stats.Get(CharacterStat.Scale)
+                : DefaultMonsterScale;
+            int monsterScale = Math.Clamp(scale, 1, short.MaxValue);
 
             int petMasterInstance = Stats.Get(CharacterStat.PetMaster);
             int headMesh = Stats.Get(CharacterStat.HeadMesh);
