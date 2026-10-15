@@ -505,6 +505,17 @@ namespace ZoneEngine_New.Core.Entities
             OnTrainedPerksChanged(null);
         }
 
+        // GUI DisableXPGain reads stat 349 bit 0x10; research remains active.
+        internal bool IsNormalXpSuppressed
+            => (Stats.GetOrZero(CharacterStat.AutoAttackFlags, StatDetail.Base) & 0x10) != 0;
+
+        public void SetXpGainOptions(int flags)
+        {
+            // The client preserves other AutoAttackFlags bits and updates the same stat locally.
+            Stats.Set(CharacterStat.AutoAttackFlags, flags, StatDetail.Base, dirty: true);
+            FlushDirtyStats();
+        }
+
         /// <summary>Personal research tiers (Research.json).</summary>
         public ResearchCatalog ResearchCatalog { get; init; } = ResearchCatalog.Default;
 
@@ -2039,7 +2050,7 @@ namespace ZoneEngine_New.Core.Entities
             CharacterStat.MissionBits16,
             CharacterStat.MissionBits17,
             CharacterStat.MissionBits18,
-            // CharacterStat.AutoAttackFlags,
+            CharacterStat.AutoAttackFlags,
             CharacterStat.PersonalResearchLevel,
             CharacterStat.GlobalResearchLevel,
             CharacterStat.PersonalResearchGoal,
@@ -2054,7 +2065,6 @@ namespace ZoneEngine_New.Core.Entities
             // CharacterStat.VeteranPoints,
             // CharacterStat.MonthsPaid,
             CharacterStat.PaidPoints,
-            // CharacterStat.AutoAttackFlags,
             CharacterStat.XPKillRange,
             CharacterStat.InPlay,
             CharacterStat.Health,

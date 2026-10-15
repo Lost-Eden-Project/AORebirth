@@ -457,14 +457,14 @@ namespace ZoneEngine_New.Core.Entities
             amount = ApplySideXpBonus(amount);
 
             // Personal research takes its PersonalResearchLevel share of the whole grant, before the per-grant cap; what
-            // the research goal does not use (none selected, or the excess past a finished tier) stays XP. Only the XP
+            // the research goal does not use (none selected, or the excess past a finished tier) stays XP when enabled. Only the XP
             // that remains is capped.
             if (this is Player researcher)
             {
                 long research = researcher.ResearchShareOf(amount);
                 if (research > 0)
                     amount = (int)Math.Clamp(amount - research + researcher.ApplyResearchXp(research), 0, amount);
-                if (amount <= 0)
+                if (amount <= 0 || researcher.IsNormalXpSuppressed)
                     return;
             }
 

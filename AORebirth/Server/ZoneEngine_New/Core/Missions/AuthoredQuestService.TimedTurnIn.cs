@@ -124,7 +124,8 @@ public sealed partial class AuthoredQuestService
             if (!ProgressionRewardRules.TryCreateCompletionSnapshot(player.Stats.GetOrOne(CharacterStat.Level), player.Stats.GetOrZero(CharacterStat.Side), out var snapshot))
                 throw new InvalidOperationException("Accepted daily reward snapshot is unavailable.");
             var progression = DirectXpRewardPlan.CreatePersistedReward(player, snapshot.XpReward);
-            if (progression.LevelAfter != progression.LevelBefore + 1) throw new InvalidOperationException("Timed turn-in full-level reward cannot project exactly one level from this persisted XP state.");
+            if (!progression.NormalXpSuppressed && progression.LevelAfter != progression.LevelBefore + 1)
+                throw new InvalidOperationException("Timed turn-in full-level reward cannot project exactly one level from this persisted XP state.");
             CompleteTimed(tx, player, rule, rule.Quest, rule.Objective, "complete-quest");
             long tokens = 0;
             if (snapshot.SideTokenReward > 0)
@@ -135,9 +136,15 @@ public sealed partial class AuthoredQuestService
                         Value = tokens, MinimumValue = 0, MaximumValue = int.MaxValue }],
                     ProgressionRewardRules.CreateSideTokenEffectReference(snapshot.SideTokenStatId, snapshot.SideTokenReward), _now().Ticks));
             }
-            RequireNewReward(tx.TryApplyCharacterStatReward(new(new(player.Identity.Instance, rule.Quest), rule.XpRewardKey), "character-stats",
-                progression.Stats.Select(value => new MissionStatMutationData { StatIdentityType = (int)player.Identity.Type, StatId = (int)value.Key,
-                    Kind = AORebirth.Interfaces.Persistence.Missions.MissionStatMutationKind.Set, Value = value.Value, MinimumValue = 0, MaximumValue = int.MaxValue }).ToArray(),
+            // The stat-reward API needs a mutation to record its idempotent ledger stage. XP-off records
+            // the plan's unchanged XP without normalizing progression or discarding the independent rewards.
+            MissionStatMutationData[] xpMutations = progression.NormalXpSuppressed
+                ? [new() { StatIdentityType = (int)player.Identity.Type, StatId = (int)CharacterStat.XP,
+                    Kind = AORebirth.Interfaces.Persistence.Missions.MissionStatMutationKind.Set,
+                    Value = progression.ExperienceAfter, MinimumValue = 0, MaximumValue = int.MaxValue }]
+                : progression.Stats.Select(value => new MissionStatMutationData { StatIdentityType = (int)player.Identity.Type, StatId = (int)value.Key,
+                    Kind = AORebirth.Interfaces.Persistence.Missions.MissionStatMutationKind.Set, Value = value.Value, MinimumValue = 0, MaximumValue = int.MaxValue }).ToArray();
+            RequireNewReward(tx.TryApplyCharacterStatReward(new(new(player.Identity.Instance, rule.Quest), rule.XpRewardKey), "character-stats", xpMutations,
                 ProgressionRewardRules.CreateFullLevelXpEffectReference(snapshot.LevelBefore, snapshot.XpReward), _now().Ticks));
             Accept(tx, rule.CooldownQuest);
             string until = _now().AddSeconds(rule.CooldownSeconds).ToString("o", CultureInfo.InvariantCulture);

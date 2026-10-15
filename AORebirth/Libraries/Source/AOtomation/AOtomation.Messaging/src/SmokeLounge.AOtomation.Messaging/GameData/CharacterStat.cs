@@ -689,6 +689,8 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         HasAlwaysLootable = 0x00000159, 
 
+        AutoAttackFlags = 0x0000015D,
+
         NextXP = 0x0000015E, 
 
         SISCap = 0x00000160, 

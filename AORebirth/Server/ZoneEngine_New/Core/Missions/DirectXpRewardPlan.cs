@@ -29,6 +29,9 @@ public sealed class DirectXpRewardPlan
     public int RequestedReward { get; }
     public bool IsShadowKnowledge { get; }
 
+    /// <summary>The XP-off preference captured while planning; research and independent rewards still apply.</summary>
+    public bool NormalXpSuppressed { get; private init; }
+
     /// <summary>
     /// The reward's personal research share (Player.PlanResearchXp), already taken off its XP. Put into the research goal
     /// once the reward is committed, by <see cref="PublishAfterCommit"/>.
@@ -63,6 +66,11 @@ public sealed class DirectXpRewardPlan
         // As Character.AwardXp: personal research takes its share of the whole reward, before the cap; only the XP
         // that remains is capped.
         long research = player.PlanResearchXp(amount);
+        if (player.IsNormalXpSuppressed)
+            return new(player, 0, before, before, false, values)
+            {
+                _questStyle = true, ResearchXp = research, NormalXpSuppressed = true
+            };
         amount = checked(amount - (int)research);
         if (current.NextLevelXp > 0)
             amount = (int)Math.Min(amount, GameplayXpCaps.Of(player.XpCaps.Quest, current.NextLevelXp));
@@ -122,6 +130,11 @@ public sealed class DirectXpRewardPlan
         // Personal research takes its share of an XP reward (not of Shadowlands SK); the rest is the XP the plan adds.
         long research = shadow ? 0 : player.PlanResearchXp(reward);
         int requested = reward;
+        if (!shadow && player.IsNormalXpSuppressed)
+            return new(player, 0, before, before, false, values)
+            {
+                ResearchXp = research, NormalXpSuppressed = true
+            };
         reward = checked(reward - (int)research);
         if (shadow)
         {

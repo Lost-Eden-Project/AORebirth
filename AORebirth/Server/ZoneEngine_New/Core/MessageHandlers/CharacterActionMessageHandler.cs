@@ -165,6 +165,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     player.TryApplyVisualFlags(message.Parameter2);
                     break;
 
+                case CharacterActionType.DisableXP:
+                    // EventFeedback 0x3c sends the complete AutoAttackFlags word in Parameter2.
+                    if (message.Identity == player.Identity)
+                        player.SetXpGainOptions(message.Parameter2);
+                    break;
+
                 case CharacterActionType.DeleteItem:
                 case CharacterActionType.Split:
                 case CharacterActionType.JoinItems:
