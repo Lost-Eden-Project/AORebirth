@@ -95,10 +95,18 @@ namespace ZoneEngine_New.Core.DebugMcp
                 int tickRate = DefaultTickRate;
                 int? players = null;
                 int? dynels = null;
+                int? navmeshTiles = null;
+                int? navmeshIndexedTiles = null;
                 if (byId.TryGetValue(snapshot.PlayfieldId, out Playfield? playfield))
                 {
                     players = 0;
                     dynels = 0;
+                    if (playfield.Pathfinder is { } finder)
+                    {
+                        navmeshTiles = finder.Residency.LoadedTiles;
+                        navmeshIndexedTiles = finder.Residency.IndexedTiles;
+                    }
+
                     foreach (Dynel dynel in playfield.GetRequiredService<DynelRegistry>().Dynels())
                     {
                         dynels++;
@@ -122,7 +130,9 @@ namespace ZoneEngine_New.Core.DebugMcp
                     worldSimAvgMs = R(snapshot.WorldSimAverageMs),
                     buildMs = R(snapshot.BuildElapsedMs),
                     players,
-                    dynels
+                    dynels,
+                    navmeshTiles,
+                    navmeshIndexedTiles
                 });
             }
 

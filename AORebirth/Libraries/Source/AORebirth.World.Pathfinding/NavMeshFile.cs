@@ -26,6 +26,10 @@ namespace AORebirth.World.Pathfinding
             new DtMeshSetWriter().Write(writer, result.Mesh, RcByteOrder.LITTLE_ENDIAN, cCompatibility: false);
         }
 
+        /// <summary>
+        /// Loads every tile at once. Tools and tests only: the engine streams tiles through
+        /// <see cref="NavMeshPathfinder"/>, which keeps a large outdoor mesh from costing its whole size in heap.
+        /// </summary>
         public static DtNavMesh Read(string path, out int playfieldId)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -48,7 +52,8 @@ namespace AORebirth.World.Pathfinding
             writer.Write(settings.AgentMaxClimb);
         }
 
-        static int ReadHeader(BinaryReader reader)
+        /// <summary>Validates the AONM header and leaves the reader at the Detour tile set.</summary>
+        internal static int ReadHeader(BinaryReader reader)
         {
             int magic = reader.ReadInt32();
             if (magic != Magic)

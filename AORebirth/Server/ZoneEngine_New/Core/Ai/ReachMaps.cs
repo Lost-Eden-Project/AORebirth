@@ -37,9 +37,12 @@ namespace ZoneEngine_New.Core.Ai
                 Sweep(now);
 
             ulong key = target.Identity.Long();
+            // A map also expires when the navmesh dropped a tile since it was flooded: a reloaded tile's polygons
+            // carry new references, so the old set would wrongly deny walkers standing on them.
             if (_byTarget.TryGetValue(key, out Entry? entry)
                 && (now - entry.BuiltUtc).TotalSeconds < NpcFollowTarget.PathReplanSeconds
-                && Vector3.Abs(targetFeet - entry.At) < NpcFollowTarget.MinAnnounceDeltaMeters)
+                && Vector3.Abs(targetFeet - entry.At) < NpcFollowTarget.MinAnnounceDeltaMeters
+                && !finder.IsStale(entry.Map))
             {
                 entry.LastUsedUtc = now;
                 PathDiag.CacheHit(PathDiag.ReachMap);

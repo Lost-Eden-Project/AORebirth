@@ -714,6 +714,20 @@ namespace ZoneEngine_New.Core.Playfield
 
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("locality");
                 _serviceProvider.GetRequiredService<PlayfieldLocality>().Tick(deltaTime);
+                if (Pathfinder is { } finder)
+                {
+                    ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("navmesh.prefetch");
+                    foreach (Player player in _dynelRegistry.PlayerEntities())
+                    {
+                        if (player.Session == null)
+                            continue;
+                        AORebirth.Core.Vector.Vector3 at = player.Position;
+                        finder.Prefetch(new System.Numerics.Vector3((float)at.x, (float)at.y, (float)at.z));
+                    }
+
+                    ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("navmesh.sweep");
+                    finder.Tick();
+                }
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("stats.rebase");
                 DrainRebases();
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("knubot");
@@ -744,9 +758,11 @@ namespace ZoneEngine_New.Core.Playfield
                 logger.Info(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "Playfield navmesh loaded id={0} islands={1}",
+                        "Playfield navmesh indexed id={0} islands={1} tiles={2} polys={3}",
                         playfieldId,
-                        pathfinder.IslandCount));
+                        pathfinder.IslandCheckEnabled ? pathfinder.IslandCount.ToString(CultureInfo.InvariantCulture) : "off(off-mesh links)",
+                        pathfinder.Residency.IndexedTiles,
+                        pathfinder.Residency.TotalPolys));
                 return pathfinder;
             }
 

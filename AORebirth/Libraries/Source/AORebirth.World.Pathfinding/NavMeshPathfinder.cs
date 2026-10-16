@@ -13,6 +13,8 @@ namespace AORebirth.World.Pathfinding
 
     /// <summary>
     /// Tick-thread Detour query over a GameData <c>Navmesh.dat</c>. One instance per playfield.
+    /// Tiles stream in from the file around each query and out again once idle (<see cref="NavMeshTileStreamer"/>),
+    /// so a playfield's resident navmesh is the part being walked on, not the whole bake.
     /// </summary>
     public sealed class NavMeshPathfinder : IDisposable
     {
@@ -33,30 +35,60 @@ namespace AORebirth.World.Pathfinding
         /// <summary>Stacked floors a column can hold before the rest are ignored.</summary>
         const int MaxColumnPolys = 64;
 
+        /// <summary>
+        /// Tiles loaded for a path search form a corridor along the start→end segment. Its half-width is half
+        /// the distance, held between these bounds, so a route can swing around an obstacle without loading the
+        /// square a diagonal bounding box would.
+        /// </summary>
+        const float CorridorMarginMin = 32f;
+
+        const float CorridorMarginMax = 128f;
+
+        /// <summary>
+        /// A search that ran out of loaded mesh (Partial) is retried once with a wider corridor: one and a half
+        /// times the distance, held between these bounds. A Partial after that is a detour longer than the search
+        /// could have explored under its iteration cap anyway.
+        /// </summary>
+        const float RetryMarginMin = 96f;
+
+        const float RetryMarginMax = 320f;
+
+        /// <summary>Share of the per-request tile budget a corridor may plan for; the rest absorbs tile-grid rounding.</summary>
+        const float CorridorBudgetFill = 0.85f;
+
+        /// <summary>Half-width of the box kept loaded around each connected player (<see cref="Prefetch"/>).</summary>
+        public const float PrefetchExtent = 64f;
+
+        readonly NavMeshTileStreamer _streamer;
         readonly DtNavMeshQuery _query;
         readonly DtQueryDefaultFilter _filter;
         readonly RcVec3f _extents;
-        readonly NavMeshIslands _islands;
+        readonly NavMeshIslands? _islands;
+        readonly long[] _columnPolys = new long[MaxColumnPolys];
 
         // Reach-map flood scratch, grown on demand.
         long[] _reachRefs = [];
         long[] _reachParents = [];
         float[] _reachCosts = [];
 
-        NavMeshPathfinder(int playfieldId, DtNavMesh mesh, NavMeshBuildSettings settings)
+        NavMeshPathfinder(int playfieldId, NavMeshTileStreamer streamer, NavMeshIslands? islands, NavMeshBuildSettings settings)
         {
             PlayfieldId = playfieldId;
             Settings = settings;
-            _query = new DtNavMeshQuery(mesh);
+            _streamer = streamer;
+            _query = new DtNavMeshQuery(streamer.Mesh);
             _filter = new DtQueryDefaultFilter();
             float pathHoriz = MathF.Max(settings.AgentRadius, PathQueryHorizontal);
             float pathVert = settings.AgentHeight + settings.AgentMaxClimb + PathQueryHorizontal;
             _extents = new RcVec3f(pathHoriz, pathVert, pathHoriz);
-            _islands = NavMeshIslands.Build(mesh);
+            _islands = islands;
         }
 
-        /// <summary>Separate connected regions of this navmesh.</summary>
-        public int IslandCount => _islands.Count;
+        /// <summary>Separate connected regions of this navmesh; 0 when the pre-check is off (<see cref="IslandCheckEnabled"/>).</summary>
+        public int IslandCount => _islands?.Count ?? 0;
+
+        /// <summary>False for a mesh with off-mesh connections: every search then runs rather than being pre-answered.</summary>
+        public bool IslandCheckEnabled => _islands != null;
 
         public int PlayfieldId { get; }
 
@@ -69,6 +101,16 @@ namespace AORebirth.World.Pathfinding
         public int LastIterations { get; private set; }
 
         public static int SearchIterationCap => MaxSearchIters;
+
+        /// <summary>What the tile window holds right now.</summary>
+        public NavMeshResidency Residency => new(
+            _streamer.Index.Count,
+            _streamer.LoadedCount,
+            _streamer.Capacity,
+            _streamer.TileLoads,
+            _streamer.TileUnloads,
+            _streamer.LoadMilliseconds,
+            _streamer.Index.TotalPolys);
 
         public static bool TryLoad(string gameDataRoot, int playfieldId, out NavMeshPathfinder? pathfinder)
         {
@@ -104,19 +146,45 @@ namespace AORebirth.World.Pathfinding
                 return false;
             }
 
-            DtNavMesh mesh;
+            NavMeshTileStreamer? streamer = null;
             try
             {
-                mesh = NavMeshFile.Read(meshPath, out _);
+                NavMeshTileIndex index = NavMeshTileIndex.Build(meshPath);
+                streamer = new NavMeshTileStreamer(index, meshPath);
+                NavMeshIslands? islands = NavMeshIslands.Build(index, streamer.File);
+                pathfinder = new NavMeshPathfinder(playfieldId, streamer, islands, settings);
+                return true;
             }
             catch (Exception exception)
             {
+                streamer?.Dispose();
                 failure = "mesh: " + exception.Message;
                 return false;
             }
+        }
 
-            pathfinder = new NavMeshPathfinder(playfieldId, mesh, settings);
-            return true;
+        /// <summary>Releases tiles no query has touched lately. Call once per playfield tick.</summary>
+        public void Tick() => _streamer.Sweep(Now());
+
+        /// <summary>
+        /// Keeps the tiles around a player resident and loads new ones a row at a time as they move, so the first
+        /// NPC to path near them pays nothing. Skipped when the window is busy, leaving it to demand loading.
+        /// </summary>
+        public void Prefetch(Vector3 at)
+        {
+            if (_streamer.LoadedCount >= NavMeshTileStreamer.PrefetchOccupancyLimit)
+                return;
+            EnsureAround(at, PrefetchExtent);
+        }
+
+        /// <summary>
+        /// Whether a tile has been unloaded since <paramref name="map"/> was flooded. Its polygon references may
+        /// then be dead (a reloaded tile gets fresh references), so the owner should rebuild it.
+        /// </summary>
+        public bool IsStale(ReachMap map)
+        {
+            ArgumentNullException.ThrowIfNull(map);
+            return map.BuiltStamp < _streamer.LastUnloadStamp;
         }
 
         public bool TrySnap(Vector3 position, out Vector3 snapped)
@@ -128,6 +196,7 @@ namespace AORebirth.World.Pathfinding
             if (extent <= 0f)
                 return false;
 
+            EnsureAround(position, extent);
             float vert = MathF.Max(extent, Settings.AgentHeight + Settings.AgentMaxClimb);
             DtStatus status = _query.FindNearestPoly(
                 position,
@@ -156,12 +225,13 @@ namespace AORebirth.World.Pathfinding
             if (maxDrop <= 0f)
                 return false;
 
+            EnsureAround(position, ColumnHalfWidth);
             float above = Settings.AgentMaxClimb;
             float half = (maxDrop + above) * 0.5f;
             var center = new RcVec3f(position.X, position.Y + above - half, position.Z);
             var extents = new RcVec3f(ColumnHalfWidth, half, ColumnHalfWidth);
 
-            var polys = new long[MaxColumnPolys];
+            long[] polys = _columnPolys;
             var collect = new DtCollectPolysQuery(polys, polys.Length);
             if (_query.QueryPolygons(center, extents, _filter, ref collect).Failed())
                 return false;
@@ -202,6 +272,7 @@ namespace AORebirth.World.Pathfinding
             if (radius <= 0f)
                 return false;
 
+            EnsureAround(centre, radius + _extents.X);
             var at = new RcVec3f(centre.X, centre.Y, centre.Z);
             if (_query.FindNearestPoly(at, _extents, _filter, out long startRef, out RcVec3f nearest, out _).Failed()
                 || startRef == 0)
@@ -218,13 +289,14 @@ namespace AORebirth.World.Pathfinding
 
         public bool TryCanReach(Vector3 start, Vector3 end)
         {
+            EnsurePathRegion(start, end, widest: false);
             if (!TryResolveEnds(start, end, out PolyEnds ends))
                 return false;
             if (!IsOnMesh(end, ends.EndPt))
                 return false;
 
             Span<long> path = stackalloc long[MaxPathPolys];
-            return TrySearchCorridor(ends, path, out int pathCount)
+            return TrySearchCorridor(start, end, ends, path, out int pathCount)
                 && pathCount > 0
                 && path[pathCount - 1] == ends.EndRef;
         }
@@ -235,6 +307,7 @@ namespace AORebirth.World.Pathfinding
             waypoints.Clear();
             LastIterations = 0;
 
+            EnsurePathRegion(start, end, widest: false);
             if (!TryResolveEnds(start, end, out PolyEnds ends))
             {
                 LastOutcome = PathSearchOutcome.NoEnds;
@@ -247,14 +320,14 @@ namespace AORebirth.World.Pathfinding
             }
 
             // No route exists between separate islands; skip the search that would run to its cap proving it.
-            if (_islands.AreDisconnected(ends.StartRef, ends.EndRef))
+            if (_islands != null && _islands.AreDisconnected(_streamer.GlobalPolyId(ends.StartRef), _streamer.GlobalPolyId(ends.EndRef)))
             {
                 LastOutcome = PathSearchOutcome.Disconnected;
                 return false;
             }
 
             Span<long> path = stackalloc long[MaxPathPolys];
-            if (!TrySearchCorridor(ends, path, out int pathCount) || pathCount <= 0)
+            if (!TrySearchCorridor(start, end, ends, path, out int pathCount) || pathCount <= 0)
                 return false;
 
             Span<DtStraightPath> straight = stackalloc DtStraightPath[MaxStraightPath];
@@ -292,16 +365,20 @@ namespace AORebirth.World.Pathfinding
         /// </summary>
         public ReachMap BuildReachMap(Vector3 target, float radius, int maxPolys)
         {
+            EnsureAround(target, radius + _extents.X);
             if (!TrySnap(target, out _))
-                return new ReachMap(ReachMapKind.TargetNoMesh, null, target, 0);
+                return new ReachMap(ReachMapKind.TargetNoMesh, null, target, 0, _streamer.Stamp);
 
             DtStatus status = _query.FindNearestPoly(target, _extents, _filter, out long endRef, out RcVec3f endPt, out _);
             if (status.Failed() || endRef == 0)
-                return new ReachMap(ReachMapKind.TargetNoMesh, null, target, 0);
+                return new ReachMap(ReachMapKind.TargetNoMesh, null, target, 0, _streamer.Stamp);
 
             var end = new Vector3(endPt.X, endPt.Y, endPt.Z);
             if (!IsOnMesh(target, endPt))
-                return new ReachMap(ReachMapKind.TargetOffMesh, null, end, 0);
+                return new ReachMap(ReachMapKind.TargetOffMesh, null, end, 0, _streamer.Stamp);
+
+            // Stamped right before the flood: only an unload after this can retire polygons the map holds.
+            long stamp = _streamer.Stamp;
 
             // One slot past the limit tells "exactly full" from "ran out of room".
             int capacity = maxPolys + 1;
@@ -323,12 +400,12 @@ namespace AORebirth.World.Pathfinding
                 out int count,
                 capacity);
             if (flood.Failed() || count > maxPolys)
-                return new ReachMap(ReachMapKind.TooLarge, null, end, count);
+                return new ReachMap(ReachMapKind.TooLarge, null, end, count, stamp);
 
             var polys = new HashSet<long>(count);
             for (int i = 0; i < count; i++)
                 polys.Add(_reachRefs[i]);
-            return new ReachMap(ReachMapKind.Flooded, polys, end, count);
+            return new ReachMap(ReachMapKind.Flooded, polys, end, count, stamp);
         }
 
         /// <summary>
@@ -361,9 +438,61 @@ namespace AORebirth.World.Pathfinding
 
         public void Dispose()
         {
+            _streamer.Dispose();
         }
 
-        bool TrySearchCorridor(in PolyEnds ends, Span<long> path, out int pathCount)
+        static long Now() => Environment.TickCount64;
+
+        /// <summary>Loads the tiles under an XZ box of half-width <paramref name="extent"/> around <paramref name="at"/>.</summary>
+        void EnsureAround(Vector3 at, float extent)
+            => _streamer.EnsureRegion(at.X - extent, at.Z - extent, at.X + extent, at.Z + extent, Now());
+
+        /// <summary>Loads the corridor a route between the two points may cross. Returns how many tiles were newly loaded.</summary>
+        int EnsurePathRegion(Vector3 start, Vector3 end, bool widest)
+        {
+            float dx = end.X - start.X;
+            float dz = end.Z - start.Z;
+            float distance = MathF.Sqrt((dx * dx) + (dz * dz));
+            float margin = widest
+                ? Math.Clamp(distance * 1.5f, RetryMarginMin, RetryMarginMax)
+                : Math.Clamp(distance * 0.5f, CorridorMarginMin, CorridorMarginMax);
+
+            // The corridor must fit the window's corridor budget or its far end is cut off. The streamer claims
+            // every tile whose centre is within the half-width plus half a tile diagonal, a capsule of area
+            // 2·r·d + π·r², so the widest affordable reach solves that for r. A route too long even for the
+            // minimum margin is loaded as far as the budget reaches and fails like any out-of-reach route (the
+            // search's iteration cap bounded such routes before streaming too).
+            DtNavMeshParams tiles = _streamer.Index.Params;
+            float halfDiagonal = 0.5f * MathF.Sqrt((tiles.tileWidth * tiles.tileWidth) + (tiles.tileHeight * tiles.tileHeight));
+            float budgetArea = NavMeshTileStreamer.MaxCorridorTiles * tiles.tileWidth * tiles.tileHeight * CorridorBudgetFill;
+            float affordableReach = (-distance + MathF.Sqrt((distance * distance) + (MathF.PI * budgetArea))) / MathF.PI;
+            float reach = margin + _extents.X + halfDiagonal;
+            if (reach > affordableReach)
+                margin = MathF.Max(CorridorMarginMin, affordableReach - _extents.X - halfDiagonal);
+            long now = Now();
+            int loaded = _streamer.EnsureCorridor(start.X, start.Z, end.X, end.Z, margin + _extents.X, now);
+
+            // A corridor past the window's budget is cut short; the ends must still resolve.
+            loaded += _streamer.EnsureRegion(start.X - _extents.X, start.Z - _extents.X, start.X + _extents.X, start.Z + _extents.X, now);
+            loaded += _streamer.EnsureRegion(end.X - _extents.X, end.Z - _extents.X, end.X + _extents.X, end.Z + _extents.X, now);
+            return loaded;
+        }
+
+        /// <summary>
+        /// The corridor search. On a full mesh two polygons on one island always connect, so a Partial result
+        /// means the route left the loaded tiles: a wider corridor is loaded once and the search repeated.
+        /// </summary>
+        bool TrySearchCorridor(Vector3 start, Vector3 end, in PolyEnds ends, Span<long> path, out int pathCount)
+        {
+            if (SearchCorridor(ends, path, out pathCount))
+                return true;
+            if (LastOutcome != PathSearchOutcome.Partial || EnsurePathRegion(start, end, widest: true) == 0)
+                return false;
+
+            return SearchCorridor(ends, path, out pathCount);
+        }
+
+        bool SearchCorridor(in PolyEnds ends, Span<long> path, out int pathCount)
         {
             pathCount = 0;
             DtStatus init = _query.InitSlicedFindPath(
@@ -470,6 +599,16 @@ namespace AORebirth.World.Pathfinding
             public RcVec3f EndPt { get; }
         }
     }
+
+    /// <summary>What a pathfinder's tile window holds: baked tiles in the file versus tiles resident now.</summary>
+    public readonly record struct NavMeshResidency(
+        int IndexedTiles,
+        int LoadedTiles,
+        int WindowCapacity,
+        long TileLoads,
+        long TileUnloads,
+        double LoadMilliseconds,
+        int TotalPolys);
 
     /// <summary>How a <see cref="NavMeshPathfinder.TryFindPath"/> call ended.</summary>
     public enum PathSearchOutcome

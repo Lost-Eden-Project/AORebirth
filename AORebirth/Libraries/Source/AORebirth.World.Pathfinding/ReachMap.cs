@@ -38,13 +38,17 @@ namespace AORebirth.World.Pathfinding
     {
         readonly HashSet<long>? _polys;
 
-        internal ReachMap(ReachMapKind kind, HashSet<long>? polys, Vector3 endPoint, int polyCount)
+        internal ReachMap(ReachMapKind kind, HashSet<long>? polys, Vector3 endPoint, int polyCount, long builtStamp)
         {
             Kind = kind;
             _polys = polys;
             EndPoint = endPoint;
             PolyCount = polyCount;
+            BuiltStamp = builtStamp;
         }
+
+        /// <summary>Streamer stamp when the flood ran; a tile unloaded since may have retired some of its polygons.</summary>
+        internal long BuiltStamp { get; }
 
         public ReachMapKind Kind { get; }
 
