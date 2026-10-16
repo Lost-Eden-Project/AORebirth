@@ -17,6 +17,7 @@ namespace ZoneEngine_New.Core.Inventory
         readonly IItemTemplateCatalog _catalog;
         readonly IItemBuilder _items;
         readonly ConcurrentDictionary<string, QualitySpan[]> _qualitySpans = new(StringComparer.Ordinal);
+        readonly ConcurrentDictionary<string, LeafRange[]> _leafRanges = new(StringComparer.Ordinal);
 
         public HashItemMinter(IGameData gameData, IItemTemplateCatalog catalog, IItemBuilder items)
         {
@@ -39,6 +40,78 @@ namespace ZoneEngine_New.Core.Inventory
 
             item = _items.CreateWithNewInstance(lowId, highId, quality, source);
             return true;
+        }
+
+        /// <summary>
+        /// SpawnItem's mint: of every leaf family reachable from <paramref name="hash"/>, the one that reaches the
+        /// highest QL at or below <paramref name="desiredQuality"/>, random among families tied at that QL. A QL-range
+        /// family reaches the request itself when it spans it, else its top QL. False when every family starts above
+        /// the request.
+        /// </summary>
+        public bool TryMintHighestUpTo(string hash, int desiredQuality, ItemSource source, out Item item)
+        {
+            item = null!;
+            if (string.IsNullOrEmpty(hash))
+                return false;
+
+            int wanted = desiredQuality < 1 ? 1 : desiredQuality;
+            LeafRange[] leaves = _leafRanges.GetOrAdd(hash, BuildLeafRanges);
+            int best = 0;
+            int ties = 0;
+            HashInstance? picked = null;
+            for (int i = 0; i < leaves.Length; i++)
+            {
+                LeafRange leaf = leaves[i];
+                if (leaf.Min > wanted)
+                    continue;
+
+                int reached = Math.Min(wanted, leaf.Max);
+                if (reached > best)
+                {
+                    best = reached;
+                    ties = 1;
+                    picked = leaf.Instance;
+                }
+                else if (reached == best && Random.Shared.Next(++ties) == 0)
+                {
+                    picked = leaf.Instance;
+                }
+            }
+
+            if (picked == null
+                || !HashItemCatalog.TrySelectIds(picked, best, CatalogQuality, out int lowId, out int highId))
+            {
+                return false;
+            }
+
+            item = _items.CreateWithNewInstance(lowId, highId, best, source);
+            return true;
+        }
+
+        LeafRange[] BuildLeafRanges(string hash)
+        {
+            var instances = new List<HashInstance>();
+            _gameData.CollectHashLeafInstances(hash, instances);
+            var ranges = new List<LeafRange>(instances.Count);
+            foreach (HashInstance instance in instances)
+            {
+                int min = int.MaxValue;
+                int max = int.MinValue;
+                foreach (int id in instance.TemplateIds)
+                {
+                    if (id <= 0)
+                        continue;
+
+                    int ql = CatalogQuality(id);
+                    min = Math.Min(min, ql);
+                    max = Math.Max(max, ql);
+                }
+
+                if (min <= max)
+                    ranges.Add(new LeafRange(instance, min, max));
+            }
+
+            return ranges.ToArray();
         }
 
         /// <summary>
@@ -213,6 +286,8 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         readonly record struct QualitySpan(int Min, int Max);
+
+        readonly record struct LeafRange(HashInstance Instance, int Min, int Max);
 
         int CatalogQuality(int aoid)
         {

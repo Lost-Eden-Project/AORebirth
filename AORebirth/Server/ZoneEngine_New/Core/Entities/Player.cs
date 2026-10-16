@@ -1426,6 +1426,9 @@ namespace ZoneEngine_New.Core.Entities
 
         bool _inFullRebase;
 
+        /// <summary>Bonus rebuilds allowed for worn OE levels to settle. Each item can rise at most four levels.</summary>
+        const int MaxOverEquipPasses = 8;
+
         public override void Rebase()
         {
             _inFullRebase = true;
@@ -1449,12 +1452,15 @@ namespace ZoneEngine_New.Core.Entities
             // ability values, so equipment and buffs have to be in place before those are
             // recomputed. Worn appearance follows the bonus pass because its spells carry stat
             // requirements.
-            // Over-equipped items are judged on the full buffed skills with every item at full strength, then the
-            // bonus layers are rebuilt once with their penalties (one extra pass, only while something is OE).
+            // The client judges each worn item's OE level on the current skills, which already carry the other OE
+            // items' penalties, and re-judges whenever they change (Gamecode.dll FUN_1004d003 / FUN_10081e10). Starting
+            // from every item at full strength, the bonus layers are rebuilt until no item's level changes. Penalties
+            // shrink bonuses, so levels normally only rise; the pass cap ends the rare oscillation a penalised negative
+            // modifier could cause.
             if (Inventory.IsHydrated)
                 Inventory.ResetOverEquip();
             ApplyBonusLayers();
-            if (Inventory.IsHydrated && Inventory.ApplyOverEquip(Stats))
+            for (int pass = 0; pass < MaxOverEquipPasses && Inventory.IsHydrated && Inventory.ApplyOverEquip(Stats); pass++)
                 ApplyBonusLayers();
             ActionRestrictionFlags = CombatRules.CollectActionRestrictions(Buffs, Stats);
             RebaseWearAppearance();

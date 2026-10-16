@@ -161,9 +161,8 @@ public sealed class JournalDefinition
     public int DeleteQuestMarker { get; set; }
     public int DeleteRecipientMarker { get; set; }
     public bool TypedDelete { get; set; }
+    /// <summary>Send a GameTime from the shared world clock ahead of the journal; the expiry is written in that clock.</summary>
     public bool SynchronizeClock { get; set; }
-    public float ClockTime { get; set; } public int ClockUnknown3 { get; set; } public float ClockUnknown4 { get; set; }
-    public long ClockBaseSeconds { get; set; }
     public int DurationSeconds { get; set; }
     public int ExpiryOffset { get; set; } = -1;
 }

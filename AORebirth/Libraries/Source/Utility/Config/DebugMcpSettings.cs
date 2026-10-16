@@ -8,6 +8,9 @@ namespace Utility.Config
     {
         public bool Enabled { get; set; }
 
+        /// <summary>Also exposes the tools that change live characters (e.g. reset_perks). Defaults to off.</summary>
+        public bool AllowWrites { get; set; }
+
         public string ListenIP { get; set; }
 
         public int Port { get; set; }

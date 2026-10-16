@@ -69,6 +69,7 @@ namespace ZoneEngine_New.Core.Entities
             if (dead is NpcCharacter npc)
             {
                 ItemTable = npc.MobTemplate?.ItemTable;
+                CarriedItems = npc.TakeCarriedLoot();
                 CorpseFullUpdateTemplate = CopyCorpseFullUpdateTemplate(npc.MobTemplate?.CorpseFullUpdateTemplate);
             }
 

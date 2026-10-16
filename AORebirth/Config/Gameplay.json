@@ -29,5 +29,25 @@
     "requireLineOfSight": true,
     "maxHelpers": 0,
     "chain": false
+  },
+  "pets": {
+    "ownerThreatSharePercent": 50,
+    "ownerAlwaysOnHateList": true,
+    "ownerSharesPetEngageRange": true
+  },
+  "worldClock": {
+    "epochUtc": "2026-01-01T00:00:00Z",
+    "dayAtEpoch": 185408,
+    "timeOfDayAtEpochSeconds": 30024
+  },
+  "npcNanos": {
+    "minCastIntervalSeconds": 10,
+    "maxCastIntervalSeconds": 20,
+    "minBuffIntervalSeconds": 20,
+    "maxBuffIntervalSeconds": 40,
+    "idleCheckSeconds": 3,
+    "buffInCombat": false,
+    "supportRange": 20,
+    "healBelowPercent": 75
   }
 }

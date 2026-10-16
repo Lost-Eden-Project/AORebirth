@@ -33,7 +33,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 || !playfield.GetRequiredService<DynelRegistry>().TryGet(message.MissionTerminalIdentity, out var dynel)
                 || dynel is not MissionTerminal terminal || terminal.GetEdgeDistanceTo(player) > LootableDynel.OpenRange)
                 return;
-            if (session is not IGameTimeSession { GameTimeSynchronizedAtUtc: { } synchronizedUtc })
+            if (session is not IGameTimeSession { GameTimeSynchronizedAtUtc: not null } clock)
             { Feedback(session, player, "The mission clock has not synchronized. No credits were deducted."); return; }
             int level = player.Stats.Get(CharacterStat.Level);
             var side = MissionLocationPool.ResolveCharacterSide(player.Stats.Get(CharacterStat.Side));
@@ -70,7 +70,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         response = GeneratedMissionRollService.Generate(message, player.Identity, level,
                             playfield.Identity.Instance, player.Position.xf, player.Position.zf,
                             side,
-                            GeneratedMissionWire.ClientClock(synchronizedUtc, now), seed, nonce,
+                            GeneratedMissionWire.ClientClock(clock, now), seed, nonce,
                             () => next < checked(first + 5) ? next++ : throw new InvalidOperationException("Mission identity reservation exhausted."),
                             _destinations, breed, profession, out selectedEntrances);
                     }

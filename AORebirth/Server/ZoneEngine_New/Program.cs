@@ -293,6 +293,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, DiagCommand>();
             services.AddSingleton<IGmCommand, DebugCommand>();
             services.AddSingleton<IGmCommand, OnlineCommand>();
+            services.AddSingleton<IGmCommand, GameTimeCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();

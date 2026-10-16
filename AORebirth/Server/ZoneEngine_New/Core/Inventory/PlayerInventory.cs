@@ -827,23 +827,24 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// Sets each worn item's over-equipped level from <paramref name="stats"/> (the full, unpenalised
-        /// values). True when any item is over-equipped.
+        /// Sets each worn item's over-equipped level from <paramref name="stats"/>, the current values carrying
+        /// the other items' penalties. True when any item's level changed.
         /// </summary>
         public bool ApplyOverEquip(StatCollection stats)
         {
             ArgumentNullException.ThrowIfNull(stats);
-            bool any = false;
+            bool changed = false;
             foreach (Container page in WornPages())
             {
                 foreach (KeyValuePair<int, Item> slot in page.Content)
                 {
-                    slot.Value.OverEquipLevel = OverEquip.ComputeLevel(slot.Value, page.Identity.Type, slot.Key, stats);
-                    any |= slot.Value.OverEquipLevel > 0;
+                    int level = OverEquip.ComputeLevel(slot.Value, page.Identity.Type, slot.Key, stats);
+                    changed |= level != slot.Value.OverEquipLevel;
+                    slot.Value.OverEquipLevel = level;
                 }
             }
 
-            return any;
+            return changed;
         }
 
         /// <summary>Social page slot (1-15) of the right hand: placement 0x3D (client drop, 2026-10-06).</summary>

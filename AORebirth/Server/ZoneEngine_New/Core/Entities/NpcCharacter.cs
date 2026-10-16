@@ -29,6 +29,7 @@ namespace ZoneEngine_New.Core.Entities
         readonly IItemBuilder _items;
         readonly Dictionary<int, string> _equipmentSawHashes = new();
         readonly HashSet<int> _combatWeaponSlots = new();
+        List<Item>? _carriedLoot;
 
         public NpcCharacter(Identity identity, IItemBuilder items)
             : base(identity)
@@ -91,6 +92,29 @@ namespace ZoneEngine_New.Core.Entities
         public string? SpawnHash { get; init; }
 
         public bool IsAiBusy => Brain?.IsBusy == true;
+
+        /// <summary>
+        /// Holds an item SpawnItem gave this NPC until its corpse loots it alongside the item table roll. False once
+        /// the NPC already carries a full corpse's worth.
+        /// </summary>
+        public bool TryCarryLoot(Item item)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            _carriedLoot ??= new List<Item>();
+            if (_carriedLoot.Count >= Corpse.LootCapacity)
+                return false;
+
+            _carriedLoot.Add(item);
+            return true;
+        }
+
+        /// <summary>The carried items, handed to the corpse once; later calls return null.</summary>
+        public IReadOnlyList<Item>? TakeCarriedLoot()
+        {
+            List<Item>? carried = _carriedLoot;
+            _carriedLoot = null;
+            return carried;
+        }
 
         /// <summary>
         /// Binds a shop to this NPC and flags the character so the client draws the vendor cart.
@@ -271,9 +295,10 @@ namespace ZoneEngine_New.Core.Entities
 
         protected override void OnDamaged(Character attacker, int hpRemoved, HitType hitType)
         {
-            // A player's pet draws threat like its owner does, so a mob turns on the pet that hits it.
+            // A player's pet draws threat like its owner does, so a mob turns on the pet that hits it, and its owner
+            // takes a share (NpcBrain.AddThreatFrom).
             if (attacker.IsPlayer || (attacker is NpcCharacter { PetOwner: Player }))
-                Brain?.AddThreat(attacker.Identity, hpRemoved);
+                Brain?.AddThreatFrom(attacker, hpRemoved);
         }
 
         public override bool IsEvading => Brain?.IsEvading == true;

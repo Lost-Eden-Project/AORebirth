@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Configuration
 {
     using System;
+    using System.Globalization;
     using System.IO;
     using System.Text.Json;
 
@@ -40,6 +41,15 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Nearby NPCs joining a fight one of their own is drawn into.</summary>
         public GameplaySocialAggro SocialAggro { get; init; } = new();
+
+        /// <summary>How much of a fight a player's pet starts falls back on the player.</summary>
+        public GameplayPets Pets { get; init; } = new();
+
+        /// <summary>Where the shared Rubi-Ka clock stood at its epoch.</summary>
+        public GameplayWorldClock WorldClock { get; init; } = new();
+
+        /// <summary>How often NPCs cast their uploaded nanos, and what they cast in a fight.</summary>
+        public GameplayNpcNanos NpcNanos { get; init; } = new();
 
         public static string ResolvePath(string gameDataRoot)
         {
@@ -115,7 +125,107 @@ namespace ZoneEngine_New.Core.Configuration
                     + Ai.NpcAiRules.MaxLeashRange + " m leash range.");
             if (SocialAggro.MaxHelpers < 0)
                 throw new InvalidDataException(path + ": socialAggro.maxHelpers must be 0 (no limit) or more.");
+            if (Pets == null || !float.IsFinite(Pets.OwnerThreatSharePercent) || Pets.OwnerThreatSharePercent < 0)
+                throw new InvalidDataException(path + ": pets.ownerThreatSharePercent must be a finite, non-negative percent.");
+            if (WorldClock == null || !WorldClock.TryGetEpoch(out _) || WorldClock.DayAtEpoch < 0
+                || WorldClock.TimeOfDayAtEpochSeconds < 0 || WorldClock.TimeOfDayAtEpochSeconds >= Network.GameClock.SecondsPerDay)
+                throw new InvalidDataException(path + ": worldClock needs an ISO 8601 epochUtc, dayAtEpoch 0 or more, and "
+                    + "timeOfDayAtEpochSeconds from 0 up to below the " + Network.GameClock.SecondsPerDay + " s day.");
+            if (NpcNanos == null || !NpcNanos.IsValid)
+                throw new InvalidDataException(path + ": npcNanos needs finite, non-negative intervals with min <= max, "
+                    + "idleCheckSeconds and supportRange above 0, and healBelowPercent from 0 to 100.");
         }
+    }
+
+    /// <summary>
+    /// The npcNanos section of Gameplay.json: the pace of an NPC's own nano casting (<see cref="Ai.NpcNanoCaster"/>).
+    /// In a fight an NPC casts hostile nanos and pet summons first, then heals; buffs wait for the fight to end unless
+    /// <see cref="BuffInCombat"/> allows them. Each cast is followed by a random wait in the matching interval, and a
+    /// look that found nothing to cast waits <see cref="IdleCheckSeconds"/>.
+    /// </summary>
+    public sealed class GameplayNpcNanos
+    {
+        internal static readonly GameplayNpcNanos Default = new();
+
+        /// <summary>Wait after a hostile nano, heal or summon before the next look.</summary>
+        public double MinCastIntervalSeconds { get; init; } = 10;
+
+        public double MaxCastIntervalSeconds { get; init; } = 20;
+
+        /// <summary>Wait after a buff before the next look: idle NPCs buffing themselves and their neighbours.</summary>
+        public double MinBuffIntervalSeconds { get; init; } = 20;
+
+        public double MaxBuffIntervalSeconds { get; init; } = 40;
+
+        /// <summary>Wait after a look that found nothing to cast.</summary>
+        public double IdleCheckSeconds { get; init; } = 3;
+
+        /// <summary>Buffs may also be cast during a fight, after the hostile nanos and heals.</summary>
+        public bool BuffInCombat { get; init; }
+
+        /// <summary>Friendly nanos reach NPCs this close, in meters, when the nano has no AttackRange.</summary>
+        public double SupportRange { get; init; } = 20;
+
+        /// <summary>Heals only go on characters under this health percent (a pet heals its own all the way to full).</summary>
+        public int HealBelowPercent { get; init; } = 75;
+
+        internal bool IsValid
+            => IsInterval(MinCastIntervalSeconds, MaxCastIntervalSeconds)
+                && IsInterval(MinBuffIntervalSeconds, MaxBuffIntervalSeconds)
+                && double.IsFinite(IdleCheckSeconds) && IdleCheckSeconds > 0
+                && double.IsFinite(SupportRange) && SupportRange > 0
+                && HealBelowPercent is >= 0 and <= 100;
+
+        static bool IsInterval(double min, double max)
+            => double.IsFinite(min) && double.IsFinite(max) && min >= 0 && max >= min;
+    }
+
+    /// <summary>
+    /// The worldClock section of Gameplay.json: the one Rubi-Ka clock every player is sent (GameTime). The client runs
+    /// a 27-hour day at 15 game seconds per real second from what it is sent, so these only fix where that clock stood
+    /// at <see cref="EpochUtc"/>; the server time the same message carries is real UTC seconds.
+    /// </summary>
+    public sealed class GameplayWorldClock
+    {
+        /// <summary>When the clock read <see cref="DayAtEpoch"/> and <see cref="TimeOfDayAtEpochSeconds"/>, ISO 8601 UTC.</summary>
+        public string EpochUtc { get; init; } = "2026-01-01T00:00:00Z";
+
+        /// <summary>Day number at the epoch (GameTime_t::GetCurrentDay).</summary>
+        public int DayAtEpoch { get; init; } = 185408;
+
+        /// <summary>Time of day at the epoch in game seconds of the 97200 s day (30024 is 08:20:24, dawn).</summary>
+        public int TimeOfDayAtEpochSeconds { get; init; } = 30024;
+
+        public bool TryGetEpoch(out DateTime epochUtc)
+            => DateTime.TryParse(EpochUtc, CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out epochUtc);
+    }
+
+    /// <summary>
+    /// The pets section of Gameplay.json. A pet that fights for a player is not a free shield: the NPCs it fights also
+    /// hold its owner responsible, so an owner whose pet dies, is dismissed or is somewhere the NPC cannot reach is the
+    /// NPC's next target instead of the NPC walking home unharmed.
+    /// </summary>
+    public sealed class GameplayPets
+    {
+        /// <summary>
+        /// Percent of every threat a player's pet earns (damage, taunts, hostile nanos) that its owner earns as well. The
+        /// pet keeps the full amount, so it still holds the NPC in ordinary play; the owner builds up behind it. 0 leaves
+        /// the owner with only the minimum entry from <see cref="OwnerAlwaysOnHateList"/>.
+        /// </summary>
+        public float OwnerThreatSharePercent { get; init; } = 50f;
+
+        /// <summary>
+        /// The owner goes on the NPC's hate list the moment their pet first draws its threat, at least at the proximity
+        /// minimum, even with a 0 share. Without this an NPC whose pet target is gone has nobody left and resets.
+        /// </summary>
+        public bool OwnerAlwaysOnHateList { get; init; } = true;
+
+        /// <summary>
+        /// The owner of the pet an NPC is fighting is engageable out to the leash range, like the pet itself, instead
+        /// of the shorter range a bystander must be within. An owner standing back behind their pet is in the fight.
+        /// </summary>
+        public bool OwnerSharesPetEngageRange { get; init; } = true;
     }
 
     /// <summary>

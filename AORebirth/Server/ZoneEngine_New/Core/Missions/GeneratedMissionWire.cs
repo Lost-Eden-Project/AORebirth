@@ -38,10 +38,11 @@ internal static class GeneratedMissionWire
         Resolver.GetSerializer(typeof(QuestAlternativeMessage)).Serialize(writer, new SerializationContext(Resolver), message);
         return stream.ToArray();
     }
-    internal static int ClientClock(DateTime synchronizedUtc, DateTime now)
-        => checked(MissionRollPolicy.Current.ClientClockBaseSeconds + (int)Math.Max(0, (now - synchronizedUtc).TotalSeconds));
-    internal static int ClientExpiry(DateTime synchronizedUtc, DateTime now, DateTime expires)
-        => expires <= now ? 0 : checked(ClientClock(synchronizedUtc, now) + (int)Math.Ceiling((expires - now).TotalSeconds));
+    /// <summary>The client's now: the server seconds its last GameTime carried plus the real seconds since.</summary>
+    internal static int ClientClock(ZoneEngine_New.Core.Network.IGameTimeSession clock, DateTime now)
+        => checked(clock.GameTimeServerSeconds + (int)Math.Max(0, (now - (clock.GameTimeSynchronizedAtUtc ?? now)).TotalSeconds));
+    internal static int ClientExpiry(ZoneEngine_New.Core.Network.IGameTimeSession clock, DateTime now, DateTime expires)
+        => expires <= now ? 0 : checked(ClientClock(clock, now) + (int)Math.Ceiling((expires - now).TotalSeconds));
     internal static string ExpiryField(int value)
     {
         Span<byte> bytes = stackalloc byte[sizeof(int)];

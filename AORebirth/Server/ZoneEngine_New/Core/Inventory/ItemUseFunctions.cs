@@ -593,17 +593,10 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// How long an item SpawnItem places in the world stays there. Nothing in the catalog carries it: the
-        /// function has no duration argument and the spawned template (Energy Vortex 281513, from 245411's
-        /// OnTerminate) has no TimeExist.
-        /// TODO: 2 minutes is a placeholder default; verify the retail lifetime.
-        /// </summary>
-        static readonly TimeSpan WorldSpawnItemLifetime = TimeSpan.FromMinutes(2);
-
-        /// <summary>
-        /// Catalog shape: hash, quality, and a 0/1 third integer. Both third values grant one item
-        /// into a player's inventory. Any other third value is refused. On a non-player target (an NPC's
-        /// OnTerminate on death) the item is placed in the world at the target for <see cref="WorldSpawnItemLifetime"/>.
+        /// Catalog shape: hash, quality, and a 0/1 third integer. Both third values grant one item; any other third
+        /// value is refused. The item is the hash's highest QL at or below the requested quality
+        /// (<see cref="HashItemMinter.TryMintHighestUpTo"/>; the quality scales with the casting item's QL). A player
+        /// gets it in inventory; an NPC carries it and its corpse drops it alongside the item table loot.
         /// </summary>
         static bool SpawnItem(Character target, ItemSpell spell)
         {
@@ -614,23 +607,21 @@ namespace ZoneEngine_New.Core.Inventory
             if (spell.TryReadInt(2, out int mode) && mode is not 0 and not 1)
                 return false;
 
-            if (target is not Player player)
+            if (target is NpcCharacter npc)
             {
-                if (target.Playfield?.GetService<SpawnService>() is not SpawnService spawn)
+                if (npc.Playfield == null
+                    || !npc.Playfield.GetRequiredService<HashItemMinter>().TryMintHighestUpTo(hash, quality, ItemSource.Loot, out Item carried))
+                {
                     return false;
+                }
 
-                return spawn.SpawnStaticBranches(
-                    hash,
-                    target.Position,
-                    target.Rotation,
-                    quality,
-                    lifetime: WorldSpawnItemLifetime).Count > 0;
+                return npc.TryCarryLoot(carried);
             }
 
-            if (player.Playfield == null || player.Session == null)
+            if (target is not Player player || player.Playfield == null || player.Session == null)
                 return false;
 
-            if (!player.Playfield.GetRequiredService<HashItemMinter>().TryMint(hash, quality, ItemSource.Other, out Item item))
+            if (!player.Playfield.GetRequiredService<HashItemMinter>().TryMintHighestUpTo(hash, quality, ItemSource.Other, out Item item))
                 return false;
             if (InventoryStacking.TryGrantOntoStack(player, item, player.Playfield.GetService<InventoryFlushService>()))
                 return true;
@@ -701,7 +692,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (!spell.TryReadInt(0, out int amount) || amount <= 0)
                 return false;
 
-            npc.Brain.AddThreat(source.Identity, amount);
+            npc.Brain.AddThreatFrom(source, amount);
             return true;
         }
 
@@ -739,7 +730,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (!ReferenceEquals(opponent.Playfield, npc.Playfield))
                 return false;
 
-            npc.Brain.AddThreat(opponent.Identity, NpcAiRules.ProximityHate);
+            npc.Brain.AddThreatFrom(opponent, NpcAiRules.ProximityHate);
             npc.StartFighting(opponent.Identity, 0);
             return true;
         }

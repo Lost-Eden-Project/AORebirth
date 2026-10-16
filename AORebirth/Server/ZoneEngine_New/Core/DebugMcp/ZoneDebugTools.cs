@@ -428,7 +428,7 @@ namespace ZoneEngine_New.Core.DebugMcp
         }
 
         [McpServerTool(Name = "playfield_metrics")]
-        [System.ComponentModel.Description("Tick and world-sim timing for one playfield. windowSeconds must be 1, 3, 5, 10, or 30.")]
+        [System.ComponentModel.Description("Tick and world-sim timing for one playfield, plus its navmesh tile window (indexed vs resident tiles, loads/unloads). windowSeconds must be 1, 3, 5, 10, or 30.")]
         public string PlayfieldMetrics(int playfieldId, int windowSeconds = 1)
         {
             if (playfieldId <= 0)
@@ -437,6 +437,23 @@ namespace ZoneEngine_New.Core.DebugMcp
                 return Error("windowSeconds must be 1, 3, 5, 10, or 30.");
             if (!_metrics.TryGetSnapshot(playfieldId, windowSeconds, out PlayfieldMetricsSnapshot? snapshot) || snapshot == null)
                 return Error("No metrics for playfield " + playfieldId.ToString(CultureInfo.InvariantCulture) + ".");
+            object? navmesh = null;
+            if (_playfields.TryGet(playfieldId, out Playfield? playfield) && playfield?.Pathfinder is { } finder)
+            {
+                AORebirth.World.Pathfinding.NavMeshResidency residency = finder.Residency;
+                navmesh = new
+                {
+                    residency.IndexedTiles,
+                    residency.LoadedTiles,
+                    residency.WindowCapacity,
+                    residency.TileLoads,
+                    residency.TileUnloads,
+                    LoadMs = Math.Round(residency.LoadMilliseconds, 3),
+                    residency.TotalPolys,
+                    Islands = finder.IslandCount
+                };
+            }
+
             return Json(new
             {
                 snapshot.PlayfieldId,
@@ -445,7 +462,8 @@ namespace ZoneEngine_New.Core.DebugMcp
                 snapshot.TickAverageMs,
                 snapshot.TickSampleCount,
                 snapshot.WorldSimAverageMs,
-                snapshot.WorldSimSampleCount
+                snapshot.WorldSimSampleCount,
+                Navmesh = navmesh
             });
         }
 
@@ -464,6 +482,62 @@ namespace ZoneEngine_New.Core.DebugMcp
             }
             IReadOnlyList<string> lines = DebugMcpLogBuffer.Shared.Recent(count);
             return Json(new { count = lines.Count, lines });
+        }
+
+        /// <summary>How long a write tool waits for the player's playfield tick to run it.</summary>
+        static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(5);
+
+        [McpServerTool(Name = "reset_perks")]
+        [System.ComponentModel.Description("WRITE: untrains every perk, alien perk and research perk on one online player and drops research in progress, the same as a GM setup with no perks. Perk points come back (they follow level). Saves like any perk change and reloads the player's client view. Needs DebugMcp AllowWrites. Returns the trained perk count before and after.")]
+        public string ResetPerks(int characterId = 0, string name = "")
+        {
+            if (!_endpoint.AllowWrites)
+                return Error("Write tools are off. Set DebugMcp AllowWrites to true in the zone config and restart the zone engine.");
+            if (!TryFindPlayer(characterId, name, out Player? player, out string? error))
+                return Error(error!);
+
+            Playfield? playfield = player!.Playfield;
+            if (playfield == null)
+                return Error("The player is between playfields; try again.");
+
+            // Character state belongs to the playfield tick, so the reset runs there and this call waits for it.
+            var done = new System.Threading.Tasks.TaskCompletionSource<int>(
+                System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            playfield.DispatchPlayerProjection(player, () =>
+            {
+                try
+                {
+                    int before = player.TrainedPerks.Snapshot().Length;
+                    player.ReplacePerksAndResearch(Array.Empty<int>());
+                    player.Rebase();
+                    player.Playfield?.GetService<InventoryFlushService>()?.NotifyDirty(player);
+                    player.SaveState.MarkDirty();
+                    player.Playfield?.GetRequiredService<SpawnService>().ReloadInPlace(player);
+                    done.TrySetResult(before);
+                }
+                catch (Exception exception)
+                {
+                    done.TrySetException(exception);
+                }
+            });
+
+            try
+            {
+                if (!done.Task.Wait(WriteTimeout))
+                    return Error("Timed out waiting for the playfield tick; the reset may still apply. Check get_player.");
+            }
+            catch (AggregateException exception)
+            {
+                return Error("Reset failed: " + exception.InnerException?.Message);
+            }
+
+            return Json(new
+            {
+                characterId = player.Identity.Instance,
+                name = ZoneDebugSnapshots.DisplayName(player),
+                perksBefore = done.Task.Result,
+                perksAfter = player.TrainedPerks.Snapshot().Length
+            });
         }
 
         bool TryFindPlayer(int characterId, string name, out Player? player, out string? error)

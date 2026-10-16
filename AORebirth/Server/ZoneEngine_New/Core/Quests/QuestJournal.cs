@@ -246,18 +246,19 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
-        /// The expiry in the client's clock, which the journal counts "time left" against. Our GameTime starts that
-        /// clock at ClientClockBaseSeconds when the session's clock was synchronized (at world entry), so the
-        /// client's now is base + seconds since then; the expiry is that plus the quest's remaining seconds.
-        /// A Unix time here showed as thousands of days left.
+        /// The expiry in the client's clock, which the journal counts "time left" against. The session's last GameTime
+        /// gave the client its server seconds, which it advances in real time, so the client's now is that plus the
+        /// seconds since; the expiry is that plus the quest's remaining seconds. Before any GameTime, the same UTC
+        /// seconds the next one will carry.
         /// </summary>
         static uint ClientExpiry(Player player, DateTime expiresUtc, DateTime nowUtc)
         {
             if (expiresUtc <= nowUtc)
                 return 0;
 
-            DateTime synchronized = player.Session is Network.IGameTimeSession { GameTimeSynchronizedAtUtc: DateTime at } ? at : nowUtc;
-            long clientNow = MissionRollPolicy.Current.ClientClockBaseSeconds + (long)Math.Max(0, (nowUtc - synchronized).TotalSeconds);
+            long clientNow = player.Session is Network.IGameTimeSession { GameTimeSynchronizedAtUtc: DateTime at } clock
+                ? clock.GameTimeServerSeconds + (long)Math.Max(0, (nowUtc - at).TotalSeconds)
+                : Network.GameClock.UnixSeconds(nowUtc);
             long expires = clientNow + (long)Math.Ceiling((expiresUtc - nowUtc).TotalSeconds);
             return (uint)Math.Min(expires, int.MaxValue);
         }

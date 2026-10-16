@@ -8,6 +8,7 @@ namespace ZoneEngine_New.Core.Ai
 
     using SmokeLounge.AOtomation.Messaging.GameData;
 
+    using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Nanos;
@@ -17,10 +18,11 @@ namespace ZoneEngine_New.Core.Ai
     using Utility;
 
     /// <summary>
-    /// Casts an NPC's uploaded nanos now and then. Every cast goes through <see cref="NanoRuntime"/>, so
-    /// requirements, nano cost, recharge and NCU are the same as for players.
-    /// Hostile nanos go on the combat target. Friendly buffs, in or out of combat, go on the caster when it
-    /// lacks them, otherwise on a random nearby NPC that does. Heals go on the caster when it is hurt,
+    /// Casts an NPC's uploaded nanos now and then, at the pace Gameplay.json npcNanos sets. Every cast goes through
+    /// <see cref="NanoRuntime"/>, so requirements, nano cost, recharge and NCU are the same as for players.
+    /// In a fight the NPC casts hostile nanos (on its combat target) and pet summons first, then heals; buffs wait for
+    /// the fight to end unless npcNanos allows them in combat. Out of a fight it heals, then buffs. A buff goes on the
+    /// caster when it lacks it, otherwise on a random nearby NPC that does. A heal goes on the caster when it is hurt,
     /// otherwise on the most hurt nearby NPC. A pet looks after its owner and the owner's other pets instead of
     /// nearby NPCs. A summon (SummonPet) nano is cast once a fight starts, while that pet slot is free.
     /// </summary>
@@ -33,24 +35,26 @@ namespace ZoneEngine_New.Core.Ai
         NoHeal
     }
 
+    /// <summary>What a nano is for, which decides when the NPC casts it and how long it waits afterwards.</summary>
+    enum NanoKind
+    {
+        Hostile,
+        Summon,
+        Heal,
+        Buff
+    }
+
     sealed class NpcNanoCaster
     {
-        /// <summary>Wait after a cast before the next one.</summary>
-        public const double MinCastIntervalSeconds = 8;
+        static readonly NanoKind[] CombatOrder = [NanoKind.Hostile, NanoKind.Summon, NanoKind.Heal];
 
-        public const double MaxCastIntervalSeconds = 16;
+        static readonly NanoKind[] CombatOrderWithBuffs = [NanoKind.Hostile, NanoKind.Summon, NanoKind.Heal, NanoKind.Buff];
 
-        /// <summary>Wait after a look that found nothing to cast.</summary>
-        public const double IdleCheckSeconds = 2;
-
-        /// <summary>Friendly nanos reach NPCs this close when the nano has no AttackRange.</summary>
-        public const double DefaultSupportRange = 20;
-
-        /// <summary>Non-buff friendly nanos (heals) only go on characters under this health.</summary>
-        public const int HealBelowPercent = 75;
+        static readonly NanoKind[] IdleOrder = [NanoKind.Heal, NanoKind.Buff];
 
         readonly NpcBrain _brain;
         readonly Dictionary<int, NanoSpell?> _spells = new();
+        readonly Dictionary<int, NanoKind> _kinds = new();
         readonly List<Character> _allies = new();
         readonly List<Dynel> _nearby = new();
         readonly Random _random;
@@ -60,10 +64,16 @@ namespace ZoneEngine_New.Core.Ai
         {
             _brain = brain;
             _random = new Random(brain.Npc.Identity.Instance);
-            _nextAttemptUtc = DateTime.UtcNow.AddSeconds(Between(IdleCheckSeconds, MaxCastIntervalSeconds));
+            GameplayNpcNanos rules = GameplayNpcNanos.Default;
+            _nextAttemptUtc = DateTime.UtcNow.AddSeconds(Between(rules.IdleCheckSeconds, rules.MaxCastIntervalSeconds));
         }
 
         NpcCharacter Npc => _brain.Npc;
+
+        GameplayNpcNanos Rules => Npc.Playfield?.GetService<GameplaySettings>()?.NpcNanos ?? GameplayNpcNanos.Default;
+
+        /// <summary>Fighting someone, or still holding hate for someone (chasing, or between swings).</summary>
+        bool InCombat => Npc.FightingTarget.Instance != 0 || !_brain.Hate.IsEmpty;
 
         public void Tick(DateTime nowUtc)
         {
@@ -73,18 +83,32 @@ namespace ZoneEngine_New.Core.Ai
                 || Npc.UploadedNanoIds.Count == 0 || Npc.Playfield == null)
                 return;
 
-            _nextAttemptUtc = nowUtc.AddSeconds(IdleCheckSeconds);
+            GameplayNpcNanos rules = Rules;
+            _nextAttemptUtc = nowUtc.AddSeconds(rules.IdleCheckSeconds);
             _allies.Clear();
 
+            // Hostile nanos and summons have no target outside a fight, so the idle order leaves them out.
+            NanoKind[] order = InCombat ? (rules.BuffInCombat ? CombatOrderWithBuffs : CombatOrder) : IdleOrder;
+            for (int i = 0; i < order.Length; i++)
+            {
+                if (TryCast(order[i], rules, nowUtc))
+                    return;
+            }
+        }
+
+        /// <summary>The first castable nano of <paramref name="kind"/>, starting from a random one so NPCs vary.</summary>
+        bool TryCast(NanoKind kind, GameplayNpcNanos rules, DateTime nowUtc)
+        {
             List<int> nanos = Npc.UploadedNanoIds;
             int start = _random.Next(nanos.Count);
             for (int i = 0; i < nanos.Count; i++)
             {
-                NanoSpell? spell = Resolve(nanos[(start + i) % nanos.Count]);
-                if (spell == null)
+                int nanoId = nanos[(start + i) % nanos.Count];
+                NanoSpell? spell = Resolve(nanoId);
+                if (spell == null || KindOf(nanoId, spell) != kind)
                     continue;
 
-                Character? target = ChooseTarget(spell, nowUtc);
+                Character? target = ChooseTarget(spell, kind, rules, nowUtc);
                 if (target == null)
                     continue;
 
@@ -99,15 +123,37 @@ namespace ZoneEngine_New.Core.Ai
                         Npc.Identity.Instance,
                         spell.Id,
                         spell.Name,
-                        spell.IsHostile ? "hostile" : IsHeal(spell) ? "heal" : IsBuffLike(spell) ? "buff" : "friendly",
+                        kind,
                         target.Identity.Instance,
                         ReferenceEquals(target, Npc),
                         HealthPercent(target),
                         HealthPercent(Npc)));
 
-                _nextAttemptUtc = nowUtc.AddSeconds(Between(MinCastIntervalSeconds, MaxCastIntervalSeconds));
-                return;
+                _nextAttemptUtc = kind == NanoKind.Buff
+                    ? nowUtc.AddSeconds(Between(rules.MinBuffIntervalSeconds, rules.MaxBuffIntervalSeconds))
+                    : nowUtc.AddSeconds(Between(rules.MinCastIntervalSeconds, rules.MaxCastIntervalSeconds));
+                return true;
             }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Hostile, summon, heal (a heal over time counts as a heal, not a buff) or buff. A friendly nano that is none
+        /// of those takes the heal path, as before.
+        /// </summary>
+        NanoKind KindOf(int nanoId, NanoSpell spell)
+        {
+            if (_kinds.TryGetValue(nanoId, out NanoKind known))
+                return known;
+
+            NanoKind kind = spell.IsHostile ? NanoKind.Hostile
+                : TrySummonedPetType(spell, out _) ? NanoKind.Summon
+                : IsHeal(spell) ? NanoKind.Heal
+                : IsBuffLike(spell) ? NanoKind.Buff
+                : NanoKind.Heal;
+            _kinds[nanoId] = kind;
+            return kind;
         }
 
         /// <summary>
@@ -124,6 +170,7 @@ namespace ZoneEngine_New.Core.Ai
             if (Npc.IsInNanoRecharge(nowUtc))
                 return HealOrderResult.Busy;
 
+            GameplayNpcNanos rules = Rules;
             bool hasHeal = false;
             foreach (int nanoId in Npc.UploadedNanoIds)
             {
@@ -132,12 +179,12 @@ namespace ZoneEngine_New.Core.Ai
                     continue;
 
                 hasHeal = true;
-                if (!InRange(spell, target, DefaultSupportRange) || !NanoRuntime.CanStartCast(Npc, spell, target, nowUtc))
+                if (!InRange(spell, target, rules.SupportRange) || !NanoRuntime.CanStartCast(Npc, spell, target, nowUtc))
                     continue;
                 if (NanoRuntime.TryStartCast(Npc, spell.Id, target.Identity, nowUtc) != NanoCastRefusal.None)
                     continue;
 
-                _nextAttemptUtc = nowUtc.AddSeconds(Between(MinCastIntervalSeconds, MaxCastIntervalSeconds));
+                _nextAttemptUtc = nowUtc.AddSeconds(Between(rules.MinCastIntervalSeconds, rules.MaxCastIntervalSeconds));
                 return HealOrderResult.Cast;
             }
 
@@ -155,17 +202,18 @@ namespace ZoneEngine_New.Core.Ai
             return spell;
         }
 
-        Character? ChooseTarget(NanoSpell spell, DateTime nowUtc)
+        Character? ChooseTarget(NanoSpell spell, NanoKind kind, GameplayNpcNanos rules, DateTime nowUtc)
         {
-            if (TrySummonedPetType(spell, out int petType))
+            if (kind == NanoKind.Summon)
             {
                 // Pets do not summon; an NPC calls its pet into a fight it is in, once per slot.
-                if (Npc.Pet != null || Npc.FightingTarget.Instance == 0 || Npc.OwnedPets.InSlotOf(petType) != null)
+                if (Npc.Pet != null || Npc.FightingTarget.Instance == 0 || !TrySummonedPetType(spell, out int petType)
+                    || Npc.OwnedPets.InSlotOf(petType) != null)
                     return null;
                 return NanoRuntime.CanStartCast(Npc, spell, Npc, nowUtc) ? Npc : null;
             }
 
-            if (spell.IsHostile)
+            if (kind == NanoKind.Hostile)
             {
                 Character? enemy = Npc.FightingTarget.Instance != 0 ? _brain.ResolveCurrentTarget() : null;
                 if (enemy == null || !InRange(spell, enemy, NpcAiRules.NearbyRange) || HasNano(enemy, spell))
@@ -175,7 +223,7 @@ namespace ZoneEngine_New.Core.Ai
 
             // Heals, including heal-over-time buffs, only go on someone who is actually hurt.
             // The caster looks after itself first; only then does it help a neighbour.
-            if (IsBuffLike(spell) && !IsHeal(spell))
+            if (kind == NanoKind.Buff)
             {
                 if (!HasNano(Npc, spell) && NanoRuntime.CanStartCast(Npc, spell, Npc, nowUtc))
                     return Npc;
@@ -183,7 +231,7 @@ namespace ZoneEngine_New.Core.Ai
                 // Random pick among nearby NPCs that can take it, so NPCs buff each other.
                 Character? chosen = null;
                 int eligible = 0;
-                foreach (Character candidate in FriendlyCandidates(spell))
+                foreach (Character candidate in FriendlyCandidates(spell, rules.SupportRange))
                 {
                     if (ReferenceEquals(candidate, Npc)
                         || HasNano(candidate, spell) || !NanoRuntime.CanStartCast(Npc, spell, candidate, nowUtc))
@@ -202,14 +250,14 @@ namespace ZoneEngine_New.Core.Ai
                 return null;
 
             // A pet heals greedily, all the way to full; other NPCs only once someone is well hurt.
-            int healBelow = Npc.Pet != null ? 100 : HealBelowPercent;
+            int healBelow = Npc.Pet != null ? 100 : rules.HealBelowPercent;
             if (HealthPercent(Npc) < healBelow && !HasNano(Npc, spell)
                 && NanoRuntime.CanStartCast(Npc, spell, Npc, nowUtc))
                 return Npc;
 
             Character? hurt = null;
             int lowest = healBelow;
-            foreach (Character candidate in FriendlyCandidates(spell))
+            foreach (Character candidate in FriendlyCandidates(spell, rules.SupportRange))
             {
                 if (ReferenceEquals(candidate, Npc))
                     continue;
@@ -229,7 +277,7 @@ namespace ZoneEngine_New.Core.Ai
         /// Self, then living NPCs in range and sight that are not player pets. A pet's friends are its owner and
         /// the owner's other pets.
         /// </summary>
-        IEnumerable<Character> FriendlyCandidates(NanoSpell spell)
+        IEnumerable<Character> FriendlyCandidates(NanoSpell spell, double supportRange)
         {
             yield return Npc;
 
@@ -238,11 +286,11 @@ namespace ZoneEngine_New.Core.Ai
 
             if (Npc.PetOwner is Character owner)
             {
-                if (!owner.IsDead && InRange(spell, owner, DefaultSupportRange))
+                if (!owner.IsDead && InRange(spell, owner, supportRange))
                     yield return owner;
                 foreach (NpcCharacter sibling in owner.OwnedPets.All)
                 {
-                    if (!ReferenceEquals(sibling, Npc) && !sibling.IsDead && InRange(spell, sibling, DefaultSupportRange))
+                    if (!ReferenceEquals(sibling, Npc) && !sibling.IsDead && InRange(spell, sibling, supportRange))
                         yield return sibling;
                 }
 
@@ -259,7 +307,7 @@ namespace ZoneEngine_New.Core.Ai
                         continue;
                     if (other.Stats.GetOrZero(CharacterStat.PetMaster) != 0)
                         continue;
-                    if (Npc.GetEdgeDistanceTo(other) > DefaultSupportRange)
+                    if (Npc.GetEdgeDistanceTo(other) > supportRange)
                         continue;
 
                     _allies.Add(other);
@@ -271,7 +319,7 @@ namespace ZoneEngine_New.Core.Ai
             for (int i = 0; i < _allies.Count; i++)
             {
                 Character ally = _allies[i];
-                if (!ally.IsDead && InRange(spell, ally, DefaultSupportRange))
+                if (!ally.IsDead && InRange(spell, ally, supportRange))
                     yield return ally;
             }
         }

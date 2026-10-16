@@ -1027,23 +1027,25 @@ namespace ZoneEngine_New.Core.Playfield
             }
         }
 
+        /// <summary>
+        /// GameTime from the shared world clock (Gameplay.json worldClock, moved by .gametime). The session records the
+        /// server seconds it carried: the mission and perk timers sent afterwards are given in that clock.
+        /// </summary>
+        public void SendGameTime(IZoneSession session, Player player)
+        {
+            DateTime now = DateTime.UtcNow;
+            GameClock.Reading reading = GameClock.Now(
+                _playfield.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.WorldClock, now);
+            if (session is IGameTimeSession clock)
+                clock.RecordGameTimeSynchronization(now, reading.ServerSeconds);
+            session.Send(GameClock.BuildMessage(player.Identity, reading), _playfield.Identity.Instance, player.Identity.Instance);
+        }
+
         private void SendRetailWorldEntryReadyBlock(IZoneSession session, Player player)
         {
             // Official capture 20260623-042326 sends the entering player's SCFU and
             // weapon state before GameTime, then SocialStatus before FullCharacter.
-            if (session is IGameTimeSession clock)
-                clock.RecordGameTimeSynchronization(DateTime.UtcNow, GameClock.ServerSeconds(GameClock.WorldEntryServerTime));
-
-            session.Send(
-                new GameTimeMessage
-                {
-                    Identity = player.Identity,
-                    Unknown1 = 30024.0f,
-                    Unknown3 = 185408,
-                    Unknown4 = GameClock.WorldEntryServerTime
-                },
-                _playfield.Identity.Instance,
-                player.Identity.Instance);
+            SendGameTime(session, player);
 
             // Before FullCharacter, so it carries the perk reset time in the clock just given.
             player.SyncLastPerkResetTime();
@@ -1224,22 +1226,7 @@ namespace ZoneEngine_New.Core.Playfield
             session.Send(player.BuildFullCharacterMessage());
             player.SendPerkActions();
 
-            session.Send(
-                new GameTimeMessage
-                {
-                    Identity = new Identity
-                    {
-                        Type = IdentityType.CanbeAffected,
-                        Instance = characterId
-                    },
-                    Unknown1 = 30024.0f,
-                    Unknown3 = 185408,
-                    Unknown4 = GameClock.WorldEntryServerTime
-                },
-                playfieldId,
-                characterId);
-            if (session is IGameTimeSession resynced)
-                resynced.RecordGameTimeSynchronization(DateTime.UtcNow, GameClock.ServerSeconds(GameClock.WorldEntryServerTime));
+            SendGameTime(session, player);
             player.SyncLastPerkResetTime();
             player.FlushDirtyStats();
 

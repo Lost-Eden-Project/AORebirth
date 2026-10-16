@@ -638,11 +638,15 @@ namespace ZoneEngine_New.Core.Nanos
                 AddHostileThreat(caster, recipient);
         }
 
-        /// <summary>A player's hostile nano puts the player on the NPC's hate list (ignored while resetting or pacified).</summary>
+        /// <summary>
+        /// A player's hostile nano puts the player on the NPC's hate list (ignored while resetting or pacified). A
+        /// player's pet's does the same for the pet, and for its owner (NpcBrain.AddThreatFrom).
+        /// </summary>
         static void AddHostileThreat(Character caster, Character recipient)
         {
-            if (recipient is NpcCharacter npc && caster.IsPlayer && !ReferenceEquals(caster, recipient))
-                npc.Brain?.AddThreat(caster.Identity, Ai.NpcAiRules.ProximityHate);
+            if (recipient is NpcCharacter npc && !ReferenceEquals(caster, recipient)
+                && (caster.IsPlayer || caster is NpcCharacter { PetOwner: Player }))
+                npc.Brain?.AddThreatFrom(caster, Ai.NpcAiRules.ProximityHate);
         }
 
         static bool TargetCanHoldBuff(NanoSpell spell, Character? recipient)

@@ -17,10 +17,12 @@ internal static class AuthoredQuestJournal
         if (!content.Journals.TryGetValue(questId, out var definition) || player.Session == null) return false;
         if (definition.SynchronizeClock)
         {
-            player.Session.Send(new GameTimeMessage { Identity = player.Identity, Unknown1 = definition.ClockTime,
-                Unknown3 = definition.ClockUnknown3, Unknown4 = definition.ClockUnknown4 });
+            // The shared world clock, as at world entry; the journal's expiry below is given in it.
+            GameClock.Reading reading = GameClock.Now(
+                player.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.WorldClock, now);
             if (player.Session is IGameTimeSession clock)
-                clock.RecordGameTimeSynchronization(now, GameClock.ServerSeconds(definition.ClockUnknown4));
+                clock.RecordGameTimeSynchronization(now, reading.ServerSeconds);
+            player.Session.Send(GameClock.BuildMessage(player.Identity, reading));
             // The clock just moved: the perk reset timer follows it.
             player.SyncLastPerkResetTime();
             player.FlushDirtyStats();
@@ -37,9 +39,12 @@ internal static class AuthoredQuestJournal
             Replace(bytes, definition.RecipientMarker, player.Identity.Instance);
             if (definition.ExpiryOffset >= 0)
             {
-                long elapsed = player.Session is IGameTimeSession { GameTimeSynchronizedAtUtc: { } anchor } ? Math.Max(0, (long)(now-anchor).TotalSeconds) : 0;
+                // The client's now in the clock the session was last given, plus what is left of the quest.
+                long clientNow = player.Session is IGameTimeSession { GameTimeSynchronizedAtUtc: { } anchor } clock
+                    ? clock.GameTimeServerSeconds + Math.Max(0, (long)(now - anchor).TotalSeconds)
+                    : GameClock.UnixSeconds(now);
                 int duration = Math.Min(remainingSeconds ?? definition.DurationSeconds, definition.DurationSeconds);
-                BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(definition.ExpiryOffset, 4), unchecked((int)(definition.ClockBaseSeconds + elapsed + duration)));
+                BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(definition.ExpiryOffset, 4), unchecked((int)(clientNow + duration)));
             }
             player.Session.Send(bytes);
         }

@@ -1391,9 +1391,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BE9F6": {
@@ -1487,9 +1484,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BE9F7": {
@@ -1583,9 +1577,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555B4366": {
@@ -1679,9 +1670,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BD124": {
@@ -1775,9 +1763,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BE9C5": {
@@ -1871,9 +1856,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BE9F2": {
@@ -1967,9 +1949,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BE9F3": {
@@ -2063,9 +2042,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:555BE9F4": {
@@ -2159,9 +2135,6 @@
       "DeleteRecipientMarker": 1985636618,
       "TypedDelete": true,
       "SynchronizeClock": true,
-      "ClockTime": 30024,
-      "ClockUnknown3": 185408,
-      "ClockUnknown4": 80183.3125,
       "DurationSeconds": 172800
     },
     "Mission:55AA2421": {
@@ -2173,7 +2146,6 @@
       ],
       "DeleteRecipientMarker": 2027438144,
       "DeleteQuestMarker": 1437213729,
-      "ClockBaseSeconds": 1201445827,
       "DurationSeconds": 43200,
       "ExpiryOffset": -1
     },
@@ -2186,7 +2158,6 @@
       ],
       "DeleteRecipientMarker": 2027438144,
       "DeleteQuestMarker": 1437213729,
-      "ClockBaseSeconds": 1201445827,
       "DurationSeconds": 64800,
       "ExpiryOffset": 323
     }

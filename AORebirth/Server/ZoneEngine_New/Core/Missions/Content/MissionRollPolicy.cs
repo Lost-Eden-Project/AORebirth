@@ -13,7 +13,6 @@ internal sealed class MissionRollPolicy
 {
     internal static MissionRollPolicy Current { get; } = Load();
     public PolicyProvenance Provenance { get; set; } = new();
-    public int ClientClockBaseSeconds { get; set; }
     public int OfferLifetimeSeconds { get; set; }
     public int AcceptedLifetimeSeconds { get; set; }
     public int MinimumRollFee { get; set; }
@@ -38,7 +37,7 @@ internal sealed class MissionRollPolicy
     internal void Validate()
     {
         var types = Enum.GetValues<MissionRollType>().Where(t => t != MissionRollType.Unknown).Order().ToArray();
-        if (ClientClockBaseSeconds <= 0 || OfferLifetimeSeconds <= 0 || AcceptedLifetimeSeconds <= 0 || MinimumRollFee <= 0 || FeePerCharacterLevel <= 0
+        if (OfferLifetimeSeconds <= 0 || AcceptedLifetimeSeconds <= 0 || MinimumRollFee <= 0 || FeePerCharacterLevel <= 0
             || !Types.Select(t => t.Type).Order().SequenceEqual(types) || Types.Any(t => t.Icon <= 0 || t.Action <= 0 || t.ObjectiveInteraction <= 0 || string.IsNullOrWhiteSpace(t.Title))
             || Types.Select(t => t.Icon).Distinct().Count() != Types.Length)
             throw new InvalidDataException("Invalid mission roll protocol/policy content.");

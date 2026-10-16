@@ -9,17 +9,21 @@ namespace ZoneEngine_New.Core.DebugMcp
 
     public sealed class DebugMcpEndpoint
     {
-        public DebugMcpEndpoint(IPAddress address, int port)
+        public DebugMcpEndpoint(IPAddress address, int port, bool allowWrites = false)
         {
             ArgumentNullException.ThrowIfNull(address);
             Address = address;
             Port = port;
+            AllowWrites = allowWrites;
             Url = "http://" + FormatHost(address) + ":" + port.ToString(CultureInfo.InvariantCulture) + DebugMcpOptions.Route;
         }
 
         public IPAddress Address { get; }
 
         public int Port { get; }
+
+        /// <summary>DebugMcp AllowWrites: the tools that change live characters run only when true.</summary>
+        public bool AllowWrites { get; }
 
         public string ListenIP => Address.ToString();
 
@@ -57,7 +61,7 @@ namespace ZoneEngine_New.Core.DebugMcp
             if (port > 65535)
                 throw new StartupValidationException("DebugMcp Port must be between 1 and 65535.");
 
-            return new DebugMcpEndpoint(address, port);
+            return new DebugMcpEndpoint(address, port, settings.AllowWrites);
         }
     }
 }

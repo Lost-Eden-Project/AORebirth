@@ -343,6 +343,27 @@ namespace ZoneEngine_New.Core.Ai
         }
 
         /// <summary>
+        /// Threat from <paramref name="source"/>'s own act. A player's pet also puts its owner on the list (Gameplay.json
+        /// pets): the owner earns the configured share of the pet's threat, and at least the proximity minimum the first
+        /// time, so the owner is the NPC's next target once the pet is dead, dismissed or out of reach.
+        /// </summary>
+        public void AddThreatFrom(Character source, float amount)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            AddThreat(source.Identity, amount);
+
+            if (source is not NpcCharacter { PetOwner: Player owner } || owner.IsDead
+                || Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Pets is not { } rules)
+                return;
+
+            float share = amount * rules.OwnerThreatSharePercent / 100f;
+            if (rules.OwnerAlwaysOnHateList && !Hate.Contains(owner.Identity))
+                share = Math.Max(share, NpcAiRules.ProximityHate);
+            if (share > 0f)
+                AddThreat(owner.Identity, share);
+        }
+
+        /// <summary>
         /// Social aggro (Gameplay.json socialAggro): NPCs near this one that are of its kind join the fight against
         /// <paramref name="attacker"/>, nearest first. Runs once per new attacker.
         /// </summary>
@@ -1199,8 +1220,22 @@ namespace ZoneEngine_New.Core.Ai
         {
             Character? target = Resolve(identity);
             return target != null
-                && Npc.GetEdgeDistanceTo(target) <= NpcAiRules.EngageRange(identity == _currentTarget)
+                && Npc.GetEdgeDistanceTo(target) <= NpcAiRules.EngageRange(identity == _currentTarget || OwnsCurrentPetTarget(identity))
                 && HasChanceWithGrace(target);
+        }
+
+        /// <summary>
+        /// <paramref name="identity"/> is the owner of the pet this NPC is fighting (Gameplay.json pets
+        /// ownerSharesPetEngageRange): the owner is in the fight and gets the pet's engage range.
+        /// </summary>
+        bool OwnsCurrentPetTarget(Identity identity)
+        {
+            if (_currentTarget.Instance == 0 || identity == _currentTarget)
+                return false;
+            if (Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Pets is not { OwnerSharesPetEngageRange: true })
+                return false;
+
+            return Resolve(_currentTarget) is NpcCharacter { PetOwner: Player owner } && owner.Identity == identity;
         }
 
         internal static bool PathEndsUnderNpc(

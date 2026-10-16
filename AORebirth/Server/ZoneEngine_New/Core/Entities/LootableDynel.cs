@@ -67,20 +67,34 @@ namespace ZoneEngine_New.Core.Entities
 
         protected List<MobItemTableEntry>? ItemTable { get; set; }
 
+        /// <summary>Items the owner already carried (SpawnItem on an NPC); placed ahead of the item table roll.</summary>
+        protected IReadOnlyList<Item>? CarriedItems { get; set; }
+
         /// <summary>
-        /// Rolls <see cref="ItemTable"/> against the loot catalog into <see cref="Loot"/>.
-        /// Each rolled item gets a unique in-memory <see cref="Item.InstanceId"/> (no DB write).
-        /// Persistence happens on loot via MarkDirty / flush.
+        /// Places <see cref="CarriedItems"/>, then rolls <see cref="ItemTable"/> against the loot catalog into the
+        /// remaining <see cref="Loot"/> slots. Each rolled item gets a unique in-memory <see cref="Item.InstanceId"/>
+        /// (no DB write). Persistence happens on loot via MarkDirty / flush.
         /// </summary>
         public void ResolveLoot(HashItemMinter minter)
         {
             ArgumentNullException.ThrowIfNull(minter);
 
-            var rolled = new List<(int LowId, int HighId, int Quality)>();
-            RollItemTable(ItemTable, LootLevel, minter, Loot.Capacity, rolled);
-            for (int slot = 0; slot < rolled.Count; slot++)
+            int slot = 0;
+            if (CarriedItems != null)
             {
-                (int lowId, int highId, int quality) = rolled[slot];
+                foreach (Item carried in CarriedItems)
+                {
+                    if (slot >= Loot.Capacity || !Loot.Add(slot, carried))
+                        return;
+                    slot++;
+                }
+            }
+
+            var rolled = new List<(int LowId, int HighId, int Quality)>();
+            RollItemTable(ItemTable, LootLevel, minter, Loot.Capacity - slot, rolled);
+            for (int i = 0; i < rolled.Count; i++, slot++)
+            {
+                (int lowId, int highId, int quality) = rolled[i];
                 if (!Loot.Add(slot, minter.CreateWithNewInstance(lowId, highId, quality, ItemSource.Loot)))
                     return;
             }

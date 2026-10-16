@@ -79,9 +79,21 @@ namespace ZoneEngine_New.Core.Inventory
 
                 if (spell.Is(FunctionType.Modify))
                     delta = Inventory.OverEquip.ScaleModifier(stat, delta, overEquipLevel);
+                else if (spell.Is(FunctionType.ScalingModify))
+                    delta = ScaleByLevel(delta, stats.GetOrOne(CharacterStat.Level));
                 stats.AddBonus(stat, delta, dirty: true);
             }
         }
+
+        /// <summary>
+        /// ScalingModify {stat, value}: value is the amount at level 200, scaled linearly by the holder's level. The
+        /// client shows Supressive Horde 248182's 200 damage as 220 at level 220, and 293685's 1000 Max Health/Nano as
+        /// 1100. Truncates toward zero.
+        /// </summary>
+        static int ScaleByLevel(int value, int level)
+            => (int)((long)value * level / ScalingModifyReferenceLevel);
+
+        const int ScalingModifyReferenceLevel = 200;
 
         static void ApplySetFlag(ItemSpell spell, StatCollection stats)
         {
