@@ -865,16 +865,19 @@ namespace ZoneEngine_New.Core.Entities
                 int each = share.Amount / recipients.Count;
                 for (int r = 0; r < recipients.Count; r++)
                 {
+                    // A grey monster (more than its XPKillRange in the recipient's Xp.json row below them) is worth 1 XP,
+                    // whatever the share.
+                    if (IsGreyFor(recipients[r], victimLevel, gameData))
+                    {
+                        recipients[r].AwardXp(1, XpSource.Kill);
+                        continue;
+                    }
+
                     int amount = each;
                     if (amount <= 0)
                         continue;
 
-                    // A monster the recipient's client shows gray (more than XPKillRange levels below them) is worth 1 XP.
-                    if (IsBelowKillRange(recipients[r], victimLevel, gameData))
-                        amount = 1;
-                    else
-                        amount = ScaleForLevelDifference(amount, victimLevel, recipients[r].Stats.GetOrOne(CharacterStat.Level), percentPerLevel);
-
+                    amount = ScaleForLevelDifference(amount, victimLevel, recipients[r].Stats.GetOrOne(CharacterStat.Level), percentPerLevel);
                     recipients[r].AwardXp(amount, XpSource.Kill);
                 }
             }
@@ -892,16 +895,13 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// The client's gray test (N3Msg_Consider): a victim more than XPKillRange levels below the recipient. The
-        /// recipient's own XPKillRange stat is what their client colors by; its Xp.json row stands in until it is set.
+        /// Grey for <paramref name="recipient"/>: the victim is more than the level delta (XPKillRange) of the recipient's
+        /// Xp.json row below them. The XP table decides, not the character's own XPKillRange stat.
         /// </summary>
-        static bool IsBelowKillRange(Character recipient, int victimLevel, IGameData gameData)
+        static bool IsGreyFor(Character recipient, int victimLevel, IGameData gameData)
         {
             int level = recipient.Stats.GetOrOne(CharacterStat.Level);
-            int range = recipient.Stats.Get(CharacterStat.XPKillRange, StatDetail.Base);
-            if (StatCollection.IsUnset(range) || range <= 0)
-                range = gameData.TryGetXpLevel(level, out XpLevelEntry entry) ? entry.XpKillRange : 0;
-
+            int range = gameData.TryGetXpLevel(level, out XpLevelEntry entry) ? entry.XpKillRange : 0;
             return range > 0 && victimLevel < level - range;
         }
 
