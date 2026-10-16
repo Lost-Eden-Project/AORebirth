@@ -1118,7 +1118,8 @@
                 float y = d.Position.Y;
                 float z = d.Position.Z;
                 float r = TriggerVolumeCatalog.TargetVicinityRadius;
-                if (events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0)
+                bool explicitRange = events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0;
+                if (explicitRange)
                     r = vicinityRange;
                 var pad = new ZoneTriggerVolume
                 {
@@ -1138,6 +1139,10 @@
                 float h = TriggerVolumeCatalog.HalfHeight(pad);
                 pad.MinY = y - h;
                 pad.MaxY = y + h;
+                // Without a VicinityRange the pad is the ring's own collision sphere against the player's, as for a door:
+                // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
+                if (!explicitRange)
+                    ApplyClientSphere(pad, d, x, y, z);
                 _triggers.Add(pad);
             }
         }
