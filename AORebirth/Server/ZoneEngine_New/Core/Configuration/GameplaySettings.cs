@@ -38,6 +38,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Rules for a player fighting a player.</summary>
         public GameplayPvp Pvp { get; init; } = new();
 
+        /// <summary>Nearby NPCs joining a fight one of their own is drawn into.</summary>
+        public GameplaySocialAggro SocialAggro { get; init; } = new();
+
         public static string ResolvePath(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
@@ -103,7 +106,56 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.critChancePercent must be a finite, non-negative number.");
             if (Pvp.AttackerFlagNano < 0)
                 throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
+            if (SocialAggro == null
+                || !float.IsFinite(SocialAggro.DefaultRadius) || SocialAggro.DefaultRadius < 0
+                || !float.IsFinite(SocialAggro.MaxRadius) || SocialAggro.MaxRadius < 0
+                || SocialAggro.DefaultRadius >= Ai.NpcAiRules.MaxLeashRange
+                || SocialAggro.MaxRadius >= Ai.NpcAiRules.MaxLeashRange)
+                throw new InvalidDataException(path + ": socialAggro.defaultRadius and maxRadius must be 0 up to below the "
+                    + Ai.NpcAiRules.MaxLeashRange + " m leash range.");
+            if (SocialAggro.MaxHelpers < 0)
+                throw new InvalidDataException(path + ": socialAggro.maxHelpers must be 0 (no limit) or more.");
         }
+    }
+
+    /// <summary>
+    /// The socialAggro section of Gameplay.json. When an NPC gains a new attacker (hit, or proximity aggro), nearby NPCs
+    /// on the same Side join the fight against that attacker. How far each helper comes is its own spawn point's
+    /// AssistanceRadius (GameData Playfields/{id}/Spawns.json); 0 there means it never assists. Pets, non-attackable,
+    /// evading and pacified NPCs never join.
+    /// </summary>
+    public sealed class GameplaySocialAggro
+    {
+        /// <summary>Off: no NPC answers a call for help.</summary>
+        public bool Enabled { get; init; } = true;
+
+        /// <summary>
+        /// Assist radius for an NPC whose spawn point has none (AssistanceRadius 0) or that has no spawn point (summoned,
+        /// GM spawn). 0 keeps those from assisting.
+        /// </summary>
+        public float DefaultRadius { get; init; }
+
+        /// <summary>Cap on a spawn point's AssistanceRadius, in meters edge to edge (the data reaches 200).</summary>
+        public float MaxRadius { get; init; } = 30f;
+
+        /// <summary>The radius a helper with <paramref name="assistanceRadius"/> from its spawn point comes from.</summary>
+        public float RadiusFor(int assistanceRadius)
+            => Math.Min(assistanceRadius > 0 ? assistanceRadius : DefaultRadius, MaxRadius);
+
+        /// <summary>The farthest any helper can come: how far a call for help has to look.</summary>
+        public float SearchRadius => Math.Max(DefaultRadius, MaxRadius);
+
+        /// <summary>Helpers must share the NPC's NPCFamily (455) as well as its Side.</summary>
+        public bool SameFamilyOnly { get; init; } = true;
+
+        /// <summary>Helpers must have line of sight to the NPC under attack.</summary>
+        public bool RequireLineOfSight { get; init; } = true;
+
+        /// <summary>Most NPCs one call brings in, nearest first. 0 means no limit.</summary>
+        public int MaxHelpers { get; init; }
+
+        /// <summary>A helper calls for help in turn. Off keeps one pull from spreading across a whole area.</summary>
+        public bool Chain { get; init; }
     }
 
     /// <summary>

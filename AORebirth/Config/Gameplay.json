@@ -20,5 +20,14 @@
     "radius": 50,
     "minPauseSeconds": 5,
     "maxPauseSeconds": 20
+  },
+  "socialAggro": {
+    "enabled": true,
+    "defaultRadius": 0,
+    "maxRadius": 30,
+    "sameFamilyOnly": true,
+    "requireLineOfSight": true,
+    "maxHelpers": 0,
+    "chain": false
   }
 }

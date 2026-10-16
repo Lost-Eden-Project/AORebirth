@@ -336,8 +336,90 @@ namespace ZoneEngine_New.Core.Ai
             // Pacified NPCs keep no hate.
             if (_evading || Npc.IsPacified)
                 return;
+            bool newAttacker = !Hate.Contains(identity);
             Hate.Add(identity, amount);
+            if (newAttacker)
+                CallForHelp(identity);
         }
+
+        /// <summary>
+        /// Social aggro (Gameplay.json socialAggro): NPCs near this one that are of its kind join the fight against
+        /// <paramref name="attacker"/>, nearest first. Runs once per new attacker.
+        /// </summary>
+        void CallForHelp(Identity attacker)
+        {
+            if (Pet != null || !Npc.Attackable || Npc.Playfield is not ZoneEngine_New.Core.Playfield.Playfield playfield)
+                return;
+            if (playfield.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.SocialAggro is not { Enabled: true, SearchRadius: > 0 } rules)
+                return;
+            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(attacker, out Dynel? found)
+                || found is not Character enemy || enemy.IsDead)
+                return;
+
+            int side = Npc.Stats.GetOrZero(CharacterStat.Side);
+            int family = Npc.Stats.GetOrZero(CharacterStat.NPCFamily);
+            playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc, rules.SearchRadius, _nearbyNpcs);
+            _helpers.Clear();
+            for (int i = 0; i < _nearbyNpcs.Count; i++)
+            {
+                NpcCharacter other = _nearbyNpcs[i];
+                if (ReferenceEquals(other, Npc) || other.IsDead || !other.Attackable || other.Brain is not NpcBrain brain
+                    || brain.Pet != null || brain._evading || other.IsPacified || brain.Hate.Contains(attacker))
+                    continue;
+                if (other.Stats.GetOrZero(CharacterStat.Side) != side
+                    || (rules.SameFamilyOnly && other.Stats.GetOrZero(CharacterStat.NPCFamily) != family))
+                    continue;
+
+                double distance = Npc.GetEdgeDistanceTo(other);
+                if (distance > rules.RadiusFor(brain.SpawnAssistanceRadius()) || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
+                    continue;
+                if (rules.RequireLineOfSight && !other.HasLineOfSightTo(Npc))
+                    continue;
+
+                _helpers.Add((distance, brain));
+            }
+
+            _nearbyNpcs.Clear();
+            _helpers.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+            int count = rules.MaxHelpers > 0 ? Math.Min(rules.MaxHelpers, _helpers.Count) : _helpers.Count;
+            for (int i = 0; i < count; i++)
+                _helpers[i].Brain.JoinFight(attacker, rules.Chain);
+            _helpers.Clear();
+        }
+
+        /// <summary>
+        /// This NPC's spawn point AssistanceRadius (Playfields/{id}/Spawns.json), 0 without one. Looked up on first use,
+        /// once the spawn system has bound the NPC to its point; the point never changes for this NPC.
+        /// </summary>
+        int SpawnAssistanceRadius()
+        {
+            if (_spawnAssistanceRadius is int known)
+                return known;
+
+            int radius = Npc.Playfield?.GetService<HashSpawnSystem>() is HashSpawnSystem spawns
+                && spawns.TryGetSpawnPoint(Npc, out HashSpawnPoint point)
+                    ? System.Math.Max(0, point.Source.AssistanceRadius)
+                    : 0;
+            _spawnAssistanceRadius = radius;
+            return radius;
+        }
+
+        int? _spawnAssistanceRadius;
+
+        /// <summary>Answers a call for help: <paramref name="attacker"/> goes on the hate list with the proximity threat.</summary>
+        void JoinFight(Identity attacker, bool chain)
+        {
+            if (_evading || Npc.IsPacified || Hate.Contains(attacker))
+                return;
+
+            Hate.Add(attacker, NpcAiRules.ProximityHate);
+            if (chain)
+                CallForHelp(attacker);
+        }
+
+        readonly List<NpcCharacter> _nearbyNpcs = new();
+
+        readonly List<(double Distance, NpcBrain Brain)> _helpers = new();
 
         public void ClearHate()
         {
@@ -406,6 +488,7 @@ namespace ZoneEngine_New.Core.Ai
                 return;
 
             Hate.Add(player.Identity, NpcAiRules.ProximityHate);
+            CallForHelp(player.Identity);
         }
 
         public bool ShouldLeash()
