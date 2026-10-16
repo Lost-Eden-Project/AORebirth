@@ -22,6 +22,16 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".serverstats [1|3|5|10|30]";
 
+        public GmCommandHelp Help { get; } = new(
+            "Server load on your playfield: tick rate, tick time and counts.",
+            [
+                new(".serverstats [1|3|5|10|30]", "Averages over the last 1, 3, 5, 10 or 30 seconds (default 1)."),
+            ],
+            [
+                new(".serverstats", "The last second."),
+                new(".serverstats 10", "The last 10 seconds."),
+            ]);
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -32,7 +42,7 @@ namespace ZoneEngine_New.Core.Commands
                 if (!int.TryParse(context.Args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out windowSeconds)
                     || !PlayfieldMetricsWindows.IsAllowed(windowSeconds))
                 {
-                    GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                    context.SendUsage();
                     return;
                 }
             }

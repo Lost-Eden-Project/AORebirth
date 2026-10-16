@@ -3712,13 +3712,9 @@ namespace ZoneEngine_New.Core.Entities
             int characterFlags = Stats.Get(CharacterStat.Flags);
             if (Stats.TryGetValue(CharacterStat.GmLevel, out int gmLevel) && gmLevel > 0)
             {
+                // The blue name marks a GM. The name itself stays as stored: a " [GM]" suffix broke %t in chat.
                 characterFlags &= ~(int)CharacterFlags.NpcStyleFlag28;
                 characterFlags |= (int)CharacterFlags.HasBlueName;
-                if (name != null
-                    && name.IndexOf("[GM]", StringComparison.OrdinalIgnoreCase) < 0)
-                {
-                    name += " [GM]";
-                }
             }
 
             int maxHealth = Stats.GetOrZero(CharacterStat.MaxHealth);

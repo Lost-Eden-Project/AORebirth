@@ -13,11 +13,12 @@ namespace ZoneEngine_New.Core.Commands
 
     public sealed class GmCommandContext
     {
-        public GmCommandContext(IZoneSession session, Player player, string[] args)
+        public GmCommandContext(IZoneSession session, Player player, string[] args, IGmCommand? command = null)
         {
             Session = session ?? throw new ArgumentNullException(nameof(session));
             Player = player ?? throw new ArgumentNullException(nameof(player));
             Args = args ?? Array.Empty<string>();
+            Command = command;
         }
 
         public IZoneSession Session { get; }
@@ -25,6 +26,25 @@ namespace ZoneEngine_New.Core.Commands
         public Player Player { get; }
 
         public string[] Args { get; }
+
+        /// <summary>The command being run; null when a context is built outside the dispatcher.</summary>
+        public IGmCommand? Command { get; }
+
+        /// <summary>
+        /// A malformed call: <paramref name="problem"/> in red (default: invalid arguments), then a link to the
+        /// command's help popup.
+        /// </summary>
+        public void SendUsage(string? problem = null)
+        {
+            if (Command == null)
+            {
+                GmCommandFeedback.Send(Session, Player, problem ?? "Invalid arguments.");
+                return;
+            }
+
+            GmCommandFeedback.SendError(Session, Player, problem ?? "Invalid arguments for ." + Command.Name + ".");
+            GmCommandFeedback.Send(Session, Player, GmCommandHelpAoml.BuildLink(Command));
+        }
 
         /// <summary>Look-at player if selected, otherwise the command issuer.</summary>
         public Player ResolveSubject()
@@ -160,6 +180,9 @@ namespace ZoneEngine_New.Core.Commands
 
         string Usage { get; }
 
+        /// <summary>Verbose help: the popup for <c>-h</c>, a malformed call, or a failure.</summary>
+        GmCommandHelp Help { get; }
+
         void Execute(GmCommandContext context);
     }
 
@@ -180,6 +203,14 @@ namespace ZoneEngine_New.Core.Commands
                     Unknown2 = 0,
                     Unknown3 = 0
                 });
+        }
+
+        /// <summary>A command error line in red.</summary>
+        public static void SendError(IZoneSession session, Player player, string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            Send(session, player, DiagAoml.Color(DiagAoml.Red, text.Replace("<", "(", StringComparison.Ordinal)
+                .Replace(">", ")", StringComparison.Ordinal)));
         }
 
         public static void SendLines(
@@ -229,29 +260,35 @@ namespace ZoneEngine_New.Core.Commands
             ArgumentNullException.ThrowIfNull(name);
             args ??= Array.Empty<string>();
 
+            // A player with no GmLevel stat is level 0, which still runs RequiredGmLevel 0 commands such as .online.
+            int gmLevel = player.Stats.GetOrZero(CharacterStat.GmLevel);
             if (!_commands.TryGetValue(name, out IGmCommand? command))
             {
-                GmCommandFeedback.Send(session, player, "Unknown command: ." + name);
+                GmCommandFeedback.SendError(session, player, "Unknown command: ." + name);
+                GmCommandFeedback.Send(session, player, GmCommandHelpAoml.BuildIndexLink(_commands.Values, gmLevel));
                 return;
             }
 
-            // A player with no GmLevel stat is level 0, which still runs RequiredGmLevel 0 commands such as .online.
-            if (player.Stats.GetOrZero(CharacterStat.GmLevel) < command.RequiredGmLevel)
+            if (gmLevel < command.RequiredGmLevel)
             {
-                GmCommandFeedback.Send(session, player, "Insufficient GM level.");
+                GmCommandFeedback.SendError(session, player, "Insufficient GM level.");
+                return;
+            }
+
+            var context = new GmCommandContext(session, player, args, command);
+            if (GmCommandHelpAoml.IsHelpRequest(args))
+            {
+                GmCommandFeedback.Send(session, player, GmCommandHelpAoml.BuildLink(command));
                 return;
             }
 
             try
             {
-                command.Execute(new GmCommandContext(session, player, args));
+                command.Execute(context);
             }
             catch (Exception exception)
             {
-                GmCommandFeedback.Send(
-                    session,
-                    player,
-                    string.Format(CultureInfo.InvariantCulture, "Command failed: {0}", exception.Message));
+                context.SendUsage(string.Format(CultureInfo.InvariantCulture, "Command failed: {0}", exception.Message));
             }
         }
     }

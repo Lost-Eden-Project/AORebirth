@@ -44,6 +44,29 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".diag [on [sec] | off | reset | top [n] [here|pfId] | stages [here|all|pfId] | path [n] [here|pfId] | alloc [here|all|pfId] | pfs [1|3|5|10|30] | slow | proc | threshold <ms|auto>]";
 
+        public GmCommandHelp Help { get; } = new(
+            "Zone engine tick-performance diagnostics.",
+            [
+                new(".diag on [seconds]", "Starts recording the tick profiler (top, stages, path and alloc read it)."),
+                new(".diag off", "Stops the recording and keeps its data."),
+                new(".diag reset", "Clears the recording and the slow-tick log."),
+                new(".diag top [n] [here|pfId]", "The n costliest tick entries in the recording."),
+                new(".diag stages [here|all|pfId]", "Time spent in each tick stage."),
+                new(".diag path [n] [here|pfId]", "The costliest navmesh path searches."),
+                new(".diag alloc [here|all|pfId]", "Memory allocated in each tick stage."),
+                new(".diag pfs [1|3|5|10|30]", "Tick rate and load of every playfield over the last 1-30 seconds."),
+                new(".diag slow", "Recent slow ticks."),
+                new(".diag proc", "Process CPU, memory and garbage collection."),
+                new(".diag threshold <ms|auto>", "Sets the slow-tick limit; auto follows the tick interval."),
+            ],
+            [
+                new(".diag on 30", "Record 30 seconds of ticks."),
+                new(".diag top 10 here", "Ten costliest entries on your playfield."),
+                new(".diag pfs 5", "Every playfield over the last 5 seconds."),
+                new(".diag threshold 50", "Log ticks slower than 50 ms."),
+            ],
+            "here = your playfield, all = every playfield, or a playfield id. Colors: green fine, yellow watch, red problem.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -90,12 +113,12 @@ namespace ZoneEngine_New.Core.Commands
                     Threshold(context);
                     break;
                 default:
-                    Help(context);
+                    Overview(context);
                     break;
             }
         }
 
-        void Help(GmCommandContext context)
+        void Overview(GmCommandContext context)
         {
             bool watchdog = WatchdogFeed.IsSubscribed(context.Player);
             // One block per section so a page break never splits a section.
@@ -135,7 +158,7 @@ namespace ZoneEngine_New.Core.Commands
             if (context.Args.Length > 1
                 && (!int.TryParse(context.Args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds) || seconds <= 0))
             {
-                Say(context, "Usage: .diag on [1-" + TickProfiler.MaxRecordSeconds.ToString(CultureInfo.InvariantCulture) + "]");
+                context.SendUsage("Usage: .diag on [1-" + TickProfiler.MaxRecordSeconds.ToString(CultureInfo.InvariantCulture) + "]");
                 return;
             }
 
@@ -226,7 +249,7 @@ namespace ZoneEngine_New.Core.Commands
                 }
                 else
                 {
-                    Say(context, "Usage: " + usage);
+                    context.SendUsage("Usage: " + usage);
                     return false;
                 }
             }
@@ -359,7 +382,7 @@ namespace ZoneEngine_New.Core.Commands
                 playfieldId = id;
             else
             {
-                Say(context, "Usage: .diag " + (byAllocation ? "alloc" : "stages") + " [here|all|pfId]");
+                context.SendUsage("Usage: .diag " + (byAllocation ? "alloc" : "stages") + " [here|all|pfId]");
                 return;
             }
 
@@ -421,7 +444,7 @@ namespace ZoneEngine_New.Core.Commands
                 && (!int.TryParse(context.Args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out window)
                     || !PlayfieldMetricsWindows.IsAllowed(window)))
             {
-                Say(context, "Usage: .diag pfs [1|3|5|10|30]");
+                context.SendUsage("Usage: .diag pfs [1|3|5|10|30]");
                 return;
             }
 

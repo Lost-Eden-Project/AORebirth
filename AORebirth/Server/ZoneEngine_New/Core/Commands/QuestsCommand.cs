@@ -44,6 +44,19 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".quests (selected player's active quests) | .quests info <questId> [characterId] (all of a quest's details) | .quests tp <questId> (you, to its dungeon entrance)";
 
+        public GmCommandHelp Help { get; } = new(
+            "Shows and inspects quests.",
+            [
+                new(".quests", "Your look-at player's active quests (or yours)."),
+                new(".quests info <questId> [characterId]", "Every detail of one quest, in a popup."),
+                new(".quests tp <questId>", "Takes you to the quest's dungeon entrance."),
+            ],
+            [
+                new(".quests", "Active quests of your target."),
+                new(".quests info 12", "Details of quest 12."),
+                new(".quests tp 12", "Go to quest 12's entrance."),
+            ]);
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -111,7 +124,7 @@ namespace ZoneEngine_New.Core.Commands
         {
             if (context.Args.Length < 2)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: .quests info <questId> [characterId]");
+                context.SendUsage("Usage: .quests info <questId> [characterId]");
                 return;
             }
 

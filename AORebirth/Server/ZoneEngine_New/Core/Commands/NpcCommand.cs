@@ -45,13 +45,30 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".npc source|template|loot [roll [count]]|equipment|nanos|position";
 
+        public GmCommandHelp Help { get; } = new(
+            "Inspects your selected NPC.",
+            [
+                new(".npc source", "Where it came from: spawn point, hash and spawn source."),
+                new(".npc template", "Its mob template."),
+                new(".npc loot", "Its loot table."),
+                new(".npc loot roll [count]", "Simulates its loot drops count times."),
+                new(".npc equipment", "Its equipment."),
+                new(".npc nanos", "Its uploaded and running nanos."),
+                new(".npc position", "Its position, home and movement state."),
+            ],
+            [
+                new(".npc template", "Template of your target."),
+                new(".npc loot roll 20", "Twenty simulated drops."),
+            ],
+            "Select an NPC first.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
 
             if (context.Args.Length < 1)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 
@@ -80,10 +97,7 @@ namespace ZoneEngine_New.Core.Commands
                         && (!int.TryParse(context.Args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out rolls)
                             || rolls < 1 || rolls > MaxLootRolls))
                     {
-                        GmCommandFeedback.Send(
-                            context.Session,
-                            context.Player,
-                            "Usage: .npc loot roll [1-" + MaxLootRolls.ToString(CultureInfo.InvariantCulture) + "]");
+                        context.SendUsage("Usage: .npc loot roll [1-" + MaxLootRolls.ToString(CultureInfo.InvariantCulture) + "]");
                         return;
                     }
 
@@ -113,7 +127,7 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+            context.SendUsage();
         }
 
         static bool TryResolveNpc(GmCommandContext context, out NpcCharacter npc)

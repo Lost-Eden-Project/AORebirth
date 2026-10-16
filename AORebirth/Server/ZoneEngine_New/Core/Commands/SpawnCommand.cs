@@ -26,13 +26,23 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".spawn <Hash> <Level>";
 
+        public GmCommandHelp Help { get; } = new(
+            "Spawns a mob or a static world item from its hash at your position.",
+            [
+                new(".spawn <hash> <level>", "A mob hash spawns that mob; a static hash spawns the world item at that quality."),
+            ],
+            [
+                new(".spawn ASSU 30", "Abmouth Supremus, level 30."),
+                new(".spawn CARO 25", "A Carbonrich Rock, QL 25."),
+            ]);
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
 
             if (context.Args.Length < 2)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 
@@ -40,7 +50,7 @@ namespace ZoneEngine_New.Core.Commands
             if (!int.TryParse(context.Args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int level)
                 || level < 1)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 

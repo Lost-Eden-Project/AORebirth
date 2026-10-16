@@ -31,13 +31,29 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".get stat <statName|statId> | .get stats | .get buffs | .get quests | .get weapons";
 
+        public GmCommandHelp Help { get; } = new(
+            "Shows a character's stats, buffs, quests or weapons.",
+            [
+                new(".get stat <statName|statId>", "One stat: base, bonus and full value."),
+                new(".get stats", "Every stat, in popups by group."),
+                new(".get buffs", "Running nanos with time left and NCU use."),
+                new(".get quests", "Active quests."),
+                new(".get weapons", "Equipped weapons and their template stats."),
+            ],
+            [
+                new(".get stat Health", "Current health."),
+                new(".get stat 589", "A stat by id (PlayfieldProxy)."),
+                new(".get buffs", "What is running on your target."),
+            ],
+            "Works on your look-at target, player or NPC; with nothing selected it shows you.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
 
             if (context.Args.Length < 1)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 
@@ -72,14 +88,14 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+            context.SendUsage();
         }
 
         static void ExecuteStat(GmCommandContext context)
         {
             if (context.Args.Length < 2 || !CharacterStatParser.TryParse(context.Args[1], out CharacterStat stat))
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: .get stat <statName|statId>");
+                context.SendUsage("Usage: .get stat <statName|statId>");
                 return;
             }
 

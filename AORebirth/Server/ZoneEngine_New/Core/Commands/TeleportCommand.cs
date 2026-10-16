@@ -37,6 +37,22 @@ namespace ZoneEngine_New.Core.Commands
         public string Usage =>
             ".tp <x> <z> <playfieldId> or .tp <x> <y> <z> <playfieldId> (look-at player if selected) | .tp summon <character name> | .tp to <character name>";
 
+        public GmCommandHelp Help { get; } = new(
+            "Teleports to coordinates or between players.",
+            [
+                new(".tp <x> <z> <playfieldId>", "To coordinates; the height comes from the ground."),
+                new(".tp <x> <y> <z> <playfieldId>", "To exact coordinates."),
+                new(".tp summon <name>", "Brings a player to you."),
+                new(".tp to <name>", "Takes you to a player."),
+            ],
+            [
+                new(".tp 440 285 566", "To (440, 285) in playfield 566."),
+                new(".tp 440 29 285 566", "With an exact height."),
+                new(".tp summon Delmus", "Bring Delmus here."),
+                new(".tp to Delmus", "Go to Delmus."),
+            ],
+            "Coordinate teleports move your look-at player when one is selected, otherwise you.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -62,7 +78,7 @@ namespace ZoneEngine_New.Core.Commands
                 || !int.TryParse(context.Args[playfieldIndex], NumberStyles.Integer, CultureInfo.InvariantCulture, out int playfieldId)
                 || playfieldId <= 0)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 
@@ -96,7 +112,7 @@ namespace ZoneEngine_New.Core.Commands
             if (hasExplicitY
                 && !float.TryParse(context.Args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y))
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
             Vector3 landing = new Vector3(x, y, z);
@@ -134,7 +150,7 @@ namespace ZoneEngine_New.Core.Commands
         {
             if (context.Args.Length < 2)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: .tp summon <character name>");
+                context.SendUsage("Usage: .tp summon <character name>");
                 return;
             }
 
@@ -185,7 +201,7 @@ namespace ZoneEngine_New.Core.Commands
         {
             if (context.Args.Length < 2)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: .tp to <character name>");
+                context.SendUsage("Usage: .tp to <character name>");
                 return;
             }
 

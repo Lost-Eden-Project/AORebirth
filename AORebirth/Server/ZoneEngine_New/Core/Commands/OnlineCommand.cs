@@ -35,6 +35,16 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".online";
 
+        public GmCommandHelp Help { get; } = new(
+            "Lists every player online, grouped by profession, highest level first.",
+            [
+                new(".online", "The online list."),
+            ],
+            [
+                new(".online", "Who is on."),
+            ],
+            "Open to everyone, with a short cooldown. Callers who may use .tp get a [TP] link beside each player.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

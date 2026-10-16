@@ -55,13 +55,29 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".give item <low> <high> <ql> | .give item <hash> <ql> | .give buff <nanoId> | .give quest <hash> | .give setup <aosetups url>";
 
+        public GmCommandHelp Help { get; } = new(
+            "Gives items, nanos, quests or a whole setup.",
+            [
+                new(".give item <low> <high> <ql>", "An item by its low and high template ids at a quality."),
+                new(".give item <hash> <ql>", "An item from an item hash at a quality."),
+                new(".give buff <nanoId>", "Lands a nano program, ignoring combat rules."),
+                new(".give quest <hash>", "Starts a quest."),
+                new(".give setup <aosetups url>", "Equips a full setup from AO Setups."),
+            ],
+            [
+                new(".give item 266993 266993 300", "A QL 300 item by template id."),
+                new(".give item CARO 25", "A QL 25 item from a hash."),
+                new(".give buff 214879", "Lands nano 214879 (PvP Enabled)."),
+            ],
+            "Items, quests and setups go to your look-at player, or to you. Buffs land on your look-at character (player or NPC), or on you.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
 
             if (context.Args.Length < 1)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 
@@ -91,7 +107,7 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+            context.SendUsage();
         }
 
         void ExecuteItem(GmCommandContext context)
@@ -138,10 +154,7 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            GmCommandFeedback.Send(
-                context.Session,
-                context.Player,
-                "Usage: .give item <low> <high> <ql> | .give item <hash> <ql>");
+            context.SendUsage("Usage: .give item <low> <high> <ql> | .give item <hash> <ql>");
         }
 
         void GiveCreatedItem(GmCommandContext context, Item item)
@@ -226,7 +239,7 @@ namespace ZoneEngine_New.Core.Commands
         {
             if (context.Args.Length < 2 || string.IsNullOrWhiteSpace(context.Args[1]))
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: .give quest <hash>");
+                context.SendUsage("Usage: .give quest <hash>");
                 return;
             }
 
@@ -247,7 +260,7 @@ namespace ZoneEngine_New.Core.Commands
                 || !int.TryParse(context.Args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int nanoId)
                 || nanoId <= 0)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: .give buff <nanoId>");
+                context.SendUsage("Usage: .give buff <nanoId>");
                 return;
             }
 

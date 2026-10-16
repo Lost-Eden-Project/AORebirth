@@ -18,6 +18,18 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".set <statName|statId> <value>";
 
+        public GmCommandHelp Help { get; } = new(
+            "Sets a stat's base value.",
+            [
+                new(".set <statName|statId> <value>", "Sets the stat on your look-at character (player or NPC), or on you."),
+            ],
+            [
+                new(".set Level 220", "Level 220 (XP follows)."),
+                new(".set Health 1", "Health to 1."),
+                new(".set 589 4329", "A stat by id."),
+            ],
+            "Another character's stats need GM level 100. GmLevel cannot be set this way.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -26,7 +38,7 @@ namespace ZoneEngine_New.Core.Commands
                 || !CharacterStatParser.TryParse(context.Args[0], out CharacterStat stat)
                 || !int.TryParse(context.Args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Usage: " + Usage);
+                context.SendUsage();
                 return;
             }
 

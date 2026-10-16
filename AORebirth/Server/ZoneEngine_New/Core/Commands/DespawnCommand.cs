@@ -21,6 +21,15 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".despawn (despawns the selected non-player target as if it died)";
 
+        public GmCommandHelp Help { get; } = new(
+            "Removes your selected NPC as if it had died.",
+            [
+                new(".despawn", "Despawns your look-at target. Players cannot be despawned."),
+            ],
+            [
+                new(".despawn", "Select a mob first, then run it."),
+            ]);
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

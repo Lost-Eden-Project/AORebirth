@@ -27,6 +27,20 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".debug [watchdog|tick] [on|off]";
 
+        public GmCommandHelp Help { get; } = new(
+            "Turns your own debug chat channels on or off. The choice is saved across relogs.",
+            [
+                new(".debug", "Lists the channels and whether each one is on."),
+                new(".debug <channel>", "Flips one channel on or off."),
+                new(".debug <channel> on|off", "Turns one channel on or off."),
+            ],
+            [
+                new(".debug", "See every channel."),
+                new(".debug watchdog on", "Get slow-tick watchdog warnings in chat."),
+                new(".debug tick off", "Stop the per-tick debug output."),
+            ],
+            "Channels: watchdog, tick.");
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -50,7 +64,7 @@ namespace ZoneEngine_New.Core.Commands
             int index = Array.FindIndex(Channels, c => string.Equals(c.Name, context.Args[0], StringComparison.OrdinalIgnoreCase));
             if (index < 0)
             {
-                GmCommandFeedback.Send(context.Session, player, "Unknown debug channel. Usage: " + Usage);
+                context.SendUsage("Unknown debug channel.");
                 return;
             }
 
@@ -64,7 +78,7 @@ namespace ZoneEngine_New.Core.Commands
                     enable = false;
                 else
                 {
-                    GmCommandFeedback.Send(context.Session, player, "Usage: " + Usage);
+                    context.SendUsage();
                     return;
                 }
             }

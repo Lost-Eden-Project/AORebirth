@@ -23,6 +23,17 @@ namespace ZoneEngine_New.Core.Commands
 
         public string Usage => ".shutdown <seconds> | .shutdown abort";
 
+        public GmCommandHelp Help { get; } = new(
+            "Schedules a timed engine shutdown with a chat countdown.",
+            [
+                new(".shutdown <seconds>", "Shuts the engine down after the given seconds."),
+                new(".shutdown abort", "Cancels a scheduled shutdown."),
+            ],
+            [
+                new(".shutdown 300", "Shut down in 5 minutes."),
+                new(".shutdown abort", "Cancel it."),
+            ]);
+
         public void Execute(GmCommandContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -42,7 +53,7 @@ namespace ZoneEngine_New.Core.Commands
                 || seconds < 1
                 || seconds > ShutdownScheduler.MaxSeconds)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, string.Format(CultureInfo.InvariantCulture,
+                context.SendUsage(string.Format(CultureInfo.InvariantCulture,
                     "Usage: {0} (1 to {1} seconds)", Usage, ShutdownScheduler.MaxSeconds));
                 return;
             }
