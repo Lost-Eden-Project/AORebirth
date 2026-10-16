@@ -1,51 +1,58 @@
 # Current Task
 
-XP OFF WITH PERSONAL RESEARCH ACTIVE (2026-10-15).
+TEAM ROSTER PUBLICATION REPAIR (2026-10-16).
 
-Mike authorized repairing the ignored DisableXP client action and the earned-XP
-paths while preserving personal research. Base: public master
-5ce47adc4e14253884415e5c0a107e6d21ad8113. Work is isolated from the dirty local
-installation on codex/xp-off-research.
+Mike authorized repairing duplicate team-window entries in ZoneEngine_New,
+focused packet-publication regression tests, the approved Windows build, and
+commit/push reporting. Base: public master
+b8cf9323371f67581bef1e4301eab6dd1306bc56. Branch: codex/team-roster-deltas.
+Work is isolated from Mike's dirty local installation in an attached worktree.
 
-OBSERVED: live logs contain unhandled DisableXP(165) requests. PROVEN: the
-starting master lacked the handler and applied normal XP after research without a disabled-XP
-check, including independent quest/DOJA projections.
+PROVEN BASE DEFECT: successful invitation acceptance called SendRoster for every
+teammate, reannouncing rows already published. Per-packet projection epochs could
+discard an initial roster when another join/removal occurred before its owner
+queue drained. SpawnService skipped team refresh after zoning, so a retained
+client could miss changes made during the transfer.
 
-PROVEN client encoding: DisableXPGain uses AutoAttackFlags (stat 349), bit 0x10.
-The original GUI sets/clears that bit while preserving other bits, then sends
-EventFeedback 0x3c; Gamecode sends CharacterAction 165 with the complete flag word
-in Parameter2 and updates stat 349 locally. PlayerOptions 576 is not this setting.
-Installed GUI.dll SHA256:
-ECAA2C686DB3E0E17032AC69B14A14F030BC3185C51A10E04BEEC18BA3AC5306.
-GUI callback 0x100c017f, event call 0x100c01d1. Existing Gamecode export:
-tools-temp/gamecode-disasm.txt:38014-38058, 158149-158272, 442857-442870.
-The retained GUI constructor independently agrees (gui-visualflags-consumers.txt,
-stat 349 read and bit 4 binding). Completed captures contain Action165 Parameter2
-5 and 21; the client code establishes their enabled/disabled meaning.
-Reuse existing stats, persistence and reward APIs; no action-echo mechanism.
+Repair within the existing TeamService membership authority, owner dispatcher,
+session fences, wire models, chat bridge and stats. Track published client rows
+separately from authoritative membership. Publish complete initial rosters to
+new clients and only missing additions/removals to retained clients. Preserve
+initial ordering, invitation validation and raid reassignment ordering. A
+published row means handed to the accepted session, not client acknowledgment.
 
-Preserve research/caps, independent quest rewards, reward-ledger transactions and
-existing enabled-XP behavior. No schema or GameData changes. Compile through the
-approved Windows wrapper; no automated suites or client control are requested.
-OBSERVED WINDOWS ACCEPTANCE (2026-10-15): Mike confirmed repair
-3d7239a24708e4e33995b0ce304b12d98ff1dddf works and authorized merging it into
-Windows/public master. Fetched master remains the original base, so integration
-is a fast-forward with no runtime merge changes. Linux deployment is separate.
+No packet-format, content, database, Linux or deployment changes. Mike explicitly
+requested focused automated tests for this task. Run the approved Windows core
+build and relevant team/reconnect tests. Actual AO-client rendering after joins
+and zoning remains UNVERIFIED until supported by client evidence.
 
-IMPLEMENTED, CLIENT ACCEPTED: CharacterAction 165 stores the complete
-AutoAttackFlags word through the existing authoritative stats/save path. Login
-publication includes stat 349. Normal kill and quest XP is suppressed after
-research allocation. Quest/DOJA projections capture the preference at planning
-time and preserve XP, level, watermarks and death pool. DOJA retains its existing
-reward ledger with an unchanged-XP mutation, independent tokens and cooldowns.
-Enabled-XP, research caps, SK and alien-XP behavior are unchanged.
+IMPLEMENTED: one fenced owner callback reconciles the latest authoritative team
+against rows submitted to that client's accepted session. Initial delivery keeps
+the existing self-first handshake; established clients receive additions and
+removals only. Raid moves retain the existing remove/re-add fields and ordering.
+Zoning keeps published history; a fresh client discards it and receives a full
+current roster. Local stats and team/raid chat remain coherent when queued work
+is superseded, including leave/rejoin into the same surviving team.
 
-VALIDATION: approved Windows core build PASS, source/encoding/persistence/reward
-path review and git diff --check PASS. No automated suites or client launch.
-The Codex process PATH exceeded CMD's limit; the unchanged approved wrapper ran
-successfully with a short child-process PATH. No build-system files changed.
-Build log: build-verify/xp-off-research/build.log (private, not committed).
-Mike's general repair acceptance is recorded without claiming a separate result
-for every edge case. Explicit quest/DOJA live acceptance and broader SK/alien-XP
-toggle semantics remain UNVERIFIED. No rebuild, suites, service or database
-actions are required for this documentation-only integration step.
+VALIDATION: approved Windows core build PASS; 73 focused TeamService test cases
+PASS; scoped independent source review and git diff --check PASS. Tests inspect
+the emitted packets, including initial ordering, C/D deltas, concurrent/replayed
+acceptance, deferred/reordered callbacks, zoning missed changes, removals,
+disband, inactive stats, chat recovery and raid movement/conversion ordering.
+
+Focused command (explicitly requested by Mike):
+
+```cmd
+dotnet test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests.csproj -p:TeamRosterFocusedTests=true --filter FullyQualifiedName~TeamServiceTests
+```
+
+The default project compile remains blocked by six missing-type errors in three
+unchanged public-master mission-test files. The existing opt-in focused-compile
+pattern selects team tests without changing the default/full suite. Two stale
+team fixture references were updated to current StuckService/feedback APIs;
+runtime behavior was not changed to satisfy those stale references.
+
+UNVERIFIED: actual AO-client team-window rendering and end-to-end production
+SpawnService reconnect execution. The production reconnect hook was source
+reviewed; owner/session packet reconciliation was tested directly. No client,
+server startup, database or deployment actions were performed.

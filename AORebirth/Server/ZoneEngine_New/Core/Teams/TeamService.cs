@@ -40,11 +40,25 @@ namespace ZoneEngine_New.Core.Teams
         private sealed record MemberData(string Name, int Level, int Profession, int MaxHealth,
             int MaxNano, bool HasVitals);
 
+        // Rows submitted through the accepted session on its owner tick, not queued projection intentions.
+        private sealed class PublishedRoster(int teamId)
+        {
+            public int TeamId { get; } = teamId;
+            public Dictionary<int, int> Members { get; } = new();
+            public int Leader;
+            public bool ExplicitLeadershipTransfer;
+            public bool IsRaid;
+            public bool ChatJoined;
+            public bool RaidChatJoined;
+        }
+
         private readonly object _sync = new();
         private readonly Dictionary<int, Player> _players = new();
         private readonly Dictionary<int, MemberData> _data = new();
         private readonly Dictionary<int, Action<CharacterStat, int, int, bool>> _statObservers = new();
         private readonly Dictionary<int, long> _projectionEpochs = new();
+        private readonly Dictionary<int, PublishedRoster> _publishedRosters = new();
+        private readonly Dictionary<int, IZoneSession> _rosterResetSessions = new();
         // A character has exactly one membership entry; Team.Members is its ordered projection.
         private readonly Dictionary<int, Team> _membership = new();
         private readonly Dictionary<int, Invitation> _invitations = new();
@@ -81,6 +95,8 @@ namespace ZoneEngine_New.Core.Teams
                     previous.Stats.StatChanged -= _statObservers[player.Identity.Instance];
                 }
                 _players[player.Identity.Instance] = player;
+                _publishedRosters.Remove(player.Identity.Instance);
+                _rosterResetSessions.Remove(player.Identity.Instance);
                 _projectionEpochs[player.Identity.Instance] = _projectionEpochs.GetValueOrDefault(player.Identity.Instance) + 1;
                 CaptureData(player);
                 Action<CharacterStat, int, int, bool> observer = (stat, _, _, _) =>
@@ -96,16 +112,21 @@ namespace ZoneEngine_New.Core.Teams
             }
         }
 
-        public void RefreshPlayer(Player player)
+        public void RefreshPlayer(Player player, bool preserveRoster = false)
         {
             lock (_sync)
             {
                 if (!IsActive(player)) return;
                 CaptureData(player);
-                if (_membership.TryGetValue(player.Identity.Instance, out Team? team))
-                    SendRoster(player, team);
+                if (!preserveRoster)
+                {
+                    _rosterResetSessions[player.Identity.Instance] = player.Session!;
+                }
                 else
-                    ApplyStats(player, null, 4, send: true);
+                {
+                    _rosterResetSessions.Remove(player.Identity.Instance);
+                }
+                QueueRoster(player, refreshVitals: !preserveRoster);
             }
         }
 
@@ -134,6 +155,8 @@ namespace ZoneEngine_New.Core.Teams
                 _players.Remove(player.Identity.Instance);
                 _data.Remove(player.Identity.Instance);
                 _projectionEpochs.Remove(player.Identity.Instance);
+                _publishedRosters.Remove(player.Identity.Instance);
+                _rosterResetSessions.Remove(player.Identity.Instance);
                 _declinedUntil.Remove(player.Identity.Instance);
             }
         }
@@ -149,6 +172,8 @@ namespace ZoneEngine_New.Core.Teams
                 _statObservers.Clear();
                 _data.Clear();
                 _projectionEpochs.Clear();
+                _publishedRosters.Clear();
+                _rosterResetSessions.Clear();
                 _invitations.Clear();
                 _declinedUntil.Clear();
                 _players.Clear();
@@ -256,9 +281,7 @@ namespace ZoneEngine_New.Core.Teams
                 team.IsRaid = true;
                 foreach (int id in team.Members)
                 {
-                    Player member = _players[id];
-                    Send(member, new RaidMessage { Identity = member.Identity, Unknown = 0, Unknown1 = 0 });
-                    ChatCommand(id, "#aorebirth-raid-convert " + team.Id);
+                    QueueRoster(_players[id]);
                 }
 
                 Send(leader, ClientFeedback.Create(leader.Identity, "Feedback_RaidCreated"));
@@ -304,7 +327,9 @@ namespace ZoneEngine_New.Core.Teams
 
                 team.RaidTeamIndex[targetCharacterId] = destinationTeamIndex;
                 foreach (int viewerId in team.Members)
-                    PublishRaidMemberMove(_players[viewerId], target, team);
+                {
+                    QueueRoster(_players[viewerId]);
+                }
                 return true;
             }
         }
@@ -527,7 +552,10 @@ namespace ZoneEngine_New.Core.Teams
             CancelInvitations(invitee.Identity.Instance);
             _invitations.Remove(inviter.Identity.Instance);
             ChatCommand(invitee.Identity.Instance, "#aorebirth-lft-remove");
-            foreach (int id in team.Members) SendRoster(_players[id], team);
+            foreach (int id in team.Members)
+            {
+                QueueRoster(_players[id]);
+            }
             return true;
         }
 
@@ -552,10 +580,7 @@ namespace ZoneEngine_New.Core.Teams
             team.ExplicitLeadershipTransfer = true;
             foreach (int id in team.Members)
             {
-                Player member = _players[id];
-                ApplyStats(member, team, id == target.Instance ? 15 : 13, send: true);
-                Send(member, Action(member, CharacterActionType.AcceptTeamRequest, target,
-                    (int)IdentityType.TeamWindow, team.Id));
+                QueueRoster(_players[id]);
             }
             return true;
         }
@@ -564,27 +589,21 @@ namespace ZoneEngine_New.Core.Teams
         {
             if (!_membership.Remove(player.Identity.Instance, out Team? team))
             {
-                ApplyStats(player, null, 4, send: notifyLeaving);
-                if (notifyLeaving)
-                    Send(player, Action(player, CharacterActionType.TeamMemberLeft, player.Identity, 0, -1));
+                QueueRoster(player, player.Identity.Instance, notifyLeaving);
                 return true;
             }
             team.Members.Remove(player.Identity.Instance);
             team.RaidTeamIndex.Remove(player.Identity.Instance);
-            ApplyStats(player, null, 4, send: notifyLeaving);
-            ChatCommand(player.Identity.Instance, "#aorebirth-team-leave " + team.Id);
-            if (notifyLeaving) Send(player, Action(player, CharacterActionType.TeamMemberLeft, player.Identity, team.Id, -1));
-            foreach (int id in team.Members)
-                Send(_players[id], Action(_players[id], CharacterActionType.TeamMemberLeft, player.Identity, team.Id, -1));
+            LeaveChat(player.Identity.Instance, team.Id);
+            QueueRoster(player, player.Identity.Instance, notifyLeaving);
             if (team.Members.Count == 1)
             {
                 Player last = _players[team.Members[0]];
                 _membership.Remove(last.Identity.Instance);
                 team.Members.Clear();
                 CancelInvitations(last.Identity.Instance);
-                ApplyStats(last, null, 4, send: true);
-                Send(last, Action(last, CharacterActionType.TeamMemberLeft, last.Identity, team.Id, -1));
-                ChatCommand(last.Identity.Instance, "#aorebirth-team-leave " + team.Id);
+                QueueRoster(last, player.Identity.Instance);
+                LeaveChat(last.Identity.Instance, team.Id);
             }
             else if (team.Members.Count > 1)
             {
@@ -592,76 +611,195 @@ namespace ZoneEngine_New.Core.Teams
                 team.ExplicitLeadershipTransfer = false;
                 foreach (int id in team.Members)
                 {
-                    Player member = _players[id];
-                    ApplyStats(member, team, id == team.Leader ? 7 : 5, send: true);
-                    if (id == team.Leader)
-                    {
-                        Send(member, Action(member, CharacterActionType.TeamRequestReply, Identity.None, 0, 17));
-                        Send(member, Action(member, CharacterActionType.AcceptTeamRequest, member.Identity,
-                            (int)IdentityType.TeamWindow, team.Id));
-                    }
+                    QueueRoster(_players[id], player.Identity.Instance);
                 }
             }
             return true;
         }
 
-        private void SendRoster(Player viewer, Team team)
+        private void QueueRoster(Player viewer, int? departingMember = null, bool notifyLeaving = true,
+            bool refreshVitals = false)
         {
-            if (!IsActive(viewer)) return;
-            int social = viewer.Identity.Instance == team.Leader
+            _projectionEpochs[viewer.Identity.Instance] = _projectionEpochs.GetValueOrDefault(viewer.Identity.Instance) + 1;
+            Dispatch(viewer, () => PublishRosterNow(viewer, departingMember, notifyLeaving, refreshVitals));
+        }
+
+        private void PublishRosterNow(Player viewer, int? departingMember, bool notifyLeaving, bool refreshVitals)
+        {
+            int viewerId = viewer.Identity.Instance;
+            _membership.TryGetValue(viewerId, out Team? team);
+            int social = team == null ? 4 : viewerId == team.Leader
                 ? (team.ExplicitLeadershipTransfer ? 15 : 7)
                 : (team.ExplicitLeadershipTransfer ? 13 : 5);
-            ApplyStats(viewer, team, social, send: false);
-            // Keep the captured Legacy ordering: social/team-side precede ack/self roster,
-            // leadership precedes other members, and channel identity follows the roster.
-            SetStat(viewer, CharacterStat.SocialStatus, social, true);
-            SetStat(viewer, CharacterStat.TeamSide, 2, true);
-            SetStat(viewer, CharacterStat.SocialStatus, social, true);
-            if (viewer.Identity.Instance == team.Leader)
+            if (!IsActive(viewer))
             {
-                Send(viewer, Action(viewer, CharacterActionType.TeamRequestReply, Identity.None, 0, 17));
-                SetStat(viewer, CharacterStat.SocialStatus, social, true);
+                ApplyStatsNow(viewer, team, social, send: false);
+                return;
             }
-            Announce(viewer, viewer, team);
-            if (viewer.Identity.Instance == team.Leader)
+            if (_rosterResetSessions.TryGetValue(viewerId, out IZoneSession? resetSession)
+                && ReferenceEquals(resetSession, viewer.Session))
             {
-                Send(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, viewer.Identity,
-                    (int)IdentityType.TeamWindow, team.Id));
-                SetStat(viewer, CharacterStat.SocialStatus, social, true);
+                _publishedRosters.Remove(viewerId);
+                _rosterResetSessions.Remove(viewerId);
+            }
+            _publishedRosters.TryGetValue(viewerId, out PublishedRoster? published);
+            if (published != null && published.TeamId != (team?.Id ?? 0))
+            {
+                // A surviving member sees departed rows before the final self-leave on disband.
+                if (departingMember != viewerId)
+                {
+                    foreach (int memberId in published.Members.Keys.Where(id => id != viewerId).ToArray())
+                    {
+                        if (!RemovePublishedMemberNow(viewer, published, memberId, -1)) return;
+                    }
+                }
+                ApplyStatsNow(viewer, null, 4, send: notifyLeaving);
+                if (!notifyLeaving || !RemovePublishedMemberNow(viewer, published, viewerId, -1)) return;
+                _publishedRosters.Remove(viewerId);
+                published = null;
+                if (team == null) return;
+            }
+            if (team == null)
+            {
+                ApplyStatsNow(viewer, null, 4, send: notifyLeaving);
+                return;
+            }
+
+            bool initialRoster = published == null;
+            bool membershipChanged = published == null || published.Members.Count != team.Members.Count
+                || team.Members.Any(id => !published.Members.ContainsKey(id));
+            bool leadershipChanged = published == null || published.Leader != team.Leader
+                || published.ExplicitLeadershipTransfer != team.ExplicitLeadershipTransfer;
+
+            if (published != null)
+            {
+                foreach (int memberId in published.Members.Keys.Where(id => !team.Members.Contains(id)).ToArray())
+                {
+                    if (!RemovePublishedMemberNow(viewer, published, memberId, -1)) return;
+                }
+            }
+
+            ApplyStatsNow(viewer, team, social, send: !initialRoster && (membershipChanged || leadershipChanged || refreshVitals));
+            if (initialRoster)
+            {
+                // Preserve the captured initial handshake; existing viewers receive only row deltas.
+                SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
+                SetStatNow(viewer, CharacterStat.TeamSide, 2, true);
+                SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
+                if (viewerId == team.Leader)
+                {
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamRequestReply, Identity.None, 0, 17))) return;
+                    SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
+                }
+                if (TryLevel(viewer, out _) && !AnnounceNow(viewer, viewer, team)) return;
+                _publishedRosters.TryGetValue(viewerId, out published);
+                if (viewerId == team.Leader)
+                {
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, viewer.Identity,
+                        (int)IdentityType.TeamWindow, team.Id))) return;
+                    SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
+                }
+            }
+            else if (leadershipChanged)
+            {
+                if (team.ExplicitLeadershipTransfer)
+                {
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, CharacterIdentity(team.Leader),
+                        (int)IdentityType.TeamWindow, team.Id))) return;
+                }
+                else if (viewerId == team.Leader)
+                {
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamRequestReply, Identity.None, 0, 17))) return;
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, viewer.Identity,
+                        (int)IdentityType.TeamWindow, team.Id))) return;
+                }
+            }
+            // Established viewers must enter raid mode before an accumulated subgroup reassignment.
+            if (!initialRoster && team.IsRaid && !published!.IsRaid)
+            {
+                if (!SendNow(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Unknown1 = 0 })) return;
+                published.IsRaid = true;
             }
             foreach (int id in team.Members)
             {
-                if (id == viewer.Identity.Instance) continue;
+                if (initialRoster && id == viewerId) continue;
                 Player member = _players[id];
-                Announce(viewer, member, team);
-                // Legacy paired max values; unresolved vitals are omitted, never synthesized as 469.
+                int raidIndex = team.RaidTeamIndex.GetValueOrDefault(id, -1);
+                bool hasRow = published != null && published.Members.TryGetValue(id, out _);
+                if (hasRow && published!.Members[id] != raidIndex)
+                {
+                    PublishRaidMemberMoveNow(viewer, member, team);
+                    continue;
+                }
+                if (hasRow && !initialRoster && !refreshVitals) continue;
+                if (!hasRow && !TryLevel(member, out _)) continue;
+                if (!AnnounceNow(viewer, member, team)) return;
+                _publishedRosters.TryGetValue(viewerId, out published);
+                if (id == viewerId) continue;
+                // Captured paired max values; unresolved vitals are omitted, never synthesized as 469.
                 MemberData data = _data[id];
                 if (data.HasVitals)
-                    Send(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = member.Identity,
+                {
+                    SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = member.Identity,
                         Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
                         Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
-                SetStat(viewer, CharacterStat.SocialStatus, social, true);
+                }
+                SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
             }
-            SetStat(viewer, CharacterStat.Team, team.Id, true);
-            ChatCommand(viewer.Identity.Instance, "#aorebirth-team-join " + team.Id);
-            if (team.IsRaid)
+            if (!IsActive(viewer)) return;
+            if (initialRoster)
             {
-                Send(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Unknown1 = 0 });
-                ChatCommand(viewer.Identity.Instance, "#aorebirth-raid-convert " + team.Id);
+                SetStatNow(viewer, CharacterStat.Team, team.Id, true);
+            }
+            if (published == null) return;
+            published.Leader = team.Leader;
+            published.ExplicitLeadershipTransfer = team.ExplicitLeadershipTransfer;
+            if (!published.ChatJoined)
+            {
+                ChatCommand(viewerId, "#aorebirth-team-join " + team.Id);
+                published.ChatJoined = true;
+            }
+            if (team.IsRaid && !published.IsRaid
+                && SendNow(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Unknown1 = 0 }))
+            {
+                published.IsRaid = true;
+            }
+            if (published.IsRaid && !published.RaidChatJoined)
+            {
+                ChatCommand(viewerId, "#aorebirth-raid-convert " + team.Id);
+                published.RaidChatJoined = true;
             }
         }
 
-        private void Announce(Player viewer, Player member, Team team)
+        private bool AnnounceNow(Player viewer, Player member, Team team)
         {
-            if (!TryLevel(member, out int level)) return;
+            int viewerId = viewer.Identity.Instance;
+            _publishedRosters.TryGetValue(viewerId, out PublishedRoster? published);
+            if (published?.TeamId == team.Id && published.Members.ContainsKey(member.Identity.Instance)) return true;
+            if (!TryLevel(member, out int level)) return false;
             MemberData data = _data[member.Identity.Instance];
             int raidTeamIndex = team.RaidTeamIndex.GetValueOrDefault(member.Identity.Instance, -1);
-            Send(viewer, new TeamMemberMessage { Identity = viewer.Identity, Unknown = 0, Member = member.Identity,
+            if (!SendNow(viewer, new TeamMemberMessage { Identity = viewer.Identity, Unknown = 0, Member = member.Identity,
                 Team = new Identity { Type = IdentityType.TeamWindow, Instance = team.Id }, Unknown4 = raidTeamIndex,
-                Level = level, Unknown5 = (short)data.Profession, Name = data.Name });
+                Level = level, Unknown5 = (short)data.Profession, Name = data.Name })) return false;
+            if (published == null)
+            {
+                published = new PublishedRoster(team.Id);
+                _publishedRosters[viewerId] = published;
+            }
+            published.Members[member.Identity.Instance] = raidTeamIndex;
+            return true;
         }
 
-        private void PublishRaidMemberMove(Player viewer, Player target, Team team)
+        private bool RemovePublishedMemberNow(Player viewer, PublishedRoster published, int memberId, int reason)
+        {
+            if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamMemberLeft, CharacterIdentity(memberId),
+                published.TeamId, reason))) return false;
+            published.Members.Remove(memberId);
+            return true;
+        }
+
+        private void PublishRaidMemberMoveNow(Player viewer, Player target, Team team)
         {
             if (!IsActive(viewer)) return;
             int social = viewer.Identity.Instance == team.Leader
@@ -669,29 +807,26 @@ namespace ZoneEngine_New.Core.Teams
                 : (team.ExplicitLeadershipTransfer ? 13 : 5);
             MemberData data = _data[target.Identity.Instance];
             if (data.HasVitals)
-                Send(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target.Identity,
+                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target.Identity,
                     Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
                     Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
-            SetStat(viewer, CharacterStat.SocialStatus, social, true);
+            SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
             // Capture 20260924-213512: TeamMemberLeft Parameter2=0 (reassign), not leave (-1).
-            Send(viewer, Action(viewer, CharacterActionType.TeamMemberLeft, target.Identity, team.Id, 0));
-            Announce(viewer, target, team);
+            if (!RemovePublishedMemberNow(viewer, _publishedRosters[viewer.Identity.Instance], target.Identity.Instance, 0)) return;
+            if (!AnnounceNow(viewer, target, team)) return;
             if (data.HasVitals)
-                Send(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target.Identity,
+                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target.Identity,
                     Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
                     Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
-            SetStat(viewer, CharacterStat.SocialStatus, social, true);
+            SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
         }
 
-        private void ApplyStats(Player player, Team? team, int social, bool send)
+        private static void ApplyStatsNow(Player player, Team? team, int social, bool send)
         {
-            // A newer projection may execute inline on the owner tick while an older remote
-            // projection is still queued. Never allow that delayed projection to restore old UI/stats.
-            _projectionEpochs[player.Identity.Instance] = _projectionEpochs.GetValueOrDefault(player.Identity.Instance) + 1;
-            SetStat(player, CharacterStat.NumberOfTeamMembers, team?.Members.Count ?? 0, send);
-            SetStat(player, CharacterStat.TeamSide, team == null ? 0 : 2, send);
-            SetStat(player, CharacterStat.SocialStatus, social, send);
-            SetStat(player, CharacterStat.Team, team?.Id ?? 0, send);
+            SetStatNow(player, CharacterStat.NumberOfTeamMembers, team?.Members.Count ?? 0, send);
+            SetStatNow(player, CharacterStat.TeamSide, team == null ? 0 : 2, send);
+            SetStatNow(player, CharacterStat.SocialStatus, social, send);
+            SetStatNow(player, CharacterStat.Team, team?.Id ?? 0, send);
         }
 
         // Lifecycle callers are already on this actor's owner tick. Clear transient values before
@@ -704,14 +839,11 @@ namespace ZoneEngine_New.Core.Teams
             player.Stats.Set(CharacterStat.Team, 0);
         }
 
-        private void SetStat(Player player, CharacterStat stat, int value, bool send)
+        private static void SetStatNow(Player player, CharacterStat stat, int value, bool send)
         {
-            Dispatch(player, () =>
-            {
-                player.Stats.Set(stat, value);
-                if (send) SendNow(player, new StatMessage { Identity = player.Identity, Stats =
-                    [new GameTuple<CharacterStat, uint> { Value1 = stat, Value2 = (uint)value }] });
-            });
+            player.Stats.Set(stat, value);
+            if (send) SendNow(player, new StatMessage { Identity = player.Identity, Stats =
+                [new GameTuple<CharacterStat, uint> { Value1 = stat, Value2 = (uint)value }] });
         }
 
         private static CharacterActionMessage Action(Player viewer, CharacterActionType action, Identity target,
@@ -745,6 +877,15 @@ namespace ZoneEngine_New.Core.Teams
         }
         private void ChatCommand(int id, string command)
             => _chat?.TrySend(new ChatCommand { CharacterId = id, ChatCommandString = command });
+        private void LeaveChat(int id, int teamId)
+        {
+            ChatCommand(id, "#aorebirth-team-leave " + teamId);
+            if (_publishedRosters.TryGetValue(id, out PublishedRoster? published) && published.TeamId == teamId)
+            {
+                published.ChatJoined = false;
+                published.RaidChatJoined = false;
+            }
+        }
         private void Send(Player player, MessageBody message) => Dispatch(player, () => SendNow(player, message));
 
         private void Dispatch(Player player, Action action)
@@ -765,10 +906,14 @@ namespace ZoneEngine_New.Core.Teams
             else throw new InvalidOperationException("Team projections require the owning playfield dispatcher.");
         }
 
-        private static void SendNow(Player player, MessageBody message)
+        private static bool SendNow(Player player, MessageBody message)
         {
             if (player.Session?.State == SessionState.InPlay && ReferenceEquals(player.Session.Player, player))
+            {
                 player.Session.Send(message);
+                return true;
+            }
+            return false;
         }
         private bool Error(Player player, string text)
         {

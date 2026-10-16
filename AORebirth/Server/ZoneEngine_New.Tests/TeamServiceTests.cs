@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Tests
 {
     using System;
+    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Linq;
     using System.IO;
@@ -14,6 +15,8 @@ namespace ZoneEngine_New.Tests
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
     using SmokeLounge.AOtomation.Messaging.Serialization;
     using ZoneEngine_New.Core.Chat;
+    using ZoneEngine_New.Core.Characters;
+    using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Network;
@@ -175,6 +178,463 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
+        public void ThirdAndFourthMembersOnlyAddNewRowsForEstablishedViewers()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3), d = f.Player(4);
+            f.Join(a, b);
+            f.Clear();
+
+            f.Join(a, c);
+            AssertRosterRows(f, a, 3);
+            AssertRosterRows(f, b, 3);
+            AssertRosterRows(f, c, 1, 2, 3);
+            AssertAnnouncementsPrecedeVitals(f, a);
+            AssertAnnouncementsPrecedeVitals(f, b);
+            AssertInitialRosterOrder(f, c);
+            Assert.IsFalse(f.AllBodies.OfType<CharacterActionMessage>()
+                .Any(m => m.Action == CharacterActionType.TeamMemberLeft));
+            Assert.IsFalse(f.Session(a).Bodies.OfType<CharacterActionMessage>()
+                .Any(m => m.Action is CharacterActionType.TeamRequestReply or CharacterActionType.AcceptTeamRequest));
+
+            f.Clear();
+            f.Join(b, d);
+            foreach (Player established in new[] { a, b, c })
+            {
+                AssertRosterRows(f, established, 4);
+                AssertAnnouncementsPrecedeVitals(f, established);
+            }
+            AssertRosterRows(f, d, 1, 2, 3, 4);
+            AssertInitialRosterOrder(f, d);
+            Assert.AreEqual(4, a.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void RapidInitialJoinsPublishEveryCurrentMemberOnce(bool reverseCallbacks)
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3), d = f.Player(4);
+            pending.Deferred = true;
+
+            f.Invite(a, b);
+            f.Invite(a, c);
+            f.Invite(a, d);
+            f.Accept(b, a);
+            f.Accept(c, a);
+            f.Accept(d, a);
+            Assert.IsFalse(f.AllBodies.OfType<TeamMemberMessage>().Any(), "Queued work is not delivered state.");
+            pending.Drain(reverseCallbacks);
+
+            foreach (Player viewer in new[] { a, b, c, d })
+            {
+                AssertRosterRows(f, viewer, 1, 2, 3, 4);
+                AssertInitialRosterOrder(f, viewer);
+                Assert.AreEqual(4, viewer.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ConcurrentQueuedAcceptsDoNotLoseOrRepeatAnEstablishedViewersDelta(bool reverseCallbacks)
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3), d = f.Player(4);
+            a.Playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
+            b.Playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
+            f.Join(a, b);
+            f.Invite(a, c);
+            f.Invite(a, d);
+            f.Clear();
+            pending.Deferred = true;
+
+            Parallel.Invoke(() => f.Accept(c, a), () => f.Accept(d, a));
+            pending.Drain(reverseCallbacks);
+
+            AssertRosterRows(f, a, 3, 4);
+            AssertRosterRows(f, b, 3, 4);
+            AssertRosterRows(f, c, 1, 2, 3, 4);
+            AssertRosterRows(f, d, 1, 2, 3, 4);
+            AssertAnnouncementsPrecedeVitals(f, a);
+            AssertAnnouncementsPrecedeVitals(f, b);
+            AssertInitialRosterOrder(f, c);
+            AssertInitialRosterOrder(f, d);
+            f.Clear();
+            Parallel.Invoke(() => f.Accept(c, a), () => f.Accept(d, a));
+            pending.Drain(reverseCallbacks);
+            Assert.IsFalse(f.AllBodies.OfType<TeamMemberMessage>().Any());
+        }
+
+        [TestMethod]
+        public void QueuedJoinThenLeaveDoesNotPublishAGhostMember()
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b);
+            f.Clear();
+            pending.Deferred = true;
+
+            f.Join(a, c);
+            f.Action(c, CharacterActionType.LeaveTeam);
+            pending.Drain(reverse: true);
+
+            Assert.IsFalse(f.AllBodies.OfType<TeamMemberMessage>().Any());
+            CollectionAssert.AreEqual(new[] { 1, 2 }, f.Teams.GetTeam(a)!.MemberIds.ToArray());
+            Assert.IsNull(f.Teams.GetTeam(c));
+            Assert.AreEqual(0, c.Stats.GetOrZero(CharacterStat.Team));
+        }
+
+        [TestMethod]
+        public void PartialInitialPublicationCompletesMissingMemberAndTeamChatJoinOnce()
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2);
+            pending.Deferred = true;
+            f.Join(a, b);
+            b.Stats.Set(CharacterStat.Level, 0);
+            pending.Drain();
+            AssertRosterRows(f, a, 1);
+
+            b.Stats.Set(CharacterStat.Level, 60);
+            f.Teams.RefreshPlayer(a, preserveRoster: true);
+            pending.Drain();
+
+            AssertRosterRows(f, a, 1, 2);
+            string join = "#aorebirth-team-join " + f.Teams.GetTeam(a)!.TeamId;
+            Assert.AreEqual(1, f.Chat.Commands.Count(c => c.CharacterId == a.Identity.Instance
+                && c.ChatCommandString == join));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void QueuedLeaveAndRejoinRestoresChatWithoutRepeatingRetainedRows(bool raid)
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b); f.Join(a, c);
+            if (raid)
+            {
+                Assert.IsTrue(f.Teams.ConvertToRaid(a));
+            }
+            int team = f.Teams.GetTeam(a)!.TeamId;
+            f.Clear();
+            f.Chat.Commands.Clear();
+            pending.Deferred = true;
+
+            f.Action(c, CharacterActionType.LeaveTeam);
+            f.Join(a, c);
+            pending.Drain(reverse: true);
+
+            foreach (Player viewer in new[] { a, b, c })
+            {
+                AssertRosterRows(f, viewer);
+            }
+            Assert.AreEqual(team, f.Teams.GetTeam(c)!.TeamId);
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, f.Teams.GetTeam(c)!.MemberIds.ToArray());
+            var expected = new List<string>
+            {
+                "#aorebirth-team-leave " + team, "#aorebirth-lft-remove", "#aorebirth-team-join " + team
+            };
+            if (raid)
+            {
+                expected.Add("#aorebirth-raid-convert " + team);
+            }
+            CollectionAssert.AreEqual(expected.ToArray(), f.Chat.Commands.Where(command => command.CharacterId == c.Identity.Instance)
+                .Select(command => command.ChatCommandString).ToArray());
+        }
+
+        [TestMethod]
+        public void QueuedRemovalsReachRemainingViewersWithoutReplayingTheirRows()
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3), d = f.Player(4);
+            f.Join(a, b); f.Join(a, c); f.Join(a, d);
+            int team = f.Teams.GetTeam(a)!.TeamId;
+            f.Clear();
+            pending.Deferred = true;
+
+            f.Action(c, CharacterActionType.LeaveTeam);
+            f.Action(d, CharacterActionType.LeaveTeam);
+            pending.Drain(reverse: true);
+
+            foreach (Player viewer in new[] { a, b })
+            {
+                AssertRosterRows(f, viewer);
+                AssertDepartures(f, viewer, team, 3, 4);
+                Assert.AreEqual(2, viewer.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+            }
+        }
+
+        [TestMethod]
+        public void LeadershipAndRaidChangesBeforeInitialDeliveryPreserveTheCurrentRoster()
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2);
+            pending.Deferred = true;
+
+            f.Join(a, b);
+            f.Action(a, CharacterActionType.TransferLeader, b.Identity);
+            Assert.IsTrue(f.Teams.ConvertToRaid(b));
+            Assert.IsTrue(f.Teams.TryHandleRaidCmd(b, new RaidCmdMessage
+            {
+                Command = 4, TargetCharacterId = a.Identity.Instance, DestinationTeamIndex = 1
+            }));
+            pending.Drain(reverse: true);
+
+            foreach (Player viewer in new[] { a, b })
+            {
+                AssertRosterRows(f, viewer, 1, 2);
+                Assert.AreEqual(1, f.Session(viewer).Bodies.OfType<TeamMemberMessage>()
+                    .Single(m => m.Member == a.Identity).Unknown4);
+                Assert.AreEqual(1, f.Session(viewer).Bodies.OfType<RaidMessage>().Count());
+            }
+            Assert.AreEqual(b.Identity, f.Session(b).Bodies.OfType<CharacterActionMessage>()
+                .Single(m => m.Action == CharacterActionType.AcceptTeamRequest).Target);
+            Assert.AreEqual(13, a.Stats.GetOrZero(CharacterStat.SocialStatus));
+            Assert.AreEqual(15, b.Stats.GetOrZero(CharacterStat.SocialStatus));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void RepeatedQueuedRaidMovesOnlyReplaceTheMovedMemberAtItsFinalIndex(bool deferConversion)
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b); f.Join(a, c);
+            if (!deferConversion)
+            {
+                Assert.IsTrue(f.Teams.ConvertToRaid(a));
+            }
+            int team = f.Teams.GetTeam(a)!.TeamId;
+            f.Clear();
+            pending.Deferred = true;
+            if (deferConversion)
+            {
+                Assert.IsTrue(f.Teams.ConvertToRaid(a));
+            }
+
+            foreach (int destination in new[] { 1, 2 })
+            {
+                Assert.IsTrue(f.Teams.TryHandleRaidCmd(a, new RaidCmdMessage
+                {
+                    Command = 4, TargetCharacterId = b.Identity.Instance, DestinationTeamIndex = destination
+                }));
+            }
+            pending.Drain(reverse: true);
+
+            foreach (Player viewer in new[] { a, b, c })
+            {
+                AssertRosterRows(f, viewer, 2);
+                MessageBody[] rows = f.Session(viewer).Bodies.Where(m => m is TeamMemberMessage
+                    || m is CharacterActionMessage { Action: CharacterActionType.TeamMemberLeft }).ToArray();
+                Assert.AreEqual(2, rows.Length);
+                var left = (CharacterActionMessage)rows[0];
+                Assert.AreEqual(b.Identity, left.Target);
+                Assert.AreEqual(team, left.Parameter1);
+                Assert.AreEqual(0, left.Parameter2);
+                Assert.AreEqual(2, ((TeamMemberMessage)rows[1]).Unknown4);
+                if (deferConversion)
+                {
+                    RaidMessage converted = f.Session(viewer).Bodies.OfType<RaidMessage>().Single();
+                    Assert.IsTrue(f.Session(viewer).Bodies.IndexOf(converted) < f.Session(viewer).Bodies.IndexOf(left),
+                        "Raid conversion must precede the moved member's raid-slot update.");
+                }
+            }
+        }
+
+        [TestMethod]
+        public void ZoningDuringAQueuedAdditionReconcilesOnlyTheUndeliveredMember()
+        {
+            var pending = new ProjectionQueue();
+            var f = new Fixture(pending.Dispatch);
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b);
+            f.Clear();
+            pending.Deferred = true;
+            f.Join(a, c);
+            TeamSession old = f.BeginZoning(b);
+            pending.Drain();
+            Assert.IsFalse(old.Bodies.OfType<TeamMemberMessage>().Any());
+
+            f.ReplaceSession(b);
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
+            pending.Drain();
+            AssertRosterRows(f, b, 3);
+            f.Clear();
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
+            pending.Drain();
+            AssertRosterRows(f, b);
+        }
+
+        [TestMethod]
+        public void ZoningReconcilesAddedAndRemovedMembersWithoutReplayingRetainedRows()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3), d = f.Player(4);
+            f.Join(a, b); f.Join(a, c);
+            int team = f.Teams.GetTeam(a)!.TeamId;
+            f.Clear();
+            f.BeginZoning(b);
+            f.Join(a, d);
+            f.Action(c, CharacterActionType.LeaveTeam);
+
+            f.ReplaceSession(b);
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
+
+            AssertRosterRows(f, b, 4);
+            AssertDepartures(f, b, team, 3);
+            CollectionAssert.AreEqual(new[] { 1, 2, 4 }, f.Teams.GetTeam(b)!.MemberIds.ToArray());
+            Assert.AreEqual(3, b.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+        }
+
+        [TestMethod]
+        public void ZoningAcrossDisbandPublishesRetainedMemberRemovals()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2);
+            f.Join(a, b);
+            int team = f.Teams.GetTeam(a)!.TeamId;
+            f.Clear();
+            f.BeginZoning(b);
+            f.Action(a, CharacterActionType.LeaveTeam);
+
+            f.ReplaceSession(b);
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
+
+            Assert.IsNull(f.Teams.GetTeam(b));
+            AssertRosterRows(f, b);
+            Assert.IsTrue(f.Session(b).Bodies.OfType<CharacterActionMessage>().Any(m =>
+                m.Action == CharacterActionType.TeamMemberLeft && m.Target == b.Identity
+                && m.Parameter1 == team && m.Parameter2 == -1));
+            Assert.AreEqual(0, b.Stats.GetOrZero(CharacterStat.Team));
+            Assert.AreEqual(0, b.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+            Assert.AreEqual(4, b.Stats.GetOrZero(CharacterStat.SocialStatus));
+        }
+
+        [TestMethod]
+        public void KickedZoningViewerReceivesSelfDepartureWithoutReplayingRows()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b); f.Join(a, c);
+            int team = f.Teams.GetTeam(a)!.TeamId;
+            f.Clear();
+            TeamSession old = f.BeginZoning(b);
+            f.Action(a, CharacterActionType.TeamKickMember, b.Identity);
+            Assert.AreEqual(0, old.Bodies.Count);
+
+            f.ReplaceSession(b);
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
+
+            Assert.IsNull(f.Teams.GetTeam(b));
+            CollectionAssert.AreEqual(new[] { 1, 3 }, f.Teams.GetTeam(a)!.MemberIds.ToArray());
+            AssertRosterRows(f, b);
+            CharacterActionMessage left = f.Session(b).Bodies.OfType<CharacterActionMessage>()
+                .Single(m => m.Action == CharacterActionType.TeamMemberLeft && m.Target == b.Identity);
+            Assert.AreEqual(team, left.Parameter1);
+            Assert.AreEqual(-1, left.Parameter2);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void InactiveOrDisconnectedRemovalSilentlyResetsLocalTeamStats(bool disconnected)
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2);
+            f.Join(a, b);
+            Assert.AreEqual(2, b.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+            Assert.AreNotEqual(0, b.Stats.GetOrZero(CharacterStat.Team));
+            f.Clear();
+            TeamSession inactive = f.Session(b);
+            if (disconnected)
+            {
+                inactive.Close();
+                f.Teams.OnTransportDisconnected(b, inactive);
+            }
+            else
+            {
+                f.BeginZoning(b);
+                f.Action(a, CharacterActionType.LeaveTeam);
+            }
+
+            Assert.IsNull(f.Teams.GetTeam(b));
+            Assert.AreEqual(0, b.Stats.GetOrZero(CharacterStat.Team));
+            Assert.AreEqual(0, b.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+            Assert.AreEqual(0, b.Stats.GetOrZero(CharacterStat.TeamSide));
+            Assert.AreEqual(4, b.Stats.GetOrZero(CharacterStat.SocialStatus));
+            Assert.AreEqual(0, inactive.Bodies.Count, "An inactive recipient must not receive UI packets.");
+        }
+
+        [TestMethod]
+        public void ZoningReconcilesLeadershipAndRaidStateWithoutReplayingMembers()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b); f.Join(a, c);
+            f.Clear();
+            f.BeginZoning(b);
+            f.Action(a, CharacterActionType.TransferLeader, c.Identity);
+            Assert.IsTrue(f.Teams.ConvertToRaid(c));
+
+            f.ReplaceSession(b);
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
+
+            AssertRosterRows(f, b);
+            Assert.AreEqual(c.Identity, f.Session(b).Bodies.OfType<CharacterActionMessage>()
+                .Single(m => m.Action == CharacterActionType.AcceptTeamRequest).Target);
+            Assert.AreEqual(1, f.Session(b).Bodies.OfType<RaidMessage>().Count());
+            Assert.AreEqual(13, b.Stats.GetOrZero(CharacterStat.SocialStatus));
+        }
+
+        [TestMethod]
+        public void FreshReconnectStillReceivesTheCompleteRoster()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3);
+            f.Join(a, b); f.Join(a, c);
+            f.ReplaceSession(b);
+
+            f.Teams.RefreshPlayer(b);
+
+            AssertRosterRows(f, b, 1, 2, 3);
+            AssertInitialRosterOrder(f, b);
+            Assert.AreEqual(f.Teams.GetTeam(a)!.TeamId, b.Stats.GetOrZero(CharacterStat.Team));
+        }
+
+        [TestMethod]
+        public void FreshReconnectAfterMissedChangesReceivesOnlyTheFinalCompleteRoster()
+        {
+            var f = new Fixture();
+            Player a = f.Player(1), b = f.Player(2), c = f.Player(3), d = f.Player(4);
+            f.Join(a, b); f.Join(a, c);
+            f.BeginZoning(b);
+            f.Join(a, d);
+            f.Action(c, CharacterActionType.LeaveTeam);
+            f.ReplaceSession(b);
+
+            f.Teams.RefreshPlayer(b);
+
+            AssertRosterRows(f, b, 1, 2, 4);
+            AssertInitialRosterOrder(f, b);
+            Assert.IsFalse(f.Session(b).Bodies.OfType<CharacterActionMessage>()
+                .Any(m => m.Action == CharacterActionType.TeamMemberLeft));
+            Assert.AreEqual(3, b.Stats.GetOrZero(CharacterStat.NumberOfTeamMembers));
+        }
+
+        [TestMethod]
         public void LeavePublishesRemovalNotAnotherRosterAndDissolvesLastMember()
         {
             var f = new Fixture();
@@ -262,11 +722,10 @@ namespace ZoneEngine_New.Tests
             b.Playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
             f.Teams.OnTransportDisconnected(b, old);
             f.ReplaceSession(b);
-            f.Teams.RefreshPlayer(b);
+            f.Teams.RefreshPlayer(b, preserveRoster: true);
             f.Teams.OnTransportDisconnected(b, old);
             Assert.AreEqual(team, f.Teams.GetTeam(b)!.TeamId);
-            CollectionAssert.AreEqual(new[] { 2, 1 }, f.Session(b).Bodies.OfType<TeamMemberMessage>()
-                .Select(m => m.Member.Instance).ToArray());
+            AssertRosterRows(f, b);
         }
 
         [TestMethod]
@@ -506,7 +965,9 @@ namespace ZoneEngine_New.Tests
         {
             var f = new Fixture();
             Player a = f.Player(1), b = f.Player(2);
-            var handler = new TeamChatMessageHandler(f.Teams);
+            var stuck = new StuckService(new GameplaySettings(), new Lazy<PlayfieldManager>(() =>
+                throw new InvalidOperationException("Team command routing must not resolve stuck-service playfields.")));
+            var handler = new TeamChatMessageHandler(f.Teams, stuck);
             var invite = new ChatCmdMessage { Identity = a.Identity, Command = "/command invite  Member2\0" };
             handler.Handle(invite, f.Session(a));
             handler.Handle(new ChatCmdMessage { Identity = b.Identity, Command = ".team accept" }, f.Session(b));
@@ -677,7 +1138,7 @@ namespace ZoneEngine_New.Tests
 
         private static void AssertFeedback(FeedbackMessage message, string key)
         {
-            Assert.AreEqual(ClientFeedback.Channel, message.Unknown1);
+            Assert.AreEqual(0, message.Unknown1);
             Assert.AreEqual(ClientFeedback.CategoryId, message.CategoryId);
             Assert.AreEqual(unchecked((int)ClientFeedback.ElfHash(key)), message.MessageId);
         }
@@ -690,6 +1151,71 @@ namespace ZoneEngine_New.Tests
             TeamMemberInfoMessage info => "V:" + info.Member.Instance,
             _ => body.GetType().Name
         };
+
+        private static void AssertRosterRows(Fixture fixture, Player viewer, params int[] members)
+        {
+            TeamMemberMessage[] rows = fixture.Session(viewer).Bodies.OfType<TeamMemberMessage>().ToArray();
+            CollectionAssert.AreEquivalent(members, rows.Select(m => m.Member.Instance).ToArray(),
+                "Unexpected roster announcements for viewer " + viewer.Identity.Instance + ".");
+            Assert.IsTrue(rows.All(m => m.Identity == viewer.Identity && m.Team.Type == IdentityType.TeamWindow
+                && m.Team.Instance == fixture.Teams.GetTeam(viewer)!.TeamId));
+        }
+
+        private static void AssertDepartures(Fixture fixture, Player viewer, int team, params int[] members)
+        {
+            CharacterActionMessage[] departures = fixture.Session(viewer).Bodies.OfType<CharacterActionMessage>()
+                .Where(m => m.Action == CharacterActionType.TeamMemberLeft).ToArray();
+            CollectionAssert.AreEquivalent(members, departures.Select(m => m.Target.Instance).ToArray());
+            Assert.IsTrue(departures.All(m => m.Identity == viewer.Identity && m.Parameter1 == team && m.Parameter2 == -1));
+        }
+
+        private static void AssertInitialRosterOrder(Fixture fixture, Player viewer)
+        {
+            Assert.AreEqual(viewer.Identity, fixture.Session(viewer).Bodies.OfType<TeamMemberMessage>().First().Member,
+                "A fresh roster must announce its viewer before the other members.");
+            AssertAnnouncementsPrecedeVitals(fixture, viewer);
+        }
+
+        private static void AssertAnnouncementsPrecedeVitals(Fixture fixture, Player viewer)
+        {
+            List<MessageBody> bodies = fixture.Session(viewer).Bodies;
+            foreach (TeamMemberMessage row in bodies.OfType<TeamMemberMessage>().Where(m => m.Member != viewer.Identity))
+            {
+                TeamMemberInfoMessage vitals = bodies.OfType<TeamMemberInfoMessage>().Single(m => m.Member == row.Member);
+                Assert.IsTrue(bodies.IndexOf(row) < bodies.IndexOf(vitals),
+                    "Member " + row.Member.Instance + " must be announced before its vitals.");
+            }
+        }
+
+        private sealed class ProjectionQueue
+        {
+            private readonly ConcurrentQueue<Action> _pending = new();
+            public bool Deferred;
+            public void Dispatch(Player _, Action action)
+            {
+                if (Deferred)
+                {
+                    _pending.Enqueue(action);
+                }
+                else
+                {
+                    action();
+                }
+            }
+            public void Drain(bool reverse = false)
+            {
+                while (!_pending.IsEmpty)
+                {
+                    var batch = new List<Action>();
+                    while (_pending.TryDequeue(out Action? action)) batch.Add(action);
+                    if (reverse)
+                    {
+                        batch.Reverse();
+                    }
+                    foreach (Action action in batch) action();
+                }
+            }
+        }
 
         private sealed class Fixture
         {
@@ -718,6 +1244,14 @@ namespace ZoneEngine_New.Tests
             {
                 var session = new TeamSession(); session.BindPlayer(player);
                 player.Session = session; _sessions[player.Identity.Instance] = session;
+            }
+            public TeamSession BeginZoning(Player player)
+            {
+                TeamSession old = Session(player);
+                player.Session = null;
+                old.UnbindPlayer();
+                Teams.OnTransportDisconnected(player, old);
+                return old;
             }
             public void Action(Player player, CharacterActionType action, Identity target = default, int p2 = 0)
                 => Teams.TryHandle(player, new CharacterActionMessage { Identity = player.Identity,

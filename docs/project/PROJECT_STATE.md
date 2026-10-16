@@ -1,5 +1,20 @@
 # AORebirth Project State
 
+PROVEN SERVER PUBLICATION REPAIR (2026-10-16, team roster replay):
+codex/team-roster-deltas, based on public master
+b8cf9323371f67581bef1e4301eab6dd1306bc56, reconciles each client's published team
+rows inside one fenced owner callback. New clients receive the full initial
+roster; established clients receive only missing additions/removals. Zoning
+reconciles missed membership/control changes without replaying retained rows;
+fresh reconnects receive the current full roster. Invitation/membership checks
+and wire formats remain intact. Chat recovery, local stats and captured raid
+reassignment ordering are preserved across superseded queued updates.
+Approved Windows core build and 73 focused team tests PASS. The default test
+project still has six unrelated missing mission-type compilation errors;
+focused compilation uses the existing opt-in pattern. Actual client rendering
+and end-to-end SpawnService reconnect execution remain UNVERIFIED; the reconnect
+hook was source reviewed. No master integration or deployment is included.
+
 OBSERVED WINDOWS CLIENT ACCEPTANCE (2026-10-15, XP off/research active): Mike
 confirmed repair 3d7239a24708e4e33995b0ce304b12d98ff1dddf works and authorized
 integration into public master. The integration is a fast-forward from the
