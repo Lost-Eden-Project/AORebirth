@@ -56,3 +56,23 @@ UNVERIFIED: actual AO-client team-window rendering and end-to-end production
 SpawnService reconnect execution. The production reconnect hook was source
 reviewed; owner/session packet reconciliation was tested directly. No client,
 server startup, database or deployment actions were performed.
+
+LOCAL TEST STARTUP (2026-10-16, later explicit request): Mike requested running
+local engines for this repair. Approved startup and status-engines.cmd --core
+PASS on this exact repair build, with existing local settings and external
+private GameData. Chat owns 6996/7012, Login 7500 and Zone 7501. Engines remain
+running for Mike; no database migrations or client control. The earlier
+no-startup statement describes the completed implementation task only.
+OBSERVED CLIENT ACCEPTANCE (2026-10-16): Mike reports "ok looks fixed" and
+authorizes merging this repair into public Windows master and private Linux Git.
+His overall client acceptance supersedes the pending status above; individual
+edge-case client results remain unverified. Runtime bytes are unchanged from
+the approved Windows build and 73 focused test cases.
+
+ACTIVE INTEGRATION: publish the accepted source to public Windows master first,
+then reconcile that exact SHA in private Linux. Mike explicitly requires ONLY
+the ZoneEngine_New incremental build, not the full Linux build pipeline.
+Reuse existing GameData and verified compilation state; package changed outputs
+with the existing changed-file mechanism and push only to verified private Git.
+No production deployment, database changes, automated test reruns or Windows
+rebuild/restart are requested. Leave the existing local engines running.

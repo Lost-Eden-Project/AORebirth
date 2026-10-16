@@ -1,5 +1,14 @@
 # AORebirth Project State
 
+OBSERVED WINDOWS CLIENT ACCEPTANCE (2026-10-16, team roster replay): Mike tested
+repair cb8ef44c3e7956cf812c91544007fc6de3e7a180 on the running local engines,
+reported "ok looks fixed", and authorized integration into public Windows master
+and private Linux Git. This records his overall acceptance; it does not claim
+separate client evidence for every regression-test edge case. Runtime bytes are
+unchanged from the approved build and 73 passing focused tests. Linux work is
+limited to the ZoneEngine_New incremental build and changed-output package,
+reusing existing canonical GameData. No production deployment is authorized.
+
 PROVEN SERVER PUBLICATION REPAIR (2026-10-16, team roster replay):
 codex/team-roster-deltas, based on public master
 b8cf9323371f67581bef1e4301eab6dd1306bc56, reconciles each client's published team
