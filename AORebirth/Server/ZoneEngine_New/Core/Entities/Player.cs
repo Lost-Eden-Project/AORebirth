@@ -1331,6 +1331,12 @@ namespace ZoneEngine_New.Core.Entities
             => _respawnRemainingSeconds <= 0.0
                 || (DateTime.UtcNow - _diedAtUtc).TotalSeconds >= RespawnGracePeriodMilliseconds / 1000.0;
 
+        /// <summary>
+        /// Set when the normal respawn could not be resolved: the character comes back at the stuck location (Gameplay.json
+        /// stuckLocation) instead. Kept until the revive lands, across any wait for that playfield to build.
+        /// </summary>
+        bool _respawnAtStuckLocation;
+
         void TryRespawn()
         {
             try
@@ -1338,18 +1344,47 @@ namespace ZoneEngine_New.Core.Entities
                 Respawn();
                 SaveState.MarkDirty();
             }
-            catch (Exception exception) when (TryGetSavePoint(out int savedPlayfield, out _))
+            catch (Exception exception) when (!_respawnAtStuckLocation)
             {
-                // A save point that cannot be reached (its playfield gone from the content) must not leave the
-                // character dead: forget it and use the default respawn.
-                Logger.Error(exception, "Respawn at the save point (pf " + savedPlayfield + ") failed; using the default respawn.");
+                // A respawn that cannot be resolved (a save point whose playfield is gone, no respawn configured) must
+                // not leave the character dead: forget the save point and send them to the stuck location.
+                Logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
+                    "Player respawn failed character={0} savePointPf={1}; respawning at the stuck location.",
+                    Identity.Instance, Stats.GetOrZero(CharacterStat.ResurrectDest, StatDetail.Base)));
                 Stats.Set(CharacterStat.ResurrectDest, 0, StatDetail.Base);
+                _respawnAtStuckLocation = true;
                 TryRespawn();
             }
             catch (Exception exception)
             {
-                Logger.Error(exception, "Player respawn failed.");
+                _respawnAtStuckLocation = false;
+                Logger.Error(exception, "Player respawn at the stuck location failed character=" + Identity.Instance + ".");
             }
+        }
+
+        /// <summary>
+        /// Where a death brings this character back: the stuck location after a failed resolution, else the last save
+        /// point, else the new-character start (Arete Landing), else Respawn.json. Throws when none is configured.
+        /// </summary>
+        (int Playfield, Vector3 Landing) ResolveRespawn(Playfield playfield)
+        {
+            if (_respawnAtStuckLocation)
+            {
+                if (playfield.GetService<GameplaySettings>()?.StuckLocation is not GameplayLocation stuck || !stuck.IsValid)
+                    throw new InvalidOperationException("No stuck location is configured.");
+                return (stuck.Playfield, new Vector3(stuck.X, stuck.Y, stuck.Z));
+            }
+
+            if (TryGetSavePoint(out int savedPlayfield, out Vector3 saved))
+                return (savedPlayfield, saved);
+
+            RespawnContentCatalog respawn = playfield.GetRequiredService<IGameData>().RespawnContent;
+            if (respawn.StartPlayfieldId > 0 && respawn.StartPosition is { Length: 3 } start)
+                return (respawn.StartPlayfieldId, new Vector3(start[0], start[1], start[2]));
+
+            if (respawn.PlayfieldId <= 0 || respawn.Position is not { Length: 3 })
+                throw new InvalidOperationException("No respawn destination is configured.");
+            return (respawn.PlayfieldId, new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]));
         }
 
         /// <summary>
@@ -1493,27 +1528,7 @@ namespace ZoneEngine_New.Core.Entities
             if (playfield == null)
             { Revive(); return; }
 
-            // The last save point; never saved: the new-character start (Arete Landing); else Respawn.json.
-            RespawnContentCatalog respawn = playfield.GetRequiredService<IGameData>().RespawnContent;
-            int respawnPlayfield;
-            Vector3 landing;
-            if (TryGetSavePoint(out int savedPlayfield, out Vector3 saved))
-            {
-                respawnPlayfield = savedPlayfield;
-                landing = saved;
-            }
-            else if (respawn.StartPlayfieldId > 0 && respawn.StartPosition is { Length: 3 } start)
-            {
-                respawnPlayfield = respawn.StartPlayfieldId;
-                landing = new Vector3(start[0], start[1], start[2]);
-            }
-            else
-            {
-                if (respawn.PlayfieldId <= 0 || respawn.Position is not { Length: 3 })
-                    throw new InvalidOperationException("No respawn destination is configured.");
-                respawnPlayfield = respawn.PlayfieldId;
-                landing = new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]);
-            }
+            (int respawnPlayfield, Vector3 landing) = ResolveRespawn(playfield);
 
             // Never build the respawn playfield on this tick: stay dead while it builds in the background, and
             // respawn once it is ready.
@@ -1548,6 +1563,7 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             _respawnObserversCleared = false;
+            _respawnAtStuckLocation = false;
             Revive();
 
             Logger.Info(
