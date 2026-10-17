@@ -8,7 +8,14 @@ Implemented candidate; original AO client acceptance remains **UNVERIFIED**.
 The final focused run compiled successfully and passed all 56 chest cases.
 All 34 disposable real-DAO checks passed. Two inventory
 fixture failures reproduce unchanged on exact public source; they are recorded
-below. No deployment or accepted-engine replacement is included.
+below. No production deployment is included.
+
+Mike subsequently authorized a local Windows rebuild and restart for client
+testing. The full Windows graph additionally needs the existing shared source
+inventories regenerated from the canonical Interfaces/Database projects.
+DatabasePreflight uses Dapper 1.13, so the two chest existence checks use LINQ
+`Any()` rather than the newer Dapper `AsList()` extension. SQL, ownership checks
+and transaction boundaries are unchanged.
 
 Implementation is isolated from the original checkout and its unrelated dirty
 work. Original capture/research artifacts and protected item data were read only.
@@ -240,6 +247,10 @@ or evidence files were modified.
   where the existing evaluator rejects it. Runtime/tests were not changed to
   hide either failure. New inventory failures: **0**.
 - `git diff --check`: passed.
+- Local Windows follow-up: the approved `NewZoneEngineBuild\build.cmd` passed
+  for DatabasePreflight, ChatEngine, LoginEngine and ZoneEngine_New after the
+  compatibility/source-inventory corrections described above. The required
+  read-only local database preflight also passed; no schema changes were made.
 - Existing objective/reward regression execution is blocked by the unchanged
   `QuestDungeonDestinationTests` fixture at line 716: its parameterless
   `ClientGetItemMessageHandler` construction no longer matches the production
@@ -260,8 +271,10 @@ disposable database. It does not consume player connection configuration.
 The execution host required explicit existing SDK/NuGet environment settings;
 no repository build-system redesign was made.
 
-No AO client/capture startup, accepted engine restart, player-database mutation,
-schema migration or deployment was performed. Client acceptance is **UNVERIFIED**.
+The initial feature implementation performed no AO client/capture startup,
+accepted engine restart, player-database mutation, schema migration or deployment.
+The later local testing request authorizes core-engine restart. Client acceptance
+is **UNVERIFIED**.
 
 ## 10. Remaining limitations and client acceptance
 

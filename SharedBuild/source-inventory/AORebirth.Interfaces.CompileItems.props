@@ -31,6 +31,8 @@
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Missions/IMissionDao.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Missions/IGeneratedMissionDao.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Missions/IMissionInventoryMutationTransaction.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Missions/IMissionChestPopulationTransaction.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Missions/ICharacterQuestCompletionTransaction.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Shops/IShopDao.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Shops/ShopStockData.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Interfaces/Persistence/Shops/ShopVendorData.cs" />

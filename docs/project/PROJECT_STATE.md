@@ -1,5 +1,11 @@
 # AORebirth Project State
 
+PROVEN WINDOWS BUILD (2026-10-17, mission chest local testing): the approved
+full core build passed for DatabasePreflight, ChatEngine, LoginEngine and
+ZoneEngine_New after the Dapper compatibility and generated source-inventory
+corrections. Read-only local database preflight passed without schema changes.
+Mike authorized restarting the local servers and leaving them running for testing.
+
 IMPLEMENTED CANDIDATE (2026-10-17, codex/mission-chests): ordinary generated
 mission chests reuse frozen layouts, original captured chest packets, JSON
 rarity-group selection and existing mission/inventory DAO transactions.

@@ -5,8 +5,9 @@ MISSION CHEST IMPLEMENTATION 001 (2026-10-17).
 Feature branch: codex/mission-chests, derived from public master
 749f819fdf764ce0cc9debd17304607e71bbf363. Development is isolated in the
 attached mission-chests worktree. Preserve the original checkout's dirty work,
-private full GameData and accepted local engines. No engine replacement,
-public-master merge or Linux deployment is authorized by this task.
+private full GameData. Mike's follow-up explicitly authorizes updating the
+local Windows build and restarting the local core servers for testing; leave
+them running for him. No public-master merge or Linux deployment is authorized.
 
 Implemented: captured original chest spawn/contents protocol, independent
 JSON-configured rarity-group loot selection, frozen-layout collision-checked
@@ -35,4 +36,14 @@ UNVERIFIED. Full integration details and limitations are in
 The selected private DungeonGeneration.json received only the validated Chests
 section, with rollback copy under ignored build-verify and all other properties
 verified unchanged. No player DB/schema mutation, capture startup, AO client
-control, accepted-engine lifecycle operation or deployment was performed.
+control, accepted-engine lifecycle operation or deployment was performed during
+the initial implementation.
+
+Local testing follow-up: full Windows compilation exposed two Dapper 1.13
+collection calls unsupported by DatabasePreflight and missing chest/completion
+entries in the existing shared compile inventories. The collection checks now
+use LINQ Any; SourceInventoryGuard regenerates the two inventories from their
+canonical projects. Read-only database preflight passed without schema changes.
+The approved full Windows core build passed, including DatabasePreflight,
+ChatEngine, LoginEngine and ZoneEngine_New. Restart uses restart-engines.cmd;
+Mike owns client acceptance and the local servers must remain running for him.

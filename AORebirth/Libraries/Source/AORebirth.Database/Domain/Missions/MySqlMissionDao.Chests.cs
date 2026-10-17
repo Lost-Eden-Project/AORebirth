@@ -4,6 +4,7 @@ namespace AORebirth.Database.Domain.Missions
     using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Runtime.Serialization;
     using System.Runtime.Serialization.Json;
     using System.Text;
@@ -56,7 +57,7 @@ namespace AORebirth.Database.Domain.Missions
                     return false;
                 if (this.connection.Query<int>("SELECT Id FROM missionflags WHERE CharacterId=@Owner AND QuestId=@Quest "
                     + "AND FlagKey LIKE @Prefix LIMIT 1 FOR UPDATE", new { Owner = this.CharacterId, Quest = request.QuestId,
-                        Prefix = MissionChestPopulationFlags.Prefix(request.AssignedAtUtcTicks) + "%" }, this.transaction).AsList().Count != 0)
+                        Prefix = MissionChestPopulationFlags.Prefix(request.AssignedAtUtcTicks) + "%" }, this.transaction).Any())
                     throw new InvalidOperationException("An unsealed chest population must be reconciled before initialization.");
                 if (quest.State != 1 || quest.ExpiresAtUtcTicks <= request.NowUtcTicks)
                     throw new InvalidOperationException("An ended or expired mission cannot initialize chest contents.");
@@ -72,7 +73,7 @@ namespace AORebirth.Database.Domain.Missions
                     if (ReadChestSnapshotContainer(chest.SnapshotJson) != chest.ContainerInstance)
                         throw new ArgumentException("The frozen chest snapshot and item container identities differ.");
                     if (this.connection.Query<int>("SELECT InstanceId FROM item_instances WHERE InstanceId=@Id FOR UPDATE",
-                        new { Id = chest.ContainerInstance }, this.transaction).AsList().Count != 0)
+                        new { Id = chest.ContainerInstance }, this.transaction).Any())
                         throw new InvalidOperationException("A chest container identity is already allocated to an item instance.");
                     for (int slot = 0; slot < chest.Items.Count; slot++)
                     {
