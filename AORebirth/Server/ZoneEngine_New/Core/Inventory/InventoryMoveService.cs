@@ -189,7 +189,11 @@ namespace ZoneEngine_New.Core.Inventory
             if (!ApplyMove(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource))
                 return;
 
-            SendAck(player, message.SourceContainer, player.Identity, destSlot);
+            // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F).
+            // Ownership still uses the resolved physical slot, committed by ApplyMove above.
+            int acknowledgementPlacement = lootSource is Chest && message.TargetPlacement == 0x6F
+                ? message.TargetPlacement : destSlot;
+            SendAck(player, message.SourceContainer, player.Identity, acknowledgementPlacement);
         }
 
         public void Handle(Player player, ClientContainerAddItemMessage message)

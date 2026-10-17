@@ -1,5 +1,19 @@
 # AORebirth Project State
 
+PROVEN AUTOMATED CHEST CORRECTION (2026-10-17, codex/mission-chests): actual-room
+density, alternative door-side access groups, bounded fallback wall search and
+intermediate pocket ground support preserve safe new placement. Original chest
+automatic-take ACKs echo marker 0x6F after physical ownership commits. All 576
+real-layout cases passed; 2244/2320 chests, with 35 explicit cave shortfalls.
+All 77 focused chest cases and 50 real disposable-MySQL checks passed. Focused
+inventory remains 23 passed / 2 proven public-baseline failures. Synthetic TCP
+generation/acceptance/entry/open/loot/reconnect/distinct-process restart passed.
+Windows candidate builds passed in separate outputs. Running local engines,
+actual player DB, retained backup and all accepted rollback files are preserved;
+no deployment, schema/content change or saved-population relocation occurred.
+Original-client acceptance and an earlier non-reproduced host abort are UNVERIFIED.
+See docs/reports/MISSION_CHEST_AUTONOMOUS_VALIDATION.md and its layout CSV.
+
 PROVEN PLACEMENT CORRECTION (2026-10-17, codex/mission-chests): generated
 mission chests use actual wall/ground triangles, one chest per eligible room,
 passage/door exclusions, inward approaches and separation across rooms/floors.

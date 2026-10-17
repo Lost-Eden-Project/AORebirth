@@ -16,6 +16,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Inventory;
+using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Quests.Dungeons;
 using ZoneEngine_New.Core.WorldSimulation;
 using AoVector3 = AORebirth.Core.Vector.Vector3;
@@ -27,8 +28,300 @@ public sealed class MissionChestPlacementTests
 {
     static readonly Lazy<GameDataStore> Data = new(() => new GameDataStore(new StubLogger(), null, RuntimeRoot()));
     static readonly Lazy<ItemTemplateCatalog> Templates = new(() => new ItemTemplateCatalog(Data.Value, new StubLogger()));
+    static readonly object CorpusOutputLock = new();
 
     public TestContext TestContext { get; set; } = null!;
+
+    public static IEnumerable<object[]> RealGeometryCorpusCases()
+    {
+        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(Path.Combine(RuntimeRoot(), "DungeonGeneration.json")));
+        var configurations = json.RootElement.GetProperty("Profiles").EnumerateArray()
+            .SelectMany(profile => profile.GetProperty("Styles").EnumerateArray().Select(style => (
+                Style: style.GetInt32(), Floors: profile.GetProperty("Floors").GetInt32(),
+                Minimum: profile.GetProperty("MinFloorSize").GetInt32(), Maximum: profile.GetProperty("MaxFloorSize").GetInt32())))
+            .Distinct().OrderBy(configuration => configuration.Style).ThenBy(configuration => configuration.Floors).ToArray();
+        foreach (var configuration in configurations)
+        {
+            for (int index = 0; index < 64; index++)
+            {
+                int seed = index switch { 0 => 42, 1 => 1, 2 => 7,
+                    _ => unchecked(index * 104729 + configuration.Style * 7919 + configuration.Floors * 15485863) };
+                int size = configuration.Minimum + index % (configuration.Maximum - configuration.Minimum + 1);
+                yield return [configuration.Style, configuration.Floors, seed, size];
+            }
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestGeometryCorpus")]
+    [DynamicData(nameof(RealGeometryCorpusCases), DynamicDataSourceType.Method)]
+    public void RealGeometryCorpusVerifiesDensitySafetyAndEntranceRoutes(int style, int floors, int seed, int floorSize)
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var elapsed = Stopwatch.StartNew();
+        DungeonLayout layout;
+        DungeonWorldLayout dungeon;
+        try
+        {
+            (layout, dungeon) = Build(style, floors, seed, floorSize);
+        }
+        catch (Exception exception)
+        {
+            WriteCorpusResult(new
+            {
+                Generated = false, Style = style, Floors = floors, LayoutSeed = seed, FloorSize = floorSize,
+                Error = exception.Message
+            });
+            throw;
+        }
+        using PlayfieldWorldSimulation world = World(dungeon);
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
+        Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
+        int placementSeed = unchecked(seed ^ (style * 7919) ^ (floorSize * 104729));
+        int requested = policy.RollChestCount(eligible.Count, new Random(placementSeed));
+        var diagnostics = new MissionChestPlacementDiagnostics();
+        var placementElapsed = Stopwatch.StartNew();
+        var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value,
+            [], policy, new Random(placementSeed), diagnostics);
+        placementElapsed.Stop();
+        elapsed.Stop();
+        WallMetric[] walls = positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray();
+        int adjacentPairs = positions.SelectMany((position, index) => positions.Skip(index + 1).Select(other => (position, other)))
+            .Count(pair => dungeon.RoomLinks.TryGetValue(pair.position.RoomIndex, out var links) && links.Contains(pair.other.RoomIndex));
+        int[] safeRooms = diagnostics.ReachableCandidateCounts.Where(pair => pair.Value > 0).Select(pair => pair.Key).ToArray();
+        WriteCorpusResult(new
+        {
+            Generated = true, Style = style, Floors = floors, LayoutSeed = seed, FloorSize = floorSize,
+            PlacementSeed = placementSeed, TotalCells = dungeon.Rooms.Count, EligibleRooms = eligible.Count,
+            Requested = requested, Placed = positions.Count, DistinctRooms = positions.Select(position => position.RoomIndex).Distinct().Count(),
+            Coverage = requested == 0 ? 1 : positions.Count / (double)requested,
+            CandidateRooms = diagnostics.CandidateCounts.Count(pair => pair.Value > 0), ReachableCandidateRooms = safeRooms.Length,
+            EligibleFloors = eligible.Keys.GroupBy(room => layout.Generator.Rooms[room].Floor).ToDictionary(group => group.Key, group => group.Count()),
+            ReachableFloors = safeRooms.GroupBy(room => layout.Generator.Rooms[room].Floor).ToDictionary(group => group.Key, group => group.Count()),
+            PlacedFloors = positions.GroupBy(position => layout.Generator.Rooms[position.RoomIndex].Floor).ToDictionary(group => group.Key, group => group.Count()),
+            AdjacentPairs = adjacentPairs, WallMinimum = walls.Length == 0 ? (float?)null : walls.Min(wall => wall.Nearest),
+            WallMean = walls.Length == 0 ? (float?)null : walls.Average(wall => wall.Nearest),
+            WallMaximum = walls.Length == 0 ? (float?)null : walls.Max(wall => wall.Nearest),
+            RuntimeMilliseconds = elapsed.ElapsedMilliseconds, PlacementMilliseconds = placementElapsed.ElapsedMilliseconds, diagnostics.Rejections,
+            diagnostics.ReferenceHeights, diagnostics.LocalHeightSeeds, diagnostics.OffReferencePlacements,
+            diagnostics.AnchorCounts, diagnostics.ReachableAnchorCounts, diagnostics.LandingHeightOffsets,
+            diagnostics.WallSectionCounts, diagnostics.WallSectionsTried,
+            diagnostics.InitiallyReachableAnchorGroups, diagnostics.PreservedAnchorGroups, diagnostics.LostAnchorSamples,
+            RequiredRouteLengths = diagnostics.RequiredRoutes.Select(route => route.Count).ToArray(),
+            RequiredTargetCounts = diagnostics.RequiredRouteTargets.Select(targets => targets.Count).ToArray(),
+            diagnostics.SearchPasses, diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced,
+            RouteLengths = diagnostics.Routes.ToDictionary(pair => pair.Key, pair => pair.Value.Count)
+        });
+        Assert.AreEqual(dungeon.Rooms.Count, diagnostics.TotalCells);
+        Assert.AreEqual(eligible.Count, diagnostics.EligibleRooms, "Density must count actual eligible rooms separately from generated passage cells.");
+        Assert.AreEqual(requested, diagnostics.Requested);
+        Assert.IsTrue(positions.Count <= requested);
+        Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
+        Assert.AreEqual(positions.Count, diagnostics.Routes.Count, "Every selected chest needs a final entrance-to-approach route witness.");
+        AssertSearchChoice(diagnostics, positions.Count);
+        AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement!);
+        if (safeRooms.Length >= requested
+            && diagnostics.Rejections.GetValueOrDefault("selected-route-preservation") == 0
+            && diagnostics.Rejections.GetValueOrDefault("selected-chest-clearance") == 0)
+        {
+            Assert.AreEqual(requested, positions.Count, "Enough mutually unblocked verified rooms must meet the density target.");
+        }
+        int safeFloors = safeRooms.Select(room => layout.Generator.Rooms[room].Floor).Distinct().Count();
+        Assert.IsTrue(positions.Select(position => layout.Generator.Rooms[position.RoomIndex].Floor).Distinct().Count()
+            >= Math.Min(requested, safeFloors), "Placement must span reachable candidate floors when the requested count permits.");
+        foreach (MissionChestPosition position in positions)
+        {
+            AssertCorpusPose(dungeon, layout, world, position, sphere, policy, eligible, positions);
+            AssertEntranceRoute(layout, world, position, diagnostics.Routes[position.RoomIndex], positions, sphere, policy.Placement!);
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestGeometryRegression")]
+    [DataRow(1, 20804467, 10)]
+    [DataRow(1, 24051066, 9)]
+    [DataRow(2, 39955845, 8)]
+    [DataRow(1, 22270673, 16)]
+    public void RealCaveDoorGroupRegressionsKeepVerifiedRoutesWithoutForcingPositions(int floors, int seed, int floorSize)
+        => RealGeometryCorpusVerifiesDensitySafetyAndEntranceRoutes(341, floors, seed, floorSize);
+
+    [TestMethod]
+    [TestCategory("MissionChestGeometryRegression")]
+    public void RealSubwayGeometryRegressionProducesACompleteValidatedResult()
+        => RealGeometryCorpusVerifiesDensitySafetyAndEntranceRoutes(351, 1, 24653901, 14);
+
+    [TestMethod]
+    [TestCategory("MissionChestGeometryRegression")]
+    public void RealCavePocketSupportRegressionProducesACompleteValidatedResult()
+        => RealGeometryCorpusVerifiesDensitySafetyAndEntranceRoutes(341, 4, 68937720, 14);
+
+    void WriteCorpusResult(object result)
+    {
+        string json = JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
+        });
+        TestContext.WriteLine("MISSION_CHEST_CORPUS " + json);
+        string? output = Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_VALIDATION_OUTPUT");
+        if (string.IsNullOrWhiteSpace(output))
+            return;
+        lock (CorpusOutputLock)
+        {
+            string path = Path.GetFullPath(output);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, json + Environment.NewLine);
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestSearchDiagnostic")]
+    [DataRow(5, 1, 10)]
+    [DataRow(5, 7, 10)]
+    [DataRow(1, 19024074, 9)]
+    [DataRow(1, 18709887, 14)]
+    [DataRow(1, 20804467, 10)]
+    public void RealCaveSearchBudgetsExposeValidatedRoomOpportunities(int floors, int layoutSeed, int floorSize)
+    {
+        MissionChestPolicy baseline = ReadPolicy();
+        var (layout, dungeon) = Build(341, floors, layoutSeed, floorSize);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, baseline, out var sphere));
+        Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, baseline);
+        int corpusPlacementSeed = unchecked(layoutSeed ^ (341 * 7919) ^ (floorSize * 104729));
+        var landingFacts = layout.FloorTransitions.SelectMany(transition => new[] { transition.From, transition.To })
+            .Select(endpoint =>
+            {
+                bool found = world.TryRaycastDown(ToAo(endpoint.Position + Vector3.UnitY * baseline.Placement!.FloorProbeLift),
+                    baseline.Placement.FloorProbeLift + baseline.Placement.MaxFloorDrop, out AoVector3 floor);
+                return new
+                {
+                    endpoint.RoomIndex, Floor = layout.Generator.Rooms[endpoint.RoomIndex].Floor,
+                    Template = dungeon.Placements[endpoint.RoomIndex].Template.InstanceId,
+                    Name = dungeon.Placements[endpoint.RoomIndex].Template.Name,
+                    ConfiguredPoint = new[] { endpoint.Position.X, endpoint.Position.Y, endpoint.Position.Z },
+                    OwnRoomGroundHeights = GroundHeights(dungeon, endpoint.RoomIndex,
+                        new Vector2(endpoint.Position.X, endpoint.Position.Z)).Distinct().ToArray(),
+                    ProjectedPoint = found ? new[] { floor.xf, floor.yf, floor.zf } : null,
+                    LandingHeightDelta = found ? floor.yf - endpoint.Position.Y : (float?)null,
+                    ProjectedOnOwnRoom = found && HasOwnFloor(dungeon, endpoint.RoomIndex,
+                        new Vector3(floor.xf, floor.yf, floor.zf), 0.03f)
+                };
+            }).ToArray();
+        foreach (int attempts in new[] { 128, 256 })
+        {
+            foreach (bool allRooms in new[] { false, true })
+            {
+                foreach (int placementSeed in new[] { corpusPlacementSeed, 7919, 104729, 32452843 }.Distinct())
+                {
+                    MissionChestPolicy policy = baseline.Clone();
+                    policy.Placement!.CandidateAttemptsPerRoom = attempts;
+                    if (allRooms)
+                    {
+                        policy.RoomDensity = 1;
+                        policy.CountVariationFraction = 0;
+                    }
+                    Assert.IsTrue(policy.IsValid, "Diagnostics must stay within the existing supported policy bounds.");
+                    TestContext.WriteLine("search diagnostic floors={0} layoutSeed={1} floorSize={2} attempts={3} allRooms={4} placementSeed={5}",
+                        floors, layoutSeed, floorSize, attempts, allRooms, placementSeed);
+                    var diagnostics = new MissionChestPlacementDiagnostics();
+                    var elapsed = Stopwatch.StartNew();
+                    var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value,
+                        [], policy, new Random(placementSeed), diagnostics);
+                    elapsed.Stop();
+                    Assert.AreEqual(eligible.Count, diagnostics.EligibleRooms);
+                    Assert.AreEqual(policy.RollChestCount(eligible.Count, new Random(placementSeed)), diagnostics.Requested);
+                    Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
+                    Assert.AreEqual(positions.Count, diagnostics.Routes.Count);
+                    AssertSearchChoice(diagnostics, positions.Count);
+                    AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement);
+                    foreach (MissionChestPosition position in positions)
+                    {
+                        AssertCorpusPose(dungeon, layout, world, position, sphere, policy, eligible, positions);
+                        AssertEntranceRoute(layout, world, position, diagnostics.Routes[position.RoomIndex], positions, sphere, policy.Placement);
+                    }
+                    TestContext.WriteLine("MISSION_CHEST_SEARCH " + JsonSerializer.Serialize(new
+                    {
+                        Style = 341, Floors = floors, LayoutSeed = layoutSeed, FloorSize = floorSize,
+                        PlacementSeed = placementSeed, AttemptsPerRoom = attempts, AllRooms = allRooms,
+                        TotalCells = dungeon.Rooms.Count, EligibleRooms = eligible.Count, diagnostics.Requested,
+                        Placed = positions.Count, PhysicalPosesValidated = true, RuntimeMilliseconds = elapsed.ElapsedMilliseconds,
+                        diagnostics.CandidateCounts, diagnostics.ReachableCandidateCounts, diagnostics.Rejections,
+                        diagnostics.ReferenceHeights, diagnostics.LocalHeightSeeds, diagnostics.OffReferencePlacements,
+                        diagnostics.AnchorCounts, diagnostics.ReachableAnchorCounts, diagnostics.LandingHeightOffsets,
+                        diagnostics.WallSectionCounts, diagnostics.WallSectionsTried,
+                        diagnostics.InitiallyReachableAnchorGroups, diagnostics.PreservedAnchorGroups, diagnostics.LostAnchorSamples,
+                        RequiredRouteLengths = diagnostics.RequiredRoutes.Select(route => route.Count).ToArray(),
+                        RequiredTargetCounts = diagnostics.RequiredRouteTargets.Select(targets => targets.Count).ToArray(),
+                        diagnostics.SearchPasses, diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced,
+                        LandingFacts = landingFacts,
+                        CandidateFloors = diagnostics.CandidateCounts.Where(pair => pair.Value > 0)
+                            .GroupBy(pair => layout.Generator.Rooms[pair.Key].Floor).ToDictionary(group => group.Key, group => group.Count()),
+                        ReachableFloors = diagnostics.ReachableCandidateCounts.Where(pair => pair.Value > 0)
+                            .GroupBy(pair => layout.Generator.Rooms[pair.Key].Floor).ToDictionary(group => group.Key, group => group.Count()),
+                        PlacedFloors = positions.GroupBy(position => layout.Generator.Rooms[position.RoomIndex].Floor)
+                            .ToDictionary(group => group.Key, group => group.Count()),
+                        Positions = positions
+                    }));
+                }
+            }
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestSearchDiagnostic")]
+    public void RealCaveWalkingAnchorBudgetsProbeLowerFloorReachability()
+    {
+        MissionChestPolicy baseline = ReadPolicy();
+        var (layout, dungeon) = Build(341, 5, 7, 10);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, baseline, out var sphere));
+        Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, baseline);
+        int corpusPlacementSeed = unchecked(7 ^ (341 * 7919) ^ (10 * 104729));
+        foreach (int candidates in new[] { 8, 16, 32 })
+        {
+            foreach (int placementSeed in new[] { 7919, corpusPlacementSeed })
+            {
+                MissionChestPolicy policy = baseline.Clone();
+                policy.RoomDensity = 1;
+                policy.CountVariationFraction = 0;
+                policy.Placement!.CandidateAttemptsPerRoom = 256;
+                policy.Placement.CandidatesPerRoom = candidates;
+                Assert.IsTrue(policy.IsValid);
+                TestContext.WriteLine("walking-anchor diagnostic candidatesPerRoom={0} placementSeed={1}", candidates, placementSeed);
+                var diagnostics = new MissionChestPlacementDiagnostics();
+                var elapsed = Stopwatch.StartNew();
+                var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value,
+                    [], policy, new Random(placementSeed), diagnostics);
+                elapsed.Stop();
+                Assert.AreEqual(eligible.Count, diagnostics.Requested);
+                Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
+                AssertSearchChoice(diagnostics, positions.Count);
+                AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement);
+                foreach (MissionChestPosition position in positions)
+                {
+                    AssertCorpusPose(dungeon, layout, world, position, sphere, policy, eligible, positions);
+                    AssertEntranceRoute(layout, world, position, diagnostics.Routes[position.RoomIndex], positions, sphere, policy.Placement);
+                }
+                TestContext.WriteLine("MISSION_CHEST_GRAPH " + JsonSerializer.Serialize(new
+                {
+                    Style = 341, Floors = 5, LayoutSeed = 7, FloorSize = 10, PlacementSeed = placementSeed,
+                    AttemptsPerRoom = 256, CandidatesPerRoom = candidates, TotalCells = dungeon.Rooms.Count,
+                    EligibleRooms = eligible.Count, diagnostics.Requested, Placed = positions.Count,
+                    PhysicalPosesAndRequiredRoutesValidated = true, RuntimeMilliseconds = elapsed.ElapsedMilliseconds,
+                    diagnostics.SearchPasses, diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced,
+                    diagnostics.AnchorCounts, diagnostics.ReachableAnchorCounts, diagnostics.LandingHeightOffsets,
+                    diagnostics.CandidateCounts, diagnostics.ReachableCandidateCounts, diagnostics.Rejections,
+                    diagnostics.InitiallyReachableAnchorGroups, diagnostics.PreservedAnchorGroups, diagnostics.LostAnchorSamples,
+                    RoomFloors = dungeon.Placements.ToDictionary(room => room.Index, room => layout.Generator.Rooms[room.Index].Floor),
+                    PlacedFloors = positions.GroupBy(position => layout.Generator.Rooms[position.RoomIndex].Floor)
+                        .ToDictionary(group => group.Key, group => group.Count()),
+                    LowerFloorRouteLengths = diagnostics.Routes.Where(pair => layout.Generator.Rooms[pair.Key].Floor == -3)
+                        .ToDictionary(pair => pair.Key, pair => pair.Value.Count),
+                    Positions = positions
+                }));
+            }
+        }
+    }
 
     [TestMethod]
     [DataRow(321, 1, 42)]
@@ -45,14 +338,29 @@ public sealed class MissionChestPlacementTests
         var (layout, dungeon) = Build(style, floors, seed);
         using PlayfieldWorldSimulation world = World(dungeon);
         Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
-        var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(7919));
+        var diagnostics = new MissionChestPlacementDiagnostics();
+        var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(7919), diagnostics);
         var restored = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(7919));
         CollectionAssert.AreEqual(positions.ToArray(), restored.ToArray());
-        int requested = policy.RollChestCount(dungeon.Rooms.Count, new Random(7919));
         Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
+        int requested = policy.RollChestCount(eligible.Count, new Random(7919));
         WallMetric[] metrics = positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray();
         WritePlacementStatistics(style, floors, seed, layout, dungeon, eligible, requested, positions, metrics);
+        TestContext.WriteLine("placement diagnostics " + JsonSerializer.Serialize(new
+        {
+            diagnostics.EligibleRooms, diagnostics.Requested, diagnostics.CandidateCounts,
+            diagnostics.ReachableCandidateCounts, diagnostics.Rejections,
+            diagnostics.ReferenceHeights, diagnostics.LocalHeightSeeds, diagnostics.OffReferencePlacements,
+            diagnostics.AnchorCounts, diagnostics.ReachableAnchorCounts, diagnostics.LandingHeightOffsets,
+            diagnostics.WallSectionCounts, diagnostics.WallSectionsTried,
+            diagnostics.InitiallyReachableAnchorGroups, diagnostics.PreservedAnchorGroups, diagnostics.LostAnchorSamples,
+            RequiredRouteLengths = diagnostics.RequiredRoutes.Select(route => route.Count).ToArray(),
+            RequiredTargetCounts = diagnostics.RequiredRouteTargets.Select(targets => targets.Count).ToArray(),
+            diagnostics.SearchPasses, diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced,
+            Routes = diagnostics.Routes.ToDictionary(pair => pair.Key, pair => pair.Value.Count)
+        }));
         Assert.IsTrue(positions.Count > 0, "No verified positions in style " + style + " floors=" + floors);
+        AssertSearchChoice(diagnostics, positions.Count);
         Assert.IsTrue(positions.Count <= requested && positions.Count <= eligible.Count,
             "A density target cannot override the one-chest-per-eligible-room capacity or geometric safety.");
         if (style is 321 or 324)
@@ -61,6 +369,7 @@ public sealed class MissionChestPlacementTests
         Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count(),
             "Separate coordinates in the same actual generated room are not separate chest rooms.");
         Assert.AreEqual(positions.Count, positions.Select(position => (position.X, position.Y, position.Z)).Distinct().Count());
+        AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement!);
         Assert.IsTrue(metrics.Any(metric => metric.Second <= 3 * (sphere.Radius + 2 * policy.Placement!.CollisionPadding)),
             "No selected chest used a corner formed by two nearby nonparallel collision walls.");
         int eligibleFloors = eligible.Keys.Select(room => layout.Generator.Rooms[room].Floor).Distinct().Count();
@@ -84,6 +393,8 @@ public sealed class MissionChestPlacementTests
                 "A chest must sit tightly beside an actual collision wall: distance=" + metric.Nearest);
             AssertNoTriangleOverlap(dungeon, position, sphere);
             AssertRoomSideApproach(world, dungeon, position, sphere, policy.Placement);
+            Assert.IsTrue(diagnostics.Routes.TryGetValue(position.RoomIndex, out var route));
+            AssertEntranceRoute(layout, world, position, route!, positions, sphere, policy.Placement);
             foreach (DungeonDoorPlacement door in dungeon.Doors)
             {
                 AssertClear(point, door.Position, policy.Placement!.DoorClearance, sphere.Radius, policy.Placement.MaxWalkStep);
@@ -134,7 +445,7 @@ public sealed class MissionChestPlacementTests
         var all = new List<MissionChestPosition>();
         foreach (int randomSeed in new[] { 19, 7919, 104729, 32452843 })
         {
-            int requested = policy.RollChestCount(dungeon.Rooms.Count, new Random(randomSeed));
+            int requested = policy.RollChestCount(eligible.Count, new Random(randomSeed));
             var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(randomSeed));
             WallMetric[] metrics = positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray();
             TestContext.WriteLine("same-layout placement randomSeed={0}", randomSeed);
@@ -170,7 +481,7 @@ public sealed class MissionChestPlacementTests
         var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(104729));
         Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
         Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
-        WritePlacementStatistics(324, 1, 12345, layout, dungeon, eligible, dungeon.Rooms.Count, positions,
+        WritePlacementStatistics(324, 1, 12345, layout, dungeon, eligible, eligible.Count, positions,
             positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray());
         Assert.IsTrue(positions.Count > 0);
         Assert.IsTrue(eligible.Count < dungeon.Rooms.Count, "The real layout must exercise authored room exclusions.");
@@ -328,6 +639,158 @@ public sealed class MissionChestPlacementTests
         public int Allocate() => ++_next;
     }
 
+    static void AssertCorpusPose(DungeonWorldLayout dungeon, DungeonLayout layout, PlayfieldWorldSimulation world,
+        MissionChestPosition position, CollisionSphereData sphere, MissionChestPolicy policy,
+        IReadOnlyDictionary<int, RoomShape> eligible, IReadOnlyList<MissionChestPosition> positions)
+    {
+        MissionChestPlacementPolicy placement = policy.Placement!;
+        Vector3 point = new(position.X, position.Y, position.Z);
+        Assert.IsTrue(eligible.ContainsKey(position.RoomIndex), "A chest is in a passage, hall, entrance or transition cell.");
+        Assert.IsTrue(dungeon.Rooms[position.RoomIndex].Contains(point));
+        Assert.IsTrue(HasOwnFloor(dungeon, position.RoomIndex, point, 0.03f));
+        Assert.IsTrue(world.TryRaycastDown(ToAo(point + Vector3.UnitY), 2, out AoVector3 floor));
+        Assert.AreEqual(position.Y, floor.yf, 0.003f);
+        Assert.IsTrue(position.YawDegrees is >= 0 and < 360);
+        WallMetric wall = MeasureWalls(dungeon, position, sphere.CenterY);
+        Assert.IsTrue(wall.Nearest >= sphere.Radius + placement.CollisionPadding - 0.03f
+            && wall.Nearest <= sphere.Radius + 2 * placement.CollisionPadding + 0.03f,
+            "The chest is not tightly adjacent to a finite transformed wall triangle: " + wall.Nearest);
+        AssertNoTriangleOverlap(dungeon, position, sphere);
+        AssertRoomSideApproach(world, dungeon, position, sphere, placement);
+        AssertClear(point, new Vector3(layout.Spawn.xf, layout.Spawn.yf, layout.Spawn.zf),
+            placement.EntryClearance, sphere.Radius, placement.MaxWalkStep);
+        foreach (DungeonDoorPlacement door in dungeon.Doors)
+        {
+            AssertClear(point, door.Position, placement.DoorClearance, sphere.Radius, placement.MaxWalkStep);
+            foreach (float height in DoorFloorHeights(dungeon, door))
+            {
+                AssertClear(point, new Vector3(door.Position.X, height, door.Position.Z),
+                    placement.DoorClearance, sphere.Radius, placement.MaxWalkStep);
+            }
+        }
+        foreach (DungeonFloorTransition transition in layout.FloorTransitions)
+        {
+            AssertClear(point, transition.From.Position, placement.DoorClearance, sphere.Radius, placement.MaxWalkStep);
+            AssertClear(point, transition.To.Position, placement.DoorClearance, sphere.Radius, placement.MaxWalkStep);
+        }
+        foreach (MissionChestPosition other in positions.Where(other => other.RoomIndex != position.RoomIndex))
+        {
+            AssertClear(point, new Vector3(other.X, other.Y, other.Z),
+                MathF.Max(placement.ChestClearance, 2 * sphere.Radius + placement.CollisionPadding), sphere.Radius, placement.MaxWalkStep);
+        }
+    }
+
+    static void AssertRequiredRoutes(DungeonLayout layout, PlayfieldWorldSimulation world,
+        MissionChestPlacementDiagnostics diagnostics, IReadOnlyList<MissionChestPosition> positions,
+        CollisionSphereData chest, MissionChestPlacementPolicy policy)
+    {
+        Assert.AreEqual(diagnostics.InitiallyReachableAnchorGroups, diagnostics.PreservedAnchorGroups,
+            "Every initially reachable doorway side, entrance and supported floor landing must remain reachable.");
+        Assert.AreEqual(diagnostics.PreservedAnchorGroups, diagnostics.RequiredRoutes.Count,
+            "Every preserved required group needs a final physical route witness.");
+        Assert.AreEqual(diagnostics.RequiredRoutes.Count, diagnostics.RequiredRouteTargets.Count);
+        var checkedEdges = new HashSet<(Vector3 From, Vector3 To, bool Transition)>();
+        for (int index = 0; index < diagnostics.RequiredRoutes.Count; index++)
+        {
+            IReadOnlyList<MissionChestRouteStep> route = diagnostics.RequiredRoutes[index];
+            Assert.IsTrue(route.Count > 0);
+            Assert.IsTrue(diagnostics.RequiredRouteTargets[index].Any(target => Vector3.Distance(route[^1].Point, target) < 0.03f),
+                "A physical route must end at a member of its own required doorway/landing group.");
+            AssertEntranceRoute(layout, world, null, route, positions, chest, policy, checkedEdges);
+        }
+    }
+
+    static void AssertSearchChoice(MissionChestPlacementDiagnostics diagnostics, int placed)
+    {
+        if (diagnostics.Requested == 0)
+            return;
+        Assert.IsTrue(placed >= diagnostics.PrimaryPlaced, "A fallback cannot reduce the primary valid population.");
+        Assert.AreEqual(Math.Max(diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced ?? diagnostics.PrimaryPlaced), placed,
+            "Choose one complete verified population, rather than merging unchecked positions from separate searches.");
+    }
+
+    static void AssertEntranceRoute(DungeonLayout layout, PlayfieldWorldSimulation world,
+        MissionChestPosition? position, IReadOnlyList<MissionChestRouteStep> route,
+        IReadOnlyList<MissionChestPosition> positions, CollisionSphereData chest, MissionChestPlacementPolicy policy,
+        HashSet<(Vector3 From, Vector3 To, bool Transition)>? checkedEdges = null)
+    {
+        Assert.IsTrue(route.Count > 0, "A selected chest lacks an entrance route witness.");
+        CollisionSphereData player = Data.Value.PlayerCollisionSphere!;
+        Vector3 spawn = new(layout.Spawn.xf, layout.Spawn.yf, layout.Spawn.zf);
+        Assert.IsTrue(world.TryRaycastDown(ToAo(spawn + Vector3.UnitY * policy.FloorProbeLift),
+            policy.FloorProbeLift + policy.MaxFloorDrop, out AoVector3 start));
+        Assert.IsTrue(Vector3.Distance(route[0].Point, new Vector3(start.xf, start.yf, start.zf)) < 0.03f,
+            "The route witness must begin at the actual supported mission entrance.");
+        for (int index = 1; index < route.Count; index++)
+        {
+            Vector3 from = route[index - 1].Point, to = route[index].Point;
+            if (checkedEdges != null && !checkedEdges.Add((from, to, route[index].Transition)))
+                continue;
+            if (route[index].Transition)
+            {
+                Assert.IsTrue(layout.FloorTransitions.Any(transition => ValidTravel(transition.From, transition.To)
+                    || ValidTravel(transition.To, transition.From)), "An unverified teleport cannot bridge a failed walking segment.");
+            }
+            else
+            {
+                AssertWalkingSegment(world, from, to, positions, chest, player, policy);
+            }
+
+            bool ValidTravel(DungeonTransitionEndpoint source, DungeonTransitionEndpoint target)
+                => Vector3.Distance(from, source.Position) <= LootableDynel.OpenRange + 0.005f
+                    && Vector2.Distance(new Vector2(to.X, to.Z), new Vector2(target.Position.X, target.Position.Z)) < 0.03f
+                    && MathF.Abs(to.Y - target.Position.Y) <= policy.MaxWalkStep + 0.03f
+                    && world.HasLineOfSight(ToAo(from + Vector3.UnitY * player.CenterY),
+                        ToAo(source.Position + Vector3.UnitY * player.CenterY));
+        }
+        if (position == null)
+            return;
+        Vector3 feet = new(position.X, position.Y, position.Z), approach = route[^1].Point;
+        Assert.IsTrue(Vector3.Distance(approach, feet) <= LootableDynel.OpenRange);
+        Vector2 direction = Vector2.Normalize(new Vector2(approach.X - feet.X, approach.Z - feet.Z));
+        float yaw = position.YawDegrees * MathF.PI / 180;
+        Assert.IsTrue(Vector2.Dot(direction, new Vector2(MathF.Sin(yaw), MathF.Cos(yaw))) > 0.99f,
+            "The persisted yaw must face the reachable interaction area.");
+        Assert.IsTrue(world.HasLineOfSight(ToAo(approach + Vector3.UnitY * player.CenterY),
+            ToAo(feet + Vector3.UnitY * chest.CenterY)));
+    }
+
+    static void AssertWalkingSegment(PlayfieldWorldSimulation world, Vector3 from, Vector3 to,
+        IReadOnlyList<MissionChestPosition> positions, CollisionSphereData chest, CollisionSphereData player,
+        MissionChestPlacementPolicy policy)
+    {
+        int samples = Math.Max(1, (int)MathF.Ceiling(Vector3.Distance(from, to) / policy.WalkSampleSpacing));
+        Assert.IsTrue(samples <= MissionChestPlacement.MaximumWalkSamplesPerLink);
+        Vector3 previous = from;
+        for (int sample = 1; sample <= samples; sample++)
+        {
+            Vector3 expected = Vector3.Lerp(from, to, sample / (float)samples);
+            expected.Y = previous.Y;
+            Assert.IsTrue(world.TryRaycastDown(ToAo(expected + Vector3.UnitY * policy.FloorProbeLift),
+                policy.FloorProbeLift + policy.MaxFloorDrop, out AoVector3 floor), "A route segment crosses unsupported space.");
+            Vector3 current = new(floor.xf, floor.yf, floor.zf);
+            Assert.IsTrue(MathF.Abs(current.Y - previous.Y) <= policy.MaxWalkStep + 0.005f,
+                $"Route step exceeds the supported height limit: {previous} -> {current}.");
+            Vector3 a = previous + Vector3.UnitY * (player.CenterY + policy.CollisionPadding);
+            Vector3 b = current + Vector3.UnitY * (player.CenterY + policy.CollisionPadding);
+            Assert.IsFalse(world.TrySphereCast(ToAo(a), ToAo(b), player.Radius, out _, out _), $"Route blocked: {a} -> {b}.");
+            Assert.IsFalse(world.TrySphereCast(ToAo(b), ToAo(a), player.Radius, out _, out _), $"Reverse route blocked: {b} -> {a}.");
+            foreach (MissionChestPosition position in positions)
+            {
+                if (MathF.Abs(position.Y - previous.Y) > 2 * chest.Radius + policy.MaxWalkStep
+                    && MathF.Abs(position.Y - current.Y) > 2 * chest.Radius + policy.MaxWalkStep)
+                    continue;
+                Vector2 delta = new(current.X - previous.X, current.Z - previous.Z);
+                Vector2 offset = new(position.X - previous.X, position.Z - previous.Z);
+                float fraction = delta.LengthSquared() > 0 ? Math.Clamp(Vector2.Dot(offset, delta) / delta.LengthSquared(), 0, 1) : 0;
+                Assert.IsTrue((offset - delta * fraction).Length() >= chest.Radius + player.Radius + policy.CollisionPadding - 0.005f,
+                    "A final entrance route crosses a placed chest's occupied footprint.");
+            }
+            previous = current;
+        }
+        Assert.IsTrue(MathF.Abs(previous.Y - to.Y) <= policy.MaxWalkStep + 0.005f);
+    }
+
     static Dictionary<int, RoomShape> EligibleRooms(DungeonLayout layout, DungeonWorldLayout dungeon, MissionChestPolicy policy)
     {
         StyleRoomSet styles = StyleRoomSet.Load(RuntimeRoot(), layout.Generator.Style);
@@ -439,6 +902,34 @@ public sealed class MissionChestPlacementTests
         }
     }
 
+    static IEnumerable<string> SupportingSurfaces(DungeonWorldLayout dungeon, Vector3 point, float tolerance)
+    {
+        foreach (CollisionTriangleMesh mesh in dungeon.Collision.SurfaceMeshes)
+        {
+            int index = 0;
+            foreach (CollisionTriangle triangle in mesh.Triangles)
+            {
+                int triangleIndex = index++;
+                Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
+                Vector2 ab = new(b.X - a.X, b.Z - a.Z), ac = new(c.X - a.X, c.Z - a.Z);
+                Vector2 delta = new(point.X - a.X, point.Z - a.Z);
+                float determinant = ab.X * ac.Y - ab.Y * ac.X;
+                if (MathF.Abs(determinant) < 1e-8f)
+                    continue;
+                float u = (delta.X * ac.Y - delta.Y * ac.X) / determinant;
+                float v = (ab.X * delta.Y - ab.Y * delta.X) / determinant;
+                float height = a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y);
+                if (u < -0.001f || v < -0.001f || u + v > 1.001f || MathF.Abs(height - point.Y) > tolerance)
+                    continue;
+                Vector3 normal = Vector3.Cross(b - a, c - a);
+                if (normal.LengthSquared() < 1e-8f)
+                    continue;
+                yield return $"cell={mesh.CellId}, source={mesh.Source}, triangle={triangleIndex}, "
+                    + $"height={height}, normalY={Vector3.Normalize(normal).Y}";
+            }
+        }
+    }
+
     static void AssertRoomSideApproach(PlayfieldWorldSimulation world, DungeonWorldLayout dungeon,
         MissionChestPosition position, CollisionSphereData chest, MissionChestPlacementPolicy policy)
     {
@@ -469,10 +960,38 @@ public sealed class MissionChestPlacementTests
                 Assert.IsTrue(world.TryRaycastDown(ToAo(between + Vector3.UnitY * policy.FloorProbeLift),
                     policy.FloorProbeLift + policy.MaxFloorDrop, out AoVector3 intermediate));
                 Assert.IsTrue(MathF.Abs(intermediate.yf - feet.Y) <= policy.MaxWalkStep + 0.03f);
-                Assert.IsTrue(HasOwnFloor(dungeon, position.RoomIndex,
-                    new Vector3(intermediate.xf, intermediate.yf, intermediate.zf), 0.03f),
-                    "A valid endpoint cannot bridge an unsupported gap in the room-side pocket.");
                 Vector3 current = new(intermediate.xf, intermediate.yf, intermediate.zf);
+                bool hasOwnFloor = HasOwnFloor(dungeon, position.RoomIndex, current, 0.03f);
+                string ownFloorFailure = "A valid endpoint cannot bridge an unsupported gap in the room-side pocket.";
+                if (!hasOwnFloor)
+                {
+                    Vector3 runtimeProjection = approach;
+                    bool runtimeSupported = true;
+                    for (int replay = 1; replay <= sample; replay++)
+                    {
+                        Vector3 runtimeExpected = Vector3.Lerp(approach, supported, replay / (float)samples);
+                        runtimeExpected.Y = runtimeProjection.Y;
+                        if (!world.TryRaycastDown(ToAo(runtimeExpected + Vector3.UnitY * policy.FloorProbeLift),
+                                policy.FloorProbeLift + policy.MaxFloorDrop, out AoVector3 runtimeHit))
+                        {
+                            runtimeSupported = false;
+                            break;
+                        }
+                        runtimeProjection = new Vector3(runtimeHit.xf, runtimeHit.yf, runtimeHit.zf);
+                    }
+                    float[] ownHeights = GroundHeights(dungeon, position.RoomIndex, new Vector2(current.X, current.Z)).ToArray();
+                    int[] otherGroundRooms = Enumerable.Range(0, dungeon.Rooms.Count)
+                        .Where(room => room != position.RoomIndex && HasOwnFloor(dungeon, room, current, 0.03f)).ToArray();
+                    ownFloorFailure += $" Room={position.RoomIndex}, chest={feet}, yaw={position.YawDegrees}, "
+                        + $"approach={approach}, endpoint={supported}, sample={sample}/{samples}, expected={between}, "
+                        + $"projected={current}, previous={previous}, ownGroundHeights=[{string.Join(",", ownHeights)}], "
+                        + $"otherGroundRooms=[{string.Join(",", otherGroundRooms)}], "
+                        + $"supportingSurfaces=[{string.Join(" | ", SupportingSurfaces(dungeon, current, 0.03f))}], "
+                        + $"runtimePreviousYProjection={runtimeProjection}, runtimeSupported={runtimeSupported}, "
+                        + $"runtimeHasOwnFloor={runtimeSupported && HasOwnFloor(dungeon, position.RoomIndex, runtimeProjection, 0.03f)}, "
+                        + $"runtimeSupportingSurfaces=[{string.Join(" | ", SupportingSurfaces(dungeon, runtimeProjection, 0.03f))}].";
+                }
+                Assert.IsTrue(hasOwnFloor, ownFloorFailure);
                 Assert.IsTrue(MathF.Abs(current.Y - previous.Y) <= policy.MaxWalkStep + 0.03f,
                     $"Room {position.RoomIndex} pocket step exceeds the height limit: {previous} -> {current}.");
                 if (sample > 0)
@@ -544,13 +1063,13 @@ public sealed class MissionChestPlacementTests
             Assert.IsTrue(Vector2.Distance(new Vector2(position.X, position.Z), new Vector2(excluded.X, excluded.Z)) >= minimum);
     }
 
-    static (DungeonLayout, DungeonWorldLayout) Build(int style, int floors, int seed = 42)
+    static (DungeonLayout, DungeonWorldLayout) Build(int style, int floors, int seed = 42, int floorSize = 10)
     {
         var generator = new DungeonGenerator(RuntimeRoot());
         var loaded = generator.LoadStyle(style);
         DungeonGenerationResult generated = generator.Generate(new DungeonGenerationRequest
         {
-            StyleId = style, Seed = seed, FloorCount = floors, FloorSize = 10, FloorHeight = 64,
+            StyleId = style, Seed = seed, FloorCount = floors, FloorSize = floorSize, FloorHeight = 64,
             UseFloorTransitions = true, BossFloor = floors > 1, BuildingInstance = 1234,
             DescendingFloors = loaded.Transitions?.DescendingFloors ?? false
         });

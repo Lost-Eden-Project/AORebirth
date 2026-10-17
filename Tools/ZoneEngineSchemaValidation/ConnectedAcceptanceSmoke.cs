@@ -37,6 +37,7 @@ static partial class ConnectedAcceptanceSmoke
             if (File.Exists(Path.Combine(directory.FullName, "AI_START_HERE.md"))) return directory.FullName;
         throw new FixtureFailure("connected-repository-root-not-found");
     }
+#if !MISSION_CHEST_CONNECTED_TESTS
     public static void Validate(string zoneBinary, string loginBinary, DisposableSchemaDatabase fixture, MySqlConnection connection)
     {
         string password = Convert.ToHexString(RandomNumberGenerator.GetBytes(20));
@@ -213,6 +214,7 @@ static partial class ConnectedAcceptanceSmoke
         }
         finally { Environment.SetEnvironmentVariable("AO_REBIRTH_MYSQL_CONNECTION", previous); }
     }
+#endif
     static ConnectedWireClient Enter(DisposableSchemaDatabase fixture, string password)
         => EnterWithHandoff(fixture, Authorize(fixture, password));
 
@@ -308,6 +310,7 @@ static partial class ConnectedAcceptanceSmoke
         ZoneEngine_New.Core.Characters.PlayerSpawnPayloadValidator.RequireValidMessages(spawn, full);
         Console.WriteLine("SYNTHETIC_ACCEPTANCE_PLAYER_PAYLOAD_VALIDATION=PASS");
     }
+#if !MISSION_CHEST_CONNECTED_TESTS
     static void VerifyConnected(ConnectedWireClient client, int identity, int slot, string phase)
     {
         var full = client.Received.OfType<FullCharacterMessage>().Single(m => m.Identity.Instance == Owner);
@@ -353,6 +356,7 @@ static partial class ConnectedAcceptanceSmoke
         Console.WriteLine("ACTIVE_NANOS_RELOAD=PASS MORPH_RELOAD=PASS AUTHORED_MISSION_RELOAD=PASS GENERATED_MISSION_RELOAD=PASS PROOF=SEEDED_STATE_CONNECTED_RELOAD");
         Console.WriteLine("WIRE_INVENTORY_" + phase + "=" + System.Text.Json.JsonSerializer.Serialize(full.InventorySlots));
     }
+#endif
     static void VerifyDatabase(MySqlConnection connection, int identity, int slot)
     {
         Require(FixtureSql.Scalar(connection, $"SELECT COUNT(*) FROM item_instances WHERE ContainerInstance={Owner}") == 6, "persisted-no-phantom-rows");

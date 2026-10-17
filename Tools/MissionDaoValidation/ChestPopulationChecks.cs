@@ -75,7 +75,90 @@ namespace AORebirth.Tools.MissionDaoValidation
                 "chest-concurrent-first-materialization-one-population");
             ValidateUncertainChestInitialization(dao, quests, connectionString);
             ValidateChestTransfers(quests, connectionString);
+            ValidateAcceptedChestLifecycle(dao, quests, connectionString);
         }
+
+        private static void ValidateAcceptedChestLifecycle(MySqlMissionDao dao, MySqlCharacterQuestDao quests, string connectionString)
+        {
+            const string questId = "chest.accepted.lifecycle";
+            int offerId = dao.ReserveIdentities("offer", 1);
+            GeneratedMissionOfferBatch batch = ReconciledBatch(offerId, questId);
+            batch.OwnerId = CompletionOwner;
+            foreach (GeneratedMissionOffer offer in batch.Offers)
+                offer.OwnerId = CompletionOwner;
+            Require(dao.PublishOffers(batch).Status == GeneratedMissionResultStatus.Applied,
+                "chest-lifecycle-generated-offer-published");
+            Require(dao.PublishOffers(batch).Status == GeneratedMissionResultStatus.AlreadyApplied,
+                "chest-lifecycle-generated-offer-replay-does-not-charge-again");
+
+            var generated = new GeneratedQuestRow { QuestId = questId, OwnerType = 0, OwnerId = CompletionOwner,
+                DefinitionJson = CompletionDefinition, AcgBuildingGeneratorJson = CompletionBinding,
+                CreatedAtUtcTicks = CompletionAssigned, UpdatedAtUtcTicks = CompletionAssigned, ExpiresAtUtcTicks = 3000 };
+            var key = ChestLifecycleKey(940100, CompletionOwner);
+            Require(quests.TryAcceptOfferQuest(CompletionOwner, 0xDAC3, offerId, generated, CompletionRow(questId), key, 1500),
+                "chest-lifecycle-active-acceptance-atomically-creates-quest-and-key");
+            Require(!quests.TryAcceptOfferQuest(CompletionOwner, 0xDAC3, offerId, generated, CompletionRow(questId), key, 1500)
+                && quests.LoadKeyQuests(new[] { key.InstanceId })[key.InstanceId] == questId
+                && quests.LoadForCharacter(CompletionOwner).Count(row => row.QuestId == questId) == 1,
+                "chest-lifecycle-duplicate-acceptance-retains-one-quest-and-key");
+            Require(quests.TryAddDuplicateKey(key.InstanceId, ChestLifecycleKey(940101, 102), 2, 2000) == questId,
+                "chest-lifecycle-second-player-receives-the-same-dungeon-key-link");
+            Require(quests.TryAddDuplicateKey(key.InstanceId, ChestLifecycleKey(940102, 101), 2, 2000) == null
+                && Scalar(connectionString, "SELECT COUNT(*) FROM item_instances WHERE InstanceId=940102") == 0,
+                "chest-lifecycle-key-limit-refusal-grants-no-item");
+
+            Require(InitializeChests(dao, ChestRequest(questId, 940000, 940001, 3)),
+                "chest-lifecycle-accepted-run-populates-once");
+            string snapshot = dao.Execute(CompletionOwner, tx => tx.GetFlag(new MissionKeyData(CompletionOwner, questId),
+                MissionChestPopulationFlags.Chest(CompletionAssigned, 0))).Value;
+            var reloadedQuests = new MySqlCharacterQuestDao(() => new MySqlConnection(connectionString));
+            var reloadedMissions = new MySqlMissionDao(() => Open(connectionString));
+            var reloadedLinks = reloadedQuests.LoadKeyQuests(new[] { 940100, 940101 });
+            Require(reloadedQuests.LoadGeneratedForCharacter(CompletionOwner).Single(row => row.QuestId == questId).AcgBuildingGeneratorJson == CompletionBinding
+                && reloadedLinks.Count == 2 && reloadedLinks.Values.All(value => value == questId),
+                "chest-lifecycle-fresh-dao-load-retains-frozen-layout-and-both-key-links");
+            var reroll = ChestRequest(questId, 940010, 940011, 1);
+            reroll.Chests[0].SnapshotJson = "{\"ContainerInstance\":940010,\"RoomIndex\":99,\"X\":99,\"Y\":80,\"Z\":99,\"YawDegrees\":270}";
+            Require(!InitializeChests(reloadedMissions, reroll)
+                && reloadedMissions.Execute(CompletionOwner, tx => tx.GetFlag(new MissionKeyData(CompletionOwner, questId),
+                    MissionChestPopulationFlags.Chest(CompletionAssigned, 0))).Value == snapshot
+                && Scalar(connectionString, "SELECT COUNT(*) FROM item_instances WHERE InstanceId=940011") == 0,
+                "chest-lifecycle-reconstruction-preserves-snapshot-and-never-rerolls");
+
+            var inventory = new MySqlCharacterPersistenceDao(() => Open(connectionString));
+            PersistedItemData[] contents = inventory.LoadContainerItems(940000).OrderBy(row => row.ContainerPlacement).ToArray();
+            inventory.CommitInventoryMutation(ChestTransfer(contents[0], CompletionOwner, 89));
+            var afterReconnect = new MySqlCharacterPersistenceDao(() => Open(connectionString));
+            PersistedItemData carried = afterReconnect.LoadCarriedItems(CompletionOwner).Single(row => row.InstanceId == contents[0].InstanceId);
+            Require(carried.ContainerPlacement == 89 && carried.Quality == contents[0].Quality
+                && carried.LowId == contents[0].LowId && carried.HighId == contents[0].HighId
+                && carried.StackCount == contents[0].StackCount && carried.Source == contents[0].Source
+                && afterReconnect.LoadContainerItems(940000).Select(row => row.InstanceId).OrderBy(id => id).SequenceEqual(new[] { 940002, 940003 }),
+                "chest-lifecycle-reconnect-load-preserves-player-item-and-partial-chest");
+            afterReconnect.CommitInventoryMutation(ChestTransfer(contents[1], 102, 89));
+            Expect<InvalidOperationException>(() => afterReconnect.CommitInventoryMutation(ChestTransfer(contents[1], CompletionOwner, 88)),
+                "chest-lifecycle-second-player-loot-cannot-be-stolen-by-stale-first-player");
+            Require(new MySqlCharacterPersistenceDao(() => Open(connectionString)).LoadCarriedItems(102).Any(row => row.InstanceId == 940002)
+                && inventory.LoadContainerItems(940000).Single().InstanceId == 940003,
+                "chest-lifecycle-second-player-and-remaining-contents-reload-independently");
+            Require(quests.PurgeEndedGeneratedQuests(4000, 50) == 0 && quests.LoadGenerated(questId) != null,
+                "chest-lifecycle-linked-keys-prevent-premature-dungeon-purge");
+            Require(quests.EndQuestKeys(questId).Count == 2 && quests.LoadKeyQuests(new[] { 940100, 940101 }).Count == 0,
+                "chest-lifecycle-end-retires-both-keys-and-links");
+            Require(quests.PurgeEndedGeneratedQuests(4000, 50) == 1 && quests.LoadGenerated(questId) == null
+                && inventory.LoadContainerItems(940000).Count == 0,
+                "chest-lifecycle-purge-removes-unlooted-contents-and-generated-dungeon");
+            Require(inventory.LoadCarriedItems(CompletionOwner).Any(row => row.InstanceId == 940001)
+                && inventory.LoadCarriedItems(102).Any(row => row.InstanceId == 940002)
+                && Scalar(connectionString, "SELECT COUNT(*) FROM item_instances WHERE InstanceId IN (940100,940101) AND ContainerType=0") == 2
+                && Scalar(connectionString, "SELECT COUNT(*) FROM missionflags WHERE QuestId='chest.accepted.lifecycle'") == 0,
+                "chest-lifecycle-cleanup-retains-player-loot-and-retired-key-history");
+        }
+
+        private static QuestDungeonKeyItemRow ChestLifecycleKey(int instance, int owner)
+            => new QuestDungeonKeyItemRow { InstanceId = instance, ContainerType = 104, ContainerInstance = owner,
+                ContainerPlacement = 90, ItemType = 0xC76D, LowId = 10, HighId = 10, Quality = 1, Source = 0,
+                CreatedAtUtcTicks = CompletionAssigned };
 
         private static void ValidateUncertainChestInitialization(MySqlMissionDao dao, MySqlCharacterQuestDao quests, string connectionString)
         {

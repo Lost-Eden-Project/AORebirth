@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AORebirth.Core.GameData;
+using AORebirth.DungeonGenerator;
 using AORebirth.Interfaces.Persistence.Missions;
 using AORebirth.World.Collision;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,86 @@ public sealed class MissionChestPopulationTests
 {
     const string Quest = "chest.population.test";
     const long Assigned = 12345;
+
+    [TestMethod]
+    public void PartialLootReopenDisconnectAndFreshPlayerReconstructionPreserveDurableOwnership()
+    {
+        var dao = new AuthoredMissionTestDao();
+        Seed(dao);
+        using var originalPlayer = new InventoryActionTests.World();
+        originalPlayer.Persistence.Rows.Add(7001, ItemRow(7001, 0));
+        originalPlayer.Persistence.Rows.Add(7002, ItemRow(7002, 2));
+        using var original = new World();
+        original.Inventory.ReadRows = () => originalPlayer.Persistence.Rows.Values;
+        Population(dao).Populate(original.Playfield, original.Layout, original.Simulation);
+        Chest chest = original.Registry.Dynels().OfType<Chest>().Single();
+        originalPlayer.Player.Playfield = original.Playfield;
+        originalPlayer.Player.Position = chest.Position;
+        original.Registry.Register(originalPlayer.Player);
+        Assert.IsTrue(chest.TryUse(originalPlayer.Player));
+        var moves = new InventoryMoveService(new StubLogger(), originalPlayer.Flush, originalPlayer.Actions);
+        moves.Handle(originalPlayer.Player, new ClientMoveItemToInventoryMessage
+        {
+            SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 },
+            TargetPlacement = 64
+        });
+        Assert.AreEqual(7001, originalPlayer.Player.Inventory.Inventory.Content[64].InstanceId);
+        Assert.AreEqual(7002, chest.Loot.Content.Single().Value.InstanceId);
+        Assert.AreEqual(2, chest.Loot.Content.Single().Key);
+        Assert.IsTrue(chest.TryUse(originalPlayer.Player));
+        Assert.IsFalse(chest.IsOpen);
+        Assert.IsTrue(chest.TryUse(originalPlayer.Player));
+        Assert.AreEqual(7002, chest.Loot.Content.Single().Value.InstanceId);
+        Assert.AreEqual(1, originalPlayer.Persistence.Calls, "Reopening is a durable read, never another item transfer.");
+        originalPlayer.Session.Close();
+        original.Registry.Unregister(originalPlayer.Player.Identity);
+        chest.Tick(0);
+        Assert.IsFalse(chest.IsOpen, "Removing a disconnected opener must release the shared chest.");
+
+        using var connectedPlayer = new InventoryActionTests.World();
+        connectedPlayer.Persistence.Rows = originalPlayer.Persistence.Rows;
+        using var reconstructed = new World();
+        reconstructed.Inventory.ReadRows = () => connectedPlayer.Persistence.Rows.Values;
+        Population(dao).Populate(reconstructed.Playfield, reconstructed.Layout, reconstructed.Simulation);
+        Chest restored = reconstructed.Registry.Dynels().OfType<Chest>().Single();
+        connectedPlayer.Player.Playfield = reconstructed.Playfield;
+        connectedPlayer.Player.Position = restored.Position;
+        reconstructed.Registry.Register(connectedPlayer.Player);
+        var itemBuilder = new ItemBuilder(new Catalog(), new StubLogger());
+        foreach (ItemInstanceRecord row in connectedPlayer.Persistence.Rows.Values.Where(row =>
+                     row.ContainerType == (int)IdentityType.Inventory && row.ContainerInstance == connectedPlayer.Player.Identity.Instance))
+        {
+            Assert.IsTrue(itemBuilder.TryFromInstanceRecord(row, out Item carried));
+            Assert.IsTrue(connectedPlayer.Player.Inventory.Inventory.Add(row.ContainerPlacement, carried));
+        }
+        Assert.AreEqual(7001, connectedPlayer.Player.Inventory.Inventory.Content[64].InstanceId);
+        Assert.IsTrue(connectedPlayer.Player.Inventory.Inventory.Content[64].IsPersisted);
+        Assert.AreEqual(50, connectedPlayer.Player.Inventory.Inventory.Content[64].Quality);
+        Assert.AreEqual(chest.Identity, restored.Identity);
+        Assert.AreEqual(chest.Position, restored.Position);
+        Assert.IsTrue(restored.TryUse(connectedPlayer.Player));
+        new InventoryMoveService(new StubLogger(), connectedPlayer.Flush, connectedPlayer.Actions).Handle(connectedPlayer.Player,
+            new ClientMoveItemToInventoryMessage
+            {
+                SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = restored.InventoryHandle << 16 | 2 },
+                TargetPlacement = 65
+            });
+        CollectionAssert.AreEquivalent(new[] { 7001, 7002 }, connectedPlayer.Player.Inventory.Inventory.Content.Values
+            .Select(item => item.InstanceId).ToArray());
+        Assert.AreEqual(0, restored.Loot.Content.Count);
+
+        using var exhausted = new World();
+        exhausted.Inventory.ReadRows = () => connectedPlayer.Persistence.Rows.Values;
+        Population(dao, PositivePolicy()).Populate(exhausted.Playfield, exhausted.Layout, exhausted.Simulation);
+        Chest empty = exhausted.Registry.Dynels().OfType<Chest>().Single();
+        Assert.AreEqual(chest.Identity, empty.Identity);
+        Assert.AreEqual(chest.Position, empty.Position);
+        Assert.AreEqual(0, empty.Loot.Content.Count);
+        Assert.AreEqual(0, dao.Calls, "Fresh aggregate reconstruction must not reroll a sealed run.");
+        Assert.AreEqual(2, connectedPlayer.Persistence.Rows.Count);
+        Assert.IsTrue(connectedPlayer.Persistence.Rows.Values.All(row => row.ContainerType == (int)IdentityType.Inventory
+            && row.ContainerInstance == connectedPlayer.Player.Identity.Instance));
+    }
 
     [TestMethod]
     [DataRow(false)]
@@ -174,7 +255,7 @@ public sealed class MissionChestPopulationTests
             policy.Placement = null;
         if (missing == "invalid-placement")
             policy.Placement!.WalkSampleSpacing = 0;
-        using (var unavailable = new World(withSurface: missing != "surface", withPlayerSphere: missing != "player-sphere"))
+        using (var unavailable = new World(withSurface: missing != "surface", withPlayerSphere: missing != "player-sphere", withStyle: true))
         {
             Population(dao, policy).Populate(unavailable.Playfield, unavailable.Layout, unavailable.Simulation);
             Assert.AreEqual(0, dao.Calls, "Unavailable placement inputs must not start population persistence.");
@@ -182,7 +263,7 @@ public sealed class MissionChestPopulationTests
             Assert.AreEqual(0, unavailable.Registry.Dynels().Count());
         }
 
-        using var repaired = new World(withSurface: true, withPlayerSphere: true);
+        using var repaired = new World(withSurface: true, withPlayerSphere: true, withStyle: true);
         // This valid one-room layout rounds the configured 30% target to zero. It still proves that
         // repairing the prerequisites permits initialization of the same previously unsealed run.
         Population(dao, PositivePolicy()).Populate(repaired.Playfield, repaired.Layout, repaired.Simulation);
@@ -297,11 +378,28 @@ public sealed class MissionChestPopulationTests
         internal readonly PlayfieldWorldSimulation Simulation =
             (PlayfieldWorldSimulation)RuntimeHelpers.GetUninitializedObject(typeof(PlayfieldWorldSimulation));
 
-        internal World(bool withSurface = false, bool withPlayerSphere = false)
+        internal World(bool withSurface = false, bool withPlayerSphere = false, bool withStyle = false)
         {
             Playfield = (QuestDungeonPlayfield)RuntimeHelpers.GetUninitializedObject(typeof(QuestDungeonPlayfield));
             var catalog = new Catalog();
-            IGameData data = new StubGameData(HashItemCatalog.Parse("{}"))
+            string? root = null;
+            var room = new StyleRoomTemplate(1, 0, 0, 5, 5, System.Numerics.Vector3.Zero);
+            AcgBuildingGeneratorData? generator = null;
+            if (withStyle)
+            {
+                root = Environment.GetEnvironmentVariable(GameDataPaths.EnvironmentVariableName);
+                Assert.IsFalse(string.IsNullOrWhiteSpace(root), "Set AO_REBIRTH_GAMEDATA_PATH to the existing full GameData.");
+                Assert.IsTrue(Directory.Exists(root));
+                // Counting eligible rooms reads the same authored style metadata as real placement.
+                room = StyleRoomSet.Load(root!, 324).Growth.First().Template;
+                generator = new AcgBuildingGeneratorData
+                {
+                    Identity = new Identity { Type = (IdentityType)0xC79F, Instance = 1 },
+                    DbObjectVersion = 2, Version = 3, Width = 32, Height = 32, RoomsPerFloor = 1, Style = 324,
+                    Rooms = [new BuildingRoomInfo { RoomId = checked((ushort)room.InstanceId) }]
+                };
+            }
+            IGameData data = new StubGameData(HashItemCatalog.Parse("{}"), rootPath: root)
                 { DynelCollisionSphere = new CollisionSphereData { Radius = 0.75f, CenterY = 0.75f } };
             if (withSurface || withPlayerSphere)
             {
@@ -317,11 +415,12 @@ public sealed class MissionChestPopulationTests
                 .AddSingleton(new PlayfieldLocality(4582, null)).BuildServiceProvider();
             typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(Playfield, _services);
+            typeof(Playfield).GetField("_nextContainerInventoryHandle", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Playfield, 117);
             typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(Playfield, new Identity { Type = IdentityType.Playfield, Instance = 4582 });
             typeof(QuestDungeonPlayfield).GetField("<Layout>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .SetValue(Playfield, new DungeonLayout(null!, [], new AORebirth.Core.Vector.Vector3(), 1, null));
-            var room = new StyleRoomTemplate(1, 0, 0, 5, 5, System.Numerics.Vector3.Zero);
+                .SetValue(Playfield, new DungeonLayout(generator!, generator?.ToByteArray() ?? [], new AORebirth.Core.Vector.Vector3(), 1, null));
             var mesh = new CollisionTriangleMesh(
                 [new(0, 0, 0), new(32, 0, 0), new(0, 0, 32), new(32, 0, 32)],
                 [new CollisionTriangle(0, 2, 1), new CollisionTriangle(1, 2, 3)]);
@@ -377,7 +476,9 @@ public sealed class MissionChestPopulationTests
     sealed class Inventory : IInventoryRepository
     {
         internal readonly List<ItemInstanceRecord> Rows = [];
-        public IReadOnlyList<ItemInstanceRecord> GetContainerItems(int id) => Rows.Where(row => row.ContainerInstance == id).ToArray();
+        internal Func<IEnumerable<ItemInstanceRecord>>? ReadRows;
+        public IReadOnlyList<ItemInstanceRecord> GetContainerItems(int id) => (ReadRows?.Invoke() ?? Rows)
+            .Where(row => row.ContainerType == (int)IdentityType.Container && row.ContainerInstance == id).ToArray();
         public IReadOnlyList<ItemInstanceRecord> GetCarriedItems(int id) => throw new NotSupportedException();
         public IReadOnlyList<ItemInstanceRecord> GetBankItems(int id) => throw new NotSupportedException();
         public int LeaseInstanceIdBlock(int count) => throw new NotSupportedException();

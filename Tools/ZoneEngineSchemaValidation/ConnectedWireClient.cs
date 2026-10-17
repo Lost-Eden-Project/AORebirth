@@ -45,7 +45,13 @@ sealed class ConnectedWireClient : IDisposable
         {
             MessageBody? body;
             try { body = Read(); }
-            catch (IOException) { throw new FixtureFailure("connected-read-failed-waiting-" + typeof(T).Name); }
+            catch (IOException exception)
+            {
+                string reason = exception is EndOfStreamException ? "end-of-stream"
+                    : exception.InnerException is SocketException socket ? socket.SocketErrorCode.ToString()
+                    : exception.GetType().Name;
+                throw new FixtureFailure("connected-read-failed-waiting-" + typeof(T).Name + "-" + reason);
+            }
             Console.WriteLine("WIRE_RECEIVED=" + (body?.GetType().Name ?? "transport-or-unmapped"));
             if (body != null) Received.Add(body);
             if (body is T result && (matches == null || matches(result))) return result;

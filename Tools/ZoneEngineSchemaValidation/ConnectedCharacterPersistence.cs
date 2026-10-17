@@ -7,6 +7,7 @@ using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
 static partial class ConnectedAcceptanceSmoke
 {
     static int expectedCash = 1234;
+#if !MISSION_CHEST_CONNECTED_TESTS
     static void ZonePersistenceRoundTrip(DisposableSchemaDatabase fixture, string password, MySqlConnection connection)
     {
         var handoff = Authorize(fixture, password);
@@ -41,6 +42,7 @@ static partial class ConnectedAcceptanceSmoke
         }
         Console.WriteLine("CONNECTED_ACTUAL_ZONE_TRANSFER=PASS ROUTE=4582-800-4582 REDIRECT_ADMISSION=PASS STATS_MUTATION=GM_SET_CASH FULL_DURABLE_STATE=PASS");
     }
+#endif
     static void Command(ConnectedWireClient client, string text)
         => client.Send(new TextMessage { Message = new ChatMessage { Text = text } }, Owner);
 }

@@ -64,6 +64,21 @@ accepts an unauthenticated character. Positive lifecycle PASS does not override
 that negative gate. Retain the console log under `build-verify` and link the
 actual SHA in `NEWENGINE_CUTOVER_VALIDATION_RECEIPT.md`.
 
+For current generated mission chest acceptance, use the same disposable fixture:
+
+```cmd
+cmd /d /c Tools\run_newengine_connected_acceptance.cmd --engine <absolute-built-ZoneEngine_New.dll> --login-engine <absolute-built-LoginEngine.exe-or-dll> --chests-only
+```
+
+This opt-in cohort compiles the current chest path and existing shared wire,
+authentication, process and database helpers. The default cohort still reports
+its older fixture API failures. Set the existing `AO_REBIRTH_GAMEDATA_PATH` to
+the complete dataset. The chest cohort rolls/accepts through TCP and checks
+opening, transfers, authenticated reconnect and distinct-process restart using
+its own labelled database. Indoor positioning uses direct-control packets;
+this does not establish original-client visuals or player walking. Preserve
+running outputs by using separate standard MSBuild `OutDir` paths when needed.
+
 Run:
 
 ```cmd

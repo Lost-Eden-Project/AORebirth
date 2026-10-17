@@ -18,6 +18,60 @@ using ZoneEngine_New.Core.Playfield;
 public sealed class MissionChestPersistenceTests
 {
     [TestMethod]
+    public void TwoPlayersRespectTheSingleOpenerAndKeepDistinctOriginalLootInstances()
+    {
+        using var world = new InventoryActionTests.World();
+        var registry = new DynelRegistry();
+        using var services = MissionChestProtocolTests.AttachChestServices(world, registry);
+        var otherSession = new InventoryActionTests.Session();
+        Player other = TestWorld.CreatePlayer(222);
+        other.Session = otherSession;
+        otherSession.BindPlayer(other);
+        other.Playfield = world.Player.Playfield;
+        other.Position = world.Player.Position;
+        Chest chest = MissionChestProtocolTests.CreateCapturedChest();
+        chest.Playfield = world.Player.Playfield;
+        chest.Position = world.Player.Position;
+        registry.Register(chest); registry.Register(world.Player); registry.Register(other);
+        for (int slot = 0; slot < 2; slot++)
+        {
+            Item item = TestWorld.CreateItem(instanceId: 901 + slot);
+            chest.Loot.Add(slot, item);
+            world.Persistence.Rows[item.InstanceId] = item.ToRecord(chest.Loot.Identity, slot, item.StackCount);
+        }
+        var moves = new InventoryMoveService(new StubLogger(), world.Flush, world.Actions);
+        Assert.IsTrue(chest.TryUse(world.Player));
+        Assert.IsFalse(chest.TryUse(other));
+        var firstSource = new Identity { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 };
+        moves.Handle(other, new ClientMoveItemToInventoryMessage { SourceContainer = firstSource, TargetPlacement = 64 });
+        Assert.AreEqual(0, world.Persistence.Calls, "A player who did not open this chest cannot take its items.");
+        Assert.AreEqual(2, chest.Loot.Content.Count);
+        moves.Handle(world.Player, new ClientMoveItemToInventoryMessage { SourceContainer = firstSource, TargetPlacement = 64 });
+        Assert.AreEqual(901, world.Player.Inventory.Inventory.Content[64].InstanceId);
+        Assert.AreEqual(902, chest.Loot.Content.Single().Value.InstanceId);
+        Assert.IsTrue(chest.TryUse(world.Player));
+        Assert.IsTrue(chest.TryUse(other));
+        moves.Handle(world.Player, new ClientMoveItemToInventoryMessage
+        {
+            SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 | 1 },
+            TargetPlacement = 65
+        });
+        Assert.AreEqual(1, world.Persistence.Calls, "The former opener cannot keep taking after ownership of the open window changes.");
+        moves.Handle(other, new ClientMoveItemToInventoryMessage
+        {
+            SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 | 1 },
+            TargetPlacement = 64
+        });
+        Assert.AreEqual(902, other.Inventory.Inventory.Content[64].InstanceId);
+        Assert.AreEqual(0, chest.Loot.Content.Count);
+        Assert.AreEqual(2, world.Persistence.Calls);
+        Assert.AreEqual(world.Player.Identity.Instance, world.Persistence.Rows[901].ContainerInstance);
+        Assert.AreEqual(other.Identity.Instance, world.Persistence.Rows[902].ContainerInstance);
+        Assert.AreEqual(1, world.Session.Messages.OfType<ContainerAddItemMessage>().Count());
+        Assert.AreEqual(1, otherSession.Messages.OfType<ContainerAddItemMessage>().Count());
+    }
+
+    [TestMethod]
     public void FullPlayerInventoryRejectsChestLootWithoutChangingEitherOwner()
     {
         using var world = new InventoryActionTests.World();

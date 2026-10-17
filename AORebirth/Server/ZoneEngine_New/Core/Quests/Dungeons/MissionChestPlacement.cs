@@ -20,6 +20,59 @@ using Vector3 = System.Numerics.Vector3;
 
 public sealed record MissionChestPosition(int RoomIndex, float X, float Y, float Z, int YawDegrees);
 
+internal readonly record struct MissionChestRouteStep(Vector3 Point, bool Transition);
+
+internal sealed class MissionChestPlacementDiagnostics
+{
+    public int TotalCells { get; internal set; }
+    public int EligibleRooms { get; internal set; }
+    public int Requested { get; internal set; }
+    public Dictionary<int, float> ReferenceHeights { get; } = new();
+    public int LocalHeightSeeds { get; internal set; }
+    public int OffReferencePlacements { get; internal set; }
+    public Dictionary<int, int> CandidateCounts { get; } = new();
+    public Dictionary<int, int> WallSectionCounts { get; } = new();
+    public Dictionary<int, int> WallSectionsTried { get; } = new();
+    public Dictionary<int, int> ReachableCandidateCounts { get; } = new();
+    public Dictionary<int, int> AnchorCounts { get; } = new();
+    public Dictionary<int, int> ReachableAnchorCounts { get; } = new();
+    public Dictionary<int, float?> LandingHeightOffsets { get; } = new();
+    public Dictionary<string, int> Rejections { get; } = new();
+    public Dictionary<int, IReadOnlyList<MissionChestRouteStep>> Routes { get; } = new();
+    public List<IReadOnlyList<MissionChestRouteStep>> RequiredRoutes { get; } = new();
+    public List<IReadOnlyList<Vector3>> RequiredRouteTargets { get; } = new();
+    public int InitiallyReachableAnchorGroups { get; internal set; }
+    public int PreservedAnchorGroups { get; internal set; }
+    public int LostAnchorSamples { get; internal set; }
+    public int SearchPasses { get; internal set; }
+    public int PrimaryPlaced { get; internal set; }
+    public int? FallbackPlaced { get; internal set; }
+
+    internal void CopyFrom(MissionChestPlacementDiagnostics source)
+    {
+        TotalCells = source.TotalCells; EligibleRooms = source.EligibleRooms; Requested = source.Requested;
+        LocalHeightSeeds = source.LocalHeightSeeds; OffReferencePlacements = source.OffReferencePlacements;
+        InitiallyReachableAnchorGroups = source.InitiallyReachableAnchorGroups;
+        PreservedAnchorGroups = source.PreservedAnchorGroups; LostAnchorSamples = source.LostAnchorSamples;
+        Copy(source.ReferenceHeights, ReferenceHeights); Copy(source.CandidateCounts, CandidateCounts);
+        Copy(source.WallSectionCounts, WallSectionCounts); Copy(source.WallSectionsTried, WallSectionsTried);
+        Copy(source.ReachableCandidateCounts, ReachableCandidateCounts); Copy(source.AnchorCounts, AnchorCounts);
+        Copy(source.ReachableAnchorCounts, ReachableAnchorCounts); Copy(source.LandingHeightOffsets, LandingHeightOffsets);
+        Copy(source.Rejections, Rejections); Copy(source.Routes, Routes);
+        RequiredRoutes.Clear(); RequiredRoutes.AddRange(source.RequiredRoutes);
+        RequiredRouteTargets.Clear(); RequiredRouteTargets.AddRange(source.RequiredRouteTargets);
+
+        static void Copy<TKey, TValue>(Dictionary<TKey, TValue> from, Dictionary<TKey, TValue> to) where TKey : notnull
+        {
+            to.Clear();
+            foreach (var pair in from)
+            {
+                to.Add(pair.Key, pair.Value);
+            }
+        }
+    }
+}
+
 /// <summary>
 /// A bounded placement-time connectivity check, using the existing collision queries and frozen room/floor links.
 /// It does not bake, load, or replace runtime navigation. Rejected or unproven positions are never substituted.
@@ -43,6 +96,12 @@ public static class MissionChestPlacement
     public static IReadOnlyList<MissionChestPosition> Plan(DungeonWorldLayout dungeon, DungeonLayout layout,
         PlayfieldWorldSimulation simulation, IGameData gameData, IItemTemplateCatalog templates,
         IReadOnlyList<Vector3> exclusions, MissionChestPolicy policy, Random random)
+        => Plan(dungeon, layout, simulation, gameData, templates, exclusions, policy, random, null);
+
+    internal static IReadOnlyList<MissionChestPosition> Plan(DungeonWorldLayout dungeon, DungeonLayout layout,
+        PlayfieldWorldSimulation simulation, IGameData gameData, IItemTemplateCatalog templates,
+        IReadOnlyList<Vector3> exclusions, MissionChestPolicy policy, Random random,
+        MissionChestPlacementDiagnostics? diagnostics)
     {
         ArgumentNullException.ThrowIfNull(dungeon);
         ArgumentNullException.ThrowIfNull(layout);
@@ -52,14 +111,56 @@ public static class MissionChestPlacement
         ArgumentNullException.ThrowIfNull(exclusions);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(random);
-        int wanted = policy.RollChestCount(dungeon.Rooms.Count, random);
-        if (wanted == 0 || simulation.Surface == null || policy.Placement?.IsValid != true
+        if (simulation.Surface == null || policy.Placement?.IsValid != true
             || !TryGetChestSphere(gameData, templates, policy, out CollisionSphereData chest)
             || gameData.PlayerCollisionSphere is not { Radius: > 0, CenterY: > 0 } player
             || !float.IsFinite(player.Radius) || !float.IsFinite(player.CenterY))
             return [];
-        return new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
-            chest, player, random).Select(wanted);
+        StyleRoomSet styles = StyleRoomSet.Load(gameData.RootPath, layout.Generator.Style);
+        var shapes = styles.All.ToDictionary(shape => shape.RoomId);
+        var transitions = layout.FloorTransitions.SelectMany(link => new[] { link.From.RoomIndex, link.To.RoomIndex }).ToHashSet();
+        var eligible = dungeon.Placements.Where(placed => shapes.TryGetValue(placed.Template.InstanceId, out RoomShape? shape)
+                && shape.Role is not (RoomRole.Entrance or RoomRole.Start) && !styles.IsMainHall(shape)
+                && !transitions.Contains(placed.Index) && !policy.Placement.ExcludedRoomNameParts.Any(part =>
+                    shape.Name.Contains(part, StringComparison.OrdinalIgnoreCase)))
+            .Select(placed => placed.Index).ToHashSet();
+        int wanted = policy.RollChestCount(eligible.Count, random);
+        if (diagnostics != null)
+        {
+            diagnostics.TotalCells = dungeon.Rooms.Count;
+            diagnostics.EligibleRooms = eligible.Count;
+            diagnostics.Requested = wanted;
+        }
+        if (wanted == 0)
+            return [];
+        MissionChestPlacementDiagnostics? primaryDiagnostics = diagnostics == null ? null : new();
+        var primary = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
+            chest, player, random, eligible, primaryDiagnostics, coverSections: false).Select(wanted);
+        var result = primary;
+        MissionChestPlacementDiagnostics? selectedDiagnostics = primaryDiagnostics;
+        int? fallbackCount = null;
+        if (primary.Count < wanted)
+        {
+            // A second bounded search can recover missed wall sections or walking anchors.
+            // Keep one complete validated population; never combine unchecked positions or reroll the count.
+            MissionChestPlacementDiagnostics? fallbackDiagnostics = diagnostics == null ? null : new();
+            var fallback = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
+                chest, player, random, eligible, fallbackDiagnostics, coverSections: true).Select(wanted);
+            fallbackCount = fallback.Count;
+            if (fallback.Count > primary.Count)
+            {
+                result = fallback;
+                selectedDiagnostics = fallbackDiagnostics;
+            }
+        }
+        if (diagnostics != null)
+        {
+            diagnostics.CopyFrom(selectedDiagnostics!);
+            diagnostics.TotalCells = dungeon.Rooms.Count; diagnostics.EligibleRooms = eligible.Count; diagnostics.Requested = wanted;
+            diagnostics.SearchPasses = fallbackCount.HasValue ? 2 : 1;
+            diagnostics.PrimaryPlaced = primary.Count; diagnostics.FallbackPlaced = fallbackCount;
+        }
+        return result;
     }
 
     public static bool TryGetChestSphere(IGameData gameData, IItemTemplateCatalog templates,
@@ -98,6 +199,9 @@ public static class MissionChestPlacement
         readonly CollisionSphereData _chest;
         readonly CollisionSphereData _player;
         readonly Random _random;
+        readonly HashSet<int> _eligible;
+        readonly MissionChestPlacementDiagnostics? _diagnostics;
+        readonly bool _coverSections;
         readonly List<Node> _nodes = [];
         readonly Dictionary<int, List<int>> _rooms = new();
         readonly Dictionary<int, List<(int Node, bool Transition)>> _links = new();
@@ -105,7 +209,7 @@ public static class MissionChestPlacement
         readonly List<Vector3> _doorPoints = [];
         readonly List<Vector3> _selected = [];
         readonly List<int> _chosen = [];
-        readonly HashSet<int> _requiredAnchors = [];
+        readonly List<int[]> _requiredAnchorGroups = [];
         readonly Dictionary<int, HashSet<int>> _roomLinks = new();
         readonly Dictionary<CollisionTriangleMesh, (Vector3 Min, Vector3 Max)> _meshBounds = new();
         readonly List<(Vector3 Source, int Landing)> _floorTravel = [];
@@ -113,10 +217,13 @@ public static class MissionChestPlacement
 
         internal PlacementRun(DungeonWorldLayout dungeon, DungeonLayout layout, PlayfieldWorldSimulation world,
             IGameData data, IReadOnlyList<Vector3> exclusions, MissionChestPlacementPolicy policy,
-            CollisionSphereData chest, CollisionSphereData player, Random random)
+            CollisionSphereData chest, CollisionSphereData player, Random random, HashSet<int> eligible,
+            MissionChestPlacementDiagnostics? diagnostics, bool coverSections)
         {
             _dungeon = dungeon; _layout = layout; _world = world; _data = data; _exclusions = exclusions;
             _policy = policy; _chest = chest; _player = player; _random = random;
+            _eligible = eligible; _diagnostics = diagnostics;
+            _coverSections = coverSections;
             foreach (CollisionTriangleMesh mesh in dungeon.Collision.SurfaceMeshes)
             {
                 Vector3 min = new(float.PositiveInfinity), max = new(float.NegativeInfinity);
@@ -139,6 +246,19 @@ public static class MissionChestPlacement
             bool[] initial = Flood();
             int[] candidates = Enumerable.Range(0, _nodes.Count)
                 .Where(index => _nodes[index].Candidate && initial[_nodes[index].Approach]).ToArray();
+            if (_diagnostics != null)
+            {
+                foreach (var group in _nodes.Select((node, index) => (node, index)).Where(pair => !pair.node.Candidate)
+                             .GroupBy(pair => pair.node.Room))
+                {
+                    _diagnostics.AnchorCounts[group.Key] = group.Count();
+                    _diagnostics.ReachableAnchorCounts[group.Key] = group.Count(pair => initial[pair.index]);
+                }
+                foreach (var group in candidates.GroupBy(index => _nodes[index].Room))
+                {
+                    _diagnostics.ReachableCandidateCounts[group.Key] = group.Count();
+                }
+            }
             _random.Shuffle(candidates);
             var rooms = candidates.GroupBy(index => _nodes[index].Room)
                 .ToDictionary(group => group.Key, group => group.OrderByDescending(index => _nodes[index].Corner).ToArray());
@@ -168,26 +288,89 @@ public static class MissionChestPlacement
                     Node node = _nodes[index];
                     if (_selected.Any(point => Near(point, node.Point,
                             MathF.Max(_policy.ChestClearance, 2 * _chest.Radius + _policy.CollisionPadding))))
+                    {
+                        Reject("selected-chest-clearance");
                         continue;
+                    }
                     _selected.Add(node.Point);
                     _chosen.Add(index);
                     bool[] reachable = Flood();
-                    bool routesClear = _requiredAnchors.All(anchor => !initial[anchor] || reachable[anchor]);
+                    // Alternative standing points at one doorway are one access requirement.
+                    // Preserve a route to each door side, not every peripheral sample around it.
+                    bool routesClear = _requiredAnchorGroups.All(group => !group.Any(anchor => initial[anchor])
+                        || group.Any(anchor => reachable[anchor]));
                     if (!routesClear || !_chosen.All(chosen => HasApproach(chosen, reachable)))
                     {
                         _selected.RemoveAt(_selected.Count - 1);
                         _chosen.RemoveAt(_chosen.Count - 1);
+                        Reject("selected-route-preservation");
                         continue;
                     }
                     int yaw = ((int)MathF.Round(MathF.Atan2(node.Inward.X, node.Inward.Z) * 180 / MathF.PI) + 360) % 360;
                     result.Add(new MissionChestPosition(room, node.Point.X, node.Point.Y, node.Point.Z, yaw));
+                    if (_diagnostics != null && _diagnostics.ReferenceHeights.TryGetValue(room, out float reference)
+                        && (node.Point.Y > reference + _policy.FloorProbeLift || node.Point.Y < reference - _policy.MaxFloorDrop))
+                    {
+                        _diagnostics.OffReferencePlacements++;
+                    }
                     selectedRooms.Add(room);
                     floorCounts[Floor(room)] = floorCounts.GetValueOrDefault(Floor(room)) + 1;
                     distances.Add(RoomDistances(room));
                     break;
                 }
             }
+            CaptureRoutes(initial);
             return result;
+        }
+
+        void Reject(string reason)
+        {
+            if (_diagnostics != null)
+            {
+                _diagnostics.Rejections[reason] = _diagnostics.Rejections.GetValueOrDefault(reason) + 1;
+            }
+        }
+
+        void CaptureRoutes(bool[] initial)
+        {
+            if (_diagnostics == null)
+                return;
+            var parents = new Dictionary<int, (int From, bool Transition)>();
+            bool[] reachable = Flood(parents);
+            foreach (int chosen in _chosen)
+            {
+                Node chest = _nodes[chosen];
+                if (!reachable[chest.Approach])
+                    continue;
+                _diagnostics.Routes[chest.Room] = Path(chest.Approach);
+            }
+            foreach (int[] group in _requiredAnchorGroups.Where(group => group.Any(anchor => initial[anchor])))
+            {
+                _diagnostics.InitiallyReachableAnchorGroups++;
+                int target = Array.FindIndex(group, anchor => reachable[anchor]);
+                if (target >= 0)
+                {
+                    _diagnostics.PreservedAnchorGroups++;
+                    _diagnostics.RequiredRoutes.Add(Path(group[target]));
+                    _diagnostics.RequiredRouteTargets.Add(group.Select(anchor => _nodes[anchor].Point).ToArray());
+                }
+            }
+            _diagnostics.LostAnchorSamples = _requiredAnchorGroups.SelectMany(group => group).Distinct()
+                .Count(anchor => initial[anchor] && !reachable[anchor]);
+
+            IReadOnlyList<MissionChestRouteStep> Path(int current)
+            {
+                var path = new List<MissionChestRouteStep>();
+                while (current != _start)
+                {
+                    var parent = parents[current];
+                    path.Add(new MissionChestRouteStep(_nodes[current].Point, parent.Transition));
+                    current = parent.From;
+                }
+                path.Add(new MissionChestRouteStep(_nodes[_start].Point, false));
+                path.Reverse();
+                return path;
+            }
         }
 
         int Floor(int room) => _layout.Generator.Rooms[room].Floor;
@@ -228,7 +411,7 @@ public static class MissionChestPlacement
             _start = Add(0, ToNumerics(_layout.Spawn));
             if (_start >= 0)
             {
-                _requiredAnchors.Add(_start);
+                _requiredAnchorGroups.Add([_start]);
             }
             var districts = QuestDungeonPlayfield.LoadStyleDistricts(_data.RootPath, _layout.Generator.Style, new NLogZoneLogger());
             if (districts?.Districts != null)
@@ -260,8 +443,15 @@ public static class MissionChestPlacement
                         Link(a, b, transition: false);
                 foreach (int node in first.Concat(second))
                 {
-                    _requiredAnchors.Add(node);
                     _doorPoints.Add(new Vector3(door.Position.X, _nodes[node].Point.Y, door.Position.Z));
+                }
+                if (first.Length > 0)
+                {
+                    _requiredAnchorGroups.Add(first);
+                }
+                if (second.Length > 0)
+                {
+                    _requiredAnchorGroups.Add(second);
                 }
             }
             foreach (var transition in _layout.FloorTransitions)
@@ -282,18 +472,24 @@ public static class MissionChestPlacement
                 }
                 if (from >= 0)
                 {
-                    _requiredAnchors.Add(from);
+                    _requiredAnchorGroups.Add([from]);
                 }
                 if (to >= 0)
                 {
-                    _requiredAnchors.Add(to);
+                    _requiredAnchorGroups.Add([to]);
                 }
             }
         }
 
         int Landing(int room, Vector3 target)
-            => Project(target, out Vector3 supported) && MathF.Abs(supported.Y - target.Y) <= _policy.MaxWalkStep
-                ? Add(room, supported) : -1;
+        {
+            bool projected = Project(target, out Vector3 supported);
+            if (_diagnostics != null)
+            {
+                _diagnostics.LandingHeightOffsets[room] = projected ? supported.Y - target.Y : null;
+            }
+            return projected && MathF.Abs(supported.Y - target.Y) <= _policy.MaxWalkStep ? Add(room, supported) : -1;
+        }
 
         void AddWalkAnchors()
         {
@@ -345,16 +541,10 @@ public static class MissionChestPlacement
 
         void AddCandidates()
         {
-            StyleRoomSet styles = new AORebirth.DungeonGenerator.DungeonGenerator(_data.RootPath).LoadStyle(_layout.Generator.Style);
-            var shapes = styles.All.ToDictionary(shape => shape.RoomId);
-            var transitions = _layout.FloorTransitions.SelectMany(link => new[] { link.From.RoomIndex, link.To.RoomIndex }).ToHashSet();
             foreach (DungeonRoomPlacement placed in _dungeon.Placements)
             {
                 int room = placed.Index;
-                if (!shapes.TryGetValue(placed.Template.InstanceId, out RoomShape? shape)
-                    || shape.Role is RoomRole.Entrance or RoomRole.Start || styles.IsMainHall(shape)
-                    || transitions.Contains(room) || _policy.ExcludedRoomNameParts.Any(part =>
-                        shape.Name.Contains(part, StringComparison.OrdinalIgnoreCase)))
+                if (!_eligible.Contains(room))
                     continue;
                 float referenceY = placed.Placed.Y;
                 if (_rooms.TryGetValue(room, out List<int>? anchors) && anchors.Count > 0)
@@ -362,23 +552,52 @@ public static class MissionChestPlacement
                     float[] heights = anchors.Select(index => _nodes[index].Point.Y).Order().ToArray();
                     referenceY = heights[heights.Length / 2];
                 }
+                if (_diagnostics != null)
+                {
+                    _diagnostics.ReferenceHeights[room] = referenceY;
+                }
+                // Length-weighted random ordering keeps long sections likely, but does not spend
+                // a bounded search repeatedly drawing the same unsuitable section with replacement.
                 Wall[] walls = Walls(room, referenceY + _chest.CenterY).ToArray();
-                _random.Shuffle(walls);
+                if (_coverSections)
+                {
+                    walls = walls.OrderBy(wall => -Math.Log(1 - _random.NextDouble()) / Vector3.Distance(wall.A, wall.B)).ToArray();
+                }
+                else
+                {
+                    _random.Shuffle(walls);
+                }
+                if (_diagnostics != null)
+                {
+                    _diagnostics.WallSectionCounts[room] = walls.Length;
+                }
                 if (walls.Length == 0)
+                {
+                    Reject("no-wall-at-reference-height");
                     continue;
+                }
                 float wallLength = walls.Sum(wall => Vector3.Distance(wall.A, wall.B));
+                var tried = _diagnostics == null ? null : new HashSet<Wall>();
                 int added = 0;
                 for (int attempt = 0; attempt < _policy.CandidateAttemptsPerRoom && added < _policy.CandidatesPerRoom; attempt++)
                 {
-                    float roll = (float)_random.NextDouble() * wallLength;
-                    Wall wall = walls[^1];
-                    foreach (Wall section in walls)
+                    Wall wall = _coverSections ? walls[attempt % walls.Length] : walls[^1];
+                    if (!_coverSections)
                     {
-                        roll -= Vector3.Distance(section.A, section.B);
-                        if (roll > 0)
-                            continue;
-                        wall = section;
-                        break;
+                        float roll = (float)_random.NextDouble() * wallLength;
+                        foreach (Wall section in walls)
+                        {
+                            roll -= Vector3.Distance(section.A, section.B);
+                            if (roll > 0)
+                                continue;
+                            wall = section;
+                            break;
+                        }
+                    }
+                    if (_diagnostics != null)
+                    {
+                        tried!.Add(wall);
+                        _diagnostics.WallSectionsTried[room] = tried.Count;
                     }
                     float fraction = (float)_random.NextDouble();
                     // Bias towards section ends (corners), with collision/side clearance deciding suitability.
@@ -389,24 +608,56 @@ public static class MissionChestPlacement
                         float offset = _chest.Radius + _policy.CollisionPadding * (1 + (float)_random.NextDouble());
                         Vector3 point = new(contact.X, referenceY, contact.Z);
                         point += inward * offset;
-                        if (!Project(point, out point) || !OwnFloor(room, point) || !Allowed(point)
-                            || !Occupies(point, _chest, exact: true) || !WallClear(room, point) || !BoundaryWall(room, point, inward))
+                        if (_diagnostics != null && TryOwnFloor(room, point, out Vector3 ownGround, checkHeight: false)
+                            && (ownGround.Y > referenceY + _policy.FloorProbeLift
+                            || ownGround.Y < referenceY - _policy.MaxFloorDrop))
+                        {
+                            _diagnostics.LocalHeightSeeds++;
+                        }
+                        if (!Project(point, out point) || !OwnFloor(room, point))
+                        {
+                            Reject("wall-floor-support");
                             continue;
+                        }
+                        if (!Allowed(point))
+                        {
+                            Reject("entry-door-objective-clearance");
+                            continue;
+                        }
+                        if (!Occupies(point, _chest, exact: true))
+                        {
+                            Reject("chest-collision-support");
+                            continue;
+                        }
+                        if (!WallClear(room, point) || !BoundaryWall(room, point, inward))
+                        {
+                            Reject("boundary-wall");
+                            continue;
+                        }
                         float approachDistance = _chest.Radius + _player.Radius + 2 * _policy.CollisionPadding;
                         float heading = MathF.Round(MathF.Atan2(inward.X, inward.Z) * 180 / MathF.PI) * MathF.PI / 180;
                         Vector3 facing = new(MathF.Sin(heading), 0, MathF.Cos(heading));
                         Vector3 approach = point + facing * approachDistance;
                         if (!Project(approach, out approach) || MathF.Abs(approach.Y - point.Y) > _policy.MaxWalkStep)
+                        {
+                            Reject("approach-floor");
                             continue;
+                        }
                         Vector3 tangent = new(facing.Z, 0, -facing.X);
                         float width = MathF.Max(_policy.DoorClearance, _chest.Radius + _player.Radius + _policy.CollisionPadding);
                         // Require an open room-side pocket, rather than a narrow strip beside a passage wall.
                         if (!Pocket(approach, point.Y) || !Pocket(approach + facing * width, point.Y)
                             || !Pocket(approach + tangent * width, point.Y) || !Pocket(approach - tangent * width, point.Y))
+                        {
+                            Reject("room-side-pocket");
                             continue;
+                        }
                         int front = Add(room, approach);
                         if (front < 0)
+                        {
+                            Reject("approach-occupancy");
                             continue;
+                        }
                         bool corner = walls.Any(other => MathF.Abs(Vector3.Dot(other.Inward, inward)) < 0.7f
                             && DistanceToSegment(point, other.A, other.B) <= 3 * offset
                             && BoundaryWall(room, point, Vector3.Dot(point - other.A, other.Inward) >= 0
@@ -419,8 +670,12 @@ public static class MissionChestPlacement
                         bool Pocket(Vector3 probe, float height)
                             => Project(probe, out Vector3 supported) && MathF.Abs(supported.Y - height) <= _policy.MaxWalkStep
                                 && OwnFloor(room, supported) && Occupies(supported, _player)
-                                && CanWalkPoints(approach, supported);
+                                && CanWalkPoints(approach, supported, room);
                     }
+                }
+                if (_diagnostics != null)
+                {
+                    _diagnostics.CandidateCounts[room] = added;
                 }
             }
         }
@@ -569,7 +824,7 @@ public static class MissionChestPlacement
             to.Add((first, transition));
         }
 
-        bool[] Flood()
+        bool[] Flood(Dictionary<int, (int From, bool Transition)>? parents = null)
         {
             var visited = new bool[_nodes.Count];
             if (Blocked(_nodes[_start].Point))
@@ -601,6 +856,10 @@ public static class MissionChestPlacement
                     if (!transition && (BlockedSegment(a, b) || !CanWalk(current, next)))
                         return;
                     visited[next] = true;
+                    if (parents != null)
+                    {
+                        parents[next] = (current, transition);
+                    }
                     queue.Enqueue(next);
                 }
             }
@@ -618,7 +877,7 @@ public static class MissionChestPlacement
             return result;
         }
 
-        bool CanWalkPoints(Vector3 from, Vector3 to)
+        bool CanWalkPoints(Vector3 from, Vector3 to, int? requiredRoom = null)
         {
             if (!TryGetWalkSampleCount(Vector3.Distance(from, to), _policy.WalkSampleSpacing, out int steps))
                 return false;
@@ -629,6 +888,7 @@ public static class MissionChestPlacement
                 // Follow supported terrain step by step; a curved floor need not follow the endpoint chord's Y.
                 expected.Y = previous.Y;
                 if (!Project(expected, out Vector3 point) || MathF.Abs(point.Y - previous.Y) > _policy.MaxWalkStep
+                    || (requiredRoom.HasValue && !OwnFloor(requiredRoom.Value, point))
                     || !ClearWalkSegment(previous, point))
                     return false;
                 previous = point;

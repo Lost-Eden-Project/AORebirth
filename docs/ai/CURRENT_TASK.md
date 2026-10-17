@@ -1,30 +1,24 @@
 # Current Task
 
-CORRECT GENERATED MISSION CHEST PLACEMENT (2026-10-17).
+AUTONOMOUS MISSION CHEST CORRECTION COMPLETE (2026-10-17).
 
-Work only in the attached mission-chests worktree on codex/mission-chests.
-Correct existing placement using actual generated wall/floor triangles, existing
-room roles, door links, transitions, collision metadata and reachability checks.
-Require wall-adjacent inward-facing positions, maximum one chest per eligible
-room, passage/door/transition exclusion and separation across rooms and floors.
-Preserve density and randomized first initialization; reject unsuitable positions
-rather than forcing count. Persisted chest populations must never relocate.
+Feature branch codex/mission-chests continues d0d94b5f039168ae69964f0fd8d5a994e6a2c83c.
+Corrected actual-room density, alternative doorway requirements, bounded wall
+search, intermediate room-side pocket support and captured automatic-take ACKs.
 
-Loot, rarity weights, QL rules, ownership, inventory, multiplayer synchronization,
-DAO persistence and original packet behavior are outside this correction.
-Mike explicitly requested real-layout, multi-floor, reconstruction and loot/
-inventory regression validation. No schema changes or additional migrations.
-Codex must never launch, control or test the AO client. Mike owns client testing.
+Final real geometry corpus: 576/576 passed across all supported styles/floor
+configurations; 2244/2320 chests placed. Safe bounded-search cave shortfalls
+remain explicit in docs/reports/MISSION_CHEST_AUTONOMOUS_VALIDATION.md and the
+companion 576-row layout CSV. Final focused cohort: 102 cases, 100 passed,
+2 proven inventory baseline failures; all 77 chest cases passed. Real disposable
+MySQL: 50 checks passed. Synthetic TCP mission/loot/authenticated reconnect and
+distinct-process restart passed against the final Windows candidate.
 
-The previous c1b123730 local build and approved single nano-line migration were
-installed successfully. Its fresh backup and accepted build remain preserved
-under ignored build-verify/database-safety-20261017. Original-client acceptance
-is unverified. Existing local servers are being stopped through the approved
-wrapper as required for compilation; restore corrected local servers for Mike
-when validation completes. No public-master merge or Linux deployment.
+Preserved running engines, actual player database, retained backup and accepted
+rollback build. Candidate compilation/testing used isolated outputs and owned
+disposable processes/database; no deployment or schema/content changes occurred.
+Saved chest populations retain their identities, positions and remaining items.
+No AO client or capture tools were launched/controlled. Original-client/visual
+acceptance and the cause of an earlier non-reproduced host abort remain UNVERIFIED.
 
-Validation: all 65 chest cases passed; inventory is 23 passed / 2 proven
-public-baseline failures. Overall: 88 passed / 2 failed / 0 skipped.
-Per-real-layout statistics are recorded in
-../reports/MISSION_CHEST_PLACEMENT_CORRECTION.md. Prior feature evidence remains
-in ../MISSION_CHEST_INTEGRATION.md. Preserve original checkout dirty work.
+Commit/push is limited to this feature branch; no master merge or Linux work.

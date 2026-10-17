@@ -31,7 +31,7 @@ sealed class ConnectedEngineProcess : IDisposable
         }
         throw new FixtureFailure("position-runtime-snapshot-log-timeout");
     }
-    public ConnectedEngineProcess(string assembly, bool login, DisposableSchemaDatabase fixture)
+    public ConnectedEngineProcess(string assembly, bool login, DisposableSchemaDatabase fixture, string? gameDataRoot = null)
     {
         this.fixture = fixture;
         assembly = Path.GetFullPath(assembly);
@@ -52,6 +52,11 @@ sealed class ConnectedEngineProcess : IDisposable
         start.Environment["AO_REBIRTH_EXPECTED_DATABASE"] = DisposableSchemaDatabase.DatabaseName;
         start.Environment["AO_REBIRTH_REQUIRED_SQL_TYPE"] = "MySql";
         start.Environment["AO_REBIRTH_SESSION_OWNERSHIP_DIR"] = Path.Combine(fixture.DirectoryPath, "sessions");
+        if (gameDataRoot != null)
+        {
+            if (!Directory.Exists(gameDataRoot)) throw new FixtureFailure("connected-gamedata-root-missing");
+            start.Environment["AO_REBIRTH_GAMEDATA_PATH"] = Path.GetFullPath(gameDataRoot);
+        }
         process = new Process { StartInfo = start };
         process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };

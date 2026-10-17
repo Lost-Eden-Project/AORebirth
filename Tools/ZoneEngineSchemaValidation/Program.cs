@@ -11,10 +11,11 @@ using MySqlConnector;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Logging;
 
-bool connected = args.Length == 5 && args[0] == "--run-connected" && args[3] == "--login-engine" && File.Exists(args[4]);
+bool connectedChests = args.Length == 5 && args[0] == "--run-connected-chests" && args[3] == "--login-engine" && File.Exists(args[4]);
+bool connected = connectedChests || args.Length == 5 && args[0] == "--run-connected" && args[3] == "--login-engine" && File.Exists(args[4]);
 if ((!connected && (args.Length != 3 || args[0] != "--run-disposable")) || args[1] != "--engine" || !File.Exists(args[2]))
 {
-    Console.Error.WriteLine("USAGE: ZoneEngineSchemaValidation --run-disposable --engine <absolute ZoneEngine_New.dll> OR --run-connected --engine <absolute ZoneEngine_New.dll> --login-engine <absolute LoginEngine.exe-or-dll>. Creates its own loopback-only, labeled disposable MySQL. Never reads production connection settings.");
+    Console.Error.WriteLine("USAGE: ZoneEngineSchemaValidation --run-disposable --engine <absolute ZoneEngine_New.dll> OR --run-connected[-chests] --engine <absolute ZoneEngine_New.dll> --login-engine <absolute LoginEngine.exe-or-dll>. Creates its own loopback-only, labeled disposable MySQL. Never reads production connection settings.");
     return 64;
 }
 try
@@ -28,8 +29,17 @@ try
     {
         Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "connected-explicit-migration");
         EngineSmoke.Validate(args[2], fixture, SchemaState.SCHEMA_CURRENT);
+        if (connectedChests)
+        {
+            ConnectedAcceptanceSmoke.ValidateChests(args[2], args[4], fixture, connection);
+            return 0;
+        }
+#if !MISSION_CHEST_CONNECTED_TESTS
         ConnectedAcceptanceSmoke.Validate(args[2], args[4], fixture, connection);
         return ConnectedAcceptanceSmoke.HandoffRejected ? 0 : 2;
+#else
+        throw new FixtureFailure("chest-focused-build-requires-run-connected-chests");
+#endif
     }
     FixtureSql.Execute(connection, "INSERT INTO instanceditems (Id,ContainerType,ContainerInstance,ContainerPlacement,Itemtype,LowId,HighId,Quality,MultipleCount) VALUES (42,1001,104,1,0,10,10,1,2); INSERT INTO items (ContainerType,ContainerInstance,ContainerPlacement,LowId,HighId,Quality,MultipleCount) VALUES (1001,104,2,11,11,1,1)");
     string before = FixtureSql.Fingerprint(connection);

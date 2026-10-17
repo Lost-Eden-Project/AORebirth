@@ -44,7 +44,7 @@ public sealed class MissionChestPolicy
         }
     }
 
-    /// <summary>One count roll, later persisted with the generated placement results.</summary>
+    /// <summary>One count roll over eligible actual rooms, persisted with the generated placement results.</summary>
     public int RollChestCount(int roomCount, Random random)
     {
         ArgumentNullException.ThrowIfNull(random);

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using AORebirth.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SmokeLounge.AOtomation.Messaging.GameData;
@@ -14,6 +15,9 @@ using SmokeLounge.AOtomation.Messaging.Messages;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using SmokeLounge.AOtomation.Messaging.Serialization;
 using ZoneEngine_New.Core.Entities;
+using ZoneEngine_New.Core.Inventory;
+using ZoneEngine_New.Core.MessageHandlers;
+using ZoneEngine_New.Core.Missions;
 using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Playfield.Locality;
 using AoQuaternion = AORebirth.Core.Vector.Quaternion;
@@ -116,6 +120,149 @@ public sealed class MissionChestProtocolTests
         Assert.AreEqual(move.SourceContainer, added.SourceContainer);
         Assert.AreEqual(inventory.Identity, added.Target);
         CollectionAssert.AreEqual(acknowledgement, Serialize(added));
+    }
+
+    [TestMethod]
+    public void OrdinaryRetailChestUsePublishesContentsBeforeSuccessAndCloseBeforeSuccess()
+    {
+        // Same official CSV: ordinary Use 913 -> contents 914 -> success 915.
+        // Close 1447 -> close action 1449 -> success 1450 is a different chest; only identities are retargeted.
+        byte[] useBytes = Convert.FromHexString("525268580000C3504A6CF26A01000000000000001500000003000000010000C3504A6CF26A0000C7490BBA6B26");
+        byte[] contentsBytes = Convert.FromHexString("4E5369760000C3504A6CF26A010000001500000002000007E20000000000210001000000000000000000006AD000006AD000000001000000000000C7490BBA6B260000007300000001");
+        byte[] successBytes = Convert.FromHexString("525268580000C3504A6CF26A00000000010000001500000003000000010000C3504A6CF26A0000C7490BBA6B26");
+        var request = Deserialize<GenericCmdMessage>(useBytes);
+        var contents = Deserialize<InventoryUpdateMessage>(contentsBytes);
+        var success = Deserialize<GenericCmdMessage>(successBytes);
+        CollectionAssert.AreEqual(useBytes, Serialize(request));
+        CollectionAssert.AreEqual(contentsBytes, Serialize(contents));
+        CollectionAssert.AreEqual(successBytes, Serialize(success));
+        Assert.AreEqual(GenericCmdAction.Use, request.Action);
+        Assert.AreEqual(1, request.Target.Length);
+
+        using var world = new InventoryActionTests.World();
+        var registry = new DynelRegistry();
+        using ServiceProvider services = new ServiceCollection().AddSingleton(registry)
+            .AddSingleton(new PlayfieldLocality(4582, null))
+            .AddSingleton((QuestPropService)RuntimeHelpers.GetUninitializedObject(typeof(QuestPropService)))
+            .BuildServiceProvider();
+        typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(world.Player.Playfield, services);
+        typeof(Playfield).GetField("_nextContainerInventoryHandle", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(world.Player.Playfield, contents.SlotnumberInMainInventory);
+        var chest = new Chest(request.Target[0])
+        {
+            SpawnDefinition = CreateCapturedChest().SpawnDefinition,
+            Playfield = world.Player.Playfield,
+            Position = world.Player.Position
+        };
+        InventoryEntry entry = contents.Entries.Single();
+        Assert.IsTrue(chest.Loot.Add(entry.Slotnumber, TestWorld.CreateItem(entry.LowId, entry.HighId,
+            entry.Quality, (ItemFlags)entry.UnknownFlags, instanceId: 901, stackCount: entry.Unknown1)));
+        registry.Register(world.Player);
+        registry.Register(chest);
+        request.Identity = request.User = world.Player.Identity;
+        contents.Identity = success.Identity = success.User = world.Player.Identity;
+        var handler = new GenericCmdMessageHandler(new StubInventoryRepository(), new StubItemBuilder(),
+            (AuthoredQuestService)RuntimeHelpers.GetUninitializedObject(typeof(AuthoredQuestService)));
+
+        handler.Handle(request, world.Session);
+
+        Assert.AreEqual(2, world.Session.Messages.Count);
+        Assert.IsInstanceOfType<InventoryUpdateMessage>(world.Session.Messages[0]);
+        Assert.IsInstanceOfType<GenericCmdMessage>(world.Session.Messages[1]);
+        CollectionAssert.AreEqual(Serialize(contents), Serialize(world.Session.Messages[0]));
+        CollectionAssert.AreEqual(Serialize(success), Serialize(world.Session.Messages[1]));
+        Assert.IsTrue(chest.IsOpen);
+
+        var close = Deserialize<GenericCmdMessage>(Convert.FromHexString("525268580000C3504A6CF26A01000000000000002400000003000000010000C3504A6CF26A0000C7490BBA6B24"));
+        var closeAction = Deserialize<ActionMessage>(Convert.FromHexString("2049527C0000C7490BBA6B240100000001000000660000C3504A6CF26A"));
+        var closeSuccess = Deserialize<GenericCmdMessage>(Convert.FromHexString("525268580000C3504A6CF26A00000000010000002400000003000000010000C3504A6CF26A0000C7490BBA6B24"));
+        close.Identity = close.User = closeSuccess.Identity = closeSuccess.User = world.Player.Identity;
+        close.Target[0] = closeSuccess.Target[0] = closeAction.Identity = chest.Identity;
+        closeAction.Target = world.Player.Identity;
+        world.Session.Messages.Clear();
+
+        handler.Handle(close, world.Session);
+
+        Assert.AreEqual(2, world.Session.Messages.Count);
+        Assert.IsInstanceOfType<ActionMessage>(world.Session.Messages[0]);
+        Assert.IsInstanceOfType<GenericCmdMessage>(world.Session.Messages[1]);
+        CollectionAssert.AreEqual(Serialize(closeAction), Serialize(world.Session.Messages[0]));
+        CollectionAssert.AreEqual(Serialize(closeSuccess), Serialize(world.Session.Messages[1]));
+        Assert.IsFalse(chest.IsOpen);
+    }
+
+    [TestMethod]
+    [DataRow(196766495, 117, 2, 56250, 56250, 4, 1,
+        "5469373F0000C3504A6CF26A000000006B007500020000006F",
+        "47537A240000C3504A6CF26A000000006B007500020000C3504A6CF26A0000006F")]
+    [DataRow(196766496, 119, 0, 164780, 164781, 2, 100,
+        "5469373F0000C3504A6CF26A000000006B007700000000006F",
+        "47537A240000C3504A6CF26A000000006B007700000000C3504A6CF26A0000006F")]
+    public void CapturedChestTakeKeepsTheRequestedBagMarkerInItsDurableAcknowledgement(
+        int chestInstance, int handle, int slot, int lowId, int highId, int quality, int count,
+        string requestHex, string acknowledgementHex)
+    {
+        // Official 1105/1106 after lockpick, and 1141/1142 after ordinary Use 1129/contents 1130/success 1131.
+        var request = Deserialize<ClientMoveItemToInventoryMessage>(Convert.FromHexString(requestHex));
+        var expected = Deserialize<ContainerAddItemMessage>(Convert.FromHexString(acknowledgementHex));
+        CollectionAssert.AreEqual(Convert.FromHexString(requestHex), Serialize(request));
+        CollectionAssert.AreEqual(Convert.FromHexString(acknowledgementHex), Serialize(expected));
+        Assert.AreEqual((handle << 16) | slot, request.SourceContainer.Instance);
+        using var world = new InventoryActionTests.World();
+        var registry = new DynelRegistry();
+        using ServiceProvider services = AttachChestServices(world, registry);
+        typeof(Playfield).GetField("_nextContainerInventoryHandle", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(world.Player.Playfield, handle);
+        var chest = new Chest(new Identity { Type = IdentityType.Container, Instance = chestInstance })
+        {
+            SpawnDefinition = CreateCapturedChest().SpawnDefinition,
+            Playfield = world.Player.Playfield,
+            Position = world.Player.Position
+        };
+        registry.Register(world.Player);
+        registry.Register(chest);
+        Item item = TestWorld.CreateItem(lowId: lowId, highId: highId, quality: quality, instanceId: 902, stackCount: count);
+        Assert.IsTrue(chest.Loot.Add(slot, item));
+        world.Persistence.Rows[item.InstanceId] = item.ToRecord(chest.Loot.Identity, slot, item.StackCount);
+        Assert.IsTrue(chest.TryUse(world.Player));
+        Assert.AreEqual(handle, chest.InventoryHandle);
+        request.Identity = expected.Identity = expected.Target = world.Player.Identity;
+        world.Session.Messages.Clear();
+        world.Persistence.BeforeCommit = _ => Assert.AreEqual(0, world.Session.Messages.Count);
+
+        new InventoryMoveService(new StubLogger(), world.Flush, world.Actions).Handle(world.Player, request);
+
+        Assert.AreEqual(1, world.Persistence.Calls);
+        Assert.IsFalse(chest.Loot.Content.ContainsKey(slot));
+        Assert.AreSame(item, world.Player.Inventory.Inventory.Content[world.Player.Inventory.Inventory.Offset]);
+        Assert.AreEqual(world.Player.Inventory.Inventory.Offset, world.Persistence.Rows[item.InstanceId].ContainerPlacement);
+        Assert.AreEqual(count, world.Persistence.Rows[item.InstanceId].StackCount);
+        var actual = world.Session.Messages.OfType<ContainerAddItemMessage>().Single();
+        CollectionAssert.AreEqual(Serialize(expected), Serialize(actual));
+    }
+
+    [TestMethod]
+    public void RetailLockpickActionFiveEvidenceIsDistinctFromOrdinaryUse()
+    {
+        // Ordinals 1091/1092/1093 precede 1094 contents: item-on-chest, not ordinary Use(3).
+        byte[] requestBytes = Convert.FromHexString("525268580000C3504A6CF26A01000000000000001A00000005000000000000C3504A6CF26A00000068000000490000C7490BBA6B1F");
+        byte[] replyBytes = Convert.FromHexString("525268580000C3504A6CF26A00000000010000001A00000005000000000000C3504A6CF26A00000068000000490000C7490BBA6B1F");
+        byte[] actionBytes = Convert.FromHexString("2049527C0000C7490BBA6B1F0000000001000000730000C3504A6CF26A");
+        var request = Deserialize<GenericCmdMessage>(requestBytes);
+        var reply = Deserialize<GenericCmdMessage>(replyBytes);
+        var action = Deserialize<ActionMessage>(actionBytes);
+        Assert.AreEqual(GenericCmdAction.UseItemOnItem, request.Action);
+        Assert.AreEqual(new Identity { Type = IdentityType.Inventory, Instance = 73 }, request.Target[0]);
+        Assert.AreEqual(new Identity { Type = IdentityType.Container, Instance = 196766495 }, request.Target[1]);
+        CollectionAssert.AreEqual(request.Target, reply.Target);
+        Assert.AreEqual(request.Target[1], action.Identity);
+        Assert.AreEqual(request.User, action.Target);
+        Assert.AreEqual(1, action.ActionCode);
+        Assert.AreEqual(0x73, action.ActionIdentity);
+        CollectionAssert.AreEqual(requestBytes, Serialize(request));
+        CollectionAssert.AreEqual(replyBytes, Serialize(reply));
+        CollectionAssert.AreEqual(actionBytes, Serialize(action));
     }
 
     [TestMethod]
