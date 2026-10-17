@@ -108,6 +108,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.deathXpLossGraceLevel must be 0 (every level can lose XP) or more.");
             if (Xp.DefaultXpPoolRecoveryPercent is < 0 or > 100)
                 throw new InvalidDataException(path + ": xp.defaultXpPoolRecoveryPercent must be from 0 to 100.");
+            if (Xp.TradeskillXpPerQl < 0)
+                throw new InvalidDataException(path + ": xp.tradeskillXpPerQl must be 0 or more.");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
@@ -355,6 +357,12 @@ namespace ZoneEngine_New.Core.Configuration
         /// Percent of the death pool (XP lost on deaths since the last insurance save) each kill gives back, at least 1 XP.
         /// </summary>
         public int DefaultXpPoolRecoveryPercent { get; init; } = 5;
+
+        /// <summary>A successful tradeskill combine gives XP (<see cref="TradeskillXpPerQl"/> per result QL). Off by default.</summary>
+        public bool TradeskillGrantsXp { get; init; }
+
+        /// <summary>XP per QL of a combine's result while <see cref="TradeskillGrantsXp"/> is on.</summary>
+        public int TradeskillXpPerQl { get; init; } = 5;
 
         /// <summary>Per-grant caps, in percent of the current level's XP bar.</summary>
         public GameplayXpCaps Caps { get; init; } = new();

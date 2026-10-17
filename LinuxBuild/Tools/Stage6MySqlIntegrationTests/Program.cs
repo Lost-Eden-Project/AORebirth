@@ -62,7 +62,6 @@ namespace AORebirth.LinuxBuild.Stage6MySqlIntegrationTests
             "staticdynels",
             "stats",
             "teleports",
-            "tradeskill",
             "vendors",
             "vendortemplate"
         };

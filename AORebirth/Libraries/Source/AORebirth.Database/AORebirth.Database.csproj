@@ -148,7 +148,6 @@
     <Compile Include="Dao\StaticDynelDao.cs" />
     <Compile Include="Dao\TablenameAttribute.cs" />
     <Compile Include="Dao\TeleportDao.cs" />
-    <Compile Include="Dao\TradeSkillDao.cs" />
     <Compile Include="Dao\UploadedNanosDao.cs" />
     <Compile Include="Dao\CharacterPerksDao.cs" />
     <Compile Include="Dao\CharacterActiveNanosDao.cs" />
@@ -171,7 +170,6 @@
     <Compile Include="Entities\DBReceivedMessages.cs" />
     <Compile Include="Entities\DBShopInventoryTemplate.cs" />
     <Compile Include="Entities\DBStats.cs" />
-    <Compile Include="Entities\DBTradeSkill.cs" />
     <Compile Include="Entities\DBUploadedNano.cs" />
     <Compile Include="Entities\DBCharacterPerk.cs" />
     <Compile Include="Entities\DBCharacterActiveNano.cs" />
@@ -326,9 +324,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="SqlTables\teleports.sql">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="SqlTables\tradeskill.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="SqlTables\vendors.sql">

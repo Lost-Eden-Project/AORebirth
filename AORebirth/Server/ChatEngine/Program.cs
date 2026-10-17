@@ -1210,7 +1210,6 @@ namespace ChatEngine
                 "staticdynels",
                 "stats",
                 "teleports",
-                "tradeskill",
                 "vendors",
                 "vendortemplate"
             };

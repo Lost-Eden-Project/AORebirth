@@ -13,6 +13,7 @@ namespace ZoneEngine_New.Core.Quests
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Logging;
@@ -331,24 +332,48 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
-        /// A tradeskill combine made an item with these template ids: active Assemble quests wanting it complete.
+        /// A tradeskill combine made <paramref name="result"/>: active Assemble quests whose
+        /// <see cref="QuestObjective.SpecItem"/> hash covers that item complete.
         /// </summary>
-        public void OnItemAssembled(Player player, int lowId, int highId)
+        public void OnItemAssembled(Player player, Item result)
         {
             ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(result);
+            if (player.Playfield?.GetService<IGameData>() is not IGameData gameData)
+                return;
 
             List<PlayerQuest>? found = null;
             foreach (PlayerQuest quest in GetLog(player).Quests.Values)
             {
                 if (quest.IsActive && string.Equals(quest.Template.Action, QuestTemplate.AssembleAction, StringComparison.Ordinal)
                     && !RequiresBoundObjective(quest)
-                    && quest.Template.Objective.Items is { } items
-                    && (Array.IndexOf(items, lowId) >= 0 || Array.IndexOf(items, highId) >= 0))
+                    && quest.Template.Objective.SpecItem is { Length: > 0 } specItem
+                    && HashHolds(gameData, specItem, result))
                     (found ??= new List<PlayerQuest>()).Add(quest);
             }
 
             if (found != null)
                 CompleteAll(player, found);
+        }
+
+        /// <summary>Template ids each item hash covers (all its leaf families), resolved once per hash.</summary>
+        readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<int>> _assembleHashIds = new(StringComparer.Ordinal);
+
+        bool HashHolds(IGameData gameData, string hash, Item item)
+        {
+            if (string.IsNullOrEmpty(hash))
+                return false;
+
+            HashSet<int> ids = _assembleHashIds.GetOrAdd(hash, key =>
+            {
+                var leaves = new List<HashInstance>();
+                gameData.CollectHashLeafInstances(key, leaves);
+                var set = new HashSet<int>();
+                foreach (HashInstance leaf in leaves)
+                    set.UnionWith(leaf.TemplateIds);
+                return set;
+            });
+            return ids.Contains(item.LowId) || ids.Contains(item.HighId);
         }
 
         List<PlayerQuest>? FindActiveOn(Player player, NpcCharacter npc, string action)

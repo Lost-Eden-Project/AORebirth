@@ -42,7 +42,6 @@ readonly SCHEMA_FILES=(
     staticdynels.sql
     stats.sql
     teleports.sql
-    tradeskill.sql
     vendors.sql
     vendortemplate.sql
 )

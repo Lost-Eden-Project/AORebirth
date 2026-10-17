@@ -9,14 +9,13 @@ namespace ZoneEngine_New.Core.Tradeskills
 
     /// <summary>
     /// Tradeskill recipes: an item (Source) combined with another (Target) makes a Result. Live keeps recipes on the
-    /// server only (the RDB says nothing about what two items make), so they come from captures and curated data:
-    /// <c>Tradeskills.json</c> (captured and hand-checked recipes) is searched before <c>Tradeskills.Legacy.json</c>
-    /// (the CellAO tradeskill table, unverified). An item matches a recipe id by its low or its high template id.
+    /// server only (the RDB says nothing about what two items make), so they come from <c>Tradeskills.json</c> in the
+    /// GameData root (the CellAO tradeskill table, then captured and hand-checked recipes). An item matches a recipe id
+    /// by its low or its high template id. Recipes carry no XP: Gameplay.json xp.tradeskillGrantsXp decides it.
     /// </summary>
     public sealed class TradeskillCatalog
     {
         public const string FileName = "Tradeskills.json";
-        public const string LegacyFileName = "Tradeskills.Legacy.json";
 
         static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -107,30 +106,26 @@ namespace ZoneEngine_New.Core.Tradeskills
             return best;
         }
 
-        /// <summary>Reads <see cref="FileName"/> then <see cref="LegacyFileName"/> from the GameData root; missing files are empty.</summary>
+        /// <summary>Reads <see cref="FileName"/> from the GameData root; a missing file is empty.</summary>
         public static TradeskillCatalog Load(string gameDataRoot, Action<string>? log = null)
         {
-            var recipes = new List<TradeskillRecipe>();
-            foreach (string name in new[] { FileName, LegacyFileName })
+            string path = Path.Combine(gameDataRoot, FileName);
+            if (!File.Exists(path))
             {
-                string path = Path.Combine(gameDataRoot, name);
-                if (!File.Exists(path))
-                {
-                    log?.Invoke(name + " not found at " + path);
-                    continue;
-                }
-
-                TradeskillFile? file = JsonSerializer.Deserialize<TradeskillFile>(File.ReadAllText(path), JsonOptions);
-                int before = recipes.Count;
-                foreach (TradeskillRecipe recipe in file?.Recipes ?? new List<TradeskillRecipe>())
-                {
-                    recipe.Order = recipes.Count;
-                    recipe.Origin = name;
-                    recipes.Add(recipe);
-                }
-                log?.Invoke(name + ": " + (recipes.Count - before) + " recipes from " + path);
+                log?.Invoke(FileName + " not found at " + path);
+                return Empty;
             }
 
+            TradeskillFile? file = JsonSerializer.Deserialize<TradeskillFile>(File.ReadAllText(path), JsonOptions);
+            var recipes = new List<TradeskillRecipe>();
+            foreach (TradeskillRecipe recipe in file?.Recipes ?? new List<TradeskillRecipe>())
+            {
+                recipe.Order = recipes.Count;
+                recipe.Origin = FileName;
+                recipes.Add(recipe);
+            }
+
+            log?.Invoke(FileName + ": " + recipes.Count + " recipes from " + path);
             return new TradeskillCatalog(recipes);
         }
 
@@ -202,10 +197,6 @@ namespace ZoneEngine_New.Core.Tradeskills
         public int MaxBump { get; set; }
 
         public bool Implant { get; set; }
-
-        public int MinXp { get; set; }
-
-        public int MaxXp { get; set; }
 
         public string? Provenance { get; set; }
 

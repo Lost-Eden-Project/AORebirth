@@ -1,14 +1,13 @@
 # Tradeskills
 
 Live keeps tradeskill recipes on the server only: nothing in the RDB says what two items make. ZoneEngine_New
-(`Core/Tradeskills`) combines items from two GameData files, searched in this order:
+(`Core/Tradeskills`) combines items from one GameData file, `GameData/Tradeskills.json`. It holds the CellAO
+tradeskill table, converted once and unverified; captured and hand-checked recipes, each with `Provenance` and
+`Evidence`, replace its entries. When two recipes match the same items, the earlier one in
+the file wins.
 
-| File | Holds | Edited by |
-| --- | --- | --- |
-| `GameData/Tradeskills.json` | captured and hand-checked recipes, each with `Provenance` and `Evidence` | hand, and `capture_to_gamedata.py` for its own `capture-to-gamedata:tradeskills` entries |
-| `GameData/Tradeskills.Legacy.json` | the CellAO tradeskill table, unverified | `legacy_tradeskill_sql_to_json.py` only |
-
-The first matching recipe wins, so a recipe in `Tradeskills.json` overrides the legacy one for the same items.
+Recipes carry no XP. A combine gives the result's QL x `xp.tradeskillXpPerQl` (5) XP, and only while
+`xp.tradeskillGrantsXp` is on in `Config/Gameplay.json` (off by default).
 
 ## Getting a recipe in
 
@@ -20,8 +19,8 @@ The first matching recipe wins, so a recipe in `Tradeskills.json` overrides the 
    least once become `Tradeskills.json` entries. A key that already has a hand-checked recipe is left alone and
    reported, so compare the two and fix the hand-checked one if the capture disagrees.
 
-A combine also completes active `Assemble` quests whose `Objective.Items` names the result
-(`QuestService.OnItemAssembled`).
+A combine also completes active `Assemble` quests whose `Objective.SpecItem` is an item hash covering the item it
+made (`QuestService.OnItemAssembled`).
 
 ## Recipe fields
 
@@ -29,7 +28,7 @@ A combine also completes active `Assemble` quests whose `Objective.Items` names 
 { "Key": "150922>42620", "Source": [150922], "Target": [42620, 42619], "AnyOrder": true,
   "Result": { "LowId": 150923, "HighId": 150924 }, "ResultQl": "Target",
   "ConsumeSource": false, "ConsumeTarget": true,
-  "Skills": [{ "Stat": 125, "Percent": 400, "PerBump": 0 }], "MinXp": 0, "MaxXp": 0,
+  "Skills": [{ "Stat": 125, "Percent": 400, "PerBump": 0 }],
   "Provenance": "cellao-arete-captures", "Evidence": "capture 20260721-001538: Screwdriver kept, Robot Junk used" }
 ```
 
@@ -38,7 +37,7 @@ A combine also completes active `Assemble` quests whose `Objective.Items` names 
   `Fixed` with `FixedQl`.
 - `Skills`: needed skill is `Percent`/100 x target QL; every `PerBump` points above it adds a result QL.
 - `MinTargetQl`, `QlRangePercent` (source QL may be this % below the target's; 1 = at least the target's QL),
-  `Implant`, `MinXp`/`MaxXp` (XP from the result's lowest to highest QL) as in CellAO.
+  `Implant` as in CellAO.
 
 ## Sources so far
 
@@ -46,9 +45,8 @@ A combine also completes active `Assemble` quests whose `Objective.Items` names 
   Antonio Stacklund's Adaptation Factory, the Personalized Basic Robot Brain chain, Vernon Godfray's library hack,
   Dr. Mason's leg implant, Lorelei's pet cage, the Thrak garden key. Antonio's Adaptation Factory is kept as a
   tool, unlike the old rules: live hands out one, and a captured Range Meter run used it for two combines.
-- `legacy_tradeskill_sql_to_json.py --items <items.tsv>` regenerates the legacy file from
-  `AORebirth.Database/SqlTables/tradeskill.sql`; `items.tsv` (id, QL, name per line) comes from `items.dat` and
-  lets it drop rows naming items the client data does not have.
+- The CellAO tradeskill table (101,095 recipes), converted once into `Tradeskills.json`; rows naming items the
+  client data does not have were dropped. The SQL table and its converter are gone: edit `Tradeskills.json`.
 
 ## Not verified yet
 

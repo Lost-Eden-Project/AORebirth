@@ -160,7 +160,7 @@ public static class MigrationCommand
             foreach (string table in TablesDeclaredByCreate(script.Sql))
                 Execute(connection, "DROP TABLE IF EXISTS " + QuoteIdentifier(table));
 
-        // Each script's rows in one commit, without a time limit: the big ones (tradeskill.sql: ~100k single-row
+        // Each script's rows in one commit, without a time limit: the big ones (~100k single-row
         // INSERTs) took one disk flush per row under autocommit, ran past the command timeout on a slow disk, and the
         // cancelled command closed the connection half-way through the scripts. CREATE TABLE still commits by itself.
         Execute(connection, "SET autocommit=0");

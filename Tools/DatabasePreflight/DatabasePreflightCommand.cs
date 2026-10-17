@@ -64,7 +64,6 @@ namespace AORebirth.Tools.DatabasePreflight
             "staticdynels",
             "stats",
             "teleports",
-            "tradeskill",
             "vendors",
             "vendortemplate"
         };

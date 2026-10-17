@@ -63,7 +63,6 @@ namespace LoginEngine
             "staticdynels",
             "stats",
             "teleports",
-            "tradeskill",
             "vendors",
             "vendortemplate"
         };

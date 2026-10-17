@@ -259,10 +259,10 @@ namespace ZoneEngine_New.Core.Tradeskills
                 return CombineOutcome.Refused;
             }
 
-            int xp = Xp(recipe, result.Quality);
+            int xp = Xp(player, result.Quality);
             if (xp > 0)
                 player.AwardXp(xp, XpSource.Quest);
-            player.Playfield?.GetService<Quests.QuestService>()?.OnItemAssembled(player, result.LowId, result.HighId);
+            player.Playfield?.GetService<Quests.QuestService>()?.OnItemAssembled(player, result);
             if (_windows.TryGetValue(player, out Window? window))
             {
                 if (recipe.ConsumeSource || recipe.ConsumeTarget)
@@ -378,15 +378,17 @@ namespace ZoneEngine_New.Core.Tradeskills
             return (Math.Min(min, max), Math.Max(min, max));
         }
 
-        /// <summary>CellAO: MinXp at the result's lowest QL up to MaxXp at its highest.</summary>
-        int Xp(TradeskillRecipe recipe, int quality)
+        /// <summary>
+        /// XP for a combine: the result's QL x Gameplay.json xp.tradeskillXpPerQl, only while xp.tradeskillGrantsXp is on;
+        /// 0 otherwise.
+        /// </summary>
+        static int Xp(Player player, int quality)
         {
-            if (recipe.MaxXp <= 0)
+            Configuration.GameplayXp rules = player.Playfield?.GetService<Configuration.GameplaySettings>()?.Xp
+                ?? new Configuration.GameplayXp();
+            if (!rules.TradeskillGrantsXp || quality <= 0)
                 return 0;
-            (int min, int max) = ResultQlRange(recipe);
-            if (max <= min)
-                return recipe.MaxXp;
-            return (int)Math.Floor(recipe.MinXp + (recipe.MaxXp - recipe.MinXp) * (double)(Math.Clamp(quality, min, max) - min) / (max - min));
+            return (int)Math.Min(int.MaxValue, (long)quality * rules.TradeskillXpPerQl);
         }
 
         string NameOf(Item item)

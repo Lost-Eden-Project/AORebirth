@@ -34,7 +34,6 @@
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Database/SqlTables/staticdynels.sql" Link="SqlTables/staticdynels.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Database/SqlTables/stats.sql" Link="SqlTables/stats.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Database/SqlTables/teleports.sql" Link="SqlTables/teleports.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Database/SqlTables/tradeskill.sql" Link="SqlTables/tradeskill.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Database/SqlTables/vendors.sql" Link="SqlTables/vendors.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.Database/SqlTables/vendortemplate.sql" Link="SqlTables/vendortemplate.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
