@@ -8,21 +8,39 @@ using System.Text.RegularExpressions;
 using AORebirth.Database.Migrations;
 using AORebirth.Database.Schema;
 using MySqlConnector;
+#if !LOGIN_CHARACTER_CREATION_TESTS
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Logging;
+#endif
 
+#if LOGIN_CHARACTER_CREATION_TESTS
+bool connected = false;
+if (args.Length != 1 || args[0] != "--run-character-creation")
+{
+    Console.Error.WriteLine("USAGE: ZoneEngineSchemaValidation --run-character-creation. Creates its own loopback-only, labeled disposable MySQL. Never reads production connection settings.");
+    return 64;
+}
+#else
 bool connected = args.Length == 5 && args[0] == "--run-connected" && args[3] == "--login-engine" && File.Exists(args[4]);
 if ((!connected && (args.Length != 3 || args[0] != "--run-disposable")) || args[1] != "--engine" || !File.Exists(args[2]))
 {
     Console.Error.WriteLine("USAGE: ZoneEngineSchemaValidation --run-disposable --engine <absolute ZoneEngine_New.dll> OR --run-connected --engine <absolute ZoneEngine_New.dll> --login-engine <absolute LoginEngine.exe-or-dll>. Creates its own loopback-only, labeled disposable MySQL. Never reads production connection settings.");
     return 64;
 }
+#endif
 try
 {
     using var fixture = new DisposableSchemaDatabase();
     fixture.Start();
     using var connection = fixture.Open();
     FixtureSql.CreateBaseline(connection);
+#if LOGIN_CHARACTER_CREATION_TESTS
+    CharacterCreationSmoke.CreateBaseline(connection);
+    Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "creation-explicit-migration");
+    CharacterCreationSmoke.Validate(fixture, connection);
+    Console.WriteLine("CHARACTER_CREATION_VALIDATION=PASS PRODUCTION_CONTACT=NO ENGINES_STARTED=NO");
+    return 0;
+#else
     AuthoredMissionSmoke.CreateBaseline(connection);
     if (connected)
     {
@@ -103,6 +121,7 @@ try
     Require(current == FixtureSql.Fingerprint(connection), "runtime-restart-database-unchanged");
     Console.WriteLine("SCHEMA_NEGATIVE_TEST=PASS SCHEMA_CURRENT_TEST=PASS EXPLICIT_MIGRATION_TEST=PASS COPY_FAILURE_ROLLBACK=PASS RUNTIME_RESTART=PASS PRODUCTION_CONTACT=NO");
     return 0;
+#endif
 }
 catch (Exception exception)
 {
@@ -126,7 +145,12 @@ static class FixtureSql
     {
         // Minimal exact DAO contract fixture; no unrelated SqlTables bootstrap or seed data.
         // The canonical bootstrap includes its full teleport seed corpus as individual inserts.
-        Execute(connection, File.ReadAllText(Path.Combine(ConnectedAcceptanceSmoke.RepositoryRoot(),
+#if LOGIN_CHARACTER_CREATION_TESTS
+        string repositoryRoot = CharacterCreationSmoke.RepositoryRoot();
+#else
+        string repositoryRoot = ConnectedAcceptanceSmoke.RepositoryRoot();
+#endif
+        Execute(connection, File.ReadAllText(Path.Combine(repositoryRoot,
             "AORebirth/Libraries/Source/AORebirth.Database/SqlTables/teleports.sql")), commandTimeout: 180);
         Execute(connection, "CREATE TABLE charactersactivenanos (Id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,CharacterId INT NOT NULL,NanoId INT UNSIGNED NOT NULL,Strain INT UNSIGNED NOT NULL,NanoInstance INT NOT NULL DEFAULT 0,DurationCentiseconds INT NOT NULL DEFAULT 0,ExpiresAtUtcTicks BIGINT NOT NULL DEFAULT 0) ENGINE=InnoDB");
         Execute(connection, "CREATE TABLE missionrewardledger (Id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,CharacterId INT NOT NULL,QuestId VARCHAR(128) NOT NULL,RewardKey VARCHAR(191) NOT NULL,RewardType VARCHAR(64) NOT NULL,Status INT NOT NULL,Attempts INT NOT NULL DEFAULT 0,EffectReference VARCHAR(255) NULL,LastError VARCHAR(1024) NULL,ClaimToken VARCHAR(64) NULL,ClaimedAtUtcTicks BIGINT NOT NULL DEFAULT 0,ClaimExpiresAtUtcTicks BIGINT NOT NULL DEFAULT 0,AppliedAtUtcTicks BIGINT NOT NULL DEFAULT 0,CreatedAtUtcTicks BIGINT NOT NULL,UpdatedAtUtcTicks BIGINT NOT NULL,Version BIGINT NOT NULL DEFAULT 1,UNIQUE KEY character_quest_reward(CharacterId,QuestId,RewardKey),KEY character_quest(CharacterId,QuestId)) ENGINE=InnoDB");
@@ -182,6 +206,7 @@ static class FixtureSql
     }
 }
 
+#if !LOGIN_CHARACTER_CREATION_TESTS
 sealed class SilentLogger : IZoneLogger
 {
     public void Debug(string message) { }
@@ -271,6 +296,8 @@ static class SnapshotSmoke
 
 }
 
+#endif
+
 static class MigrationSmoke
 {
     public static int Run(DisposableSchemaDatabase fixture, string[] arguments, TextWriter output)
@@ -303,6 +330,7 @@ static class FixtureEnvironment
     }
 }
 
+#if !LOGIN_CHARACTER_CREATION_TESTS
 static class EngineSmoke
 {
     public static void ExpectedDatabaseMismatch(string assembly, DisposableSchemaDatabase fixture)
@@ -401,6 +429,8 @@ static class EngineSmoke
         return start;
     }
 }
+
+#endif
 
 sealed class DisposableSchemaDatabase : IDisposable
 {

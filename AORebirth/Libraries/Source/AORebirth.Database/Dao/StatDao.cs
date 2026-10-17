@@ -238,10 +238,11 @@ namespace AORebirth.Database.Dao
         /// <returns>
         /// DBStats object
         /// </returns>
-        public DBStats GetById(int type, int instance, int statId)
+        public DBStats GetById(int type, int instance, int statId,
+            IDbConnection connection = null, IDbTransaction transaction = null)
         {
             // Return stat or new DBStat with value of 0
-            return Instance.GetAll(new { Type = type, Instance = instance, StatId = statId }).FirstOrDefault()
+            return Instance.GetWhere(new { Type = type, Instance = instance, StatId = statId }, connection, transaction).FirstOrDefault()
                    ?? new DBStats { Type = type, Instance = instance, StatId = statId, StatValue = 0 };
         }
 

@@ -1,5 +1,6 @@
 namespace AORebirth.Database
 {
+    using System.Data;
     using AORebirth.Database.Domain.Accounts;
     using AORebirth.Database.Domain.Characters;
     using AORebirth.Database.Domain.Missions;
@@ -16,6 +17,12 @@ namespace AORebirth.Database
         public static ICharacterPersistenceDao CreateCharacterPersistenceDao()
         {
             return new MySqlCharacterPersistenceDao();
+        }
+
+        /// <summary>Uses the caller's open connection and transaction without committing or disposing them.</summary>
+        public static ICharacterPersistenceDao CreateCharacterPersistenceDao(IDbConnection connection, IDbTransaction transaction)
+        {
+            return new MySqlCharacterPersistenceDao(connection, transaction);
         }
 
         /// <summary>Creates the MySQL character DAO lazily; no runtime initialization or connection is opened.</summary>

@@ -66,4 +66,17 @@
     <Compile Include="TestDoubles.cs" />
     <Compile Include="TeamServiceTests.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(LoginCharacterCreationFocusedTests)' == 'true'">
+    <!-- Login uses the existing full engine libraries; the normal Zone suite keeps its trimmed references. -->
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="../../../WindowsBuildNet10/Projects/LoginEngine.WinNet10.csproj" />
+    <Compile Remove="@(Compile)" />
+    <Compile Include="CharacterCreationTests.cs" />
+    <Compile Include="CharacterListTests.cs" />
+    <None Include="../../GameData/NewCharacter.json" Link="GameData/NewCharacter.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(LoginCharacterCreationFocusedTests)' != 'true'">
+    <Compile Remove="CharacterCreationTests.cs" />
+    <Compile Remove="CharacterListTests.cs" />
+  </ItemGroup>
 </Project>

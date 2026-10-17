@@ -12,4 +12,19 @@
     <ProjectReference Include="../DatabaseMigrationTool/DatabaseMigrationTool.csproj" />
     <ProjectReference Include="../../AORebirth/Server/ZoneEngine_New/ZoneEngine_New.csproj" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(LoginCharacterCreationFocusedTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);LOGIN_CHARACTER_CREATION_TESTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(LoginCharacterCreationFocusedTests)' == 'true'">
+    <ProjectReference Remove="../../AORebirth/Server/ZoneEngine_New/ZoneEngine_New.csproj" />
+    <ProjectReference Include="../../WindowsBuildNet10/Projects/LoginEngine.WinNet10.csproj" />
+    <Compile Remove="@(Compile)" />
+    <Compile Include="Program.cs" />
+    <Compile Include="CharacterCreationSmoke.cs" />
+    <Compile Include="CharacterPersistenceFaultSmoke.cs" />
+    <None Include="../../AORebirth/GameData/NewCharacter.json" Link="GameData/NewCharacter.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(LoginCharacterCreationFocusedTests)' != 'true'">
+    <Compile Remove="CharacterCreationSmoke.cs" />
+  </ItemGroup>
 </Project>

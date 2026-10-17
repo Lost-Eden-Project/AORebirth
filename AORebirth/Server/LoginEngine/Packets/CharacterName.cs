@@ -35,10 +35,14 @@ namespace LoginEngine.Packets
 
     using System;
     using System.Collections.Generic;
+    using System.Data;
     using System.Text;
 
+    using AORebirth.Database;
     using AORebirth.Database.Dao;
     using AORebirth.Database.Entities;
+    using AORebirth.Interfaces.Persistence.CharacterCreation;
+    using AORebirth.Interfaces.Persistence.Characters;
     using AORebirth.Interfaces.Persistence.Missions;
 
     using LoginEngine.CharacterCreation;
@@ -133,7 +137,7 @@ namespace LoginEngine.Packets
         /// </summary>
         /// <returns>
         /// </returns>
-        public int CheckAgainstDatabase()
+        public int CheckAgainstDatabase(bool startInSL = false)
         {
             /* name in use */
             if (CharacterDao.Instance.ExistsByName(this.Name))
@@ -141,7 +145,7 @@ namespace LoginEngine.Packets
                 return 0;
             }
 
-            return this.CreateNewChar();
+            return this.CreateNewChar(startInSL);
         }
 
         /// <summary>
@@ -273,10 +277,39 @@ namespace LoginEngine.Packets
         /// <returns>
         /// charID
         /// </returns>
-        private int CreateNewChar()
+        private int CreateNewChar(bool startInSL)
         {
-            // Resolve and validate editable kit content before creating any character rows.
+            // Resolve all editable starter content and the account before opening the write transaction.
+            NewCharacterStats starter = NewCharacterStats.Current;
             var startPackage = CharacterStartPackageApplier.RequirePackage(this.Profession);
+            DBLoginData account = LoginDataDao.Instance.GetByUsername(this.AccountName);
+            return this.CreateNewChar(startInSL, starter, account, startPackage, Connector.GetConnection);
+        }
+
+        internal int CreateNewChar(bool startInSL, NewCharacterStats starter, DBLoginData account,
+            CharacterStartProfessionPackage startPackage, Func<IDbConnection> connectionFactory)
+        {
+            if (starter == null) throw new ArgumentNullException(nameof(starter));
+            if (startPackage == null) throw new ArgumentNullException(nameof(startPackage));
+            if (connectionFactory == null) throw new ArgumentNullException(nameof(connectionFactory));
+            if (string.IsNullOrWhiteSpace(this.Name) || string.IsNullOrWhiteSpace(this.AccountName))
+                throw new InvalidOperationException("Character creation requires a name and authenticated account.");
+            if (account == null || account.Id <= 0
+                || !string.Equals(account.Username, this.AccountName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The authenticated character-creation account is unavailable.");
+            if (this.Profession <= 0 || !Enum.IsDefined(typeof(Profession), this.Profession)
+                || startPackage.ProfessionId != this.Profession)
+                throw new InvalidOperationException("The selected profession has no matching starting package.");
+            if (this.Breed <= 0 || !Enum.IsDefined(typeof(Breed), this.Breed)
+                || !Enum.IsDefined(typeof(Gender), this.Gender))
+                throw new InvalidOperationException("The selected breed or gender is invalid.");
+
+            NewCharacterStartLocation startLocation = starter.StartLocation;
+            if (startLocation == null || startLocation.Playfield <= 0
+                || float.IsNaN(startLocation.X) || float.IsInfinity(startLocation.X)
+                || float.IsNaN(startLocation.Y) || float.IsInfinity(startLocation.Y)
+                || float.IsNaN(startLocation.Z) || float.IsInfinity(startLocation.Z))
+                throw new InvalidOperationException("Character creation requires a valid starting location.");
 
             DBCharacter newCharacter = new DBCharacter
                                        {
@@ -286,14 +319,11 @@ namespace LoginEngine.Packets
                                            Username = this.AccountName,
                                        };
 
-            CharacterDao.Instance.Add(newCharacter);
-
-            int charID = newCharacter.Id;
+            int charID = 0;
 
             #region Statistics
 
             // Fixed starter stats and breed abilities come from GameData/NewCharacter.json.
-            NewCharacterStats starter = NewCharacterStats.Current;
             BreedAbilities breedAbilities = starter.AbilitiesFor(this.Breed);
             if (breedAbilities == null)
             {
@@ -316,7 +346,7 @@ namespace LoginEngine.Packets
                     Type = 50000,
                     Instance = charID,
                     StatId = 215,
-                    StatValue = LoginDataDao.Instance.GetByUsername(this.AccountName).GM
+                    StatValue = account.GM
                 });
 
             // SEXXX
@@ -370,19 +400,107 @@ namespace LoginEngine.Packets
                     Type = 50000,
                     Instance = charID,
                     StatId = 389,
-                    StatValue = LoginDataDao.Instance.GetByUsername(this.AccountName).Expansions
+                    StatValue = account.Expansions
                 });
 
-            StatDao.Instance.BulkReplace(stats);
-
+            var initialStats = new Dictionary<int, int>();
+            foreach (DBStats stat in stats)
+            {
+                if (stat.StatId < 0 || initialStats.ContainsKey(stat.StatId))
+                    throw new InvalidOperationException("New-character starter stats contain an invalid or duplicate runtime stat: " + stat.StatId + ".");
+                initialStats.Add(stat.StatId, stat.StatValue);
+            }
+            int value;
+            if (!initialStats.TryGetValue((int)CharacterStat.Level, out value) || value <= 0
+                || !initialStats.TryGetValue((int)CharacterStat.BodyDevelopment, out value) || value < 0
+                || !initialStats.TryGetValue((int)CharacterStat.NanoPool, out value) || value < 0)
+                throw new InvalidOperationException("New-character stats require a positive level and nonnegative BodyDevelopment and NanoPool.");
             #endregion
 
-            // Profession inventory + optional uploaded nanos from GameData/StartPackages.json (DAO).
-            CharacterStartPackageApplier.Apply(charID, startPackage);
+            IDbConnection connection = null;
+            IDbTransaction transaction = null;
+            Exception failure = null;
+            bool commitAttempted = false;
+            try
+            {
+                connection = connectionFactory();
+                if (connection == null) throw new InvalidOperationException("Character creation connection is unavailable.");
+                if (connection.State != ConnectionState.Open) connection.Open();
+                transaction = connection.BeginTransaction();
+                string stage = "character insertion";
+                try
+                {
+                    CharacterDao.Instance.Add(newCharacter, connection, transaction);
+                    charID = newCharacter.Id;
+                    if (charID <= 0) throw new InvalidOperationException("Character insertion returned no identity.");
+                    foreach (DBStats stat in stats) stat.Instance = charID;
 
-            StarterVitalStats.Apply(charID, this.Breed, this.Profession, this.Abis);
+                    stage = "initial stats";
+                    StatDao.Instance.BulkReplace(stats, connection, transaction);
+                    stage = "starting inventory and uploaded nanos";
+                    CharacterStartPackageApplier.Apply(charID, startPackage, connection, transaction);
+                    stage = "starting health and nano";
+                    StarterVitalStats.Apply(charID, this.Breed, this.Profession, this.Abis, connection, transaction);
+                    stage = "starting location";
+                    CharacterDao.Instance.Save(newCharacter,
+                        new { Id = charID, Playfield = startLocation.Playfield, X = startLocation.X, Y = startLocation.Y, Z = startLocation.Z },
+                        connection, transaction);
+                    CharacterDao.Instance.SetPlayfield(charID, (int)IdentityType.Playfield, startLocation.Playfield, connection, transaction);
+                    if (!startInSL)
+                    {
+                        stage = "Rubi-Ka start-area selection";
+                        if (!NewCharacterStartAreaSelectionDao.MarkPending(charID, connection, transaction))
+                            throw new InvalidOperationException("The starting-area selection marker was not persisted.");
+                    }
 
-            return charID;
+                    stage = "commit";
+                    commitAttempted = true;
+                    try { transaction.Commit(); }
+                    catch (Exception exception) { throw new CharacterPersistenceCommitOutcomeUnknownException(exception); }
+                    return charID;
+                }
+                catch (Exception exception)
+                {
+                    if (!commitAttempted)
+                    {
+                        try { transaction.Rollback(); }
+                        catch (Exception rollbackFailure) { exception.Data["CharacterCreation.RollbackFailure"] = rollbackFailure; }
+                    }
+                    if (exception is CharacterPersistenceCommitOutcomeUnknownException) throw;
+                    throw new InvalidOperationException("Character creation failed during " + stage + ".", exception);
+                }
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+                throw;
+            }
+            finally
+            {
+                bool hadFailure = failure != null;
+                DisposeCreationResource(transaction, ref failure, commitAttempted);
+                DisposeCreationResource(connection, ref failure, commitAttempted);
+                if (!hadFailure && failure != null) throw failure;
+            }
+        }
+
+        private static void DisposeCreationResource(IDisposable resource, ref Exception failure, bool commitAttempted)
+        {
+            if (resource == null) return;
+            try { resource.Dispose(); }
+            catch (Exception cleanupFailure)
+            {
+                if (failure == null)
+                {
+                    failure = commitAttempted
+                        ? new CharacterPersistenceCommitOutcomeUnknownException(cleanupFailure)
+                        : cleanupFailure;
+                }
+                else
+                {
+                    failure.Data["CharacterCreation.DisposeFailure." + resource.GetType().Name] = cleanupFailure;
+                }
+            }
         }
 
         #endregion

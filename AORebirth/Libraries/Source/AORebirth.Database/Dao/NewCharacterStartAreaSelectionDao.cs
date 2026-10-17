@@ -1,5 +1,9 @@
 namespace AORebirth.Database.Dao
 {
+    using System;
+    using System.Data;
+    using AORebirth.Database.Domain.Missions;
+
     /// <summary>
     /// Compatibility entry points for existing callers. The shared mission DAO
     /// owns all SQL and preserves the legacy false/null failure behavior.
@@ -15,6 +19,16 @@ namespace AORebirth.Database.Dao
         public static bool MarkPending(int characterId)
         {
             return DatabaseDaoFactory.CreateMissionDao().MarkStartAreaSelectionPending(characterId);
+        }
+
+        /// <summary>Writes and verifies the pending selection inside character creation's transaction.</summary>
+        public static bool MarkPending(int characterId, IDbConnection connection, IDbTransaction transaction)
+        {
+            if (connection == null) throw new ArgumentNullException(nameof(connection));
+            if (transaction == null) throw new ArgumentNullException(nameof(transaction));
+            if (!ReferenceEquals(transaction.Connection, connection))
+                throw new ArgumentException("The transaction must belong to the supplied connection.");
+            return MySqlMissionDao.MarkStartAreaSelectionPending(characterId, connection, transaction);
         }
 
         public static string GetState(int characterId)

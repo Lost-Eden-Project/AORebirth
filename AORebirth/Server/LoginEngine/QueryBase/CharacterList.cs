@@ -33,12 +33,18 @@ namespace LoginEngine.QueryBase
 {
     #region Usings ...
 
+    using System;
     using System.Collections.Generic;
+    using System.Linq;
 
     using AORebirth.Database.Dao;
-    using AORebirth.Database.Entities;
+    using AORebirth.Interfaces.Persistence.Characters;
 
     using LoginEngine.Packets;
+
+    using SmokeLounge.AOtomation.Messaging.GameData;
+
+    using Utility;
 
     #endregion
 
@@ -56,19 +62,52 @@ namespace LoginEngine.QueryBase
         /// </returns>
         public static List<CharacterEntry> LoadCharacters(string accountName)
         {
+            return LoadCharacters(
+                AORebirth.Database.DatabaseDaoFactory.CreateCharacterDao().ListForAccount(accountName),
+                characterId => StatDao.Instance.GetAll(new { Type = (int)IdentityType.CanbeAffected, Instance = characterId }));
+        }
+
+        internal static List<CharacterEntry> LoadCharacters(
+            IEnumerable<CharacterDirectoryData> directory,
+            Func<int, IEnumerable<DBStats>> loadStats)
+        {
             var characters = new List<CharacterEntry>();
 
-            foreach (var ch in AORebirth.Database.DatabaseDaoFactory.CreateCharacterDao().ListForAccount(accountName))
+            foreach (var ch in directory)
             {
-                var charentry = new CharacterEntry();
-                charentry.Id = ch.CharacterId;
-                charentry.Name = ch.Name;
-                charentry.Playfield = ch.Playfield;
-                charentry.Level = StatDao.Instance.GetById(50000, ch.CharacterId, 54).StatValue; // 54 = Level
-                charentry.Breed = StatDao.Instance.GetById(50000, ch.CharacterId, 4).StatValue; // 4 = Breed
-                charentry.Gender = StatDao.Instance.GetById(50000, ch.CharacterId, 59).StatValue; // 59 = Sex
-                charentry.Profession = StatDao.Instance.GetById(50000, ch.CharacterId, 60).StatValue; // 60 = Profession
-                characters.Add(charentry);
+                // GetById fabricates a zero-valued row when a stat is absent. The
+                // character list must distinguish that from a stored zero Sex value.
+                var stats = loadStats(ch.CharacterId).ToList();
+                DBStats level = stats.FirstOrDefault(stat => stat.StatId == (int)CharacterStat.Level);
+                DBStats breed = stats.FirstOrDefault(stat => stat.StatId == (int)CharacterStat.Breed);
+                DBStats gender = stats.FirstOrDefault(stat => stat.StatId == (int)CharacterStat.Sex);
+                DBStats profession = stats.FirstOrDefault(stat => stat.StatId == (int)CharacterStat.Profession);
+
+                string incompleteField = level == null || level.StatValue <= 0 ? "Level"
+                    : breed == null || breed.StatValue <= 0 ? "Breed"
+                    : gender == null ? "Sex"
+                    : profession == null || profession.StatValue <= 0 ? "Profession"
+                    : ch.Playfield <= 0 ? "Playfield"
+                    : null;
+                if (incompleteField != null)
+                {
+                    LogUtil.WarnException(
+                        "Character list skipped incomplete character id={0}: missing or invalid {1}.",
+                        ch.CharacterId,
+                        incompleteField);
+                    continue;
+                }
+
+                characters.Add(new CharacterEntry
+                {
+                    Id = ch.CharacterId,
+                    Name = ch.Name,
+                    Playfield = ch.Playfield,
+                    Level = level.StatValue,
+                    Breed = breed.StatValue,
+                    Gender = gender.StatValue,
+                    Profession = profession.StatValue
+                });
             }
 
             return characters;

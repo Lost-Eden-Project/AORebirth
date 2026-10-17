@@ -646,6 +646,21 @@ parser/native consumer, field locations, vector, and accessors. It does not
 prove an `ACGHash_t`-to-mob-template, `MonsterData`, dynel, or AORebirth profile
 join. Do not call `GetHash` or `GetHashSpawnPoints` terminal identity consumers.
 
+## Login Character Creation Tests
+
+When Mike explicitly requests character-creation regression coverage, run:
+
+```cmd
+cmd /d /c dotnet test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests.csproj --configuration Debug --nologo -p:LoginCharacterCreationFocusedTests=true
+cmd /d /c Tools\run_zoneengine_schema_validation.cmd --run-character-creation
+```
+
+The focused configurations reference the actual LoginEngine assembly and its
+full DAO dependencies. The second command uses the existing labeled, loopback
+disposable MySQL fixture, accepts no database connection or engine arguments,
+and checks actual creation/rollback without starting backend engines or reading
+application database settings. Default test configurations are unchanged.
+
 ## AOtomation Messaging Tests
 
 Build and run the legacy MSTest assembly through the repo-owned wrapper:

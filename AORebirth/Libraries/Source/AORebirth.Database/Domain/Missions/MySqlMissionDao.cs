@@ -366,38 +366,47 @@ namespace AORebirth.Database.Domain.Missions
                 return false;
             }
 
-            const string Sql =
-                "INSERT INTO missionflags "
-                + "(CharacterId, QuestId, FlagKey, `Value`, CreatedAtUtcTicks, UpdatedAtUtcTicks, Version) "
-                + "VALUES (@CharacterId, @QuestId, @FlagKey, @Value, @NowUtcTicks, @NowUtcTicks, 1) "
-                + "ON DUPLICATE KEY UPDATE `Value`=`Value`";
-
             try
             {
                 using (IDbConnection connection = this.OpenConnection())
                 {
-                    connection.Execute(
-                        Sql,
-                        new
-                        {
-                            CharacterId = characterId,
-                            QuestId = StartAreaQuestId,
-                            FlagKey = StartAreaFlagKey,
-                            Value = MissionStartAreaSelectionStates.Pending,
-                            NowUtcTicks = DateTime.UtcNow.Ticks
-                        });
+                    return MarkStartAreaSelectionPending(characterId, connection, null);
                 }
-
-                return string.Equals(
-                    this.GetStartAreaSelectionState(characterId),
-                    MissionStartAreaSelectionStates.Pending,
-                    StringComparison.OrdinalIgnoreCase);
             }
             catch (Exception exception)
             {
                 LogUtil.ErrorException(exception);
                 return false;
             }
+        }
+
+        internal static bool MarkStartAreaSelectionPending(int characterId,
+            IDbConnection connection, IDbTransaction transaction)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (connection == null) throw new ArgumentNullException(nameof(connection));
+            const string Sql =
+                "INSERT INTO missionflags "
+                + "(CharacterId, QuestId, FlagKey, `Value`, CreatedAtUtcTicks, UpdatedAtUtcTicks, Version) "
+                + "VALUES (@CharacterId, @QuestId, @FlagKey, @Value, @NowUtcTicks, @NowUtcTicks, 1) "
+                + "ON DUPLICATE KEY UPDATE `Value`=`Value`";
+
+            connection.Execute(
+                Sql,
+                new
+                {
+                    CharacterId = characterId,
+                    QuestId = StartAreaQuestId,
+                    FlagKey = StartAreaFlagKey,
+                    Value = MissionStartAreaSelectionStates.Pending,
+                    NowUtcTicks = DateTime.UtcNow.Ticks
+                }, transaction);
+
+            string state = connection.Query<string>(
+                "SELECT `Value` FROM missionflags WHERE CharacterId=@CharacterId AND QuestId=@QuestId AND FlagKey=@FlagKey LIMIT 1",
+                new { CharacterId = characterId, QuestId = StartAreaQuestId, FlagKey = StartAreaFlagKey },
+                transaction).FirstOrDefault();
+            return string.Equals(state, MissionStartAreaSelectionStates.Pending, StringComparison.OrdinalIgnoreCase);
         }
 
         public string GetStartAreaSelectionState(int characterId)

@@ -13,14 +13,27 @@ namespace AORebirth.Database.Domain.Characters
     public sealed partial class MySqlCharacterPersistenceDao : ICharacterPersistenceDao
     {
         private readonly Func<IDbConnection> connectionFactory;
+        private readonly IDbConnection callerConnection;
+        private readonly IDbTransaction callerTransaction;
 
         public MySqlCharacterPersistenceDao(Func<IDbConnection> connectionFactory)
         {
             this.connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         }
 
+        public MySqlCharacterPersistenceDao(IDbConnection connection, IDbTransaction transaction)
+        {
+            if (connection == null) throw new ArgumentNullException(nameof(connection));
+            if (transaction == null) throw new ArgumentNullException(nameof(transaction));
+            if (connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection))
+                throw new ArgumentException("An open connection and its active transaction are required.");
+            callerConnection = connection;
+            callerTransaction = transaction;
+        }
+
         private T Read<T>(Func<IDbConnection, T> action, bool committedWrite = false)
         {
+            if (callerConnection != null) return action(callerConnection);
             IDbConnection connection = null;
             Exception failure = null;
             try
@@ -36,6 +49,12 @@ namespace AORebirth.Database.Domain.Characters
         private T Transaction<T>(Func<IDbConnection, IDbTransaction, T> action,
             IsolationLevel isolation = IsolationLevel.Unspecified)
         {
+            if (callerTransaction != null)
+            {
+                if (isolation != IsolationLevel.Unspecified && callerTransaction.IsolationLevel != isolation)
+                    throw new InvalidOperationException("The caller transaction does not provide the required isolation level.");
+                return action(callerConnection, callerTransaction);
+            }
             return Read(connection =>
             {
                 IDbTransaction transaction = null;
@@ -110,7 +129,7 @@ namespace AORebirth.Database.Domain.Characters
             return Read<IList<T>>(connection =>
             {
                 var rows = new List<T>();
-                using (IDbCommand command = Command(connection, null, sql, parameters))
+                using (IDbCommand command = Command(connection, callerTransaction, sql, parameters))
                 using (IDataReader reader = command.ExecuteReader())
                     while (reader.Read()) rows.Add(map(reader));
                 return rows;

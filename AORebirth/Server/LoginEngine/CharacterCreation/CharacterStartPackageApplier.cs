@@ -2,6 +2,7 @@ namespace LoginEngine.CharacterCreation
 {
     using System;
     using System.Collections.Generic;
+    using System.Data;
     using System.Globalization;
 
     using AORebirth.Core.GameData;
@@ -39,19 +40,24 @@ namespace LoginEngine.CharacterCreation
             return package;
         }
 
-        public static void Apply(int characterId, CharacterStartProfessionPackage package)
+        public static void Apply(int characterId, CharacterStartProfessionPackage package,
+            IDbConnection connection = null, IDbTransaction transaction = null)
         {
             if (characterId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(characterId));
             if (package == null)
                 throw new ArgumentNullException(nameof(package));
+            if ((connection == null) != (transaction == null))
+                throw new ArgumentException("Connection and transaction must be supplied together.");
 
             IReadOnlyList<CharacterStartPackageItem> items = package.Items;
             IReadOnlyList<int> nanos = package.UploadedNanos;
             if (items.Count == 0 && nanos.Count == 0)
                 return;
 
-            ICharacterPersistenceDao persistence = DatabaseDaoFactory.CreateCharacterPersistenceDao();
+            ICharacterPersistenceDao persistence = connection == null
+                ? DatabaseDaoFactory.CreateCharacterPersistenceDao()
+                : DatabaseDaoFactory.CreateCharacterPersistenceDao(connection, transaction);
             var inserts = new List<PersistedItemData>(items.Count);
             if (items.Count > 0)
             {

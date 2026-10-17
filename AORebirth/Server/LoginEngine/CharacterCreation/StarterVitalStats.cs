@@ -9,6 +9,8 @@ namespace LoginEngine.CharacterCreation
 {
     #region Usings ...
 
+    using System;
+    using System.Data;
     using AORebirth.Database.Dao;
     using AORebirth.Database.Entities;
 
@@ -24,8 +26,11 @@ namespace LoginEngine.CharacterCreation
         private const int BodyDevelopmentBase = 5;
         private const int NanoEnergyPoolBase = 5;
 
-        public static void Apply(int characterId, int breed, int profession, int[] abis)
+        public static void Apply(int characterId, int breed, int profession, int[] abis,
+            IDbConnection connection = null, IDbTransaction transaction = null)
         {
+            if ((connection == null) != (transaction == null))
+                throw new ArgumentException("Connection and transaction must be supplied together.");
             if (abis == null || abis.Length < 6)
             {
                 return;
@@ -39,10 +44,10 @@ namespace LoginEngine.CharacterCreation
             int maxHealth = CalculateMaxHealth(breed, profession, bodyDevelopment);
             int maxNano = CalculateMaxNano(breed, profession, nanoEnergyPool);
 
-            UpsertStat(characterId, 27, maxHealth);
-            UpsertStat(characterId, 1, maxHealth);
-            UpsertStat(characterId, 214, maxNano);
-            UpsertStat(characterId, 221, maxNano);
+            UpsertStat(characterId, 27, maxHealth, connection, transaction);
+            UpsertStat(characterId, 1, maxHealth, connection, transaction);
+            UpsertStat(characterId, 214, maxNano, connection, transaction);
+            UpsertStat(characterId, 221, maxNano, connection, transaction);
         }
 
         private static int CalculateMaxHealth(int breed, int profession, int bodyDevelopment)
@@ -124,7 +129,8 @@ namespace LoginEngine.CharacterCreation
             return value;
         }
 
-        private static void UpsertStat(int characterId, int statId, int statValue)
+        private static void UpsertStat(int characterId, int statId, int statValue,
+            IDbConnection connection, IDbTransaction transaction)
         {
             var stat = new DBStats
                        {
@@ -134,7 +140,7 @@ namespace LoginEngine.CharacterCreation
                            StatValue = statValue
                        };
 
-            DBStats existing = StatDao.Instance.GetById(stat.Type, stat.Instance, stat.StatId);
+            DBStats existing = StatDao.Instance.GetById(stat.Type, stat.Instance, stat.StatId, connection, transaction);
             if (existing.Id != 0)
             {
                 if (existing.StatValue == stat.StatValue)
@@ -143,11 +149,11 @@ namespace LoginEngine.CharacterCreation
                 }
 
                 existing.StatValue = stat.StatValue;
-                StatDao.Instance.Save(existing);
+                StatDao.Instance.Save(existing, null, connection, transaction);
                 return;
             }
 
-            StatDao.Instance.Add(stat);
+            StatDao.Instance.Add(stat, connection, transaction);
         }
     }
 }

@@ -45,12 +45,14 @@ namespace LoginEngine
     using AO.Core.Encryption;
 
     using AORebirth.Core.Components;
+    using AORebirth.Core.GameData;
     using AORebirth.Database;
     using AORebirth.Database.Dao;
 
     using locales;
 
     using LoginEngine.CoreServer;
+    using LoginEngine.CharacterCreation;
     using LoginEngine.Packets;
 
 #if !AOREBIRTH_WIN_NET10
@@ -510,6 +512,26 @@ namespace LoginEngine
                 return false;
             }
 
+            Logger creationLogger = LogManager.GetCurrentClassLogger();
+            string gameDataRoot = null;
+            try
+            {
+                gameDataRoot = GameDataPaths.ResolveRuntimeRoot();
+                creationLogger.Info("LoginEngine GameData root: {0}", gameDataRoot);
+                NewCharacterStats creationData = NewCharacterStats.Current;
+                creationLogger.Info("LoginEngine creation data loaded: {0}",
+                    Path.Combine(gameDataRoot, GameDataPaths.NewCharacterFileName));
+            }
+            catch (Exception exception)
+            {
+                creationLogger.Error(exception,
+                    "LoginEngine cannot load creation data from {0}. Verify AO_REBIRTH_GAMEDATA_PATH and the required NewCharacter.json, then retry startup.",
+                    gameDataRoot ?? "the configured GameData root");
+                LogManager.Flush();
+                Colouring.Pop();
+                return false;
+            }
+
             if (!InitializeServerInstance())
             {
                 Colouring.Push(ConsoleColor.Red);
@@ -723,9 +745,14 @@ namespace LoginEngine
 
             if (!Initialize())
             {
+                Environment.ExitCode = 1;
                 Console.WriteLine(locales.ErrorInitializingEngine);
-                Console.WriteLine("Press enter to exit");
-                Console.ReadLine();
+                if (!headless)
+                {
+                    Console.WriteLine("Press enter to exit");
+                    Console.ReadLine();
+                }
+                FlushHeadlessConsoleLogging();
             }
             else
             {

@@ -33,12 +33,15 @@ namespace LoginEngine.MessageHandlers
 {
     #region Usings ...
 
+    using System;
     using System.ComponentModel.Composition;
 
     using AORebirth.Core.Components;
 
     using LoginEngine.CoreClient;
     using LoginEngine.Packets;
+
+    using NLog;
 
     using SmokeLounge.AOtomation.Messaging.Messages;
     using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
@@ -81,7 +84,19 @@ namespace LoginEngine.MessageHandlers
                                     MonsterScale = createCharacterMessage.MonsterScale,
                                     Fatness = (int)createCharacterMessage.Fatness
                                 };
-            int characterId = characterName.CheckAgainstDatabase();
+            int characterId;
+            try
+            {
+                characterId = characterName.CheckAgainstDatabase(
+                    createCharacterMessage.StarterArea == StarterArea.Shadowlands);
+            }
+            catch (Exception exception)
+            {
+                LogManager.GetCurrentClassLogger().Error(exception,
+                    "Character creation failed before completion. Check LoginEngine's GameData and database error details; creation success was not sent.");
+                client.Server.DisconnectClient(client);
+                return;
+            }
 
             if (characterId < 1)
             {
@@ -89,9 +104,6 @@ namespace LoginEngine.MessageHandlers
                 return;
             }
 
-            characterName.SendNameToStartPlayfield(
-                createCharacterMessage.StarterArea == StarterArea.Shadowlands,
-                characterId);
             client.Send(0x0000FFFF, new CharacterCreatedMessage { CharacterId = characterId });
         }
 
