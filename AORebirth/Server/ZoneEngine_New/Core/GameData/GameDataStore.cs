@@ -85,6 +85,9 @@ namespace ZoneEngine_New.Core.GameData
 
             EnsureRootExists();
             RespawnContent = RespawnContentCatalog.Load(RootPath);
+            // Startup is the one place a broken start location may stop the engine: never on a tick.
+            if (RespawnContent.StartLocationError is string startLocationError)
+                throw new InvalidDataException("Invalid NewCharacter.json: " + startLocationError);
             LoadNpcTemplates();
             LoadMonsterWeapons();
             LoadHashItems();

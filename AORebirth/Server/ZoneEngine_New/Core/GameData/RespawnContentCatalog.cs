@@ -36,24 +36,42 @@ public sealed class RespawnContentCatalog
         return content;
     }
 
+    /// <summary>
+    /// Why NewCharacter.json's StartLocation was not used, or null when it was (or there is none). Reading never throws:
+    /// <see cref="Load"/> can also run after startup (IGameData's default RespawnContent re-reads the files), where an
+    /// exception would end the tick. GameDataStore refuses to start on it instead.
+    /// </summary>
+    public string? StartLocationError { get; private set; }
+
     void ReadStartLocation(string path)
     {
         if (!File.Exists(path))
             return;
 
-        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
-        if (!document.RootElement.TryGetProperty("StartLocation", out JsonElement start)
-            || !start.TryGetProperty("Playfield", out JsonElement playfield)
-            || !start.TryGetProperty("X", out JsonElement x) || !start.TryGetProperty("Y", out JsonElement y)
-            || !start.TryGetProperty("Z", out JsonElement z))
-            return;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+            if (!document.RootElement.TryGetProperty("StartLocation", out JsonElement start)
+                || !start.TryGetProperty("Playfield", out JsonElement playfield)
+                || !start.TryGetProperty("X", out JsonElement x) || !start.TryGetProperty("Y", out JsonElement y)
+                || !start.TryGetProperty("Z", out JsonElement z))
+                return;
 
-        float[] position = [x.GetSingle(), y.GetSingle(), z.GetSingle()];
-        if (playfield.GetInt32() <= 0 || position.Any(value => !float.IsFinite(value)))
-            throw new InvalidDataException("Invalid NewCharacter.json StartLocation.");
+            if (!playfield.TryGetInt32(out int playfieldId) || playfieldId <= 0
+                || !x.TryGetSingle(out float px) || !y.TryGetSingle(out float py) || !z.TryGetSingle(out float pz)
+                || !float.IsFinite(px) || !float.IsFinite(py) || !float.IsFinite(pz))
+            {
+                StartLocationError = path + ": StartLocation needs a positive Playfield and finite X, Y, Z.";
+                return;
+            }
 
-        StartPlayfieldId = playfield.GetInt32();
-        StartPosition = position;
+            StartPlayfieldId = playfieldId;
+            StartPosition = [px, py, pz];
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or InvalidOperationException)
+        {
+            StartLocationError = path + ": " + exception.Message;
+        }
     }
 
     public static RespawnContentCatalog Parse(string json)

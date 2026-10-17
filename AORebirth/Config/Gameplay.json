@@ -6,6 +6,8 @@
     "killPercentPerLevelDifference": 2.5,
     "sideBonusPercent": 10,
     "noKillXpNpcFamilies": [0],
+    "deathXpLossGraceLevel": 20,
+    "defaultXpPoolRecoveryPercent": 5,
     "caps": {
       "killXp": 10.0,
       "quest": 20.0,

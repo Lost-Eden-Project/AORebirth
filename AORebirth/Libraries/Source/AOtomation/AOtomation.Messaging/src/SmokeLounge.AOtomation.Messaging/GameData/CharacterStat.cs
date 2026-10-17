@@ -1105,7 +1105,21 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         UnsavedXP = 0x00000250, 
 
-        RegainXPPercentage = 0x00000251, 
+        RegainXPPercentage = 0x00000251,
+
+        /// <summary>
+        /// AORebirth server-only: the insurance save point's height (Y), in centimetres. AO names stat 595
+        /// TempSavePlayfield; live leaves it 0 and the client never reads it. The playfield is kept in ResurrectDest.
+        /// </summary>
+        SavePointY = 0x00000253,
+
+        /// <summary>AORebirth server-only: the insurance save point's X, in centimetres (AO's TempSaveX, 596).</summary>
+        SavePointX = 0x00000254,
+
+        /// <summary>
+        /// AORebirth server-only: the insurance save point's Z (AO's map y), in centimetres (AO's TempSaveY, 597).
+        /// </summary>
+        SavePointZ = 0x00000255,
 
         ExtendedFlags = 0x00000256, 
 

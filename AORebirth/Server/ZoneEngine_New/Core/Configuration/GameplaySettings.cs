@@ -104,6 +104,10 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.caps killXp, quest and research must be finite, non-negative percents.");
             if (Xp.NoKillXpNpcFamilies == null)
                 throw new InvalidDataException(path + ": xp.noKillXpNpcFamilies must be a list of NPCFamily values (it may be empty).");
+            if (Xp.DeathXpLossGraceLevel < 0)
+                throw new InvalidDataException(path + ": xp.deathXpLossGraceLevel must be 0 (every level can lose XP) or more.");
+            if (Xp.DefaultXpPoolRecoveryPercent is < 0 or > 100)
+                throw new InvalidDataException(path + ": xp.defaultXpPoolRecoveryPercent must be from 0 to 100.");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
@@ -340,6 +344,17 @@ namespace ZoneEngine_New.Core.Configuration
         /// civilians (Newland Militia Guard and some 78 other templates). An NPC with no NPCFamily stat is not family 0.
         /// </summary>
         public int[] NoKillXpNpcFamilies { get; init; } = [0];
+
+        /// <summary>
+        /// The death XP loss grace level: characters below it lose no XP when they die (live's insurance terminal says
+        /// you are "always" saved there). 0 turns the grace off.
+        /// </summary>
+        public int DeathXpLossGraceLevel { get; init; } = 20;
+
+        /// <summary>
+        /// Percent of the death pool (XP lost on deaths since the last insurance save) each kill gives back, at least 1 XP.
+        /// </summary>
+        public int DefaultXpPoolRecoveryPercent { get; init; } = 5;
 
         /// <summary>Per-grant caps, in percent of the current level's XP bar.</summary>
         public GameplayXpCaps Caps { get; init; } = new();

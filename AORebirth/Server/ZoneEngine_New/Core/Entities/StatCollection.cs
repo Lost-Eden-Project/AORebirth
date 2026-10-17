@@ -86,8 +86,8 @@ namespace ZoneEngine_New.Core.Entities
             => stat is CharacterStat.UsedIP or CharacterStat.MissionBits19 or CharacterStat.MissionBits20
                 or CharacterStat.DebugFlags or CharacterStat.DeathXpPool
                 // The save point (Player.StoreSavePoint): live never sends these (ResurrectDest stays unset).
-                or CharacterStat.ResurrectDest or Player.SaveY or Player.SaveX
-                or Player.SaveZ;
+                or CharacterStat.ResurrectDest or CharacterStat.SavePointY or CharacterStat.SavePointX
+                or CharacterStat.SavePointZ;
 
         /// <summary>
         /// The value the client is sent for a stat, when it is not simply the stored base (a player's IP is sent as

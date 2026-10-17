@@ -43,6 +43,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"You are already running this action!" (category 110). Live perk spam capture 2026-10-02T03:54:58Z.</summary>
         public const int AlreadyRunningAction = 171187118;
 
+        /// <summary>"%d credits were deducted from your account." (category 110, FormatFeedback). Insurance save fee.</summary>
+        public const int CreditsDeducted = 57671460;
+
+        /// <summary>"Character stored. %d XP saved." (category 110, FormatFeedback). Insurance save.</summary>
+        public const int CharacterStored = 159227364;
+
         /// <summary>
         /// Plain text passthrough: one string argument shown as is. Live sends item SystemText (53044, "You
         /// successfully perform an Impale attack.") as FormatFeedback 110/707 (capture 2026-10-02T03:54:58Z).
