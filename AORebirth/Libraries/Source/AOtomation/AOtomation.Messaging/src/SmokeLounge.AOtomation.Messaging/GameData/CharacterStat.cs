@@ -122,6 +122,7 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         IP = 0x00000035, 
 
+        /// <summary>A character's level. On a nano item it is the NCU the nano takes.</summary>
         Level = 0x00000036, 
 
         InventoryId = 0x00000037, 
@@ -162,6 +163,7 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         Value = 0x0000004A, 
 
+        /// <summary>MetaType. On a nano item it is the nano strain (line); nanos of one strain never stack.</summary>
         MetaType = 0x0000004B, 
 
         ItemClass = 0x0000004C,
@@ -517,15 +519,22 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         QuestLevelsSolved = 0x000000FD, 
 
+        /// <summary>
+        /// MonsterLevelsKilled. On a nano item it is the local cooldown in centiseconds, the client info's "Local
+        /// cooldown" (Gamecode.dll N3Msg_GetInfo; Spirit Siphon 297342: 12000).
+        /// </summary>
         MonsterLevelsKilled = 0x000000FE, 
 
         PvPLevelsKilled = 0x000000FF, 
 
         MissionBits1 = 0x00000100, 
 
-        MissionBits2 = 0x00000101, 
+        MissionBits2 = 0x00000101,
 
-        ClanHierarchy = 0x00000104, 
+        /// <summary>A door's flags (259). Door full updates send 0.</summary>
+        DoorFlags = 0x00000103,
+
+        ClanHierarchy = 0x00000104,
 
         QuestStat = 0x00000105, 
 
@@ -687,7 +696,10 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         MonsterTexture = 0x00000158, 
 
-        HasAlwaysLootable = 0x00000159, 
+        HasAlwaysLootable = 0x00000159,
+
+        /// <summary>A vending machine's trade limit (346): the most credits one trade with it may move.</summary>
+        TradeLimit = 0x0000015A,
 
         AutoAttackFlags = 0x0000015D,
 
@@ -813,6 +825,7 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         CharRadius = 0x000001A5, 
 
+        /// <summary>ChanceOfUse. On crowd-control nanos it is the chance an attack breaks them (100429: 100).</summary>
         ChanceOfUse = 0x000001A6, 
 
         CurrentState = 0x000001A7, 
@@ -895,7 +908,10 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         DurationModifier = 0x000001D0, 
 
-        NPCCryForHelpRange = 0x000001D1, 
+        NPCCryForHelpRange = 0x000001D1,
+
+        /// <summary>LOSHeight (466): the eye height a character's line of sight is taken from.</summary>
+        LOSHeight = 0x000001D2,
 
         PetReq1 = 0x000001D3, 
 
@@ -1203,6 +1219,13 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         CityTerminalRechargePercent = 0x00000282,
 
+        /// <summary>
+        /// On a nano (643): its nano line cooldown in centiseconds, the lock casting it puts on its strain (Lesser
+        /// Healing Touch 82034: 800, Mongo Slam! 100198: 500). Not in AO's stat tables; live FullCharacter after a zone
+        /// change shows the line locked for 8 with 5 left (capture 2026-10-17T01:38:54Z).
+        /// </summary>
+        NanoLineCooldown = 0x00000283,
+
         UnreadMailCount = 0x00000289,
 
         LastMailCheckTime = 0x0000028A,
@@ -1326,6 +1349,18 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
         Type = 0x000003E9, 
 
         Instance = 0x000003EA,
+
+        /// <summary>On a weapon item (1006): the mesh shown in the right hand.</summary>
+        WeaponMeshRight = 0x000003EE,
+
+        /// <summary>On a weapon item (1007): the mesh shown in the left hand.</summary>
+        WeaponMeshLeft = 0x000003EF,
+
+        /// <summary>On a weapon item (1009): the texture override for the right-hand weapon mesh.</summary>
+        OverrideTextureWeaponRight = 0x000003F1,
+
+        /// <summary>On a weapon item (1010): the texture override for the left-hand weapon mesh.</summary>
+        OverrideTextureWeaponLeft = 0x000003F2,
 
         /// <summary>
         /// AORebirth server-only: IP spent on skills and abilities. Never sent to the client; the client's IP is the

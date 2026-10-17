@@ -367,7 +367,7 @@ namespace ZoneEngine_New.Core.Quests
             {
                 Save(player, quest);
                 // Retail: category 110 id 204307477 with the remaining count and the NPC name as arguments.
-                ClientFeedback.SendFormatted(player, QuestCatalog.KillsRemainingTextId, quest.Remaining, npc.Name ?? string.Empty);
+                ClientFeedback.SendFormatted(player, ClientFeedback.KillsRemaining, quest.Remaining, npc.Name ?? string.Empty);
                 return;
             }
 

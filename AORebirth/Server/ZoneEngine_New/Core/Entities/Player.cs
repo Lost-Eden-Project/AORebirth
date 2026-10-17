@@ -1843,11 +1843,6 @@ namespace ZoneEngine_New.Core.Entities
             Inventory.ApplyWearBonuses(Stats);
         }
 
-        const CharacterStat WeaponMeshRightStat = (CharacterStat)1006;
-        const CharacterStat WeaponMeshLeftStat = (CharacterStat)1007;
-        const CharacterStat OverrideTextureWeaponRightStat = (CharacterStat)1009;
-        const CharacterStat OverrideTextureWeaponLeftStat = (CharacterStat)1010;
-
         /// <summary>Every bonus layer from scratch: equipment (clears the layer first), perks, buffs, level IP, trickle.</summary>
         void ApplyBonusLayers()
         {
@@ -2070,13 +2065,13 @@ namespace ZoneEngine_New.Core.Entities
             bool changed = SyncOneHandWeaponMesh(
                 (int)WeaponSlots.Righthand,
                 meshPosition: 1,
-                WeaponMeshRightStat,
-                OverrideTextureWeaponRightStat);
+                CharacterStat.WeaponMeshRight,
+                CharacterStat.OverrideTextureWeaponRight);
             changed |= SyncOneHandWeaponMesh(
                 (int)WeaponSlots.LeftHand,
                 meshPosition: 2,
-                WeaponMeshLeftStat,
-                OverrideTextureWeaponLeftStat);
+                CharacterStat.WeaponMeshLeft,
+                CharacterStat.OverrideTextureWeaponLeft);
             return changed;
         }
 

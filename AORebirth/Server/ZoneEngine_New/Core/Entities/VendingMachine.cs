@@ -82,9 +82,6 @@ namespace ZoneEngine_New.Core.Entities
         /// Cash. The client prices the shop the same way (Gamecode.dll 0x100998c1, read by N3Msg_TradeAddItem for its
         /// "N extra VP is needed" check). Stat 156 is RunSpeed on a character; on a vending machine it is the currency.
         /// </summary>
-        /// <summary>Stat 346, TradeLimit: the most this shop pays for one item.</summary>
-        const CharacterStat TradeLimitStat = (CharacterStat)346;
-
         /// <summary>The client's default TradeLimit for a vending machine (Gamecode.dll 0x10099a06).</summary>
         const int DefaultTradeLimit = 10_000_000;
 
@@ -92,7 +89,7 @@ namespace ZoneEngine_New.Core.Entities
         /// The most this shop pays for one item; the client refuses to sell it anything worth more (Gamecode.dll
         /// 0x1006701d).
         /// </summary>
-        public int TradeLimit => Stats.TryGetValue(TradeLimitStat, out int limit) && !StatCollection.IsUnset(limit)
+        public int TradeLimit => Stats.TryGetValue(CharacterStat.TradeLimit, out int limit) && !StatCollection.IsUnset(limit)
             ? limit
             : DefaultTradeLimit;
 

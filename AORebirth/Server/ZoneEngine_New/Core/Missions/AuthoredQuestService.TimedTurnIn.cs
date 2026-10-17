@@ -200,7 +200,7 @@ public sealed partial class AuthoredQuestService
             player.Session?.Send(new StatMessage { Identity = player.Identity,
                 Stats = [new() { Value1 = (CharacterStat)stat, Value2 = (uint)(previous + pulse * 2) }] });
         player.Session?.Send(new FormatFeedbackMessage { Identity = player.Identity, Unknown = 1, Unknown1 = 0, FormattedMessage = text.Replace("{value}", finalValue.ToString(CultureInfo.InvariantCulture)) });
-        player.Session?.Send(new FeedbackMessage { Identity = player.Identity, Unknown = 1, Unknown1 = 0, CategoryId = 110, MessageId = 108871108 });
+        ClientFeedback.Send(player, ClientFeedback.MissionRewardItemReceived);
     }
 
     static bool TryResolveTimedItem(TimedTurnInDefinition rule, Item item, out TimedItem definition)

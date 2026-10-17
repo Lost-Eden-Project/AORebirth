@@ -295,9 +295,9 @@ namespace ZoneEngine_New.Core.Helpers
                 95 => (CharacterStat.ReflectColdAC, CharacterStat.MaxReflectedColdDmg),
                 96 => (CharacterStat.ReflectPoisonAC, CharacterStat.MaxReflectedPoisonDmg),
                 97 => (CharacterStat.ReflectFireAC, CharacterStat.MaxReflectedFireDmg),
-                _ => ((CharacterStat)0, (CharacterStat)0)
+                _ => (CharacterStat.Unset, CharacterStat.Unset)
             };
-            return reflectStat != 0;
+            return reflectStat != CharacterStat.Unset;
         }
 
         /// <summary>The defender's Shield AC (damage every hit of the type costs the attacker) for a damage type (90-97).</summary>

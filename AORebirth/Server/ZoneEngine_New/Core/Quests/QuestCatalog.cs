@@ -16,9 +16,6 @@ namespace ZoneEngine_New.Core.Quests
     {
         public const string FileName = "Quests.json";
 
-        /// <summary>Feedback category 110 id 204307477: "You have to kill %d more %s to fulfill one of your missions!"</summary>
-        public const int KillsRemainingTextId = 204307477;
-
         readonly Dictionary<string, QuestTemplate> _templates = new(StringComparer.Ordinal);
 
         public QuestCatalog(IGameData gameData, IZoneLogger logger)

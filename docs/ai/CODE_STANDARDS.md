@@ -52,6 +52,37 @@ Generated: 2026-06-02
 - Do not move private GameData into tracked public paths.
 - For high-risk systems, separate evidence/model/test work from runtime behavior changes.
 
+## Stat Rules
+
+- Every stat is a named member of the `CharacterStat` enum
+  (`AORebirth/Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging/GameData/CharacterStat.cs`).
+- Do not define stat constants or aliases elsewhere and do not cast literal
+  numbers to stats: no `const CharacterStat X = (CharacterStat)596;`, no
+  `const CharacterStat X = CharacterStat.Y;`, and no `(CharacterStat)643` at a
+  call site. A stat id that arrives as data (a content file, a spell argument,
+  a packet field) may be converted where it is read.
+- When an enum name does not describe what a stat means on an item or nano (on
+  nano templates Level is the NCU cost and MetaType the strain), use the enum
+  name and document the item meaning on the enum member instead of adding an
+  alias.
+- When a stat is missing from the enum, add it there with its id and a
+  `<summary>` saying what it holds and where that is known from (AO's name for
+  the id, the item or capture it was seen in, server-only use). Name it for what
+  it means; when that differs from AO's name, record AO's name in the summary.
+- Server-only stats (never sent to the client) also go on the
+  `StatCollection.IsServerOnly` list. Set them without the wire flag
+  (`dirty: true`); saving follows the base change, not that flag.
+
+## Feedback Text Id Rules
+
+- Client feedback text ids (category 110 FormatFeedback / Feedback message ids)
+  have one home: `ClientFeedback`
+  (`AORebirth/Server/ZoneEngine_New/Core/Helpers/ClientFeedback.cs`).
+- Do not declare feedback id constants in other classes or pass raw feedback ids
+  at call sites. Add a named constant to `ClientFeedback` with a `<summary>`
+  holding the client text and, where known, the capture it came from, and use
+  that.
+
 ## File Naming Rules
 
 - Use existing C# naming style.

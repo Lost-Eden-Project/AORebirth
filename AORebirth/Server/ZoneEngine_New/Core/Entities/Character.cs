@@ -2446,7 +2446,7 @@ namespace ZoneEngine_New.Core.Entities
 
             CharacterStat chanceStat = cause switch
             {
-                BuffBreakCause.Attack => BreakOnAttackStat,
+                BuffBreakCause.Attack => CharacterStat.ChanceOfUse,
                 BuffBreakCause.SpellAttack => CharacterStat.ChanceOfBreakOnSpellAttack,
                 _ => CharacterStat.ChanceOfBreakOnDebuff
             };
@@ -2472,12 +2472,6 @@ namespace ZoneEngine_New.Core.Entities
             if (this is NpcCharacter npc && !ReferenceEquals(aggressor, this) && !aggressor.IsDead)
                 npc.Brain?.AddThreatFrom(aggressor, Ai.NpcAiRules.ProximityHate);
         }
-
-        /// <summary>
-        /// Stat 422, named ChanceOfUse in the stat tables, carries the break-on-attack chance on
-        /// crowd-control nanos (100429: 100).
-        /// </summary>
-        const CharacterStat BreakOnAttackStat = (CharacterStat)422;
 
         public bool IsInNanoRecharge(DateTime nowUtc) => nowUtc < _nanoRechargeUntilUtc;
 
@@ -3757,7 +3751,7 @@ namespace ZoneEngine_New.Core.Entities
             int headMesh = Stats.Get(CharacterStat.HeadMesh);
             int runSpeedBase = Stats.GetOrZero(CharacterStat.RunSpeed, StatDetail.Base);
             int npcFamily = Stats.Get(CharacterStat.NPCFamily);
-            int losHeight = Stats.GetOrZero((CharacterStat)466);
+            int losHeight = Stats.GetOrZero(CharacterStat.LOSHeight);
             // Every non-player gets the NPC character info. NPCFamily 0 is a real family (Newland Militia Guard and
             // 78 other templates); sending those as a PC made the client never show them.
             bool isNpc = !IsPlayer;

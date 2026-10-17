@@ -461,7 +461,7 @@ namespace ZoneEngine_New.Core.Ai
         {
             if (!Npc.Attackable)
                 return;
-            if (!NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(NpcAiRules.BreedHostilityStat)))
+            if (!NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility)))
                 return;
             if (Npc.Playfield == null)
                 return;
@@ -484,7 +484,7 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             if (!Npc.Attackable || _evading || Npc.IsPacified)
                 return;
-            if (!NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(NpcAiRules.BreedHostilityStat)))
+            if (!NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility)))
                 return;
             if (Hate.Contains(player.Identity))
                 return;

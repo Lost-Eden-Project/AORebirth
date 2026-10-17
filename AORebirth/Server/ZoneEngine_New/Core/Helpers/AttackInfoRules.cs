@@ -153,8 +153,8 @@ namespace ZoneEngine_New.Core.Helpers
                 return false;
 
             return VisualMesh(item, CharacterStat.WeaponMesh) > 0
-                || VisualMesh(item, WeaponMeshRightStat) > 0
-                || VisualMesh(item, WeaponMeshLeftStat) > 0;
+                || VisualMesh(item, CharacterStat.WeaponMeshRight) > 0
+                || VisualMesh(item, CharacterStat.WeaponMeshLeft) > 0;
         }
 
         /// <summary>
@@ -168,14 +168,11 @@ namespace ZoneEngine_New.Core.Helpers
             if (VisualMesh(item, CharacterStat.WeaponMesh) > 0)
                 return true;
             if (equipmentSlot == (int)WeaponSlots.Righthand)
-                return VisualMesh(item, WeaponMeshRightStat) > 0;
+                return VisualMesh(item, CharacterStat.WeaponMeshRight) > 0;
             if (equipmentSlot == (int)WeaponSlots.LeftHand)
-                return VisualMesh(item, WeaponMeshLeftStat) > 0;
+                return VisualMesh(item, CharacterStat.WeaponMeshLeft) > 0;
             return false;
         }
-
-        const CharacterStat WeaponMeshRightStat = (CharacterStat)1006;
-        const CharacterStat WeaponMeshLeftStat = (CharacterStat)1007;
 
         static int VisualMesh(Item item, CharacterStat stat)
         {

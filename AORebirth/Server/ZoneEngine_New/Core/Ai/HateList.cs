@@ -67,9 +67,6 @@ namespace ZoneEngine_New.Core.Ai
 
     public static class NpcAiRules
     {
-        /// <summary>AO BreedHostility (stat 204).</summary>
-        public const CharacterStat BreedHostilityStat = CharacterStat.BreedHostility;
-
         public const float NearbyRange = 30f;
 
         /// <summary>

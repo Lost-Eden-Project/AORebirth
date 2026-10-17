@@ -22,7 +22,7 @@ namespace ZoneEngine_New.Tests
         public void ProximityAggroAddsOneHateWhenBreedHostilityIsPositive()
         {
             NpcCharacter npc = CreateNpc();
-            npc.Stats.Set(NpcAiRules.BreedHostilityStat, 1);
+            npc.Stats.Set(CharacterStat.BreedHostility, 1);
             npc.Position = new Vector3(0, 0, 0);
             NpcBrain brain = NpcBrain.Create(npc, npc.Position);
 
@@ -48,7 +48,7 @@ namespace ZoneEngine_New.Tests
             brain.TryProximityAggro(near);
             Assert.IsTrue(brain.Hate.IsEmpty);
 
-            npc.Stats.Set(NpcAiRules.BreedHostilityStat, 2);
+            npc.Stats.Set(CharacterStat.BreedHostility, 2);
             brain.TryProximityAggro(far);
             Assert.IsTrue(brain.Hate.IsEmpty);
 

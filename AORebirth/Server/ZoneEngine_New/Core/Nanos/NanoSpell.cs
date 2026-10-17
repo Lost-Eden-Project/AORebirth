@@ -12,43 +12,24 @@ namespace ZoneEngine_New.Core.Nanos
 
     /// <summary>
     /// A nano program read out of an <see cref="ItemTemplate"/>.
-    /// Item attribute ids 54 and 75 carry NCU cost and strain on nano templates, so the
-    /// <see cref="CharacterStat"/> names for those ids (Level, StrainOmniTokens) do not
-    /// describe what the value means here; the constants below are the readable spelling.
+    /// On nano templates some <see cref="CharacterStat"/> ids mean something other than their character name:
+    /// Level is the NCU cost, MetaType the nano strain, MonsterLevelsKilled the local cooldown (see the enum).
     /// </summary>
     public class NanoSpell : ItemTemplate
     {
-        public const CharacterStat NcuCostStat = (CharacterStat)54;
-
-        public const CharacterStat NanoStrainStat = (CharacterStat)75;
-
-        /// <summary>
-        /// Stat 254 on a nano: its local cooldown in centiseconds, the "Local cooldown" line of the client's nano info
-        /// (Gamecode.dll N3Msg_GetInfo reads it). Our stat table names 254 MonsterLevelsKilled, which is its character
-        /// meaning, not this one. Spirit Siphon 297342 carries 12000 (120 s).
-        /// </summary>
-        public const CharacterStat LocalCooldownStat = (CharacterStat)254;
-
-        /// <summary>
-        /// Stat 643 on a nano: the nano line cooldown in centiseconds most nanos carry (Lesser Healing Touch 82034: 800,
-        /// Mongo Slam! 100198: 500). Not in our stat tables. Live FullCharacter after a zone change (capture
-        /// 2026-10-17T01:38:54Z) lists the line of a just-cast Lesser Healing Touch as locked for 8 with 5 left.
-        /// </summary>
-        public const CharacterStat NanoLineCooldownStat = (CharacterStat)643;
-
         protected NanoSpell(ItemTemplate template)
             : base(template)
         {
-            NanoStrain = ReadStat(NanoStrainStat);
+            NanoStrain = ReadStat(CharacterStat.MetaType);
             StackingOrder = ReadStat(CharacterStat.StackingOrder);
-            NcuCost = Math.Max(0, ReadStat(NcuCostStat));
+            NcuCost = Math.Max(0, ReadStat(CharacterStat.Level));
             NanoPointCost = Math.Max(0, ReadStat(CharacterStat.NanoPoints));
             DurationCentiseconds = Math.Max(0, ReadStat(CharacterStat.TimeExist));
             AttackDelayCentiseconds = Math.Max(0, ReadStat(CharacterStat.AttackDelay));
             AttackDelayCapCentiseconds = Math.Max(0, ReadStat(CharacterStat.AttackDelayCap));
             RechargeDelayCentiseconds = Math.Max(0, ReadStat(CharacterStat.RechargeDelay));
             RechargeDelayCapCentiseconds = Math.Max(0, ReadStat(CharacterStat.RechargeDelayCap));
-            NanoLineLockCentiseconds = Math.Max(0, Math.Max(ReadStat(LocalCooldownStat), ReadStat(NanoLineCooldownStat)));
+            NanoLineLockCentiseconds = Math.Max(0, Math.Max(ReadStat(CharacterStat.MonsterLevelsKilled), ReadStat(CharacterStat.NanoLineCooldown)));
 
             CanFlags can = (CanFlags)(uint)ReadStat(CharacterStat.Can);
             NanoFlags nanoFlags = (NanoFlags)Flags;
@@ -105,8 +86,8 @@ namespace ZoneEngine_New.Core.Nanos
         public int RechargeDelayCapCentiseconds { get; }
 
         /// <summary>
-        /// How long a cast locks this nano's strain for the caster: the longer of <see cref="LocalCooldownStat"/> and
-        /// <see cref="NanoLineCooldownStat"/>; 0 for none.
+        /// How long a cast locks this nano's strain for the caster: the longer of the local cooldown (<see cref="CharacterStat.MonsterLevelsKilled"/>) and
+        /// <see cref="CharacterStat.NanoLineCooldown"/>; 0 for none.
         /// </summary>
         public int NanoLineLockCentiseconds { get; }
 

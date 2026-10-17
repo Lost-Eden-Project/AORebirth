@@ -27,9 +27,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
     public sealed class CharacterActionMessageHandler : IMessageHandler<CharacterActionMessage>
     {
-        /// <summary>Feedback category 110: "You failed to hide as you are currently fighting."</summary>
-        const int FailedToHideWhileFighting = 247632055;
-
         private readonly InventoryActionService _inventoryActions;
         private readonly TeamService _teams;
 
@@ -134,7 +131,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 case CharacterActionType.StartSneak: //TODO: Wire in hiding when sneaking
                     if (player.IsBeingFought)
                     {
-                        ClientFeedback.Send(player, FailedToHideWhileFighting);
+                        ClientFeedback.Send(player, ClientFeedback.FailedToHideWhileFighting);
                         break;
                     }
 

@@ -301,8 +301,8 @@ namespace ZoneEngine_New.Tests
             var stats = new Dictionary<CharacterStat, int>
             {
                 [CharacterStat.TimeExist] = durationCentiseconds,
-                [NanoSpell.NcuCostStat] = ncuCost,
-                [NanoSpell.NanoStrainStat] = strain,
+                [CharacterStat.Level] = ncuCost,
+                [CharacterStat.MetaType] = strain,
                 [CharacterStat.StackingOrder] = stackingOrder,
                 [CharacterStat.NanoPoints] = nanoPointCost,
                 [CharacterStat.AttackDelay] = attackDelay,

@@ -49,6 +49,15 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"Character stored. %d XP saved." (category 110, FormatFeedback). Insurance save.</summary>
         public const int CharacterStored = 159227364;
 
+        /// <summary>"You failed to hide as you are currently fighting." (category 110). A stealth attempt mid-fight.</summary>
+        public const int FailedToHideWhileFighting = 247632055;
+
+        /// <summary>"You have to kill %d more %s to fulfill one of your missions!" (category 110, FormatFeedback).</summary>
+        public const int KillsRemaining = 204307477;
+
+        /// <summary>"You've received an item as mission reward!" (category 110). Sent after a timed turn-in's token reward.</summary>
+        public const int MissionRewardItemReceived = 108871108;
+
         /// <summary>
         /// Plain text passthrough: one string argument shown as is. Live sends item SystemText (53044, "You
         /// successfully perform an Impale attack.") as FormatFeedback 110/707 (capture 2026-10-02T03:54:58Z).
