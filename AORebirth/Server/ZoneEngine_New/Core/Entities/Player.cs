@@ -1273,6 +1273,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             base.OnDeath(killer);
+            ApplyDeathXpLoss();
             _respawnObserversCleared = false;
             _respawnPending = true;
             _respawnRemainingSeconds = RespawnGracePeriodMilliseconds / 1000.0;
@@ -1337,10 +1338,158 @@ namespace ZoneEngine_New.Core.Entities
                 Respawn();
                 SaveState.MarkDirty();
             }
+            catch (Exception exception) when (TryGetSavePoint(out int savedPlayfield, out _))
+            {
+                // A save point that cannot be reached (its playfield gone from the content) must not leave the
+                // character dead: forget it and use the default respawn.
+                Logger.Error(exception, "Respawn at the save point (pf " + savedPlayfield + ") failed; using the default respawn.");
+                Stats.Set(CharacterStat.ResurrectDest, 0, StatDetail.Base, dirty: true);
+                TryRespawn();
+            }
             catch (Exception exception)
             {
                 Logger.Error(exception, "Player respawn failed.");
             }
+        }
+
+        /// <summary>
+        /// The save point's position, in the TempSave stats live leaves at 0 (TempSaveX 596, TempSaveY 597 = AO's map y,
+        /// i.e. z, and TempSavePlayfield 595 for the height). The server's stat enum has no names for them.
+        /// </summary>
+        internal const CharacterStat SaveX = (CharacterStat)596;
+        internal const CharacterStat SaveZ = (CharacterStat)597;
+        internal const CharacterStat SaveY = (CharacterStat)595;
+
+        /// <summary>
+        /// Remembers where this character stands as its save point (an insurance terminal's SaveChar): death brings it
+        /// back here (live 2026-10-07: saved at the Arete Cell Structure Scanner, killed, N3Teleport to the same spot).
+        /// Kept in server-only stats: ResurrectDest = playfield, then <see cref="SaveX"/>, <see cref="SaveY"/>, <see cref="SaveZ"/>,
+        /// in centimetres.
+        /// </summary>
+        public void StoreSavePoint()
+        {
+            if (Playfield == null)
+                return;
+
+            Stats.Set(CharacterStat.ResurrectDest, Playfield.Identity.Instance, StatDetail.Base, dirty: true);
+            Stats.Set(SaveX, (int)Math.Round(Position.x * 100), StatDetail.Base, dirty: true);
+            Stats.Set(SaveZ, (int)Math.Round(Position.z * 100), StatDetail.Base, dirty: true);
+            Stats.Set(SaveY, (int)Math.Round(Position.y * 100), StatDetail.Base, dirty: true);
+            SaveState.MarkDirty();
+            Logger.Info(string.Format(CultureInfo.InvariantCulture, "Save point character={0} pf={1} at ({2},{3},{4})",
+                Identity.Instance, Playfield.Identity.Instance, Position.xf, Position.yf, Position.zf));
+        }
+
+        /// <summary>FormatFeedback 110/57671460 "%d credits were deducted from your account."</summary>
+        const int CreditsDeductedText = 57671460;
+
+        /// <summary>FormatFeedback 110/159227364 "Character stored. %d XP saved."</summary>
+        const int CharacterStoredText = 159227364;
+
+        /// <summary>Below this level a death costs no XP: live's terminal says you are "always" saved there.</summary>
+        internal const int AlwaysSavedBelowLevel = 20;
+
+        /// <summary>A kill gives back this share of the death pool (CellAO, "each kill recovers 5% of the pool").</summary>
+        const int DeathPoolRecoveryPercent = 5;
+
+        /// <summary>
+        /// An insurance terminal's save (SaveChar), as live did it (2026-10-07, Arete Cell Structure Scanner, level 4):
+        /// Cash down by level x 100 and "400 credits were deducted from your account.", then the save point, then
+        /// "Character stored. 1235 XP saved." where the number is the XP earned since the last save (or since the start
+        /// of the level, which saves itself). A character that cannot pay is not saved.
+        /// </summary>
+        public bool InsuranceSave()
+        {
+            IGameData? gameData = Playfield?.GetService<IGameData>();
+            if (gameData == null)
+                return false;
+
+            int level = Stats.GetOrOne(CharacterStat.Level);
+            int fee = level * 100;
+            int cash = Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
+            if (cash < fee)
+            {
+                ClientFeedback.SendFormatted(this, ClientFeedback.PlainText,
+                    string.Format(CultureInfo.InvariantCulture, "Saving costs {0} credits.", fee));
+                return false;
+            }
+
+            Stats.Set(CharacterStat.Cash, cash - fee, StatDetail.Base, dirty: true);
+            FlushDirtyStats();
+            ClientFeedback.SendFormatted(this, CreditsDeductedText, fee);
+
+            StoreSavePoint();
+
+            int xp = Stats.GetOrZero(CharacterStat.XP, StatDetail.Base);
+            int saved = Math.Max(0, xp - SavedXpWatermark(gameData));
+            Stats.Set(CharacterStat.SavedXP, xp, StatDetail.Base, dirty: true);
+            FlushDirtyStats();
+            SaveState.MarkDirty();
+            ClientFeedback.SendFormatted(this, CharacterStoredText, saved);
+            Logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Insurance save character={0} level={1} fee={2} xp={3} saved={4} deathPool={5}",
+                Identity.Instance, level, fee, xp, saved, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base)));
+            return true;
+        }
+
+        /// <summary>The XP a death cannot take: the last insurance save, or the start of the current level if later.</summary>
+        int SavedXpWatermark(IGameData gameData)
+        {
+            int floor = gameData.TryGetXpLevel(Stats.GetOrOne(CharacterStat.Level), out XpLevelEntry entry) ? entry.FloorXp : 0;
+            int saved = Stats.GetOrZero(CharacterStat.SavedXP, StatDetail.Base);
+            return StatCollection.IsUnset(saved) ? floor : Math.Max(floor, saved);
+        }
+
+        /// <summary>
+        /// A death takes the XP earned since the last save (never below the level's start; nothing below level
+        /// <see cref="AlwaysSavedBelowLevel"/>, nor at shadow levels, which earn SK). The lost XP goes into the death
+        /// pool, which later kills give back (<see cref="TakeDeathPoolRecovery"/>).
+        /// </summary>
+        void ApplyDeathXpLoss()
+        {
+            IGameData? gameData = Playfield?.GetService<IGameData>();
+            int level = Stats.GetOrOne(CharacterStat.Level);
+            if (gameData == null || level < AlwaysSavedBelowLevel || level >= 200)
+                return;
+
+            int xp = Stats.GetOrZero(CharacterStat.XP, StatDetail.Base);
+            int keep = Math.Min(xp, SavedXpWatermark(gameData));
+            int lost = xp - keep;
+            if (lost <= 0)
+                return;
+
+            int pool = Math.Max(0, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base));
+            Stats.Set(CharacterStat.XP, keep, StatDetail.Base, dirty: true);
+            Stats.Set(CharacterStat.DeathXpPool, (int)Math.Min(int.MaxValue, (long)pool + lost), StatDetail.Base, dirty: true);
+            FlushDirtyStats();
+            SaveState.MarkDirty();
+            Logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Death XP loss character={0} level={1} xp={2}->{3} lost={4} pool={5}",
+                Identity.Instance, level, xp, keep, lost, pool + lost));
+        }
+
+        /// <summary>The XP one kill gives back from the death pool (5% of what is left, at least 1), taken out of it.</summary>
+        internal int TakeDeathPoolRecovery()
+        {
+            int pool = Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base);
+            if (pool <= 0 || StatCollection.IsUnset(pool))
+                return 0;
+
+            int recovered = Math.Min(pool, Math.Max(1, pool * DeathPoolRecoveryPercent / 100));
+            Stats.Set(CharacterStat.DeathXpPool, pool - recovered, StatDetail.Base, dirty: true);
+            return recovered;
+        }
+
+        /// <summary>The stored save point, if any (see <see cref="StoreSavePoint"/>).</summary>
+        bool TryGetSavePoint(out int playfieldId, out Vector3 position)
+        {
+            playfieldId = Stats.GetOrZero(CharacterStat.ResurrectDest, StatDetail.Base);
+            position = new Vector3(
+                Stats.GetOrZero(SaveX, StatDetail.Base) / 100.0,
+                Stats.GetOrZero(SaveY, StatDetail.Base) / 100.0,
+                Stats.GetOrZero(SaveZ, StatDetail.Base) / 100.0);
+            // Unset reads as the client's 1234567890 sentinel or 0; a real playfield id is small.
+            return playfieldId > 0 && playfieldId < 1_000_000;
         }
 
         void Respawn()
@@ -1349,18 +1498,34 @@ namespace ZoneEngine_New.Core.Entities
             if (playfield == null)
             { Revive(); return; }
 
+            // The last save point; never saved: the new-character start (Arete Landing); else Respawn.json.
             RespawnContentCatalog respawn = playfield.GetRequiredService<IGameData>().RespawnContent;
-            if (respawn.PlayfieldId <= 0 || respawn.Position is not { Length: 3 })
-                throw new InvalidOperationException("No respawn destination is configured.");
-
-            Vector3 landing = new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]);
+            int respawnPlayfield;
+            Vector3 landing;
+            if (TryGetSavePoint(out int savedPlayfield, out Vector3 saved))
+            {
+                respawnPlayfield = savedPlayfield;
+                landing = saved;
+            }
+            else if (respawn.StartPlayfieldId > 0 && respawn.StartPosition is { Length: 3 } start)
+            {
+                respawnPlayfield = respawn.StartPlayfieldId;
+                landing = new Vector3(start[0], start[1], start[2]);
+            }
+            else
+            {
+                if (respawn.PlayfieldId <= 0 || respawn.Position is not { Length: 3 })
+                    throw new InvalidOperationException("No respawn destination is configured.");
+                respawnPlayfield = respawn.PlayfieldId;
+                landing = new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]);
+            }
 
             // Never build the respawn playfield on this tick: stay dead while it builds in the background, and
             // respawn once it is ready.
             PlayfieldManager manager = playfield.GetRequiredService<PlayfieldManager>();
-            if (playfield.Identity.Instance != respawn.PlayfieldId && !manager.TryGet(respawn.PlayfieldId, out _))
+            if (playfield.Identity.Instance != respawnPlayfield && !manager.TryGet(respawnPlayfield, out _))
             {
-                bool queued = manager.WithPlayfield(respawn.PlayfieldId, this, _ =>
+                bool queued = manager.WithPlayfield(respawnPlayfield, this, _ =>
                 {
                     if (IsDead && Playfield != null)
                         TryRespawn();
@@ -1378,7 +1543,7 @@ namespace ZoneEngine_New.Core.Entities
 
             // In-zone respawn: observers in range keep the dead copy unless it is despawned, and they only show the
             // fresh spawn when it comes on a later tick than the despawn. Despawn now, respawn next tick.
-            if (playfield.Identity.Instance == respawn.PlayfieldId && !_respawnObserversCleared)
+            if (playfield.Identity.Instance == respawnPlayfield && !_respawnObserversCleared)
             {
                 playfield.GetRequiredService<PlayfieldLocality>().DespawnForObservers(this);
                 _respawnObserversCleared = true;
@@ -1398,9 +1563,9 @@ namespace ZoneEngine_New.Core.Entities
                     landing.xf,
                     landing.yf,
                     landing.zf,
-                    respawn.PlayfieldId));
+                    respawnPlayfield));
 
-            if (playfield.Identity.Instance == respawn.PlayfieldId)
+            if (playfield.Identity.Instance == respawnPlayfield)
             {
                 playfield.GetRequiredService<SpawnService>().CompleteSamePlayfieldDeathRespawn(this, landing);
                 return;
@@ -1413,7 +1578,7 @@ namespace ZoneEngine_New.Core.Entities
             Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
 
-            using PlayfieldAdmission destinationAdmission = manager.AcquirePlayfield(respawn.PlayfieldId);
+            using PlayfieldAdmission destinationAdmission = manager.AcquirePlayfield(respawnPlayfield);
             Playfield destination = destinationAdmission.Playfield;
             if (Session != null)
             {
@@ -2026,9 +2191,9 @@ namespace ZoneEngine_New.Core.Entities
             CharacterStat.SocialStatus,
             CharacterStat.PlayerOptions,
             // CharacterStat.TempSaveTeamID,
-            // CharacterStat.TempSavePlayfield,
-            // CharacterStat.TempSaveX,
-            // CharacterStat.TempSaveY,
+            // SaveY,
+            // SaveX,
+            // SaveZ,
             CharacterStat.VisualFlags,
             CharacterStat.PVPDuelKills,
             CharacterStat.PVPDuelDeaths,

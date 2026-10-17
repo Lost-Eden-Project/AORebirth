@@ -491,6 +491,10 @@ namespace ZoneEngine_New.Core.Entities
                 amount = (int)Math.Min(amount, GameplayXpCaps.Of(capPercent, current.NextLevelXp));
             }
 
+            // A kill also gives back part of the XP lost on deaths since the last save (the death pool).
+            if (source == XpSource.Kill && this is Player recovering)
+                amount += recovering.TakeDeathPoolRecovery();
+
             int levelBefore = level;
             int xp = Stats.GetOrZero(CharacterStat.XP) + amount;
             while (level < MaxXpLevel
