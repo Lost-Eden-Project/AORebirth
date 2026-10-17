@@ -144,7 +144,7 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
-        public bool TryUse(Player player)
+        public virtual bool TryUse(Player player)
         {
             ArgumentNullException.ThrowIfNull(player);
 

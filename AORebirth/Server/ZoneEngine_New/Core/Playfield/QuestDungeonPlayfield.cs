@@ -51,7 +51,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         InventoryMoveService moves, InventoryFlushService flush, TradeService trades, CharacterSnapshotService snapshot,
         IPlayfieldMetricsRegistry metrics, IShopDao shopDao, MissionItemObjectiveBinding? objectiveItem = null,
         Func<Player, MissionObjectiveItem, bool>? collectObjective = null, MissionNpcObjectiveBinding? npcObjective = null,
-        MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true)
+        MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true, MissionChestPopulation? chestPopulation = null)
         : base(new Identity { Type = IdentityType.Playfield, Instance = playfieldId }, logger, router,
             manager, hydrator, data, items, hashItems, inventory, ids, moves, flush, trades, snapshot, metrics, shopDao)
     {
@@ -72,6 +72,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         _spawnNpcObjective = spawnNpcObjective;
         TokenProgress = tokenProgress;
         TokenProgress?.Attach(this, logger);
+        ChestPopulation = chestPopulation;
     }
 
     public string QuestId { get; }
@@ -79,6 +80,8 @@ public sealed class QuestDungeonPlayfield : Playfield
     public DungeonLayout Layout { get; }
 
     public MissionTokenProgress? TokenProgress { get; }
+
+    public MissionChestPopulation? ChestPopulation { get; }
 
     /// <summary>Where the dungeon is entered from, and where its occupants return to.</summary>
     public MissionEntrancePlacement Entrance { get; }
@@ -119,6 +122,8 @@ public sealed class QuestDungeonPlayfield : Playfield
             SpawnObjectiveNpc(dungeon);
             AddDistrictSpawns(dungeon);
             SpawnObjectiveItem(dungeon, locality);
+            if (_simulation != null)
+                ChestPopulation?.Populate(this, dungeon, _simulation);
         }
 
         TokenProgress?.Seal();
@@ -491,6 +496,7 @@ public sealed class QuestDungeonPlayfield : Playfield
 
     protected override void OnDispose()
     {
+        ChestPopulation?.Retire();
         _simulation?.Dispose();
         _simulation = null;
         base.OnDispose();

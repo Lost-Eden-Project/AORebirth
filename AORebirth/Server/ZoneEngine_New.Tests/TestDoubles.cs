@@ -55,6 +55,15 @@ namespace ZoneEngine_New.Tests
 
         public string RootPath { get; init; } = string.Empty;
 
+        public CollisionSphereData? DynelCollisionSphere { get; set; }
+
+        public bool TryGetDynelCollisionSphere(int templateId, out float radius, out float centerY)
+        {
+            radius = DynelCollisionSphere?.Radius ?? 0;
+            centerY = DynelCollisionSphere?.CenterY ?? 0;
+            return DynelCollisionSphere != null;
+        }
+
         string DataRoot => string.IsNullOrEmpty(RootPath) ? GameDataPaths.ResolveRuntimeRoot() : RootPath;
 
         public int MobTemplateCount => 0;
@@ -62,6 +71,8 @@ namespace ZoneEngine_New.Tests
         public int HashTemplateCount => _hashItems.CategoryCount;
 
         public int HashInstanceCount => _hashItems.InstanceCount;
+
+        public IReadOnlyCollection<HashInstance> ItemFamilies => _hashItems.Instances;
 
         public int MonsterDataCount => 0;
 

@@ -533,7 +533,8 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.Quests.Dungeons.MissionItemObjectiveBinding? objectiveItem = null,
             Func<Player, MissionObjectiveItem, bool>? collectObjective = null,
             ZoneEngine_New.Core.Quests.Dungeons.MissionNpcObjectiveBinding? npcObjective = null,
-            ZoneEngine_New.Core.Quests.Dungeons.MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true)
+            ZoneEngine_New.Core.Quests.Dungeons.MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true,
+            ZoneEngine_New.Core.Quests.Dungeons.MissionChestPopulation? chestPopulation = null)
         {
             ArgumentNullException.ThrowIfNull(questId);
             ArgumentNullException.ThrowIfNull(layout);
@@ -554,7 +555,7 @@ namespace ZoneEngine_New.Core.Playfield
             QuestDungeonPlayfield created = new(playfieldId, questId, layout, entrance, targetHash, quality, _logger.CreateForPlayfield(playfieldId),
                 _router, this, _playerHydrator, _gameData, _items, _hashItems, _inventoryRepository, _instanceIds,
                 _inventoryMoves, _inventoryFlush, _trades, _characterSnapshot, _metricsRegistry, _shopDao, objectiveItem, collectObjective, npcObjective,
-                tokenProgress, spawnNpcObjective);
+                tokenProgress, spawnNpcObjective, chestPopulation);
             try
             {
                 created.Build();

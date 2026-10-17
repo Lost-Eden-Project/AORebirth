@@ -42,6 +42,9 @@ namespace ZoneEngine_New.Core.GameData
 
         public int InstanceCount => _instances.Count;
 
+        /// <summary>Every leaf family, independent of category, NPC loot, or mission reward selection.</summary>
+        public IReadOnlyCollection<HashInstance> Instances => _instances.Values;
+
         public static HashItemCatalog Parse(string? json, Random? random = null)
         {
             var categories = new Dictionary<string, string[]>(StringComparer.Ordinal);

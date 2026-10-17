@@ -7,7 +7,7 @@ using AORebirth.Interfaces.Persistence.Missions;
 using SmokeLounge.AOtomation.Messaging.GameData;
 
 /// <summary>Transactional test storage: mutations operate on a private copy and publish only at commit.</summary>
-internal sealed class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransaction, IMissionInventoryMutationTransaction
+internal sealed partial class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransaction, IMissionInventoryMutationTransaction
 {
     internal Dictionary<MissionKeyData, MissionStateData> Missions = [];
     internal Dictionary<MissionObjectiveKeyData, MissionObjectiveProgressData> Objectives = [];

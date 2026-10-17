@@ -35,6 +35,9 @@ namespace ZoneEngine_New.Core.GameData
 
         int HashInstanceCount { get; }
 
+        /// <summary>Existing item-family metadata, without selecting any parent loot or reward catalog.</summary>
+        IReadOnlyCollection<HashInstance> ItemFamilies => Array.Empty<HashInstance>();
+
         int MonsterDataCount { get; }
 
         int XpLevelCount { get; }

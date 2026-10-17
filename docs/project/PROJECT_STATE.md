@@ -1,5 +1,14 @@
 # AORebirth Project State
 
+IMPLEMENTED CANDIDATE (2026-10-17, codex/mission-chests): ordinary generated
+mission chests reuse frozen layouts, original captured chest packets, JSON
+rarity-group selection and existing mission/inventory DAO transactions.
+All 56 focused chest cases and 34 disposable real-MySQL checks passed;
+two existing inventory failures reproduce on untouched public source.
+Original-client acceptance remains
+UNVERIFIED. Existing accepted engines and the original checkout are preserved.
+See docs/MISSION_CHEST_INTEGRATION.md for validation and metadata limitations.
+
 OBSERVED WINDOWS CLIENT ACCEPTANCE (2026-10-16, team roster replay): Mike tested
 repair cb8ef44c3e7956cf812c91544007fc6de3e7a180 on the running local engines,
 reported "ok looks fixed", and authorized integration into public Windows master

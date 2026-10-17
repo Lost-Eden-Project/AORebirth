@@ -2,6 +2,41 @@
   "_comment": "AORebirth generation policy, not a reconstruction of Funcom selection probabilities. QL2 team captures have two floors; QL220 has five. Intermediate sizes/floor bands are configurable policy. Team layout support reserves a separate boss floor; team acceptance and boss population are a subsequent milestone. Room roles and exact floor-travel anchors live in DungeonEntrances.json.",
   "FloorHeight": 64,
   "LockedDoorChancePercent": 0,
+  "Chests": {
+    "_comment": "User-defined AORebirth rarity policy. Missing and raw 1 are separate Common groups; raw 2 Uncommon, 3 Rare, 4 Very Rare, 5 Extremely Rare. Filter mission QL +/-5 within 1..250 before weighted group selection, then choose an eligible item uniformly. Unknown family links support stored QL only. Appearance comes from mission-20261011-004128-b8e7bf2e ordinal 480; only the verified Locked flag is cleared for ordinary chests.",
+    "RoomDensity": 0.3,
+    "CountVariationFraction": 0.2,
+    "MinItems": 1,
+    "MaxItems": 3,
+    "SpawnDefinition": {
+      "StateMachineType": 1000015,
+      "StateMachineInstance": 7,
+      "HeaderStatBytes": 111,
+      "LockableValue": 15,
+      "Stats": [
+        { "StatId": 0, "Value": 536877057 },
+        { "StatId": 23, "Value": 162447 },
+        { "StatId": 701, "Value": 1 },
+        { "StatId": 702, "Value": 162447 },
+        { "StatId": 703, "Value": 162447 },
+        { "StatId": 412, "Value": 1 }
+      ]
+    },
+    "Placement": {
+      "CandidateAttemptsPerRoom": 48,
+      "CandidatesPerRoom": 8,
+      "FloorProbeLift": 2,
+      "MaxFloorDrop": 4,
+      "WalkSampleSpacing": 0.4,
+      "MaxWalkStep": 0.4,
+      "CollisionPadding": 0.05,
+      "DoorClearance": 2,
+      "ObjectiveClearance": 2,
+      "ChestClearance": 1.5,
+      "EntryClearance": 2
+    },
+    "RarityWeights": { "Missing": 70, "1": 20, "2": 6, "3": 2.5, "4": 1, "5": 0.5 }
+  },
   "TokenReward": {
     "_comment": "Sided token policy for newly accepted generated missions. The existing item catalog owns these Unique token items and their level-dependent points when used. Capture feedback proves rising killed/total chance, first displayed after five kills, and includes objective NPCs. AORebirth counts the frozen generated ordinary and objective NPC population; exact retail denominator eligibility and chance below five kills remain unproven. Linear chance applies from the first kill, empty populations grant no token, and no gray-NPC exclusion is invented. This is configurable gameplay policy, not a claim of complete retail equivalence.",
     "SidedItems": { "1": 96350, "2": 96349 },

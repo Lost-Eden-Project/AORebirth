@@ -63,6 +63,8 @@ namespace AORebirth.Interfaces.Persistence.Characters
     public sealed class CharacterInventoryMutationData
     {
         public int CharacterId { get; set; }
+        /// <summary>Exact durable source rows to lock and compare before moving a shared persisted container item.</summary>
+        public IList<PersistedItemData> ExpectedSources { get; set; } = new List<PersistedItemData>();
         public IList<PersistedItemData> Inserts { get; set; } = new List<PersistedItemData>();
         public IList<ItemLocationData> Locations { get; set; } = new List<ItemLocationData>();
         public IList<ItemStackData> Stacks { get; set; } = new List<ItemStackData>();
