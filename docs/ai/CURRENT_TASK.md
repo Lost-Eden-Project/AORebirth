@@ -30,6 +30,12 @@ zero orphan rows and no production contact. Login's staged JSON matches source.
 Historical records and private GameData are unchanged. No backend engines were
 started or restarted. No AO client or Linux action.
 
+OBSERVED CLIENT ACCEPTANCE: Mike reports "works" for repair 13990ce8b and
+authorizes public-master integration, faithful Linux reconciliation and live
+installation if the deployed Linux version needs the same repair. His overall
+acceptance does not establish separate client coverage for every failure case.
+The original triggering exception and GUI.dll crash cause remain unverified.
+
 See docs/reports/LOGIN_CHARACTER_CREATION_REPAIR.md for exact files, commands,
-transaction boundaries and limitations. Publish this feature branch; public
-master merge and client acceptance remain separate.
+transaction boundaries and limitations. Linux build/deployment evidence remains
+private and must distinguish source integration from live installation.

@@ -1,5 +1,12 @@
 # AORebirth Project State
 
+OBSERVED CLIENT ACCEPTANCE (2026-10-17, Login character creation): Mike reports
+repair 13990ce8b works and authorizes public-master integration, faithful Linux
+publication and normal live installation if Linux has the same defect. Runtime
+bytes are unchanged from the approved build and passing focused/disposable-DB
+checks. This is overall client acceptance, not per-case crash attribution.
+Linux source/package/deployment results are recorded separately and privately.
+
 PROVEN LOGIN CREATION REPAIR (2026-10-17): Based on public master 245cfaa4,
 codex/login-character-creation stages and validates Login's creation data,
 caches successful loads without retaining failures, commits all mandatory

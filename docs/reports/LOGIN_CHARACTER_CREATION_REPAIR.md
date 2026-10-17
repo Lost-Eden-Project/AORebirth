@@ -5,6 +5,11 @@ Date: 2026-10-17
 Base public master: `245cfaa41182f1e7c574f9d8a9fb4d6db8ebcf23`.
 Branch: `codex/login-character-creation`.
 
+Client acceptance update: Mike reports "works" for repair `13990ce8b` and
+authorizes public-master integration and the faithful Linux/live workflow.
+The implementation-time limitations below describe the completed repair task;
+Linux installation and per-case client checks are separate results.
+
 ## Proven defects and resulting behavior
 
 Login's Windows build did not stage NewCharacter.json in its own executable-
