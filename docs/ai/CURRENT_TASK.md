@@ -1,49 +1,30 @@
 # Current Task
 
-MISSION CHEST IMPLEMENTATION 001 (2026-10-17).
+CORRECT GENERATED MISSION CHEST PLACEMENT (2026-10-17).
 
-Feature branch: codex/mission-chests, derived from public master
-749f819fdf764ce0cc9debd17304607e71bbf363. Development is isolated in the
-attached mission-chests worktree. Preserve the original checkout's dirty work,
-private full GameData. Mike's follow-up explicitly authorizes updating the
-local Windows build and restarting the local core servers for testing; leave
-them running for him. No public-master merge or Linux deployment is authorized.
+Work only in the attached mission-chests worktree on codex/mission-chests.
+Correct existing placement using actual generated wall/floor triangles, existing
+room roles, door links, transitions, collision metadata and reachability checks.
+Require wall-adjacent inward-facing positions, maximum one chest per eligible
+room, passage/door/transition exclusion and separation across rooms and floors.
+Preserve density and randomized first initialization; reject unsuitable positions
+rather than forcing count. Persisted chest populations must never relocate.
 
-Implemented: captured original chest spawn/contents protocol, independent
-JSON-configured rarity-group loot selection, frozen-layout collision-checked
-placement, atomic mission-DAO population seal, persisted inventory source guards,
-reconstruction and existing-lifecycle cleanup. Ordinary chests only; traps and
-locked generation remain separate work.
+Loot, rarity weights, QL rules, ownership, inventory, multiplayer synchronization,
+DAO persistence and original packet behavior are outside this correction.
+Mike explicitly requested real-layout, multi-floor, reconstruction and loot/
+inventory regression validation. No schema changes or additional migrations.
+Codex must never launch, control or test the AO client. Mike owns client testing.
 
-Mike explicitly approved AORebirth rarity group weights Missing=70, 1=20, 2=6,
-3=2.5, 4=1, 5=0.5, with empty-group renormalization before uniform item selection.
-These are gameplay policy, not original numeric rarity definitions.
+The previous c1b123730 local build and approved single nano-line migration were
+installed successfully. Its fresh backup and accepted build remain preserved
+under ignored build-verify/database-safety-20261017. Original-client acceptance
+is unverified. Existing local servers are being stopped through the approved
+wrapper as required for compilation; restore corrected local servers for Mike
+when validation completes. No public-master merge or Linux deployment.
 
-PROVEN evidence: original mission-20261011-004128-b8e7bf2e ordinal 480,
-155-byte ChestFullUpdate, SHA256
-E86620C76173EE0D943B94C144C40E4EDBA87B5F27B406CD93E62884EB42FD31.
-External research/capture artifacts were read only under Mike's explicit scope.
-
-Validation: final focused run compiled and all 56 chest cases passed;
-34 disposable real-MySQL checks passed. Inventory regression is 23 passed/two
-failed on BOTH this candidate and an untouched exact-public-SHA checkout.
-Combined result: 79 passed/two proven public-baseline failures, zero skipped.
-Existing objective/reward coverage is blocked by its unchanged stale handler
-fixture constructor; no pass is claimed. Original-client acceptance is
-UNVERIFIED. Full integration details and limitations are in
-../MISSION_CHEST_INTEGRATION.md.
-
-The selected private DungeonGeneration.json received only the validated Chests
-section, with rollback copy under ignored build-verify and all other properties
-verified unchanged. No player DB/schema mutation, capture startup, AO client
-control, accepted-engine lifecycle operation or deployment was performed during
-the initial implementation.
-
-Local testing follow-up: full Windows compilation exposed two Dapper 1.13
-collection calls unsupported by DatabasePreflight and missing chest/completion
-entries in the existing shared compile inventories. The collection checks now
-use LINQ Any; SourceInventoryGuard regenerates the two inventories from their
-canonical projects. Read-only database preflight passed without schema changes.
-The approved full Windows core build passed, including DatabasePreflight,
-ChatEngine, LoginEngine and ZoneEngine_New. Restart uses restart-engines.cmd;
-Mike owns client acceptance and the local servers must remain running for him.
+Validation: all 65 chest cases passed; inventory is 23 passed / 2 proven
+public-baseline failures. Overall: 88 passed / 2 failed / 0 skipped.
+Per-real-layout statistics are recorded in
+../reports/MISSION_CHEST_PLACEMENT_CORRECTION.md. Prior feature evidence remains
+in ../MISSION_CHEST_INTEGRATION.md. Preserve original checkout dirty work.

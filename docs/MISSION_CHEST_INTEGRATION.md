@@ -46,27 +46,34 @@ login reconstruction. Count is a single random roll around
 `roomCount * RoomDensity`; default density is 0.3 with a 0.2 variation fraction.
 With variation disabled, 10/20/30/40/50 rooms produce 3/6/9/12/15 targets.
 
-Placement uses the existing transformed room geometry and district anchors.
-Random candidate coordinates are sampled throughout rooms, rather than selecting
-predetermined chest rooms. Existing doors and exact floor-transition endpoints
-connect the room graph. Floor projection, sampled walking support, bidirectional
-sphere casts and usable approaches establish conservative reachability from the
-accepted entrance. Chest/player extents come from the existing selected GameData
-collision metadata. Doors, transitions, entry, objectives and other selected
-chests have explicit clearances. Multiple chests may occupy one room.
+The placement correction uses actual transformed collision-wall sections and
+occupied ground triangles. Room roles, authored main halls, configured passage
+name markers and actual transition rooms exclude unsuitable cells. Each room
+can contain at most one generated chest. Random wall positions prefer suitable
+corners; the heading faces a verified room-side interaction pocket. Room choice
+prefers separation in the existing room graph and balances eligible floors.
 
-Adding a chest must leave every selected chest with a reachable interaction
-approach. Unsafe candidates are rejected. If verified capacity is insufficient,
+Existing district/door anchors, supported walking samples and exact transition
+landings supply the bounded placement-time connectivity check. Cave doorway
+approaches and exclusions use actual ground height rather than template-origin
+Y. Collision metadata supplies chest/player extents; static triangle checks
+also reject chest-sphere overlap. Doorways, transitions, entry, objectives and
+other selected chests retain clearance. This changes placement only.
+
+Adding a chest must preserve reachable door/transition anchors and every selected
+chest's room-side interaction approach. Unsafe candidates are rejected. If verified capacity is insufficient,
 the planner returns fewer positions instead of inserting unchecked objects.
 The generated identities, poses, appearance and collision radii are stored once.
 Unavailable placement inputs leave the population uninitialized, allowing a
 later materialization to retry after the inputs are restored. A legitimate
 zero-count roll or exhausted safe capacity can still be sealed as empty.
 
-**PROVEN automated scope:** all six representative real layouts achieved their
-exact requested count: styles 321, 324, 341 and 351, including two- and five-floor
-341 instances. This is not an assertion that every possible generated seed was
-exhaustively tested.
+The initial six count-only checks did not enforce wall placement or one chest
+per room. They are superseded by the geometry, distribution and persistence
+checks and per-layout statistics in
+[the placement correction report](reports/MISSION_CHEST_PLACEMENT_CORRECTION.md).
+Existing sealed populations retain their stored identities and poses; this
+policy affects only missions whose chest population is first initialized now.
 
 ## 3. Loot eligibility and rarity
 
@@ -150,7 +157,7 @@ One transaction writes compact per-chest mission flags, initial
 `item_instances` rows and the population seal. Each snapshot is at most 1,024
 characters. An existing seal returns load authority; partial unsealed records,
 identity collisions and mismatched snapshots fail closed. Zero-count
-populations can also be sealed. No schema migration is required.
+populations can also be sealed. Chest persistence introduces no schema migration.
 
 Ownership is the existing container type/instance/placement tuple. Chest
 contents use Container identities and initial slots 0-2. The client container
@@ -250,7 +257,11 @@ or evidence files were modified.
 - Local Windows follow-up: the approved `NewZoneEngineBuild\build.cmd` passed
   for DatabasePreflight, ChatEngine, LoginEngine and ZoneEngine_New after the
   compatibility/source-inventory corrections described above. The required
-  read-only local database preflight also passed; no schema changes were made.
+  read-only local database preflight also passed at that phase. Mike later
+  approved the sole outstanding public-base migration,
+  20261016_character_nano_line_locks.sql; it was backed up, applied and the
+  c1b123730 chest build started successfully. Chest persistence itself adds no
+  migration. The later placement correction is recorded in its separate report.
 - Existing objective/reward regression execution is blocked by the unchanged
   `QuestDungeonDestinationTests` fixture at line 716: its parameterless
   `ClientGetItemMessageHandler` construction no longer matches the production

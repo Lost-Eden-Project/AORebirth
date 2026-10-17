@@ -1,5 +1,15 @@
 # AORebirth Project State
 
+PROVEN PLACEMENT CORRECTION (2026-10-17, codex/mission-chests): generated
+mission chests use actual wall/ground triangles, one chest per eligible room,
+passage/door exclusions, inward approaches and separation across rooms/floors.
+Persisted populations retain their original IDs and poses. All 65 chest cases
+passed, including real multi-floor layouts and reconstruction; inventory remains
+23 passed / 2 proven public-baseline failures, with no new inventory failures.
+Loot, original packet behavior, DAO/schema and dungeon generation are unchanged.
+See docs/reports/MISSION_CHEST_PLACEMENT_CORRECTION.md for all real-layout
+statistics and bounded-search shortfalls. Mike exclusively owns AO client tests.
+
 PROVEN WINDOWS BUILD (2026-10-17, mission chest local testing): the approved
 full core build passed for DatabasePreflight, ChatEngine, LoginEngine and
 ZoneEngine_New after the Dapper compatibility and generated source-inventory

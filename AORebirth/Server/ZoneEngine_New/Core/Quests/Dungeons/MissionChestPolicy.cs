@@ -79,6 +79,7 @@ public sealed class MissionChestPolicy
 /// <summary>Bounded placement checks over existing collision geometry; these are configurable AORebirth margins.</summary>
 public sealed class MissionChestPlacementPolicy
 {
+    public string[] ExcludedRoomNameParts { get; set; } = [];
     public int CandidateAttemptsPerRoom { get; set; }
     public int CandidatesPerRoom { get; set; }
     public float FloorProbeLift { get; set; }
@@ -92,7 +93,8 @@ public sealed class MissionChestPlacementPolicy
     public float EntryClearance { get; set; }
 
     [JsonIgnore]
-    public bool IsValid => CandidateAttemptsPerRoom is >= 1 and <= 256
+    public bool IsValid => ExcludedRoomNameParts != null && ExcludedRoomNameParts.All(part => !string.IsNullOrWhiteSpace(part))
+        && CandidateAttemptsPerRoom is >= 1 and <= 256
         && CandidatesPerRoom is >= 1 and <= 32 && CandidateAttemptsPerRoom >= CandidatesPerRoom
         && Positive(FloorProbeLift) && Positive(MaxFloorDrop) && Positive(WalkSampleSpacing) && Positive(MaxWalkStep)
         && Nonnegative(CollisionPadding) && Positive(DoorClearance) && Positive(ObjectiveClearance)
@@ -103,6 +105,7 @@ public sealed class MissionChestPlacementPolicy
 
     internal MissionChestPlacementPolicy Clone() => new()
     {
+        ExcludedRoomNameParts = (string[])ExcludedRoomNameParts.Clone(),
         CandidateAttemptsPerRoom = CandidateAttemptsPerRoom,
         CandidatesPerRoom = CandidatesPerRoom,
         FloorProbeLift = FloorProbeLift,

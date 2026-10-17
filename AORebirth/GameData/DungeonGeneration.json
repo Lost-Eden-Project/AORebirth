@@ -23,7 +23,8 @@
       ]
     },
     "Placement": {
-      "CandidateAttemptsPerRoom": 48,
+      "ExcludedRoomNameParts": ["hallway", "corridor", "endblock", "entrance", "startroom", "stair", "elevator", "ramp", "vent", "checkpoint", "passage", "intersection", "foyaer", "foyer"],
+      "CandidateAttemptsPerRoom": 128,
       "CandidatesPerRoom": 8,
       "FloorProbeLift": 2,
       "MaxFloorDrop": 4,

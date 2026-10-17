@@ -14,6 +14,7 @@ using AORebirth.World.Collision;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SmokeLounge.AOtomation.Messaging.GameData;
+using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
@@ -28,6 +29,68 @@ public sealed class MissionChestPopulationTests
 {
     const string Quest = "chest.population.test";
     const long Assigned = 12345;
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ChangedGenerationInputsCannotRelocateOrRerollASealedPopulation(bool removePolicy)
+    {
+        var dao = new AuthoredMissionTestDao();
+        Seed(dao);
+        string[] savedFlags = dao.Flags.OrderBy(pair => pair.Key)
+            .Select(pair => pair.Key + "=" + JsonSerializer.Serialize(pair.Value)).ToArray();
+        using var original = new World();
+        original.Inventory.Rows.Add(ItemRow(7001, 0));
+        original.Inventory.Rows.Add(ItemRow(7002, 2));
+        Population(dao, PositivePolicy()).Populate(original.Playfield, original.Layout, original.Simulation);
+        Chest first = original.Registry.Dynels().OfType<Chest>().Single();
+        var firstSpawn = (ChestItemFullUpdateMessage)first.BuildSpawnMessage();
+
+        using var reconstructed = new World();
+        reconstructed.Inventory.Rows.Add(ItemRow(7002, 2));
+        typeof(QuestDungeonPlayfield).GetField("<Layout>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(reconstructed.Playfield, new DungeonLayout(null!, [],
+                new AORebirth.Core.Vector.Vector3(321, 80, 641), 987654321, null));
+        var offset = new System.Numerics.Vector3(320, 80, 640);
+        var changedGeometry = new DungeonWorldLayout(reconstructed.Layout.Collision,
+            [new DungeonRoomBounds(0, offset, offset + new System.Numerics.Vector3(32, 8, 32))],
+            placements: [new DungeonRoomPlacement(0,
+                new StyleRoomTemplate(2, 0, 0, 5, 5, System.Numerics.Vector3.Zero), offset, 270)]);
+        MissionChestPolicy? changedPolicy = null;
+        if (!removePolicy)
+        {
+            changedPolicy = PositivePolicy();
+            changedPolicy.RoomDensity = 1;
+            changedPolicy.CountVariationFraction = 1;
+            changedPolicy.MinItems = changedPolicy.MaxItems = 3;
+            changedPolicy.RarityWeights = changedPolicy.RarityWeights.ToDictionary(pair => pair.Key,
+                pair => pair.Key == "5" ? 1d : 0d);
+            changedPolicy.SpawnDefinition!.StateMachineInstance += 100;
+            changedPolicy.Placement!.EntryClearance = 100;
+            changedPolicy.Placement.ChestClearance = 100;
+        }
+        Assert.IsNull(reconstructed.Simulation.Surface,
+            "Reconstruction must not require the geometry prerequisites of a new placement roll.");
+        Population(dao, changedPolicy).Populate(reconstructed.Playfield, changedGeometry, reconstructed.Simulation);
+
+        Chest restored = reconstructed.Registry.Dynels().OfType<Chest>().Single();
+        var restoredSpawn = (ChestItemFullUpdateMessage)restored.BuildSpawnMessage();
+        Assert.AreEqual(first.Identity, restored.Identity);
+        Assert.AreEqual(first.Position.x, restored.Position.x);
+        Assert.AreEqual(first.Position.y, restored.Position.y);
+        Assert.AreEqual(first.Position.z, restored.Position.z);
+        CollectionAssert.AreEqual(new[] { firstSpawn.Heading.X, firstSpawn.Heading.Y, firstSpawn.Heading.Z, firstSpawn.Heading.W },
+            new[] { restoredSpawn.Heading.X, restoredSpawn.Heading.Y, restoredSpawn.Heading.Z, restoredSpawn.Heading.W });
+        Assert.AreEqual(first.GetCollisionRadius(), restored.GetCollisionRadius());
+        Assert.AreEqual(JsonSerializer.Serialize(first.SpawnDefinition), JsonSerializer.Serialize(restored.SpawnDefinition));
+        Assert.AreEqual(7002, restored.Loot.Content.Single().Value.InstanceId);
+        Assert.AreEqual(2, restored.Loot.Content.Single().Key);
+        Assert.AreEqual(50, restored.Loot.Content.Single().Value.Quality);
+        Assert.AreEqual(0, dao.Calls, "Changed placement or loot policy must never initialize a sealed run again.");
+        Assert.AreEqual(0, dao.Items.Count, "Already looted contents must never be reminted.");
+        CollectionAssert.AreEqual(savedFlags, dao.Flags.OrderBy(pair => pair.Key)
+            .Select(pair => pair.Key + "=" + JsonSerializer.Serialize(pair.Value)).ToArray());
+    }
 
     [TestMethod]
     public void ReconstructionUsesFrozenIdentityAppearanceAndOnlyRemainingDurableItems()
