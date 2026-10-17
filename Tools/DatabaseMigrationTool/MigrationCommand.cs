@@ -35,8 +35,13 @@ public static class MigrationCommand
                  try { Initialize(initConnection, output); }
                  finally
                  {
-                     using var initRelease = new MySqlCommand("SELECT RELEASE_LOCK(CONCAT(DATABASE(),':aorebirth-schema'))", initConnection);
-                     initRelease.ExecuteScalar();
+                     // A failure can leave the connection closed (and the lock gone with it): don't let the release
+                     // replace the error that says why.
+                     if (initConnection.State == System.Data.ConnectionState.Open)
+                     {
+                         using var initRelease = new MySqlCommand("SELECT RELEASE_LOCK(CONCAT(DATABASE(),':aorebirth-schema'))", initConnection);
+                         initRelease.ExecuteScalar();
+                     }
                  }
                  return 0;
              }
@@ -58,8 +63,11 @@ public static class MigrationCommand
             try { Apply(connection, output); }
             finally
             {
-                using var release = new MySqlCommand("SELECT RELEASE_LOCK(CONCAT(DATABASE(),':aorebirth-schema'))", connection);
-                release.ExecuteScalar();
+                if (connection.State == System.Data.ConnectionState.Open)
+                {
+                    using var release = new MySqlCommand("SELECT RELEASE_LOCK(CONCAT(DATABASE(),':aorebirth-schema'))", connection);
+                    release.ExecuteScalar();
+                }
             }
             var after = DatabaseSchemaReadiness.Check(builder.ConnectionString);
             WriteStatus(output, after);
@@ -152,11 +160,23 @@ public static class MigrationCommand
             foreach (string table in TablesDeclaredByCreate(script.Sql))
                 Execute(connection, "DROP TABLE IF EXISTS " + QuoteIdentifier(table));
 
-        foreach (InitScript next in orderedScripts)
+        // Each script's rows in one commit, without a time limit: the big ones (tradeskill.sql: ~100k single-row
+        // INSERTs) took one disk flush per row under autocommit, ran past the command timeout on a slow disk, and the
+        // cancelled command closed the connection half-way through the scripts. CREATE TABLE still commits by itself.
+        Execute(connection, "SET autocommit=0");
+        try
         {
-            string sql = next.Sql;
-            Execute(connection, sql);
-            output.WriteLine("INITIALIZED=" + next.Name);
+            foreach (InitScript next in orderedScripts)
+            {
+                Execute(connection, next.Sql, timeoutSeconds: 0);
+                Execute(connection, "COMMIT");
+                output.WriteLine("INITIALIZED=" + next.Name);
+            }
+        }
+        finally
+        {
+            if (connection.State == System.Data.ConnectionState.Open)
+                Execute(connection, "SET autocommit=1");
         }
         Execute(connection, "CREATE TABLE IF NOT EXISTS schema_migrations (MigrationName VARCHAR(255) NOT NULL, AppliedAtUtc DATETIME(6) NOT NULL, PRIMARY KEY (MigrationName)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
@@ -228,8 +248,8 @@ public static class MigrationCommand
     private static void WriteStatus(TextWriter output, SchemaCheckResult result) => output.WriteLine(result.State + ": " + result.Message);
     private static long Scalar(MySqlConnection connection, string sql)
     { using var command = new MySqlCommand(sql, connection); return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture); }
-    private static void Execute(MySqlConnection connection, string sql, MySqlTransaction? transaction = null)
-    { using var command = new MySqlCommand(sql, connection, transaction); command.CommandTimeout = 120; command.ExecuteNonQuery(); }
+    private static void Execute(MySqlConnection connection, string sql, MySqlTransaction? transaction = null, int timeoutSeconds = 120)
+    { using var command = new MySqlCommand(sql, connection, transaction); command.CommandTimeout = timeoutSeconds; command.ExecuteNonQuery(); }
     private static void Mark(MySqlConnection connection, string name, MySqlTransaction? transaction = null)
     {
         using var command = new MySqlCommand("INSERT INTO schema_migrations (MigrationName,AppliedAtUtc) VALUES (@name,UTC_TIMESTAMP(6))", connection, transaction);
