@@ -500,6 +500,12 @@ namespace ZoneEngine_New.Core.Nanos
                 : NanoDelayCalculator.RechargeTimeCentiseconds(spell.RechargeDelayCentiseconds);
             caster.StartNanoRecharge(recharge, nowUtc);
 
+            // A nano with a line cooldown (stat 643, or the longer local cooldown 254) locks its strain for the caster from
+            // the finished cast, resisted or not. Persisted with an absolute expiry, so it keeps running while the player
+            // is logged out, and FullCharacter shows the client what is left after a zone change or login.
+            if (spell.NanoLineLockCentiseconds > 0 && spell.NanoStrain > 0)
+                caster.LockNanoLine(spell.NanoStrain, (int)Math.Ceiling(spell.NanoLineLockCentiseconds / 100.0), nowUtc);
+
             // A finished hostile cast pulls the NPC whether it lands, is resisted or is refused; a resetting NPC ignores it.
             if (spell.IsHostile)
                 AddHostileThreat(caster, recipient!);
@@ -606,6 +612,7 @@ namespace ZoneEngine_New.Core.Nanos
                 CasterIsDead = caster.IsDead,
                 CasterIsCasting = caster.IsCastingNano,
                 CasterIsRecharging = caster.IsInNanoRecharge(nowUtc),
+                NanoLineLocked = spell.NanoStrain > 0 && caster.NanoLineLocks.IsLocked(spell.NanoStrain, nowUtc),
                 // NPC casts are not upload gated; an NPC's list only holds its equipped crystals.
                 IsUploaded = !caster.IsPlayer || caster.UploadedNanoIds.Contains(spell.Id),
                 RequirementsMet = spell.MeetsActionRequirements(

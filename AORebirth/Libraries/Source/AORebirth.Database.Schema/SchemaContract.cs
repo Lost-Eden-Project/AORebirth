@@ -31,7 +31,8 @@ public static class SchemaContract
         "20260927_character_quests.sql",
         "20260928_quest_dungeon_keys.sql",
         "20261001_character_perk_locks.sql",
-        "20261013_character_research.sql"
+        "20261013_character_research.sql",
+        "20261016_character_nano_line_locks.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -51,7 +52,7 @@ public static class SchemaContract
         "generatedmissionsequences", "generatedmissionbatches", "generatedmissionoffers",
         "generatedmissionbindings", "generatedmissionobservations", "generatedmissionartifacts", "generatedmissionobjects",
         "characterskilllocks", "characterquests", "generatedquests", "questdungeonkeys",
-        "characterperklocks", "characterresearch"
+        "characterperklocks", "characterresearch", "characternanolinelocks"
     });
 
     public static readonly IReadOnlyList<(string Table, string Columns)> UniqueKeys = Array.AsReadOnly(new[]
@@ -71,7 +72,8 @@ public static class SchemaContract
         ("generatedmissionobjects", "RuntimeType,RuntimeInstance"), ("characterskilllocks", "CharacterId,StatId"),
         ("characterquests", "CharacterId,QuestId"), ("generatedquests", "QuestId"), ("questdungeonkeys", "KeyInstanceId"),
         ("characterperklocks", "CharacterId,PerkId"),
-        ("characterresearch", "CharacterId,ResearchId")
+        ("characterresearch", "CharacterId,ResearchId"),
+        ("characternanolinelocks", "CharacterId,NanoStrain")
     });
 
     private static IReadOnlyList<ColumnRequirement> BuildColumns()
@@ -159,6 +161,8 @@ public static class SchemaContract
         Add("characterperklocks", "int", "CharacterId PerkId", false);
         Add("characterperklocks", "bigint", "ExpiresAtUtcTicks", false);
         Add("characterresearch", "int", "CharacterId ResearchId RemainingXp", false);
+        Add("characternanolinelocks", "int", "CharacterId NanoStrain", false);
+        Add("characternanolinelocks", "bigint", "ExpiresAtUtcTicks", false);
         return result.AsReadOnly();
     }
 }

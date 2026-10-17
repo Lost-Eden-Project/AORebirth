@@ -14,6 +14,8 @@ namespace ZoneEngine_New.Core.Nanos
         NotEnoughNcu,
         InvalidTarget,
         TargetDead,
+        /// <summary>The nano's strain is still on its local cooldown for this caster.</summary>
+        NanoLineLocked,
     }
 
     /// <summary>
@@ -32,6 +34,8 @@ namespace ZoneEngine_New.Core.Nanos
                 return NanoCastRefusal.AlreadyCasting;
             if (attempt.CasterIsRecharging)
                 return NanoCastRefusal.Recharging;
+            if (attempt.NanoLineLocked)
+                return NanoCastRefusal.NanoLineLocked;
             if (!attempt.IsUploaded)
                 return NanoCastRefusal.NotUploaded;
             if (!attempt.TargetExists)
@@ -58,6 +62,7 @@ namespace ZoneEngine_New.Core.Nanos
             NanoCastRefusal.NotEnoughNcu => "Not enough NCU.",
             NanoCastRefusal.InvalidTarget => "That is not a valid target for that nano program.",
             NanoCastRefusal.TargetDead => "Your target is dead.",
+            NanoCastRefusal.NanoLineLocked => "That nano line is still cooling down.",
             _ => string.Empty,
         };
     }
@@ -70,6 +75,9 @@ namespace ZoneEngine_New.Core.Nanos
         public bool CasterIsCasting { get; init; }
 
         public bool CasterIsRecharging { get; init; }
+
+        /// <summary>The caster's lock on this nano's strain has not run out.</summary>
+        public bool NanoLineLocked { get; init; }
 
         public bool IsUploaded { get; init; }
 

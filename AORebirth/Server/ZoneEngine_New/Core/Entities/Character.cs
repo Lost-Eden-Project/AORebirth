@@ -105,6 +105,20 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>LockSkill cooldowns by stat id. Only players persist them.</summary>
         public SkillLocks SkillLocks { get; } = new();
 
+        /// <summary>
+        /// Nano line cooldowns by nano strain (stat 75), from a cast nano's local cooldown (stat 254). Every nano of a
+        /// locked strain is refused until the lock runs out. Only players persist them (characternanolinelocks).
+        /// </summary>
+        public SkillLocks NanoLineLocks { get; } = new();
+
+        /// <summary>Locks <paramref name="nanoStrain"/> for <paramref name="durationSeconds"/>; zero or less clears it.</summary>
+        public void LockNanoLine(int nanoStrain, int durationSeconds, DateTime nowUtc)
+        {
+            NanoLineLocks.Lock(nanoStrain, durationSeconds, nowUtc);
+            if (this is Player player)
+                Playfield?.GetService<InventoryFlushService>()?.NotifyDirty(player);
+        }
+
         /// <summary>Locks <paramref name="statId"/>; returns the applied duration after SkillLockModifier.</summary>
         public int LockSkill(int statId, int durationSeconds, DateTime nowUtc)
         {
@@ -822,6 +836,13 @@ namespace ZoneEngine_New.Core.Entities
             if (IsPlayer)
                 return;
 
+            // Guards and civilians (Gameplay.json xp.noKillXpNpcFamilies, family 0) are worth nothing, grey XP included.
+            // Only an NPCFamily the template actually carries counts; an unset stat is not family 0.
+            GameplayXp xpRules = playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp();
+            int npcFamily = Stats.Get(CharacterStat.NPCFamily);
+            if (!StatCollection.IsUnset(npcFamily) && xpRules.GivesNoKillXp(npcFamily))
+                return;
+
             IGameData gameData = playfield.GetRequiredService<IGameData>();
             int victimLevel = Stats.GetOrOne(CharacterStat.Level);
 
@@ -831,7 +852,7 @@ namespace ZoneEngine_New.Core.Entities
             if (pool <= 0)
                 return;
 
-            double percentPerLevel = (playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp()).KillPercentPerLevelDifference;
+            double percentPerLevel = xpRules.KillPercentPerLevelDifference;
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             // One share per team (or solo player), split evenly between the team's nearby members, so every member gets
             // the same cut whatever they dealt and each player gets one grant per kill (the per-grant cap applies once).

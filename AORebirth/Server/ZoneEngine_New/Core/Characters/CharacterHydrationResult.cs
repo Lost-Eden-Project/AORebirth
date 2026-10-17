@@ -29,6 +29,9 @@ namespace ZoneEngine_New.Core.Characters
         /// <summary>Personal research tiers in progress from characterresearch.</summary>
         public IReadOnlyList<ResearchProgressRecord> Research { get; init; } = [];
 
+        /// <summary>Stored nano line cooldowns (StatId = nano strain). Expired entries are dropped on apply.</summary>
+        public IReadOnlyList<SkillLockRecord> NanoLineLocks { get; init; } = [];
+
         public bool IsSpawnReady => CharacterHydrationValidator.Validate(this).IsValid;
     }
 }

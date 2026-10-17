@@ -28,6 +28,10 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<PersistedPerkLockData> LoadPerkLocks(int characterId);
         /// <summary>Replaces the character's perk locks in one transaction.</summary>
         void SavePerkLocks(int characterId, IList<PersistedPerkLockData> perkLocks);
+        /// <summary>Nano line cooldowns (characternanolinelocks).</summary>
+        IList<PersistedNanoLineLockData> LoadNanoLineLocks(int characterId);
+        /// <summary>Replaces the character's nano line locks in one transaction.</summary>
+        void SaveNanoLineLocks(int characterId, IList<PersistedNanoLineLockData> nanoLineLocks);
         /// <summary>Personal research tiers in progress (characterresearch).</summary>
         IList<PersistedResearchData> LoadResearch(int characterId);
         /// <summary>Replaces the character's research progress in one transaction.</summary>

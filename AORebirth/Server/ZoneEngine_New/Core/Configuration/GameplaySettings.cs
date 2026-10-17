@@ -102,6 +102,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.sideBonusPercent must fit the non-negative, hundredths-of-percent InfoPacket field.");
             if (Xp.Caps == null || !Xp.Caps.IsValid)
                 throw new InvalidDataException(path + ": xp.caps killXp, quest and research must be finite, non-negative percents.");
+            if (Xp.NoKillXpNpcFamilies == null)
+                throw new InvalidDataException(path + ": xp.noKillXpNpcFamilies must be a list of NPCFamily values (it may be empty).");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
@@ -333,8 +335,16 @@ namespace ZoneEngine_New.Core.Configuration
         /// </summary>
         public double KillPercentPerLevelDifference { get; init; } = 2.5;
 
+        /// <summary>
+        /// NPCFamily (455) values whose kills give no XP at all, not even the grey 1 XP. Family 0 is the guards and
+        /// civilians (Newland Militia Guard and some 78 other templates). An NPC with no NPCFamily stat is not family 0.
+        /// </summary>
+        public int[] NoKillXpNpcFamilies { get; init; } = [0];
+
         /// <summary>Per-grant caps, in percent of the current level's XP bar.</summary>
         public GameplayXpCaps Caps { get; init; } = new();
+
+        public bool GivesNoKillXp(int npcFamily) => Array.IndexOf(NoKillXpNpcFamilies, npcFamily) >= 0;
     }
 
     /// <summary>

@@ -202,6 +202,30 @@ namespace AORebirth.Database.Domain.Characters
             });
         }
 
+        public IList<PersistedNanoLineLockData> LoadNanoLineLocks(int characterId)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            return Query("SELECT NanoStrain,ExpiresAtUtcTicks FROM characternanolinelocks WHERE CharacterId=@Id ORDER BY NanoStrain",
+                r => new PersistedNanoLineLockData { NanoStrain = r.GetInt32(0), ExpiresAtUtcTicks = r.GetInt64(1) }, "@Id", characterId);
+        }
+
+        public void SaveNanoLineLocks(int characterId, IList<PersistedNanoLineLockData> nanoLineLocks)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (nanoLineLocks == null) throw new ArgumentNullException(nameof(nanoLineLocks));
+            if (nanoLineLocks.Any(l => l.NanoStrain <= 0 || l.ExpiresAtUtcTicks <= 0)
+                || nanoLineLocks.Select(l => l.NanoStrain).Distinct().Count() != nanoLineLocks.Count)
+                throw new ArgumentException("Invalid or duplicate nano line lock.", nameof(nanoLineLocks));
+            Transaction((c, t) =>
+            {
+                Execute(c, t, "DELETE FROM characternanolinelocks WHERE CharacterId=@Id", "@Id", characterId);
+                foreach (var lineLock in nanoLineLocks)
+                    Execute(c, t, "INSERT INTO characternanolinelocks (CharacterId,NanoStrain,ExpiresAtUtcTicks) VALUES (@Id,@Strain,@Expiry)",
+                        "@Id", characterId, "@Strain", lineLock.NanoStrain, "@Expiry", lineLock.ExpiresAtUtcTicks);
+                return 0;
+            });
+        }
+
         public IList<PersistedResearchData> LoadResearch(int characterId)
         {
             if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));

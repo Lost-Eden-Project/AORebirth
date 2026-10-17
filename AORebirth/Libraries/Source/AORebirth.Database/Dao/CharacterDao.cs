@@ -278,6 +278,10 @@ namespace AORebirth.Database.Dao
                 new { CharacterId = id },
                 transaction);
             connection.Execute(
+                "DELETE FROM characternanolinelocks WHERE CharacterId=@CharacterId",
+                new { CharacterId = id },
+                transaction);
+            connection.Execute(
                 "DELETE FROM characterresearch WHERE CharacterId=@CharacterId",
                 new { CharacterId = id },
                 transaction);

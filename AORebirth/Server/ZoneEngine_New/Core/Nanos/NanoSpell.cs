@@ -22,6 +22,20 @@ namespace ZoneEngine_New.Core.Nanos
 
         public const CharacterStat NanoStrainStat = (CharacterStat)75;
 
+        /// <summary>
+        /// Stat 254 on a nano: its local cooldown in centiseconds, the "Local cooldown" line of the client's nano info
+        /// (Gamecode.dll N3Msg_GetInfo reads it). Our stat table names 254 MonsterLevelsKilled, which is its character
+        /// meaning, not this one. Spirit Siphon 297342 carries 12000 (120 s).
+        /// </summary>
+        public const CharacterStat LocalCooldownStat = (CharacterStat)254;
+
+        /// <summary>
+        /// Stat 643 on a nano: the nano line cooldown in centiseconds most nanos carry (Lesser Healing Touch 82034: 800,
+        /// Mongo Slam! 100198: 500). Not in our stat tables. Live FullCharacter after a zone change (capture
+        /// 2026-10-17T01:38:54Z) lists the line of a just-cast Lesser Healing Touch as locked for 8 with 5 left.
+        /// </summary>
+        public const CharacterStat NanoLineCooldownStat = (CharacterStat)643;
+
         protected NanoSpell(ItemTemplate template)
             : base(template)
         {
@@ -34,6 +48,7 @@ namespace ZoneEngine_New.Core.Nanos
             AttackDelayCapCentiseconds = Math.Max(0, ReadStat(CharacterStat.AttackDelayCap));
             RechargeDelayCentiseconds = Math.Max(0, ReadStat(CharacterStat.RechargeDelay));
             RechargeDelayCapCentiseconds = Math.Max(0, ReadStat(CharacterStat.RechargeDelayCap));
+            NanoLineLockCentiseconds = Math.Max(0, Math.Max(ReadStat(LocalCooldownStat), ReadStat(NanoLineCooldownStat)));
 
             CanFlags can = (CanFlags)(uint)ReadStat(CharacterStat.Can);
             NanoFlags nanoFlags = (NanoFlags)Flags;
@@ -88,6 +103,12 @@ namespace ZoneEngine_New.Core.Nanos
         public int RechargeDelayCentiseconds { get; }
 
         public int RechargeDelayCapCentiseconds { get; }
+
+        /// <summary>
+        /// How long a cast locks this nano's strain for the caster: the longer of <see cref="LocalCooldownStat"/> and
+        /// <see cref="NanoLineCooldownStat"/>; 0 for none.
+        /// </summary>
+        public int NanoLineLockCentiseconds { get; }
 
         /// <summary>
         /// True when the nano occupies NCU. Catalog bit is <see cref="NanoFlags.IsBuff"/>;

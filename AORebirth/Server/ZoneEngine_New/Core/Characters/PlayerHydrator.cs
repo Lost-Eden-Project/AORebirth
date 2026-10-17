@@ -75,6 +75,8 @@ namespace ZoneEngine_New.Core.Characters
                 player.SkillLocks.Restore(record.StatId, new DateTime(record.ExpiresAtUtcTicks, DateTimeKind.Utc), nowUtc);
             foreach (SkillLockRecord record in hydration.PerkLocks)
                 player.PerkLocks.Restore(record.StatId, new DateTime(record.ExpiresAtUtcTicks, DateTimeKind.Utc), nowUtc);
+            foreach (SkillLockRecord record in hydration.NanoLineLocks)
+                player.NanoLineLocks.Restore(record.StatId, new DateTime(record.ExpiresAtUtcTicks, DateTimeKind.Utc), nowUtc);
         }
 
         /// <summary>

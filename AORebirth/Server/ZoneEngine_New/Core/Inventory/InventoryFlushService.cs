@@ -25,6 +25,7 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly ITrainedPerkRepository? _trainedPerks;
         private readonly IPerkLockRepository? _perkLocks;
         private readonly IResearchRepository? _research;
+        private readonly INanoLineLockRepository? _nanoLineLocks;
         private readonly IZoneLogger _logger;
         private readonly object _scheduleGate = new();
         private readonly Dictionary<int, long> _dueAtMs = new();
@@ -38,7 +39,8 @@ namespace ZoneEngine_New.Core.Inventory
             IZoneLogger logger,
             ITrainedPerkRepository? trainedPerks = null,
             IPerkLockRepository? perkLocks = null,
-            IResearchRepository? research = null)
+            IResearchRepository? research = null,
+            INanoLineLockRepository? nanoLineLocks = null)
         {
             ArgumentNullException.ThrowIfNull(playfieldManager);
             ArgumentNullException.ThrowIfNull(persist);
@@ -49,6 +51,7 @@ namespace ZoneEngine_New.Core.Inventory
             _trainedPerks = trainedPerks;
             _perkLocks = perkLocks;
             _research = research;
+            _nanoLineLocks = nanoLineLocks;
             _logger = logger;
 
             _writer = new Thread(WriterLoop)
@@ -215,8 +218,9 @@ namespace ZoneEngine_New.Core.Inventory
                 int[]? trainedPerks = _trainedPerks == null ? null : player.TrainedPerks.TakeDirty();
                 List<SkillLockRecord>? perkLocks = _perkLocks == null ? null : player.PerkLocks.TakeDirty(DateTime.UtcNow);
                 ResearchProgressRecord[]? research = _research == null ? null : player.Research.TakeDirty();
+                List<SkillLockRecord>? nanoLineLocks = _nanoLineLocks == null ? null : player.NanoLineLocks.TakeDirty(DateTime.UtcNow);
                 if (inventory == null && nanos.Length == 0 && activeNanos == null && skillLocks == null && trainedPerks == null
-                    && perkLocks == null && research == null)
+                    && perkLocks == null && research == null && nanoLineLocks == null)
                     return;
 
                 try
@@ -248,6 +252,7 @@ namespace ZoneEngine_New.Core.Inventory
                     player.TrainedPerks.RestoreDirty(trainedPerks);
                     player.PerkLocks.RestoreDirty(perkLocks);
                     player.Research.RestoreDirty(research);
+                    player.NanoLineLocks.RestoreDirty(nanoLineLocks);
                     _logger.Error(
                         exception,
                         string.Format(
@@ -265,6 +270,8 @@ namespace ZoneEngine_New.Core.Inventory
                     () => player.TrainedPerks.RestoreDirty(trainedPerks), "trained perks");
                 SaveReplacementSet(player, perkLocks, locks => _perkLocks!.Save(player.Identity.Instance, locks),
                     () => player.PerkLocks.RestoreDirty(perkLocks), "perk locks");
+                SaveReplacementSet(player, nanoLineLocks, locks => _nanoLineLocks!.Save(player.Identity.Instance, locks),
+                    () => player.NanoLineLocks.RestoreDirty(nanoLineLocks), "nano line locks");
                 // A finished research tier leaves its progress row only once it is a stored trained perk: never write
                 // the research set ahead of a trained-perk set that failed, or the tier would be lost on a restart.
                 if (perksSaved)
@@ -304,7 +311,7 @@ namespace ZoneEngine_New.Core.Inventory
         static bool HasDirtyState(Player player)
             => player.Inventory.HasDirtyEntries || player.HasDirtyUploadedNanos || player.HasDirtyActiveNanos
                 || player.SkillLocks.IsDirty || player.TrainedPerks.IsDirty || player.PerkLocks.IsDirty
-                || player.Research.IsDirty;
+                || player.Research.IsDirty || player.NanoLineLocks.IsDirty;
 
         public void Dispose()
         {

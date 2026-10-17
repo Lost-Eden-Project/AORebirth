@@ -819,6 +819,29 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
+        /// FullCharacter's nano line lock list (the third FullCharacterSub2 array): per running lock 1, Identity (1,
+        /// nano strain), the seconds it was locked for, the seconds left. Live after a Lesser Healing Touch and a zone
+        /// change: 1, (1, 951), 8, 5 (capture 2026-10-17T01:38:54Z). The client only times the lines it cast itself, so
+        /// this is how a lock survives zoning and login on its side.
+        /// </summary>
+        FullCharacterSub2[] BuildNanoLineLockEntries()
+        {
+            var entries = new List<FullCharacterSub2>();
+            foreach ((int strain, int duration, int remaining) in NanoLineLocks.ActiveWithDuration(DateTime.UtcNow))
+            {
+                entries.Add(new FullCharacterSub2
+                {
+                    Unknown1 = 1,
+                    Unknown2 = new Identity { Type = (IdentityType)1, Instance = strain },
+                    Unknown3 = duration,
+                    Unknown4 = remaining
+                });
+            }
+
+            return [.. entries];
+        }
+
+        /// <summary>
         /// RemovePerkAction for actions no longer held, AddPerkAction for new ones. Client case 0x43
         /// (Gamecode.dll 0x10043026) keys the button on Parameter1 (slot), builds its identity from
         /// Parameter2 (hash) and stores Target.Instance (action template); Target.Type is not read.
@@ -2309,7 +2332,7 @@ namespace ZoneEngine_New.Core.Entities
                 UnknownI2 = 1,
                 Unknown5 = [],
                 UnknownI3 = 1,
-                Unknown6 = []
+                Unknown6 = BuildNanoLineLockEntries()
             };
 
             message.Stats1 = BuildFullCharacterIntStats(stats, FullCharacterStats1);

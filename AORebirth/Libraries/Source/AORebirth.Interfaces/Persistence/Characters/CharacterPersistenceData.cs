@@ -110,6 +110,13 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public long ExpiresAtUtcTicks { get; set; }
     }
 
+    /// <summary>One nano line cooldown: the locked nano strain (stat 75) and absolute UTC expiry.</summary>
+    public sealed class PersistedNanoLineLockData
+    {
+        public int NanoStrain { get; set; }
+        public long ExpiresAtUtcTicks { get; set; }
+    }
+
     /// <summary>One personal research tier in progress: its research (perk) id and the research XP it still needs.</summary>
     public sealed class PersistedResearchData
     {
