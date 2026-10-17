@@ -80,7 +80,8 @@ namespace ZoneEngine_New.Core.Inventory
                     // perform ...") belongs to the attacker, not the target it hit.
                     return ResolveApplyOn(target, source, spell) is not Player textPlayer || SystemText(textPlayer, spell);
                 case FunctionType.SaveChar:
-                    return true;
+                    // Insurance terminal (ICC Cell Structure Scanner 300813 and the like): fee, save point, XP saved.
+                    return (source as Player ?? target as Player) is Player saver && saver.InsuranceSave();
                 case FunctionType.LockSkill:
                     return LockSkill(target, source, spell);
                 case FunctionType.TimedEffect:

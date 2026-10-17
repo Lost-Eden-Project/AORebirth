@@ -1334,6 +1334,12 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
         /// </summary>
         DebugFlags = 0x00002713,
 
+        /// <summary>
+        /// AORebirth server-only: XP lost on deaths since the last insurance save (the death pool). Each kill gives back
+        /// 5% of what is left. Never sent to the client.
+        /// </summary>
+        DeathXpPool = 0x00002714,
+
         /// <summary>Sentinel for missing / unset stat and item attribute values.</summary>
         Unset = 1234567890,
     }
