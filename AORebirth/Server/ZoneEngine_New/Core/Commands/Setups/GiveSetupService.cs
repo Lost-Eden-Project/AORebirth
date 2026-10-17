@@ -243,14 +243,15 @@ public sealed class GiveSetupService(
         if (!alienLevelSet)
             skipped.Add("AI level " + alienLevel + ": not set");
 
-        foreach ((CharacterStat stat, int value) in skills)
-            player.Stats.Set(stat, value, StatDetail.Base);
+        AllocateSetupSkills(player, skills);
 
         // Perks and research are replaced, not kept: whatever was trained or being researched before is gone.
         player.ReplacePerksAndResearch(perks);
         int research = perks.Count(player.PerkCatalog.IsResearch);
 
         player.Rebase();
+        // A GM setup is applied even when it costs more than the level earns; say by how much instead of hiding it.
+        int ipOverBudget = Math.Max(0, -player.AvailableIp);
         foreach (Placement placement in placements.Values.Where(placement => placement.Page.Identity.Type != IdentityType.SocialPage))
             WearCastNano.ApplyItem(player, placement.Item, includeWield: placement.Page.Identity.Type == IdentityType.WeaponPage, items, inventory);
 
@@ -276,6 +277,10 @@ public sealed class GiveSetupService(
             setup.Name, profession?.ToString() ?? "profession unchanged", levelSet ? setup.Level.ToString(CultureInfo.InvariantCulture) : "unchanged",
             alienLevelSet ? alienLevel.ToString(CultureInfo.InvariantCulture) : "unchanged", placements.Count, removed, skills.Count,
             perks.Count - research, research, buffs, setup.Buffs.Count));
+        if (ipOverBudget > 0)
+            GmCommandFeedback.SendError(session, player, string.Format(CultureInfo.InvariantCulture,
+                "The setup's skills cost {0} more IP than level {1} gives; applied anyway.",
+                ipOverBudget, player.Stats.GetOrOne(CharacterStat.Level)));
         foreach (string reason in skipped)
             GmCommandFeedback.Send(session, player, "Skipped " + reason);
     }
@@ -361,6 +366,50 @@ public sealed class GiveSetupService(
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The setup is the whole build, as for gear and perks: each trainable ability and skill gets the setup's value, or
+    /// its starting value (the breed's ability base, or <see cref="SkillCatalog.SkillFloor"/>) when the setup does not
+    /// list it, and UsedIP becomes what raising every one of them from its start costs at the character's breed and
+    /// (already set) profession, priced the way training prices it. Without this the character kept its old spending,
+    /// so its unspent IP had nothing to do with the skills it now has.
+    /// </summary>
+    void AllocateSetupSkills(Player player, IReadOnlyList<(CharacterStat Stat, int Base)> setupSkills)
+    {
+        int breedId = player.Stats.GetOrZero(CharacterStat.Breed, StatDetail.Base);
+        var breed = (Breed)breedId;
+        var profession = (Profession)player.Stats.GetOrZero(CharacterStat.Profession, StatDetail.Base);
+        SkillCatalog skillCatalog = player.SkillCatalog;
+
+        var listed = new Dictionary<CharacterStat, int>();
+        foreach ((CharacterStat stat, int value) in setupSkills)
+            listed[stat] = value;
+
+        long used = 0;
+        var seen = new HashSet<CharacterStat>();
+        foreach (CharacterStat stat in Enum.GetValues<CharacterStat>())
+        {
+            if ((!SkillCatalog.IsAbility(stat) && !SkillCatalog.IsSkill(stat)) || !seen.Add(stat))
+                continue;
+
+            int start = SkillCatalog.IsAbility(stat)
+                ? _breedAbilities.Value.GetValueOrDefault((breedId, stat), SkillCatalog.SkillFloor)
+                : SkillCatalog.SkillFloor;
+            // Not trainable at this breed and profession: leave it alone.
+            if (!skillCatalog.TryGetRaiseCost(breed, profession, stat, start, start, out _))
+                continue;
+
+            int value = listed.TryGetValue(stat, out int setupValue) ? Math.Max(start, setupValue) : start;
+            player.Stats.Set(stat, value, StatDetail.Base);
+            if (skillCatalog.TryGetRaiseCost(breed, profession, stat, start, value, out long cost))
+                used += cost;
+        }
+
+        player.Stats.Set(CharacterStat.UsedIP, (int)Math.Min(used, int.MaxValue), StatDetail.Base);
+        // The level grants its IP as the bonus; the base is only extra IP. Characters from the old model kept their
+        // lifetime IP there, which a setup at a lower level would otherwise keep as unspent IP.
+        player.Stats.Set(CharacterStat.IP, 0, StatDetail.Base);
     }
 
     /// <summary>Client short stat names (Text.json category 2003, keyed by stat id) for abilities and skills.</summary>
