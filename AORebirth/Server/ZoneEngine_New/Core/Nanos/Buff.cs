@@ -107,7 +107,17 @@ namespace ZoneEngine_New.Core.Nanos
         /// <summary>Per-character NCU entry id the client uses to address this buff.</summary>
         public int NanoInstance { get; }
 
-        public DateTime ExpiresAtUtc { get; }
+        public DateTime ExpiresAtUtc { get; private set; }
+
+        /// <summary>
+        /// Brings the end forward by <paramref name="amount"/> (ReduceNanoStrainDuration). The caller removes a buff
+        /// this runs out; periodic ticks already stop at the expiry (<see cref="CollectDueTicks"/>).
+        /// </summary>
+        internal void Shorten(TimeSpan amount)
+        {
+            if (amount > TimeSpan.Zero)
+                ExpiresAtUtc -= amount;
+        }
 
         /// <summary>
         /// Buff functions the target runs while the nano is up. Reapplied by every rebase,

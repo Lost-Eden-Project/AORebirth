@@ -184,6 +184,10 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>What an NPC lets go of when it dies or is despawned as dead: its brain, pet bookkeeping, pets and shop.</summary>
         void ReleaseForDeath(string shopCloseReason)
         {
+            // A charmed NPC dies as itself, not as a pet: the charm ends first, so its body and rewards are its own.
+            if (Pet is { IsCharmed: true })
+                Playfield?.GetService<Pets.PetService>()?.EndCharm(this, "died", turnOnOwner: false);
+
             Brain?.OnOwnerDied();
 
             // A pet's death gives nobody a reward and leaves no body to loot.
@@ -567,9 +571,16 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             ApplyBuffBonuses();
+            // A charmed NPC keeps pace with its owner through a bonus; the charm ending drops it with the next rebase.
+            AppliedCharmRunSpeedBonus = Pets.PetService.CharmRunSpeedBonus(this);
+            if (AppliedCharmRunSpeedBonus != 0)
+                Stats.AddBonus(CharacterStat.RunSpeed, AppliedCharmRunSpeedBonus);
             RebaseWearAppearance();
             SyncPetRunSpeeds();
         }
+
+        /// <summary>The run speed bonus the last rebase gave this NPC to keep up with its charmer (0 when not charmed).</summary>
+        internal int AppliedCharmRunSpeedBonus { get; private set; }
 
         /// <summary>
         /// NPCs keep one inventory rather than player wear pages, so everything they carry feeds

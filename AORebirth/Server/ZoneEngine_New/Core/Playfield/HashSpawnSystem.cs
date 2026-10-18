@@ -945,6 +945,14 @@ namespace ZoneEngine_New.Core.Playfield
             if (members.Length == 0)
                 return;
 
+            // The point sleeps with its own cell, wherever its members are. A member serving a player as a charmed pet
+            // is out with its owner, not idle here: the point stays awake until the charm ends and it comes home.
+            for (int i = 0; i < members.Length; i++)
+            {
+                if (members[i] is NpcCharacter { Pet: not null })
+                    return;
+            }
+
             // Stay Alive — sleep-despawned; respawn on next awake tick.
             point.State = HashSpawnState.Alive;
             for (int i = 0; i < members.Length; i++)

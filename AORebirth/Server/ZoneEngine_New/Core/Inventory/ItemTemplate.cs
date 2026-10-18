@@ -529,11 +529,15 @@ namespace ZoneEngine_New.Core.Inventory
             return false;
         }
 
-        /// <summary>Runs OnTerminate functions when a timed nano leaves NCU.</summary>
+        /// <summary>
+        /// Runs OnTerminate functions when a timed nano leaves NCU. <paramref name="source"/> is its caster while it is
+        /// still there: as on landing and on each tick, User functions act on the caster and a Hit is the caster's.
+        /// </summary>
         public bool ExecuteTerminateSpells(
             Character target,
             IInventoryRepository inventoryRepository,
-            IItemBuilder items)
+            IItemBuilder items,
+            Character? source = null)
         {
             ArgumentNullException.ThrowIfNull(target);
             ArgumentNullException.ThrowIfNull(inventoryRepository);
@@ -543,7 +547,8 @@ namespace ZoneEngine_New.Core.Inventory
                 EventType.OnTerminate,
                 target,
                 inventoryRepository,
-                items);
+                items,
+                source: source);
         }
 
         bool ExecuteSpell(

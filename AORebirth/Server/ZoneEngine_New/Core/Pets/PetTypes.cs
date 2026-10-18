@@ -19,6 +19,31 @@ namespace ZoneEngine_New.Core.Pets
 
         public const int Support = 2001;
 
+        /// <summary>
+        /// The mindcontrolled-character slot (charmed NPCs). A charm nano's TestNumPets on it shows as "Must have no
+        /// other mindcontrolled character" (7001) or "no more than 1 of pet type: mindcontrolled character" (7002).
+        /// </summary>
+        public const int MindControlledSlot = 7;
+
+        /// <summary>
+        /// The pet type a charmed NPC takes: the mindcontrolled place its charm nano lets it fill, one under the
+        /// TestNumPets value that allowed the cast (7001: the first, 7000; 7002: the second, 7001). Each charm nano
+        /// thus has its own place, so a second charm does not replace the first. A nano without that test takes the
+        /// first place.
+        /// </summary>
+        public static int CharmType(IReadOnlyList<Inventory.ItemRequirement> requirements)
+        {
+            ArgumentNullException.ThrowIfNull(requirements);
+            foreach (Inventory.ItemRequirement row in requirements)
+            {
+                if (row.Operator == (int)AORebirth.Enums.Operator.TestNumPets
+                    && Slot(Math.Abs(row.Value)) == MindControlledSlot && MaxOwned(Math.Abs(row.Value)) > 0)
+                    return Math.Abs(row.Value) - 1;
+            }
+
+            return MindControlledSlot * 1000;
+        }
+
         /// <summary>The slot of a pet type or TestNumPets value.</summary>
         public static int Slot(int value) => Math.Max(0, value) / 1000;
 

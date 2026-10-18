@@ -26,6 +26,11 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private readonly List<Dynel> _tickBuffer = [];
         private readonly List<int> _nearbyCellBuffer = [];
 
+        // RespawnForObservers: dynels despawned for their observers, with the tick serial they were despawned on.
+        private readonly Dictionary<Dynel, long> _pendingRespawns = [];
+        private readonly List<Dynel> _respawnBuffer = [];
+        private long _tickSerial;
+
         public PlayfieldLocality(int playfieldId, PlayfieldMetaData? metaData)
         {
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
@@ -170,6 +175,21 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _visibility.DespawnForObservers(source);
         }
 
+        /// <summary>
+        /// Sends <paramref name="source"/> afresh to everyone who sees it, for a change only its spawn packet carries
+        /// (an NPC becoming or ceasing to be a pet). It is despawned for them now and shown again on a later locality
+        /// tick: the client does not show a spawn in the same burst as the despawn.
+        /// </summary>
+        public void RespawnForObservers(Dynel source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            if (!_tracked.Contains(source))
+                return;
+
+            _visibility.DespawnForObservers(source);
+            _pendingRespawns[source] = _tickSerial;
+        }
+
         public void UnregisterDynel(Dynel dynel, Player? transferredTo = null)
         {
             if (dynel == null)
@@ -177,6 +197,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
             _visibility.Untrack(dynel, transferredTo);
             _tracked.Remove(dynel);
+            _pendingRespawns.Remove(dynel);
             dynel.Cell?.Remove(dynel);
             dynel.Cell = null;
         }
@@ -200,6 +221,25 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         public void Tick(double deltaTime)
         {
+            if (_pendingRespawns.Count > 0)
+            {
+                TickStallWatch.Stage("locality.respawn");
+                _respawnBuffer.Clear();
+                foreach (KeyValuePair<Dynel, long> pending in _pendingRespawns)
+                {
+                    if (pending.Value < _tickSerial)
+                        _respawnBuffer.Add(pending.Key);
+                }
+
+                for (int i = 0; i < _respawnBuffer.Count; i++)
+                {
+                    Dynel dynel = _respawnBuffer[i];
+                    _pendingRespawns.Remove(dynel);
+                    if (_tracked.Contains(dynel))
+                        _visibility.Reconcile(dynel);
+                }
+            }
+
             TickStallWatch.Stage("locality.cells");
             _tickBuffer.Clear();
             foreach (Dynel dynel in _tracked)
@@ -221,6 +261,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
             TickStallWatch.Stage("locality.heat");
             _heatScheduler.Tick(_tickBuffer, deltaTime);
+            _tickSerial++;
         }
 
         private void PlaceInCell(Dynel dynel, bool logPlayerCellChange)

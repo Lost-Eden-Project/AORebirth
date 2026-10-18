@@ -279,6 +279,60 @@ namespace ZoneEngine_New.Core.Nanos
         }
 
         /// <summary>
+        /// ReduceNanoStrainDuration: every NCU entry of <paramref name="strain"/> on <paramref name="owner"/> ends
+        /// <paramref name="centiseconds"/> sooner. One that this runs out leaves NCU as a strip does (its OnTerminate
+        /// runs); the rest keep running, and the client is told the time they have left.
+        /// </summary>
+        public static bool ReduceStrainDuration(Character owner, int strain, int centiseconds)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            if (strain <= 0 || centiseconds <= 0)
+                return false;
+
+            DateTime nowUtc = DateTime.UtcNow;
+            var amount = TimeSpan.FromMilliseconds(centiseconds * 10L);
+            var matching = new List<Buff>();
+            foreach (Buff buff in owner.Buffs)
+            {
+                if (buff.NanoStrain == strain)
+                    matching.Add(buff);
+            }
+
+            for (int i = 0; i < matching.Count; i++)
+            {
+                Buff buff = matching[i];
+                if (buff.ExpiresAtUtc - amount <= nowUtc)
+                {
+                    if (owner.TryRemoveBuff(buff.Id, BuffRemovalReason.Stripped, out Buff? removed)
+                        == BuffRemovalOutcome.Removed
+                        && removed != null)
+                        AnnounceBuffRemoved(owner, removed);
+                    continue;
+                }
+
+                owner.ShortenBuff(buff, amount);
+                SendRemainingDuration(owner, buff, nowUtc);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Removes one NCU entry whatever its CanCancel says, as a strip does: its OnTerminate runs and observers see
+        /// it go. False when <paramref name="owner"/> does not have it.
+        /// </summary>
+        public static bool StripBuff(Character owner, int nanoId)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            if (owner.TryRemoveBuff(nanoId, BuffRemovalReason.Stripped, out Buff? removed) != BuffRemovalOutcome.Removed
+                || removed == null)
+                return false;
+
+            AnnounceBuffRemoved(owner, removed);
+            return true;
+        }
+
+        /// <summary>
         /// Removes every NCU entry another character put on <paramref name="owner"/>: debuffs, DoTs and
         /// buffs cast by others. What the owner or its own items cast on it (source = owner) stays, as do
         /// entries with no recorded source.
@@ -690,7 +744,8 @@ namespace ZoneEngine_New.Core.Nanos
         static int ResolveNanoCost(Character caster, NanoSpell spell)
             => NanoCostCalculator.Compute(
                 spell.NanoPointCost,
-                caster.Stats.GetOrZero(CharacterStat.NPCostModifier));
+                caster.Stats.GetOrZero(CharacterStat.NPCostModifier),
+                (Breed)caster.Stats.GetOrZero(CharacterStat.Breed));
 
         static void SpendNano(Character caster, int cost)
         {
@@ -880,12 +935,31 @@ namespace ZoneEngine_New.Core.Nanos
         static void ExecuteBuffEnd(Character owner, Buff buff)
         {
             Playfield? playfield = owner.Playfield;
+            // A charm lasts as long as its nano: when the nano runs out or is stripped, the NPC is its own again
+            // before the nano's OnTerminate runs on it (so its Hit lands on the NPC, not on a pet), and it settles
+            // after that Hit has had its say. A charm ended any other way already let go of the NPC.
+            Pets.PetService? pets = playfield?.GetService<Pets.PetService>();
+            NpcCharacter? released = null;
+            if (pets != null && owner is NpcCharacter { Pet.Charm.NanoId: int charmNano } charmed && charmNano == buff.Id)
+            {
+                pets.EndCharm(charmed, "charm ended", settle: false);
+                released = charmed;
+            }
+
             if (playfield != null)
             {
                 IInventoryRepository inventory = playfield.GetRequiredService<IInventoryRepository>();
                 IItemBuilder items = playfield.GetRequiredService<IItemBuilder>();
-                buff.ExecuteTerminateSpells(owner, inventory, items);
+                // Attributed to the caster while it is still here, as each tick is.
+                Character? source = playfield.GetRequiredService<DynelRegistry>().TryGet(buff.Source, out Dynel? dynel)
+                    && dynel is Character caster
+                    ? caster
+                    : null;
+                buff.ExecuteTerminateSpells(owner, inventory, items, source);
             }
+
+            if (released != null)
+                pets!.SettleAfterCharm(released, turnOnOwner: true);
 
             if (owner is not Player)
                 owner.MarkRebaseDirty();
@@ -917,6 +991,32 @@ namespace ZoneEngine_New.Core.Nanos
         /// Duration is the buff landing. Caster and owner get a direct copy for NCU.
         /// The owner's cell gets the same packet so other players see the buff.
         /// </summary>
+        /// <summary>
+        /// A running NCU entry's time changed: the owner and everyone who sees it get SetNanoDuration with what is
+        /// left, from now, as a spawn packet's NCU list would carry it.
+        /// </summary>
+        static void SendRemainingDuration(Character owner, Buff buff, DateTime nowUtc)
+        {
+            var message = new CharacterActionMessage
+            {
+                Identity = owner.Identity,
+                Unknown = 0x00,
+                Action = CharacterActionType.SetNanoDuration,
+                Unknown1 = 0,
+                Target = new Identity
+                {
+                    Type = IdentityType.NanoProgram,
+                    Instance = buff.Id
+                },
+                Parameter1 = buff.Source.Instance,
+                Parameter2 = buff.RemainingCentiseconds(nowUtc),
+                Unknown2 = 0
+            };
+
+            SessionOf(owner)?.Send(message);
+            owner.Cell?.Announce(message, exclude: owner);
+        }
+
         static void SendNanoDuration(Character caster, Character owner, Buff buff)
         {
             var message = new CharacterActionMessage

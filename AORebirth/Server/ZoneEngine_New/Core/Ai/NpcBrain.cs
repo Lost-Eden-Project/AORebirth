@@ -531,6 +531,16 @@ namespace ZoneEngine_New.Core.Ai
         /// NPC before or during the return sticks, so running it home cannot be used to whittle it down.
         /// Buffs the NPC or its own items put on itself stay.
         /// </summary>
+        /// <summary>
+        /// Resets this NPC as a leash does, without waiting for the leash to decide it: it heals, sheds what others
+        /// cast on it and walks home (a charm that ended with nobody left to fight).
+        /// </summary>
+        internal void Evade()
+        {
+            BeginEvade();
+            _leashing = true;
+        }
+
         void BeginEvade()
         {
             if (_evading)
@@ -1168,6 +1178,34 @@ namespace ZoneEngine_New.Core.Ai
             // Resetting the tree from inside Evaluate rewinds the running Sequence child index, so
             // the sequence re-enters this node for the rest of the tick. Clear state before the
             // next tick instead.
+            _treeResetPending = true;
+        }
+
+        /// <summary>
+        /// The NPC stops doing what this brain had it doing, without a reset: its fight, route, hate and what it had
+        /// judged about targets go, while its health, nano and buffs stay as they are (unlike
+        /// <see cref="ResetOutOfCombat"/>). A pet zoning with its owner drops what referred to the world it leaves; a
+        /// charm hands the NPC to another brain, and its own takes it back clean when the charm ends.
+        /// </summary>
+        internal void DropEngagement()
+        {
+            StopFighting();
+            StopPathing();
+            ClearHate();
+            _leashing = false;
+            _evading = false;
+            _resetForUnreachable = false;
+            _stuckWarps = 0;
+            _returningHome = false;
+            _returnFailed = false;
+            _reachCacheId = Identity.None;
+            _reachCacheResult = false;
+            _engageByTarget.Clear();
+            _nearbyPlayers.Clear();
+            _nearbyNpcs.Clear();
+            _helpers.Clear();
+            _followAnnounced = false;
+            ProgressSinceUtc = default;
             _treeResetPending = true;
         }
 

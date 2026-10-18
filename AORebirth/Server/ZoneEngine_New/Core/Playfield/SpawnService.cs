@@ -1117,8 +1117,8 @@ namespace ZoneEngine_New.Core.Playfield
             if (!ReferenceEquals(player.Playfield, _playfield))
                 throw new InvalidOperationException("Player is not on this playfield.");
 
-            // Pets zone with their owner: they leave here and are summoned again on arrival.
-            _playfield.GetRequiredService<Pets.PetService>().StashForTransfer(player);
+            // Pets zone with their owner, as the same NPCs: they leave here and arrive with it.
+            _playfield.GetRequiredService<Pets.PetService>().LeaveWithOwner(player);
 
             // Zoning ends the fight on the client too. Retail sends the leaving player two StopFights before the
             // N3Teleport (capture 2026-10-14T20:12:33Z: Attack, then StopFight x2, then N3Teleport to 3089); without
@@ -1246,7 +1246,7 @@ namespace ZoneEngine_New.Core.Playfield
             player.Logger = _logger;
             _registry.Register(player);
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(player);
-            _playfield.GetRequiredService<Pets.PetService>().RestoreAfterTransfer(player);
+            _playfield.GetRequiredService<Pets.PetService>().ArriveWithOwner(player);
             player.SaveState.MarkDirty();
             // The next trigger sample has to start at this landing. Keeping the position from
             // the last visit draws a segment through the pad they left by, which zones them back.
@@ -1265,10 +1265,76 @@ namespace ZoneEngine_New.Core.Playfield
                     position.zf));
         }
 
+        /// <summary>
+        /// Soft-leave for an NPC changing playfield with its owner (a pet). Like the player's, it keeps the object
+        /// whole, with its stats, buffs and brain; only its place in this world goes. The caller has already ended
+        /// what tied it here (<see cref="Ai.NpcBrain.LeavePlayfield"/>).
+        /// </summary>
+        public void LeaveForTransfer(NpcCharacter npc)
+        {
+            ArgumentNullException.ThrowIfNull(npc);
+            if (!ReferenceEquals(npc.Playfield, _playfield))
+                throw new InvalidOperationException("NPC is not on this playfield.");
+
+            npc.SetFightingTarget(Identity.None);
+            npc.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
+            _playfield.GetRequiredService<PlayfieldLocality>().UnregisterDynel(npc);
+            _registry.Unregister(npc.Identity);
+            npc.Playfield = null;
+
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "NPC {0} left playfield {1} for transfer",
+                    npc.Identity.Instance,
+                    _playfield.Identity.Instance));
+        }
+
+        /// <summary>
+        /// An NPC that left another playfield alive (<see cref="LeaveForTransfer(NpcCharacter)"/>) enters this one at
+        /// <paramref name="position"/>, as <see cref="ArriveFromTransfer(Player, Vector3)"/> does for a player: the
+        /// same object under the same identity, which no NPC here can hold: NPC identities are engine-wide
+        /// (<see cref="DynelRegistry.AllocateNpcIdentity"/>).
+        /// </summary>
+        public void ArriveFromTransfer(NpcCharacter npc, Vector3 position, Quaternion heading)
+        {
+            ArgumentNullException.ThrowIfNull(npc);
+            ArgumentNullException.ThrowIfNull(position);
+            ArgumentNullException.ThrowIfNull(heading);
+            if (npc.Playfield != null)
+                throw new InvalidOperationException("NPC is still on a playfield.");
+
+            npc.Motor.ClearPath();
+            npc.Motor.Warp(position, heading);
+            // Entering sets the playfield stats the spawn packet carries (Character.OnEnteredPlayfield).
+            npc.Playfield = _playfield;
+            if (!_registry.TryRegister(npc))
+            {
+                npc.Playfield = null;
+                throw new InvalidOperationException("Transferred NPC identity is already occupied.");
+            }
+
+            _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(npc);
+
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "NPC {0} arrived playfield {1} at ({2},{3},{4})",
+                    npc.Identity.Instance,
+                    _playfield.Identity.Instance,
+                    position.xf,
+                    position.yf,
+                    position.zf));
+        }
+
         /// <summary>Removes an NPC from the playfield (visibility + registry). Does not fire death.</summary>
         public void DespawnNpc(NpcCharacter npc)
         {
             ArgumentNullException.ThrowIfNull(npc);
+
+            // A charmed NPC leaving the world leaves its owner first.
+            if (npc.Pet is { IsCharmed: true })
+                _playfield.GetRequiredService<Pets.PetService>().EndCharm(npc, "despawned", turnOnOwner: false);
 
             // An NPC leaving the world takes its pets with it.
             if (npc.OwnedPets.Count > 0)
@@ -1316,7 +1382,8 @@ namespace ZoneEngine_New.Core.Playfield
         {
             int characterId = player.Identity.Instance;
             // Logging out sends the player's pets away.
-            _playfield.GetRequiredService<Pets.PetService>().DismissAll(player, "owner logged out");
+            // Charmed NPCs stay here, their own again, and do not turn on a player who is gone.
+            _playfield.GetRequiredService<Pets.PetService>().DismissAll(player, "owner logged out", charmTurnsOnOwner: false);
             player.SetFightingTarget(Identity.None);
             _playfieldManager.Teams.DetachPlayer(player);
 

@@ -13,7 +13,9 @@ namespace ZoneEngine_New.Core.Pets
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Mobs;
+    using ZoneEngine_New.Core.Nanos;
     using ZoneEngine_New.Core.Playfield;
+    using ZoneEngine_New.Core.Playfield.Locality;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
@@ -59,12 +61,11 @@ namespace ZoneEngine_New.Core.Pets
 
             DateTime? expires = durationSeconds > 0 ? DateTime.UtcNow.AddSeconds(durationSeconds) : null;
             int type = Types.TypeOf(hash.Trim());
-            return Spawn(owner, hash.Trim(), type, level, expires, DefaultMode(type), healthPercent: 100, nanoPercent: 100,
-                summonRequirements ?? [], replaceSameSlot);
+            return Spawn(owner, hash.Trim(), type, level, expires, summonRequirements ?? [], replaceSameSlot);
         }
 
-        NpcCharacter? Spawn(Character owner, string hash, int type, int level, DateTime? expires, PetMode mode, int healthPercent,
-            int nanoPercent, IReadOnlyList<ItemRequirement> summonRequirements, bool replaceSameSlot = true)
+        NpcCharacter? Spawn(Character owner, string hash, int type, int level, DateTime? expires,
+            IReadOnlyList<ItemRequirement> summonRequirements, bool replaceSameSlot = true)
         {
             if (!_gameData.TryResolveMobTemplate(hash, level > 0 ? level : null, out MobTemplate template)
                 || !NpcTemplateValidation.CanSpawn(template))
@@ -77,8 +78,8 @@ namespace ZoneEngine_New.Core.Pets
                 Dismiss(previous, "replaced");
 
             var controller = new PetController(owner, type, hash, level, expires, summonRequirements);
-            if (owner is Player && mode is PetMode.Follow or PetMode.Guard)
-                controller.Order(mode);
+            if (owner is Player)
+                controller.Order(DefaultMode(type));
 
             int index = owner.OwnedPets.Count;
             Vector3 at = _playfield.SnapNpcSpawn(PetFormation.PointFor(owner, index));
@@ -96,19 +97,6 @@ namespace ZoneEngine_New.Core.Pets
                     npc.Stats.Set(CharacterStat.Side, owner.Stats.GetOrZero(CharacterStat.Side, StatDetail.Base));
                     MatchOwnerRunSpeed(npc, owner);
                     npc.BindPet(controller);
-                    if (healthPercent is > 0 and < 100)
-                    {
-                        int max = npc.Stats.GetOrZero(CharacterStat.MaxHealth);
-                        if (max > 0)
-                            npc.Stats.Set(CharacterStat.Health, Math.Max(1, (int)(max * (long)healthPercent / 100)));
-                    }
-
-                    if (nanoPercent is >= 0 and < 100)
-                    {
-                        int max = npc.Stats.GetOrZero(CharacterStat.MaxNanoEnergy);
-                        if (max > 0)
-                            npc.Stats.Set(CharacterStat.CurrentNano, (int)(max * (long)nanoPercent / 100));
-                    }
                 },
                 attachDefaultBrain: false);
             NpcBrain.CreatePet(pet, controller);
@@ -126,13 +114,24 @@ namespace ZoneEngine_New.Core.Pets
             return pet;
         }
 
-        /// <summary>Removes a pet from the world and from its owner.</summary>
-        public void Dismiss(NpcCharacter pet, string reason)
+        /// <summary>
+        /// Removes a pet from the world and from its owner. A charmed NPC is not removed: its charm ends
+        /// (<see cref="EndCharm"/>), and it turns on its owner unless <paramref name="charmTurnsOnOwner"/> is false
+        /// (an owner leaving the world).
+        /// </summary>
+        public void Dismiss(NpcCharacter pet, string reason, bool charmTurnsOnOwner = true)
         {
             ArgumentNullException.ThrowIfNull(pet);
             PetController? controller = pet.Pet;
             if (controller == null)
                 return;
+
+            // A charmed NPC is not the owner's to remove from the world: dismissing it ends the charm.
+            if (controller.IsCharmed)
+            {
+                EndCharm(pet, reason, charmTurnsOnOwner);
+                return;
+            }
 
             Character owner = controller.Owner;
             bool owned = owner.OwnedPets.Remove(pet);
@@ -153,14 +152,149 @@ namespace ZoneEngine_New.Core.Pets
                 pet.Identity.Instance, controller.Hash, owner.Identity.Instance, reason));
         }
 
-        /// <summary>Removes every pet <paramref name="owner"/> has, and any it was carrying through a zone change.</summary>
-        public void DismissAll(Character owner, string reason)
+        /// <summary>
+        /// Removes every pet <paramref name="owner"/> has, including any in transit with it. Charmed NPCs go back to
+        /// themselves (<see cref="Dismiss"/>); <paramref name="charmTurnsOnOwner"/> is false when the owner is leaving
+        /// the world (logout, despawn), so nothing turns on a character that is no longer there.
+        /// </summary>
+        public void DismissAll(Character owner, string reason, bool charmTurnsOnOwner = true)
         {
             ArgumentNullException.ThrowIfNull(owner);
-            owner.OwnedPets.Stash.Clear();
             NpcCharacter[] pets = [.. owner.OwnedPets.All];
             foreach (NpcCharacter pet in pets)
-                Dismiss(pet, reason);
+                Dismiss(pet, reason, charmTurnsOnOwner);
+        }
+
+        /// <summary>
+        /// CharmNpc: <paramref name="npc"/> serves <paramref name="owner"/> as a pet for as long as the charm nano
+        /// <paramref name="nanoId"/> stays in its NCU. Its own brain is set aside (it goes back to it when the charm
+        /// ends, <see cref="EndCharm"/>); it takes the owner's side and run speed, a pet slot of
+        /// <paramref name="petType"/>, and <paramref name="requirements"/> for over-equip as a summoned pet does.
+        /// Refused for a player, a pet, a dead or non-combat NPC, an NPC without the charm nano, or an owner elsewhere.
+        /// </summary>
+        public bool Charm(Player owner, NpcCharacter npc, int nanoId, int petType, IReadOnlyList<ItemRequirement> requirements)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            ArgumentNullException.ThrowIfNull(npc);
+            ArgumentNullException.ThrowIfNull(requirements);
+            if (owner.IsDead || npc.IsDead || !npc.Attackable || npc.Pet != null || npc.Brain == null
+                || !ReferenceEquals(owner.Playfield, _playfield) || !ReferenceEquals(npc.Playfield, _playfield)
+                || !npc.TryGetBuff(nanoId, out Buff? charmBuff) || charmBuff == null)
+                return false;
+
+            // Charms share the mindcontrolled slot; the nano's TestNumPets already decided whether this one fits. Only
+            // a charm in the very same place (an owner past that test some other way) gives way to the new one.
+            foreach (NpcCharacter held in owner.OwnedPets.All)
+            {
+                if (held.Pet is { IsCharmed: true } heldCharm && heldCharm.Type == petType)
+                {
+                    Dismiss(held, "replaced");
+                    break;
+                }
+            }
+
+            // Whatever the NPC commanded is its own business no longer: its pets go, its fight ends.
+            if (npc.OwnedPets.Count > 0)
+                DismissAll(npc, "owner charmed");
+            NpcBrain original = npc.Brain;
+            original.StopFighting();
+            original.DropEngagement();
+
+            var charm = new PetCharm(nanoId, original, npc.Stats.GetOrZero(CharacterStat.Side, StatDetail.Base));
+            var controller = new PetController(owner, petType, npc.SpawnHash ?? npc.MobTemplate?.Hash ?? string.Empty,
+                npc.Stats.GetOrZero(CharacterStat.Level), charmBuff.ExpiresAtUtc, requirements)
+            {
+                Charm = charm
+            };
+            // A charmed NPC guards: it follows its owner and fights whatever fights either of them.
+            controller.Order(PetMode.Guard);
+
+            // PetType (the client's pet kind) is the nano's ChangeVariable; the run speed follows the owner as a bonus
+            // the next rebase adds (NpcCharacter.RebaseStats).
+            npc.Stats.Set(CharacterStat.PetMaster, owner.Identity.Instance, StatDetail.Base, dirty: true);
+            npc.Stats.Set(CharacterStat.Side, owner.Stats.GetOrZero(CharacterStat.Side, StatDetail.Base), StatDetail.Base, dirty: true);
+            npc.BindPet(controller);
+            NpcBrain.CreatePet(npc, controller);
+            npc.MarkRebaseDirty();
+            // A stroll leaves the NPC walking, and only its own brain's wandering switches back: a pet keeps pace.
+            if (npc.Motor.State == Movement.MovementState.Walk)
+                npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
+
+            owner.OwnedPets.Add(npc);
+            PublishPetsStat(owner);
+            SendAddPet(owner, npc);
+            RefreshOverEquip(npc);
+
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Charmed npc id={0} hash={1} type={2} owner={3} nano={4} until={5} mode={6} over-equipped={7}",
+                npc.Identity.Instance, controller.Hash, petType, owner.Identity.Instance, nanoId,
+                charmBuff.ExpiresAtUtc.ToString("o", CultureInfo.InvariantCulture), controller.Mode,
+                controller.IsOverEquipped));
+            return true;
+        }
+
+        /// <summary>
+        /// The charm on <paramref name="npc"/> is over: it leaves its owner and goes back to its own brain, side and
+        /// run speed, where it stands, and the charm nano leaves its NCU. The nano's OnTerminate decides how it parts
+        /// with its charmer (231008 hits it for the charmer, who it then fights); then it settles
+        /// (<see cref="SettleAfterCharm"/>). <paramref name="turnOnOwner"/> is false for an owner who is leaving
+        /// (zoning, logging out): the NPC does not go after them. <paramref name="settle"/> is false only when the
+        /// nano's end is already running (it settles the NPC once its OnTerminate has run). Does nothing for an NPC
+        /// that is not charmed, so every path that ends a charm (the nano running out or stripped, a dismiss, the
+        /// owner zoning or logging out, the NPC dying or despawning) can call it.
+        /// </summary>
+        public void EndCharm(NpcCharacter npc, string reason, bool turnOnOwner = true, bool settle = true)
+        {
+            ArgumentNullException.ThrowIfNull(npc);
+            if (npc.Pet is not { Charm: PetCharm charm } controller)
+                return;
+
+            Character owner = controller.Owner;
+            if (owner.OwnedPets.Remove(npc))
+            {
+                PublishPetsStat(owner);
+                if (owner is Player player)
+                    SendRemovePet(player, npc);
+            }
+
+            npc.Brain?.StopFighting();
+            npc.Brain?.DropEngagement();
+            npc.UnbindPet();
+            npc.Stats.Set(CharacterStat.PetMaster, 0, StatDetail.Base, dirty: true);
+            npc.Stats.Set(CharacterStat.Side, charm.OriginalSide, StatDetail.Base, dirty: true);
+            // The next rebase drops the owner's run speed bonus.
+            npc.MarkRebaseDirty();
+
+            NpcBrain brain = charm.OriginalBrain;
+            npc.AttachBrain(brain);
+            brain.DropEngagement();
+
+            // The pet state is gone first, so the nano's own end (ExecuteBuffEnd) finds nothing more to end here; its
+            // OnTerminate runs on the NPC as itself.
+            NanoRuntime.StripBuff(npc, charm.NanoId);
+
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Charm ended npc id={0} owner={1} reason={2}", npc.Identity.Instance, owner.Identity.Instance, reason));
+
+            if (settle)
+                SettleAfterCharm(npc, turnOnOwner);
+        }
+
+        /// <summary>
+        /// A released NPC picks up where its own brain left off. Without <paramref name="turnOnOwner"/> it forgets the
+        /// charmer (who is leaving). With nobody left to fight, it resets as a leashing NPC does: heals, sheds what
+        /// others cast on it and walks home. Otherwise it would stand wherever its charmer last led it.
+        /// </summary>
+        public void SettleAfterCharm(NpcCharacter npc, bool turnOnOwner)
+        {
+            ArgumentNullException.ThrowIfNull(npc);
+            if (npc.IsDead || npc.Playfield == null || npc.Pet != null || npc.Brain is not NpcBrain brain)
+                return;
+
+            if (!turnOnOwner)
+                brain.ClearHate();
+            if (!brain.HasNearbyHate())
+                brain.Evade();
         }
 
         /// <summary>A pet died: it leaves its owner (its body is not kept; pets leave no corpse).</summary>
@@ -180,61 +314,76 @@ namespace ZoneEngine_New.Core.Pets
             }
         }
 
-        /// <summary>The owner is leaving this playfield for another: its pets go with it.</summary>
-        public void StashForTransfer(Player owner)
+        /// <summary>
+        /// The owner is leaving this playfield for another: its pets go with it, as the same NPCs. Each drops what
+        /// tied it to this playfield (its fight, route, hate, orders that only made sense here) and soft-leaves the
+        /// way the owner does, keeping its health, nano, NCU and buffs. Only pets on this playfield are touched, so
+        /// a destination undoing a partial arrival can call it too.
+        /// </summary>
+        public void LeaveWithOwner(Player owner)
         {
             ArgumentNullException.ThrowIfNull(owner);
-            owner.OwnedPets.Stash.Clear();
+            SpawnService spawn = _playfield.GetRequiredService<SpawnService>();
             NpcCharacter[] pets = [.. owner.OwnedPets.All];
-            DateTime now = DateTime.UtcNow;
             foreach (NpcCharacter pet in pets)
             {
-                PetController? controller = pet.Pet;
-                if (controller == null || pet.IsDead || controller.HasExpired(now))
+                if (!ReferenceEquals(pet.Playfield, _playfield))
                     continue;
 
-                // Pets arrive in the mode they left in. A waiting pet cannot keep its post on another playfield, so it
-                // follows; an attack order's target stays behind, so the pet goes back to what it did before it.
-                PetMode mode = controller.Mode switch
+                // A charm holds only where it was cast: the NPC stays behind, its own again.
+                if (pet.Pet is { IsCharmed: true })
                 {
-                    PetMode.Wait => PetMode.Follow,
-                    PetMode.Attack => controller.ModeBeforeAttack,
-                    _ => controller.Mode
-                };
-                owner.OwnedPets.Stash.Add(new PetStash(controller.Hash, controller.Type, controller.Level,
-                    controller.ExpiresUtc, mode, HealthPercent(pet), NanoPercent(pet), controller.SummonRequirements));
-            }
+                    EndCharm(pet, "owner zoned", turnOnOwner: false);
+                    continue;
+                }
 
-            foreach (NpcCharacter pet in pets)
-            {
-                PetController? controller = pet.Pet;
-                owner.OwnedPets.Remove(pet);
-                pet.Brain?.StopPathing();
-                if (pet.Playfield != null)
-                    pet.Playfield.GetRequiredService<SpawnService>().DespawnNpc(pet);
-                pet.UnbindPet();
+                pet.Pet?.LeavePlayfield();
+                pet.Brain?.DropEngagement();
+                spawn.LeaveForTransfer(pet);
                 _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                    "Pet id={0} hash={1} leaves with owner={2}", pet.Identity.Instance, controller?.Hash, owner.Identity.Instance));
+                    "Pet id={0} hash={1} leaves with owner={2}", pet.Identity.Instance, pet.Pet?.Hash, owner.Identity.Instance));
             }
         }
 
-        /// <summary>The owner arrived here from another playfield: the pets it brought are summoned next to it.</summary>
-        public void RestoreAfterTransfer(Player owner)
+        /// <summary>
+        /// The owner arrived here from another playfield: the pets it brought take their formation places beside it.
+        /// A pet whose summon ran out on the way, or that is dead, is dismissed instead. The owner's client learns of
+        /// them once it has zoned in (<see cref="AnnounceOwnedPets"/>).
+        /// </summary>
+        public void ArriveWithOwner(Player owner)
         {
             ArgumentNullException.ThrowIfNull(owner);
-            List<PetStash> stash = owner.OwnedPets.Stash;
-            if (stash.Count == 0)
+            if (owner.OwnedPets.Count == 0)
                 return;
 
-            PetStash[] carried = [.. stash];
-            stash.Clear();
+            owner.OwnedPets.ResetFormation();
+            SpawnService spawn = _playfield.GetRequiredService<SpawnService>();
             DateTime now = DateTime.UtcNow;
-            foreach (PetStash pet in carried)
+            NpcCharacter[] pets = [.. owner.OwnedPets.All];
+            foreach (NpcCharacter pet in pets)
             {
-                if (pet.ExpiresUtc is DateTime expires && now >= expires)
+                if (pet.Playfield != null)
                     continue;
-                Spawn(owner, pet.Hash, pet.Type, pet.Level, pet.ExpiresUtc, pet.Mode, pet.HealthPercent, pet.NanoPercent,
-                    pet.SummonRequirements);
+
+                PetController? controller = pet.Pet;
+                if (controller == null)
+                {
+                    owner.OwnedPets.Remove(pet);
+                    continue;
+                }
+
+                if (pet.IsDead || controller.HasExpired(now))
+                {
+                    Dismiss(pet, "ended in transit");
+                    continue;
+                }
+
+                Vector3 at = _playfield.SnapNpcSpawn(PetFormation.PointFor(owner, owner.OwnedPets.FormationIndex(pet)));
+                spawn.ArriveFromTransfer(pet, at, owner.Rotation);
+                MatchOwnerRunSpeed(pet, owner);
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Pet id={0} hash={1} arrives with owner={2} mode={3}",
+                    pet.Identity.Instance, controller.Hash, owner.Identity.Instance, controller.Mode));
             }
         }
 
@@ -452,10 +601,20 @@ namespace ZoneEngine_New.Core.Pets
 
         /// <summary>
         /// A pet moves at its owner's run speed (buffs and all), so it keeps up instead of trailing behind.
-        /// Returns true when the pet's speed changed.
+        /// Returns true when the pet's speed changed. A charmed NPC keeps its own run speed and catches up through a
+        /// bonus (<see cref="CharmRunSpeedBonus"/>), which its next rebase recomputes.
         /// </summary>
         public static bool MatchOwnerRunSpeed(NpcCharacter pet, Character owner)
         {
+            if (pet.Pet is { IsCharmed: true })
+            {
+                if (pet.AppliedCharmRunSpeedBonus == CharmRunSpeedBonus(pet))
+                    return false;
+
+                pet.MarkRebaseDirty();
+                return true;
+            }
+
             int speed = owner.Stats.GetOrZero(CharacterStat.RunSpeed);
             if (speed <= 0 || pet.Stats.GetOrZero(CharacterStat.RunSpeed, StatDetail.Base) == speed)
                 return false;
@@ -464,16 +623,18 @@ namespace ZoneEngine_New.Core.Pets
             return true;
         }
 
-        static int HealthPercent(Character character)
+        /// <summary>
+        /// The run speed bonus that brings a charmed NPC's own (base) run speed up to its owner's: what its rebase adds
+        /// on top of its buffs, so a snare on it still slows it. 0 for any other NPC, and never negative.
+        /// </summary>
+        public static int CharmRunSpeedBonus(NpcCharacter npc)
         {
-            int max = character.Stats.GetOrZero(CharacterStat.MaxHealth);
-            return max <= 0 ? 100 : (int)Math.Clamp(100L * Math.Max(0, character.Stats.GetOrZero(CharacterStat.Health)) / max, 1, 100);
-        }
+            ArgumentNullException.ThrowIfNull(npc);
+            if (npc.Pet is not { IsCharmed: true } controller)
+                return 0;
 
-        static int NanoPercent(Character character)
-        {
-            int max = character.Stats.GetOrZero(CharacterStat.MaxNanoEnergy);
-            return max <= 0 ? 100 : (int)Math.Clamp(100L * Math.Max(0, character.Stats.GetOrZero(CharacterStat.CurrentNano)) / max, 0, 100);
+            int owner = controller.Owner.Stats.GetOrZero(CharacterStat.RunSpeed);
+            return Math.Max(0, owner - npc.Stats.GetOrZero(CharacterStat.RunSpeed, StatDetail.Base));
         }
 
         static void PublishPetsStat(Character owner)

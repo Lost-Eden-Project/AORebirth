@@ -128,6 +128,10 @@ namespace ZoneEngine_New.Core.Inventory
                     return RemoveNano(target, spell);
                 case FunctionType.RemoveNanoStrain:
                     return RemoveNanoStrain(target, spell);
+                case FunctionType.ReduceNanoStrainDuration:
+                    return ReduceNanoStrainDuration(target, spell);
+                case FunctionType.CharmNpc:
+                    return CharmNpc(templateId, target, source, sourceTemplate);
                 case FunctionType.RemoveBuffs:
                     return NanoRuntime.StripAllBuffs(target);
                 case FunctionType.SpawnItem:
@@ -591,6 +595,36 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
 
             return NanoRuntime.TryStripStrain(target, strain);
+        }
+
+        /// <summary>
+        /// Catalog shape: strain, centiseconds. The target's NCU entries of that strain end that much sooner; one this
+        /// runs out leaves NCU (nano 231008's OnTerminate: strain 225, 2000000).
+        /// </summary>
+        static bool ReduceNanoStrainDuration(Character target, ItemSpell spell)
+        {
+            if (!spell.TryReadInt(0, out int strain) || !spell.TryReadInt(1, out int centiseconds))
+                return false;
+
+            return NanoRuntime.ReduceStrainDuration(target, strain, centiseconds);
+        }
+
+        /// <summary>
+        /// No arguments: the target NPC serves the caster as a pet while the charm nano (<paramref name="templateId"/>,
+        /// already in the target's NCU when its OnUse runs) lasts. Its pet type is the mindcontrolled place the nano's
+        /// TestNumPets lets it fill (<see cref="Pets.PetTypes.CharmType"/>: 99192 7000, 99209 7001). The PetType stat
+        /// the nano's ChangeVariable sets (12 / 11) is the client's pet kind and stays as the data has it. Over-equip
+        /// judges the caster against the nano's ToUse rows, as for a summoned pet.
+        /// </summary>
+        static bool CharmNpc(int templateId, Character target, Character? source, ItemTemplate? sourceTemplate)
+        {
+            if (target is not NpcCharacter npc || source is not Player owner || npc.Playfield == null)
+                return false;
+
+            IReadOnlyList<ItemRequirement> requirements =
+                sourceTemplate?.Actions.Find(action => action.ActionType == (int)ActionType.ToUse)?.Requirements ?? [];
+            return npc.Playfield.GetRequiredService<Pets.PetService>()
+                .Charm(owner, npc, templateId, Pets.PetTypes.CharmType(requirements), requirements);
         }
 
         /// <summary>

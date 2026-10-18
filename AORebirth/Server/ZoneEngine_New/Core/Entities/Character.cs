@@ -412,7 +412,7 @@ namespace ZoneEngine_New.Core.Entities
             _corpseSwapPending = false;
             InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
             if (OwnedPets.Count > 0)
-                Playfield?.GetService<Pets.PetService>()?.DismissAll(this, "owner despawned");
+                Playfield?.GetService<Pets.PetService>()?.DismissAll(this, "owner despawned", charmTurnsOnOwner: false);
             SetFightingTarget(Identity.None);
             NanoRuntime.ClearBuffsOnDeath(this);
             ClearKillRewards();
@@ -2588,6 +2588,20 @@ namespace ZoneEngine_New.Core.Entities
 
             OnBuffsChanged();
             return buff;
+        }
+
+        /// <summary>
+        /// Brings <paramref name="buff"/>'s end forward by <paramref name="amount"/> (ReduceNanoStrainDuration). The
+        /// caller removes it instead when that would run it out.
+        /// </summary>
+        public void ShortenBuff(Buff buff, TimeSpan amount)
+        {
+            ArgumentNullException.ThrowIfNull(buff);
+            if (!_buffs.Contains(buff))
+                return;
+
+            buff.Shorten(amount);
+            OnBuffsChanged();
         }
 
         public bool TryGetBuff(int nanoId, out Buff? buff)

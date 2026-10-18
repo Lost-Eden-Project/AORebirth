@@ -33,6 +33,14 @@ namespace ZoneEngine_New.Core.Pets
         public IReadOnlyList<ItemRequirement> SummonRequirements { get; }
 
         /// <summary>
+        /// Set when the pet is a charmed NPC (CharmNpc) rather than a summoned one: what it goes back to when the
+        /// charm ends. Null for a summoned pet.
+        /// </summary>
+        public PetCharm? Charm { get; init; }
+
+        public bool IsCharmed => Charm != null;
+
+        /// <summary>
         /// The owner's skills fell under 80% of <see cref="SummonRequirements"/>: the pet follows and ignores every
         /// command until they recover.
         /// </summary>
@@ -117,24 +125,46 @@ namespace ZoneEngine_New.Core.Pets
         internal void EndHeal() => HealTarget = Identity.None;
 
         public bool HasExpired(DateTime nowUtc) => ExpiresUtc is DateTime expires && nowUtc >= expires;
+
+        /// <summary>
+        /// The pet is zoning with its owner. It arrives in the mode it left in, except that a waiting pet cannot
+        /// keep its post on another playfield, so it follows, and an attack order's target stays behind, so the pet
+        /// goes back to what it did before the order. The owner-distance cache measured this playfield.
+        /// </summary>
+        internal void LeavePlayfield()
+        {
+            if (Mode == PetMode.Attack)
+                EndAttack();
+            if (Mode == PetMode.Wait)
+                Order(PetMode.Follow);
+            EndHeal();
+            WarpRequested = false;
+            CachedOwnerDistance = double.NaN;
+            OwnerDistanceUtc = default;
+            OwnerDistancePetAt = null;
+            OwnerDistanceOwnerAt = null;
+        }
     }
 
-    /// <summary>A pet carried through a zone change: it is despawned on the way out and summoned again on arrival.</summary>
-    public sealed record PetStash(string Hash, int Type, int Level, DateTime? ExpiresUtc, PetMode Mode, int HealthPercent,
-        int NanoPercent, IReadOnlyList<ItemRequirement> SummonRequirements);
+    /// <summary>
+    /// A charmed NPC's own state while it serves as a pet: the charm nano on it (its NCU entry decides how long the
+    /// charm lasts) and the brain and side it had, which it gets back when the charm ends. Its run speed is never
+    /// changed: it keeps up with its owner through a bonus (<see cref="NpcCharacter.RebaseStats"/>).
+    /// </summary>
+    public sealed record PetCharm(int NanoId, Ai.NpcBrain OriginalBrain, int OriginalSide);
 
-    /// <summary>The pets a character owns, one per pet slot, in summon order (which is also their formation order).</summary>
+    /// <summary>
+    /// The pets a character owns, one per pet slot, in summon order (which is also their formation order). A pet
+    /// stays owned while it zones with its owner; between leaving one playfield and arriving on the next it has
+    /// no <see cref="Dynel.Playfield"/>.
+    /// </summary>
     public sealed class OwnedPets
     {
         readonly List<NpcCharacter> _pets = new();
-        readonly List<PetStash> _stash = new();
 
         public IReadOnlyList<NpcCharacter> All => _pets;
 
         public int Count => _pets.Count;
-
-        /// <summary>Pets waiting to be summoned again once their owner arrives on the next playfield.</summary>
-        internal List<PetStash> Stash => _stash;
 
         internal void Add(NpcCharacter pet)
         {
@@ -189,6 +219,18 @@ namespace ZoneEngine_New.Core.Pets
         DateTime _velocitySampleUtc;
         double _velocityX;
         double _velocityZ;
+
+        /// <summary>
+        /// The owner arrived on another playfield: the formation is laid out afresh from where it landed. The old
+        /// anchor and velocity samples describe the playfield it left, and would read the zone as a sprint.
+        /// </summary>
+        internal void ResetFormation()
+        {
+            _formationAnchor = null;
+            _velocitySamplePos = null;
+            _velocityX = 0;
+            _velocityZ = 0;
+        }
 
         /// <summary>
         /// The owner's ground velocity (meters per second), from how far it moved between samples, smoothed. Works

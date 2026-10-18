@@ -548,6 +548,8 @@ namespace ZoneEngine_New.Core.Playfield
         internal void RemovePartialTransferArrival(Player player)
         {
             RequireTransferTick();
+            // Pets that arrived with it leave again, so the source can take them back along with it.
+            GetRequiredService<Pets.PetService>().LeaveWithOwner(player);
             if (_dynelRegistry.TryGet(player.Identity, out Dynel? current) && ReferenceEquals(current, player))
             {
                 GetRequiredService<PlayfieldLocality>().UnregisterDynel(player);
@@ -574,6 +576,8 @@ namespace ZoneEngine_New.Core.Playfield
         internal void AbandonDetachedTransfer(Player player, IZoneSession oldSession)
         {
             RequireTransferTick();
+            // An abandoned aggregate leaves no pets behind, in this world or in transit.
+            GetRequiredService<Pets.PetService>().DismissAll(player, "owner abandoned", charmTurnsOnOwner: false);
             // A replacement identity must never receive an old aggregate's snapshot or unregister.
             player.QuarantinePersistence();
             _playfieldManager.Teams.DetachPlayer(player);

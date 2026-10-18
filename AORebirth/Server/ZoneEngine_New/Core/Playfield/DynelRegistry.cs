@@ -19,7 +19,11 @@ namespace ZoneEngine_New.Core.Playfield
 
         private readonly Lock _sync = new();
         private readonly Dictionary<ulong, Dynel> _dynels = new();
-        private int _nextNpcInstance = FirstNpcInstance - 1;
+        /// <summary>
+        /// Engine-wide, unlike the other counters: an NPC can change playfield alive (a pet zoning with its owner)
+        /// and keeps its identity, so no two NPCs on any playfield may ever share one.
+        /// </summary>
+        private static int _nextNpcInstance = FirstNpcInstance - 1;
         private int _nextCorpseInstance = FirstCorpseInstance - 1;
         private int _nextVendingMachineInstance = FirstVendingMachineInstance - 1;
         private int _nextTempBagInstance = FirstTempBagInstance - 1;

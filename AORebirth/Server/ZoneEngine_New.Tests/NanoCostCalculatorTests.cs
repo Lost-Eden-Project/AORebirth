@@ -2,6 +2,8 @@ namespace ZoneEngine_New.Tests
 {
     using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+    using SmokeLounge.AOtomation.Messaging.GameData;
+
     using ZoneEngine_New.Core.Helpers;
 
     [TestClass]
@@ -10,39 +12,40 @@ namespace ZoneEngine_New.Tests
         [TestMethod]
         public void NoModifierLeavesTheTemplateCost()
         {
-            Assert.AreEqual(250, NanoCostCalculator.Compute(250, npCostModifierPercent: 0));
+            Assert.AreEqual(250, NanoCostCalculator.Compute(250, npCostModifierPercent: 0, Breed.Solitus));
         }
 
         [TestMethod]
-        public void ModifierRemovesItsPercentage()
+        public void NegativeModifierRemovesItsPercentage()
         {
-            Assert.AreEqual(200, NanoCostCalculator.Compute(250, npCostModifierPercent: 20));
+            Assert.AreEqual(200, NanoCostCalculator.Compute(250, npCostModifierPercent: -20, Breed.Solitus));
         }
 
         [TestMethod]
-        public void StackedModifiersCannotBeatTheReductionCap()
+        public void PositiveModifierAddsItsPercentage()
         {
-            Assert.AreEqual(
-                125,
-                NanoCostCalculator.Compute(250, npCostModifierPercent: NanoCostCalculator.MaxReductionPercent + 40));
+            Assert.AreEqual(300, NanoCostCalculator.Compute(250, npCostModifierPercent: 20, Breed.Solitus));
         }
 
         [TestMethod]
-        public void NegativeModifiersNeverRaiseTheCost()
+        public void StackedReductionsStopAtTheBreedCap()
         {
-            Assert.AreEqual(250, NanoCostCalculator.Compute(250, npCostModifierPercent: -30));
+            Assert.AreEqual(100, NanoCostCalculator.Compute(200, npCostModifierPercent: -90, Breed.Solitus));
+            Assert.AreEqual(100, NanoCostCalculator.Compute(200, npCostModifierPercent: -90, Breed.Opifex));
+            Assert.AreEqual(90, NanoCostCalculator.Compute(200, npCostModifierPercent: -90, Breed.Nanomage));
+            Assert.AreEqual(110, NanoCostCalculator.Compute(200, npCostModifierPercent: -90, Breed.Atrox));
         }
 
         [TestMethod]
         public void ACostBearingNanoNeverBecomesFree()
         {
-            Assert.AreEqual(1, NanoCostCalculator.Compute(1, npCostModifierPercent: 50));
+            Assert.AreEqual(1, NanoCostCalculator.Compute(1, npCostModifierPercent: -50, Breed.Solitus));
         }
 
         [TestMethod]
         public void FreeNanosStayFree()
         {
-            Assert.AreEqual(0, NanoCostCalculator.Compute(0, npCostModifierPercent: 50));
+            Assert.AreEqual(0, NanoCostCalculator.Compute(0, npCostModifierPercent: -50, Breed.Solitus));
         }
     }
 }
