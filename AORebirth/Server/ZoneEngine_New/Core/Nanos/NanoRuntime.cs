@@ -669,12 +669,17 @@ namespace ZoneEngine_New.Core.Nanos
                 NanoLineLocked = spell.NanoStrain > 0 && caster.NanoLineLocks.IsLocked(spell.NanoStrain, nowUtc),
                 // NPC casts are not upload gated; an NPC's list only holds its equipped crystals.
                 IsUploaded = !caster.IsPlayer || caster.UploadedNanoIds.Contains(spell.Id),
+                // OnTarget leaves the target's stats cannot answer (a running nano line, a perk, a worn item) read the
+                // target itself, as item use does: Gallant Slave 230372 needs the charm (line 202) on the target.
                 RequirementsMet = spell.MeetsActionRequirements(
                     stat => caster.Stats.Get(stat),
                     ActionType.ToUse,
                     resolve: ItemTemplate.WithActionTarget(
                         caster is Player casterPlayer ? casterPlayer.ResolvePerkRequirement : null, caster, recipient),
-                    getTargetStat: recipient == null ? null : stat => recipient.Stats.Get(stat)),
+                    getTargetStat: recipient == null ? null : stat => recipient.Stats.Get(stat),
+                    resolveTarget: recipient == null
+                        ? null
+                        : ItemTemplate.WithActionTarget(recipient.ResolveRequirement, caster, recipient)),
                 TargetExists = recipient != null,
                 TargetIsDead = recipient?.IsDead == true,
                 CurrentNano = caster.Stats.GetOrZero(CharacterStat.CurrentNano),
