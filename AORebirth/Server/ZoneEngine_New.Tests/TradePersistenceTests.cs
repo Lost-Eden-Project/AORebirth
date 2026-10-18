@@ -206,17 +206,52 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void ShopNeverChargesForAnItemThatCouldOnlyLandInMemoryOnlyOverflow()
+        public void ShopPurchaseOnAFullInventoryIsSavedInOverflow()
         {
             using var world = new Fixture();
             TradeSession shop = world.CreateShop();
             shop.AddShopPick(0);
             TestWorld.FillInventory(world.First);
+            world.Persistence.BeforeCommit = batch =>
+            {
+                ItemInstanceRecord bought = batch.Inserts.Single();
+                Assert.AreEqual((int)IdentityType.OverflowWindow, bought.ContainerType);
+                Assert.AreEqual(world.First.Inventory.Overflow.Offset, bought.ContainerPlacement);
+            };
             world.CommitShop(shop);
-            Assert.AreEqual(0, world.Persistence.Calls);
-            Assert.AreEqual(100, world.First.Stats.GetOrZero(CharacterStat.Cash));
-            Assert.AreEqual(0, world.First.Inventory.Overflow.Content.Count);
-            AssertNoGrantsOrComplete(world.FirstSession);
+            Assert.AreEqual(1, world.Persistence.Calls);
+            Assert.IsTrue(world.First.Stats.GetOrZero(CharacterStat.Cash) < 100, "the purchase is paid for");
+            Assert.IsTrue(world.First.Inventory.Overflow.Content.Values.Single().IsPersisted);
+            Assert.IsTrue(world.FirstSession.Messages.OfType<TemplateActionMessage>().Any(m => m.Action == TemplateActionType.Overflow));
+            Assert.IsFalse(world.FirstSession.Messages.OfType<AddTemplateMessage>().Any(), "nothing is sent to the full inventory");
+            Assert.IsTrue(world.FirstSession.Messages.OfType<TradeMessage>().Any(m => m.Action == TradeAction.Complete));
+        }
+
+        [TestMethod]
+        public void DeclinedOfferReturnsToOverflowWhenThePlayerFilledItsSlot()
+        {
+            using var world = new Fixture();
+            TradeSession shop = world.CreateShop();
+            TestWorld.FillInventory(world.First);
+            Container page = world.First.Inventory.Inventory;
+            int slot = page.Offset;
+            Item offered = page.Content[slot];
+            world.OfferShopItem(shop, slot);
+            Assert.AreSame(offered, shop.InitiatorOffer.Items.Single().Value);
+
+            // The player uses the slot the offer left; its row was parked, so the two never share a location.
+            Item mover = TestWorld.CreateItem(instanceId: 79);
+            Assert.IsTrue(page.Add(slot, mover));
+            world.First.Inventory.MarkDirty(mover, page, slot);
+
+            world.Decline(shop);
+
+            Assert.AreSame(offered, world.First.Inventory.Overflow.Content.Values.Single());
+            Assert.AreSame(mover, page.Content[slot]);
+            PlayerInventory.InventoryDirtyFlush flush = world.First.Inventory.TakeDirty()!;
+            ItemLocationUpdate returned = flush.Updates.Single(update => update.InstanceId == offered.InstanceId);
+            Assert.AreEqual((int)IdentityType.OverflowWindow, returned.ContainerType);
+            Assert.IsTrue(world.FirstSession.Messages.OfType<TemplateActionMessage>().Any(m => m.Action == TemplateActionType.Overflow));
         }
 
         [TestMethod]
@@ -300,6 +335,7 @@ namespace ZoneEngine_New.Tests
                     Identity = First.Identity, Action = TradeAction.AddItem, Target = First.Identity,
                     Container = new Identity { Type = IdentityType.Inventory, Instance = slot }
                 } });
+            public void Decline(TradeSession session) => _service.Decline(First, session);
             public void Dispose() => Flush.Dispose();
         }
 

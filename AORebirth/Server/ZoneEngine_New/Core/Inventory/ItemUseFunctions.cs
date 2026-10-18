@@ -665,6 +665,14 @@ namespace ZoneEngine_New.Core.Inventory
 
             player.Inventory.MarkDirty(item, page, slot);
             player.Playfield.GetService<InventoryFlushService>()?.NotifyDirty(player);
+            if (ReferenceEquals(page, player.Inventory.Overflow))
+            {
+                // A full inventory: it waits in overflow, which keeps only its newest items.
+                OverflowGrants.Send(player, item);
+                OverflowGrants.Trim(player);
+                return true;
+            }
+
             player.Session.Send(
                 new AddTemplateMessage
                 {

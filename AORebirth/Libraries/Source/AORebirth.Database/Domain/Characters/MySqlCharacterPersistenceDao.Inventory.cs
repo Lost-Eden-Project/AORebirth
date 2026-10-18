@@ -16,7 +16,8 @@ namespace AORebirth.Database.Domain.Characters
             if (characterId <= 0) return new List<PersistedItemData>();
             return Query("SELECT " + ItemColumns + " FROM item_instances WHERE ContainerInstance=@Id AND ContainerType IN ("
                 + (int)IdentityType.Inventory + "," + (int)IdentityType.WeaponPage + "," + (int)IdentityType.ArmorPage + ","
-                + (int)IdentityType.ImplantPage + "," + (int)IdentityType.SocialPage + ")", ReadItem, "@Id", characterId);
+                + (int)IdentityType.ImplantPage + "," + (int)IdentityType.SocialPage + "," + (int)IdentityType.OverflowWindow + ")",
+                ReadItem, "@Id", characterId);
         }
 
         public IList<PersistedItemData> LoadBankItems(int characterId) { return LoadItems((int)IdentityType.BankByRef, characterId); }

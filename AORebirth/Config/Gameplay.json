@@ -54,5 +54,8 @@
     "buffInCombat": false,
     "supportRange": 20,
     "healBelowPercent": 75
+  },
+  "inventory": {
+    "overflowCapacity": 20
   }
 }

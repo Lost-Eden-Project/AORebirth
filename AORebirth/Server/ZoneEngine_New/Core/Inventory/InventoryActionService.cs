@@ -214,7 +214,7 @@ namespace ZoneEngine_New.Core.Inventory
                 && page.Content.TryGetValue(placement, out item!) && !item.Locked && item.InstanceId > 0;
         }
 
-        /// <summary>Wear pages hold one item per slot; overflow is memory-only and never persisted.</summary>
+        /// <summary>Wear pages hold one item per slot; overflow items can only be deleted or moved into the inventory.</summary>
         static bool IsStackPage(Container page)
             => !page.Identity.Type.IsWearPage() && page.Identity.Type != IdentityType.OverflowWindow;
 
@@ -272,8 +272,6 @@ namespace ZoneEngine_New.Core.Inventory
                             inserts.Remove(item.InstanceId);
                             locations.Remove(item.InstanceId);
                             if (change.Retired && !item.IsPersisted) continue;
-                            if (change.Container.Type == IdentityType.OverflowWindow)
-                                throw new InvalidOperationException("Durable inventory cannot target memory-only overflow.");
                             if (item.IsPersisted)
                             {
                                 locations[item.InstanceId] = new ItemLocationUpdate(item.InstanceId,

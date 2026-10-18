@@ -348,7 +348,7 @@ public sealed partial class QuestService
                     }
                     items.Add(item);
                 }
-                if (!InventoryGrantPlan.TryCreate(player, items, out var grant))
+                if (!InventoryGrantPlan.TryCreate(player, items, out var grant, allowOverflow: true))
                 {
                     NotifyPending(player, quest);
                     return;

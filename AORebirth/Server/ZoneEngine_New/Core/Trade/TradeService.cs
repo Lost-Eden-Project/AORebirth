@@ -348,12 +348,12 @@ namespace ZoneEngine_New.Core.Trade
                 return;
 
             // Only loose carried items can be put on the table. Worn gear has to be unequipped first
-            // (that path has a timed move), and the bank is not reachable from a trade window.
+            // (that path has a timed move), the bank is not reachable from a trade window, and overflow items can
+            // only be deleted or moved into the inventory.
             Identity source = message.Container;
             Container page = source.Type switch
             {
                 IdentityType.Inventory => player.Inventory.Inventory,
-                IdentityType.OverflowWindow => player.Inventory.Overflow,
                 _ => null!
             };
             if (page == null)
@@ -386,6 +386,10 @@ namespace ZoneEngine_New.Core.Trade
                 ClientFeedback.Send(player, "Feedback_CantTradeMoreItems");
                 return;
             }
+
+            // The slot it left is the player's to use while it is on the table, so its row leaves the slot too.
+            player.Inventory.ParkOffered(item, player.Identity.Instance);
+            _flush.NotifyDirty(player);
 
             Acknowledge(player, message);
 
@@ -424,7 +428,8 @@ namespace ZoneEngine_New.Core.Trade
             if (item == null)
                 return;
 
-            if (!player.Inventory.TryPlace(item, out Container page, out int slot))
+            // Taken off the table by the player, it goes back where the client puts it: the first free inventory slot.
+            if (!TryPlaceMain(player, item, out Container page, out int slot))
             {
                 offer.TryRestore(tradeSlot, item);
                 ClientFeedback.Send(player, "Feedback_InventoryFull");
@@ -540,7 +545,8 @@ namespace ZoneEngine_New.Core.Trade
         /// </summary>
         static string? ValidateSide(Player giver, TradeOffer given, Player receiver, TradeOffer received)
         {
-            if (!receiver.Inventory.HasFreeInventorySlots(given.Count))
+            // What does not fit in the inventory goes to overflow.
+            if (!receiver.Inventory.HasRoomFor(given.Count))
                 return receiver.Name + " does not have enough free inventory slots.";
 
             foreach (Item item in given.Items.Values)
@@ -618,6 +624,9 @@ namespace ZoneEngine_New.Core.Trade
 
             Unregister(initiator);
             Unregister(partner);
+            // Deliveries that went to overflow are sent; keep each window to its capacity.
+            OverflowGrants.Trim(initiator);
+            OverflowGrants.Trim(partner);
 
             SendCompleteClose(initiator, partner);
             SendCompleteClose(partner, initiator);
@@ -651,13 +660,17 @@ namespace ZoneEngine_New.Core.Trade
         static bool TryPlanDeliveries(IEnumerable<Item> items, Player receiver, List<Delivery> deliveries)
         {
             Container page = receiver.Inventory.Inventory;
+            Container overflow = receiver.Inventory.Overflow;
             var occupied = new HashSet<int>(page.Content.Keys);
+            var overflowOccupied = new HashSet<int>(overflow.Content.Keys);
             var planned = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
             foreach (Delivery delivery in deliveries)
             {
                 if (!ReferenceEquals(delivery.Receiver, receiver))
                     continue;
-                if (delivery.MergeTarget == null)
+                if (ReferenceEquals(delivery.Page, overflow))
+                    overflowOccupied.Add(delivery.Slot);
+                else if (delivery.MergeTarget == null)
                     occupied.Add(delivery.Slot);
                 else
                     planned[delivery.MergeTarget] = planned.GetValueOrDefault(delivery.MergeTarget) + delivery.Item.StackCount;
@@ -668,7 +681,17 @@ namespace ZoneEngine_New.Core.Trade
                 int slot = page.Offset;
                 while (slot < page.Offset + page.Capacity && occupied.Contains(slot)) slot++;
                 if (slot == page.Offset + page.Capacity)
-                    return false;
+                {
+                    // No inventory room: the next free overflow slot, as the client fills it (trimmed after the commit).
+                    int spare = overflow.Offset;
+                    while (spare < overflow.Offset + overflow.Capacity && overflowOccupied.Contains(spare)) spare++;
+                    if (spare == overflow.Offset + overflow.Capacity)
+                        return false;
+
+                    overflowOccupied.Add(spare);
+                    deliveries.Add(new Delivery(item, receiver, overflow, spare));
+                    continue;
+                }
 
                 if (InventoryStacking.TryFindStackTarget(page, item, planned, out int targetSlot, out Item target))
                 {
@@ -700,6 +723,8 @@ namespace ZoneEngine_New.Core.Trade
                 if (!delivery.Page.Add(delivery.Slot, delivery.Item))
                     throw new InvalidOperationException("Reserved trade location changed after durable commit.");
                 delivery.Item.IsPersisted = true;
+                if (delivery.Page.Identity.Type == IdentityType.OverflowWindow)
+                    delivery.Receiver.Inventory.NoteOverflowArrival(delivery.Item);
             }
         }
 
@@ -960,8 +985,7 @@ namespace ZoneEngine_New.Core.Trade
             foreach (Item item in bought)
                 item.AssignInstanceId(_ids.Allocate());
 
-            // Overflow is intentionally memory-only; accepting money for a purchase there would
-            // lose the paid-for item on restart. Require real inventory (or a stack to join) up front.
+            // What does not fit in the inventory (or join a stack) goes to overflow, which is saved; only both full refuse.
             if (!TryPlanDeliveries(bought, player, new List<Delivery>()))
             {
                 ClientFeedback.Send(player, "Feedback_NoRoomInInventory");
@@ -996,6 +1020,7 @@ namespace ZoneEngine_New.Core.Trade
 
             Unregister(player);
             machine.Stock.CloseTrade();
+            OverflowGrants.Trim(player);
 
             Identity shopIdentity = machine.ShopIdentity;
             player.Session!.Send(EndFrame(player.Identity, TradeAction.Complete, shopIdentity, shopIdentity));
@@ -1177,10 +1202,10 @@ namespace ZoneEngine_New.Core.Trade
 
         void AddKnubotItem(Player player, TradeOffer offer, Identity source)
         {
+            // Overflow items can only be deleted or moved into the inventory, not handed to an NPC from there.
             Container page = source.Type switch
             {
                 IdentityType.Inventory => player.Inventory.Inventory,
-                IdentityType.OverflowWindow => player.Inventory.Overflow,
                 _ => null!
             };
 
@@ -1210,6 +1235,9 @@ namespace ZoneEngine_New.Core.Trade
                 return;
 
             offer.Add(item);
+            // The slot it left is the player's to use while it is in the window, so its row leaves the slot too.
+            player.Inventory.ParkOffered(item, player.Identity.Instance);
+            _flush.NotifyDirty(player);
         }
 
         /// <summary>
@@ -1332,7 +1360,7 @@ namespace ZoneEngine_New.Core.Trade
                 }
                 else
                 {
-                    // A stored item may not live in overflow; its row never moved, so it is back at its old slot on relog.
+                    // Overflow is full too; the item's row stays parked, so it is in overflow at the next login.
                     _logger.Error(string.Format(CultureInfo.InvariantCulture,
                         "Knubot trade return failed instance={0} owner={1}; no free slot", item.InstanceId, player.Identity.Instance));
                     ClientFeedback.Send(player, "Feedback_NoRoomInInventory");
@@ -1346,6 +1374,7 @@ namespace ZoneEngine_New.Core.Trade
                 player.Session?.Send(RejectedItemsFrame(player, session.Npc, returned.ToArray(), Math.Max(0, refundCredits)));
             foreach ((Item item, Container page) in overflowed)
                 SendGrant(player, item, page);
+            OverflowGrants.Trim(player);
 
             _logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot trade closed player={0} returned={1} overflow={2} reason={3}",
                 player.Identity.Instance, returned.Count, overflowed.Count, reason));
@@ -1496,19 +1525,30 @@ namespace ZoneEngine_New.Core.Trade
         }
 
         /// <summary>
-        /// Puts a cancelled offer back in the owner's first free slot. Items on the table came out of
-        /// that inventory moments ago, so a full inventory means something else took the slot; the
-        /// item then goes to overflow only if it is not yet durable, otherwise it stays put and is
-        /// reported, never silently dropped.
+        /// Puts a cancelled offer back: the first free inventory slot, or overflow when the inventory is full (the
+        /// player may have used the slots the offer left). The client restores an inventory return itself when
+        /// <paramref name="clientRestores"/>; an overflow return is always sent, then overflow is kept to its capacity.
         /// </summary>
         void ReturnOffer(Player owner, TradeOffer offer, bool clientRestores)
         {
+            var tradeSlots = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
+            foreach (KeyValuePair<int, Item> entry in offer.Items)
+                tradeSlots[entry.Value] = entry.Key;
+
             foreach (Item item in offer.DrainAll())
             {
                 if (owner.Inventory.TryPlace(item, out Container page, out int slot))
                 {
                     owner.Inventory.MarkDirty(item, page, slot);
-                    if (!clientRestores)
+                    if (page.Identity.Type == IdentityType.OverflowWindow)
+                    {
+                        // Retail: ContainerAddItem from the trade window into overflow; the window follows (Trim).
+                        if (clientRestores)
+                            OverflowGrants.SendFromTrade(owner, tradeSlots.GetValueOrDefault(item), slot);
+                        else
+                            SendGrant(owner, item, page);
+                    }
+                    else if (!clientRestores)
                         SendGrant(owner, item, page);
                     continue;
                 }
@@ -1522,8 +1562,10 @@ namespace ZoneEngine_New.Core.Trade
                 ClientFeedback.Send(owner, "Feedback_NoRoomInInventory");
             }
 
+            // (An item with no room even in overflow keeps its parked row and is in overflow at the next login.)
             offer.Credits = 0;
             _flush.NotifyDirty(owner);
+            OverflowGrants.Trim(owner);
         }
 
         #endregion

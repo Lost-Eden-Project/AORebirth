@@ -399,7 +399,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
                 template = staticDynel.Template;
             }
-            else if (player.Inventory.TryGetItem(target.Type, target.Instance, out Item targetItem))
+            else if (target.Type != IdentityType.OverflowWindow
+                && player.Inventory.TryGetItem(target.Type, target.Instance, out Item targetItem))
             {
                 template = targetItem.Definition;
             }

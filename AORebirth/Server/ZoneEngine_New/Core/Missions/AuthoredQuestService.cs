@@ -98,6 +98,8 @@ public sealed partial class AuthoredQuestService
                 foreach (var entry in actions)
                     if (!string.IsNullOrEmpty(entry.Feedback)) player.Session?.Send(new FormatFeedbackMessage { Identity = player.Identity, Unknown = 1, Unknown1 = 0, FormattedMessage = entry.Feedback });
                 foreach (var grant in notifications.Where(x => !x.Definition.PublishBeforeConsumption)) SendOverflowGrant(player, grant.Item);
+                // Grants that did not fit went to overflow; keep it to its capacity now the client has them.
+                OverflowGrants.Trim(player);
                 foreach (var entry in actions)
                 {
                     if (entry.FeedbackMessage != 0) player.Session?.Send(new FeedbackMessage { Identity = player.Identity, Unknown = 1, Unknown1 = 0, CategoryId = entry.FeedbackCategory, MessageId = entry.FeedbackMessage });
@@ -173,7 +175,7 @@ public sealed partial class AuthoredQuestService
         .Any(item => item.LowId == templateId || item.HighId == templateId);
 
     static InventoryGrantPlan Plan(Player player, IReadOnlyList<Item> grants)
-        => InventoryGrantPlan.TryCreate(player, grants, out var plan) ? plan : throw new InvalidOperationException("No durable capacity for the complete authored reward.");
+        => InventoryGrantPlan.TryCreate(player, grants, out var plan, allowOverflow: true) ? plan : throw new InvalidOperationException("No durable capacity for the complete authored reward.");
 
     static void ApplyRows(IMissionDaoTransaction tx, InventoryGrantPlan plan, Player player, Identity slot, Item consumed)
     {

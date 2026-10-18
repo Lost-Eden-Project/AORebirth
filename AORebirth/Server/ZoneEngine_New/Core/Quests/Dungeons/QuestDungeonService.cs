@@ -404,7 +404,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public bool TryDuplicate(Player player, Identity sourceSlot, Identity targetSlot)
         {
             ArgumentNullException.ThrowIfNull(player);
+            // Overflow items can only be deleted or moved into the inventory.
             if (!player.Inventory.IsHydrated
+                || sourceSlot.Type == IdentityType.OverflowWindow || targetSlot.Type == IdentityType.OverflowWindow
                 || !player.Inventory.TryGetItem(sourceSlot.Type, sourceSlot.Instance, out Item source)
                 || !player.Inventory.TryGetItem(targetSlot.Type, targetSlot.Instance, out Item target))
                 return false;

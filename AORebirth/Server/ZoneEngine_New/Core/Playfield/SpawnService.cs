@@ -872,6 +872,8 @@ namespace ZoneEngine_New.Core.Playfield
             _playfield.GetRequiredService<PlayfieldLocality>().ActivatePlayerVisibility(player);
             Metrics.TickStallWatch.Stage("arrive.content", characterId);
             TryRestorePostSpawnContent(player);
+            // A fresh client's overflow window is empty: send the saved one.
+            OverflowGrants.Resend(player);
 
             _logger.Info(
                 string.Format(
@@ -956,10 +958,14 @@ namespace ZoneEngine_New.Core.Playfield
             // Zoning retains the client roster (capture 2026-10-06T16:36:31Z); reconcile only changes missed
             // during transfer. A fresh client needs the full initial roster instead.
             _playfieldManager.Teams.RefreshPlayer(player, preserveRoster: player.ZoneReconnectPending);
+            // A zoning client keeps its overflow window; a reconnecting one starts empty and gets it again.
+            bool freshClient = !player.ZoneReconnectPending;
             player.ZoneReconnectPending = false;
 
             _playfield.GetRequiredService<PlayfieldLocality>().ActivatePlayerVisibility(player);
             TryRestorePostSpawnContent(player);
+            if (freshClient)
+                OverflowGrants.Resend(player);
 
             _logger.Info(
                 string.Format(

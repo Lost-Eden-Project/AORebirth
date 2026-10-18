@@ -51,6 +51,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>How often NPCs cast their uploaded nanos, and what they cast in a fight.</summary>
         public GameplayNpcNanos NpcNanos { get; init; } = new();
 
+        /// <summary>Inventory rules: how many items the overflow window keeps.</summary>
+        public GameplayInventory Inventory { get; init; } = new();
+
         public static string ResolvePath(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
@@ -142,6 +145,10 @@ namespace ZoneEngine_New.Core.Configuration
             if (NpcNanos == null || !NpcNanos.IsValid)
                 throw new InvalidDataException(path + ": npcNanos needs finite, non-negative intervals with min <= max, "
                     + "idleCheckSeconds and supportRange above 0, and healBelowPercent from 0 to 100.");
+            if (Inventory == null || Inventory.OverflowCapacity < 1
+                || Inventory.OverflowCapacity > ZoneEngine_New.Core.Inventory.PlayerInventory.OverflowCapacity)
+                throw new InvalidDataException(path + ": inventory.overflowCapacity must be from 1 to "
+                    + ZoneEngine_New.Core.Inventory.PlayerInventory.OverflowCapacity + " (the overflow window's slots).");
         }
     }
 
@@ -186,6 +193,20 @@ namespace ZoneEngine_New.Core.Configuration
 
         static bool IsInterval(double min, double max)
             => double.IsFinite(min) && double.IsFinite(max) && min >= 0 && max >= min;
+    }
+
+    /// <summary>
+    /// The inventory section of Gameplay.json. An item given or returned to a player whose inventory is full goes to the
+    /// overflow window, which is saved with the character. It holds at most <see cref="OverflowCapacity"/> items: one
+    /// more removes the oldest. From overflow a player can only delete an item or move it into the inventory.
+    /// </summary>
+    public sealed class GameplayInventory
+    {
+        /// <summary>Retail's overflow window: 20 slots (its InventoryUpdate, capture 2026-10-18T20:05:29Z).</summary>
+        public const int DefaultOverflowCapacity = 20;
+
+        /// <summary>Most items the overflow window keeps; a new one past this deletes the oldest.</summary>
+        public int OverflowCapacity { get; init; } = DefaultOverflowCapacity;
     }
 
     /// <summary>

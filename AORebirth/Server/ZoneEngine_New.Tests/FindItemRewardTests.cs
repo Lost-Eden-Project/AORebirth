@@ -91,6 +91,8 @@ public sealed class FindItemRewardTests
         using var run = new Run();
         run.FillInventory(1);
         Assert.IsTrue(run.Objective.TryPickup(run.Fixture.Player));
+        // A reward that does not fit in the inventory goes to overflow; with that full too it stays pending.
+        run.FillOverflow();
         var f = run.Fixture;
         f.Quests.RetryPendingRewards(f.Player, force: true);
         Assert.IsTrue(run.Quest.IsRewardPending);
@@ -108,6 +110,21 @@ public sealed class FindItemRewardTests
         Assert.AreEqual(QuestState.Completed, run.Quest.State);
         Assert.AreEqual(137, f.Player.Stats.GetOrZero(CharacterStat.Cash));
         Assert.AreEqual(1, run.Dao.Completed);
+        f.AssertNoErrors();
+    }
+
+    [TestMethod]
+    public void FullInventoryAfterPickupDeliversTheRewardToOverflow()
+    {
+        using var run = new Run();
+        run.FillInventory(1);
+        Assert.IsTrue(run.Objective.TryPickup(run.Fixture.Player));
+        var f = run.Fixture;
+        f.Quests.RetryPendingRewards(f.Player, force: true);
+        Assert.AreEqual(QuestState.Completed, run.Quest.State);
+        Assert.AreEqual(1, run.Dao.Completed);
+        Assert.AreEqual(137, f.Player.Stats.GetOrZero(CharacterStat.Cash));
+        Assert.IsTrue(f.Player.Inventory.Overflow.Content.Values.Any(item => item.LowId == RewardTemplate && item.IsPersisted));
         f.AssertNoErrors();
     }
 
@@ -202,6 +219,7 @@ public sealed class FindItemRewardTests
         using var run = new Run();
         run.FillInventory(1);
         Assert.IsTrue(run.Objective.TryPickup(run.Fixture.Player));
+        run.FillOverflow();
         var f = run.Fixture;
         int playfield = f.Parameters().DungeonPlayfield;
         string acceptedLayout = f.Store.Generated!.AcgBuildingGeneratorJson;
@@ -470,6 +488,13 @@ public sealed class FindItemRewardTests
                 Assert.IsTrue(page.Add(slot, TestWorld.CreateItem(lowId: 765432, highId: 765432,
                     instanceId: 700000 + slot, persisted: true)));
             }
+        }
+        internal void FillOverflow()
+        {
+            Container page = Fixture.Player.Inventory.Overflow;
+            for (int slot = page.FindFreeSlot(); slot >= 0; slot = page.FindFreeSlot())
+                Assert.IsTrue(page.Add(slot, TestWorld.CreateItem(lowId: 765433, highId: 765433,
+                    instanceId: 800000 + slot, persisted: true)));
         }
         internal void RemoveFiller()
         {

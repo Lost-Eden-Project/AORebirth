@@ -62,12 +62,17 @@ namespace ZoneEngine_New.Core.Inventory
         public Container Bank { get; private set; } = null!;
 
         /// <summary>
-        /// Landing page for grants that do not fit in <see cref="Inventory"/>. Remove-only and never
-        /// persisted: <see cref="MarkDirty"/> ignores it and <see cref="TryPlace"/> refuses to move an
-        /// already-durable item here, so a crash can never leave a DB row pointing at overflow.
-        /// Contents are lost on logout, which is the intended in-memory-only behaviour.
+        /// Landing page for anything given or returned that does not fit in <see cref="Inventory"/>. Saved with the
+        /// character like any page (rows under OverflowWindow, placement = slot) and loaded back at login. The player
+        /// can only delete an item here or move it into <see cref="Inventory"/>. It keeps the Gameplay.json
+        /// inventory.overflowCapacity newest items (<see cref="TrimOverflow"/>). Slots fill first-free, as the
+        /// client's overflow window does, so both number its items the same.
         /// </summary>
         public Container Overflow { get; private set; } = null!;
+
+        // When each item entered overflow, so the oldest is the one a full window gives up.
+        private readonly Dictionary<Item, long> _overflowArrival = new(ReferenceEqualityComparer.Instance);
+        private long _overflowSequence;
 
         public bool IsHydrated =>
             Inventory != null
@@ -88,11 +93,20 @@ namespace ZoneEngine_New.Core.Inventory
             _handleToContainer.Clear();
             lock (_dirtyGate)
                 _dirty.Clear();
+            _overflowArrival.Clear();
+            _overflowSequence = 0;
 
+            var overflow = new List<(Item Item, int Placement)>();
             foreach (ItemInstanceRecord row in hydration.Items)
             {
                 if (!items.TryFromInstanceRecord(row, out Item item))
                     continue;
+
+                if ((IdentityType)row.ContainerType == IdentityType.OverflowWindow)
+                {
+                    overflow.Add((item, row.ContainerPlacement));
+                    continue;
+                }
 
                 // ContainerType = page IdentityType; ContainerInstance = characterId
                 // Bank is intentionally not loaded at login — OpenBank hydrates it.
@@ -114,6 +128,23 @@ namespace ZoneEngine_New.Core.Inventory
                         Social.Add(row.ContainerPlacement, item);
                         break;
                 }
+            }
+
+            // Overflow loads packed from slot 0 in its saved order, the order the client lists it in when it is sent
+            // again (OverflowGrants.Resend): saved slots first, then rows parked by a trade that never finished
+            // (placement = instance id). Earlier slots count as older. A row whose slot changed is rewritten.
+            int next = Overflow.Offset;
+            foreach ((Item item, int placement) in overflow
+                .OrderBy(entry => entry.Placement < Overflow.Offset + Overflow.Capacity ? 0 : 1)
+                .ThenBy(entry => entry.Placement))
+            {
+                if (next >= Overflow.Offset + Overflow.Capacity || !Overflow.Add(next, item))
+                    continue;
+
+                NoteOverflowArrival(item);
+                if (placement != next)
+                    MarkDirty(item, Overflow, next);
+                next++;
             }
         }
 
@@ -145,6 +176,13 @@ namespace ZoneEngine_New.Core.Inventory
         /// </summary>
         public bool TryGetUseItem(Identity slot, out Item item)
         {
+            // Overflow items can only be deleted or moved into the inventory, never used where they are.
+            if (slot.Type == IdentityType.OverflowWindow)
+            {
+                item = null!;
+                return false;
+            }
+
             if (slot.Type != IdentityType.Backpack)
                 return TryGetItem(slot.Type, slot.Instance, out item);
 
@@ -223,12 +261,11 @@ namespace ZoneEngine_New.Core.Inventory
         /// Returns false when the item cannot be placed anywhere, which callers must treat as
         /// "the grant did not happen" — no packet, no state change.
         /// </summary>
-        /// <remarks>
-        /// A persisted item is never allowed into overflow. Overflow is not written to the database,
-        /// so parking a durable row there would leave the row at its previous location and duplicate
-        /// the item on the next restart. Callers moving durable items (player-to-player trades) must
-        /// check <see cref="HasFreeInventorySlots"/> up front and fail the whole operation instead.
-        /// </remarks>
+        /// <summary>
+        /// Gives <paramref name="item"/> a place: the first free <see cref="Inventory"/> slot, else the first free
+        /// <see cref="Overflow"/> slot. The caller marks it dirty, tells the client (an overflow grant for overflow) and
+        /// then trims overflow to its capacity (<see cref="OverflowGrants.Trim"/>).
+        /// </summary>
         public bool TryPlace(Item item, out Container page, out int slot)
         {
             ArgumentNullException.ThrowIfNull(item);
@@ -245,15 +282,116 @@ namespace ZoneEngine_New.Core.Inventory
                 return Inventory.Add(slot, item);
             }
 
-            if (item.IsPersisted)
-                return false;
+            return TryAddToOverflow(item, out page, out slot);
+        }
 
-            slot = Overflow.FindFreeSlot();
-            if (slot < 0)
-                return false;
-
+        /// <summary>Puts <paramref name="item"/> in the first free overflow slot, as the newest overflow item.</summary>
+        public bool TryAddToOverflow(Item item, out Container page, out int slot)
+        {
+            ArgumentNullException.ThrowIfNull(item);
             page = Overflow;
-            return Overflow.Add(slot, item);
+            slot = Overflow.FindFreeSlot();
+            if (slot < 0 || !Overflow.Add(slot, item))
+                return false;
+
+            NoteOverflowArrival(item);
+            return true;
+        }
+
+        /// <summary>The first <paramref name="count"/> free overflow slots, in the order the client fills them.</summary>
+        public int[] FreeOverflowSlots(int count)
+            => Enumerable.Range(Overflow.Offset, Overflow.Capacity).Where(slot => !Overflow.Content.ContainsKey(slot)).Take(count).ToArray();
+
+        /// <summary>Records <paramref name="item"/> as the newest overflow item (it was just put there).</summary>
+        public void NoteOverflowArrival(Item item)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            _overflowArrival[item] = ++_overflowSequence;
+        }
+
+        /// <summary>
+        /// Removes the oldest overflow items until at most <paramref name="capacity"/> remain, retiring their rows, and
+        /// returns each with the slot it left (the caller tells the client). An item with no recorded arrival counts as
+        /// oldest.
+        /// </summary>
+        public List<(Item Item, int Slot)> TrimOverflow(int capacity, Identity graveyard)
+        {
+            var removed = new List<(Item, int)>();
+            if (!IsHydrated)
+                return removed;
+
+            foreach (Item gone in _overflowArrival.Keys.Where(item => !Overflow.Content.ContainsValue(item)).ToArray())
+                _overflowArrival.Remove(gone);
+
+            while (Overflow.Content.Count > Math.Max(0, capacity))
+            {
+                KeyValuePair<int, Item> oldest = Overflow.Content
+                    .OrderBy(entry => _overflowArrival.GetValueOrDefault(entry.Value, 0))
+                    .ThenBy(entry => entry.Key)
+                    .First();
+                Overflow.Content.Remove(oldest.Key);
+                _overflowArrival.Remove(oldest.Value);
+                Discard(oldest.Value, graveyard);
+                removed.Add((oldest.Value, oldest.Key));
+            }
+
+            return removed;
+        }
+
+        /// <summary>
+        /// Moves overflow items down to slots 0..n-1, keeping their order, and rewrites the rows that moved: the numbering
+        /// a client gets when the window is sent to it item by item.
+        /// </summary>
+        public void PackOverflow()
+        {
+            if (!IsHydrated)
+                return;
+
+            KeyValuePair<int, Item>[] held = [.. Overflow.EnumerateSlots()];
+            int next = Overflow.Offset;
+            foreach ((int slot, Item item) in held)
+            {
+                if (slot != next)
+                {
+                    Overflow.Content.Remove(slot);
+                    Overflow.Content[next] = item;
+                    MarkDirty(item, Overflow, next);
+                }
+
+                next++;
+            }
+        }
+
+        /// <summary>
+        /// An item leaves its slot for a trade table. Its row moves off that slot to a parking place under overflow
+        /// (placement = instance id, which no slot uses), so the player can fill the slot while the item is offered. A
+        /// trade that commits re-homes the row; one that is declined puts the item back (<see cref="TryPlace"/>); a crash
+        /// in between finds it in overflow at the next login.
+        /// </summary>
+        public void ParkOffered(Item item, int characterId)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            if (item.InstanceId <= 0 || !item.IsPersisted)
+                return;
+
+            var entry = new DirtyEntry(item, (int)IdentityType.OverflowWindow, characterId, item.InstanceId);
+            lock (_dirtyGate)
+                _dirty[item.InstanceId] = entry;
+        }
+
+        /// <summary>
+        /// True when <paramref name="count"/> more items have somewhere to go: empty inventory slots, then empty overflow
+        /// slots (overflow keeps only its newest items afterwards, <see cref="TrimOverflow"/>).
+        /// </summary>
+        public bool HasRoomFor(int count)
+        {
+            if (count <= 0)
+                return true;
+
+            if (!IsHydrated)
+                return false;
+
+            return Inventory.Capacity - Inventory.Content.Count + Overflow.Capacity - Overflow.Content.Count >= count;
         }
 
         /// <summary>True when main inventory has at least <paramref name="count"/> empty slots.</summary>
@@ -607,10 +745,6 @@ namespace ZoneEngine_New.Core.Inventory
 
             // Dirty set is keyed by unique InstanceId. Skip unkeyed stubs.
             if (item.InstanceId <= 0)
-                return;
-
-            // Overflow is in-memory only; writing a row for it would resurrect the item on restart.
-            if (page.Identity.Type == IdentityType.OverflowWindow)
                 return;
 
             var entry = new DirtyEntry(

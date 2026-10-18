@@ -148,6 +148,10 @@ namespace ZoneEngine_New.Core.Inventory
                 return;
             }
 
+            // From overflow an item can only go into the inventory: no equipping, banking or bagging it straight from there.
+            if (sourcePage.Identity.Type == IdentityType.OverflowWindow && !ReferenceEquals(destPage, player.Inventory.Inventory))
+                return;
+
             destPage.Content.TryGetValue(destSlot, out Item? destOccupant);
             if (destOccupant != null && destOccupant.Locked)
                 return;
@@ -845,6 +849,10 @@ namespace ZoneEngine_New.Core.Inventory
             if (sourceSlot < sourcePage.Offset || sourceSlot >= sourcePage.Offset + sourcePage.Capacity
                 || destSlot < destPage.Offset || destSlot >= destPage.Offset + destPage.Capacity
                 || destPage.Identity.Type == IdentityType.OverflowWindow)
+                return false;
+            // Overflow items only move into the inventory, never swap with what is there.
+            if (sourcePage.Identity.Type == IdentityType.OverflowWindow
+                && (!ReferenceEquals(destPage, player.Inventory.Inventory) || existingDest != null))
                 return false;
             if (lootSource != null && Trade.TradeRules.IsUnique(item)
                 && Trade.TradeRules.WouldDuplicateUnique(player, item.LowId, item.HighId))

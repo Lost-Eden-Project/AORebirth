@@ -181,21 +181,25 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            int slot = subject.Inventory.Inventory.FindFreeSlot();
-            if (slot < 0)
+            // The first free inventory slot, else overflow (which keeps only its newest items).
+            if (!subject.Inventory.TryPlace(item, out Container page, out int slot))
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "Inventory is full.");
+                GmCommandFeedback.Send(context.Session, context.Player, "Inventory and overflow are full.");
                 return;
             }
 
-            if (!subject.Inventory.Inventory.Add(slot, item))
-            {
-                GmCommandFeedback.Send(context.Session, context.Player, "Could not add item to inventory.");
-                return;
-            }
-
-            subject.Inventory.MarkDirty(item, subject.Inventory.Inventory, slot);
+            subject.Inventory.MarkDirty(item, page, slot);
             _flush.NotifyDirty(subject);
+
+            if (ReferenceEquals(page, subject.Inventory.Overflow))
+            {
+                OverflowGrants.Send(subject, item);
+                OverflowGrants.Trim(subject);
+                GmCommandFeedback.Send(context.Session, context.Player, string.Format(CultureInfo.InvariantCulture,
+                    "Gave {0} QL{1} x{2} to {3} (overflow)", item.Name, item.Quality, item.StackCount,
+                    PlayerSubjectName(subject, context.Player)));
+                return;
+            }
 
             subject.Session?.Send(
                 new AddTemplateMessage

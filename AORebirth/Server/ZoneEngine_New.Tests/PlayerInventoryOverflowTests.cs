@@ -1,11 +1,13 @@
 namespace ZoneEngine_New.Tests
 {
     using System.Collections.Generic;
+    using System.Linq;
 
     using Microsoft.VisualStudio.TestTools.UnitTesting;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
 
+    using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
 
@@ -41,14 +43,65 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void TryPlaceRefusesToParkADurableItemInOverflow()
+        public void TryPlacePutsADurableItemInOverflowWhenInventoryIsFull()
         {
             Player player = TestWorld.CreatePlayer(1);
             PlayerInventory inventory = player.Inventory;
             TestWorld.FillInventory(player);
 
-            Assert.IsFalse(inventory.TryPlace(TestWorld.CreateItem(instanceId: 77), out _, out _));
-            Assert.AreEqual(0, inventory.Overflow.Content.Count);
+            Item item = TestWorld.CreateItem(instanceId: 77);
+            Assert.IsTrue(inventory.TryPlace(item, out Container page, out int slot));
+
+            Assert.AreSame(inventory.Overflow, page);
+            Assert.AreSame(item, inventory.Overflow.Content[slot]);
+        }
+
+        [TestMethod]
+        public void TrimOverflowKeepsTheNewestItemsAndRetiresTheOldest()
+        {
+            Player player = TestWorld.CreatePlayer(1);
+            PlayerInventory inventory = player.Inventory;
+            TestWorld.FillInventory(player);
+            var graveyard = new Identity { Type = IdentityType.None, Instance = 1 };
+
+            var placed = new List<Item>();
+            for (int i = 0; i < 31; i++)
+            {
+                Item item = TestWorld.CreateItem(lowId: 2000 + i, highId: 2000 + i, instanceId: 2000 + i);
+                Assert.IsTrue(inventory.TryPlace(item, out _, out _));
+                placed.Add(item);
+            }
+
+            List<(Item Item, int Slot)> removed = inventory.TrimOverflow(30, graveyard);
+
+            Assert.AreEqual(1, removed.Count);
+            Assert.AreSame(placed[0], removed[0].Item);
+            Assert.AreEqual(30, inventory.Overflow.Content.Count);
+            CollectionAssert.DoesNotContain(new List<Item>(inventory.Overflow.Content.Values), placed[0]);
+            Assert.IsTrue(inventory.HasDirtyEntries, "the evicted durable item's row is retired");
+        }
+
+        [TestMethod]
+        public void ParkOfferedMovesADurableRowOffItsSlotSoTheSlotCanBeReused()
+        {
+            Player player = TestWorld.CreatePlayer(1);
+            PlayerInventory inventory = player.Inventory;
+            Item offered = TestWorld.CreateItem(instanceId: 77);
+            inventory.Inventory.Add(inventory.Inventory.Offset, offered);
+            inventory.Inventory.Remove(inventory.Inventory.Offset);
+
+            inventory.ParkOffered(offered, characterId: 1);
+            Item mover = TestWorld.CreateItem(instanceId: 78);
+            Assert.IsTrue(inventory.Inventory.Add(inventory.Inventory.Offset, mover));
+            inventory.MarkDirty(mover, inventory.Inventory, inventory.Inventory.Offset);
+
+            PlayerInventory.InventoryDirtyFlush flush = inventory.TakeDirty()!;
+            ItemLocationUpdate parked = flush.Updates.Single(update => update.InstanceId == 77);
+            ItemLocationUpdate moved = flush.Updates.Single(update => update.InstanceId == 78);
+            Assert.AreEqual((int)IdentityType.OverflowWindow, parked.ContainerType);
+            Assert.AreEqual(77, parked.ContainerPlacement);
+            Assert.AreEqual(inventory.Inventory.Offset, moved.ContainerPlacement);
+            Assert.AreNotEqual((parked.ContainerType, parked.ContainerPlacement), (moved.ContainerType, moved.ContainerPlacement));
         }
 
         [TestMethod]
@@ -94,7 +147,7 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void MarkDirtyIgnoresOverflowSoNoRowCanResurrectTheItem()
+        public void MarkDirtySavesOverflowPlacements()
         {
             Player player = TestWorld.CreatePlayer(1);
             PlayerInventory inventory = player.Inventory;
@@ -104,7 +157,10 @@ namespace ZoneEngine_New.Tests
             inventory.TryPlace(item, out Container page, out int slot);
             inventory.MarkDirty(item, page, slot);
 
-            Assert.IsFalse(inventory.HasDirtyEntries);
+            PlayerInventory.InventoryDirtyFlush flush = inventory.TakeDirty()!;
+            ItemInstanceRecord row = flush.Inserts.Single(insert => insert.InstanceId == 77);
+            Assert.AreEqual((int)IdentityType.OverflowWindow, row.ContainerType);
+            Assert.AreEqual(slot, row.ContainerPlacement);
         }
 
         [TestMethod]

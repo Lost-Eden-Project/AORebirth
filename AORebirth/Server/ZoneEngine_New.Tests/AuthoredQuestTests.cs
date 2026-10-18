@@ -76,7 +76,7 @@ public sealed class AuthoredQuestTests
 
     [DataTestMethod]
     [DataRow("accepted")]
-    [DataRow("ineligible")]
+    [DataRow("overflow")]
     [DataRow("rollback")]
     [DataRow("unknown")]
     public void InventoryUsePacketRoutesAuthoredItemsWithoutFallingThroughOnFailure(string outcome)
@@ -84,7 +84,8 @@ public sealed class AuthoredQuestTests
         using var w = new World();
         w.Activate(AuthoredQuestFixture.BuyLockpick);
         var item = w.Add(295999);
-        if (outcome == "ineligible") TestWorld.FillInventory(w.Player);
+        // A full inventory is no refusal: the reward waits in overflow.
+        if (outcome == "overflow") TestWorld.FillInventory(w.Player);
         item.Definition.Stats[CharacterStat.Can] = (int)(CanFlags.Use | CanFlags.Consume);
         item.SpellList[EventType.OnUse] = [new ItemSpell
         {
@@ -110,6 +111,13 @@ public sealed class AuthoredQuestTests
         {
             Assert.IsFalse(w.Player.Inventory.Inventory.Content.ContainsKey(64));
             Assert.AreEqual(95577, w.Player.Inventory.Inventory.Content.Values.Single().LowId);
+            Assert.AreEqual(DaoState.Completed, w.Dao.GetMission(new(111, AuthoredQuestFixture.BuyLockpick)).State);
+            Assert.AreEqual(1, w.Session.Messages.OfType<GenericCmdMessage>().Single().Temp1);
+        }
+        else if (outcome == "overflow")
+        {
+            Assert.IsFalse(w.Player.Inventory.Inventory.Content.Values.Contains(item));
+            Assert.AreEqual(95577, w.Player.Inventory.Overflow.Content.Values.Single().LowId);
             Assert.AreEqual(DaoState.Completed, w.Dao.GetMission(new(111, AuthoredQuestFixture.BuyLockpick)).State);
             Assert.AreEqual(1, w.Session.Messages.OfType<GenericCmdMessage>().Single().Temp1);
         }
@@ -169,11 +177,20 @@ public sealed class AuthoredQuestTests
     }
 
     [TestMethod]
-    public void FullInventoryAndStaleRowsCannotConsumeOrAdvanceQuest()
+    public void FullInventoryRewardIsSavedInOverflow()
     {
         using var w = new World(); w.Activate(AuthoredQuestFixture.BuyLockpick); var item = w.Add(295999); TestWorld.FillInventory(w.Player);
-        Assert.IsFalse(w.Service.TryUseItem(w.Player, Slot, item)); Assert.AreEqual(0, w.Session.Messages.Count);
-        Assert.AreEqual(DaoState.Active, w.Dao.GetMission(new(111, AuthoredQuestFixture.BuyLockpick)).State);
+        Assert.IsTrue(w.Service.TryUseItem(w.Player, Slot, item));
+        Assert.AreEqual(DaoState.Completed, w.Dao.GetMission(new(111, AuthoredQuestFixture.BuyLockpick)).State);
+        Item reward = w.Player.Inventory.Overflow.Content.Values.Single();
+        Assert.AreEqual(95577, reward.LowId);
+        Assert.IsTrue(reward.IsPersisted);
+        Assert.IsTrue(w.Dao.Items.Values.Any(row => row.LowId == 95577 && row.ContainerType == (int)IdentityType.OverflowWindow));
+    }
+
+    [TestMethod]
+    public void StaleRowsCannotConsumeOrAdvanceQuest()
+    {
         using var stale = new World(); stale.Activate(AuthoredQuestFixture.BuyLockpick); var moved = stale.Add(295999);
         stale.Dao.Items[10].ContainerPlacement = 65;
         Assert.IsFalse(stale.Service.TryUseItem(stale.Player, Slot, moved)); Assert.AreEqual(0, stale.Session.Messages.Count);

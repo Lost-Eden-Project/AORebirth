@@ -202,29 +202,36 @@ namespace ZoneEngine_New.Core.Tradeskills
                 return CombineOutcome.Refused;
             }
 
-            // The client deletes the used items, then puts the overflow result in its first free slot.
+            // The client deletes the used items, then puts the overflow result in its first free slot; with the inventory
+            // full it stays in the overflow window's first free slot.
             Container page = player.Inventory.Inventory;
             var freed = new HashSet<int>(consumed.Select(c => c.Slot));
+            Container resultPage = page;
             int resultSlot = Enumerable.Range(page.Offset, page.Capacity)
                 .FirstOrDefault(slot => !page.Content.ContainsKey(slot) || freed.Contains(slot), -1);
             if (resultSlot < 0)
             {
-                Feedback(player, "Your inventory is full. Free a slot and try the combine again.");
-                return CombineOutcome.Refused;
+                resultPage = player.Inventory.Overflow;
+                resultSlot = resultPage.FindFreeSlot();
+                if (resultSlot < 0)
+                {
+                    Feedback(player, "Your inventory and overflow are full. Free a slot and try the combine again.");
+                    return CombineOutcome.Refused;
+                }
             }
 
             Item result = _items.CreateWithNewInstance(low, high, quality, ItemSource.Other);
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
             var changes = consumed
                 .Select(c => new InventoryRowChange(c.Item, graveyard, c.Item.InstanceId, c.Item.StackCount, Retired: true))
-                .Append(new InventoryRowChange(result, page.Identity, resultSlot, result.StackCount))
+                .Append(new InventoryRowChange(result, resultPage.Identity, resultSlot, result.StackCount))
                 .ToList();
             string sourceName = NameOf(source), targetName = NameOf(target);
 
             bool committed = _inventory.TryCommit(player, changes,
                 () => ReferenceEquals(InventoryItem(player, sourceSlot), source)
                     && ReferenceEquals(InventoryItem(player, targetSlot), target)
-                    && (!page.Content.ContainsKey(resultSlot) || freed.Contains(resultSlot)),
+                    && (!resultPage.Content.ContainsKey(resultSlot) || (ReferenceEquals(resultPage, page) && freed.Contains(resultSlot))),
                 () =>
                 {
                     foreach ((int slot, Item _) in consumed)
@@ -236,8 +243,10 @@ namespace ZoneEngine_New.Core.Tradeskills
                             Target = new Identity { Type = IdentityType.Inventory, Instance = slot }
                         });
                     }
-                    if (!page.Add(resultSlot, result))
+                    if (!resultPage.Add(resultSlot, result))
                         throw new InvalidOperationException("Reserved tradeskill result slot changed.");
+                    if (!ReferenceEquals(resultPage, page))
+                        player.Inventory.NoteOverflowArrival(result);
                     Feedback(player, string.Format(CultureInfo.InvariantCulture, CombinedText, sourceName, targetName, result.Quality, NameOf(result)));
                     player.Session?.Send(new TemplateActionMessage
                     {
@@ -258,6 +267,9 @@ namespace ZoneEngine_New.Core.Tradeskills
                 Feedback(player, "The combine could not be completed.");
                 return CombineOutcome.Refused;
             }
+
+            if (!ReferenceEquals(resultPage, page))
+                OverflowGrants.Trim(player);
 
             int xp = Xp(player, result.Quality);
             if (xp > 0)

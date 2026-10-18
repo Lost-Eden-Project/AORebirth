@@ -203,13 +203,19 @@ public static class KnubotItems
         if (InventoryStacking.TryGrantOntoStack(player, item, flush))
             return;
 
-        Container page = player.Inventory.Inventory;
-        int slot = page.FindFreeSlot();
-        if (slot < 0 || !page.Add(slot, item))
+        // The first free inventory slot, else overflow (which keeps only its newest items).
+        if (!player.Inventory.TryPlace(item, out Container page, out int slot))
             return;
 
         player.Inventory.MarkDirty(item, page, slot);
         flush.NotifyDirty(player);
+        if (ReferenceEquals(page, player.Inventory.Overflow))
+        {
+            OverflowGrants.Send(player, item);
+            OverflowGrants.Trim(player);
+            return;
+        }
+
         player.Session?.Send(new AddTemplateMessage
         {
             Identity = player.Identity,
