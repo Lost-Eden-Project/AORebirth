@@ -11,6 +11,7 @@ internal static class SpawnContentValidation
         => entry != null && !string.IsNullOrWhiteSpace(entry.HashText)
             && entry.MinLevel > 0 && entry.MaxLevel >= entry.MinLevel
             && entry.RespawnChance >= 0 && entry.RespawnChance <= 100 && entry.RespawnTime >= 0
+            && (!entry.StaticTemplateId.HasValue || entry.StaticTemplateId.Value > 0)
             && ValidSite(entry.Position, entry.Radius)
             && (entry.AdditionalPoints == null || entry.AdditionalPoints.All(p => p != null && ValidSite(p.Position, p.Radius)));
     static bool ValidSite(float[]? position, float radius)

@@ -54,6 +54,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Inventory rules: how many items the overflow window keeps.</summary>
         public GameplayInventory Inventory { get; init; } = new();
 
+        /// <summary>Seasonal population switches, read once at startup.</summary>
+        public GameplayEvents Events { get; init; } = new();
+
         public static string ResolvePath(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
@@ -149,7 +152,19 @@ namespace ZoneEngine_New.Core.Configuration
                 || Inventory.OverflowCapacity > ZoneEngine_New.Core.Inventory.PlayerInventory.OverflowCapacity)
                 throw new InvalidDataException(path + ": inventory.overflowCapacity must be from 1 to "
                     + ZoneEngine_New.Core.Inventory.PlayerInventory.OverflowCapacity + " (the overflow window's slots).");
+            if (Events == null || Events.Halloween == null)
+                throw new InvalidDataException(path + ": events and events.halloween must be objects.");
         }
+    }
+
+    public sealed class GameplayEvents
+    {
+        public GameplayHalloween Halloween { get; init; } = new();
+    }
+
+    public sealed class GameplayHalloween
+    {
+        public bool Enabled { get; init; }
     }
 
     /// <summary>

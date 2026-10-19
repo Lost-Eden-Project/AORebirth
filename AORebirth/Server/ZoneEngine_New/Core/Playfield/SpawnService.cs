@@ -323,6 +323,9 @@ namespace ZoneEngine_New.Core.Playfield
             return spawned;
         }
 
+        internal bool HasStaticTemplate(int templateId)
+            => _services.GetRequiredService<IItemTemplateCatalog>().TryGet(templateId, out _);
+
         /// <summary>
         /// Spawns one resolved item family as a world dynel. Returns null when the quality band cannot be selected.
         /// A <paramref name="lifetime"/> makes it temporary; null keeps it until despawned.

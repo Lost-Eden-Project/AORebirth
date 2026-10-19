@@ -57,5 +57,10 @@
   },
   "inventory": {
     "overflowCapacity": 20
+  },
+  "events": {
+    "halloween": {
+      "enabled": false
+    }
   }
 }
