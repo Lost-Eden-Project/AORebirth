@@ -599,15 +599,16 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// Catalog shape: strain, centiseconds. The target's NCU entries of that strain end that much sooner; one this
-        /// runs out leaves NCU (nano 231008's OnTerminate: strain 225, 2000000).
+        /// Catalog shape: strain, seconds. The target's NCU entries of that strain end that much sooner; one this runs
+        /// out leaves NCU. Free Movement 204104 takes root (146) down by 15 s, snare (145) by 150 s and 147 by 30 s; a
+        /// charm's OnTerminate (231008: strain 225, 2000000) clears its line outright.
         /// </summary>
         static bool ReduceNanoStrainDuration(Character target, ItemSpell spell)
         {
-            if (!spell.TryReadInt(0, out int strain) || !spell.TryReadInt(1, out int centiseconds))
+            if (!spell.TryReadInt(0, out int strain) || !spell.TryReadInt(1, out int seconds))
                 return false;
 
-            return NanoRuntime.ReduceStrainDuration(target, strain, centiseconds);
+            return NanoRuntime.ReduceStrainDuration(target, strain, seconds);
         }
 
         /// <summary>

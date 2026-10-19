@@ -126,6 +126,16 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 useTarget.SyncCharState();
             }
+
+            // A skill the use would lock that is still locked refuses the use outright, before its use time starts: no
+            // timer, no success reply, only the "skill is locked" line.
+            if (item.Definition.TryFindActiveSkillLock(EventType.OnUse, useTarget, player, DateTime.UtcNow,
+                    out int lockedStat, out TimeSpan lockedFor))
+            {
+                player.SendSkillLocked(lockedStat, lockedFor);
+                return ItemUseStart.Rejected;
+            }
+
             if (!item.CanBeginUse(player, useTarget))
             {
                 if (item.UsesFightingTarget && player.TryResolveFightingTarget() == null)
@@ -185,6 +195,15 @@ namespace ZoneEngine_New.Core.Inventory
 
             if (RejectMissingSpawnHash(player, dynel.Template))
                 return ItemUseStart.Rejected;
+
+            // As for an item: a skill the use would lock that is still locked refuses it before anything runs (a
+            // Stationary Surgery Clinic has no use time, so the effect would otherwise play every click).
+            if (dynel.Template.TryFindActiveSkillLock(EventType.OnUse, player, player, DateTime.UtcNow,
+                    out int lockedStat, out TimeSpan lockedFor))
+            {
+                player.SendSkillLocked(lockedStat, lockedFor);
+                return ItemUseStart.Rejected;
+            }
 
             if (!dynel.CanBeginUse(player))
             {

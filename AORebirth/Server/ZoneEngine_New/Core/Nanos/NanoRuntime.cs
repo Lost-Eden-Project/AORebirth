@@ -280,17 +280,17 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>
         /// ReduceNanoStrainDuration: every NCU entry of <paramref name="strain"/> on <paramref name="owner"/> ends
-        /// <paramref name="centiseconds"/> sooner. One that this runs out leaves NCU as a strip does (its OnTerminate
-        /// runs); the rest keep running, and the client is told the time they have left.
+        /// <paramref name="seconds"/> sooner. One that this runs out leaves NCU as a strip does (its OnTerminate runs);
+        /// the rest keep running, and the client is told the time they have left.
         /// </summary>
-        public static bool ReduceStrainDuration(Character owner, int strain, int centiseconds)
+        public static bool ReduceStrainDuration(Character owner, int strain, int seconds)
         {
             ArgumentNullException.ThrowIfNull(owner);
-            if (strain <= 0 || centiseconds <= 0)
+            if (strain <= 0 || seconds <= 0)
                 return false;
 
             DateTime nowUtc = DateTime.UtcNow;
-            var amount = TimeSpan.FromMilliseconds(centiseconds * 10L);
+            var amount = TimeSpan.FromSeconds(seconds);
             var matching = new List<Buff>();
             foreach (Buff buff in owner.Buffs)
             {
@@ -315,6 +315,32 @@ namespace ZoneEngine_New.Core.Nanos
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// A zone transfer re-checks every NCU entry's PlayShiftRequirements (action 136) against
+        /// <paramref name="owner"/> where it now stands: one it no longer meets is removed as a strip removes it (274416
+        /// [Level > 200]). Returns how many went.
+        /// </summary>
+        public static int StripPlayshiftFailures(Character owner)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            var failing = new List<int>();
+            foreach (Buff buff in owner.Buffs)
+            {
+                if (!buff.MeetsActionRequirements(stat => owner.Stats.Get(stat), ActionType.PlayShiftRequirements,
+                        owner.ResolveRequirement))
+                    failing.Add(buff.Id);
+            }
+
+            int removed = 0;
+            foreach (int nanoId in failing)
+            {
+                if (StripBuff(owner, nanoId))
+                    removed++;
+            }
+
+            return removed;
         }
 
         /// <summary>

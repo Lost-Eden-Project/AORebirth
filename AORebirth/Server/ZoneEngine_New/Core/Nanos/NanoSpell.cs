@@ -37,12 +37,37 @@ namespace ZoneEngine_New.Core.Nanos
                 || ((can & CanFlags.ApplyOnHostile) != 0
                     && (can & (CanFlags.ApplyOnFriendly | CanFlags.ApplyOnSelf)) == 0);
 
-            IsBuff = (nanoFlags & NanoFlags.IsBuff) != 0 || DurationCentiseconds > 0;
+            // Without the IsBuff flag a duration only makes an NCU entry when the nano does something that needs one. A
+            // nano that just launches others (Phalanx 29245: TeamCastNano 162357, TimeExist 4 h) gives that duration to
+            // what it makes; the client never lists it in NCU, only the buff it casts.
+            IsBuff = (nanoFlags & NanoFlags.IsBuff) != 0 || (DurationCentiseconds > 0 && HasEffectOfItsOwn());
             CanCancel = template.CanCancel
                 && !IsHostile
                 && (nanoFlags & NanoFlags.NotRemovable) == 0;
             IgnoresNcu = (nanoFlags & NanoFlags.NoRemoveNoNCUFriendly) != 0;
             IsSelfOnly = (can & CanFlags.ApplyOnSelf) != 0 || AllFunctionsApplyToCaster();
+        }
+
+        /// <summary>
+        /// True when an OnUse function is more than a one-shot launch: anything but casting another nano (CastNano,
+        /// TeamCastNano, AreaCastNano, CastChance), summoning a pet or spawning an item or monster, or one of those
+        /// repeating on a timer (its ticks run from the NCU entry).
+        /// </summary>
+        bool HasEffectOfItsOwn()
+        {
+            if (!SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells) || spells.Count == 0)
+                return true;
+
+            foreach (ItemSpell spell in spells)
+            {
+                bool launches = (FunctionType)spell.FunctionType is FunctionType.CastNano or FunctionType.TeamCastNano
+                    or FunctionType.AreaCastNano or FunctionType.CastChance or FunctionType.SummonPet
+                    or FunctionType.SpawnItem or FunctionType.SpawnMonster2;
+                if (!launches || (spell.TickCount > 1 && spell.TickInterval > 0))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>

@@ -1255,6 +1255,9 @@ namespace ZoneEngine_New.Core.Playfield
             player.Logger = _logger;
             _registry.Register(player);
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(player);
+            // Buffs with a playshift requirement the character no longer meets here end on arrival, before the
+            // FullCharacter the client gets lists its NCU.
+            Nanos.NanoRuntime.StripPlayshiftFailures(player);
             _playfield.GetRequiredService<Pets.PetService>().ArriveWithOwner(player);
             player.SaveState.MarkDirty();
             // The next trigger sample has to start at this landing. Keeping the position from
