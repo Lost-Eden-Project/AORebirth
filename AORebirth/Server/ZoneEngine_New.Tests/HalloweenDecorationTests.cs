@@ -27,6 +27,11 @@ public sealed class HalloweenDecorationTests
 {
     const string PrivateDataVariable = "AO_REBIRTH_HALLOWEEN_GAMEDATA_PATH";
     static readonly int[] DecorationTemplates = [301382, 301383, 301384, 301385, 301386, 301387];
+    static readonly Dictionary<string, int> DecorationTemplateByHash = new(StringComparer.Ordinal)
+    {
+        ["AUPU"] = 301382, ["PJUQ"] = 301383, ["CXNP"] = 301384,
+        ["BRSK"] = 301385, ["SLHD"] = 301386, ["KELE"] = 301387
+    };
     public TestContext TestContext { get; set; } = null!;
     static readonly Lazy<ItemTemplateCatalog> RealCatalog = new(() =>
     {
@@ -177,8 +182,18 @@ public sealed class HalloweenDecorationTests
     }
 
     [TestMethod]
-    [DataRow(800, 20)]
-    [DataRow(655, 15)]
+    [DataRow(540, 31)]
+    [DataRow(566, 28)]
+    [DataRow(655, 30)]
+    [DataRow(710, 39)]
+    [DataRow(800, 23)]
+    [DataRow(6300, 10)]
+    [DataRow(6301, 10)]
+    [DataRow(6302, 10)]
+    [DataRow(6303, 10)]
+    [DataRow(6304, 10)]
+    [DataRow(6305, 10)]
+    [DataRow(6306, 10)]
     public void ActualPrivateBoundDecorationsRespectGlobalSwitchAndSpawnOnlyTheirAuthoredTemplates(int playfieldId, int expected)
     {
         ItemTemplateCatalog catalog = RealCatalog.Value;
@@ -214,12 +229,92 @@ public sealed class HalloweenDecorationTests
             Assert.AreEqual(SpawnSource.HashSpawn, item.SpawnSource);
             Assert.IsTrue(on.Registry.TryGet(item.Identity, out Dynel? registered));
             Assert.AreSame(item, registered);
-            Assert.AreEqual(playfieldId, ((SimpleItemFullUpdateMessage)item.BuildSpawnMessage()).Playfield);
+            AssertSpawnBody(item, (SimpleItemFullUpdateMessage)item.BuildSpawnMessage());
         }
         Assert.AreEqual(expected, on.Registry.Dynels().OfType<WorldItem>().Count());
         Assert.AreEqual(0, on.Registry.Dynels().OfType<NpcCharacter>().Count());
+
+        // One actual placement per playfield exercises nearby publication, wire codec and sleep/wake.
+        HashSpawnPoint observedPoint = points[0];
+        var observed = (WorldItem)observedPoint.MembersSnapshot().Single();
+        Session session = Observe(on, observed.Position);
+        AssertPublished(observed, session);
+        on.Locality.ActivatePlayerVisibility(session.Player!);
+        Assert.AreEqual(1, session.Bodies.OfType<SimpleItemFullUpdateMessage>().Count(body => body.Identity == observed.Identity));
+        Sleep(on, observedPoint);
+        Assert.AreEqual(0, observedPoint.MemberCount);
+        Assert.IsNull(observed.Playfield);
+        Assert.IsFalse(on.Registry.TryGet(observed.Identity, out _));
+        Assert.IsTrue(session.Bodies.OfType<DespawnMessage>().Any(body => body.Identity == observed.Identity));
+        Assert.AreEqual(HashSpawnState.Alive, observedPoint.State);
+        Assert.IsTrue((bool)typeof(HashSpawnSystem).GetMethod("TrySpawn", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(on.System, [observedPoint])!);
+        var awakened = (WorldItem)observedPoint.MembersSnapshot().Single();
+        Assert.AreNotEqual(observed.Identity, awakened.Identity);
+        Assert.AreEqual(observed.LowId, awakened.LowId);
+        Assert.AreEqual(observed.HighId, awakened.HighId);
+        AssertPublished(awakened, session);
+        on.Locality.ActivatePlayerVisibility(session.Player!);
+        Assert.AreEqual(1, session.Bodies.OfType<SimpleItemFullUpdateMessage>().Count(body => body.Identity == awakened.Identity));
         CollectionAssert.AreEqual(original, File.ReadAllBytes(path));
-        TestContext.WriteLine("Actual private PF{0}: explicit seasonal bindings={1}, eligible ON={1}, eligible OFF=0; no global aliases or file writes.", playfieldId, expected);
+        TestContext.WriteLine("Actual private PF{0}: explicit seasonal bindings={1}, eligible ON={1}, eligible OFF=0; all registered/body-validated, nearby wire and sleep/wake validated for one placement; no global aliases or file writes.", playfieldId, expected);
+    }
+
+    [TestMethod]
+    public void ActualPrivateGlobalDecorationInventoryHasAllAuthoredBindingsAndKeepsPpoaAndAaaaSeparate()
+    {
+        _ = RealCatalog.Value;
+        string root = Environment.GetEnvironmentVariable(PrivateDataVariable)!;
+        var selected = new List<PlayfieldSpawnEntry>();
+        int decorationPlacements = 0;
+        int ppoa = 0;
+        int aaaa = 0;
+        var playfields = new Dictionary<int, int>();
+        foreach (string path in Directory.EnumerateFiles(Path.Combine(root, "Playfields"), "Spawns.json", SearchOption.AllDirectories))
+        {
+            var content = JsonSerializer.Deserialize<PlayfieldSpawnsData>(File.ReadAllBytes(path),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+            foreach (PlayfieldSpawnEntry entry in content.Spawns)
+            {
+                if (entry.HashText == "AAAA")
+                {
+                    aaaa++;
+                    Assert.IsNull(entry.StaticTemplateId, "Diagnostic AAAA placements must not acquire decoration bindings.");
+                }
+                bool seasonal = entry.Extensions?.Events?.Any(item => item != null && HashSpawnSystem.IsHalloweenEvent(item.Name)) == true;
+                if (!seasonal)
+                    continue;
+                if (entry.Extensions.Events.Any(item => item.Name == "halloween_decor"))
+                {
+                    decorationPlacements++;
+                }
+                if (entry.HashText == "PPOA")
+                {
+                    ppoa++;
+                    Assert.IsNull(entry.StaticTemplateId);
+                    Assert.IsTrue(entry.Extensions.Events.All(item => !item.Active), "Unsupported PPOA remains inactive.");
+                }
+                if (!DecorationTemplateByHash.TryGetValue(entry.HashText, out int templateId))
+                    continue;
+                selected.Add(entry);
+                Assert.AreEqual(templateId, entry.StaticTemplateId!.Value);
+                Assert.IsTrue(entry.Extensions.Events.All(item => item.Active));
+                playfields[content.PlayfieldId] = playfields.GetValueOrDefault(content.PlayfieldId) + 1;
+            }
+        }
+        Assert.AreEqual(221, selected.Count);
+        Assert.AreEqual(316, decorationPlacements);
+        Assert.AreEqual(12, playfields.Count);
+        CollectionAssert.AreEquivalent(new[] { 31, 28, 30, 39, 23, 10, 10, 10, 10, 10, 10, 10 }, playfields.Values.ToArray());
+        var expectedHashes = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["AUPU"] = 98, ["KELE"] = 48, ["BRSK"] = 20,
+            ["SLHD"] = 46, ["CXNP"] = 5, ["PJUQ"] = 4
+        };
+        foreach ((string hash, int count) in expectedHashes)
+            Assert.AreEqual(count, selected.Count(entry => entry.HashText == hash));
+        Assert.AreEqual(95, ppoa, "The unsupported PPOA cohort must remain present, inactive and unbound.");
+        TestContext.WriteLine("Actual private global inventory: 221 authored decorations in 12 playfields; unsupported PPOA={0} inactive/unbound; AAAA={1} retain diagnostic routing.", ppoa, aaaa);
     }
 
     [TestMethod]
@@ -294,24 +389,7 @@ public sealed class HalloweenDecorationTests
     static void AssertPublished(WorldItem item, Session session)
     {
         var body = session.Bodies.OfType<SimpleItemFullUpdateMessage>().Single(message => message.Identity == item.Identity);
-        Assert.AreEqual(IdentityType.Terminal, body.Identity.Type);
-        Assert.AreEqual(0, body.Identitytype, "An ownerless runtime object must transmit its own position/rotation.");
-        Assert.AreEqual(0, body.Instance);
-        Assert.AreEqual(Identity.None, body.Owner);
-        Assert.AreEqual(665, body.Playfield);
-        Assert.AreEqual(item.Position.xf, body.Coordinate.X);
-        Assert.AreEqual(item.Position.yf, body.Coordinate.Y);
-        Assert.AreEqual(item.Position.zf, body.Coordinate.Z);
-        Assert.AreEqual(item.Rotation.yf, body.Heading.Y);
-        Assert.AreEqual(item.Rotation.wf, body.Heading.W);
-        Assert.AreEqual(item.Template.Name + "\0", body.Name);
-        Dictionary<CharacterStat, uint> stats = body.Stats.ToDictionary(row => row.Value1, row => row.Value2);
-        Assert.AreEqual((uint)item.LowId, stats[CharacterStat.StaticInstance]);
-        Assert.AreEqual((uint)item.LowId, stats[CharacterStat.ACGItemTemplateID]);
-        Assert.AreEqual((uint)item.HighId, stats[CharacterStat.ACGItemTemplateID2]);
-        Assert.AreEqual((uint)item.Quality, stats[CharacterStat.ACGItemLevel]);
-        uint visibleFlags = unchecked((uint)(ItemFlags.Visible | ItemFlags.TellCollision | ItemFlags.DisableStatelCollision));
-        Assert.AreEqual(visibleFlags, stats[CharacterStat.Flags] & visibleFlags);
+        AssertSpawnBody(item, body);
 
         byte[] packet = session.Packets[session.Bodies.IndexOf(body)];
         using var stream = new MemoryStream(packet);
@@ -329,11 +407,35 @@ public sealed class HalloweenDecorationTests
             decoded.Stats.Select(row => (row.Value1, row.Value2)).ToArray());
     }
 
-    static Session Observe(HalloweenActivationTests.World world)
+    static void AssertSpawnBody(WorldItem item, SimpleItemFullUpdateMessage body)
+    {
+        Assert.AreEqual(IdentityType.Terminal, body.Identity.Type);
+        Assert.AreEqual(item.Identity, body.Identity);
+        Assert.AreEqual(0, body.Identitytype, "An ownerless runtime object must transmit its own position/rotation.");
+        Assert.AreEqual(0, body.Instance);
+        Assert.AreEqual(Identity.None, body.Owner);
+        Assert.AreEqual(item.Playfield!.Identity.Instance, body.Playfield);
+        Assert.AreEqual(item.Position.xf, body.Coordinate.X);
+        Assert.AreEqual(item.Position.yf, body.Coordinate.Y);
+        Assert.AreEqual(item.Position.zf, body.Coordinate.Z);
+        Assert.AreEqual(item.Rotation.yf, body.Heading.Y);
+        Assert.AreEqual(item.Rotation.wf, body.Heading.W);
+        Assert.AreEqual(item.Template.Name + "\0", body.Name);
+        Dictionary<CharacterStat, uint> stats = body.Stats.ToDictionary(row => row.Value1, row => row.Value2);
+        Assert.AreEqual((uint)item.LowId, stats[CharacterStat.StaticInstance]);
+        Assert.AreEqual((uint)item.LowId, stats[CharacterStat.ACGItemTemplateID]);
+        Assert.AreEqual((uint)item.HighId, stats[CharacterStat.ACGItemTemplateID2]);
+        Assert.AreEqual((uint)item.Quality, stats[CharacterStat.ACGItemLevel]);
+        uint visibleFlags = unchecked((uint)(ItemFlags.Visible | ItemFlags.TellCollision | ItemFlags.DisableStatelCollision));
+        Assert.AreEqual(visibleFlags, stats[CharacterStat.Flags] & visibleFlags);
+
+    }
+
+    static Session Observe(HalloweenActivationTests.World world, Vector3? position = null)
     {
         Player player = TestWorld.CreatePlayer(700);
         player.Playfield = world.Playfield;
-        player.Position = new Vector3(41, 8, 93);
+        player.Position = position ?? new Vector3(41, 8, 93);
         var session = new Session();
         player.Session = session;
         session.BindPlayer(player);
@@ -389,7 +491,7 @@ public sealed class HalloweenDecorationTests
             using var stream = new MemoryStream();
             new MessageSerializer().Serialize(stream, new Message
             {
-                Header = new Header { MessageId = 0xdfdf, PacketType = body.PacketType, Unknown = 1, Sender = 665, Receiver = Player!.Identity.Instance },
+                Header = new Header { MessageId = 0xdfdf, PacketType = body.PacketType, Unknown = 1, Sender = Player!.Playfield!.Identity.Instance, Receiver = Player.Identity.Instance },
                 Body = body
             });
             Bodies.Add(body);
