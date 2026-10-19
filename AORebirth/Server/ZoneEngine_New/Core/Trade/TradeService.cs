@@ -98,8 +98,18 @@ namespace ZoneEngine_New.Core.Trade
                 return false;
             }
 
-            if (HasSession(player))
+            // Using the shop that is already open closes it, as a second click on the vendor does live; a different
+            // trade gives way to the new shop.
+            if (TryGetSession(player, out TradeSession open))
+            {
+                if (open.Kind == TradeKind.Shop && ReferenceEquals(open.Machine, machine))
+                {
+                    Close(open, "shop used again");
+                    return true;
+                }
+
                 Cancel(player, "opening another trade");
+            }
 
             int templateId = machine.Template.Id;
             if (!string.IsNullOrEmpty(machine.Stock.ConfigurationUnavailableReason))
