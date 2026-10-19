@@ -193,6 +193,7 @@ namespace ZoneEngine_New.Core.Playfield
         private readonly SpawnService _spawnService;
         private readonly IGameData _gameData;
         private readonly IZoneLogger _logger;
+        private readonly bool _halloweenEnabled;
         private readonly Dictionary<int, List<HashSpawnPoint>> _pointsByCell = new();
         private readonly List<HashSpawnPoint> _allPoints = new();
         private readonly Dictionary<Dynel, HashSpawnPoint> _pointBySpawned = new();
@@ -204,7 +205,8 @@ namespace ZoneEngine_New.Core.Playfield
             Playfield playfield,
             SpawnService spawnService,
             IGameData gameData,
-            IZoneLogger logger)
+            IZoneLogger logger,
+            GameplaySettings? gameplay = null)
         {
             ArgumentNullException.ThrowIfNull(playfield);
             ArgumentNullException.ThrowIfNull(spawnService);
@@ -215,6 +217,7 @@ namespace ZoneEngine_New.Core.Playfield
             _spawnService = spawnService;
             _gameData = gameData;
             _logger = logger;
+            _halloweenEnabled = gameplay?.Events.Halloween.Enabled ?? false;
         }
 
         internal int PointCount => _allPoints.Count;
@@ -587,12 +590,18 @@ namespace ZoneEngine_New.Core.Playfield
                 string? name = events[i]?.Name;
                 if (string.IsNullOrEmpty(name))
                     continue;
-                if (!events[i].Active)
+                if (!events[i].Active || (!_halloweenEnabled && IsHalloweenEvent(name)))
                     return true;
             }
 
             return false;
         }
+
+        // Exact event identities from Spawns.json; do not classify unrelated events by a name prefix.
+        internal static bool IsHalloweenEvent(string name) => name is
+            "halloween_all" or "halloween2019_all" or "halloween_uph" or
+            "halloween_decor" or "halloween_pvp_uph" or "halloween_pvp_uph_boss" or
+            "halloween_quests" or "halloween_fc_shop" or "halloween_buttons";
 
         private static SpawnSite[] BuildSites(PlayfieldSpawnEntry entry, Vector3 primaryPosition)
         {
