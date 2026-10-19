@@ -177,8 +177,8 @@ public sealed class HalloweenDecorationTests
     }
 
     [TestMethod]
-    [DataRow(800, 18)]
-    [DataRow(655, 13)]
+    [DataRow(800, 20)]
+    [DataRow(655, 15)]
     public void ActualPrivateBoundDecorationsRespectGlobalSwitchAndSpawnOnlyTheirAuthoredTemplates(int playfieldId, int expected)
     {
         ItemTemplateCatalog catalog = RealCatalog.Value;
