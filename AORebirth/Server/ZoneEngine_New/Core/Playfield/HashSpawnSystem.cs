@@ -283,7 +283,14 @@ namespace ZoneEngine_New.Core.Playfield
                     continue;
                 }
 
-                bool isStatic = _gameData.IsStaticSpawnHash(spawnHash);
+                if (entry.StaticTemplateId is int templateId && !_spawnService.HasStaticTemplate(templateId))
+                {
+                    _logger.Warn($"Skipping static placement hash={spawnHash}: template={templateId} not found");
+                    skipped++;
+                    continue;
+                }
+
+                bool isStatic = entry.StaticTemplateId.HasValue || _gameData.IsStaticSpawnHash(spawnHash);
                 bool isMob = !isStatic && HasSpawnableMob(spawnHash, entry.MinLevel);
                 if (!isMob && !isStatic)
                 {
@@ -908,7 +915,10 @@ namespace ZoneEngine_New.Core.Playfield
         private int SpawnStaticBranches(HashSpawnPoint point, int? level)
         {
             var instances = new List<HashInstance>();
-            _gameData.CollectHashSpawns(point.HashText, instances);
+            if (point.Source.StaticTemplateId is int templateId)
+                instances.Add(new HashInstance(point.HashText, new[] { templateId }));
+            else
+                _gameData.CollectHashSpawns(point.HashText, instances);
             int spawned = 0;
             for (int i = 0; i < instances.Count; i++)
             {

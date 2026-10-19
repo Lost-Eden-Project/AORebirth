@@ -64,6 +64,9 @@ namespace AORebirth.Core.GameData
         public PlayfieldRotationSpawnPoint[] AdditionalPoints { get; set; }
 
         public PlayfieldHashSpawnExtensionBlock Extensions { get; set; }
+
+        /// <summary>Optional item template binding for this placement only; absent uses the hash catalog.</summary>
+        public int? StaticTemplateId { get; set; }
     }
 
     public sealed class PlayfieldRotationSpawnPoint

@@ -278,7 +278,7 @@ public sealed class HalloweenActivationTests
         public void Dispose() => Directory.Delete(Root, true);
     }
 
-    sealed class World : IDisposable
+    internal sealed class World : IDisposable
     {
         readonly ServiceProvider _services;
         internal Playfield Playfield { get; } = Blank<Playfield>();
@@ -286,30 +286,32 @@ public sealed class HalloweenActivationTests
         internal PlayfieldLocality Locality { get; }
         internal HashSpawnSystem System { get; }
         internal GameDataStore Data { get; }
+        internal SpawnService Spawns { get; }
         internal List<HashSpawnPoint> Points => (List<HashSpawnPoint>)typeof(HashSpawnSystem).GetField("_allPoints", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(System)!;
-        internal World(string root, bool enabled, int id = 665) : this(root, Settings(enabled), id) { }
-        internal World(string root, GameplaySettings settings, int id = 665)
+        internal World(string root, bool enabled, int id = 665, IItemTemplateCatalog? itemCatalog = null, IItemBuilder? itemBuilder = null)
+            : this(root, Settings(enabled), id, itemCatalog, itemBuilder) { }
+        internal World(string root, GameplaySettings settings, int id = 665, IItemTemplateCatalog? itemCatalog = null, IItemBuilder? itemBuilder = null)
         {
             Field(Playfield, "<Identity>k__BackingField", new Identity { Type = IdentityType.Playfield2, Instance = id });
             Field(Playfield, "_pendingStatRebases", new ConcurrentDictionary<Character, byte>());
             Field(Playfield, "_lifecycleSync", new Lock());
             Data = new GameDataStore(new StubLogger(), null, root);
             Locality = new PlayfieldLocality(id, Data.GetPlayfieldMetaData(id));
-            var items = new StubItemBuilder();
-            var catalog = new StubCatalog();
+            IItemBuilder items = itemBuilder ?? new StubItemBuilder();
+            IItemTemplateCatalog catalog = itemCatalog ?? new StubCatalog();
             var minter = new HashItemMinter(Data, catalog, items);
             var moves = new InventoryMoveService(new StubLogger(), Blank<InventoryFlushService>(), Blank<InventoryActionService>());
             var activation = new NpcContentActivationService(Playfield, Registry, Locality, items, catalog, Data);
             _services = new ServiceCollection()
                 .AddSingleton(Registry).AddSingleton(Locality).AddSingleton<IGameData>(Data)
                 .AddSingleton<IInventoryRepository>(new StubInventoryRepository())
-                .AddSingleton<IItemBuilder>(items).AddSingleton(new WorldSimulationAccess())
+                .AddSingleton<IItemBuilder>(items).AddSingleton<IItemTemplateCatalog>(catalog).AddSingleton(new WorldSimulationAccess())
                 .AddSingleton(moves).AddSingleton(activation).AddSingleton(settings)
                 .BuildServiceProvider();
             Field(Playfield, "_serviceProvider", _services);
-            var spawns = new SpawnService(_services, Registry, new StubLogger(), Playfield, Blank<PlayfieldManager>(),
+            Spawns = new SpawnService(_services, Registry, new StubLogger(), Playfield, Blank<PlayfieldManager>(),
                 Data, items, minter, Blank<InventoryFlushService>(), Blank<TradeService>(), Blank<CharacterSnapshotService>());
-            System = new HashSpawnSystem(Playfield, spawns, Data, new StubLogger(), settings);
+            System = new HashSpawnSystem(Playfield, Spawns, Data, new StubLogger(), settings);
             System.Initialize(Locality);
         }
         internal void Tick(HashSpawnPoint point) => Invoke(System, "OnCellTick", point.CellId);

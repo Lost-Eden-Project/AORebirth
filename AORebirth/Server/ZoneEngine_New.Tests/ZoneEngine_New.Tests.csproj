@@ -70,6 +70,8 @@
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />
     <Compile Include="HalloweenActivationTests.cs" />
+    <Compile Include="HalloweenDecorationTests.cs" />
+    <Compile Include="WorldItemNameTests.cs" />
     <Compile Include="SpawnHeadingTests.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(LoginCharacterCreationFocusedTests)' == 'true'">
