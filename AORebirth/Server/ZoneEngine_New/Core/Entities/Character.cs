@@ -111,7 +111,10 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public SkillLocks NanoLineLocks { get; } = new();
 
-        /// <summary>Locks <paramref name="nanoStrain"/> for <paramref name="durationSeconds"/>; zero or less clears it.</summary>
+        /// <summary>
+        /// Locks <paramref name="nanoStrain"/> for <paramref name="durationSeconds"/>; zero or less clears it. A nano line
+        /// cooldown is the nano's own: SkillLockModifier never scales it (only <see cref="LockSkill"/> does).
+        /// </summary>
         public void LockNanoLine(int nanoStrain, int durationSeconds, DateTime nowUtc)
         {
             NanoLineLocks.Lock(nanoStrain, durationSeconds, nowUtc);

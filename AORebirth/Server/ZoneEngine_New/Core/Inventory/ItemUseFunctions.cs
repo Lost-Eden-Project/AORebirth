@@ -504,8 +504,9 @@ namespace ZoneEngine_New.Core.Inventory
             int seconds = locked.LockSkill(statId, durationSeconds, DateTime.UtcNow);
 
             // Health and Nano Stim LockSkill [123, 40] shows as SpecialUsed, then SpecialAvailable when it runs out.
+            // The client scales the duration by SkillLockModifier itself: it is told the scripted one.
             if (locked is Player player)
-                player.ShowSkillLock(statId, seconds);
+                player.ShowSkillLock(statId, durationSeconds, seconds);
 
             return true;
         }

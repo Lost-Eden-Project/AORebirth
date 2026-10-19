@@ -60,7 +60,8 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
             }
 
-            player.ShowSkillLock(computerLiteracy, player.LockSkill(computerLiteracy, DropLockSeconds, now));
+            // The client scales the duration by SkillLockModifier itself: it is told the unscaled one.
+            player.ShowSkillLock(computerLiteracy, DropLockSeconds, player.LockSkill(computerLiteracy, DropLockSeconds, now));
 
             if (slot.Type != IdentityType.Inventory
                 || !InventoryActionService.TryResolveOwnedSlot(player, slot, out _, out Item item)

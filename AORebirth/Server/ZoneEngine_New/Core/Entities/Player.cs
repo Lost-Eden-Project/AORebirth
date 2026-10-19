@@ -280,9 +280,16 @@ namespace ZoneEngine_New.Core.Entities
         /// Parameter2 = seconds; capture 2026-10-02T15:43:13Z), then SpecialAvailable when it runs out
         /// (capture 2026-10-02T16:41:09Z).
         /// </summary>
-        public void ShowSkillLock(int statId, int seconds)
+        public void ShowSkillLock(int statId, int seconds) => ShowSkillLock(statId, seconds, seconds);
+
+        /// <summary>
+        /// <see cref="ShowSkillLock(int, int)"/> for a lock scaled by SkillLockModifier: the client applies the modifier to
+        /// SpecialUsed itself (382 = -30 turned a 40 s Health and Nano Stim lock sent as 28 s into ~19 s), so it is sent
+        /// the unscaled <paramref name="clientSeconds"/>; SpecialAvailable follows the server's <paramref name="lockedSeconds"/>.
+        /// </summary>
+        public void ShowSkillLock(int statId, int clientSeconds, int lockedSeconds)
         {
-            if (seconds <= 0 || Session == null)
+            if (lockedSeconds <= 0 || Session == null)
                 return;
 
             Session.Send(new CharacterActionMessage
@@ -291,9 +298,9 @@ namespace ZoneEngine_New.Core.Entities
                 Action = CharacterActionType.SpecialUsed,
                 Target = Identity.None,
                 Parameter1 = statId,
-                Parameter2 = seconds
+                Parameter2 = clientSeconds
             });
-            ScheduleSpecialAvailable(statId, DateTime.UtcNow.AddSeconds(seconds));
+            ScheduleSpecialAvailable(statId, DateTime.UtcNow.AddSeconds(lockedSeconds));
         }
 
         /// <summary>The character this player's client last had a /follow acknowledged for.</summary>
