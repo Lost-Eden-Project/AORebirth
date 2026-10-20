@@ -113,19 +113,36 @@ namespace ZoneEngine_New.Core.Entities
             if (_cashClaimed)
                 return;
 
-            _cashClaimed = true;
-
             if (!SourceStats.TryGetValue(CharacterStat.Cash, out int cash) || cash <= 0)
+            {
+                _cashClaimed = true;
                 return;
-
-            SourceStats[CharacterStat.Cash] = 0;
+            }
 
             int current = Math.Max(0, player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base));
+            int taken = Math.Min(cash, Characters.CashLimit.Room(current));
+            if (taken < cash)
+            {
+                // At the credit cap: only what fits is taken and the rest stays on the corpse. The client adds the
+                // whole amount itself, so it is told the real total.
+                SourceStats[CharacterStat.Cash] = cash - taken;
+                player.Stats.Set(CharacterStat.Cash, current + taken, StatDetail.Base, dirty: true);
+                player.FlushDirtyStats();
+                player.Session?.Send(new SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChatTextMessage
+                {
+                    Identity = player.Identity,
+                    Text = "You cannot carry more than "
+                        + Characters.CashLimit.Max.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " credits.",
+                    Unknown1 = 0,
+                    Unknown2 = 0,
+                    Unknown3 = 0
+                });
+                return;
+            }
 
-            long sum = (long)current + cash;
-            int newCash = sum > int.MaxValue ? int.MaxValue : (int)sum;
-
-            player.Stats.Set(CharacterStat.Cash, newCash, StatDetail.Base, dirty: false); // Client somehow knows?
+            _cashClaimed = true;
+            SourceStats[CharacterStat.Cash] = 0;
+            player.Stats.Set(CharacterStat.Cash, current + cash, StatDetail.Base, dirty: false); // The client adds it itself.
         }
 
         public Identity Owner { get; }

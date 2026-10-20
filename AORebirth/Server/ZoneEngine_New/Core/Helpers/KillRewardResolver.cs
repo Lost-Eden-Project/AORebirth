@@ -22,9 +22,15 @@ namespace ZoneEngine_New.Core.Helpers
         readonly Dictionary<int, int> _damage = new();
         readonly Dictionary<int, Identity> _identities = new();
         readonly Dictionary<int, int> _firstCreditOrder = new();
+        // Damagers that are NPCs (a guard, an NPC that hates this one): their damage counts in the total, so the
+        // players' share is what they really did, but it never earns anyone anything.
+        readonly HashSet<int> _npcDamagers = new();
         int _nextOrder;
 
-        public void Record(Identity identity, int hpRemoved)
+        /// <summary>Damage a player (or a player's pet, credited to its owner) did.</summary>
+        public void Record(Identity identity, int hpRemoved) => Record(identity, hpRemoved, isPlayer: true);
+
+        public void Record(Identity identity, int hpRemoved, bool isPlayer)
         {
             int instance = identity.Instance;
             if (instance == 0 || hpRemoved <= 0)
@@ -35,6 +41,8 @@ namespace ZoneEngine_New.Core.Helpers
                 _identities[instance] = identity;
                 _firstCreditOrder[instance] = _nextOrder++;
                 _damage[instance] = hpRemoved;
+                if (!isPlayer)
+                    _npcDamagers.Add(instance);
                 return;
             }
 
@@ -46,8 +54,11 @@ namespace ZoneEngine_New.Core.Helpers
             _damage.Clear();
             _identities.Clear();
             _firstCreditOrder.Clear();
+            _npcDamagers.Clear();
             _nextOrder = 0;
         }
+
+        bool IsPlayerDamager(int instance) => !_npcDamagers.Contains(instance);
 
         public bool TryGetLootWinner(out Identity identity)
         {
@@ -69,7 +80,8 @@ namespace ZoneEngine_New.Core.Helpers
                 winner = pair.Key;
             }
 
-            if (winner == 0)
+            // An NPC that did the most damage holds no loot rights, and nobody else gets them either.
+            if (winner == 0 || !IsPlayerDamager(winner))
                 return false;
 
             identity = _identities[winner];
@@ -91,7 +103,7 @@ namespace ZoneEngine_New.Core.Helpers
 
             foreach (KeyValuePair<int, int> pair in _damage)
             {
-                if (pair.Value * 100L >= total * MinimumContributionPercent)
+                if (IsPlayerDamager(pair.Key) && pair.Value * 100L >= total * MinimumContributionPercent)
                     qualifiers.Add(pair.Key);
             }
 
@@ -99,15 +111,17 @@ namespace ZoneEngine_New.Core.Helpers
                 return qualifiers;
 
             int max = 0;
-            foreach (int damage in _damage.Values)
-            {
-                if (damage > max)
-                    max = damage;
-            }
-
             foreach (KeyValuePair<int, int> pair in _damage)
             {
-                if (pair.Value == max)
+                if (IsPlayerDamager(pair.Key) && pair.Value > max)
+                    max = pair.Value;
+            }
+
+            if (max == 0)
+                return qualifiers;
+            foreach (KeyValuePair<int, int> pair in _damage)
+            {
+                if (IsPlayerDamager(pair.Key) && pair.Value == max)
                     qualifiers.Add(pair.Key);
             }
 
@@ -118,7 +132,14 @@ namespace ZoneEngine_New.Core.Helpers
             => _identities.TryGetValue(playerInstance, out identity);
 
         /// <summary>Every player with recorded damage.</summary>
-        public List<int> GetDamagerInstances() => new(_damage.Keys);
+        public List<int> GetDamagerInstances()
+        {
+            var players = new List<int>(_damage.Count);
+            foreach (int instance in _damage.Keys)
+                if (IsPlayerDamager(instance))
+                    players.Add(instance);
+            return players;
+        }
 
         /// <summary>
         /// Splits <paramref name="pool"/> between award groups: a team pools its members' damage, a player outside a team
@@ -137,9 +158,20 @@ namespace ZoneEngine_New.Core.Helpers
                 return shares;
 
             long total = 0;
-            foreach (int damage in _damage.Values)
-                total += damage;
-            if (total <= 0)
+            long playerTotal = 0;
+            foreach (KeyValuePair<int, int> pair in _damage)
+            {
+                total += pair.Value;
+                if (IsPlayerDamager(pair.Key))
+                    playerTotal += pair.Value;
+            }
+            if (total <= 0 || playerTotal <= 0)
+                return shares;
+
+            // Players earn only for the part of the kill they did: NPC damage (a guard finishing what a player tagged)
+            // takes its share of the pool with it.
+            pool = (int)(pool * playerTotal / total);
+            if (pool <= 0)
                 return shares;
 
             // Group key -> pooled damage and its highest damager (ties to the earliest).

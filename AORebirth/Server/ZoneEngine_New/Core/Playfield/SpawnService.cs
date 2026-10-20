@@ -759,6 +759,14 @@ namespace ZoneEngine_New.Core.Playfield
             {
                 _services.GetRequiredService<PlayerHydrator>().Apply(player, hydration);
                 player.SaveState.SeedPersisted(character, hydration.Stats);
+                int savedCash = player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
+                if (savedCash > Characters.CashLimit.Max)
+                {
+                    player.Stats.Set(CharacterStat.Cash, Characters.CashLimit.Max, StatDetail.Base, dirty: true);
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "Character {0} held {1} credits, above the {2} cap; reduced to the cap", characterId, savedCash,
+                        Characters.CashLimit.Max));
+                }
                 player.Position = _playfield.SnapFeetToFloor(player.Position);
                 player.Rebase();
                 PlayerSpawnPayloadValidator.RequireValid(player);
@@ -1139,6 +1147,9 @@ namespace ZoneEngine_New.Core.Playfield
             if (!ReferenceEquals(player.Playfield, _playfield))
                 throw new InvalidOperationException("Player is not on this playfield.");
 
+            // Zoning ends a /terminate countdown.
+            player.CancelSelfTermination();
+
             // Pets zone with their owner, as the same NPCs: they leave here and arrive with it.
             _playfield.GetRequiredService<Pets.PetService>().LeaveWithOwner(player);
 
@@ -1445,6 +1456,7 @@ namespace ZoneEngine_New.Core.Playfield
         private void DespawnPlayer(Player player)
         {
             int characterId = player.Identity.Instance;
+            player.CancelSelfTermination();
             // Logging out sends the player's pets away.
             // Charmed NPCs stay here, their own again, and do not turn on a player who is gone.
             _playfield.GetRequiredService<Pets.PetService>().DismissAll(player, "owner logged out", charmTurnsOnOwner: false);

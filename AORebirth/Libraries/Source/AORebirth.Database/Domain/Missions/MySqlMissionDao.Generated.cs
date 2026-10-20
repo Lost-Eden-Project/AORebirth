@@ -225,7 +225,7 @@ namespace AORebirth.Database.Domain.Missions
                     WriteGeneratedRewardLedger(connection, transaction, binding.OwnerId, GeneratedQuestKey(binding.QuestType, binding.QuestInstance), "token", "GeneratedMissionToken", token.InstanceId.ToString(CultureInfo.InvariantCulture), completion.CompletedAtUtcTicks);
                 }
                 else if (completion.TokenItem != null) throw new InvalidOperationException("Unresolved/explicit-none token claim cannot grant an item.");
-                int cash = (int)System.Math.Min(int.MaxValue, (long)completion.CurrentCash + offer.CashReward);
+                int cash = ClampCash((long)completion.CurrentCash + offer.CashReward);
                 int xp = completion.FinalExperience;
                 WriteGeneratedStat(connection, transaction, completion.CharacterType, completion.OwnerId, (int)StatIds.cash, cash);
                 foreach (var stat in completion.ProgressionStats)
@@ -309,7 +309,7 @@ namespace AORebirth.Database.Domain.Missions
                     || nowUtcTicks < corpse.DiedAtUtcTicks + 600 * System.TimeSpan.TicksPerMillisecond)
                     return GeneratedResult(GeneratedMissionResultStatus.Rejected, "Exact durable mission corpse is unavailable.");
                 if (corpse.CorpseClaimed) return new GeneratedMissionResult { Status = GeneratedMissionResultStatus.AlreadyApplied, Binding = binding };
-                int cash = (int)System.Math.Min(int.MaxValue, (long)currentCash + corpse.CorpseCredits);
+                int cash = ClampCash((long)currentCash + corpse.CorpseCredits);
                 WriteGeneratedStat(connection, transaction, 50000, ownerId, 61, cash);
                 WriteGeneratedRewardLedger(connection, transaction, ownerId, GeneratedQuestKey(questType, questInstance), "corpse:" + runtimeNpcInstance.ToString(CultureInfo.InvariantCulture), "credits", corpse.CorpseCredits.ToString(CultureInfo.InvariantCulture), nowUtcTicks);
                 connection.Execute("UPDATE generatedmissionobjects SET CorpseClaimed=1,LootResolved=1,Version=Version+1,UpdatedAtUtcTicks=@nowUtcTicks WHERE OwnerId=@ownerId AND QuestType=@questType AND QuestInstance=@questInstance AND RuntimeType=50000 AND RuntimeInstance=@runtimeNpcInstance", new { ownerId, questType, questInstance, runtimeNpcInstance, nowUtcTicks }, transaction);

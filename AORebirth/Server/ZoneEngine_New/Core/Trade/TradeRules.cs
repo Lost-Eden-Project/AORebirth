@@ -15,16 +15,10 @@ namespace ZoneEngine_New.Core.Trade
     /// </summary>
     public static class TradeRules
     {
-        /// <summary>Largest credit total the client renders correctly.</summary>
-        public const int MaxCash = 999999999;
+        /// <summary>Most credits a character may hold (Gameplay.json inventory.maxCredits).</summary>
+        public static int MaxCash => ZoneEngine_New.Core.Characters.CashLimit.Max;
 
-        public static int ClampCash(long cash)
-        {
-            if (cash < 0)
-                return 0;
-
-            return cash > MaxCash ? MaxCash : (int)cash;
-        }
+        public static int ClampCash(long cash) => ZoneEngine_New.Core.Characters.CashLimit.Clamp(cash);
 
         public static bool IsNoDrop(Item item)
         {

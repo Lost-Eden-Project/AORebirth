@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.Teams
     using ZoneEngine_New.Core.MessageHandlers;
     using ZoneEngine_New.Core.Network;
 
-    /// <summary>The N3 ChatCmd route: /team, /invite and /stuck; never consumes ordinary vicinity text.</summary>
+    /// <summary>The N3 ChatCmd route: /team, /invite, /stuck and /terminate; never consumes ordinary vicinity text.</summary>
     public sealed class TeamChatMessageHandler(TeamService teams, Characters.StuckService stuck) : IMessageHandler<ChatCmdMessage>
     {
         public Type MessageBodyType => typeof(ChatCmdMessage);
@@ -28,6 +28,16 @@ namespace ZoneEngine_New.Core.Teams
                 teams.TryHandleChatCommand(player, ["team", "invite", args[1]]);
             else if (args[0].Equals("stuck", StringComparison.OrdinalIgnoreCase))
                 stuck.TryUnstick(player);
+            else if (args[0].Equals("terminate", StringComparison.OrdinalIgnoreCase))
+            {
+                // Retail: this line, then the death a minute later (capture 2026-10-20T18:11:17Z).
+                if (player.BeginSelfTermination(DateTime.UtcNow))
+                    session.Send(new ChatTextMessage
+                    {
+                        Identity = player.Identity,
+                        Text = "Self termination started. Termination will activate in 1 minute."
+                    });
+            }
             else
                 player.Logger.Warn("Unsupported ChatCmd command=" + args[0]);
         }

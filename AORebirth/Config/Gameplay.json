@@ -56,7 +56,8 @@
     "healBelowPercent": 75
   },
   "inventory": {
-    "overflowCapacity": 20
+    "overflowCapacity": 20,
+    "maxCredits": 1000000000
   },
   "events": {
     "halloween": {

@@ -459,20 +459,96 @@ namespace ZoneEngine_New.Core.Ai
 
         public void ScanProximity()
         {
-            if (!Npc.Attackable)
-                return;
-            if (!NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility)))
-                return;
-            if (Npc.Playfield == null)
+            if (!Npc.Attackable || Npc.Playfield == null || _evading || Npc.IsPacified)
                 return;
 
-            // Only this NPC's cell and the cells touching it (wider only for an aggro range longer than a cell).
+            bool hostile = NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility));
+            bool guard = Npc.MobTemplate?.Has(Mobs.NpcFeature.Guard) == true;
+            IReadOnlySet<int>? hated = HatedFamilies();
+            if (!hostile && !guard && hated == null)
+                return;
+
+            // Only this NPC's cell and the cells touching it (wider only for an aggro range longer than a cell). The same
+            // range is how far it notices players, defends them as a guard, and spots NPCs it hates.
             var locality = Npc.Playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>();
             float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats, locality.Grid.IsOutdoor);
-            locality.CollectNearby(Npc, range, _nearbyPlayers);
-            for (int i = 0; i < _nearbyPlayers.Count; i++)
-                TryProximityAggro(_nearbyPlayers[i]);
-            _nearbyPlayers.Clear();
+            if (hostile)
+            {
+                locality.CollectNearby(Npc, range, _nearbyPlayers);
+                for (int i = 0; i < _nearbyPlayers.Count; i++)
+                    TryProximityAggro(_nearbyPlayers[i]);
+                _nearbyPlayers.Clear();
+            }
+
+            if (guard || hated != null)
+            {
+                // Its own list: answering a call for help below collects into _nearbyNpcs.
+                locality.CollectNearby(Npc, range, _scanNpcs);
+                for (int i = 0; i < _scanNpcs.Count; i++)
+                    TryNpcAggro(_scanNpcs[i], range, guard, hated);
+                _scanNpcs.Clear();
+            }
+        }
+
+        /// <summary>
+        /// The NPC families this NPC attacks on sight (GameData MonsterCombatRules.json "Hates", by its spawn hash or
+        /// its template's); null when none. Looked up once.
+        /// </summary>
+        IReadOnlySet<int>? HatedFamilies()
+        {
+            if (_hatedLookedUp)
+                return _hated;
+            _hatedLookedUp = true;
+            if (Pet == null && Npc.Playfield?.GetService<GameData.IGameData>()?.RootPath is string root && root.Length > 0)
+            {
+                var catalog = Mobs.MonsterCombatRulesCatalog.For(root);
+                if (catalog.TryGet(Npc.SpawnHash, out Mobs.MonsterCombatRules rules) && rules.HatedFamilies is { } bySpawn)
+                    _hated = bySpawn;
+                else if (catalog.TryGet(Npc.MobTemplate?.Hash, out rules))
+                    _hated = rules.HatedFamilies;
+            }
+
+            return _hated;
+        }
+
+        IReadOnlySet<int>? _hated;
+        bool _hatedLookedUp;
+
+        /// <summary>The NPC this one was fighting started resetting and nobody else is left: reset as well.</summary>
+        bool _resetForTargetReset;
+        readonly List<NpcCharacter> _scanNpcs = new();
+
+        /// <summary>
+        /// Unprovoked aggro on another NPC: a guard on one fighting a player or a player's pet, and any NPC on one of a
+        /// family it hates. Same terms as a player: in range, in sight, reachable. Players' pets are never targets.
+        /// </summary>
+        void TryNpcAggro(NpcCharacter other, float range, bool guard, IReadOnlySet<int>? hated)
+        {
+            if (ReferenceEquals(other, Npc) || other.IsDead || other.IsEvading || other.PetOwner != null
+                || Hate.Contains(other.Identity))
+                return;
+
+            bool defend = guard && IsFightingAPlayer(other);
+            bool hates = hated != null && hated.Contains(other.Stats.GetOrZero(CharacterStat.NPCFamily));
+            if (!defend && !hates)
+                return;
+            if (!ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(Npc, other) || Npc.GetEdgeDistanceTo(other) > range)
+                return;
+            if (!Npc.HasLineOfSightTo(other) || !HasChance(other))
+                return;
+
+            Hate.Add(other.Identity, NpcAiRules.ProximityHate);
+            CallForHelp(other.Identity);
+        }
+
+        /// <summary>The NPC is attacking a player or a player's pet.</summary>
+        bool IsFightingAPlayer(NpcCharacter other)
+        {
+            Identity target = other.FightingTarget;
+            if (target.Instance == 0 || Npc.Playfield == null
+                || !Npc.Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel))
+                return false;
+            return dynel is Player { IsDead: false } || dynel is NpcCharacter { PetOwner: Player, IsDead: false };
         }
 
         /// <summary>
@@ -517,8 +593,10 @@ namespace ZoneEngine_New.Core.Ai
             TickStallWatch.Stage("brain.leash", Npc.Identity.Instance);
             // A target whose reach map was too costly to build means this fight cannot be judged: reset now rather
             // than search again (and stop players standing out of reach from farming a stuck mob).
-            bool leash = _evading || _resetForUnreachable || NpcAiRules.ShouldLeash(Hate, Home, Npc.Position, _isEngageable);
+            bool leash = _evading || _resetForUnreachable || (_resetForTargetReset && Hate.IsEmpty)
+                || NpcAiRules.ShouldLeash(Hate, Home, Npc.Position, _isEngageable);
             _resetForUnreachable = false;
+            _resetForTargetReset = false;
             if (leash)
                 BeginEvade();
             _leashing = leash;
@@ -1224,7 +1302,19 @@ namespace ZoneEngine_New.Core.Ai
 
             DynelRegistry registry = Npc.Playfield.GetRequiredService<DynelRegistry>();
             if (registry.TryGet(identity, out Dynel? dynel) && dynel is Character target && !target.IsDead)
-                return target;
+            {
+                if (target is not NpcCharacter { IsEvading: true })
+                    return target;
+
+                // An NPC that is resetting (leashing home) is out of the fight: let it go rather than chase it home.
+                // With nobody else to fight, this NPC gives up too and resets on its next think.
+                Hate.Remove(identity);
+                if (_currentTarget == identity)
+                    _currentTarget = Identity.None;
+                if (Hate.IsEmpty)
+                    _resetForTargetReset = true;
+                return null;
+            }
 
             Hate.Remove(identity);
             if (_currentTarget == identity)

@@ -1880,10 +1880,12 @@ namespace ZoneEngine_New.Core.Entities
             int previousHealth = Math.Max(0, Stats.GetOrZero(CharacterStat.Health));
             int newHealth = Math.Max(0, previousHealth - damage);
             int hpRemoved = previousHealth - newHealth;
-            // A player's pet earns its owner the credit for the damage it does.
+            // A player's pet earns its owner the credit for the damage it does. Damage an NPC does to an NPC (a guard,
+            // an NPC that hates this one) is recorded too: it earns nothing, but it is part of the total, so a player who
+            // only tagged the NPC gets only the share they dealt.
             Character credited = attacker is NpcCharacter { PetOwner: Player petOwner } ? petOwner : attacker;
-            if (hpRemoved > 0 && credited.IsPlayer && !ReferenceEquals(credited, this))
-                _killRewards.Record(credited.Identity, hpRemoved);
+            if (hpRemoved > 0 && !ReferenceEquals(credited, this) && (credited.IsPlayer || !IsPlayer))
+                _killRewards.Record(credited.Identity, hpRemoved, credited.IsPlayer);
 
             // The kill below names the attacker; the Health hook must not die first without one.
             _applyingDamage = true;

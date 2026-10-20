@@ -88,6 +88,12 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
 
         Die = 0x00000098,
 
+        /// <summary>
+        /// Parameter2 = why the client character died, shown as "You died of ...!" (1 self termination .. 7 liquid:
+        /// text 100/410-416; Gamecode.dll FUN_1005b1b8). Sent just before <see cref="Death"/>.
+        /// </summary>
+        DeathReason = 0x00000099,
+
         StartedSneaking = 0x000000A2,
 
         StartSneak = 0x000000A3,

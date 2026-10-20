@@ -152,6 +152,8 @@ namespace ZoneEngine_New.Core.Configuration
                 || Inventory.OverflowCapacity > ZoneEngine_New.Core.Inventory.PlayerInventory.OverflowCapacity)
                 throw new InvalidDataException(path + ": inventory.overflowCapacity must be from 1 to "
                     + ZoneEngine_New.Core.Inventory.PlayerInventory.OverflowCapacity + " (the overflow window's slots).");
+            if (Inventory.MaxCredits < 1)
+                throw new InvalidDataException(path + ": inventory.maxCredits must be from 1 to " + int.MaxValue + ".");
             if (Events == null || Events.Halloween == null)
                 throw new InvalidDataException(path + ": events and events.halloween must be objects.");
         }
@@ -222,6 +224,12 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Most items the overflow window keeps; a new one past this deletes the oldest.</summary>
         public int OverflowCapacity { get; init; } = DefaultOverflowCapacity;
+
+        /// <summary>
+        /// Most credits a character may hold; nothing takes one past it. Above 1,000,000,000 the client's credits
+        /// window stops updating (it ignores larger values), but the server keeps the real amount.
+        /// </summary>
+        public int MaxCredits { get; init; } = ZoneEngine_New.Core.Characters.CashLimit.Default;
     }
 
     /// <summary>

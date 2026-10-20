@@ -358,7 +358,7 @@ public sealed partial class QuestService
                 var values = xp.Stats.Where(pair => !StatCollection.IsRuntimeOnly(pair.Key))
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
                 if (reward?.Credits > 0)
-                    values[CharacterStat.Cash] = (int)Math.Min(int.MaxValue,
+                    values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
                         (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + reward.Credits);
                 if (rewardTemplate.MissionBit is int bit && MissionBits.IsValid(bit))
                 {

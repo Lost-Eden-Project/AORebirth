@@ -133,7 +133,9 @@ namespace ZoneEngine_New.Core.Entities
                         continue;
 
                     spawned.Clear();
-                    minter.RollSpawnIds(entry.Hash, RollQuality(level, entry.LevelMod), spawned);
+                    (int minQuality, int maxQuality) = QualityWindow(level, entry.LevelMod);
+                    minter.RollSpawnIds(
+                        entry.Hash, minQuality, maxQuality, LootRandom.Next(minQuality, maxQuality + 1), spawned);
                     for (int i = 0; i < spawned.Count; i++)
                     {
                         if (into.Count - start >= capacity)
@@ -257,12 +259,13 @@ namespace ZoneEngine_New.Core.Entities
             return LootRandom.Next(1, 101) <= chance;
         }
 
-        static int RollQuality(int level, int levelMod)
+        /// <summary>The QL window a loot row drops in: the mob's level ± LevelMod percent.</summary>
+        static (int Min, int Max) QualityWindow(int level, int levelMod)
         {
             int mod = Math.Max(0, levelMod);
             int min = Math.Max(1, level * (100 - mod) / 100);
             int max = Math.Max(min, level * (100 + mod) / 100);
-            return LootRandom.Next(min, max + 1);
+            return (min, max);
         }
     }
 }

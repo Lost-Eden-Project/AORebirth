@@ -151,7 +151,7 @@ namespace ZoneEngine_New.Core.GameData
             if (string.IsNullOrEmpty(hash) || !_npcTemplates.TryGetLeaf(hash, out NpcLeaf leaf))
                 return false;
 
-            template = NpcTemplateCatalog.Materialize(leaf, leaf.MinLevel);
+            template = NpcTemplateCatalog.Materialize(leaf, leaf.MinLevel, _npcTemplates.RuleFeatures?.Invoke(leaf.Hash));
             return true;
         }
 
@@ -486,6 +486,10 @@ namespace ZoneEngine_New.Core.GameData
             try
             {
                 _npcTemplates = NpcTemplateCatalog.Parse(File.ReadAllText(path));
+                // Behaviour switches (NoCombat, Guard, ...) live in MonsterCombatRules.json beside the templates.
+                string rulesRoot = Path.GetDirectoryName(path)!;
+                _npcTemplates.RuleFeatures = hash =>
+                    Mobs.MonsterCombatRulesCatalog.For(rulesRoot).TryGet(hash, out Mobs.MonsterCombatRules rules) ? rules.Features : null;
                 _logger.Info(
                     string.Format(
                         CultureInfo.InvariantCulture,

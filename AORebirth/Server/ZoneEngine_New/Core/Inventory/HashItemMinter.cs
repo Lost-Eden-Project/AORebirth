@@ -18,6 +18,7 @@ namespace ZoneEngine_New.Core.Inventory
         readonly IItemBuilder _items;
         readonly ConcurrentDictionary<string, QualitySpan[]> _qualitySpans = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<string, LeafRange[]> _leafRanges = new(StringComparer.Ordinal);
+        readonly ConcurrentDictionary<HashInstance, FamilySpan> _familySpans = new(ReferenceEqualityComparer.Instance);
 
         public HashItemMinter(IGameData gameData, IItemTemplateCatalog catalog, IItemBuilder items)
         {
@@ -163,21 +164,68 @@ namespace ZoneEngine_New.Core.Inventory
         /// items (see <see cref="MintSpawns"/>). Appends to <paramref name="into"/>.
         /// </summary>
         public void RollSpawnIds(string hash, int desiredQuality, List<(int LowId, int HighId, int Quality)> into)
+            => RollSpawnIds(hash, desiredQuality, desiredQuality, desiredQuality, into);
+
+        /// <summary>
+        /// One loot roll of <paramref name="hash"/> for the QL window <paramref name="minQuality"/>..<paramref name="maxQuality"/>
+        /// (the mob's level ± the table row's LevelMod), rolled at <paramref name="rolledQuality"/>. An ordinary family drops
+        /// only when its QL range overlaps the window, at the roll clamped into its range. A Special family
+        /// (<see cref="ItemFlags.Special"/>) ignores the window: below its range it drops at its lowest QL, above at its
+        /// highest. Appends to <paramref name="into"/>.
+        /// </summary>
+        public void RollSpawnIds(
+            string hash,
+            int minQuality,
+            int maxQuality,
+            int rolledQuality,
+            List<(int LowId, int HighId, int Quality)> into)
         {
             ArgumentNullException.ThrowIfNull(into);
             if (string.IsNullOrEmpty(hash))
                 return;
 
-            // A random category pick must land on a family whose QL range covers the roll; otherwise the
-            // builder clamps the roll up to the family's minimum (a level 1 mob dropping a QL 15 item).
-            int rollQuality = desiredQuality < 1 ? 1 : desiredQuality;
+            int min = Math.Max(1, minQuality);
+            int max = Math.Max(min, maxQuality);
+            int roll = Math.Clamp(rolledQuality, min, max);
+
+            // A random category pick only lands on families the window can drop.
             var instances = new List<HashInstance>();
-            _gameData.CollectHashSpawns(hash, instances, child => CoversQuality(child, rollQuality));
+            _gameData.CollectHashSpawns(hash, instances, child => CoversWindow(child, min, max));
             for (int i = 0; i < instances.Count; i++)
             {
-                if (TryRollIdsFor(instances[i], desiredQuality, out int lowId, out int highId, out int quality))
+                // A leaf listed directly is not filtered by the pick above.
+                FamilySpan span = GetFamilySpan(instances[i]);
+                if (span.Min > span.Max || (!span.Special && (span.Max < min || span.Min > max)))
+                    continue;
+
+                if (TryRollIdsFor(instances[i], Math.Clamp(roll, span.Min, span.Max), out int lowId, out int highId, out int quality))
                     into.Add((lowId, highId, quality));
             }
+        }
+
+        /// <summary>A leaf family's QL range, and whether any of its templates is Special.</summary>
+        FamilySpan GetFamilySpan(HashInstance instance)
+            => _familySpans.GetOrAdd(instance, BuildFamilySpan);
+
+        FamilySpan BuildFamilySpan(HashInstance instance)
+        {
+            int min = int.MaxValue;
+            int max = int.MinValue;
+            bool special = false;
+            int[] ids = instance.TemplateIds;
+            for (int i = 0; i < ids.Length; i++)
+            {
+                if (ids[i] <= 0)
+                    continue;
+
+                int ql = CatalogQuality(ids[i]);
+                min = Math.Min(min, ql);
+                max = Math.Max(max, ql);
+                special |= _catalog.TryGet(ids[i], out ItemTemplate template)
+                    && ((ItemFlags)template.Flags & ItemFlags.Special) != 0;
+            }
+
+            return new FamilySpan(min, max, special);
         }
 
         /// <summary>Every leaf item family reachable from <paramref name="hash"/>.</summary>
@@ -191,18 +239,17 @@ namespace ZoneEngine_New.Core.Inventory
             => _items.Create(lowId, highId, quality, source);
 
         /// <summary>
-        /// True when some leaf family reachable from <paramref name="hash"/> can be minted at
-        /// <paramref name="quality"/> without clamping: a QL-range family must span it, and a
-        /// single fixed-QL template must not exceed it.
+        /// True when some leaf family reachable from <paramref name="hash"/> can drop for the QL window
+        /// <paramref name="min"/>..<paramref name="max"/>: its QL range overlaps the window, or it is Special.
         /// </summary>
-        bool CoversQuality(string hash, int quality)
+        bool CoversWindow(string hash, int min, int max)
         {
             if (!_qualitySpans.TryGetValue(hash, out QualitySpan[]? spans))
                 spans = GetQualitySpans(hash, new HashSet<string>(StringComparer.Ordinal));
 
             for (int i = 0; i < spans.Length; i++)
             {
-                if (quality >= spans[i].Min && quality <= spans[i].Max)
+                if (spans[i].Min <= max && spans[i].Max >= min)
                     return true;
             }
 
@@ -219,7 +266,10 @@ namespace ZoneEngine_New.Core.Inventory
             QualitySpan[] spans;
             if (_gameData.TryGetHashInstance(hash, out HashInstance instance))
             {
-                spans = new[] { LeafSpan(instance) };
+                FamilySpan family = GetFamilySpan(instance);
+                spans = family.Min > family.Max
+                    ? Array.Empty<QualitySpan>()
+                    : new[] { family.Special ? new QualitySpan(int.MinValue, int.MaxValue) : new QualitySpan(family.Min, family.Max) };
             }
             else if (_gameData.TryGetHashTemplate(hash, out IReadOnlyList<string> children))
             {
@@ -242,30 +292,6 @@ namespace ZoneEngine_New.Core.Inventory
             return spans;
         }
 
-        QualitySpan LeafSpan(HashInstance instance)
-        {
-            int min = int.MaxValue;
-            int max = int.MinValue;
-            int count = 0;
-            int[] ids = instance.TemplateIds;
-            for (int i = 0; i < ids.Length; i++)
-            {
-                if (ids[i] <= 0)
-                    continue;
-
-                int ql = CatalogQuality(ids[i]);
-                min = Math.Min(min, ql);
-                max = Math.Max(max, ql);
-                count++;
-            }
-
-            if (count == 0)
-                return new QualitySpan(int.MaxValue, int.MinValue);
-
-            // A fixed-QL item has no range to violate from above.
-            return min == max ? new QualitySpan(min, int.MaxValue) : new QualitySpan(min, max);
-        }
-
         static QualitySpan[] Merge(List<QualitySpan> spans)
         {
             if (spans.Count == 0)
@@ -286,6 +312,8 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         readonly record struct QualitySpan(int Min, int Max);
+
+        readonly record struct FamilySpan(int Min, int Max, bool Special);
 
         readonly record struct LeafRange(HashInstance Instance, int Min, int Max);
 

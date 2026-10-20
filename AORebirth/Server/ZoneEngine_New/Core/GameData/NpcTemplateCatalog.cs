@@ -41,6 +41,12 @@ namespace ZoneEngine_New.Core.GameData
             _random = random ?? Random.Shared;
         }
 
+        /// <summary>
+        /// A leaf hash's behaviour switches (MonsterCombatRules.json "Features"); null for none. Set by the GameData
+        /// store once it knows its root.
+        /// </summary>
+        public Func<string, IReadOnlyCollection<NpcFeature>?>? RuleFeatures { get; set; }
+
         public int FamilyCount => _families.Count;
 
         public int LeafCount => _leaves.Count;
@@ -117,14 +123,14 @@ namespace ZoneEngine_New.Core.GameData
                 return false;
             if (TryResolveLeaf(hash, level, out NpcLeaf leaf))
             {
-                template = Materialize(leaf, level);
+                template = Materialize(leaf, level, RuleFeatures?.Invoke(leaf.Hash));
                 return true;
             }
 
             if (!CanUseFallback(hash) || !_leaves.TryGetValue(MobTemplate.FallbackHash, out NpcLeaf fallback))
                 return false;
 
-            template = Materialize(fallback, level);
+            template = Materialize(fallback, level, RuleFeatures?.Invoke(fallback.Hash));
             return true;
         }
 
@@ -199,7 +205,7 @@ namespace ZoneEngine_New.Core.GameData
                 return;
 
             if (CanUseFallback(hash) && _leaves.TryGetValue(MobTemplate.FallbackHash, out NpcLeaf fallback))
-                into.Add(Materialize(fallback, level));
+                into.Add(Materialize(fallback, level, RuleFeatures?.Invoke(fallback.Hash)));
         }
 
         void CollectSpawns(string hash, int? level, List<MobTemplate> into, HashSet<string> trail)
@@ -225,7 +231,7 @@ namespace ZoneEngine_New.Core.GameData
                 }
 
                 if (_leaves.TryGetValue(hash, out NpcLeaf? leaf))
-                    into.Add(Materialize(leaf, level));
+                    into.Add(Materialize(leaf, level, RuleFeatures?.Invoke(leaf.Hash)));
             }
             finally
             {
@@ -334,7 +340,7 @@ namespace ZoneEngine_New.Core.GameData
             return found;
         }
 
-        public static MobTemplate Materialize(NpcLeaf leaf, int? desiredLevel)
+        public static MobTemplate Materialize(NpcLeaf leaf, int? desiredLevel, IReadOnlyCollection<NpcFeature>? ruleFeatures = null)
         {
             ArgumentNullException.ThrowIfNull(leaf);
 
@@ -366,7 +372,7 @@ namespace ZoneEngine_New.Core.GameData
                 TemplateId = nearest.TemplateId,
                 HasHeadMesh = nearest.HasHeadMesh,
                 Stats = stats,
-                Features = ResolveFeatures(nearest, stats, isFallback),
+                Features = ResolveFeatures(ruleFeatures, stats, isFallback),
                 MinLevel = min,
                 MaxLevel = max,
                 UnresolvedPlaceholder = isFallback,
@@ -379,12 +385,12 @@ namespace ZoneEngine_New.Core.GameData
         }
 
         /// <summary>
-        /// The level entry's features. The unresolved placeholder and blue-named NPCs (friendly, non-combat) are always
-        /// NoCombat.
+        /// The hash's features from MonsterCombatRules.json. The unresolved placeholder and blue-named NPCs (friendly,
+        /// non-combat) are always NoCombat.
         /// </summary>
-        static HashSet<NpcFeature> ResolveFeatures(NpcLevelBand band, Dictionary<int, int> stats, bool isFallback)
+        static HashSet<NpcFeature> ResolveFeatures(IReadOnlyCollection<NpcFeature>? ruleFeatures, Dictionary<int, int> stats, bool isFallback)
         {
-            var features = new HashSet<NpcFeature>(band.Features ?? new List<NpcFeature>());
+            var features = new HashSet<NpcFeature>(ruleFeatures ?? Array.Empty<NpcFeature>());
             if (isFallback
                 || (stats.TryGetValue((int)CharacterStat.Flags, out int flags) && Helpers.CombatRules.IsBlueNameNpc(flags)))
                 features.Add(NpcFeature.NoCombat);
@@ -575,8 +581,6 @@ namespace ZoneEngine_New.Core.GameData
 
         public bool HasHeadMesh { get; set; }
 
-        /// <summary>Behaviour switches, e.g. "Features": ["NoCombat"].</summary>
-        public List<NpcFeature> Features { get; set; } = new();
 
         public int KnuBotId { get; set; }
 

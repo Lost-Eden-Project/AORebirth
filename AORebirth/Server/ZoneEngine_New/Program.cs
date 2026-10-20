@@ -269,6 +269,8 @@ namespace ZoneEngine_New
                 string path = ZoneEngine_New.Core.Configuration.GameplaySettings.ResolvePath(
                     provider.GetRequiredService<IGameData>().RootPath);
                 var settings = ZoneEngine_New.Core.Configuration.GameplaySettings.Load(path);
+                CashLimit.Configure(settings.Inventory.MaxCredits);
+                MySqlMissionDao.MaxCash = settings.Inventory.MaxCredits;
                 provider.GetRequiredService<IZoneLogger>().Info(
                     $"Gameplay config stuckCooldownSeconds={settings.StuckCooldownSeconds} stuckLocation=pf {settings.StuckLocation!.Playfield} ({settings.StuckLocation.X}, {settings.StuckLocation.Y}, {settings.StuckLocation.Z}) xpKillPercentPerLevelDifference={settings.Xp.KillPercentPerLevelDifference} sideXpBonusPercent={settings.Xp.SideBonusPercent} halloweenEnabled={settings.Events.Halloween.Enabled} from {path}");
                 return settings;

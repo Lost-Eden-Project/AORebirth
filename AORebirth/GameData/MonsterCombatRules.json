@@ -3,5 +3,65 @@
     "Pets": {
       "MaxPets": 2
     }
+  },
+  "ABGU": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "ARDJOP": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "ARLDGO": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "AROGPX": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "ARSDUA": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "BYWH": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "HATH": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "NEBG": {
+    "Features": [
+      "Guard"
+    ]
+  },
+  "PEAK": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "QVUS": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "RPOF": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "VAWT": {
+    "Features": [
+      "NoCombat"
+    ]
   }
 }

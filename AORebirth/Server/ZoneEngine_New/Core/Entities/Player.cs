@@ -104,6 +104,7 @@ namespace ZoneEngine_New.Core.Entities
                 if (!CharacterSaveState.IsCheckpointOnly(stat) && !StatCollection.IsRuntimeOnly(stat))
                     SaveState.MarkDirty();
             };
+            Stats.StatChanged += OnShadowBreedStatChanged;
         }
 
         /// <summary>Between death and respawn the live position is not a valid place to resume.</summary>
@@ -393,7 +394,11 @@ namespace ZoneEngine_New.Core.Entities
             ArgumentNullException.ThrowIfNull(perkIds);
             TrainedPerks.Restore(perkIds);
             RebasePerkTemplates();
+            _perksLoaded = true;
         }
+
+        /// <summary>Set once login has built the perk templates; stat writes before that are hydration.</summary>
+        bool _perksLoaded;
 
         /// <summary>Regular perk points spent: trained perks that are neither alien nor research.</summary>
         public int UsedPerkPoints => TrainedPerks.Snapshot().Count(PerkCatalog.CostsPerkPoint);
@@ -743,8 +748,52 @@ namespace ZoneEngine_New.Core.Entities
                 }
             }
 
+            // The Shadowbreed is worn like a perk: ShadowBreedTemplate (579) names the current phase's item, set by
+            // uploading "The Lighter Side" / "The Darker Side". Its OnWear grants the Shadowbreed perk action and the
+            // ShadowBreed (532) stat.
+            int shadowBreedItemId = Stats.GetOrZero(CharacterStat.ShadowBreedTemplate, StatDetail.Base);
+            _wornShadowBreedItemId = shadowBreedItemId;
+            if (shadowBreedItemId > 0)
+            {
+                try
+                {
+                    templates.Add(_items.CreateTemplate(shadowBreedItemId, shadowBreedItemId, quality: 1));
+                }
+                catch (Exception exception)
+                {
+                    Logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
+                        "Shadowbreed item {0} on character {1} has no item template; it grants nothing.",
+                        shadowBreedItemId, Identity.Instance));
+                }
+            }
+
             _perkTemplates = templates.ToArray();
             RebasePerkActions();
+        }
+
+        /// <summary>The ShadowBreedTemplate item <see cref="PerkTemplates"/> was last built with (0 for none).</summary>
+        int _wornShadowBreedItemId;
+
+        /// <summary>
+        /// A new Shadowbreed phase is worn at once. Changing sides loses the Shadowbreed: it belongs to the side whose
+        /// item granted it. Hydration (before the login perk build) is not a change: that build wears what is stored.
+        /// A character's first Shadowbreed is the stat's first write, so that is not skipped.
+        /// </summary>
+        void OnShadowBreedStatChanged(CharacterStat stat, int previous, int next, bool isInitialSet)
+        {
+            if (!_perksLoaded)
+                return;
+
+            if (stat == CharacterStat.ShadowBreedTemplate)
+            {
+                if (Stats.GetOrZero(CharacterStat.ShadowBreedTemplate, StatDetail.Base) != _wornShadowBreedItemId)
+                    OnTrainedPerksChanged(null);
+            }
+            else if (stat == CharacterStat.Side && !isInitialSet && previous != next
+                && Stats.GetOrZero(CharacterStat.ShadowBreedTemplate, StatDetail.Base) != 0)
+            {
+                Stats.Set(CharacterStat.ShadowBreedTemplate, 0, StatDetail.Base, dirty: true);
+            }
         }
 
         /// <summary>Rebuilds <see cref="PerkActions"/> from the perk templates' OnWear AddAction functions.</summary>
@@ -1320,6 +1369,7 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             TickPerkLocks();
+            TickSelfTermination();
             if (QuestLog?.Quests.Values.Any(quest => quest.IsRewardPending
                 || quest.IsActive && quest.NpcObjectiveCommitPending) == true)
                 Playfield?.GetService<Quests.QuestService>()?.RetryPendingRewards(this);
@@ -1333,6 +1383,79 @@ namespace ZoneEngine_New.Core.Entities
             _respawnPending = false;
             TryRespawn();
         }
+
+        /// <summary>How long /terminate waits before the character dies.</summary>
+        public static readonly TimeSpan SelfTerminationDelay = TimeSpan.FromMinutes(1);
+
+        DateTime? _selfTerminateAtUtc;
+        Playfield? _selfTerminatePlayfield;
+
+        public bool IsSelfTerminating => _selfTerminateAtUtc != null;
+
+        /// <summary>
+        /// /terminate: the character dies <see cref="SelfTerminationDelay"/> from now unless it zones, logs off or dies
+        /// first. False when it is dead or already counting down.
+        /// </summary>
+        public bool BeginSelfTermination(DateTime nowUtc)
+        {
+            if (IsDead || _selfTerminateAtUtc != null || Playfield == null)
+                return false;
+
+            _selfTerminateAtUtc = nowUtc + SelfTerminationDelay;
+            _selfTerminatePlayfield = Playfield;
+            return true;
+        }
+
+        public void CancelSelfTermination()
+        {
+            _selfTerminateAtUtc = null;
+            _selfTerminatePlayfield = null;
+        }
+
+        void TickSelfTermination()
+        {
+            if (_selfTerminateAtUtc is not DateTime at)
+                return;
+
+            // Leaving the playfield (zoning, logging off), dropping link-dead or dying some other way ends the countdown.
+            if (IsDead || ConnectionPhase == PlayerConnectionPhase.LinkDead
+                || !ReferenceEquals(Playfield, _selfTerminatePlayfield))
+            {
+                CancelSelfTermination();
+                return;
+            }
+
+            if (DateTime.UtcNow < at)
+                return;
+
+            CancelSelfTermination();
+            // Retail (capture 2026-10-20T18:12:17Z): DeathReason 1 ("You died of self termination!"), then Death 504.
+            Session?.Send(new CharacterActionMessage
+            {
+                Identity = Identity,
+                Action = CharacterActionType.DeathReason,
+                Target = Identity.None,
+                Parameter1 = 0,
+                Parameter2 = SelfTerminationDeathReason
+            });
+            _selfTerminationDeath = true;
+            try
+            {
+                // A live Health write to 0 kills (Character.OnStatChanged).
+                Stats.Set(CharacterStat.Health, 0, StatDetail.Base, dirty: true);
+            }
+            finally
+            {
+                _selfTerminationDeath = false;
+            }
+        }
+
+        const int SelfTerminationDeathReason = 1;
+        const int SelfTerminationDeathAnimationKey = 504;
+        bool _selfTerminationDeath;
+
+        protected override int DeathAnimationKey
+            => _selfTerminationDeath ? SelfTerminationDeathAnimationKey : base.DeathAnimationKey;
 
         bool IsRespawnGraceElapsed()
             => _respawnRemainingSeconds <= 0.0

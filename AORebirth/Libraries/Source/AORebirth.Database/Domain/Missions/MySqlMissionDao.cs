@@ -497,11 +497,11 @@ namespace AORebirth.Database.Domain.Missions
             return ClampCash(persisted.GetValueOrDefault());
         }
 
+        /// <summary>Most credits a character may hold; the zone engine sets it from Gameplay.json at startup.</summary>
+        public static int MaxCash { get; set; } = 1000000000;
+
         private static int ClampCash(long cash)
-        {
-            const int ClientSafeMaxCash = 999999999;
-            return cash < 0 ? 0 : cash > ClientSafeMaxCash ? ClientSafeMaxCash : (int)cash;
-        }
+            => cash < 0 ? 0 : cash > MaxCash ? MaxCash : (int)cash;
 
         private static string CreateRollFeeEffectReference(
             string batchIdentity,

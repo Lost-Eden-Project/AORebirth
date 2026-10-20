@@ -531,10 +531,11 @@ namespace AORebirth.Core.Items
         }
 
         /// <summary>
+        /// The item info window's "SPECIAL" (flags bit 5).
         /// </summary>
         /// <returns>
         /// </returns>
-        public bool HasMultipleCount()
+        public bool IsSpecial()
         {
             return (this.Stats[0] & (1 << 5)) > 0;
         }

@@ -8,7 +8,8 @@ namespace ZoneEngine_New.Core.Mobs
 
     /// <summary>
     /// GameData/MonsterCombatRules.json: combat behaviour keyed by mob hash, e.g.
-    /// <c>{ "ASSU": { "Pets": { "MaxPets": 2 } } }</c>. Loaded once per GameData root.
+    /// <c>{ "ASSU": { "Pets": { "MaxPets": 2 } }, "NEBG": { "Features": [ "Guard" ] }, "MUSN": { "Hates": [ 42 ] } }</c>.
+    /// Keys are NpcTemplates.json leaf hashes. Loaded once per GameData root.
     /// </summary>
     public sealed class MonsterCombatRulesCatalog
     {
@@ -16,7 +17,13 @@ namespace ZoneEngine_New.Core.Mobs
 
         static readonly ConcurrentDictionary<string, MonsterCombatRulesCatalog> ByRoot = new(StringComparer.OrdinalIgnoreCase);
 
-        static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+        static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
 
         readonly Dictionary<string, MonsterCombatRules> _rules;
 
@@ -67,7 +74,22 @@ namespace ZoneEngine_New.Core.Mobs
     /// <summary>One mob hash's combat rules.</summary>
     public sealed class MonsterCombatRules
     {
+        HashSet<int>? _hatedFamilies;
+
         public MonsterPetRule? Pets { get; set; }
+
+        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard (<see cref="NpcFeature"/>).</summary>
+        public List<NpcFeature>? Features { get; set; }
+
+        /// <summary>
+        /// NPCFamily (stat 455) values this NPC attacks on sight: an NPC of one of these families that comes within
+        /// its aggro range (ProximityRangeOutdoors/Indoors) is attacked as a player would be. Players' pets never are.
+        /// </summary>
+        public int[]? Hates { get; set; }
+
+        /// <summary><see cref="Hates"/> as a set; null when the NPC hates no family.</summary>
+        public IReadOnlySet<int>? HatedFamilies
+            => Hates is not { Length: > 0 } ? null : _hatedFamilies ??= new HashSet<int>(Hates);
     }
 
     /// <summary>

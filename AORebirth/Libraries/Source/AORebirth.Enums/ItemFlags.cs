@@ -75,8 +75,9 @@ namespace AORebirth.Enums
         HasEnergy = 0x1 << 22,
 
         /// <summary>
+        /// Shown as "SPECIAL" in the item info window (GUI.dll 0x10033524 tests flags &amp; 0x20).
         /// </summary>
-        HasMultiplecount = 0x1 << 5,
+        Special = 0x1 << 5,
 
         /// <summary>
         /// </summary>
