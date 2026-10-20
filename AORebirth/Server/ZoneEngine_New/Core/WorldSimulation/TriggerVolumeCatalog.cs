@@ -51,7 +51,13 @@ namespace ZoneEngine_New.Core.WorldSimulation
         /// the character is told the destination is unknown. Routed exit doors are baked as
         /// <see cref="PortalDynel"/> instead.
         /// </summary>
-        ExitDoor = 8
+        ExitDoor = 8,
+
+        /// <summary>
+        /// A flagged water plane (Water.dat) that zones whoever goes under its surface: feet below
+        /// <see cref="ZoneTriggerVolume.MaxY"/> inside its triangles. Destination and landing come from WaterExits.json.
+        /// </summary>
+        WaterExit = 9
     }
 
     public sealed class ZoneTriggerVolume
@@ -116,6 +122,35 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
         /// <summary>Area of a <see cref="ZoneTriggerKind.Teleportal"/>.</summary>
         public AODB.Common.RDBObjects.SurfaceTeleportal? Teleportal;
+
+        /// <summary>
+        /// Surface of a <see cref="ZoneTriggerKind.WaterExit"/>: X/Z of each triangle's corners, six floats a triangle.
+        /// </summary>
+        public float[]? WaterTriangles;
+
+        /// <summary>True when (<paramref name="x"/>, <paramref name="z"/>) lies on one of <see cref="WaterTriangles"/>.</summary>
+        public bool WaterContains(float x, float z)
+        {
+            float[]? t = WaterTriangles;
+            if (t == null)
+                return false;
+
+            for (int i = 0; i + 5 < t.Length; i += 6)
+            {
+                float d1 = Side(x, z, t[i], t[i + 1], t[i + 2], t[i + 3]);
+                float d2 = Side(x, z, t[i + 2], t[i + 3], t[i + 4], t[i + 5]);
+                float d3 = Side(x, z, t[i + 4], t[i + 5], t[i], t[i + 1]);
+                bool negative = d1 < 0 || d2 < 0 || d3 < 0;
+                bool positive = d1 > 0 || d2 > 0 || d3 > 0;
+                if (!(negative && positive))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static float Side(float px, float pz, float ax, float az, float bx, float bz)
+            => ((px - bx) * (az - bz)) - ((ax - bx) * (pz - bz));
     }
 
     public readonly struct ZoneTriggerHit
@@ -181,6 +216,8 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
         public int TeleportalTriggerCount { get; private set; }
 
+        public int WaterExitTriggerCount { get; private set; }
+
         public int Count => _all.Count;
 
         public bool HasDynel(ZoneTriggerKind kind, int dynelInstance)
@@ -209,6 +246,8 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 VicinityTriggerCount++;
             else if (volume.Kind == ZoneTriggerKind.Teleportal)
                 TeleportalTriggerCount++;
+            else if (volume.Kind == ZoneTriggerKind.WaterExit)
+                WaterExitTriggerCount++;
 
             int minBinX = (int)MathF.Floor(volume.MinX / BinSize);
             int maxBinX = (int)MathF.Floor(volume.MaxX / BinSize);
@@ -336,6 +375,19 @@ namespace ZoneEngine_New.Core.WorldSimulation
             {
                 // Inside the area at the end of the step; teleportals are wide regions, not thin lines.
                 if (v.Teleportal == null || !v.Teleportal.Contains(x, z))
+                    return false;
+
+                if (!overlappingIds.Add(v.Id))
+                    return false;
+
+                hit = new ZoneTriggerHit(v, 0f);
+                return true;
+            }
+
+            if (v.Kind == ZoneTriggerKind.WaterExit)
+            {
+                // Under the surface (MaxY, checked above) and over the water at the end of the step.
+                if (!v.WaterContains(x, z))
                     return false;
 
                 if (!overlappingIds.Add(v.Id))
@@ -487,6 +539,9 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
             if (v.Kind == ZoneTriggerKind.Teleportal)
                 return v.Teleportal != null && v.Teleportal.Contains(x, z);
+
+            if (v.Kind == ZoneTriggerKind.WaterExit)
+                return y <= v.MaxY && v.WaterContains(x, z);
 
             float dx = x - v.CenterX;
             float dz = z - v.CenterZ;

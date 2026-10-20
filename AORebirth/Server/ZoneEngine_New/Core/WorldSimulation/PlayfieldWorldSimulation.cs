@@ -88,6 +88,8 @@
 
         public int TeleportalTriggerCount => _triggers.TeleportalTriggerCount;
 
+        public int WaterExitTriggerCount => _triggers.WaterExitTriggerCount;
+
         public static PlayfieldWorldSimulation Create(
             int playfieldId,
             PlayfieldGeometryData geometry,
@@ -123,6 +125,7 @@
                 ? [.. configuredExits]
                 : gameData.GetExitProxyDoorInstances(playfieldId));
             world.BakeTeleportalTriggers(geometry.Collision?.Teleportals);
+            world.BakeWaterExitTriggers(gameData.RootPath, playfieldId);
 
             int terrainChunks = surface?.Terrain != null ? geometry.Collision!.Terrain!.Chunks.Count : 0;
             logger.Info(
@@ -130,7 +133,7 @@
                 + $" surfaceCells={surface?.PopulatedCellCount ?? 0} surfaceTriangles={surface?.TriangleCount ?? 0}"
                 + $" wallTriggers={world.WallTriggerCount} portalTriggers={world.PortalTriggerCount}"
                 + $" vicinityTriggers={world.VicinityTriggerCount} exitTriggers={world.ExitTriggerCount}"
-                + $" teleportals={world.TeleportalTriggerCount}");
+                + $" teleportals={world.TeleportalTriggerCount} waterExits={world.WaterExitTriggerCount}");
             if (surface != null && surface.OutsideTriangleCount > 0)
             {
                 logger.Warn(
@@ -478,6 +481,13 @@
                 return false;
             }
 
+            // Under the zoning water: the configured landing (WaterExits.json), facing as before.
+            if (hit.Volume.Kind == ZoneTriggerKind.WaterExit && hit.Volume.Landing is AoVector3 shore)
+            {
+                crossing = new ZoneCrossing(hit.Volume.DestPlayfieldId, shore, hit.Volume);
+                return true;
+            }
+
             if (hit.Volume.Kind == ZoneTriggerKind.DungeonExit && hit.Volume.Landing is AoVector3 outside)
             {
                 crossing = new ZoneCrossing(hit.Volume.DestPlayfieldId, outside, hit.Volume, hit.Volume.LandingHeading);
@@ -818,6 +828,76 @@
                     });
             }
         }
+
+        /// <summary>
+        /// The playfield's zoning water (WaterExits.json): each Water.dat plane carrying the configured flags becomes a
+        /// trigger for anyone under its surface. Playfields without an entry, or without Water.dat, get none.
+        /// </summary>
+        void BakeWaterExitTriggers(string gameDataRoot, int playfieldId)
+        {
+            if (string.IsNullOrWhiteSpace(gameDataRoot)
+                || !WaterExitCatalog.For(gameDataRoot).TryGet(playfieldId, out WaterExit exit))
+                return;
+
+            string path = System.IO.Path.Combine(gameDataRoot, GameDataPaths.PlayfieldWaterRelativePath(playfieldId));
+            if (!System.IO.File.Exists(path))
+            {
+                _logger.Warn("WaterExits.json lists playfield " + playfieldId + " but it has no " + GameDataPaths.WaterFileName);
+                return;
+            }
+
+            List<PlayfieldWaterEntry> waters = PlayfieldWaterDat.Parse(System.IO.File.ReadAllBytes(path), out _);
+            var landing = new AoVector3(exit.X, exit.Y, exit.Z);
+            foreach (PlayfieldWaterEntry water in waters)
+            {
+                if ((water.Flags & exit.WaterFlags) == 0 || water.Vertices == null || water.Triangles == null)
+                    continue;
+
+                float[] v = water.Vertices;
+                short[] tri = water.Triangles;
+                var xz = new List<float>(tri.Length * 2);
+                float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
+                float surface = float.MinValue;
+                for (int i = 0; i + 2 < tri.Length; i += 3)
+                {
+                    if (!IsVertex(tri[i], v) || !IsVertex(tri[i + 1], v) || !IsVertex(tri[i + 2], v))
+                        continue;
+
+                    for (int k = 0; k < 3; k++)
+                    {
+                        int index = tri[i + k] * 3;
+                        float x = v[index], y = v[index + 1], z = v[index + 2];
+                        xz.Add(x);
+                        xz.Add(z);
+                        minX = MathF.Min(minX, x);
+                        maxX = MathF.Max(maxX, x);
+                        minZ = MathF.Min(minZ, z);
+                        maxZ = MathF.Max(maxZ, z);
+                        surface = MathF.Max(surface, y);
+                    }
+                }
+
+                if (xz.Count < 6)
+                    continue;
+
+                _triggers.Add(
+                    new ZoneTriggerVolume
+                    {
+                        Kind = ZoneTriggerKind.WaterExit,
+                        Id = _nextTriggerId++,
+                        MinX = minX,
+                        MaxX = maxX,
+                        MinZ = minZ,
+                        MaxZ = maxZ,
+                        MaxY = surface,
+                        DestPlayfieldId = exit.DestinationPlayfield,
+                        Landing = landing,
+                        WaterTriangles = xz.ToArray()
+                    });
+            }
+        }
+
+        static bool IsVertex(short index, float[] vertices) => index >= 0 && (index * 3) + 2 < vertices.Length;
 
         /// <summary>
         /// Doors the client treats as exits: their placement blob sets ExitInstance (the client then registers them as
