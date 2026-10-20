@@ -47,6 +47,7 @@ namespace WorldEngine.Services
             }
 
             instance.Send(new WorldToService { Accepted = accepted });
+            state.AfterRegister();
             // Teams: after a World restart the zones' mirrors are taken back; after a reconnect each mirror is
             // brought up to date, since pushes sent while the stream was down are gone.
             if (register.Role == ServiceRole.RoleZone) teams.Reconcile(instance, register.Teams, accepted.Recovering);

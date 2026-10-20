@@ -116,8 +116,6 @@ namespace WorldEngine.State
                     "Registered {Role} {Instance} slot={Slot} endpoint={Endpoint} leases={Leases} playfields={Playfields} lost={Lost} recovering={Recovering}",
                     candidate.Role, candidate.Name, candidate.Slot, Describe(candidate.Game), accepted.Leases.Count,
                     accepted.Playfields.Count, accepted.LostLeases.Count + accepted.LostPlayfields.Count, recovering);
-                AssignDuty();
-                FlushClearOnline();
                 return accepted;
             }
         }
@@ -367,6 +365,19 @@ namespace WorldEngine.State
         }
 
         /// <summary>The lowest-slot live zone runs the database-wide sweeps.</summary>
+        /// <summary>
+        /// Work a registration causes once its acceptance is on the stream: the acceptance must be the first message
+        /// the instance gets.
+        /// </summary>
+        public void AfterRegister()
+        {
+            lock (_sync)
+            {
+                AssignDuty();
+                FlushClearOnline();
+            }
+        }
+
         void AssignDuty()
         {
             long now = Now;

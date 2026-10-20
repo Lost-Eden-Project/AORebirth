@@ -85,7 +85,7 @@ namespace ZoneEngine_New
                 RuntimeStartup.ValidatePackage(AppContext.BaseDirectory, skipPlayfieldPackagePin);
                 ZoneInstanceOptions instance = ZoneInstanceOptions.Configure(args);
 
-                if (!InitializeLogging())
+                if (!InitializeLogging(instance))
                     return 1;
                 OnScreenBanner.PrintAORebirthBanner(ConsoleColor.Green);
                 rootServices = BuildRootServices();
@@ -460,14 +460,19 @@ namespace ZoneEngine_New
             Cleanup(LogManager.Shutdown);
         }
 
-        private static bool InitializeLogging()
+        private static bool InitializeLogging(ZoneInstanceOptions instance)
         {
             try
             {
                 LogUtil.SetupConsoleLogging(LogLevel.Debug);
                 ApplyGreenConsoleLogColors();
                 LogUtil.ApplyConfiguredDebugDetails();
-                LogUtil.SetupFileLogging("${basedir}/ZoneEngine_NewLog.txt", LogLevel.Trace);
+                // Instances beside the configured one share the folder: each needs its own file.
+                Utility.Config.Config? config = ConfigReadWrite.Instance.CurrentConfig;
+                bool primary = config == null || instance.Port == config.ZonePort;
+                LogUtil.SetupFileLogging(primary
+                    ? "${basedir}/ZoneEngine_NewLog.txt"
+                    : "${basedir}/ZoneEngine_New." + instance.Name + ".Log.txt", LogLevel.Trace);
                 DebugMcpLogBuffer.Shared.Install();
                 ZoneEngine_New.Core.Logging.AsyncLogging.Install();
                 LogActiveConfiguration();
