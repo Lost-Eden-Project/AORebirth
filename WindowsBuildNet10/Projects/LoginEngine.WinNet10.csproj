@@ -33,6 +33,7 @@
     <ProjectReference Include="AORebirth.Interfaces.Engines.WinNet10.csproj" />
     <ProjectReference Include="Translations.Engines.WinNet10.csproj" />
     <ProjectReference Include="Utility.Engines.WinNet10.csproj" />
+    <ProjectReference Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.World.Contracts/AORebirth.World.Contracts.csproj" />
   </ItemGroup>
 
   <Import Project="$(AORebirthRepositoryRoot)/SharedBuild/source-inventory/LoginEngine.CompileItems.props" />

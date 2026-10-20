@@ -9,18 +9,21 @@ namespace ZoneEngine_New.Core.Commands
     using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
-    /// <c>.gametime</c>: reads or moves the shared Rubi-Ka clock (<see cref="GameClock"/>). A move shifts the clock for
-    /// the whole zone engine and resends GameTime to every player online, each on its own playfield tick. The shift is
-    /// kept in memory only: a restart goes back to Gameplay.json worldClock.
+    /// <c>.gametime</c>: reads or moves the shared Rubi-Ka clock (<see cref="GameClock"/>). World holds the shift for
+    /// every zone instance: a move goes to World, which pushes it to each instance, and each resends GameTime to its
+    /// players on their own playfield ticks. The shift is kept in memory only: a World restart goes back to
+    /// Gameplay.json worldClock.
     /// </summary>
     public sealed class GameTimeCommand : IGmCommand
     {
         readonly Lazy<PlayfieldManager> _playfields;
+        readonly ZoneEngine_New.Core.World.WorldLink? _world;
 
-        public GameTimeCommand(Lazy<PlayfieldManager> playfields)
+        public GameTimeCommand(Lazy<PlayfieldManager> playfields, ZoneEngine_New.Core.World.WorldLink? world = null)
         {
             ArgumentNullException.ThrowIfNull(playfields);
             _playfields = playfields;
+            _world = world;
         }
 
         public string Name => "gametime";
@@ -88,9 +91,32 @@ namespace ZoneEngine_New.Core.Commands
                     return;
             }
 
-            GameClock.ShiftGameSeconds(shift);
-            int sent = ResendToEveryone();
-            Report(context, string.Format(CultureInfo.InvariantCulture, "World clock moved; GameTime sent to {0} player(s)", sent));
+            if (_world == null)
+            {
+                GameClock.ShiftGameSeconds(shift);
+                int sent = ResendToEveryone();
+                Report(context, string.Format(CultureInfo.InvariantCulture, "World clock moved; GameTime sent to {0} player(s)", sent));
+                return;
+            }
+
+            bool reset = args[0].Equals("reset", StringComparison.OrdinalIgnoreCase);
+            Player gm = context.Player;
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                string title;
+                try
+                {
+                    await _world.ShiftGameClockAsync(shift, reset).ConfigureAwait(false);
+                    title = "World clock moved on every zone instance";
+                }
+                catch (Exception exception)
+                {
+                    title = "World clock not moved: World unavailable (" + exception.GetType().Name + ")";
+                }
+
+                // The GameTime resend arrives with World's push; report back on the GM's own tick.
+                gm.Playfield?.DispatchPlayerProjection(gm, () => Report(context, title));
+            });
         }
 
         /// <summary>The game seconds to move so the clock reads the requested day and time of day.</summary>

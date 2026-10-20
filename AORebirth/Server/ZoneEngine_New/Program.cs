@@ -36,6 +36,7 @@ namespace ZoneEngine_New
     using ZoneEngine_New.Core.Trade;
     using ZoneEngine_New.Core.DebugMcp;
     using ZoneEngine_New.Core.Teams;
+    using ZoneEngine_New.Core.World;
 
     using ConfigReadWrite = Utility.Config.ConfigReadWrite;
 
@@ -47,6 +48,7 @@ namespace ZoneEngine_New
         private static DebugMcpHost? debugMcp;
         private static PlayfieldManager? playfieldManager;
         private static IChatEngineLink? chatEngineLink;
+        private static WorldLink? worldLink;
         private static ZoneEngine_New.Core.Modules.ZoneModuleHost? modules;
         private static int shutdownStarted;
         private static volatile bool shutdownFailed;
@@ -81,6 +83,7 @@ namespace ZoneEngine_New
                 if (CheckDatabase() != 0)
                     return 2;
                 RuntimeStartup.ValidatePackage(AppContext.BaseDirectory, skipPlayfieldPackagePin);
+                ZoneInstanceOptions instance = ZoneInstanceOptions.Configure(args);
 
                 if (!InitializeLogging())
                     return 1;
@@ -99,6 +102,9 @@ namespace ZoneEngine_New
                         gameData.HashTemplateCount,
                         gameData.HashInstanceCount,
                         gameData.MonsterDataCount));
+                // World first: no playfield builds and no client connects before this instance is registered.
+                if (!ConnectWorld(rootServices, logger, instance))
+                    return 1;
                 // External modules load before any playfield or connection can raise into them.
                 modules = rootServices.GetRequiredService<ZoneEngine_New.Core.Modules.ZoneModuleHost>();
                 chatEngineLink = rootServices.GetRequiredService<IChatEngineLink>();
@@ -159,6 +165,39 @@ namespace ZoneEngine_New
             Shutdown();
         }
 
+        /// <summary>
+        /// Registers with World and waits until it accepts this instance. World is required: without it no character
+        /// can be leased, so the game port stays closed.
+        /// </summary>
+        private static bool ConnectWorld(ServiceProvider services, IZoneLogger logger, ZoneInstanceOptions instance)
+        {
+            worldLink = services.GetRequiredService<WorldLink>();
+            worldLink.Attach(services.GetRequiredService<WorldZoneBridge>());
+            worldLink.Start();
+            logger.Info("Connecting to World at " + worldLink.Url + " as " + instance.Name + " (" + instance.AdvertisedAddress + ":" + instance.Port + ")");
+            DateTime nextNotice = DateTime.UtcNow.AddSeconds(5);
+            while (!worldLink.WaitUntilRegistered(TimeSpan.FromMilliseconds(500)))
+            {
+                if (exited) return false;
+                if (worldLink.FatalRegistrationError is string fatal)
+                {
+                    Console.Error.WriteLine("ZONEENGINE_NEW_STARTUP_FAILED " + fatal);
+                    return false;
+                }
+                if (DateTime.UtcNow < nextNotice) continue;
+                Console.WriteLine("ZoneEngine_New waiting for World at " + worldLink.Url + "...");
+                nextNotice = DateTime.UtcNow.AddSeconds(10);
+            }
+
+            if (!DynelRegistry.ConfigureNpcRange(worldLink.NpcIdBase, worldLink.NpcIdCount))
+                logger.Error("World gave a different NPC id range than the one in use");
+            GameClock.SetOffset(worldLink.GameClockOffsetSeconds);
+            logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "World registered instance={0} npcIds={1}..{2}", instance.Name, worldLink.NpcIdBase,
+                worldLink.NpcIdBase + (long)worldLink.NpcIdCount - 1));
+            return true;
+        }
+
         private static int CheckDatabase()
         {
             SchemaCheckResult result = DatabaseSchemaReadiness.Check(MySqlConnectionSettings.GetRequiredConnectionString(),
@@ -182,6 +221,12 @@ namespace ZoneEngine_New
             ServiceCollection services = new ServiceCollection();
 
             services.AddSingleton<IZoneLogger, NLogZoneLogger>();
+            services.AddSingleton<WorldLink>();
+            services.AddSingleton<ZoneRedirects>();
+            services.AddSingleton<ZoneLoginThrottle>();
+            services.AddSingleton<WorldZoneBridge>();
+            services.AddSingleton<CrossInstanceTransfer>();
+            services.AddSingleton<WorldCommands>();
             services.AddSingleton<AORebirth.Interfaces.Persistence.Characters.ICharacterPersistenceDao>(_ =>
                 new AORebirth.Database.Domain.Characters.MySqlCharacterPersistenceDao(() =>
                     new MySqlConnection(MySqlConnectionSettings.GetRequiredConnectionString())));
@@ -266,11 +311,12 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneMessageCodec>();
 
             //Chat
-            services.AddSingleton<IChatEngineLink, IsComChatEngineLink>();
+            services.AddSingleton<IChatEngineLink, WorldChatLink>();
             services.AddSingleton(provider => new Lazy<TeamService>(provider.GetRequiredService<TeamService>));
             services.AddSingleton(provider => new TeamService(
                 provider.GetRequiredService<IChatEngineLink>(), dispatchOnOwner: (player, action) =>
-                    player.Playfield?.DispatchPlayerProjection(player, action)));
+                    player.Playfield?.DispatchPlayerProjection(player, action),
+                world: provider.GetRequiredService<WorldLink>()));
             services.AddSingleton<VicinityChatRelay>();
 
             //Quests
@@ -405,6 +451,10 @@ namespace ZoneEngine_New
             Cleanup(() => rootServices?.GetRequiredService<TeamService>().Shutdown());
             Cleanup(() => chatEngineLink?.Dispose());
             chatEngineLink = null;
+            // After every logout: their lease releases go out before the link closes.
+            Cleanup(() => worldLink?.FlushReleases(TimeSpan.FromSeconds(3)));
+            Cleanup(() => worldLink?.Dispose());
+            worldLink = null;
             Cleanup(() => rootServices?.DisposeAsync().AsTask().GetAwaiter().GetResult());
             rootServices = null;
             Cleanup(LogManager.Shutdown);

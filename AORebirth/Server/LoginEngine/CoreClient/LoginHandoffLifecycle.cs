@@ -20,16 +20,19 @@ namespace LoginEngine.CoreClient
         LoginOwnedOnlineCleanupResult TryClearLoginOwnership(int characterId);
     }
 
+    /// <summary>
+    /// World owns the handoff: the ticket it issued expires on its own, and the zone sets Online when the character
+    /// spawns. Login no longer writes the flag, so there is nothing to undo when a handoff is abandoned.
+    /// </summary>
     public sealed class CharacterDaoLoginHandoffOnlineStore : ILoginHandoffOnlineStore
     {
         public void SetOnline(int characterId)
         {
-            CharacterDao.Instance.SetOnline(characterId);
         }
 
         public LoginOwnedOnlineCleanupResult TryClearLoginOwnership(int characterId)
         {
-            return CharacterOnlineOwnershipGuard.TryClearLoginOwnership(characterId);
+            return LoginOwnedOnlineCleanupResult.Cleared;
         }
     }
 

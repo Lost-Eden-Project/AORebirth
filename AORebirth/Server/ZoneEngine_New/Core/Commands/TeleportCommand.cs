@@ -18,13 +18,94 @@ namespace ZoneEngine_New.Core.Commands
     {
         private readonly Lazy<PlayfieldManager> _playfieldManager;
         private readonly IGameData _gameData;
+        private readonly ZoneEngine_New.Core.World.WorldLink? _world;
+        private readonly ZoneEngine_New.Core.World.WorldCommands? _commands;
 
-        public TeleportCommand(Lazy<PlayfieldManager> playfieldManager, IGameData gameData)
+        /// <summary>A GM on another zone instance summons a player here: playfield, x, y, z, GM name.</summary>
+        const string SummonCommand = "gm.summon";
+
+        public TeleportCommand(Lazy<PlayfieldManager> playfieldManager, IGameData gameData,
+            ZoneEngine_New.Core.World.WorldLink? world = null, ZoneEngine_New.Core.World.WorldCommands? commands = null)
         {
             ArgumentNullException.ThrowIfNull(playfieldManager);
             ArgumentNullException.ThrowIfNull(gameData);
             _playfieldManager = playfieldManager;
             _gameData = gameData;
+            _world = world;
+            _commands = commands;
+            _commands?.Register(SummonCommand, OnSummonedFromElsewhere);
+        }
+
+        /// <summary>The summoned player is here; the GM is on another instance. Move it to the GM.</summary>
+        void OnSummonedFromElsewhere(AORebirth.World.Contracts.V1.InstanceCommand command)
+        {
+            if (command.Arguments.Count < 4
+                || !int.TryParse(command.Arguments[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int playfieldId)
+                || !float.TryParse(command.Arguments[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float x)
+                || !float.TryParse(command.Arguments[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float y)
+                || !float.TryParse(command.Arguments[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float z)
+                || !_playfieldManager.Value.FindPlayer(command.CharacterId, out Player subject)
+                || subject.Playfield is not Playfield at)
+                return;
+            var landing = new Vector3(x, y, z);
+            at.DispatchPlayerProjection(subject, () =>
+            {
+                if (subject.Session == null || !ReferenceEquals(subject.Playfield, at)) return;
+                subject.Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
+                subject.Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
+                _playfieldManager.Value.WithPlayfield(playfieldId, subject,
+                    destination => subject.Session?.TransferToPlayfield(destination, landing),
+                    new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
+            });
+        }
+
+        /// <summary>
+        /// Not on this zone instance: World knows where the character is. Runs the answer on the GM's own tick.
+        /// </summary>
+        bool TryElsewhere(GmCommandContext context, string name, bool summon)
+        {
+            if (_world == null) return false;
+            Player gm = context.Player;
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                AORebirth.World.Contracts.V1.LocateReply where;
+                try { where = await _world.LocateAsync(0, name).ConfigureAwait(false); }
+                catch (Exception) { where = new AORebirth.World.Contracts.V1.LocateReply { Found = false }; }
+
+                if (!where.Found || where.PlayfieldId <= 0)
+                {
+                    gm.Playfield?.DispatchPlayerProjection(gm, () =>
+                        GmCommandFeedback.Send(context.Session, gm, "No online character named " + name + "."));
+                    return;
+                }
+
+                if (summon)
+                {
+                    if (gm.Playfield is not Playfield here) return;
+                    bool sent = _commands != null && await _commands.ToCharacterAsync(where.CharacterId, SummonCommand,
+                        here.Identity.Instance.ToString(CultureInfo.InvariantCulture),
+                        gm.Position.xf.ToString(CultureInfo.InvariantCulture),
+                        gm.Position.yf.ToString(CultureInfo.InvariantCulture),
+                        gm.Position.zf.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                    gm.Playfield?.DispatchPlayerProjection(gm, () => GmCommandFeedback.Send(context.Session, gm,
+                        sent ? "Summoning " + name + " from zone instance " + where.Instance + "."
+                            : "Could not reach " + name + " on zone instance " + where.Instance + "."));
+                    return;
+                }
+
+                var landing = new Vector3(where.X, where.Y, where.Z);
+                gm.Playfield?.DispatchPlayerProjection(gm, () =>
+                {
+                    if (gm.Session == null) return;
+                    GmCommandFeedback.Send(context.Session, gm, "Teleporting to " + name + " on zone instance " + where.Instance + ".");
+                    gm.Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
+                    gm.Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
+                    _playfieldManager.Value.WithPlayfield(where.PlayfieldId, gm,
+                        destination => gm.Session?.TransferToPlayfield(destination, landing),
+                        new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
+                });
+            });
+            return true;
         }
 
         public string Name => "tp";
@@ -134,7 +215,16 @@ namespace ZoneEngine_New.Core.Commands
                 if (!_playfieldManager.Value.TryGet(playfieldId, out _))
                     GmCommandFeedback.Send(context.Session, context.Player, "Initializing playfield, please wait...");
 
-                if (!_playfieldManager.Value.WithPlayfield(playfieldId, subject, destination => Relocate(context, subject, destination, landing, who)))
+                // A playfield another zone instance runs: the subject moves there with no exit return here.
+                var remote = new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport, Prepare: () =>
+                {
+                    subject.Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
+                    subject.Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
+                    GmCommandFeedback.Send(context.Session, context.Player, string.Format(CultureInfo.InvariantCulture,
+                        "Teleporting {0} to pf={1} on another zone instance", who, playfieldId));
+                    return true;
+                });
+                if (!_playfieldManager.Value.WithPlayfield(playfieldId, subject, destination => Relocate(context, subject, destination, landing, who), remote))
                     GmCommandFeedback.Send(context.Session, context.Player, "Target is already changing playfield.");
                 return;
             }
@@ -167,7 +257,8 @@ namespace ZoneEngine_New.Core.Commands
 
             if (subject == null)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "No online character named " + name + ".");
+                if (!TryElsewhere(context, name, summon: true))
+                    GmCommandFeedback.Send(context.Session, context.Player, "No online character named " + name + ".");
                 return;
             }
 
@@ -218,7 +309,8 @@ namespace ZoneEngine_New.Core.Commands
 
             if (target == null)
             {
-                GmCommandFeedback.Send(context.Session, context.Player, "No online character named " + name + ".");
+                if (!TryElsewhere(context, name, summon: false))
+                    GmCommandFeedback.Send(context.Session, context.Player, "No online character named " + name + ".");
                 return;
             }
 

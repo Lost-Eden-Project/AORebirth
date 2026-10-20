@@ -81,7 +81,7 @@ namespace ZoneEngine_New.Core.Network
         private bool _outboundCompressed;
         private volatile bool _closed;
         private PlayfieldTransfer? _transfer;
-        private ZoneHandoffStore? _handoffAuthority;
+        private ZoneEngine_New.Core.World.ZoneRedirects? _handoffAuthority;
         private int _handoffCharacter;
         private uint _handoffCookie1;
         private uint _handoffCookie2;
@@ -131,8 +131,9 @@ namespace ZoneEngine_New.Core.Network
 
         public Player? Player { get; private set; }
 
-        internal void BindZoneHandoff(int character, uint cookie1, uint cookie2, ZoneHandoffStore? authority = null)
+        internal void BindZoneHandoff(int character, uint cookie1, uint cookie2, ZoneEngine_New.Core.World.ZoneRedirects authority)
         {
+            ArgumentNullException.ThrowIfNull(authority);
             if (character <= 0 || (cookie1 == 0 && cookie2 == 0))
                 throw new InvalidOperationException("A valid claimed handoff is required.");
             lock (this)
@@ -141,7 +142,7 @@ namespace ZoneEngine_New.Core.Network
                 _handoffCharacter = character;
                 _handoffCookie1 = cookie1;
                 _handoffCookie2 = cookie2;
-                _handoffAuthority = authority ?? ZoneHandoffStore.Configured();
+                _handoffAuthority = authority;
             }
         }
         public bool IsClosed => _closed;
@@ -328,6 +329,43 @@ namespace ZoneEngine_New.Core.Network
             if (ReferenceEquals(_transfer, transfer)) _transfer = null;
         }
 
+        private bool _remoteTransfer;
+
+        /// <summary>A move to another zone instance starts: no other transfer may start, and input stops.</summary>
+        internal bool TryBeginRemoteTransfer(Player player)
+        {
+            lock (this)
+            {
+                if (_closed || State != SessionState.InPlay || !ReferenceEquals(Player, player)
+                    || !ReferenceEquals(player.Session, this) || _transfer != null || _remoteTransfer
+                    || player.IsPersistenceQuarantined)
+                    return false;
+                _remoteTransfer = true;
+                State = SessionState.Loading;
+                return true;
+            }
+        }
+
+        /// <summary>The move did not happen: the player plays on here.</summary>
+        internal void AbortRemoteTransfer()
+        {
+            lock (this)
+            {
+                _remoteTransfer = false;
+                if (!_closed && Player != null) State = SessionState.InPlay;
+            }
+        }
+
+        /// <summary>The N3Teleport and the redirect to the instance that now owns the character.</summary>
+        internal byte[][] PrepareRemoteTransferPackets(Player player, Vector3 landing,
+            AORebirth.Core.Vector.Quaternion heading, int destinationId, IPAddress address, ushort port)
+            =>
+            [
+                _codec.Serialize(BuildNormalTeleport(player, landing, destinationId, heading), destinationId, player.Identity.Instance),
+                _codec.Serialize(new ZoneRedirectionMessage { ServerIpAddress = address, ServerPort = port },
+                    destinationId, player.Identity.Instance)
+            ];
+
         public void SendSamePlayfieldRespawnTeleport(Vector3 landing)
         {
             ArgumentNullException.ThrowIfNull(landing);
@@ -457,10 +495,19 @@ namespace ZoneEngine_New.Core.Network
         {
             if (_handoffAuthority == null || _handoffCharacter != character)
                 throw new InvalidOperationException("Session has no claimed redirect authority.");
-            ZoneHandoffClaim authorization = _handoffAuthority.AuthorizeRedirect(
-                character, _handoffCookie1, _handoffCookie2, target.Address.ToString(), target.Port);
-            if (!authorization.Accepted)
-                throw new InvalidOperationException("Zone redirect authorization failed: " + authorization.Reason);
+            _ = target;
+            _handoffAuthority.Authorize(character, _handoffCookie1, _handoffCookie2);
+        }
+
+        /// <summary>The cookies this client logged in with; it presents them again to whichever instance it moves to.</summary>
+        internal bool TryGetHandoffCookies(int character, out uint cookie1, out uint cookie2)
+        {
+            lock (this)
+            {
+                cookie1 = _handoffCookie1;
+                cookie2 = _handoffCookie2;
+                return _handoffCharacter == character && (cookie1 != 0 || cookie2 != 0);
+            }
         }
 
         public void Close()
@@ -962,6 +1009,19 @@ namespace ZoneEngine_New.Core.Network
                         throw new IOException("Socket closed during compressed send.");
                     sent += n;
                 }
+            }
+        }
+
+        /// <summary>The client's address, for per-address limits; null once the socket is gone.</summary>
+        internal IPAddress? RemoteAddress()
+        {
+            try
+            {
+                return (_socket.RemoteEndPoint as IPEndPoint)?.Address;
+            }
+            catch (ObjectDisposedException)
+            {
+                return null;
             }
         }
 

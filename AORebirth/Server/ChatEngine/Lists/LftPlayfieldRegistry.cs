@@ -3,7 +3,7 @@ namespace ChatEngine.Lists
     using System.Collections.Concurrent;
 
     /// <summary>
-    /// Live playfield information pushed from ZoneEngine over ISCom.
+    /// Live playfield information pushed from ZoneEngine through World.
     ///
     /// Expansion:
     /// 1 = Rubi-Ka

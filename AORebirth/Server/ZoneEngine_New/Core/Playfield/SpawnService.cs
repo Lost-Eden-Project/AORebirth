@@ -840,12 +840,23 @@ namespace ZoneEngine_New.Core.Playfield
             }
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("arrive.hydrate", characterId);
             Player player = SpawnPlayer(session, command.Hydration);
+            if (command.Envelope != null)
+            {
+                // Arriving from another zone instance: the zone-change rules a same-instance arrival applies.
+                // Buffs with a playshift requirement the character no longer meets end before FullCharacter.
+                Nanos.NanoRuntime.StripPlayshiftFailures(player);
+                if (command.Envelope.ExitProxyDoor != 0 && _playfield is ACGPlayfield acg)
+                    acg.World?.RegisterExitProxyDoor(command.Envelope.ExitProxyDoor);
+            }
 
             Metrics.TickStallWatch.Stage("arrive.self", characterId);
             session.State = SessionState.SpawnReady;
             // InitiateCompression + ChatServerInfo + PlayfieldAnarchyF + GameTime are sent from ZoneLoginHandler.
 
             _playfieldManager.Teams.AttachPlayer(player);
+            // From another instance with a team: the client's team window stays; FullCharacter carries its stats.
+            if (command.Envelope?.Team != null)
+                _playfieldManager.Teams.ApplyArrivedTeam(player, command.Envelope.Team);
             SimpleCharFullUpdateMessage spawn = player.BuildSpawnMessage();
             FullCharacterMessage full = player.BuildFullCharacterMessage();
             PlayerSpawnPayloadValidator.RequireValidMessages(spawn, full);
@@ -867,7 +878,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             Metrics.TickStallWatch.Stage("arrive.teams", characterId);
             _playfieldManager.Teams.AttachPlayer(player);
-            _playfieldManager.Teams.RefreshPlayer(player);
+            _playfieldManager.Teams.RefreshPlayer(player, preserveRoster: command.Envelope?.Team != null);
 
             Metrics.TickStallWatch.Stage("arrive.visibility", characterId);
             // Visibility must activate even when journal/quest restore fails; otherwise nearby
@@ -877,6 +888,8 @@ namespace ZoneEngine_New.Core.Playfield
             TryRestorePostSpawnContent(player);
             // A fresh client's overflow window is empty: send the saved one.
             OverflowGrants.Resend(player);
+            if (command.Envelope != null)
+                World.EnvelopeApplier.SummonPets(_playfield, player, command.Envelope, _logger);
 
             _logger.Info(
                 string.Format(
@@ -1390,6 +1403,45 @@ namespace ZoneEngine_New.Core.Playfield
                     player.Identity.Instance));
         }
 
+        /// <summary>
+        /// The player moved to another zone instance: it was saved for the move and World gave its lease to the
+        /// destination, so it leaves here without another save. The session stays open, unbound, so the redirect
+        /// already queued reaches the client; the client drops it when it reconnects elsewhere.
+        /// </summary>
+        internal void DepartToInstance(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            int characterId = player.Identity.Instance;
+            // Its pets were captured for the destination to summon again; these copies go.
+            _playfield.GetRequiredService<Pets.PetService>().DismissAll(player, "owner changed zone instance", charmTurnsOnOwner: false);
+            player.SetFightingTarget(Identity.None);
+            // Its team goes on on the destination instance.
+            _playfieldManager.Teams.DetachForTransfer(player);
+            player.QuarantinePersistence();
+
+            IZoneSession? session = player.Session;
+            if (session != null)
+            {
+                player.Session = null;
+                session.UnbindPlayer();
+            }
+
+            _playfield.GetRequiredService<PlayfieldLocality>().UnregisterDynel(player);
+            _registry.Unregister(player.Identity);
+            _playfieldManager.UnregisterPlayer(player);
+            player.Playfield = null;
+            player.ConnectionPhase = PlayerConnectionPhase.LinkDead;
+            player.LinkDeadUntilUtc = null;
+            player.ReleaseOnlineOwnership();
+
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Player {0} departed playfield {1} for another zone instance",
+                    characterId,
+                    _playfield.Identity.Instance));
+        }
+
         private void DespawnPlayer(Player player)
         {
             int characterId = player.Identity.Instance;
@@ -1401,17 +1453,32 @@ namespace ZoneEngine_New.Core.Playfield
 
             if (!player.IsPersistenceQuarantined)
             {
-                player.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
-                // Return offered items before the snapshot so a logout mid-trade cannot eat them.
-                _trades.Cancel(player, "logged out");
-                if (player.Inventory.IsHydrated)
+                try
                 {
-                    // Buffs stop running while the character is offline: they are saved with the time they have left.
-                    player.SnapshotActiveNanosForLogout();
-                    _flush.HardFlush(player);
-                }
+                    player.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
+                    // Return offered items before the snapshot so a logout mid-trade cannot eat them.
+                    _trades.Cancel(player, "logged out");
+                    if (player.Inventory.IsHydrated)
+                    {
+                        // Buffs stop running while the character is offline: they are saved with the time they have left.
+                        player.SnapshotActiveNanosForLogout();
+                        _flush.HardFlush(player);
+                    }
 
-                _snapshot.Commit(player);
+                    _snapshot.Commit(player);
+                }
+                catch (Exception exception)
+                {
+                    // The character still leaves the world: a save that cannot complete (its rows were deleted while
+                    // it was link-dead) must not keep it registered and retrying on every tick forever.
+                    _logger.Error(
+                        exception,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Logout save failed for character {0}; despawning without it",
+                            characterId));
+                    player.QuarantinePersistence();
+                }
             }
 
             IZoneSession? session = player.Session;

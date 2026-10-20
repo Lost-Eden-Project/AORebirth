@@ -52,7 +52,7 @@ namespace ZoneEngine_New.Core.Network
             }
 
             Config config = ConfigReadWrite.Instance.CurrentConfig;
-            int port = config.ZonePort;
+            int port = ZoneEngine_New.Core.World.ZoneInstanceOptions.CurrentOrNull?.Port ?? config.ZonePort;
             if (port < 1 || port > 65535)
             {
                 throw new InvalidOperationException("ZonePort must be between 1 and 65535.");

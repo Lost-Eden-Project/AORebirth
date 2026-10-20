@@ -244,6 +244,11 @@ namespace Utility.Config
         public DebugMcpSettings DebugMcp { get; set; }
 
         /// <summary>
+        /// The World service every engine connects to. Omitted fields take the <see cref="WorldSettings"/> defaults.
+        /// </summary>
+        public WorldSettings World { get; set; }
+
+        /// <summary>
         /// Comma-separated DebugInfoDetail flags (e.g. Engine,Error,Network,Combat,Locality). Defaults to Engine,Error when omitted.
         /// </summary>
         public string DebugInfoDetail { get; set; }
@@ -271,6 +276,79 @@ namespace Utility.Config
         public string WebHostPhpPath { get; set; }
 
         #endregion
+    }
+
+    /// <summary>
+    /// Where the World service listens and how engines reach it. The shared secret is never stored here: it comes
+    /// from the AO_REBIRTH_WORLD_TOKEN environment variable.
+    /// </summary>
+    public class WorldSettings
+    {
+        public const string DefaultListenIP = "127.0.0.1";
+
+        public const int DefaultPort = 7600;
+
+        public const int DefaultStatusPort = 7601;
+
+        public const int DefaultLeaseTtlSeconds = 15;
+
+        public const int DefaultLeaseGraceSeconds = 10;
+
+        public const int DefaultHeartbeatMilliseconds = 2000;
+
+        /// <summary>World's gRPC address for clients, e.g. http://127.0.0.1:7600. Defaults to ListenIP:Port.</summary>
+        public string Url { get; set; }
+
+        /// <summary>The address World binds. Anything but loopback requires AO_REBIRTH_WORLD_TOKEN.</summary>
+        public string ListenIP { get; set; }
+
+        public int Port { get; set; }
+
+        /// <summary>HTTP status page (JSON); 0 or omitted uses the default, -1 disables it.</summary>
+        public int StatusPort { get; set; }
+
+        /// <summary>This zone engine's instance name. Defaults to "zone-" plus its game port.</summary>
+        public string InstanceName { get; set; }
+
+        public int LeaseTtlSeconds { get; set; }
+
+        public int LeaseGraceSeconds { get; set; }
+
+        public int HeartbeatMilliseconds { get; set; }
+
+        public static string ResolveListenIP(WorldSettings settings)
+            => settings == null || string.IsNullOrWhiteSpace(settings.ListenIP) ? DefaultListenIP : settings.ListenIP.Trim();
+
+        public static int ResolvePort(WorldSettings settings)
+            => settings == null || settings.Port <= 0 ? DefaultPort : settings.Port;
+
+        public static int ResolveStatusPort(WorldSettings settings)
+            => settings == null || settings.StatusPort == 0 ? DefaultStatusPort : settings.StatusPort;
+
+        public static string ResolveUrl(WorldSettings settings)
+        {
+            if (settings != null && !string.IsNullOrWhiteSpace(settings.Url))
+            {
+                return settings.Url.Trim();
+            }
+
+            string host = ResolveListenIP(settings);
+            if (host == "0.0.0.0" || host == "::" || host == "*")
+            {
+                host = "127.0.0.1";
+            }
+
+            return "http://" + (host.Contains(":") ? "[" + host + "]" : host) + ":" + ResolvePort(settings);
+        }
+
+        public static int ResolveLeaseTtlSeconds(WorldSettings settings)
+            => settings == null || settings.LeaseTtlSeconds < 5 ? DefaultLeaseTtlSeconds : settings.LeaseTtlSeconds;
+
+        public static int ResolveLeaseGraceSeconds(WorldSettings settings)
+            => settings == null || settings.LeaseGraceSeconds < 2 ? DefaultLeaseGraceSeconds : settings.LeaseGraceSeconds;
+
+        public static int ResolveHeartbeatMilliseconds(WorldSettings settings)
+            => settings == null || settings.HeartbeatMilliseconds < 250 ? DefaultHeartbeatMilliseconds : settings.HeartbeatMilliseconds;
     }
 
     #endregion

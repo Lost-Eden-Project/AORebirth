@@ -275,7 +275,7 @@ namespace ZoneEngine_New.Core.Commands
                 {
                     if (ReferenceEquals(self.Playfield, playfield))
                         self.Session?.TransferToPlayfield(destination, landing);
-                });
+                }, new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
                 return;
             }
 

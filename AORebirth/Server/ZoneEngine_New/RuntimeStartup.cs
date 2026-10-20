@@ -27,7 +27,7 @@ namespace ZoneEngine_New
             var values = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "/shutdown-file", "--shutdown-file", "/stdout-log", "--stdout-log",
-                "/stderr-log", "--stderr-log"
+                "/stderr-log", "--stderr-log", "--instance", "--zone-port", "--debug-mcp-port"
             };
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int validationModes = 0;
@@ -55,7 +55,6 @@ namespace ZoneEngine_New
                 ?? throw new InvalidOperationException("Configuration is required.");
             EngineBindPolicy.ResolveFromEnvironment();
             ValidatePort(config.ZonePort);
-            ValidatePort(config.CommPort);
             if (!IPAddress.TryParse(config.ZoneIP, out IPAddress? advertised)
                 || advertised.AddressFamily != AddressFamily.InterNetwork
                 || advertised.Equals(IPAddress.Any) || advertised.Equals(IPAddress.Broadcast))

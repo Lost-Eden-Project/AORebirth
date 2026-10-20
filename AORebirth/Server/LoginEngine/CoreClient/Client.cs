@@ -316,6 +316,11 @@ namespace LoginEngine.CoreClient
         /// </returns>
         internal string ZoneHandoffGeneration { get; private set; }
 
+        /// <summary>World: login generations, zone tickets and character release for deletion.</summary>
+        internal static AORebirth.World.Contracts.WorldSessionClient World
+            => AORebirth.World.Contracts.WorldSessionClient.Shared(
+                Utility.Config.WorldSettings.ResolveUrl(Utility.Config.ConfigReadWrite.Instance.CurrentConfig.World));
+
         internal bool CompleteAuthentication(string attemptedAccountName, long attemptedGeneration)
         {
             lock (this.authenticationSync)
@@ -331,8 +336,8 @@ namespace LoginEngine.CoreClient
                     return false;
                 }
 
-                try { this.ZoneHandoffGeneration = AORebirth.Database.Dao.ZoneHandoffStore.Configured().BeginLogin(attemptedAccountName); }
-                catch { return false; } // Storage unavailable: never authorize a zone ticket.
+                try { this.ZoneHandoffGeneration = World.BeginLogin(attemptedAccountName); }
+                catch { return false; } // World unavailable: never authorize a zone ticket.
                 this.accountName = attemptedAccountName;
                 this.authenticatedAccountName = attemptedAccountName;
                 this.authenticationState = AuthenticationState.Authenticated;

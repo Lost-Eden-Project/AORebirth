@@ -65,6 +65,9 @@
         if (key === "webengine") {
             return "WebEngine";
         }
+        if (key === "worldengine") {
+            return "WorldEngine";
+        }
 
         throw new Error("Unknown engine name: " + value);
     }
@@ -233,12 +236,27 @@
             return parsePositiveInteger(nodes.item(0).text, fieldName, 65535);
         }
 
+        // World/Port and World/StatusPort are optional (WorldSettings defaults); StatusPort -1 turns it off.
+        function readOptionalWorldPort(fieldName, fallback) {
+            var nodes = document.selectNodes("/*/World/" + fieldName);
+            if (nodes.length === 0 || trim(nodes.item(0).text) === "" || trim(nodes.item(0).text) === "0") {
+                return fallback;
+            }
+            if (trim(nodes.item(0).text) === "-1") {
+                return 0;
+            }
+
+            return parsePositiveInteger(nodes.item(0).text, "World " + fieldName, 65535);
+        }
+
         return {
             chat: readPort("ChatPort"),
-            communication: readPort("CommPort"),
+            communication: 0,
             login: readPort("LoginPort"),
             zone: readPort("ZonePort"),
-            web: readPort("WebHostPort")
+            web: readPort("WebHostPort"),
+            world: readOptionalWorldPort("Port", 7600),
+            worldStatus: readOptionalWorldPort("StatusPort", 7601)
         };
     }
 
@@ -257,10 +275,13 @@
         }
 
         var definitions = [
-            definition("ChatEngine", "ChatEngine.exe", [ports.communication, ports.chat], true),
+            // ChatEngine listens for clients only; zones reach it through World (no CommPort listener).
+            definition("ChatEngine", "ChatEngine.exe", ports.communication ? [ports.communication, ports.chat] : [ports.chat], true),
             definition("LoginEngine", "LoginEngine.exe", [ports.login], true),
             definition("ZoneEngine_New", "ZoneEngine_New\\ZoneEngine_New.exe", [ports.zone], true),
-            definition("WebEngine", "WebEngine.exe", [ports.web], false)
+            definition("WebEngine", "WebEngine.exe", [ports.web], false),
+            definition("WorldEngine", "WorldEngine\\WorldEngine.exe",
+                ports.worldStatus ? [ports.world, ports.worldStatus] : [ports.world], false)
         ];
 
         var claimedPorts = {};

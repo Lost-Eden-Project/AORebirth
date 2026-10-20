@@ -30,6 +30,9 @@ namespace ZoneEngine_New.Core.DebugMcp
             DebugMcpSettings? settings = ConfigReadWrite.Instance.CurrentConfig == null
                 ? null
                 : ConfigReadWrite.Instance.CurrentConfig.DebugMcp;
+            // Each zone instance needs its own debug port.
+            if (settings != null && World.ZoneInstanceOptions.CurrentOrNull?.DebugMcpPort is int port)
+                settings = new DebugMcpSettings { Enabled = settings.Enabled, ListenIP = settings.ListenIP, Port = port, AllowWrites = settings.AllowWrites };
             DebugMcpHost? host = Start(zoneServices, logger, settings);
             if (host == null)
             {

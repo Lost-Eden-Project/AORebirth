@@ -10,6 +10,8 @@ internal sealed record ZoneRedirectEndpoint(IPAddress Address, ushort Port)
 {
     internal static ZoneRedirectEndpoint Configured()
     {
+        if (ZoneEngine_New.Core.World.ZoneInstanceOptions.CurrentOrNull is { } instance)
+            return new ZoneRedirectEndpoint(instance.AdvertisedAddress, (ushort)instance.Port);
         Config? config = ConfigReadWrite.Instance.CurrentConfig;
         string host = config == null || string.IsNullOrWhiteSpace(config.ZoneIP) ? "127.0.0.1" : config.ZoneIP;
         int port = config == null || config.ZonePort <= 0 ? 7501 : config.ZonePort;

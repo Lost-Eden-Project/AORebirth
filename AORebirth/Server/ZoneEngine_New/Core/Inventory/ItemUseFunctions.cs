@@ -891,7 +891,7 @@ namespace ZoneEngine_New.Core.Inventory
                 if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
                     return;
                 session.TransferToPlayfield(destination, destination.SnapFeetToFloor(new Vector3(x, y, z)));
-            });
+            }, new ZoneEngine_New.Core.World.RemoteArrival(new Vector3(x, y, z), Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
         }
 
         /// <summary>
@@ -955,7 +955,7 @@ namespace ZoneEngine_New.Core.Inventory
                 if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
                     return;
                 session.TransferToPlayfield(destPlayfield, landing, heading);
-            });
+            }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
         }
 
         static void ClearProxyReturn(Player player)
@@ -1113,7 +1113,7 @@ namespace ZoneEngine_New.Core.Inventory
                 if (!landsOnLine && arrival is ACGPlayfield acg)
                     acg.World?.RegisterExitProxyDoor(destDoor);
                 session.TransferToPlayfield(arrival, landing, heading);
-            });
+            }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport, landsOnLine ? 0 : destDoor));
         }
 
         /// <summary>
@@ -1169,7 +1169,7 @@ namespace ZoneEngine_New.Core.Inventory
                 if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
                     return;
                 session.TransferToPlayfield(destPlayfield, landing, heading);
-            });
+            }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
         }
 
         /// <summary>

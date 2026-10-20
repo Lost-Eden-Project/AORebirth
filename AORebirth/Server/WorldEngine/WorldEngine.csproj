@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- World service: character leases, zone routing, playfield assignment, teams. In-memory; no database. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>WorldEngine</AssemblyName>
+    <RootNamespace>WorldEngine</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <AORebirthRepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../..'))</AORebirthRepositoryRoot>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <OutputPath>..\..\Built\Debug\WorldEngine\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>..\..\Built\Release\WorldEngine\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore.Server" Version="2.71.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../Libraries/Source/AORebirth.World.Contracts/AORebirth.World.Contracts.csproj" />
+    <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/Utility.ZoneNew.WinNet10.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="../../Config/Config.xml" Link="Config.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

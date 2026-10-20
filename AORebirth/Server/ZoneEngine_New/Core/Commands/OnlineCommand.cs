@@ -21,13 +21,17 @@ namespace ZoneEngine_New.Core.Commands
         static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(5);
 
         readonly Lazy<PlayfieldManager> _playfields;
+        readonly ZoneEngine_New.Core.World.WorldLink? _world;
         readonly ConcurrentDictionary<int, DateTime> _lastUseUtc = new();
 
-        public OnlineCommand(Lazy<PlayfieldManager> playfields)
+        public OnlineCommand(Lazy<PlayfieldManager> playfields, ZoneEngine_New.Core.World.WorldLink? world = null)
         {
             ArgumentNullException.ThrowIfNull(playfields);
             _playfields = playfields;
+            _world = world;
         }
+
+        sealed record Entry(string Name, bool Teleportable, int Level, int Profession);
 
         public string Name => "online";
 
@@ -60,17 +64,48 @@ namespace ZoneEngine_New.Core.Commands
             _lastUseUtc[callerId] = nowUtc;
             bool canTeleport = context.Player.Stats.GetOrZero(CharacterStat.GmLevel) >= TeleportCommand.GmLevel;
 
-            var entries = _playfields.Value.SnapshotPlayers()
-                .Select(player => new
+            if (_world != null)
+            {
+                // Every zone instance: World's directory. The reply is sent from the caller's own tick.
+                Player caller = context.Player;
+                _ = System.Threading.Tasks.Task.Run(async () =>
                 {
-                    Name = string.IsNullOrEmpty(player.Name)
+                    List<Entry> online;
+                    try
+                    {
+                        AORebirth.World.Contracts.V1.ListOnlineReply reply = await _world.ListOnlineAsync().ConfigureAwait(false);
+                        online = reply.Characters.Select(character => new Entry(
+                            string.IsNullOrEmpty(character.Name) ? character.CharacterId.ToString(CultureInfo.InvariantCulture) : character.Name,
+                            canTeleport && !string.IsNullOrEmpty(character.Name) && character.CharacterId != callerId,
+                            character.Level,
+                            character.Profession)).ToList();
+                    }
+                    catch (Exception)
+                    {
+                        online = LocalEntries(canTeleport, callerId);
+                    }
+
+                    caller.Playfield?.DispatchPlayerProjection(caller, () => Send(context, online));
+                });
+                return;
+            }
+
+            Send(context, LocalEntries(canTeleport, callerId));
+        }
+
+        List<Entry> LocalEntries(bool canTeleport, int callerId)
+            => _playfields.Value.SnapshotPlayers()
+                .Select(player => new Entry(
+                    string.IsNullOrEmpty(player.Name)
                         ? player.Identity.Instance.ToString(CultureInfo.InvariantCulture)
                         : player.Name,
-                    Teleportable = canTeleport && !string.IsNullOrEmpty(player.Name) && player.Identity.Instance != callerId,
-                    Level = player.Stats.GetOrZero(CharacterStat.Level),
-                    Profession = player.Stats.GetOrZero(CharacterStat.Profession)
-                })
+                    canTeleport && !string.IsNullOrEmpty(player.Name) && player.Identity.Instance != callerId,
+                    player.Stats.GetOrZero(CharacterStat.Level),
+                    player.Stats.GetOrZero(CharacterStat.Profession)))
                 .ToList();
+
+        static void Send(GmCommandContext context, List<Entry> entries)
+        {
 
             // One block per profession so a page break never separates a heading from its players.
             var blocks = new List<string>();

@@ -47,7 +47,6 @@ namespace ChatEngine
     #endif
 
     using AORebirth.Database;
-    using AORebirth.Communication.ISComV2Server;
     using AORebirth.Communication.Messages;
     using AORebirth.BotService;
 
@@ -82,7 +81,6 @@ namespace ChatEngine
 
         /// <summary>
         /// </summary>
-        public static ISComV2Server ISCom;
 
         /// <summary>
         /// </summary>
@@ -354,13 +352,6 @@ namespace ChatEngine
                 return false;
             }
 
-            if (ISCom == null || !ISCom.IsRunning || !ISCom.TCPEnabled)
-            {
-                Console.Error.WriteLine("ChatEngine failed to start its ISCom TCP listener.");
-                RequestShutdown("ISCom listener startup failure");
-                return false;
-            }
-
             #if AOREBIRTH_LINUX
             NotifySystemd("READY=1\nSTATUS=ChatEngine listeners are ready");
             #endif
@@ -553,17 +544,6 @@ namespace ChatEngine
                 }
             }
 
-            if (ISCom != null)
-            {
-                try
-                {
-                    ISCom.Stop();
-                }
-                catch (Exception e)
-                {
-                    Console.Error.WriteLine("ISCom shutdown failed: " + e.Message);
-                }
-            }
         }
 
         private static void CompleteShutdown()
@@ -586,18 +566,18 @@ namespace ChatEngine
                 Console.Error.WriteLine("Signal cleanup failed: " + e.Message);
             }
 
-            if (ISCom != null)
+            if (ChatServer.World != null)
             {
                 try
                 {
-                    ISCom.Dispose();
+                    ChatServer.World.Dispose();
                 }
                 catch (Exception e)
                 {
-                    Console.Error.WriteLine("ISCom disposal failed: " + e.Message);
+                    Console.Error.WriteLine("World link disposal failed: " + e.Message);
                 }
 
-                ISCom = null;
+                ChatServer.World = null;
             }
 
             if (chatServer != null)
@@ -675,7 +655,7 @@ namespace ChatEngine
                     return false;
                 }
 
-                if (!InitializeISCom())
+                if (!InitializeWorld())
                 {
                     return false;
                 }
@@ -752,38 +732,30 @@ namespace ChatEngine
         /// </summary>
         /// <returns>
         /// </returns>
-        private static bool InitializeISCom()
+        /// <summary>
+        /// World holds the leases for characters online through chat alone (bots) and answers whether a character is
+        /// owned before chat clears its Online flag.
+        /// </summary>
+        private static bool InitializeWorld()
         {
             try
             {
-                ISCom = new ISComV2Server();
-                ISCom.DataReceived += chatServer.ISComDataReceived;
-                ISCom.TcpEndPoint = new IPEndPoint(
-                    GetISComListenAddress(Config.Instance.CurrentConfig),
-                    Config.Instance.CurrentConfig.CommPort);
-
-                // Prove DynamicMessage can resolve Zone→Chat owner pet SystemChatMessage.
-                Type systemChatType = typeof(SystemChatMessage);
-                LogUtil.Debug(
-                    DebugInfoDetail.Engine,
-                    "ISCom ready; SystemChatMessage type="
-                    + systemChatType.FullName
-                    + " asm="
-                    + systemChatType.Assembly.GetName().Name);
-
-                ISCom.Start(true, false);
-                if (!ISCom.IsRunning || !ISCom.TCPEnabled)
-                {
-                    throw new InvalidOperationException("ISCom TCP listener did not start.");
-                }
+                string url = Utility.Config.WorldSettings.ResolveUrl(Config.Instance.CurrentConfig.World);
+                ChatServer.World = new AORebirth.World.Contracts.WorldServiceLink(
+                    url, AORebirth.World.Contracts.V1.ServiceRole.RoleChat, "chat",
+                    message => LogUtil.Debug(DebugInfoDetail.Engine, message));
+                ChatServer.World.MessageReceived += chatServer.OnWorldMessage;
+                ChatServer.World.Start();
+                Console.WriteLine("Connecting to World at " + url + "...");
+                while (!ChatServer.World.WaitUntilRegistered(TimeSpan.FromSeconds(10)))
+                    Console.WriteLine("ChatEngine waiting for World at " + url + "...");
+                return true;
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine("ISCom initialization failed: " + e.Message);
+                Console.Error.WriteLine("World initialization failed: " + e.Message);
                 return false;
             }
-
-            return true;
         }
 
         /// <summary>
@@ -1061,39 +1033,6 @@ namespace ChatEngine
             }
         }
 
-        private static IPAddress GetISComListenAddress(Utility.Config.Config configuration)
-        {
-            string listenIP = configuration.ListenIP;
-            #if AOREBIRTH_LINUX
-            listenIP = Environment.GetEnvironmentVariable("AO_REBIRTH_ISCOM_LISTEN_IP");
-            if (string.IsNullOrWhiteSpace(listenIP))
-            {
-                listenIP = configuration.ISCommLocalIP;
-            }
-
-            if (string.IsNullOrWhiteSpace(listenIP))
-            {
-                listenIP = "127.0.0.1";
-            }
-            #endif
-
-            IPAddress address;
-            if (!IPAddress.TryParse(listenIP, out address))
-            {
-                throw new InvalidDataException("The ISCom listen address is invalid.");
-            }
-
-            #if AOREBIRTH_LINUX
-            if (!IPAddress.IsLoopback(address))
-            {
-                throw new InvalidDataException(
-                    "The first Linux deployment requires a loopback-only ISCom listen address.");
-            }
-            #endif
-
-            return address;
-        }
-
         private static IPAddress GetChatListenAddress(Utility.Config.Config configuration)
         {
             string listenIP = configuration.ListenIP;
@@ -1117,7 +1056,6 @@ namespace ChatEngine
         private static int ValidateStartup()
         {
             ChatServer validationChatServer = null;
-            ISComV2Server validationISCom = null;
 
             try
             {
@@ -1128,18 +1066,10 @@ namespace ChatEngine
                     configuration.ChatPort);
                 validationChatServer.MaximumPendingConnections = 100;
 
-                validationISCom = new ISComV2Server();
-                validationISCom.TcpEndPoint = new IPEndPoint(
-                    GetISComListenAddress(configuration),
-                    configuration.CommPort);
-                validationISCom.DataReceived += validationChatServer.ISComDataReceived;
-
                 if (validationChatServer.Channels.Count != 8
                     || validationChatServer.ConnectedClients.Count != 0
                     || validationChatServer.IsRunning
-                    || validationChatServer.TCPEnabled
-                    || validationISCom.IsRunning
-                    || validationISCom.TCPEnabled)
+                    || validationChatServer.TCPEnabled)
                 {
                     throw new InvalidOperationException("Offline ChatEngine topology validation failed.");
                 }
@@ -1161,11 +1091,6 @@ namespace ChatEngine
             }
             finally
             {
-                if (validationISCom != null)
-                {
-                    validationISCom.Dispose();
-                }
-
                 if (validationChatServer != null)
                 {
                     validationChatServer.Dispose();

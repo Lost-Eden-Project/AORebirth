@@ -100,14 +100,9 @@ namespace ChatEngine.PacketHandlers
             client.ChatServer().AddClientToChannels(client);
 
             // The zone may have sent this character's team join before chat was connected; ask it to resend.
-            if (!client.IsBot && Program.ISCom != null)
+            if (!client.IsBot)
             {
-                Program.ISCom.BroadCast(
-                    new AORebirth.Communication.Messages.ChatCommand
-                    {
-                        CharacterId = unchecked((int)playerId),
-                        ChatCommandString = TeamChatBridge.ChatOnlineCommand
-                    });
+                ChatEngine.CoreServer.ChatServer.SendToZone(unchecked((int)playerId), TeamChatBridge.ChatOnlineCommand);
             }
 
             if (client.IsBot)

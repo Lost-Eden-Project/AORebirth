@@ -61,6 +61,7 @@ namespace ZoneEngine_New.Core.Playfield
         private readonly CharacterSnapshotService _characterSnapshot;
         private readonly IPlayfieldMetricsRegistry _metricsRegistry;
         private readonly IShopDao _shopDao;
+        private readonly ZoneEngine_New.Core.World.CrossInstanceTransfer? _crossInstance;
         private bool _disposed;
 
         public PlayfieldManager(
@@ -86,8 +87,12 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.Knubot.KnubotService? knubot = null,
             ZoneEngine_New.Core.Configuration.GameplaySettings? gameplay = null,
             ZoneEngine_New.Core.Modules.ZoneModuleHost? modules = null,
-            ZoneEngine_New.Core.Chat.VicinityChatRelay? vicinity = null)
+            ZoneEngine_New.Core.Chat.VicinityChatRelay? vicinity = null,
+            ZoneEngine_New.Core.World.WorldLink? world = null,
+            ZoneEngine_New.Core.World.CrossInstanceTransfer? crossInstance = null)
         {
+            World = world;
+            _crossInstance = crossInstance;
             Vicinity = vicinity;
             QuestDungeons = questDungeons;
             Knubot = knubot;
@@ -135,6 +140,12 @@ namespace ZoneEngine_New.Core.Playfield
 
         public TeamService Teams { get; }
         public AuthoredQuestService AuthoredQuests { get; }
+
+        /// <summary>This instance's World link; null in tools and tests that run one isolated engine.</summary>
+        public ZoneEngine_New.Core.World.WorldLink? World { get; }
+
+        /// <summary>Moves to playfields another zone instance runs; null without a World link.</summary>
+        public ZoneEngine_New.Core.World.CrossInstanceTransfer? CrossInstance => _crossInstance;
 
         /// <summary>Knubot NPC conversations, ticked on every playfield owner.</summary>
         public ZoneEngine_New.Core.Knubot.KnubotService? Knubot { get; }
@@ -222,7 +233,8 @@ namespace ZoneEngine_New.Core.Playfield
         /// the player's playfield once it is ready; it must re-check anything that may have changed meanwhile (session,
         /// playfield, death). False when the player already has a move waiting on a build; the request is dropped.
         /// </summary>
-        public bool WithPlayfield(int playfieldId, Player player, Action<Playfield> then)
+        public bool WithPlayfield(int playfieldId, Player player, Action<Playfield> then,
+            ZoneEngine_New.Core.World.RemoteArrival? remote = null)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(then);
@@ -239,6 +251,62 @@ namespace ZoneEngine_New.Core.Playfield
             int characterId = player.Identity.Instance;
             if (!_pendingMoveByCharacter.TryAdd(characterId, playfieldId))
                 return false;
+
+            // Not loaded here: World says which instance runs it. Another instance means a cross-instance move.
+            if (World != null && !World.HostsPlayfield(playfieldId))
+            {
+                ResolveThenMove(playfieldId, player, then, remote);
+                return true;
+            }
+
+            BuildThenMove(playfieldId, player, then);
+            return true;
+        }
+
+        void ResolveThenMove(int playfieldId, Player player, Action<Playfield> then, ZoneEngine_New.Core.World.RemoteArrival? remote)
+        {
+            int characterId = player.Identity.Instance;
+            Playfield? source = player.Playfield;
+            World!.ResolveAsync(playfieldId).ContinueWith(resolve =>
+            {
+                AORebirth.World.Contracts.V1.ResolveReply? reply = resolve.IsCompletedSuccessfully ? resolve.Result : null;
+                if (reply == null || !reply.Accepted)
+                {
+                    _pendingMoveByCharacter.TryRemove(characterId, out _);
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "Playfield {0} could not be resolved for character {1}: {2}; the character stays put", playfieldId,
+                        characterId, reply?.Reason ?? resolve.Exception?.GetBaseException().GetType().Name ?? "cancelled"));
+                    return;
+                }
+
+                if (string.Equals(reply.Instance, World.Instance.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildThenMove(playfieldId, player, then);
+                    return;
+                }
+
+                _pendingMoveByCharacter.TryRemove(characterId, out _);
+                if (source == null || remote == null || _crossInstance == null)
+                {
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "Playfield {0} runs on {1}; this move of character {2} has no cross-instance landing", playfieldId,
+                        reply.Instance, characterId));
+                    return;
+                }
+
+                source.DispatchPlayerProjection(player, () =>
+                {
+                    if (!ReferenceEquals(player.Playfield, source) || player.Session == null) return;
+                    if (remote.Prepare != null && !remote.Prepare()) return;
+                    _crossInstance.Start(player, playfieldId, remote.Landing, remote.Heading ?? player.Rotation,
+                        remote.Kind, remote.ExitProxyDoor);
+                });
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        }
+
+        void BuildThenMove(int playfieldId, Player player, Action<Playfield> then)
+        {
+            int characterId = player.Identity.Instance;
 
             _logger.Info(
                 string.Format(
@@ -288,7 +356,6 @@ namespace ZoneEngine_New.Core.Playfield
                 CancellationToken.None,
                 TaskContinuationOptions.None,
                 TaskScheduler.Default);
-            return true;
         }
 
         Task<Playfield> BuildInBackground(int playfieldId)
@@ -323,6 +390,8 @@ namespace ZoneEngine_New.Core.Playfield
             // A quest dungeon id must never become an ordinary empty playfield (login, teleport or a crafted route).
             if (ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(playfieldId))
                 throw new InvalidOperationException("A quest dungeon playfield requires its quest's generated layout.");
+
+            RequireHostedHere(playfieldId);
 
             while (true)
             {
@@ -426,6 +495,25 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
+        /// Never simulate a playfield World gave to another instance: two copies would each run its NPCs and loot.
+        /// Asks World (off any tick: builds never run on one) when this instance does not know yet.
+        /// </summary>
+        void RequireHostedHere(int playfieldId)
+        {
+            if (World == null || World.HostsPlayfield(playfieldId))
+                return;
+            if (!World.IsServing)
+                throw new InvalidOperationException("World is unavailable; playfield " + playfieldId.ToString(CultureInfo.InvariantCulture)
+                    + " cannot be assigned.");
+            AORebirth.World.Contracts.V1.ResolveReply reply = World.ResolveAsync(playfieldId).GetAwaiter().GetResult();
+            if (!reply.Accepted)
+                throw new InvalidOperationException("World could not assign playfield " + playfieldId.ToString(CultureInfo.InvariantCulture)
+                    + ": " + reply.Reason);
+            if (!string.Equals(reply.Instance, World.Instance.Name, StringComparison.OrdinalIgnoreCase))
+                throw new ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException(playfieldId, reply.Instance);
+        }
+
+        /// <summary>
         /// Outdoor playfields carry metadata, while many retail interiors only carry Dynels.dat.
         /// An interior still needs the world simulation when it contains a portal or is the
         /// destination of a return-recording TeleportProxy; otherwise its exit boundary can never
@@ -504,6 +592,7 @@ namespace ZoneEngine_New.Core.Playfield
                         }
 
                         playfield.CompleteIdleRetirement();
+                        World?.PlayfieldUnloaded(playfield.Identity.Instance);
                         _logger.Info(string.Format(
                             CultureInfo.InvariantCulture,
                             "Empty playfield unloaded playfield={0} emptyLifetimeSeconds={1}",
@@ -556,6 +645,7 @@ namespace ZoneEngine_New.Core.Playfield
                 }
             }
 
+            RequireHostedHere(playfieldId);
             QuestDungeonPlayfield created = new(playfieldId, questId, layout, entrance, targetHash, quality, _logger.CreateForPlayfield(playfieldId),
                 _router, this, _playerHydrator, _gameData, _items, _hashItems, _inventoryRepository, _instanceIds,
                 _inventoryMoves, _inventoryFlush, _trades, _characterSnapshot, _metricsRegistry, _shopDao, objectiveItem, collectObjective, npcObjective,
@@ -676,6 +766,7 @@ namespace ZoneEngine_New.Core.Playfield
                 try
                 {
                     dungeon.Dispose();
+                    World?.PlayfieldUnloaded(dungeon.Identity.Instance);
                     _logger.Info(string.Format(CultureInfo.InvariantCulture, "Quest dungeon released playfield={0} quest={1}",
                         dungeon.Identity.Instance, dungeon.QuestId));
                 }

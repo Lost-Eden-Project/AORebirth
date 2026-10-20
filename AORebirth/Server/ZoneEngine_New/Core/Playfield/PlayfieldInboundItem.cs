@@ -24,6 +24,9 @@ namespace ZoneEngine_New.Core.Playfield
     {
         public required IZoneSession Session { get; init; }
         public required CharacterHydrationResult Hydration { get; init; }
+
+        /// <summary>Set when the character arrives from another zone instance.</summary>
+        public AORebirth.World.Contracts.V1.TransferEnvelope? Envelope { get; init; }
     }
 
     public sealed class PendingReconnectInboundItem : PlayfieldInboundItem

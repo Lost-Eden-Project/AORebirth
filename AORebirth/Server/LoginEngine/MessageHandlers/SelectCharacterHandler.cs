@@ -94,21 +94,25 @@ namespace LoginEngine.MessageHandlers
 
             try
             {
+                // World picks the zone instance: the one that already owns the character (link-dead, or in play on a
+                // second client) or the one that runs its playfield.
+                int storedPlayfield = AORebirth.Database.DatabaseDaoFactory.CreateCharacterDao()
+                    .LoadById(selectCharacterMessage.CharacterId)?.Playfield ?? 0;
+                var ticket = Client.World.SelectCharacter(
+                    authenticatedAccount, client.ZoneHandoffGeneration, selectCharacterMessage.CharacterId, storedPlayfield);
+                if (!ticket.Accepted)
+                {
+                    throw new InvalidOperationException("World refused the zone handoff: " + ticket.Reason);
+                }
+
                 IPAddress zoneIpAdress;
-                if (IPAddress.TryParse(ConfigReadWrite.Instance.CurrentConfig.ZoneIP, out zoneIpAdress) == false)
+                if (!IPAddress.TryParse(ticket.Zone.Address, out zoneIpAdress)
+                    || zoneIpAdress.AddressFamily != AddressFamily.InterNetwork
+                    || ticket.Zone.Port == 0 || ticket.Zone.Port > ushort.MaxValue)
                 {
-                    IPHostEntry zoneHost = Dns.GetHostEntry(ConfigReadWrite.Instance.CurrentConfig.ZoneIP);
-                    zoneIpAdress = zoneHost.AddressList.FirstOrDefault(
-                        ip => ip.AddressFamily == AddressFamily.InterNetwork);
+                    throw new InvalidOperationException("World returned an unusable zone endpoint.");
                 }
 
-                if (zoneIpAdress == null)
-                {
-                    throw new InvalidOperationException("ZoneIP did not resolve to an IPv4 address.");
-                }
-
-                var ticket = AORebirth.Database.Dao.ZoneHandoffStore.Configured().Issue(
-                    authenticatedAccount, client.ZoneHandoffGeneration, selectCharacterMessage.CharacterId);
                 var zoneRedirectionMessage = new ZoneInfoMessage
                                              {
                                                  CharacterId = selectCharacterMessage.CharacterId,
@@ -118,9 +122,7 @@ namespace LoginEngine.MessageHandlers
                                                  // The retail client stores this field but has no proven runtime consumer.
                                                  PlayerId = 0,
                                                  ServerIpAddress = zoneIpAdress,
-                                                 ServerPort =
-                                                     (ushort)
-                                                     ConfigReadWrite.Instance.CurrentConfig.ZonePort
+                                                 ServerPort = (ushort)ticket.Zone.Port
                                              };
                 client.MarkCharacterOnlineForHandoff(selectCharacterMessage.CharacterId);
                 client.StartZoneHandoff();

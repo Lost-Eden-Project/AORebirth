@@ -4,8 +4,6 @@ namespace ZoneEngine_New.Core.Chat
     using System.Collections.Generic;
     using System.Globalization;
 
-    using AORebirth.Communication.Messages;
-
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages;
 
@@ -76,16 +74,7 @@ namespace ZoneEngine_New.Core.Chat
             if (recipientIds.Count == 0)
                 return;
 
-            VicinityChatMessage vicinity = new VicinityChatMessage
-            {
-                CharacterIds = recipientIds,
-                MessageType = (byte)type,
-                Text = text,
-                SenderId = senderId,
-                SenderName = senderName
-            };
-
-            if (_chatLink.TrySend(vicinity))
+            if (_chatLink.SendVicinity(senderId, senderName, (byte)type, text, recipientIds))
                 return;
 
             _logger.Warn(

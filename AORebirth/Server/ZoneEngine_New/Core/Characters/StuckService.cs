@@ -67,7 +67,7 @@ namespace ZoneEngine_New.Core.Characters
             {
                 if (ReferenceEquals(player.Playfield, current))
                     player.Session?.TransferToPlayfield(destination, landing);
-            });
+            }, new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
 
             if (queued)
                 LockStability(player, nowUtc);

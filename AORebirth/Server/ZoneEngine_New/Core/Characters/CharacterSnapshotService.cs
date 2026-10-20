@@ -6,6 +6,8 @@ namespace ZoneEngine_New.Core.Characters
     using System.Threading;
     using AORebirth.Database.Dao;
 
+    using ZoneEngine_New.Core.World;
+
     using SmokeLounge.AOtomation.Messaging.GameData;
 
     using ZoneEngine_New.Core.Data;
@@ -36,6 +38,7 @@ namespace ZoneEngine_New.Core.Characters
         private readonly ICharacterRepository _characters;
         private readonly IStatRepository _stats;
         private readonly IZoneLogger _logger;
+        private readonly WorldLink? _world;
         private readonly object _queueGate = new();
         private readonly Dictionary<Player, PendingCheckpoint> _pending = new(ReferenceEqualityComparer.Instance);
         private readonly ManualResetEventSlim _wake = new(false);
@@ -45,8 +48,10 @@ namespace ZoneEngine_New.Core.Characters
         public CharacterSnapshotService(
             ICharacterRepository characters,
             IStatRepository stats,
-            IZoneLogger logger)
+            IZoneLogger logger,
+            WorldLink? world = null)
         {
+            _world = world;
             ArgumentNullException.ThrowIfNull(characters);
             ArgumentNullException.ThrowIfNull(stats);
             ArgumentNullException.ThrowIfNull(logger);
@@ -64,6 +69,7 @@ namespace ZoneEngine_New.Core.Characters
             {
                 if (player.IsPersistenceQuarantined)
                     throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
+                RequireLease(player);
                 long sequence = player.SaveState.NextSequence();
                 try
                 {
@@ -79,6 +85,62 @@ namespace ZoneEngine_New.Core.Characters
             }
         }
 
+        /// <summary>
+        /// The save before a move to another zone instance: everything a logout saves, with the character placed at
+        /// its destination so the instance that reloads it puts it there. Like a logout it clears Online; the
+        /// destination sets it again when the character spawns.
+        /// </summary>
+        public void CommitForTransfer(Player player, int destinationPlayfield, Vector3 landing, Quaternion heading)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(destinationPlayfield);
+            lock (player.PersistenceGate)
+            {
+                if (player.IsPersistenceQuarantined)
+                    throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
+                RequireLease(player);
+                long sequence = player.SaveState.NextSequence();
+                var record = new CharacterRecord
+                {
+                    Id = player.Identity.Instance,
+                    Playfield = destinationPlayfield,
+                    X = landing.xf,
+                    Y = landing.yf,
+                    Z = landing.zf,
+                    HeadingW = heading.wf,
+                    HeadingX = heading.xf,
+                    HeadingY = heading.yf,
+                    HeadingZ = heading.zf
+                };
+                List<StatRecord> stats = CaptureBaseStats(player);
+                try
+                {
+                    _characters.SaveSnapshot(record, online: 0, stats);
+                    player.SaveState.MarkCommitted(sequence, stats, record);
+                }
+                catch (DatabaseCommitOutcomeUnknownException)
+                {
+                    player.QuarantinePersistence();
+                    player.Session?.Close();
+                    throw;
+                }
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Character transfer snapshot character={0} destination={1} pos=({2},{3},{4}) stats={5}",
+                        record.Id,
+                        destinationPlayfield,
+                        landing.xf,
+                        landing.yf,
+                        landing.zf,
+                        stats.Count));
+            }
+        }
+
+        /// <summary>Puts Online back after a transfer that did not happen (the transfer save cleared it).</summary>
+        public void RestoreOnline(int characterId) => _characters.SetOnline(characterId);
+
         /// <summary>Flushes the live aggregate before an atomic reward projection without releasing online ownership.</summary>
         public void CommitOnline(Player player)
         {
@@ -87,6 +149,7 @@ namespace ZoneEngine_New.Core.Characters
             {
                 if (player.IsPersistenceQuarantined)
                     throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
+                RequireLease(player);
                 long sequence = player.SaveState.NextSequence();
                 var location = CaptureResumableLocation(player);
                 var stats = CaptureBaseStats(player);
@@ -288,6 +351,15 @@ namespace ZoneEngine_New.Core.Characters
                 // A logout snapshot or newer checkpoint already made this capture obsolete.
                 if (player.IsPersistenceQuarantined || !state.IsNewerThanCommitted(checkpoint.Sequence))
                     return;
+                if (!OwnsLease(player.Identity.Instance))
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Character checkpoint skipped character={0}: this instance no longer holds its World lease",
+                            player.Identity.Instance));
+                    return;
+                }
 
                 List<StatRecord> changed = state.ChangedSincePersisted(checkpoint.Stats);
                 CharacterRecord? location = checkpoint.Location != null && state.LocationChanged(checkpoint.Location)
@@ -349,8 +421,25 @@ namespace ZoneEngine_New.Core.Characters
 
         private sealed record PendingCheckpoint(long Sequence, CharacterRecord? Location, IReadOnlyList<StatRecord> Stats);
 
+        /// <summary>
+        /// Online ownership for a spawned player: a reference on the World lease claimed at admission, and the Online
+        /// flag. Disposing the last reference releases the lease to World.
+        /// </summary>
         public IDisposable AcquireOnlineOwnership(int characterId)
-            => CharacterOnlineOwnershipGuard.AcquireZoneOwnership(characterId, _characters.SetOnline);
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(characterId);
+            IDisposable ownership = _world?.AcquireOwnership(characterId) ?? new UnmanagedOwnership();
+            try
+            {
+                _characters.SetOnline(characterId);
+                return ownership;
+            }
+            catch
+            {
+                ownership.Dispose();
+                throw;
+            }
+        }
 
         public void AbandonOnlineOwnership(int characterId, IDisposable ownership)
         {
@@ -359,8 +448,30 @@ namespace ZoneEngine_New.Core.Characters
             ClearOnlineIfUnowned(characterId);
         }
 
+        /// <summary>Clears the Online flag unless this instance still holds the character.</summary>
         public void ClearOnlineIfUnowned(int characterId)
-            => CharacterOnlineOwnershipGuard.TryClearLoginOwnership(characterId, _characters.SetOffline);
+        {
+            if (_world != null && _world.TokenOf(characterId) != null) return;
+            _characters.SetOffline(characterId);
+        }
+
+        /// <summary>True while this instance may write the character (always, without a World link).</summary>
+        public bool OwnsLease(int characterId) => _world == null || _world.OwnsLease(characterId);
+
+        private void RequireLease(Player player)
+        {
+            if (!OwnsLease(player.Identity.Instance))
+                throw new InvalidOperationException(
+                    "Character " + player.Identity.Instance.ToString(CultureInfo.InvariantCulture)
+                    + " is not leased to this instance; refusing to save.");
+        }
+
+        private sealed class UnmanagedOwnership : IDisposable
+        {
+            public void Dispose()
+            {
+            }
+        }
     }
 
     /// <summary>

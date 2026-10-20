@@ -79,7 +79,7 @@ namespace ChatEngine.CoreServer
         public string MessageOfTheDay = string.Empty;
 
         /// <summary>
-        /// Optional first-party bot adapter. It is distinct from normal chat clients and ISCom peers.
+        /// Optional first-party bot adapter. It is distinct from normal chat clients and zone traffic through World.
         /// </summary>
         internal ChatEngineBotRouter BotRouter;
 
@@ -144,18 +144,71 @@ namespace ChatEngine.CoreServer
             }
 
             cl.Channels.Clear();
-            this.clientOwnership.Disconnect(cl.Character.CharacterId, cl,
-                id => CharacterOnlineOwnershipGuard.TryClearLoginOwnership(unchecked((int)id), CharacterDao.Instance.SetOffline),
-                LftRegistry.Remove);
+            this.clientOwnership.Disconnect(cl.Character.CharacterId, cl, ClearOnlineIfUnowned, LftRegistry.Remove);
         }
+
+        /// <summary>The World link; set at startup before the chat listener accepts clients.</summary>
+        internal static AORebirth.World.Contracts.WorldServiceLink World;
 
         internal bool RegisterClient(Client client)
         {
             Func<IDisposable> acquireOwnership = client.IsBot
-                ? (Func<IDisposable>)(() => CharacterOnlineOwnershipGuard.AcquireZoneOwnership(
-                    unchecked((int)client.Character.CharacterId), CharacterDao.Instance.SetOnline))
+                ? (Func<IDisposable>)(() => AcquireBotOwnership(unchecked((int)client.Character.CharacterId)))
                 : null;
             return this.clientOwnership.Register(client.Character.CharacterId, client, acquireOwnership);
+        }
+
+        /// <summary>A bot is online through chat alone: it holds its own World lease and the Online flag.</summary>
+        private static IDisposable AcquireBotOwnership(int characterId)
+        {
+            string reason;
+            if (!World.TryAcquire(characterId, out reason))
+            {
+                throw new InvalidOperationException("World refused the bot character: " + reason);
+            }
+
+            try
+            {
+                CharacterDao.Instance.SetOnline(characterId);
+            }
+            catch
+            {
+                World.Release(characterId);
+                throw;
+            }
+
+            return new BotOwnership(characterId);
+        }
+
+        /// <summary>Clears Online after a chat client leaves, unless a zone or another holder still owns it.</summary>
+        private static void ClearOnlineIfUnowned(uint characterId)
+        {
+            int id = unchecked((int)characterId);
+            if (World.Owned(new[] { id }).Contains(id))
+            {
+                return;
+            }
+
+            CharacterDao.Instance.SetOffline(id);
+        }
+
+        private sealed class BotOwnership : IDisposable
+        {
+            private readonly int characterId;
+            private int disposed;
+
+            public BotOwnership(int characterId)
+            {
+                this.characterId = characterId;
+            }
+
+            public void Dispose()
+            {
+                if (System.Threading.Interlocked.Exchange(ref this.disposed, 1) == 0)
+                {
+                    World.Release(this.characterId);
+                }
+            }
         }
 
         #endregion
@@ -223,68 +276,62 @@ namespace ChatEngine.CoreServer
         /// </param>
         /// <param name="messageObject">
         /// </param>
-        internal void ISComDataReceived(object sender, DynamicMessage messageObject)
+        /// <summary>Zone traffic through World: vicinity chat to deliver, and commands about a character.</summary>
+        internal void OnWorldMessage(AORebirth.World.Contracts.V1.WorldToService message)
         {
-            if (messageObject == null)
+            if (message == null || message.BodyCase != AORebirth.World.Contracts.V1.WorldToService.BodyOneofCase.Chat)
             {
                 return;
             }
 
+            AORebirth.World.Contracts.V1.ChatEvent chat = message.Chat;
             try
             {
-                var ping = messageObject.DataObject as Ping;
-                if (ping != null)
+                switch (chat.BodyCase)
                 {
-                    // Zone keepalive — no client delivery.
-                    return;
+                    case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.Vicinity:
+                        this.DistributeVicinityChat(new VicinityChatMessage
+                        {
+                            CharacterIds = chat.Vicinity.Recipients.ToList(),
+                            MessageType = (byte)chat.Vicinity.ChannelType,
+                            Text = chat.Vicinity.Text,
+                            SenderId = chat.Vicinity.Sender,
+                            SenderName = string.IsNullOrEmpty(chat.Vicinity.SenderName) ? null : chat.Vicinity.SenderName
+                        });
+                        break;
+                    case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.ToCharacter:
+                        this.HandleZoneChatCommand(new ChatCommand
+                        {
+                            CharacterId = chat.ToCharacter.CharacterId,
+                            ChatCommandString = chat.ToCharacter.Command
+                        });
+                        break;
                 }
-
-                var message = messageObject.DataObject as VicinityChatMessage;
-                if (message != null)
-                {
-                    this.DistributeVicinityChat(message);
-                    return;
-                }
-
-                var systemChat = messageObject.DataObject as SystemChatMessage;
-                if (systemChat != null)
-                {
-                    // Owner-only pet SystemMessage (CharacterId match). Not playfield broadcast.
-                    this.DistributeSystemChat(systemChat);
-                    return;
-                }
-
-                var privateSystem = messageObject.DataObject as PrivateSystemMessage;
-                if (privateSystem != null)
-                {
-                    // Capture 20260806-063619: Daily Login PrivateMsg Sender=0 Unk1=3.
-                    this.DistributePrivateSystem(privateSystem);
-                    return;
-                }
-
-                var chatCommand = messageObject.DataObject as ChatCommand;
-                if (chatCommand != null)
-                {
-                    this.HandleZoneChatCommand(chatCommand);
-                    return;
-                }
-
-                LogUtil.Debug(
-                    DebugInfoDetail.Engine,
-                    "ISComDataReceived: unhandled type="
-                    + (messageObject.TypeName ?? (messageObject.DataObject == null
-                                                      ? "null"
-                                                      : messageObject.DataObject.GetType().FullName)));
             }
             catch (Exception e)
             {
-                LogUtil.Debug(
-                    DebugInfoDetail.Error,
-                    "ISComDataReceived failed type="
-                    + (messageObject.TypeName ?? "?")
-                    + " err="
-                    + e.Message);
+                LogUtil.Debug(DebugInfoDetail.Error, "World chat event failed type=" + chat.BodyCase + " err=" + e.Message);
                 LogUtil.ErrorException(e);
+            }
+        }
+
+        /// <summary>A command for the zone instance that runs <paramref name="characterId"/> (World routes it).</summary>
+        internal static void SendToZone(int characterId, string command)
+        {
+            AORebirth.World.Contracts.WorldServiceLink world = World;
+            if (world == null || !world.IsConnected || string.IsNullOrWhiteSpace(command))
+            {
+                return;
+            }
+
+            var chat = new AORebirth.World.Contracts.V1.ChatEvent
+            {
+                ToCharacter = new AORebirth.World.Contracts.V1.CharacterChatCommand { CharacterId = characterId, Command = command }
+            };
+            // On the registry stream: commands for a character reach its zone in the order they were sent.
+            if (!world.Publish(chat))
+            {
+                LogUtil.Debug(DebugInfoDetail.Engine, "Zone command not sent: World is unreachable");
             }
         }
 
