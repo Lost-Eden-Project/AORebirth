@@ -97,6 +97,11 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly IGameData _gameData;
         readonly HashItemMinter? _hashItems;
         readonly IZoneLogger _logger;
+        readonly ZoneEngine_New.Core.World.WorldLink? _world;
+        readonly ZoneEngine_New.Core.World.WorldCommands? _commands;
+
+        /// <summary>Other zone instances end their part of a dungeon: keys their players hold, the dungeon if they run it.</summary>
+        const string DungeonEndedCommand = "dungeon.ended";
 
         readonly ConcurrentDictionary<string, CachedDungeon> _dungeons = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<int, long> _lastRequest = new();
@@ -107,8 +112,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public QuestDungeonService(ICharacterQuestStore store, QuestService quests, MissionDestinationCatalog entrances,
             DungeonLayoutGenerator layouts, IGeneratedMissionDao offers, IItemBuilder items, IItemInstanceIdAllocator ids,
             InventoryFlushService flush, InventoryActionService inventoryActions, Lazy<PlayfieldManager> playfields,
-            IGameData gameData, IZoneLogger logger, HashItemMinter? hashItems = null)
+            IGameData gameData, IZoneLogger logger, HashItemMinter? hashItems = null,
+            ZoneEngine_New.Core.World.WorldLink? world = null, ZoneEngine_New.Core.World.WorldCommands? commands = null)
         {
+            _world = world;
+            _commands = commands;
+            _commands?.Register(DungeonEndedCommand, OnDungeonEndedElsewhere);
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _entrances = entrances ?? throw new ArgumentNullException(nameof(entrances));
@@ -383,12 +392,46 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         return false;
                     }
 
+                    // World has not said where this dungeon runs: ask off the tick, then try the entrance again.
+                    int dungeonPlayfield = dungeon.Parameters.DungeonPlayfield;
+                    ZoneEngine_New.Core.World.WorldLink? link = _playfields.Value.World;
+                    if (link != null && !link.HostsPlayfield(dungeonPlayfield)
+                        && !_playfields.Value.TryGetQuestDungeon(dungeonPlayfield, out _)
+                        && player.Playfield is Playfield here)
+                    {
+                        Vector3 spawn = layout.Spawn;
+                        _ = link.ResolveAsync(dungeonPlayfield).ContinueWith(resolve =>
+                        {
+                            if (!resolve.IsCompletedSuccessfully || !resolve.Result.Accepted) return;
+                            bool local = string.Equals(resolve.Result.Instance, link.Instance.Name, StringComparison.OrdinalIgnoreCase);
+                            here.DispatchPlayerProjection(player, () =>
+                            {
+                                if (!ReferenceEquals(player.Playfield, here) || player.Session == null) return;
+                                if (local) TryEnter(player, target);
+                                else _playfields.Value.CrossInstance?.Start(player, dungeonPlayfield, spawn, player.Rotation,
+                                    AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon);
+                            });
+                        }, System.Threading.Tasks.TaskScheduler.Default);
+                        return true;
+                    }
+
                     MissionTokenProgress? tokenProgress = CreateTokenProgress(questId, dungeon);
                     MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
-                    QuestDungeonPlayfield world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
-                        dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                        tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
-                        spawnNpcObjective: unfinishedNpc != null);
+                    QuestDungeonPlayfield world;
+                    try
+                    {
+                        world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
+                            dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
+                            tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
+                            spawnNpcObjective: unfinishedNpc != null);
+                    }
+                    catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
+                    {
+                        // The dungeon already runs on another zone instance (a teammate went in there): join it.
+                        return _playfields.Value.CrossInstance?.Start(player, dungeon.Parameters.DungeonPlayfield, layout.Spawn,
+                            player.Rotation, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon) == true;
+                    }
+
                     session.TransferToPlayfield(world, layout.Spawn);
                     return true;
                 }
@@ -474,8 +517,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     return (live, null, null);
                 if (!playfields.TryReleaseQuestDungeon(storedPlayfield, questId))
                 {
-                    PlayfieldAdmission outside = playfields.AcquirePlayfield(live.Entrance.PlayfieldId);
-                    return (outside.Playfield, new Vector3(live.Entrance.LocalX, live.Entrance.LocalY, live.Entrance.LocalZ), outside);
+                    var outsideAt = new Vector3(live.Entrance.LocalX, live.Entrance.LocalY, live.Entrance.LocalZ);
+                    PlayfieldAdmission outside = AcquireForLogin(playfields, live.Entrance.PlayfieldId, outsideAt);
+                    return (outside.Playfield, outsideAt, outside);
                 }
             }
 
@@ -487,21 +531,43 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 {
                     MissionTokenProgress? tokenProgress = CreateTokenProgress(questId, dungeon);
                     MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
-                    return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
-                        dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                        tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
-                        spawnNpcObjective: unfinishedNpc != null), layout.Spawn, null);
+                    try
+                    {
+                        return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
+                            dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
+                            tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
+                            spawnNpcObjective: unfinishedNpc != null), layout.Spawn, null);
+                    }
+                    catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
+                    {
+                        throw new ZoneEngine_New.Core.World.LoginRelocationException(storedPlayfield, layout.Spawn);
+                    }
                 }
 
-                PlayfieldAdmission admission = playfields.AcquirePlayfield(entrance.PlayfieldId);
-                return (admission.Playfield, new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ), admission);
+                var entranceAt = new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ);
+                PlayfieldAdmission admission = AcquireForLogin(playfields, entrance.PlayfieldId, entranceAt);
+                return (admission.Playfield, entranceAt, admission);
             }
 
             RespawnContentCatalog respawn = _gameData.RespawnContent;
             if (respawn.PlayfieldId <= 0 || respawn.Position is not { Length: 3 })
                 throw new InvalidOperationException("No respawn destination is configured for a login in an ended dungeon.");
-            PlayfieldAdmission respawnAdmission = playfields.AcquirePlayfield(respawn.PlayfieldId);
-            return (respawnAdmission.Playfield, new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]), respawnAdmission);
+            var respawnAt = new Vector3(respawn.Position[0], respawn.Position[1], respawn.Position[2]);
+            PlayfieldAdmission respawnAdmission = AcquireForLogin(playfields, respawn.PlayfieldId, respawnAt);
+            return (respawnAdmission.Playfield, respawnAt, respawnAdmission);
+        }
+
+        /// <summary>A login moved out of a dungeon to a playfield another zone instance runs: it must log in there.</summary>
+        static PlayfieldAdmission AcquireForLogin(PlayfieldManager playfields, int playfieldId, Vector3 position)
+        {
+            try
+            {
+                return playfields.AcquirePlayfield(playfieldId);
+            }
+            catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
+            {
+                throw new ZoneEngine_New.Core.World.LoginRelocationException(playfieldId, position);
+            }
         }
 
         /// <summary>
@@ -653,7 +719,76 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// the dungeon released; without it (a completed quest) they stay, nobody can enter any more, and the dungeon is
         /// released once the last of them has left.
         /// </summary>
-        void EndDungeon(string questId, QuestDungeonParameters parameters, bool evict)
+        void EndDungeon(string questId, QuestDungeonParameters parameters, bool evict, int ownerId = 0)
+        {
+            MissionItemObjectiveBinding? artifact = ArtifactOf(parameters, evict);
+            QuestDungeonKeyItemRow? artifactRow = artifact is { IsValid: true } ? new QuestDungeonKeyItemRow
+            {
+                InstanceId = artifact.Instance, ItemType = artifact.IdentityType,
+                LowId = artifact.LowId, HighId = artifact.HighId, Quality = artifact.Quality,
+                Source = (int)ItemSource.Quest, ContainerInstance = artifact.OwnerId
+            } : null;
+            IList<RetiredDungeonKey> retired = _store.EndQuestKeys(questId, artifactRow);
+            EndDungeonInMemory(questId, parameters, evict, retired);
+
+            // Key holders, the dungeon itself and its owner may be on other zone instances.
+            if (_commands != null)
+            {
+                var arguments = new List<string> { questId, evict ? "1" : "0", ownerId.ToString(CultureInfo.InvariantCulture) };
+                foreach (RetiredDungeonKey key in retired)
+                {
+                    arguments.Add(key.KeyInstanceId.ToString(CultureInfo.InvariantCulture));
+                    arguments.Add(key.ContainerType.ToString(CultureInfo.InvariantCulture));
+                    arguments.Add(key.ContainerInstance.ToString(CultureInfo.InvariantCulture));
+                    arguments.Add(key.ParentContainerType.ToString(CultureInfo.InvariantCulture));
+                    arguments.Add(key.ParentContainerInstance.ToString(CultureInfo.InvariantCulture));
+                }
+
+                _ = _commands.BroadcastAsync(DungeonEndedCommand, arguments.ToArray());
+            }
+
+            _logger.Info(string.Format(CultureInfo.InvariantCulture, "Dungeon quest ended quest={0} keys={1} evicted={2}", questId, retired.Count, evict));
+        }
+
+        static MissionItemObjectiveBinding? ArtifactOf(QuestDungeonParameters parameters, bool evict)
+            => evict ? parameters.MissionType switch
+            {
+                3 => parameters.ObjectiveTool,
+                4 => parameters.ObjectiveItem,
+                _ => null
+            } : null;
+
+        /// <summary>Another zone instance ended a dungeon quest (its rows are already gone): do this instance's part.</summary>
+        void OnDungeonEndedElsewhere(AORebirth.World.Contracts.V1.InstanceCommand command)
+        {
+            if (command.Arguments.Count < 3) return;
+            string questId = command.Arguments[0];
+            bool evict = command.Arguments[1] == "1";
+            int ownerId = int.Parse(command.Arguments[2], CultureInfo.InvariantCulture);
+            var retired = new List<RetiredDungeonKey>();
+            for (int i = 3; i + 4 < command.Arguments.Count; i += 5)
+                retired.Add(new RetiredDungeonKey
+                {
+                    KeyInstanceId = int.Parse(command.Arguments[i], CultureInfo.InvariantCulture),
+                    ContainerType = int.Parse(command.Arguments[i + 1], CultureInfo.InvariantCulture),
+                    ContainerInstance = int.Parse(command.Arguments[i + 2], CultureInfo.InvariantCulture),
+                    ParentContainerType = int.Parse(command.Arguments[i + 3], CultureInfo.InvariantCulture),
+                    ParentContainerInstance = int.Parse(command.Arguments[i + 4], CultureInfo.InvariantCulture)
+                });
+
+            GeneratedQuestRow? row = _store.LoadGenerated(questId);
+            if (row != null && QuestDungeonParameters.TryParse(row.AcgBuildingGeneratorJson, out QuestDungeonParameters parameters))
+                EndDungeonInMemory(questId, parameters, evict, retired);
+            else
+                _dungeons.TryRemove(questId, out _);
+
+            PlayfieldManager playfields = _playfields.Value;
+            if (ownerId > 0 && playfields.FindPlayer(ownerId, out Player owner) && owner.Playfield is Playfield at)
+                at.DispatchPlayerProjection(owner, () => _quests.GetLog(owner));
+        }
+
+        /// <summary>This instance's part of ending a dungeon: its cache, keys its players carry, the dungeon if it runs here.</summary>
+        void EndDungeonInMemory(string questId, QuestDungeonParameters parameters, bool evict, IList<RetiredDungeonKey> retired)
         {
             if (evict)
                 _dungeons.TryRemove(questId, out _);
@@ -662,19 +797,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     ? cached with { Ended = true }
                     : new CachedDungeon(parameters, 0, null, Ended: true);
 
-            MissionItemObjectiveBinding? artifact = evict ? parameters.MissionType switch
-            {
-                3 => parameters.ObjectiveTool,
-                4 => parameters.ObjectiveItem,
-                _ => null
-            } : null;
-            QuestDungeonKeyItemRow? artifactRow = artifact is { IsValid: true } ? new QuestDungeonKeyItemRow
-            {
-                InstanceId = artifact.Instance, ItemType = artifact.IdentityType,
-                LowId = artifact.LowId, HighId = artifact.HighId, Quality = artifact.Quality,
-                Source = (int)ItemSource.Quest, ContainerInstance = artifact.OwnerId
-            } : null;
-            IList<RetiredDungeonKey> retired = _store.EndQuestKeys(questId, artifactRow);
+            MissionItemObjectiveBinding? artifact = ArtifactOf(parameters, evict);
             PlayfieldManager playfields = _playfields.Value;
             foreach (RetiredDungeonKey key in retired)
             {
@@ -699,8 +822,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         {
                             if (inside.Session == null)
                                 return;
-                            using PlayfieldAdmission admission = playfields.AcquirePlayfield(dungeon.Entrance.PlayfieldId);
-                            inside.Session.TransferToPlayfield(admission.Playfield, landing);
+                            // Built (or resolved to another instance) off this tick.
+                            playfields.WithPlayfield(dungeon.Entrance.PlayfieldId, inside,
+                                destination => inside.Session?.TransferToPlayfield(destination, landing),
+                                new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
                         });
                 }
 
@@ -708,8 +833,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (!playfields.TryReleaseQuestDungeon(parameters.DungeonPlayfield, questId))
                     _pendingRelease[parameters.DungeonPlayfield] = questId;
             }
-
-            _logger.Info(string.Format(CultureInfo.InvariantCulture, "Dungeon quest ended quest={0} keys={1} evicted={2}", questId, retired.Count, evict));
         }
 
         /// <summary>Periodic work off every playfield thread: idle dungeons, expired quests, stored-quest cleanup.</summary>
@@ -736,11 +859,16 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         _lastRequest.TryRemove(request.Key, out _);
                 }
 
+                // The database-wide half runs on one zone instance only (World's duty holder); the others hear of
+                // each ended dungeon through World.
+                if (_world != null && !_world.IsDutyHolder)
+                    return;
+
                 foreach (string questId in _store.LoadExpiredQuestsWithKeys(now.Ticks, SweepBatch))
                 {
                     GeneratedQuestRow? row = _store.LoadGenerated(questId);
                     if (row != null && QuestDungeonParameters.TryParse(row.AcgBuildingGeneratorJson, out QuestDungeonParameters parameters))
-                        EndDungeon(questId, parameters, evict: true);
+                        EndDungeon(questId, parameters, evict: true, row.OwnerId);
                     else
                         _store.EndQuestKeys(questId);
 

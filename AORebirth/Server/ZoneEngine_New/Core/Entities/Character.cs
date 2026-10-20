@@ -2740,6 +2740,9 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         void SnapshotActiveNanosForPersistence() => SnapshotActiveNanosForPersistence(paused: false);
 
+        /// <summary>Moving to another zone instance: buffs keep running, so NCU is saved with each buff's deadline.</summary>
+        public void SnapshotActiveNanosForTransfer() => SnapshotActiveNanosForPersistence(paused: false);
+
         /// <summary>
         /// Logging out: NCU is saved with each buff's remaining lifetime instead of its deadline, so buffs do not run
         /// while the character is offline (<see cref="ActiveNanoRecord.ResolveExpiry"/>). Call before the final flush.

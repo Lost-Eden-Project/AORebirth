@@ -1546,7 +1546,19 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     if (IsDead && Playfield != null)
                         TryRespawn();
-                });
+                }, new ZoneEngine_New.Core.World.RemoteArrival(landing, Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalRespawn,
+                    Prepare: () =>
+                    {
+                        // The respawn point runs on another zone instance: revive here, then move there alive.
+                        if (!IsDead || Playfield == null) return false;
+                        _respawnObserversCleared = false;
+                        _respawnAtStuckLocation = false;
+                        Revive();
+                        AnnounceDeathCleared();
+                        Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
+                        Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
+                        return true;
+                    }));
 
                 // Another move is already waiting on a build: try again next tick rather than drop the respawn.
                 if (!queued)

@@ -29,6 +29,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
         private readonly IZoneLogger _logger;
         private readonly IGeneratedMissionDao _retiredMissions;
         private readonly IZoneAdmissionGate _admission;
+        private readonly ZoneEngine_New.Core.World.ZoneRedirects _redirects;
+        private readonly ZoneEngine_New.Core.World.WorldLink? _world;
+        private readonly ICharacterRepository? _characters;
+        private readonly ZoneLoginThrottle _throttle;
         private readonly Quests.Dungeons.QuestDungeonService? _dungeons;
 
         public ZoneLoginHandler(
@@ -37,8 +41,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
             IZoneLogger logger,
             IGeneratedMissionDao retiredMissions,
             IZoneAdmissionGate admission,
-            Quests.Dungeons.QuestDungeonService? dungeons = null)
+            ZoneEngine_New.Core.World.ZoneRedirects redirects,
+            Quests.Dungeons.QuestDungeonService? dungeons = null,
+            ZoneEngine_New.Core.World.WorldLink? world = null,
+            ICharacterRepository? characters = null,
+            ZoneLoginThrottle? throttle = null)
         {
+            _throttle = throttle ?? new ZoneLoginThrottle();
+            _world = world;
+            _characters = characters;
+            _redirects = redirects ?? throw new ArgumentNullException(nameof(redirects));
             _dungeons = dungeons;
             ArgumentNullException.ThrowIfNull(hydration);
             ArgumentNullException.ThrowIfNull(playfieldManager);
@@ -86,28 +98,41 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
         private async Task HandleAsyncCoreInner(ZoneLoginMessage message, IZoneSession session)
         {
-            AORebirth.Database.Dao.ZoneHandoffClaim claim;
-            try { claim = _admission.Claim(message); }
-            catch
-            {
-                _logger.Warn("Zone admission rejected: reason=authority_unavailable");
-                session.Close();
-                return;
-            }
-            if (!claim.Accepted)
-            {
-                _logger.Warn("Zone admission rejected: reason=" + claim.Reason);
-                session.Close();
-                return;
-            }
-
             if (session is not ZoneSession zoneSession)
             {
                 _logger.Warn("Zone admission rejected: reason=unsupported_session");
                 session.Close();
                 return;
             }
-            zoneSession.BindZoneHandoff(message.CharacterId, message.Cookie1, message.Cookie2);
+
+            System.Net.IPAddress? remote = zoneSession.RemoteAddress();
+            if (_throttle.IsBlocked(remote))
+            {
+                session.Close();
+                return;
+            }
+
+            ZoneAdmission claim;
+            try { claim = await _admission.ClaimAsync(message).ConfigureAwait(false); }
+            catch (Exception exception)
+            {
+                _logger.Warn("Zone admission rejected: reason=authority_unavailable (" + exception.GetType().Name + ")");
+                session.Close();
+                return;
+            }
+            if (!claim.Accepted)
+            {
+                _logger.Warn("Zone admission rejected: reason=" + claim.Reason + " from=" + zoneSession.RemoteEndPoint());
+                if (_throttle.RecordFailure(remote))
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "Zone admissions from {0} refused for a while after {1} rejected attempts", remote, ZoneLoginThrottle.MaxFailures));
+                session.Close();
+                return;
+            }
+
+            _throttle.RecordSuccess(remote);
+
+            zoneSession.BindZoneHandoff(message.CharacterId, message.Cookie1, message.Cookie2, _redirects);
 
             int characterId = message.CharacterId;
             if (characterId <= 0)
@@ -157,10 +182,18 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         return;
                     }
 
-                    playfieldAdmission = _playfieldManager.AcquirePlayfield(binding.Offer.DestinationPlayfield);
+                    var offerAt = new AORebirth.Core.Vector.Vector3(binding.Offer.DestinationX, binding.Offer.DestinationY, binding.Offer.DestinationZ);
+                    try
+                    {
+                        playfieldAdmission = _playfieldManager.AcquirePlayfield(binding.Offer.DestinationPlayfield);
+                    }
+                    catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
+                    {
+                        throw new ZoneEngine_New.Core.World.LoginRelocationException(binding.Offer.DestinationPlayfield, offerAt);
+                    }
+
                     playfield = playfieldAdmission.Playfield;
-                    hydration = WithLoginPosition(hydration, binding.Offer.DestinationPlayfield,
-                        new AORebirth.Core.Vector.Vector3(binding.Offer.DestinationX, binding.Offer.DestinationY, binding.Offer.DestinationZ));
+                    hydration = WithLoginPosition(hydration, binding.Offer.DestinationPlayfield, offerAt);
                 }
                 else
                 {
@@ -180,12 +213,61 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         Z = hydration.Character.Z
                     },
                     characterId);
-                EnqueueSpawn(session, playfield, hydration);
+                EnqueueSpawn(session, playfield, hydration, claim.Kind == ZoneAdmissionKind.Transfer ? claim.Envelope : null);
+            }
+            catch (ZoneEngine_New.Core.World.LoginRelocationException relocation)
+            {
+                Relocate(session, hydration, relocation.PlayfieldId, relocation.Position);
+            }
+            catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException elsewhere)
+            {
+                // World moved the stored playfield to another instance after routing this login: log in again.
+                Relocate(session, hydration, elsewhere.PlayfieldId,
+                    new AORebirth.Core.Vector.Vector3(hydration.Character.X, hydration.Character.Y, hydration.Character.Z));
             }
             finally
             {
                 playfieldAdmission?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// The login has to continue on another zone instance: store where the character goes, give the lease back,
+        /// and close; the next login is routed to the instance that runs that playfield.
+        /// </summary>
+        private void Relocate(IZoneSession session, CharacterHydrationResult hydration, int playfieldId,
+            AORebirth.Core.Vector.Vector3 position)
+        {
+            CharacterRecord stored = hydration.Character;
+            int characterId = stored.Id;
+            try
+            {
+                _characters?.SaveLocation(new CharacterRecord
+                {
+                    Id = characterId,
+                    Name = stored.Name,
+                    FirstName = stored.FirstName,
+                    LastName = stored.LastName,
+                    Playfield = playfieldId,
+                    X = position.xf,
+                    Y = position.yf,
+                    Z = position.zf,
+                    HeadingX = stored.HeadingX,
+                    HeadingY = stored.HeadingY,
+                    HeadingZ = stored.HeadingZ,
+                    HeadingW = stored.HeadingW
+                }, online: 0);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Login relocation save failed for character " + characterId.ToString(CultureInfo.InvariantCulture));
+            }
+
+            _world?.Abandon(characterId);
+            _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                "ZoneLogin character={0} relocates to playfield {1} on another zone instance; the client logs in again",
+                characterId, playfieldId));
+            session.Close();
         }
 
         /// <summary>The same hydration, placed at <paramref name="position"/> on <paramref name="playfieldId"/>.</summary>
@@ -310,13 +392,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
         private static void EnqueueSpawn(
             IZoneSession session,
             Playfield playfield,
-            CharacterHydrationResult hydration)
+            CharacterHydrationResult hydration,
+            AORebirth.World.Contracts.V1.TransferEnvelope? envelope)
         {
             if (!playfield.TryEnqueue(
                 new PendingSpawnInboundItem
                 {
                     Session = session,
-                    Hydration = hydration
+                    Hydration = hydration,
+                    Envelope = envelope
                 })) session.Close();
         }
 

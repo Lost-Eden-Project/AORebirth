@@ -876,8 +876,7 @@ namespace ChatEngine.PacketHandlers
         {
             if (client == null
                 || matches == null
-                || matches.Count == 0
-                || Program.ISCom == null)
+                || matches.Count == 0)
             {
                 return;
             }
@@ -911,16 +910,9 @@ namespace ChatEngine.PacketHandlers
                 }
             }
 
-            Program.ISCom.BroadCast(
-                new AORebirth.Communication.Messages.ChatCommand
-                {
-                    CharacterId =
-                        unchecked(
-                            (int)client.Character.CharacterId),
-
-                    ChatCommandString =
-                        command.ToString()
-                });
+            ChatEngine.CoreServer.ChatServer.SendToZone(
+                unchecked((int)client.Character.CharacterId),
+                command.ToString());
         }
 
         /// <summary>

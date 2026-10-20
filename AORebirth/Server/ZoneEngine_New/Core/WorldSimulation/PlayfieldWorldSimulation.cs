@@ -741,7 +741,15 @@
                     current.TransferToPlayfield(destination, landing, heading);
                 else
                     current.TransferToPlayfield(destination, landing);
-            });
+            }, new ZoneEngine_New.Core.World.RemoteArrival(crossing.Landing, crossing.Heading,
+                AORebirth.World.Contracts.V1.ArrivalKind.ArrivalZone,
+                crossing.Trigger.RecordsReturn ? crossing.Trigger.DestDoorInstance : 0,
+                Prepare: () =>
+                {
+                    // The destination runs on another zone instance: record the way back before the transfer save.
+                    WriteProxyReturn(player, source.Identity.Instance, crossing.Trigger);
+                    return true;
+                }));
         }
 
         static ProxyReturn ReadProxyReturn(Player player)

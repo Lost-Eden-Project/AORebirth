@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("ChatEngine", "LoginEngine", "ZoneEngine_New", "WebEngine")]
+    [ValidateSet("ChatEngine", "LoginEngine", "ZoneEngine_New", "WebEngine", "WorldEngine")]
     [string[]]$EngineName,
 
     [switch]$CoreOnly,
@@ -21,7 +21,7 @@ if ([string]::IsNullOrWhiteSpace($configPath)) {
 $statusProbe = Join-Path $root "Tools\engine_status_probe.js"
 $cscript = Join-Path $env:SystemRoot "System32\cscript.exe"
 $failed = $false
-$coreEngineNames = @("ChatEngine", "LoginEngine", "ZoneEngine_New")
+$coreEngineNames = @("ChatEngine", "LoginEngine", "ZoneEngine_New", "WorldEngine")
 
 if ($CoreOnly -and $EngineName -and $EngineName.Count -gt 0) {
     throw "CoreOnly cannot be combined with EngineName."
@@ -31,7 +31,9 @@ $engineDefinitions = @(
     @{ Name = "ZoneEngine_New"; File = "ZoneEngine_New\ZoneEngine_New.exe" },
     @{ Name = "WebEngine"; File = "WebEngine.exe" },
     @{ Name = "LoginEngine"; File = "LoginEngine.exe" },
-    @{ Name = "ChatEngine"; File = "ChatEngine.exe" }
+    @{ Name = "ChatEngine"; File = "ChatEngine.exe" },
+    # Last: zones save and release their character leases through World while they stop.
+    @{ Name = "WorldEngine"; File = "WorldEngine\WorldEngine.exe" }
 )
 
 $engines = if ($CoreOnly) {

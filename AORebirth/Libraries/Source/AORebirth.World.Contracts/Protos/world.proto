@@ -1,0 +1,652 @@
+// World service: the single authority for who owns a character, which zone engine instance runs a playfield,
+// and the tickets that let a client into a zone. Zones, LoginEngine and ChatEngine are its clients.
+syntax = "proto3";
+
+package aorebirth.world.v1;
+
+option csharp_namespace = "AORebirth.World.Contracts.V1";
+
+// Fencing token. Compared as a tuple: a higher epoch (World restart) or generation (ownership change) wins.
+message LeaseToken {
+  int64 epoch = 1;
+  uint64 generation = 2;
+}
+
+message Endpoint {
+  string address = 1;
+  uint32 port = 2;
+}
+
+message Ack {
+  bool ok = 1;
+  string reason = 2;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Registry: every zone engine instance (and ChatEngine) holds one stream. The stream is its session lease: World
+// expires everything an instance owns when its heartbeats stop.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Registry {
+  rpc Connect(stream ServiceToWorld) returns (stream WorldToService);
+}
+
+enum ServiceRole {
+  ROLE_ZONE = 0;
+  ROLE_CHAT = 1;
+}
+
+message ServiceToWorld {
+  oneof body {
+    Register register = 1;
+    Heartbeat heartbeat = 2;
+    ServiceReply reply = 3;
+    // Chat traffic rides the stream so it keeps its order.
+    ChatEvent chat = 4;
+    PresenceBatch presence = 5;
+  }
+}
+
+// Presence that changed since the last heartbeat, in one message.
+message PresenceBatch {
+  repeated PresenceUpdate updates = 1;
+}
+
+message WorldToService {
+  oneof body {
+    RegisterAccepted accepted = 1;
+    HeartbeatAck heartbeat_ack = 2;
+    LeaseRevoked lease_revoked = 3;
+    ServiceRequest request = 4;
+    GameClockChanged game_clock = 5;
+    DutyAssignment duty = 6;
+    TeamEvent team = 7;
+    ChatEvent chat = 8;
+    Announcement announcement = 9;
+    ClearOnline clear_online = 10;
+    InstanceCommand command = 11;
+  }
+}
+
+message Register {
+  ServiceRole role = 1;
+  string instance = 2;
+  // Address and port clients reach this zone on; empty for ChatEngine.
+  Endpoint game = 3;
+  // The epoch this process last registered under; 0 on a fresh start.
+  int64 last_epoch = 4;
+  // What this process still owns, re-asserted after a World restart or reconnect.
+  repeated LeaseAssertion leases = 5;
+  repeated PlayfieldAssertion playfields = 6;
+  string build = 7;
+  int32 preferred_slot = 8;
+  repeated TeamState teams = 9;
+  // The session this process held before its stream dropped; lets it take its name back at once.
+  string previous_session = 10;
+}
+
+message LeaseAssertion {
+  int32 character_id = 1;
+  LeaseToken token = 2;
+  int32 playfield_id = 3;
+  bool link_dead = 4;
+  string name = 5;
+  // The account the character was admitted under; a restarted World checks transfers against it.
+  string account = 6;
+}
+
+message PlayfieldAssertion {
+  int32 playfield_id = 1;
+  uint64 assignment = 2;
+}
+
+message RegisterAccepted {
+  int64 epoch = 1;
+  string session = 2;
+  int32 slot = 3;
+  int32 heartbeat_ms = 4;
+  int32 lease_ttl_ms = 5;
+  bool recovering = 6;
+  repeated LeaseAssertion leases = 7;
+  repeated PlayfieldAssertion playfields = 8;
+  // First NPC instance id this instance may hand out, and how many it owns.
+  int32 npc_id_base = 9;
+  int32 npc_id_count = 10;
+  int64 game_clock_offset_seconds = 11;
+  // Leases or playfields this process asserted that World gave to someone else; drop them without saving.
+  repeated LeaseAssertion lost_leases = 12;
+  repeated int32 lost_playfields = 13;
+}
+
+message Heartbeat {
+  uint64 sequence = 1;
+  int32 players = 2;
+  repeated PlayfieldLoad playfields = 3;
+}
+
+message PlayfieldLoad {
+  int32 playfield_id = 1;
+  int32 players = 2;
+}
+
+message HeartbeatAck {
+  uint64 sequence = 1;
+}
+
+// World took this character away (a conflicting owner won). The holder drops it without saving.
+message LeaseRevoked {
+  int32 character_id = 1;
+  LeaseToken token = 2;
+  string reason = 3;
+}
+
+// A request World needs an answer to; the answer comes back as a ServiceReply with the same id.
+message ServiceRequest {
+  uint64 request_id = 1;
+  oneof body {
+    ReleaseCharacter release_character = 2;
+    LocateCharacter locate_character = 3;
+  }
+}
+
+message ServiceReply {
+  uint64 request_id = 1;
+  oneof body {
+    ReleaseCharacterReply release_character = 2;
+    LocateCharacterReply locate_character = 3;
+  }
+}
+
+enum ReleaseReason {
+  RELEASE_FOR_DELETE = 0;
+}
+
+// Let go of a character that is not in play (link-dead): save it, despawn it, release its lease.
+message ReleaseCharacter {
+  int32 character_id = 1;
+  ReleaseReason reason = 2;
+}
+
+enum ReleaseOutcome {
+  RELEASE_DONE = 0;
+  RELEASE_IN_PLAY = 1;
+  RELEASE_NOT_HERE = 2;
+  RELEASE_FAILED = 3;
+}
+
+message ReleaseCharacterReply {
+  ReleaseOutcome outcome = 1;
+}
+
+message LocateCharacter {
+  int32 character_id = 1;
+}
+
+message LocateCharacterReply {
+  bool found = 1;
+  int32 playfield_id = 2;
+  float x = 3;
+  float y = 4;
+  float z = 5;
+}
+
+message GameClockChanged {
+  int64 offset_game_seconds = 1;
+}
+
+// The one zone instance that runs database-wide sweeps.
+message DutyAssignment {
+  bool holder = 1;
+}
+
+message Announcement {
+  string text = 1;
+}
+
+// Nobody owns these characters any more (their instance died or restarted): clear their Online flag.
+message ClearOnline {
+  repeated int32 character_ids = 1;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Session: LoginEngine.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Session {
+  // After credentials are verified. Returns a generation; a newer login supersedes older tickets for the account.
+  rpc BeginLogin(BeginLoginRequest) returns (BeginLoginReply);
+  // Routes the character to the zone instance that owns it or that runs its playfield, and issues its cookies.
+  rpc SelectCharacter(SelectCharacterRequest) returns (SelectCharacterReply);
+  // Frees a character for deletion. A link-dead character is saved and despawned first; one in play is refused.
+  rpc ReleaseForDelete(DeleteRequest) returns (DeleteReply);
+  // The rows are gone (or the delete failed): the character may be selected again.
+  rpc CompleteDelete(DeleteRequest) returns (Ack);
+}
+
+message BeginLoginRequest {
+  string account = 1;
+}
+
+message BeginLoginReply {
+  string generation = 1;
+}
+
+message SelectCharacterRequest {
+  string account = 1;
+  string generation = 2;
+  int32 character_id = 3;
+  int32 stored_playfield = 4;
+}
+
+message SelectCharacterReply {
+  bool accepted = 1;
+  string reason = 2;
+  fixed32 cookie1 = 3;
+  fixed32 cookie2 = 4;
+  Endpoint zone = 5;
+}
+
+message DeleteRequest {
+  string account = 1;
+  int32 character_id = 2;
+}
+
+enum DeleteState {
+  DELETE_RELEASED = 0;
+  DELETE_IN_PLAY = 1;
+  DELETE_BUSY = 2;
+  DELETE_TIMEOUT = 3;
+}
+
+message DeleteReply {
+  DeleteState state = 1;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Leases: zone admission, release, cross-instance transfer. Calls carry the caller's registry session.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Leases {
+  // A client presented cookies to this zone. Grants (or confirms) the lease.
+  rpc Claim(ClaimRequest) returns (ClaimReply);
+  // The holder let go of the character (logged out, despawned, transferred away and abandoned).
+  rpc Release(ReleaseRequest) returns (Ack);
+  // A service-held character (a ChatEngine bot) that is online without a zone.
+  rpc AcquireService(ServiceLeaseRequest) returns (ServiceLeaseReply);
+  // Which of these characters are owned by anyone.
+  rpc Query(LeaseQuery) returns (LeaseQueryReply);
+  // The player is moving to a playfield another instance runs. The caller has saved and stops simulating it.
+  rpc BeginTransfer(TransferRequest) returns (TransferReply);
+  // Presence for the directory: name, playfield, link-dead.
+  rpc UpdatePresence(PresenceUpdate) returns (Ack);
+}
+
+enum ClaimKind {
+  CLAIM_LOGIN = 0;
+  CLAIM_RECONNECT = 1;
+  CLAIM_TRANSFER = 2;
+}
+
+message ClaimRequest {
+  int32 character_id = 1;
+  fixed32 cookie1 = 2;
+  fixed32 cookie2 = 3;
+}
+
+message ClaimReply {
+  bool accepted = 1;
+  string reason = 2;
+  string account = 3;
+  LeaseToken token = 4;
+  ClaimKind kind = 5;
+  TransferEnvelope envelope = 6;
+}
+
+message ReleaseRequest {
+  int32 character_id = 1;
+  LeaseToken token = 2;
+}
+
+message ServiceLeaseRequest {
+  int32 character_id = 1;
+}
+
+message ServiceLeaseReply {
+  bool accepted = 1;
+  string reason = 2;
+  LeaseToken token = 3;
+}
+
+message LeaseQuery {
+  repeated int32 character_ids = 1;
+}
+
+message LeaseQueryReply {
+  repeated int32 owned = 1;
+}
+
+message TransferRequest {
+  int32 character_id = 1;
+  LeaseToken token = 2;
+  fixed32 cookie1 = 3;
+  fixed32 cookie2 = 4;
+  TransferEnvelope envelope = 5;
+}
+
+message TransferReply {
+  bool accepted = 1;
+  string reason = 2;
+  Endpoint target = 3;
+  string target_instance = 4;
+}
+
+enum ArrivalKind {
+  ARRIVAL_ZONE = 0;
+  ARRIVAL_TELEPORT = 1;
+  ARRIVAL_RESPAWN = 2;
+  ARRIVAL_DUNGEON = 3;
+}
+
+// Session-only state that does not live in the character rows. Everything else is reloaded from the database.
+message TransferEnvelope {
+  int32 destination_playfield = 1;
+  float x = 2;
+  float y = 3;
+  float z = 4;
+  float heading_x = 5;
+  float heading_y = 6;
+  float heading_z = 7;
+  float heading_w = 8;
+  ArrivalKind arrival = 9;
+  repeated PetEnvelope pets = 10;
+  int64 saved_unix_ms = 11;
+  // The exit proxy door an ACG world should register for this arrival (door entries); 0 for none.
+  int32 exit_proxy_door = 12;
+  // The team as the source mirrored it, so the arrival's first packets carry it; World's own state follows.
+  TeamState team = 13;
+}
+
+// A pet re-summoned beside its owner on arrival: same template, level and remaining lifetime.
+message PetEnvelope {
+  string hash = 1;
+  int32 level = 2;
+  float health_fraction = 3;
+  // Seconds of summon left; 0 for a pet that never expires.
+  int32 remaining_seconds = 4;
+  int32 mode = 5;
+}
+
+message PresenceUpdate {
+  int32 character_id = 1;
+  LeaseToken token = 2;
+  string name = 3;
+  int32 playfield_id = 4;
+  bool link_dead = 5;
+  int32 level = 6;
+  int32 profession = 7;
+  PlayerCard card = 8;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Playfields: which instance runs each playfield.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Playfields {
+  // The instance that runs the playfield, assigning it to the least-loaded live instance when nobody does.
+  rpc Resolve(ResolveRequest) returns (ResolveReply);
+  // The caller retired an empty playfield; it may run elsewhere next time.
+  rpc Release(PlayfieldReleaseRequest) returns (Ack);
+}
+
+message ResolveRequest {
+  int32 playfield_id = 1;
+  // Prefer this instance when it is not much busier than the least-loaded one.
+  string affinity = 2;
+}
+
+message ResolveReply {
+  bool accepted = 1;
+  string reason = 2;
+  string instance = 3;
+  Endpoint endpoint = 4;
+  uint64 assignment = 5;
+}
+
+message PlayfieldReleaseRequest {
+  int32 playfield_id = 1;
+  uint64 assignment = 2;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Directory: lookups and commands that span instances.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Directory {
+  // Delivers a command to the zone instance that owns a character or runs a playfield, or to every zone.
+  rpc Route(InstanceCommand) returns (Ack);
+  rpc Locate(LocateRequest) returns (LocateReply);
+  rpc ListOnline(ListOnlineRequest) returns (ListOnlineReply);
+  rpc ShiftGameClock(ShiftGameClockRequest) returns (Ack);
+  rpc Announce(Announcement) returns (Ack);
+}
+
+// Work for another zone instance: the instance that owns character_id, the one that runs playfield_id, or (with
+// broadcast) every zone instance but the sender. The name selects the handler; arguments are its own.
+message InstanceCommand {
+  string name = 1;
+  repeated string arguments = 2;
+  int32 character_id = 3;
+  int32 playfield_id = 4;
+  bool broadcast = 5;
+  // Filled in by World: the instance that sent it.
+  string origin = 6;
+}
+
+message LocateRequest {
+  int32 character_id = 1;
+  string name = 2;
+}
+
+message LocateReply {
+  bool found = 1;
+  int32 character_id = 2;
+  string instance = 3;
+  int32 playfield_id = 4;
+  float x = 5;
+  float y = 6;
+  float z = 7;
+}
+
+message ListOnlineRequest {
+}
+
+message OnlineCharacter {
+  int32 character_id = 1;
+  string name = 2;
+  string instance = 3;
+  int32 playfield_id = 4;
+  bool link_dead = 5;
+  int32 level = 6;
+  int32 profession = 7;
+}
+
+message ListOnlineReply {
+  repeated OnlineCharacter characters = 1;
+}
+
+message ShiftGameClockRequest {
+  int64 delta_game_seconds = 1;
+  bool reset = 2;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Teams: World owns membership; every zone instance with a member mirrors the team and speaks the client protocol.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Teams {
+  rpc Command(TeamCommand) returns (TeamCommandReply);
+}
+
+// What another instance needs to show a character: the inspect card and the team row.
+message PlayerCard {
+  int32 character_id = 1;
+  string name = 2;
+  string first_name = 3;
+  string last_name = 4;
+  int32 level = 5;
+  int32 title_level = 6;
+  int32 profession = 7;
+  int32 visual_profession = 8;
+  int32 side_xp = 9;
+  int32 max_health = 10;
+  int32 max_nano = 11;
+  bool has_vitals = 12;
+  int32 invaders_killed = 13;
+  int32 killed_by_invaders = 14;
+  int32 ai_level = 15;
+}
+
+message TeamMember {
+  int32 character_id = 1;
+  PlayerCard card = 2;
+  // Raid sub-team; -1 when unset.
+  int32 raid_team = 3;
+}
+
+message TeamState {
+  int32 team_id = 1;
+  uint64 version = 2;
+  int32 leader = 3;
+  bool raid = 4;
+  bool explicit_leader = 5;
+  repeated TeamMember members = 6;
+}
+
+// A team changed (or, with sync, its state for a member arriving on this instance).
+message TeamUpdate {
+  // Absent when the change left the departed member without a team and nobody else to tell.
+  TeamState team = 1;
+  int32 departed = 2;
+  bool notify_leaving = 3;
+  bool disbanded = 4;
+  // On disband: the member left alone.
+  int32 last_member = 5;
+  int32 joined = 6;
+  bool sync = 7;
+}
+
+message TeamInvited {
+  int32 invitee = 1;
+  PlayerCard inviter = 2;
+  bool same_playfield = 3;
+}
+
+// Show the viewer who the subject is (name, level) before the client checks team ranges.
+message TeamPresenceCard {
+  int32 viewer = 1;
+  PlayerCard subject = 2;
+}
+
+message TeamDeclined {
+  int32 inviter = 1;
+  int32 invitee = 2;
+}
+
+message TeamEvent {
+  oneof body {
+    TeamUpdate update = 1;
+    TeamInvited invited = 2;
+    TeamPresenceCard presence = 3;
+    TeamDeclined declined = 4;
+  }
+}
+
+enum TeamOp {
+  TEAM_INVITE = 0;
+  TEAM_ACCEPT = 1;
+  TEAM_DECLINE = 2;
+  TEAM_LEAVE = 3;
+  TEAM_KICK = 4;
+  TEAM_PROMOTE = 5;
+  TEAM_CONVERT_RAID = 6;
+  TEAM_MOVE_RAID_MEMBER = 7;
+  // The member logged out for good: it leaves without the leave notice.
+  TEAM_LOGOUT = 8;
+  // The member arrived on this instance: send its team state here.
+  TEAM_SYNC = 9;
+  // The member's client dropped (link-dead): its invitations lapse.
+  TEAM_DISCONNECT = 10;
+}
+
+message TeamCommand {
+  TeamOp op = 1;
+  int32 actor = 2;
+  int32 target = 3;
+  int32 raid_team = 4;
+  // The client already confirmed an out-of-range invite.
+  bool confirmed_range = 5;
+  string target_name = 6;
+}
+
+// Invite before the range check: the zone checks level eligibility (GameData) and sends the invite again confirmed.
+message RangeCheck {
+  PlayerCard target = 1;
+  repeated PlayerCard members = 2;
+}
+
+message TeamCommandReply {
+  bool ok = 1;
+  // Client feedback key for the actor.
+  string feedback = 2;
+  // Chat text for the actor.
+  string text = 3;
+  RangeCheck range = 4;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Chat: zone and ChatEngine traffic routed through World.
+// ---------------------------------------------------------------------------------------------------------------
+
+service Chat {
+  rpc Publish(ChatEvent) returns (Ack);
+}
+
+message ChatEvent {
+  oneof body {
+    VicinityMessage vicinity = 1;
+    LftUpdate lft = 2;
+    CharacterChatCommand to_character = 3;
+    PresenceChanged presence = 4;
+  }
+}
+
+message VicinityMessage {
+  int32 sender = 1;
+  int32 playfield_id = 2;
+  repeated int32 recipients = 3;
+  string text = 4;
+  int32 channel_type = 5;
+  bytes payload = 6;
+  // An NPC speaking (quest lines); empty for players.
+  string sender_name = 7;
+}
+
+message LftUpdate {
+  int32 character_id = 1;
+  int32 playfield_id = 2;
+  bool looking = 3;
+  string text = 4;
+}
+
+// A command for whichever zone runs the character.
+message CharacterChatCommand {
+  int32 character_id = 1;
+  string command = 2;
+  repeated string arguments = 3;
+}
+
+message PresenceChanged {
+  int32 character_id = 1;
+  bool online = 2;
+  int32 playfield_id = 3;
+}

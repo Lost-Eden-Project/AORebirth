@@ -136,12 +136,7 @@ namespace ChatEngine.PacketHandlers
         {
             if (text.StartsWith(".") || text.StartsWith("/"))
             {
-                Program.ISCom.BroadCast(
-                    new AORebirth.Communication.Messages.ChatCommand
-                    {
-                        CharacterId = (int)client.Character.CharacterId,
-                        ChatCommandString = text
-                    });
+                ChatEngine.CoreServer.ChatServer.SendToZone((int)client.Character.CharacterId, text);
                 return true;
             }
 

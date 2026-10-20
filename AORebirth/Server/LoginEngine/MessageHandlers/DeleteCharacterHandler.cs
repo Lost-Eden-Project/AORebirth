@@ -35,7 +35,10 @@ namespace LoginEngine.MessageHandlers
 
     using System.ComponentModel.Composition;
 
+    using System;
+
     using AORebirth.Core.Components;
+    using AORebirth.World.Contracts.V1;
 
     using LoginEngine.CoreClient;
     using LoginEngine.Packets;
@@ -69,10 +72,54 @@ namespace LoginEngine.MessageHandlers
                 return;
             }
 
-            var characterName = new CharacterName();
-            if (!characterName.TryDeleteChar(authenticatedAccount, deleteCharacterMessage.CharacterId))
+            int characterId = deleteCharacterMessage.CharacterId;
+            if (characterId <= 0 || !new CheckLogin().IsCharacterOnAccount(authenticatedAccount, characterId))
             {
                 client.RejectAuthentication();
+                return;
+            }
+
+            // The rows go only once no zone holds the character. World asks the zone that owns a link-dead one (a
+            // disconnect, then delete) to save and despawn it first; one a client is playing is left alone. Either
+            // way this client stays at character selection.
+            DeleteState release;
+            try
+            {
+                release = Client.World.ReleaseForDelete(authenticatedAccount, characterId);
+            }
+            catch (Exception exception)
+            {
+                client.Server.Warning(client, "Delete of character {0} refused: World unavailable ({1})", characterId, exception.Message);
+                return;
+            }
+
+            if (release != DeleteState.DeleteReleased)
+            {
+                client.Server.Warning(client, "Delete of character {0} refused: {1}", characterId, release);
+                return;
+            }
+
+            bool deleted;
+            try
+            {
+                deleted = new CharacterName().TryDeleteChar(authenticatedAccount, characterId);
+            }
+            finally
+            {
+                try
+                {
+                    Client.World.CompleteDelete(authenticatedAccount, characterId);
+                }
+                catch (Exception exception)
+                {
+                    // World unblocks the character on its own shortly.
+                    client.Server.Warning(client, "Delete of character {0}: World not told it finished ({1})", characterId, exception.Message);
+                }
+            }
+
+            if (!deleted)
+            {
+                client.Server.Warning(client, "Delete of character {0} failed in the database", characterId);
                 return;
             }
 

@@ -3,7 +3,6 @@ namespace ZoneEngine_New.Core.Teams
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using AORebirth.Communication.Messages;
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
@@ -15,11 +14,14 @@ namespace ZoneEngine_New.Core.Teams
     public sealed record TeamSnapshot(int TeamId, int LeaderId, IReadOnlyList<int> MemberIds, bool IsRaid);
 
     /// <summary>
-    /// One process-local team authority, independent of playfield and transport ownership.
-    /// Only the accepted Player object may mutate its membership. No team database or capture input.
-    /// Wire fields follow the compiled Legacy TeamRuntime and current AOtomation contracts.
+    /// Teams for this zone instance's players, independent of playfield and transport ownership. With a World link,
+    /// World owns membership (ids, members, leader, raid layout, invitations): every change goes to World, and this
+    /// service mirrors each team that has a local member and speaks the client protocol for it. Without one (tests,
+    /// tools) it is the process-local authority. Only the accepted Player object may act for its character.
+    /// No team database or capture input. Wire fields follow the compiled Legacy TeamRuntime and current AOtomation
+    /// contracts.
     /// </summary>
-    public sealed class TeamService
+    public sealed partial class TeamService
     {
         private sealed class Team(int id, int leader)
         {
@@ -69,16 +71,23 @@ namespace ZoneEngine_New.Core.Teams
         private readonly TeamLevelEligibility _eligibility;
         private readonly Func<DateTime> _utcNow;
         private readonly Action<Player, Action>? _dispatchOnOwner;
+        private readonly ZoneEngine_New.Core.World.WorldLink? _world;
+        // World mode: one mirror object per team id, shared by every member entry in _membership.
+        private readonly Dictionary<int, Team> _mirrors = new();
+        // World mode: remote members' rows, from World (local members use _data from CaptureData).
+        private readonly Dictionary<int, MemberData> _remoteData = new();
         private int _nextTeamId = 0x02800000;
         private bool _stopped;
 
         public TeamService(IChatEngineLink? chatLink = null, Func<DateTime>? utcNow = null,
-            Action<Player, Action>? dispatchOnOwner = null)
+            Action<Player, Action>? dispatchOnOwner = null, ZoneEngine_New.Core.World.WorldLink? world = null)
         {
             _eligibility = TeamLevelEligibility.Current;
             _chat = chatLink;
             _utcNow = utcNow ?? (() => DateTime.UtcNow);
             _dispatchOnOwner = dispatchOnOwner;
+            _world = world;
+            if (_world != null) _world.WorldMessageReceived += OnWorldMessage;
         }
 
         public void AttachPlayer(Player player)
@@ -113,6 +122,94 @@ namespace ZoneEngine_New.Core.Teams
                 player.Stats.StatChanged += observer;
                 // Persisted stat values never reconstitute a process-local team.
                 ResetLocalStats(player);
+                if (_world != null)
+                {
+                    // Others see this player's card soon; World sends its team here if it is in one.
+                    _world.SyncPresenceSoon();
+                    WorldCommand(player, AORebirth.World.Contracts.V1.TeamOp.TeamSync);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Arriving from another zone instance with a team: mirror it before the first FullCharacter so the client's
+        /// team stats stay as they were, and treat the roster the client already shows as published.
+        /// </summary>
+        public void ApplyArrivedTeam(Player player, AORebirth.World.Contracts.V1.TeamState team)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(team);
+            lock (_sync)
+            {
+                if (_world == null || !Owns(player) || team.TeamId <= 0) return;
+                Team mirror = Mirror(team);
+                if (!_membership.ContainsKey(player.Identity.Instance)) return;
+                var published = new PublishedRoster(mirror.Id)
+                {
+                    Leader = mirror.Leader,
+                    ExplicitLeadershipTransfer = mirror.ExplicitLeadershipTransfer,
+                    IsRaid = mirror.IsRaid,
+                    ChatJoined = true,
+                    RaidChatJoined = mirror.IsRaid
+                };
+                foreach (int id in mirror.Members) published.Members[id] = mirror.RaidTeamIndex.GetValueOrDefault(id, -1);
+                _publishedRosters[player.Identity.Instance] = published;
+                int viewerId = player.Identity.Instance;
+                int social = viewerId == mirror.Leader
+                    ? (mirror.ExplicitLeadershipTransfer ? 15 : 7)
+                    : (mirror.ExplicitLeadershipTransfer ? 13 : 5);
+                ApplyStatsNow(player, mirror, social, send: false);
+            }
+        }
+
+        /// <summary>World mode: what the source of a cross-instance move tells the destination about the team.</summary>
+        public AORebirth.World.Contracts.V1.TeamState? SnapshotTeamState(Player player)
+        {
+            lock (_sync)
+            {
+                if (!Owns(player) || !_membership.TryGetValue(player.Identity.Instance, out Team? team)) return null;
+                var state = new AORebirth.World.Contracts.V1.TeamState
+                {
+                    TeamId = team.Id,
+                    Leader = team.Leader,
+                    Raid = team.IsRaid,
+                    ExplicitLeader = team.ExplicitLeadershipTransfer
+                };
+                foreach (int id in team.Members)
+                {
+                    MemberData? data = DataOf(id);
+                    state.Members.Add(new AORebirth.World.Contracts.V1.TeamMember
+                    {
+                        CharacterId = id,
+                        RaidTeam = team.RaidTeamIndex.GetValueOrDefault(id, -1),
+                        Card = data == null ? new AORebirth.World.Contracts.V1.PlayerCard { CharacterId = id } : new AORebirth.World.Contracts.V1.PlayerCard
+                        {
+                            CharacterId = id,
+                            Name = data.Name,
+                            Level = data.Level,
+                            Profession = data.Profession,
+                            MaxHealth = data.MaxHealth,
+                            MaxNano = data.MaxNano,
+                            HasVitals = data.HasVitals
+                        }
+                    });
+                }
+
+                return state;
+            }
+        }
+
+        /// <summary>The player moved to another zone instance: its team goes on there; only local tracking ends here.</summary>
+        public void DetachForTransfer(Player player)
+        {
+            lock (_sync)
+            {
+                if (_world == null) { DetachPlayerCore(player); return; }
+                if (!Owns(player)) return;
+                int id = player.Identity.Instance;
+                _membership.TryGetValue(id, out Team? team);
+                ForgetLocal(player);
+                if (team != null) PruneMirror(team);
             }
         }
 
@@ -143,28 +240,48 @@ namespace ZoneEngine_New.Core.Teams
                 if (!Owns(player) || !ReferenceEquals(player.Session, disconnectedSession)) return;
                 // A LinkDead member keeps its place: a reconnect resends the roster (RefreshPlayer),
                 // and only the LinkDead despawn (DetachPlayer) takes it out of the team.
+                if (_world != null) { WorldCommand(player, AORebirth.World.Contracts.V1.TeamOp.TeamDisconnect); return; }
                 CancelInvitations(player.Identity.Instance);
             }
         }
 
         public void DetachPlayer(Player player)
         {
-            lock (_sync)
+            lock (_sync) DetachPlayerCore(player);
+        }
+
+        private void DetachPlayerCore(Player player)
+        {
+            if (!Owns(player)) return;
+            if (_world != null)
             {
-                if (!Owns(player)) return;
-                CancelInvitations(player.Identity.Instance);
-                Remove(player, notifyLeaving: false);
+                // Logging out for good: World takes it out of its team and tells the others.
+                WorldCommand(player, AORebirth.World.Contracts.V1.TeamOp.TeamLogout);
+                _membership.TryGetValue(player.Identity.Instance, out Team? team);
                 ResetLocalStats(player);
-                player.Stats.StatChanged -= _statObservers[player.Identity.Instance];
-                _statObservers.Remove(player.Identity.Instance);
-                _players.Remove(player.Identity.Instance);
-                _data.Remove(player.Identity.Instance);
-                _projectionEpochs.Remove(player.Identity.Instance);
-                _publishedRosters.Remove(player.Identity.Instance);
-                _rosterResetSessions.Remove(player.Identity.Instance);
-                _declinedUntil.Remove(player.Identity.Instance);
-                _lftLocations.Remove(player.Identity.Instance);
+                ForgetLocal(player);
+                if (team != null) PruneMirror(team);
+                return;
             }
+
+            CancelInvitations(player.Identity.Instance);
+            Remove(player, notifyLeaving: false);
+            ResetLocalStats(player);
+            ForgetLocal(player);
+        }
+
+        private void ForgetLocal(Player player)
+        {
+            int id = player.Identity.Instance;
+            player.Stats.StatChanged -= _statObservers[id];
+            _statObservers.Remove(id);
+            _players.Remove(id);
+            _data.Remove(id);
+            _projectionEpochs.Remove(id);
+            _publishedRosters.Remove(id);
+            _rosterResetSessions.Remove(id);
+            _declinedUntil.Remove(id);
+            _lftLocations.Remove(id);
         }
 
         public void Shutdown()
@@ -172,7 +289,9 @@ namespace ZoneEngine_New.Core.Teams
             lock (_sync)
             {
                 if (_stopped) return;
-                foreach (Player player in _players.Values.ToArray()) Remove(player, notifyLeaving: true);
+                // With World, teams outlive this instance; its players already logged out one by one.
+                if (_world == null)
+                    foreach (Player player in _players.Values.ToArray()) Remove(player, notifyLeaving: true);
                 foreach (Player player in _players.Values)
                     player.Stats.StatChanged -= _statObservers[player.Identity.Instance];
                 _statObservers.Clear();
@@ -215,6 +334,12 @@ namespace ZoneEngine_New.Core.Teams
             lock (_sync)
             {
                 if (!IsActive(player) || message.Identity != player.Identity) return true;
+                if (_world != null)
+                {
+                    HandleWithWorld(player, message);
+                    return true;
+                }
+
                 switch (message.Action)
                 {
                     case CharacterActionType.TeamRequestInvite:
@@ -255,6 +380,19 @@ namespace ZoneEngine_New.Core.Teams
             {
                 if (!IsActive(player)) return false;
                 if (args == null || args.Length < 2) return Error(player, "Team commands: /team invite <name>, /team accept, /team decline, /team leave.");
+                if (_world != null)
+                {
+                    switch (args[1].ToLowerInvariant())
+                    {
+                        case "accept": WorldCommand(player, AORebirth.World.Contracts.V1.TeamOp.TeamAccept); return true;
+                        case "decline":
+                        case "reject": WorldCommand(player, AORebirth.World.Contracts.V1.TeamOp.TeamDecline); return true;
+                        case "leave": WorldCommand(player, AORebirth.World.Contracts.V1.TeamOp.TeamLeave); return true;
+                        case "invite" when args.Length == 3: WorldInvite(player, 0, args[2], confirmed: false); return true;
+                        default: return Error(player, "Unknown team command.");
+                    }
+                }
+
                 switch (args[1].ToLowerInvariant())
                 {
                     case "accept": return Reply(player, true, Identity.None);
@@ -276,6 +414,7 @@ namespace ZoneEngine_New.Core.Teams
             lock (_sync)
             {
                 if (!IsActive(leader)) return false;
+                if (_world != null) { WorldCommand(leader, AORebirth.World.Contracts.V1.TeamOp.TeamConvertRaid); return true; }
                 if (!_membership.TryGetValue(leader.Identity.Instance, out Team? team))
                     return Feedback(leader, "Feedback_YouAreNotMemberOfTeam");
                 if (team.Leader != leader.Identity.Instance)
@@ -321,6 +460,12 @@ namespace ZoneEngine_New.Core.Teams
             lock (_sync)
             {
                 if (!IsActive(leader)) return false;
+                if (_world != null)
+                {
+                    WorldCommand(leader, AORebirth.World.Contracts.V1.TeamOp.TeamMoveRaidMember, targetCharacterId, destinationTeamIndex);
+                    return true;
+                }
+
                 if (!_membership.TryGetValue(leader.Identity.Instance, out Team? team))
                     return Feedback(leader, "Feedback_YouAreNotMemberOfTeam");
                 if (!team.IsRaid)
@@ -717,7 +862,7 @@ namespace ZoneEngine_New.Core.Teams
                     if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamRequestReply, Identity.None, 0, 17))) return;
                     SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
                 }
-                if (TryLevel(viewer, out _) && !AnnounceNow(viewer, viewer, team)) return;
+                if (TryLevel(viewer, out _) && !AnnounceNow(viewer, viewerId, team)) return;
                 _publishedRosters.TryGetValue(viewerId, out published);
                 if (viewerId == team.Leader)
                 {
@@ -749,24 +894,23 @@ namespace ZoneEngine_New.Core.Teams
             foreach (int id in team.Members)
             {
                 if (initialRoster && id == viewerId) continue;
-                Player member = _players[id];
                 int raidIndex = team.RaidTeamIndex.GetValueOrDefault(id, -1);
                 bool hasRow = published != null && published.Members.TryGetValue(id, out _);
                 if (hasRow && published!.Members[id] != raidIndex)
                 {
-                    PublishRaidMemberMoveNow(viewer, member, team);
+                    PublishRaidMemberMoveNow(viewer, id, team);
                     continue;
                 }
                 if (hasRow && !initialRoster && !refreshVitals) continue;
-                if (!hasRow && !TryLevel(member, out _)) continue;
-                if (!AnnounceNow(viewer, member, team)) return;
+                if (!hasRow && !TryLevel(id, out _)) continue;
+                if (!AnnounceNow(viewer, id, team)) return;
                 _publishedRosters.TryGetValue(viewerId, out published);
                 if (id == viewerId) continue;
                 // Captured paired max values; unresolved vitals are omitted, never synthesized as 469.
-                MemberData data = _data[id];
-                if (data.HasVitals)
+                MemberData? data = DataOf(id);
+                if (data is { HasVitals: true })
                 {
-                    SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = member.Identity,
+                    SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = CharacterIdentity(id),
                         Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
                         Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
                 }
@@ -797,15 +941,15 @@ namespace ZoneEngine_New.Core.Teams
             }
         }
 
-        private bool AnnounceNow(Player viewer, Player member, Team team)
+        private bool AnnounceNow(Player viewer, int memberId, Team team)
         {
             int viewerId = viewer.Identity.Instance;
             _publishedRosters.TryGetValue(viewerId, out PublishedRoster? published);
-            if (published?.TeamId == team.Id && published.Members.ContainsKey(member.Identity.Instance)) return true;
-            if (!TryLevel(member, out int level)) return false;
-            MemberData data = _data[member.Identity.Instance];
-            int raidTeamIndex = team.RaidTeamIndex.GetValueOrDefault(member.Identity.Instance, -1);
-            if (!SendNow(viewer, new TeamMemberMessage { Identity = viewer.Identity, Unknown = 0, Member = member.Identity,
+            if (published?.TeamId == team.Id && published.Members.ContainsKey(memberId)) return true;
+            if (!TryLevel(memberId, out int level)) return false;
+            MemberData data = DataOf(memberId)!;
+            int raidTeamIndex = team.RaidTeamIndex.GetValueOrDefault(memberId, -1);
+            if (!SendNow(viewer, new TeamMemberMessage { Identity = viewer.Identity, Unknown = 0, Member = CharacterIdentity(memberId),
                 Team = new Identity { Type = IdentityType.TeamWindow, Instance = team.Id }, Unknown4 = raidTeamIndex,
                 Level = level, Unknown5 = (short)data.Profession, Name = data.Name })) return false;
             if (published == null)
@@ -813,7 +957,7 @@ namespace ZoneEngine_New.Core.Teams
                 published = new PublishedRoster(team.Id);
                 _publishedRosters[viewerId] = published;
             }
-            published.Members[member.Identity.Instance] = raidTeamIndex;
+            published.Members[memberId] = raidTeamIndex;
             return true;
         }
 
@@ -825,23 +969,25 @@ namespace ZoneEngine_New.Core.Teams
             return true;
         }
 
-        private void PublishRaidMemberMoveNow(Player viewer, Player target, Team team)
+        private void PublishRaidMemberMoveNow(Player viewer, int targetId, Team team)
         {
             if (!IsActive(viewer)) return;
             int social = viewer.Identity.Instance == team.Leader
                 ? (team.ExplicitLeadershipTransfer ? 15 : 7)
                 : (team.ExplicitLeadershipTransfer ? 13 : 5);
-            MemberData data = _data[target.Identity.Instance];
+            MemberData? data = DataOf(targetId);
+            if (data == null) return;
+            Identity target = CharacterIdentity(targetId);
             if (data.HasVitals)
-                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target.Identity,
+                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target,
                     Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
                     Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
             SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
             // Capture 20260924-213512: TeamMemberLeft Parameter2=0 (reassign), not leave (-1).
-            if (!RemovePublishedMemberNow(viewer, _publishedRosters[viewer.Identity.Instance], target.Identity.Instance, 0)) return;
-            if (!AnnounceNow(viewer, target, team)) return;
+            if (!RemovePublishedMemberNow(viewer, _publishedRosters[viewer.Identity.Instance], targetId, 0)) return;
+            if (!AnnounceNow(viewer, targetId, team)) return;
             if (data.HasVitals)
-                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target.Identity,
+                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target,
                     Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
                     Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
             SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
@@ -880,12 +1026,20 @@ namespace ZoneEngine_New.Core.Teams
             && ReferenceEquals(player, owner);
         private bool IsActive(Player player) => Owns(player) && !player.IsPersistenceQuarantined
             && player.Session?.State == SessionState.InPlay && ReferenceEquals(player.Session.Player, player);
-        private bool TryLevel(Player player, out int level)
+        private bool TryLevel(Player player, out int level) => TryLevel(player.Identity.Instance, out level);
+
+        private bool TryLevel(int characterId, out int level)
         {
-            MemberData data = _data[player.Identity.Instance];
+            level = 0;
+            if (DataOf(characterId) is not { } data) return false;
             level = data.Level;
             return level is >= 1 and <= 220 && data.Profession is >= 0 and <= 15;
         }
+
+        /// <summary>A local member's captured row, else the row World sent for a member on another instance.</summary>
+        private MemberData? DataOf(int characterId)
+            => _data.TryGetValue(characterId, out MemberData? local) ? local
+                : _remoteData.TryGetValue(characterId, out MemberData? remote) ? remote : null;
         private void CaptureData(Player player)
         {
             bool hasVitals = player.Stats.TryGetValue(CharacterStat.MaxHealth, out int health) && health > 0;
@@ -918,7 +1072,7 @@ namespace ZoneEngine_New.Core.Teams
                 ChatCommand(id, "#aorebirth-pf " + location.Playfield + " " + location.Expansion);
         }
         private void ChatCommand(int id, string command)
-            => _chat?.TrySend(new ChatCommand { CharacterId = id, ChatCommandString = command });
+            => _chat?.SendChatCommand(id, command);
         private void LeaveChat(int id, int teamId)
         {
             ChatCommand(id, "#aorebirth-team-leave " + teamId);

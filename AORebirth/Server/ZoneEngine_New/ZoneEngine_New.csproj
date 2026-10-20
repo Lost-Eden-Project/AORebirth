@@ -44,18 +44,18 @@
     <ProjectReference Include="../../Libraries/Source/AORebirth.Modules.Abstractions/AORebirth.Modules.Abstractions.csproj" />
     <ProjectReference Include="../../Libraries/Source/AORebirth.World.Collision/AORebirth.World.Collision.csproj" />
     <ProjectReference Include="../../Libraries/Source/AORebirth.World.Pathfinding/AORebirth.World.Pathfinding.csproj" />
+    <ProjectReference Include="../../Libraries/Source/AORebirth.World.Contracts/AORebirth.World.Contracts.csproj" />
     <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/SmokeLounge.AOtomation.Messaging.WinNet10.csproj" />
     <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/AORebirth.Core.ZoneNew.WinNet10.csproj" />
     <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/Utility.ZoneNew.WinNet10.csproj" />
-    <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/AORebirth.Communication.ZoneNew.WinNet10.csproj" />
   </ItemGroup>
 
   <!-- Sources under this directory are globbed by the SDK. Only the shared assembly info,
        which lives outside the project cone, needs an explicit entry. -->
   <ItemGroup>
     <!-- Shared evidence-only placement validation, not legacy runtime ownership. -->
+    <!-- Only the offline stale-online recovery tool path in MySqlCharacterDao still fences with it. -->
     <Compile Include="../../Libraries/Source/AORebirth.Database/Dao/CharacterOnlineOwnershipGuard.cs" Link="Shared/CharacterOnlineOwnershipGuard.cs" />
-    <Compile Include="../../Libraries/Source/AORebirth.Database/Dao/ZoneHandoffStore.cs" Link="Shared/ZoneHandoffStore.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Dao/TeleportRoutingDao.cs" Link="Shared/TeleportRoutingDao.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Stats/SpecialStats/XPTable.cs" Link="SharedGameplay/Progression/XPTable.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Missions/MySqlMissionDao.cs" Link="SharedGameplay/Missions/MySqlMissionDao.cs" />

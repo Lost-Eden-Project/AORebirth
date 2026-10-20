@@ -53,6 +53,9 @@ namespace ZoneEngine_New.Core.Network
 
         public static void ResetOffset() => Interlocked.Exchange(ref _offsetGameSeconds, 0);
 
+        /// <summary>World holds the shift for every zone instance; each takes the value it pushes.</summary>
+        public static void SetOffset(long offsetGameSeconds) => Interlocked.Exchange(ref _offsetGameSeconds, offsetGameSeconds);
+
         public readonly record struct Reading(float TimeOfDay, int DayPeriod, int Day, int ServerSeconds)
         {
             public int Hour => (int)TimeOfDay / SecondsPerHour;

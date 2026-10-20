@@ -267,8 +267,26 @@ $zonePort = Get-ConfiguredPort "ZonePort"
 $zoneEngine = $zoneEngineSelection
 $zoneEngine.Ports = @($zonePort)
 
+function Get-WorldPort([string]$Name, [int]$Default) {
+    $nodes = $configuration.SelectNodes("/*/World/$Name")
+    $port = 0
+    if ($nodes.Count -eq 0 -or [string]::IsNullOrWhiteSpace($nodes[0].InnerText) -or $nodes[0].InnerText.Trim() -eq "0") {
+        return $Default
+    }
+    if ($nodes[0].InnerText.Trim() -eq "-1") {
+        return 0
+    }
+    if (-not [int]::TryParse($nodes[0].InnerText, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+        throw "Configuration World/$Name must be a valid port."
+    }
+    return $port
+}
+$worldPorts = @(@((Get-WorldPort "Port" 7600), (Get-WorldPort "StatusPort" 7601)) | Where-Object { $_ -gt 0 })
+
+# World first: every other engine registers with it before serving.
 $coreEngines = @(
-    @{ Name = "ChatEngine"; File = "ChatEngine.exe"; Ports = @((Get-ConfiguredPort "CommPort"), (Get-ConfiguredPort "ChatPort")) },
+    @{ Name = "WorldEngine"; File = "WorldEngine\WorldEngine.exe"; Ports = $worldPorts },
+    @{ Name = "ChatEngine"; File = "ChatEngine.exe"; Ports = @((Get-ConfiguredPort "ChatPort")) },
     @{ Name = "LoginEngine"; File = "LoginEngine.exe"; Ports = @((Get-ConfiguredPort "LoginPort")) },
     $zoneEngine
 )

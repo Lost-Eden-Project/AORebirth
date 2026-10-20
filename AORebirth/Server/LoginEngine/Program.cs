@@ -718,7 +718,14 @@ namespace LoginEngine
             }
             else
             {
-                LoginDataDao.Instance.LogoffChars(obj[1]);
+                // Only characters nobody owns: World knows which ones a zone or bot still holds.
+                var characters = AORebirth.Database.DatabaseDaoFactory.CreateCharacterDao();
+                var ids = new System.Collections.Generic.List<int>();
+                foreach (var character in characters.ListForAccount(obj[1])) ids.Add(character.CharacterId);
+                var owned = LoginEngine.CoreClient.Client.World.Owned(ids);
+                foreach (int id in ids)
+                    if (!owned.Contains(id)) characters.MarkOffline(id);
+                Console.WriteLine("Cleared Online for " + (ids.Count - owned.Count) + " character(s); " + owned.Count + " still owned.");
             }
         }
 
