@@ -276,7 +276,8 @@ namespace ZoneEngine_New
                 return settings;
             });
             services.AddSingleton(provider => ZoneEngine_New.Core.Modules.ZoneModuleHost.Load(
-                provider.GetRequiredService<IGameData>().RootPath, provider.GetRequiredService<IZoneLogger>()));
+                provider.GetRequiredService<IGameData>().RootPath, provider.GetRequiredService<IZoneLogger>(),
+                () => provider.GetRequiredService<ZoneEngine_New.Core.Knubot.KnubotCatalog>()));
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
             services.AddSingleton<HashItemMinter>();
             services.AddSingleton<PlayerHydrator>();

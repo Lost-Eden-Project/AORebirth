@@ -17,10 +17,18 @@ using ZoneEngine_New.Core.Quests;
 /// <summary>
 /// GameData/Knubot/**/*.json scripts, validated at load and keyed by the NPCs they talk for. A script with any
 /// error is logged with its file and line id and not loaded; the others still load.
+/// <para>
+/// <see cref="OverrideVariable"/> names a second folder laid over that one: a script there replaces the GameData
+/// script with the same id (its path under the folder) and takes its NPCs from any other. <see cref="Reload"/> rebuilds
+/// both while the zone runs; a chat already open keeps the script it started with.
+/// </para>
 /// </summary>
 public sealed class KnubotCatalog
 {
     public const string DirectoryName = "Knubot";
+
+    /// <summary>Environment variable naming the override folder (e.g. where a development module uploads scripts).</summary>
+    public const string OverrideVariable = "AO_REBIRTH_KNUBOT_PATH";
 
     /// <summary>Automatic transitions (goto and fail) one player action may take before the chat is closed.</summary>
     public const int MaxChain = 8;
@@ -32,22 +40,114 @@ public sealed class KnubotCatalog
         AllowTrailingCommas = true
     };
 
-    readonly Dictionary<string, KnubotScript> _byNpc = new(StringComparer.Ordinal);
+    readonly string _root;
+    readonly KnubotLoadContext _load;
+    readonly IZoneLogger _logger;
+    readonly object _reloadLock = new();
+
+    // Swapped whole by Reload; a lookup reads the reference once.
+    volatile Dictionary<string, KnubotScript> _byNpc;
 
     public KnubotCatalog(IGameData gameData, QuestCatalog quests, IItemTemplateCatalog items, IZoneLogger logger)
     {
         ArgumentNullException.ThrowIfNull(gameData);
         ArgumentNullException.ThrowIfNull(logger);
 
-        string root = Path.Combine(gameData.RootPath, DirectoryName);
-        if (!Directory.Exists(root))
+        _root = Path.Combine(gameData.RootPath, DirectoryName);
+        string? overrideRoot = Environment.GetEnvironmentVariable(OverrideVariable);
+        OverrideRoot = string.IsNullOrWhiteSpace(overrideRoot) ? null : Path.GetFullPath(overrideRoot.Trim());
+        _load = new KnubotLoadContext(quests, gameData, items);
+        _logger = logger;
+        _byNpc = Build().ByNpc;
+    }
+
+    /// <summary>The <see cref="OverrideVariable"/> folder, or null when it is not set.</summary>
+    public string? OverrideRoot { get; }
+
+    public int NpcCount => _byNpc.Count;
+
+    /// <summary>Loads both folders again and swaps the result in. Scripts that fail stay out, as at startup.</summary>
+    public KnubotLoadResult Reload()
+    {
+        lock (_reloadLock)
         {
-            logger.Info("No Knubot scripts at " + root);
-            return;
+            KnubotLoadResult result = Build();
+            _byNpc = result.ByNpc;
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// The errors <paramref name="json"/> would be rejected with as script <paramref name="id"/>; empty when it would
+    /// load. Nothing is installed.
+    /// </summary>
+    public IReadOnlyList<string> Check(string id, string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        var errors = new List<string>();
+        Parse(id, json ?? string.Empty, errors);
+        return errors;
+    }
+
+    KnubotScript? Parse(string id, string json, List<string> errors)
+    {
+        try
+        {
+            KnubotScriptFile? file = JsonSerializer.Deserialize<KnubotScriptFile>(json, JsonOptions);
+            if (file == null)
+            {
+                errors.Add("empty file");
+                return null;
+            }
+
+            return Compile(id, file, _load, errors);
+        }
+        catch (JsonException exception)
+        {
+            errors.Add(exception.Message);
+            return null;
+        }
+    }
+
+    KnubotLoadResult Build()
+    {
+        var byNpc = new Dictionary<string, KnubotScript>(StringComparer.Ordinal);
+        var problems = new List<string>();
+        if (!Directory.Exists(_root))
+            _logger.Info("No Knubot scripts at " + _root);
+        Dictionary<string, (KnubotScript Script, string Path)> shipped = LoadFolder(_root, problems);
+        Dictionary<string, (KnubotScript Script, string Path)> overrides = OverrideRoot == null
+            ? new(StringComparer.Ordinal)
+            : LoadFolder(OverrideRoot, problems);
+
+        // Overrides claim their NPCs first. A shipped script with the same id is replaced outright; one that shares an
+        // NPC with an override gives that NPC up and keeps the rest.
+        var claimedByOverride = new HashSet<string>(StringComparer.Ordinal);
+        int loaded = 0;
+        foreach ((string _, (KnubotScript script, string path)) in overrides.OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            if (Install(script, path, byNpc, claimedByOverride, overriding: true, problems))
+                loaded++;
         }
 
-        var load = new KnubotLoadContext(quests, gameData, items);
-        int loaded = 0, rejected = 0;
+        foreach ((string id, (KnubotScript script, string path)) in shipped.OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            if (!overrides.ContainsKey(id) && Install(script, path, byNpc, claimedByOverride, overriding: false, problems))
+                loaded++;
+        }
+
+        _logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot scripts={0} rejected={1} npcs={2} from {3}{4}",
+            loaded, problems.Count, byNpc.Count, _root, OverrideRoot == null ? string.Empty : " with overrides from " + OverrideRoot));
+        return new KnubotLoadResult(loaded, byNpc.Count, problems, byNpc);
+    }
+
+    /// <summary>Every script under <paramref name="root"/> that compiles, by id; each failure goes into <paramref name="problems"/>.</summary>
+    Dictionary<string, (KnubotScript Script, string Path)> LoadFolder(string root, List<string> problems)
+    {
+        var scripts = new Dictionary<string, (KnubotScript, string)>(StringComparer.Ordinal);
+        if (!Directory.Exists(root))
+            return scripts;
+
         foreach (string path in Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories).OrderBy(x => x, StringComparer.Ordinal))
         {
             string id = Path.ChangeExtension(Path.GetRelativePath(root, path), null).Replace('\\', '/');
@@ -55,47 +155,73 @@ public sealed class KnubotCatalog
             KnubotScript? script = null;
             try
             {
-                KnubotScriptFile? file = JsonSerializer.Deserialize<KnubotScriptFile>(File.ReadAllText(path), JsonOptions);
-                script = file == null ? null : Compile(id, file, load, errors);
-                if (file == null)
-                    errors.Add("empty file");
+                script = Parse(id, File.ReadAllText(path), errors);
             }
-            catch (JsonException exception)
+            catch (IOException exception)
             {
+                // An upload being written right now; the next reload picks it up.
                 errors.Add(exception.Message);
-            }
-
-            if (script != null)
-            {
-                foreach (string npc in script.Npcs)
-                {
-                    if (_byNpc.TryGetValue(npc, out KnubotScript? owner))
-                        errors.Add("NPC " + npc + " already talks through " + owner.Id);
-                }
             }
 
             if (script == null || errors.Count != 0)
             {
-                rejected++;
-                logger.Error(string.Format(CultureInfo.InvariantCulture, "Knubot script {0} not loaded: {1}", path, string.Join("; ", errors)));
+                Reject(path, errors, problems);
                 continue;
             }
 
-            foreach (string npc in script.Npcs)
-                _byNpc[npc] = script;
-            loaded++;
-
-            var deadEnds = script.Lines.Values.SelectMany(line => line.Replies.Where(script.IsDeadEnd)
-                .Select(reply => "line '" + line.Id + "' reply '" + reply.Id + "'")).ToArray();
-            if (deadEnds.Length != 0)
-                logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot script {0} has {1} dead-end replies: {2}",
-                    script.Id, deadEnds.Length, string.Join(", ", deadEnds)));
+            scripts[id] = (script, path);
         }
 
-        logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot scripts={0} rejected={1} npcs={2} from {3}", loaded, rejected, _byNpc.Count, root));
+        return scripts;
     }
 
-    public int NpcCount => _byNpc.Count;
+    bool Install(
+        KnubotScript script,
+        string path,
+        Dictionary<string, KnubotScript> byNpc,
+        HashSet<string> claimedByOverride,
+        bool overriding,
+        List<string> problems)
+    {
+        var errors = new List<string>();
+        var npcs = new List<string>(script.Npcs.Length);
+        foreach (string npc in script.Npcs)
+        {
+            if (!overriding && claimedByOverride.Contains(npc))
+                continue;
+            if (byNpc.TryGetValue(npc, out KnubotScript? owner))
+                errors.Add("NPC " + npc + " already talks through " + owner.Id);
+            else
+                npcs.Add(npc);
+        }
+
+        if (errors.Count != 0)
+        {
+            Reject(path, errors, problems);
+            return false;
+        }
+
+        foreach (string npc in npcs)
+        {
+            byNpc[npc] = script;
+            if (overriding)
+                claimedByOverride.Add(npc);
+        }
+
+        var deadEnds = script.Lines.Values.SelectMany(line => line.Replies.Where(script.IsDeadEnd)
+            .Select(reply => "line '" + line.Id + "' reply '" + reply.Id + "'")).ToArray();
+        if (deadEnds.Length != 0)
+            _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot script {0} has {1} dead-end replies: {2}",
+                script.Id, deadEnds.Length, string.Join(", ", deadEnds)));
+        return true;
+    }
+
+    void Reject(string path, List<string> errors, List<string> problems)
+    {
+        string detail = string.Join("; ", errors);
+        problems.Add(path + ": " + detail);
+        _logger.Error(string.Format(CultureInfo.InvariantCulture, "Knubot script {0} not loaded: {1}", path, detail));
+    }
 
     /// <summary>
     /// The script for <paramref name="npc"/>: by its content NPC identity or placement key, then the hash it

@@ -1,5 +1,6 @@
 namespace AORebirth.Modules
 {
+    using AORebirth.Modules.Content;
     using AORebirth.Modules.Events;
     using AORebirth.Modules.Network;
 
@@ -16,6 +17,9 @@ namespace AORebirth.Modules
 
         /// <summary>Gameplay events. Handlers run synchronously on the playfield's tick thread.</summary>
         IZoneEvents Events { get; }
+
+        /// <summary>The zone's Knubot dialog scripts: check, reload, and where overrides go (module API 1.1).</summary>
+        IKnubotScripts Knubot { get; }
 
         /// <summary>
         /// Reads Modules/&lt;Id&gt;/config.json (case-insensitive, comments allowed), or returns null when it is absent.

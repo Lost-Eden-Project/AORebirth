@@ -11,6 +11,7 @@ namespace ZoneEngine_New.Core.Modules
     using System.Text.Json;
 
     using AORebirth.Modules;
+    using AORebirth.Modules.Content;
     using AORebirth.Modules.Events;
     using AORebirth.Modules.Network;
 
@@ -26,13 +27,15 @@ namespace ZoneEngine_New.Core.Modules
         private static readonly int ApiMajorVersion = typeof(IZoneModule).Assembly.GetName().Version?.Major ?? 0;
 
         private readonly IZoneLogger _logger;
+        private readonly IKnubotScripts _knubot;
         private readonly List<LoadedModule> _modules = new();
         private IConnectionFilterProvider? _connectionFilter;
         private string? _connectionFilterOwner;
 
-        private ZoneModuleHost(IZoneLogger logger)
+        private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot)
         {
             _logger = logger;
+            _knubot = knubot;
             Events = new ZoneModuleEvents(logger);
         }
 
@@ -40,10 +43,11 @@ namespace ZoneEngine_New.Core.Modules
 
         public int Count => _modules.Count;
 
-        public static ZoneModuleHost Load(string gameDataRoot, IZoneLogger logger)
+        public static ZoneModuleHost Load(string gameDataRoot, IZoneLogger logger, Func<Knubot.KnubotCatalog> knubot)
         {
             ArgumentNullException.ThrowIfNull(logger);
-            var host = new ZoneModuleHost(logger);
+            ArgumentNullException.ThrowIfNull(knubot);
+            var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot));
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {
@@ -197,6 +201,7 @@ namespace ZoneEngine_New.Core.Modules
                 ModuleDirectory = moduleDirectory;
                 Log = new ModuleLogger(host._logger, moduleId);
                 Events = new ModuleEventsView(host.Events, moduleId);
+                Knubot = host._knubot;
             }
 
             public string ModuleId { get; }
@@ -206,6 +211,8 @@ namespace ZoneEngine_New.Core.Modules
             public IModuleLogger Log { get; }
 
             public IZoneEvents Events { get; }
+
+            public IKnubotScripts Knubot { get; }
 
             public T? GetConfig<T>() where T : class
             {
