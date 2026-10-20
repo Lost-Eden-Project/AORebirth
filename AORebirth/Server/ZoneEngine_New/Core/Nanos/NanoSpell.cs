@@ -45,6 +45,8 @@ namespace ZoneEngine_New.Core.Nanos
                 && !IsHostile
                 && (nanoFlags & NanoFlags.NotRemovable) == 0;
             IgnoresNcu = (nanoFlags & NanoFlags.NoRemoveNoNCUFriendly) != 0;
+            RemovesOnZone = (nanoFlags & NanoFlags.IsBuff) != 0
+                && (nanoFlags & NanoFlags.RemoveOnZone) == NanoFlags.RemoveOnZone;
             IsSelfOnly = (can & CanFlags.ApplyOnSelf) != 0 || AllFunctionsApplyToCaster();
         }
 
@@ -133,6 +135,9 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>True when <see cref="NanoFlags.NoRemoveNoNCUFriendly"/> skips the NCU gate.</summary>
         public bool IgnoresNcu { get; }
+
+        /// <summary>An IsBuff nano with <see cref="NanoFlags.RemoveOnZone"/>: it ends on a playfield change.</summary>
+        public bool RemovesOnZone { get; }
 
         /// <summary>Friendly buffs that occupy NCU. Hostile and NoRemoveNoNCUFriendly do not.</summary>
         public bool ConsumesNcu => !IsHostile && !IgnoresNcu;

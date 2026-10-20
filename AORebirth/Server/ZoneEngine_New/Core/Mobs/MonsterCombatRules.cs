@@ -87,7 +87,8 @@ namespace ZoneEngine_New.Core.Mobs
         /// </summary>
         public int[]? Hates { get; set; }
 
-        /// <summary><see cref="Hates"/> as a set; null when the NPC hates no family.</summary>
+        /// <summary><see cref="Hates"/> as a set; null when the NPC hates no family. Not part of the file.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
         public IReadOnlySet<int>? HatedFamilies
             => Hates is not { Length: > 0 } ? null : _hatedFamilies ??= new HashSet<int>(Hates);
     }

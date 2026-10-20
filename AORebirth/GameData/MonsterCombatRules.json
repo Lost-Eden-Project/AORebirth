@@ -34,6 +34,16 @@
       "NoCombat"
     ]
   },
+  "CACZ": {
+    "Features": [
+      "NoCombat"
+    ]
+  },
+  "ICST": {
+    "Hates": [
+      220
+    ]
+  },
   "HATH": {
     "Features": [
       "NoCombat"

@@ -86,6 +86,12 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
 
         SpecialUnavailable = 0x00000084,
 
+        /// <summary>
+        /// The server refused an attack request: the client clears its pending attack (Gamecode.dll FUN_10067c9e,
+        /// "Feedback_StartingAttackFailed"). Retail sends Parameter2 2 after the reason's Feedback.
+        /// </summary>
+        StartingAttackFailed = 0x00000093,
+
         Die = 0x00000098,
 
         /// <summary>

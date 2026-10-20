@@ -318,9 +318,9 @@ namespace ZoneEngine_New.Core.Nanos
         }
 
         /// <summary>
-        /// A zone transfer re-checks every NCU entry's PlayShiftRequirements (action 136) against
-        /// <paramref name="owner"/> where it now stands: one it no longer meets is removed as a strip removes it (274416
-        /// [Level > 200]). Returns how many went.
+        /// A zone transfer ends every <see cref="NanoSpell.RemovesOnZone"/> NCU entry and re-checks every other entry's
+        /// PlayShiftRequirements (action 136) against <paramref name="owner"/> where it now stands: one it no longer
+        /// meets is removed as a strip removes it (274416 [Level > 200]). Returns how many went.
         /// </summary>
         public static int StripPlayshiftFailures(Character owner)
         {
@@ -328,7 +328,8 @@ namespace ZoneEngine_New.Core.Nanos
             var failing = new List<int>();
             foreach (Buff buff in owner.Buffs)
             {
-                if (!buff.MeetsActionRequirements(stat => owner.Stats.Get(stat), ActionType.PlayShiftRequirements,
+                if (buff.RemovesOnZone
+                    || !buff.MeetsActionRequirements(stat => owner.Stats.Get(stat), ActionType.PlayShiftRequirements,
                         owner.ResolveRequirement))
                     failing.Add(buff.Id);
             }

@@ -1392,6 +1392,9 @@ namespace ZoneEngine_New.Core.Entities
 
         public bool IsSelfTerminating => _selfTerminateAtUtc != null;
 
+        /// <summary>GmLevel above 0, as <see cref="Characters.CharacterHydrationValidator"/> judges it.</summary>
+        public bool IsGm => Stats.GetOrZero(CharacterStat.GmLevel) > 0;
+
         /// <summary>
         /// /terminate: the character dies <see cref="SelfTerminationDelay"/> from now unless it zones, logs off or dies
         /// first. False when it is dead or already counting down.

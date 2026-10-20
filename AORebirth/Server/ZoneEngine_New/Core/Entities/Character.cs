@@ -1179,8 +1179,8 @@ namespace ZoneEngine_New.Core.Entities
                 }
             }
 
-            if (identity.Instance == 0)
-                ResetAllWeaponAttacks();
+            // Ending a fight leaves the weapon clocks where they are: a recharge runs out on its own (TickIdleRecharge),
+            // so stopping and restarting an attack never skips one.
         }
 
         /// <summary>True while a living character has this one as its fighting target.</summary>
@@ -1279,8 +1279,9 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             Motor.StandUp();
+            // The weapon clocks carry on: a repeated or retargeted Attack must not restart a recharge (the client keeps
+            // its bars too, Gamecode.dll FUN_1006810e). Ending the fight resets them (SetFightingTarget(None)).
             SetFightingTarget(target);
-            ResetAllWeaponAttacks();
             Cell?.Announce(BuildSpecialAttackWeaponMessage());
             Cell?.Announce(
                 new AttackMessage
@@ -1616,6 +1617,8 @@ namespace ZoneEngine_New.Core.Entities
             TickStallWatch.Stage("char.combat", instance);
             if (FightingTarget.Instance != 0 && TryResolveFightingTarget() != null)
                 TickCombat(deltaTime);
+            else
+                TickIdleRecharge(deltaTime);
             TickStallWatch.Stage("char.regen", instance);
             if (!IsDead && UsesPassiveRegen)
                 TickPassiveRegen(deltaTime);
@@ -1713,20 +1716,37 @@ namespace ZoneEngine_New.Core.Entities
 
         protected virtual void TickCombat(double deltaTime) => TickWeapons(deltaTime);
 
+        /// <summary>
+        /// Out of a fight only recharges run: a bar that swung finishes recharging, and an attack bar waits (it charges
+        /// only against a target). A nano cast pauses it, as in a fight.
+        /// </summary>
+        void TickIdleRecharge(double deltaTime)
+        {
+            if (IsCastingNano)
+                return;
+
+            foreach (CharacterWeapon weapon in Weapons.Values)
+            {
+                if (weapon != null && weapon.State == WeaponState.Recharging)
+                    weapon.Tick(deltaTime);
+            }
+        }
+
         void TickWeapons(double deltaTime)
         {
             // A nano cast pauses both the swing and the recharge; they resume where they were.
             if (IsCastingNano)
                 return;
 
-            // Parked full bars (waiting on LOS/range) must still Tick so they can fire,
-            // but must not monopolize the exclusive charge slot.
+            // A full bar waiting on range or LOS keeps the one charge slot: the next weapon charges only after it swings.
+            // Letting the others charge meanwhile fills every bar out of range, and they all land as one walks in.
+            // The client charges one bar at a time and holds recharges while one charges (Gamecode.dll FUN_1003d4bd).
             foreach (CharacterWeapon weapon in Weapons.Values)
             {
                 if (weapon == null || !weapon.IsFullyCharged)
                     continue;
-                if (weapon.Tick(deltaTime))
-                    return;
+                weapon.Tick(deltaTime);
+                return;
             }
 
             CharacterWeapon? charging = null;

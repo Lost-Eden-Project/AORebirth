@@ -55,13 +55,30 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
             }
 
-            if (target != null && CombatRules.IsPvpAttackBlocked(player, target))
-                ClientFeedback.Send(player, "Feedback_PvpNotAllowedInThisDistrict");
-            else
-                ClientFeedback.Send(player, "Feedback_StartingAttackFailed");
+            // Retail (capture 2026-10-20T19:48:40Z, attacking an unattackable target): the reason's Feedback, then
+            // StartingAttackFailed 2, once per request. Without the second the client keeps its attack pending. A
+            // target that is not there gets only the StartingAttackFailed, whose own "starting attack failed" the
+            // client shows.
+            if (target != null)
+                ClientFeedback.Send(player, CombatRules.IsPvpAttackBlocked(player, target)
+                    ? "Feedback_PvpNotAllowedInThisDistrict"
+                    : "Feedback_CantbeAttacked");
+            player.Session?.Send(
+                new CharacterActionMessage
+                {
+                    Identity = player.Identity,
+                    Action = CharacterActionType.StartingAttackFailed,
+                    Target = Identity.None,
+                    Parameter1 = 0,
+                    Parameter2 = StartingAttackFailedParameter
+                });
 
-            ClearAttack(player);
+            // A refused request ends a fight already running, as before; with none there is nothing to tell observers.
+            if (player.FightingTarget.Instance != 0)
+                ClearAttack(player);
         }
+
+        const int StartingAttackFailedParameter = 2;
 
         static void ClearAttack(Player player)
         {

@@ -9,5 +9,10 @@
   "git.detectSubmodules": true,
   "files.exclude": {
     "password decoder": true
-  }
+  },
+  "json.schemas": [
+    { "fileMatch": ["**/GameData/MonsterCombatRules.json"], "url": "./AORebirth/Schemas/MonsterCombatRules.schema.json" },
+    { "fileMatch": ["**/GameData/NpcTemplates.json"], "url": "./AORebirth/Schemas/NpcTemplates.schema.json" },
+    { "fileMatch": ["**/Config/Gameplay.json"], "url": "./AORebirth/Schemas/Gameplay.schema.json" }
+  ]
 }

@@ -46,8 +46,12 @@ namespace ZoneEngine_New.Core.Characters
                 throw new InvalidOperationException("Player spawn payload rejected: " + string.Join(",", errors));
         }
 
-        /// <summary>Checks the actual two messages, including optional numeric fields and conditional shape.</summary>
-        public static void RequireValidMessages(SimpleCharFullUpdateMessage spawn, FullCharacterMessage full)
+        /// <summary>
+        /// Checks the actual two messages, including optional numeric fields and conditional shape. A GM
+        /// (<paramref name="isGm"/>) may hold zero or negative primary abilities, as <see cref="CharacterHydrationValidator"/>
+        /// already allows.
+        /// </summary>
+        public static void RequireValidMessages(SimpleCharFullUpdateMessage spawn, FullCharacterMessage full, bool isGm)
         {
             ArgumentNullException.ThrowIfNull(spawn);
             ArgumentNullException.ThrowIfNull(full);
@@ -63,8 +67,8 @@ namespace ZoneEngine_New.Core.Characters
                 errors.Add("ordinary-player-info-shape");
             else
             {
-                if (pc.StrengthBase <= 0 || pc.AgilityBase <= 0 || pc.StaminaBase <= 0
-                    || pc.IntelligenceBase <= 0 || pc.SenseBase <= 0 || pc.PsychicBase <= 0)
+                if (!isGm && (pc.StrengthBase <= 0 || pc.AgilityBase <= 0 || pc.StaminaBase <= 0
+                    || pc.IntelligenceBase <= 0 || pc.SenseBase <= 0 || pc.PsychicBase <= 0))
                     errors.Add("primary-abilities-invalid");
                 if (spawn.CharacterFlags.HasFlag(CharacterFlags.HasVisibleName)
                     && (pc.FirstName == null || pc.LastName == null)) errors.Add("visible-name-shape");

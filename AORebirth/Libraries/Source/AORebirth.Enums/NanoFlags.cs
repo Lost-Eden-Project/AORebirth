@@ -16,6 +16,11 @@ namespace AORebirth.Enums
         BreakOnDebuff = 1 << 7,
         Interruptable = BreakOnAttack | BreakOnSpellAttack | BreakOnDebuff,
         NoRemoveNoNCUFriendly = 1 << 8,
+
+        /// <summary>
+        /// Both bits (0x200 | 0x2000) on an <see cref="IsBuff"/> nano: it ends when its owner changes playfield.
+        /// </summary>
+        RemoveOnZone = (1 << 9) | (1 << 13),
         NotRemovable = 1 << 14,
         IsHostile = 1 << 15,
         IsBuff = 1 << 16,

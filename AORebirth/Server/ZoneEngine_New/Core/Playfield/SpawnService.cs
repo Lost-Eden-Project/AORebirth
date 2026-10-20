@@ -770,7 +770,7 @@ namespace ZoneEngine_New.Core.Playfield
                 player.Position = _playfield.SnapFeetToFloor(player.Position);
                 player.Rebase();
                 PlayerSpawnPayloadValidator.RequireValid(player);
-                PlayerSpawnPayloadValidator.RequireValidMessages(player.BuildSpawnMessage(), player.BuildFullCharacterMessage());
+                PlayerSpawnPayloadValidator.RequireValidMessages(player.BuildSpawnMessage(), player.BuildFullCharacterMessage(), player.IsGm);
                 _playfieldManager.RegisterPlayer(player);
                 _registry.Register(player);
                 registered = true;
@@ -867,7 +867,7 @@ namespace ZoneEngine_New.Core.Playfield
                 _playfieldManager.Teams.ApplyArrivedTeam(player, command.Envelope.Team);
             SimpleCharFullUpdateMessage spawn = player.BuildSpawnMessage();
             FullCharacterMessage full = player.BuildFullCharacterMessage();
-            PlayerSpawnPayloadValidator.RequireValidMessages(spawn, full);
+            PlayerSpawnPayloadValidator.RequireValidMessages(spawn, full, player.IsGm);
             ScfuSendLog.Write(spawn);
             session.Send(spawn);
             SendSpawnMovement(session, player);
@@ -949,7 +949,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             // Reject a damaged retained aggregate before stealing or publishing session ownership.
             PlayerSpawnPayloadValidator.RequireValid(player);
-            PlayerSpawnPayloadValidator.RequireValidMessages(player.BuildSpawnMessage(), player.BuildFullCharacterMessage());
+            PlayerSpawnPayloadValidator.RequireValidMessages(player.BuildSpawnMessage(), player.BuildFullCharacterMessage(), player.IsGm);
             StealSessionIfNeeded(player, session);
             player.EnterOnline(session);
             // The reconnecting client starts with no keys held: whatever the old connection was doing (a crash never
@@ -962,7 +962,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             SimpleCharFullUpdateMessage reconnectSpawn = player.BuildSpawnMessage();
             FullCharacterMessage reconnectFull = player.BuildFullCharacterMessage();
-            PlayerSpawnPayloadValidator.RequireValidMessages(reconnectSpawn, reconnectFull);
+            PlayerSpawnPayloadValidator.RequireValidMessages(reconnectSpawn, reconnectFull, player.IsGm);
             ScfuSendLog.Write(reconnectSpawn);
             session.Send(reconnectSpawn);
             SendSpawnMovement(session, player);
