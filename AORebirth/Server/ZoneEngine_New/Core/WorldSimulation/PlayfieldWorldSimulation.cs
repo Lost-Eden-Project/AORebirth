@@ -713,7 +713,19 @@
         /// </summary>
         void SendToSavePoint(PlayfieldType source, Player player, ZoneCrossing crossing, double now)
         {
-            (int playfieldId, AoVector3 landing) = player.ResolveSavePointDestination(source);
+            int playfieldId;
+            AoVector3 landing;
+            try
+            {
+                (playfieldId, landing) = player.ResolveSavePointDestination(source);
+            }
+            catch (InvalidOperationException exception)
+            {
+                // No save point, start location or Respawn.json: nowhere to send them.
+                _logger.Warn($"Water exit to save point failed character={player.Identity.Instance}: {exception.Message}");
+                return;
+            }
+
             if (playfieldId != source.Identity.Instance)
             {
                 TryTransfer(source, player, crossing with { DestPlayfieldId = playfieldId, Landing = landing }, now);
@@ -856,18 +868,26 @@
         /// The playfield's zoning water (WaterExits.json): each Water.dat plane carrying the configured flags becomes a
         /// trigger for anyone under its surface. Playfields without an entry, or without Water.dat, get none.
         /// </summary>
+        /// <summary>
+        /// Zoning water: the WaterExits.json entry for this playfield, or with none, the save point. Water flagged to zone
+        /// (Water.dat 0x10) always takes the character somewhere, so nobody is left stuck in it.
+        /// </summary>
         void BakeWaterExitTriggers(string gameDataRoot, int playfieldId)
         {
-            if (string.IsNullOrWhiteSpace(gameDataRoot)
-                || !WaterExitCatalog.For(gameDataRoot).TryGet(playfieldId, out WaterExit exit))
+            if (string.IsNullOrWhiteSpace(gameDataRoot))
                 return;
 
+            bool listed = WaterExitCatalog.For(gameDataRoot).TryGet(playfieldId, out WaterExit exit);
             string path = System.IO.Path.Combine(gameDataRoot, GameDataPaths.PlayfieldWaterRelativePath(playfieldId));
             if (!System.IO.File.Exists(path))
             {
-                _logger.Warn("WaterExits.json lists playfield " + playfieldId + " but it has no " + GameDataPaths.WaterFileName);
+                if (listed)
+                    _logger.Warn("WaterExits.json lists playfield " + playfieldId + " but it has no " + GameDataPaths.WaterFileName);
                 return;
             }
+
+            if (!listed)
+                exit = new WaterExit { DestinationPlayfield = WaterExit.ToSavePoint };
 
             List<PlayfieldWaterEntry> waters = PlayfieldWaterDat.Parse(System.IO.File.ReadAllBytes(path), out _);
             var landing = new AoVector3(exit.X, exit.Y, exit.Z);
