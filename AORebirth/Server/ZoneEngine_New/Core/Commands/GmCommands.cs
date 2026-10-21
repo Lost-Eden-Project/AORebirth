@@ -3,6 +3,7 @@ namespace ZoneEngine_New.Core.Commands
     using System;
     using System.Collections.Generic;
     using System.Globalization;
+    using System.Linq;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
@@ -242,7 +243,10 @@ namespace ZoneEngine_New.Core.Commands
     {
         private readonly Dictionary<string, IGmCommand> _commands;
 
-        public GmCommandDispatcher(IEnumerable<IGmCommand> commands)
+        public GmCommandDispatcher(
+            IEnumerable<IGmCommand> commands,
+            ZoneEngine_New.Core.Modules.ZoneModuleHost? modules = null,
+            ZoneEngine_New.Core.Logging.IZoneLogger? logger = null)
         {
             ArgumentNullException.ThrowIfNull(commands);
             _commands = new Dictionary<string, IGmCommand>(StringComparer.OrdinalIgnoreCase);
@@ -250,6 +254,13 @@ namespace ZoneEngine_New.Core.Commands
             {
                 ArgumentNullException.ThrowIfNull(command);
                 _commands[command.Name] = command;
+            }
+
+            // Module commands never replace a built-in: a clash unloads that module (BindGmCommands).
+            if (modules != null)
+            {
+                foreach ((string moduleId, AORebirth.Modules.Commands.ModuleGmCommand command) in modules.BindGmCommands(_commands.Keys.ToArray()))
+                    _commands.Add(command.Name, new ZoneEngine_New.Core.Modules.ModuleGmCommandAdapter(moduleId, command, logger));
             }
         }
 

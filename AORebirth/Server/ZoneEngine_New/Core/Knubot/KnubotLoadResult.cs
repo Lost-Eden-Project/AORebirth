@@ -11,3 +11,8 @@ public sealed record KnubotLoadResult(
     int Npcs,
     IReadOnlyList<string> Problems,
     Dictionary<string, KnubotScript> ByNpc);
+
+/// <summary>The NPC maps on either side of a <see cref="KnubotCatalog.Reload"/>. Neither is modified afterwards.</summary>
+public sealed record KnubotMapChange(
+    IReadOnlyDictionary<string, KnubotScript> Before,
+    IReadOnlyDictionary<string, KnubotScript> After);

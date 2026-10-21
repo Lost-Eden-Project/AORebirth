@@ -1680,7 +1680,7 @@ namespace ZoneEngine_New.Core.Entities
                 deltaTime,
                 PassiveRegenCalculator.ComputeNanoDelta(
                     breed,
-                    Stats.GetOrZero(CharacterStat.NanoPool),
+                    bodyDevelopment,
                     Stats.GetOrZero(CharacterStat.NanoDelta)),
                 PassiveRegenCalculator.ComputeNanoIntervalSeconds(
                     Stats.GetOrZero(CharacterStat.Psychic),

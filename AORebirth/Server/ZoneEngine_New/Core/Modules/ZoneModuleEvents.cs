@@ -19,16 +19,44 @@ namespace ZoneEngine_New.Core.Modules
         {
             NpcKilled = new HandlerList<NpcKilledEvent>("NpcKilled", logger);
             PlayerDied = new HandlerList<PlayerDiedEvent>("PlayerDied", logger);
+            PlayerEnteredPlayfield = new HandlerList<PlayerPlayfieldEvent>("PlayerEnteredPlayfield", logger);
+            PlayerLeftPlayfield = new HandlerList<PlayerPlayfieldEvent>("PlayerLeftPlayfield", logger);
+            PlayerLoggedIn = new HandlerList<PlayerSessionEvent>("PlayerLoggedIn", logger);
+            PlayerLoggedOut = new HandlerList<PlayerSessionEvent>("PlayerLoggedOut", logger);
+            NpcSpawned = new HandlerList<NpcSpawnEvent>("NpcSpawned", logger);
+            NpcDespawned = new HandlerList<NpcSpawnEvent>("NpcDespawned", logger);
+            KnubotChatOpened = new HandlerList<KnubotChatOpenedEvent>("KnubotChatOpened", logger);
         }
 
         public HandlerList<NpcKilledEvent> NpcKilled { get; }
 
         public HandlerList<PlayerDiedEvent> PlayerDied { get; }
 
+        public HandlerList<PlayerPlayfieldEvent> PlayerEnteredPlayfield { get; }
+
+        public HandlerList<PlayerPlayfieldEvent> PlayerLeftPlayfield { get; }
+
+        public HandlerList<PlayerSessionEvent> PlayerLoggedIn { get; }
+
+        public HandlerList<PlayerSessionEvent> PlayerLoggedOut { get; }
+
+        public HandlerList<NpcSpawnEvent> NpcSpawned { get; }
+
+        public HandlerList<NpcSpawnEvent> NpcDespawned { get; }
+
+        public HandlerList<KnubotChatOpenedEvent> KnubotChatOpened { get; }
+
         internal void RemoveModule(string moduleId)
         {
             NpcKilled.RemoveModule(moduleId);
             PlayerDied.RemoveModule(moduleId);
+            PlayerEnteredPlayfield.RemoveModule(moduleId);
+            PlayerLeftPlayfield.RemoveModule(moduleId);
+            PlayerLoggedIn.RemoveModule(moduleId);
+            PlayerLoggedOut.RemoveModule(moduleId);
+            NpcSpawned.RemoveModule(moduleId);
+            NpcDespawned.RemoveModule(moduleId);
+            KnubotChatOpened.RemoveModule(moduleId);
         }
 
         /// <summary>

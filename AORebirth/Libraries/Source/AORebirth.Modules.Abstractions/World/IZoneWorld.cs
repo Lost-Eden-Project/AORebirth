@@ -1,0 +1,119 @@
+namespace AORebirth.Modules.World
+{
+    using System;
+    using System.Collections.Generic;
+
+    /// <summary>
+    /// A read-only view of this zone instance's world (module API 1.2). Only the playfields this ZoneEngine_New process
+    /// runs are visible: a player or NPC on another zone instance is not found here.
+    /// <para>
+    /// Every member is safe to call from any thread and returns detached copies; nothing returned changes after it is
+    /// returned, and nothing in it refers to a live entity. Values come from snapshots each playfield publishes at the end
+    /// of its tick, so they may be up to one tick stale. Called from a module thread the first read of a playfield can
+    /// wait up to a few ticks for its first snapshot; called from an event handler (already on a tick) it never waits.
+    /// </para>
+    /// <para>Needs the <c>read-world</c> capability when the module has a capability entry in Modules.json.</para>
+    /// </summary>
+    public interface IZoneWorld
+    {
+        /// <summary>Every player in play on this instance's playfields.</summary>
+        IReadOnlyList<PlayerInfo> Players();
+
+        /// <summary>The player with this character id on this instance, or null.</summary>
+        PlayerInfo? Player(int characterId);
+
+        /// <summary>Ids of the playfields this instance runs right now.</summary>
+        IReadOnlyList<int> Playfields();
+
+        /// <summary>Every spawned NPC on <paramref name="playfieldId"/>; empty when this instance does not run it.</summary>
+        IReadOnlyList<NpcInfo> Npcs(int playfieldId);
+
+        /// <summary>The spawned NPC with this identity instance on <paramref name="playfieldId"/>, or null.</summary>
+        NpcInfo? Npc(int playfieldId, int instance);
+
+        /// <summary>
+        /// The current value of raw stat <paramref name="statId"/> on a player or NPC of this instance, or null when the
+        /// entity is not found or does not have the stat. The first read of a stat on an entity subscribes it to the
+        /// tick snapshot for a while, so a read from a module thread may wait up to a few ticks.
+        /// </summary>
+        int? Stat(EntityRef entity, int statId);
+    }
+
+    /// <summary>An entity identity: the AO identity type (50000 for characters) and instance.</summary>
+    public readonly record struct EntityRef(int Type, int Instance)
+    {
+        /// <summary>The identity type of players and NPCs.</summary>
+        public const int CharacterType = 50000;
+
+        /// <summary>A player or NPC.</summary>
+        public static EntityRef Character(int instance) => new(CharacterType, instance);
+    }
+
+    /// <summary>A world position.</summary>
+    public readonly record struct WorldPosition(float X, float Y, float Z);
+
+    /// <summary>A player as one playfield tick last saw them.</summary>
+    public sealed record PlayerInfo
+    {
+        public int CharacterId { get; init; }
+
+        public string Name { get; init; } = string.Empty;
+
+        public string FirstName { get; init; } = string.Empty;
+
+        public string LastName { get; init; } = string.Empty;
+
+        public int PlayfieldId { get; init; }
+
+        public WorldPosition Position { get; init; }
+
+        public float HeadingDegrees { get; init; }
+
+        public int Level { get; init; }
+
+        public int Health { get; init; }
+
+        public int MaxHealth { get; init; }
+
+        public int Nano { get; init; }
+
+        public int MaxNano { get; init; }
+
+        public int ProfessionId { get; init; }
+
+        public int BreedId { get; init; }
+
+        /// <summary>The character's GM level; 0 for an ordinary player.</summary>
+        public int GmLevel { get; init; }
+
+        public bool IsDead { get; init; }
+
+        /// <summary>The selected target, or default when none.</summary>
+        public EntityRef Target { get; init; }
+
+        /// <summary>False while link-dead (the character stays in the world without a connection).</summary>
+        public bool IsConnected { get; init; }
+    }
+
+    /// <summary>A spawned NPC as one playfield tick last saw it.</summary>
+    public sealed record NpcInfo
+    {
+        public int Instance { get; init; }
+
+        /// <summary>The NPC's template hash, or empty when it has none.</summary>
+        public string TemplateHash { get; init; } = string.Empty;
+
+        public string Name { get; init; } = string.Empty;
+
+        public int Level { get; init; }
+
+        public int PlayfieldId { get; init; }
+
+        public WorldPosition Position { get; init; }
+
+        public bool IsDead { get; init; }
+
+        /// <summary>A Knubot script talks for this NPC, so using it opens the Knubot chat.</summary>
+        public bool HasKnubotScript { get; init; }
+    }
+}

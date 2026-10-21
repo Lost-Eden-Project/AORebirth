@@ -41,6 +41,12 @@ namespace ZoneEngine_New.Core.Playfield
         public required Action Projection { get; init; }
     }
 
+    /// <summary>Work queued by <see cref="Playfield.Dispatch"/>.</summary>
+    internal sealed class PlayfieldActionInboundItem : PlayfieldInboundItem
+    {
+        public required Action Action { get; init; }
+    }
+
     internal sealed class TransferDepartureInboundItem(PlayfieldTransfer transfer) : PlayfieldInboundItem
     { public PlayfieldTransfer Transfer { get; } = transfer; }
     internal sealed class TransferArrivalInboundItem(PlayfieldTransfer transfer) : PlayfieldInboundItem

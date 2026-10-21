@@ -247,12 +247,15 @@ namespace ZoneEngine_New.Core.Entities
             if (IsDead || Playfield?.GetService<Knubot.KnubotCatalog>() is not { } knubot || !knubot.TryResolve(this, out _))
                 return null;
 
-            return new StatMessage
-            {
-                Identity = Identity,
-                Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.HasKnubotData, Value2 = 1 }]
-            };
+            return BuildKnubotDataMessage(1);
         }
+
+        /// <summary>HasKnubotData with an explicit value: 0 takes the Knubot chat away from a client that was told 1.</summary>
+        internal StatMessage BuildKnubotDataMessage(uint value) => new()
+        {
+            Identity = Identity,
+            Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.HasKnubotData, Value2 = value }]
+        };
 
         void SetCharacterFlag(CharacterFlags flag, bool set)
         {

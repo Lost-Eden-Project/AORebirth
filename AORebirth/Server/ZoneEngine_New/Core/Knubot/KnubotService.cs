@@ -85,6 +85,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
         if (!Current(transport, out Player player, out Playfield playfield))
             return false;
 
+        Conversation? opened = null;
         lock (player.PersistenceGate)
         {
             if (_sessions.TryGetValue(player.Identity.Instance, out Conversation? previous))
@@ -126,8 +127,12 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             }, 0));
             Say(conversation, opener.Say!, 0);
             Pump(conversation);
-            return true;
+            opened = conversation;
         }
+
+        // Outside the player's gate: module handlers never run under it.
+        Modules.ModuleHooks.KnubotChatOpened(playfield, player, opened.Npc, opened.Script.Id);
+        return true;
     }
 
     /// <summary>True when the answer belongs to this player's Knubot chat with <paramref name="target"/>.</summary>

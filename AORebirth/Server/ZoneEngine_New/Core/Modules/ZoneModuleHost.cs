@@ -11,9 +11,11 @@ namespace ZoneEngine_New.Core.Modules
     using System.Text.Json;
 
     using AORebirth.Modules;
+    using AORebirth.Modules.Commands;
     using AORebirth.Modules.Content;
     using AORebirth.Modules.Events;
     using AORebirth.Modules.Network;
+    using AORebirth.Modules.World;
 
     using ZoneEngine_New.Core.Logging;
 
@@ -29,25 +31,40 @@ namespace ZoneEngine_New.Core.Modules
         private readonly IZoneLogger _logger;
         private readonly IKnubotScripts _knubot;
         private readonly List<LoadedModule> _modules = new();
+        private readonly IZoneActions _actions;
+        private Dictionary<string, List<string>> _capabilities = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(string ModuleId, ModuleGmCommand Command)> _gmCommands = new();
+        private readonly HashSet<string> _required = new(StringComparer.OrdinalIgnoreCase);
+        private string? _initializing;
         private IConnectionFilterProvider? _connectionFilter;
         private string? _connectionFilterOwner;
 
-        private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot)
+        private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, Func<Playfield.PlayfieldManager> playfields)
         {
             _logger = logger;
             _knubot = knubot;
             Events = new ZoneModuleEvents(logger);
+            World = new ZoneModuleWorld(playfields);
+            _actions = new ZoneModuleActions(playfields);
         }
 
         public ZoneModuleEvents Events { get; }
 
+        /// <summary>The world view every playfield tick publishes into while a module reads it.</summary>
+        internal ZoneModuleWorld World { get; }
+
         public int Count => _modules.Count;
 
-        public static ZoneModuleHost Load(string gameDataRoot, IZoneLogger logger, Func<Knubot.KnubotCatalog> knubot)
+        public static ZoneModuleHost Load(
+            string gameDataRoot,
+            IZoneLogger logger,
+            Func<Knubot.KnubotCatalog> knubot,
+            Func<Playfield.PlayfieldManager> playfields)
         {
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(knubot);
-            var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot));
+            ArgumentNullException.ThrowIfNull(playfields);
+            var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot), playfields);
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {
@@ -57,8 +74,10 @@ namespace ZoneEngine_New.Core.Modules
 
             ModulesSettings settings = ModulesSettings.Load(settingsPath);
             string modulesDirectory = settings.ResolveModulesDirectory(settingsPath);
-            var required = new HashSet<string>(settings.Required, StringComparer.OrdinalIgnoreCase);
+            HashSet<string> required = host._required;
+            required.UnionWith(settings.Required);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            host._capabilities = LoadCapabilities(settings, logger);
             logger.Info($"Modules: config={settingsPath} directory={modulesDirectory} enabled={settings.Enabled.Count}");
 
             foreach (string id in settings.Enabled)
@@ -72,13 +91,7 @@ namespace ZoneEngine_New.Core.Modules
                 }
                 catch (Exception exception)
                 {
-                    host.Events.RemoveModule(id);
-                    if (string.Equals(host._connectionFilterOwner, id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        host._connectionFilter = null;
-                        host._connectionFilterOwner = null;
-                    }
-
+                    host.Forget(id);
                     logger.Error(exception, "Module " + id + " failed to load.");
                     if (required.Contains(id))
                         throw new InvalidOperationException("Required module " + id + " failed to load.", exception);
@@ -95,21 +108,69 @@ namespace ZoneEngine_New.Core.Modules
             return provider?.Create(new ConnectionInfo(sessionId, remoteEndPoint));
         }
 
+        /// <summary>
+        /// The module GM commands, checked against the built-in names when the GM command dispatcher is built (before the
+        /// zone accepts connections). A module whose command clashes is shut down and unloaded, as if it had failed to
+        /// load; when it is Required, zone startup fails.
+        /// </summary>
+        internal IReadOnlyList<(string ModuleId, ModuleGmCommand Command)> BindGmCommands(IEnumerable<string> builtInNames)
+        {
+            var builtIns = new HashSet<string>(builtInNames, StringComparer.OrdinalIgnoreCase);
+            foreach (string moduleId in _gmCommands.Where(x => builtIns.Contains(x.Command.Name)).Select(x => x.ModuleId)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
+            {
+                string names = string.Join(", ", _gmCommands
+                    .Where(x => string.Equals(x.ModuleId, moduleId, StringComparison.OrdinalIgnoreCase) && builtIns.Contains(x.Command.Name))
+                    .Select(x => "." + x.Command.Name));
+                var failure = new InvalidOperationException("Module " + moduleId + " GM command clashes with a built-in: " + names);
+                _logger.Error(failure, "Module " + moduleId + " failed to start; unloading it.");
+                int index = _modules.FindIndex(x => string.Equals(x.Id, moduleId, StringComparison.OrdinalIgnoreCase));
+                if (index >= 0)
+                {
+                    ShutdownModule(_modules[index]);
+                    _modules.RemoveAt(index);
+                }
+
+                Forget(moduleId);
+                if (_required.Contains(moduleId))
+                    throw new InvalidOperationException("Required module " + moduleId + " failed to start.", failure);
+            }
+
+            foreach ((string moduleId, ModuleGmCommand command) in _gmCommands)
+                _logger.Info(string.Format(CultureInfo.InvariantCulture, "Module {0} GM command .{1} gmLevel={2}",
+                    moduleId, command.Name, command.RequiredGmLevel));
+            return _gmCommands.ToArray();
+        }
+
+        /// <summary>Drops everything <paramref name="moduleId"/> registered.</summary>
+        private void Forget(string moduleId)
+        {
+            Events.RemoveModule(moduleId);
+            _gmCommands.RemoveAll(x => string.Equals(x.ModuleId, moduleId, StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(_connectionFilterOwner, moduleId, StringComparison.OrdinalIgnoreCase))
+            {
+                _connectionFilter = null;
+                _connectionFilterOwner = null;
+            }
+        }
+
+        private void ShutdownModule(LoadedModule module)
+        {
+            try
+            {
+                foreach (IZoneModule entry in module.Entries)
+                    entry.Shutdown();
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Module " + module.Id + " failed to shut down.");
+            }
+        }
+
         public void Shutdown()
         {
             for (int i = _modules.Count - 1; i >= 0; i--)
-            {
-                LoadedModule module = _modules[i];
-                try
-                {
-                    foreach (IZoneModule entry in module.Entries)
-                        entry.Shutdown();
-                }
-                catch (Exception exception)
-                {
-                    _logger.Error(exception, "Module " + module.Id + " failed to shut down.");
-                }
-            }
+                ShutdownModule(_modules[i]);
 
             _modules.Clear();
         }
@@ -146,14 +207,24 @@ namespace ZoneEngine_New.Core.Modules
             if (entryTypes.Length == 0)
                 throw new InvalidDataException("Module assembly has no public IZoneModule: " + assemblyPath);
 
-            var moduleContext = new ZoneModuleContext(this, manifest.Id, moduleDirectory);
+            _capabilities.TryGetValue(manifest.Id, out List<string>? granted);
+            var gate = new CapabilityGate(manifest.Id, granted, _logger);
+            var moduleContext = new ZoneModuleContext(this, manifest.Id, moduleDirectory, gate);
             var entries = new List<IZoneModule>(entryTypes.Length);
-            foreach (Type type in entryTypes)
+            _initializing = manifest.Id;
+            try
             {
-                var entry = (IZoneModule)(Activator.CreateInstance(type)
-                    ?? throw new InvalidOperationException("Could not create " + type.FullName));
-                entry.Initialize(moduleContext);
-                entries.Add(entry);
+                foreach (Type type in entryTypes)
+                {
+                    var entry = (IZoneModule)(Activator.CreateInstance(type)
+                        ?? throw new InvalidOperationException("Could not create " + type.FullName));
+                    entry.Initialize(moduleContext);
+                    entries.Add(entry);
+                }
+            }
+            finally
+            {
+                _initializing = null;
             }
 
             _modules.Add(new LoadedModule(manifest.Id, entries));
@@ -178,6 +249,49 @@ namespace ZoneEngine_New.Core.Modules
                     "Module was built against module API {0}; this engine provides {1}.", api.Version, ApiMajorVersion));
         }
 
+        private static Dictionary<string, List<string>> LoadCapabilities(ModulesSettings settings, IZoneLogger logger)
+        {
+            var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ModuleCapabilities.ReadWorld, ModuleCapabilities.RefreshNpc, ModuleCapabilities.SendMessages
+            };
+            var capabilities = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach ((string id, List<string>? names) in settings.Capabilities ?? new Dictionary<string, List<string>>())
+            {
+                var granted = new List<string>();
+                foreach (string name in names ?? new List<string>())
+                {
+                    if (known.Contains(name))
+                        granted.Add(name);
+                    else
+                        logger.Warn("Modules: unknown capability '" + name + "' for module " + id + " ignored.");
+                }
+
+                capabilities[id] = granted;
+                logger.Info("Modules: " + id + " capabilities=" + (granted.Count == 0 ? "none" : string.Join(",", granted)));
+            }
+
+            return capabilities;
+        }
+
+        private void RegisterGmCommand(string moduleId, ModuleGmCommand command)
+        {
+            ArgumentNullException.ThrowIfNull(command);
+            ArgumentNullException.ThrowIfNull(command.Execute);
+            if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("GM commands can only be registered during Initialize.");
+            string name = command.Name ?? string.Empty;
+            if (name.Length == 0 || name.Length > 32 || !name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
+                throw new ArgumentException("A GM command name is 1-32 letters, digits, '-' or '_', without the dot: '" + name + "'.");
+            if (command.RequiredGmLevel < 0)
+                throw new ArgumentException("RequiredGmLevel cannot be negative for ." + name + ".");
+            (string ModuleId, ModuleGmCommand Command) owner = _gmCommands.FirstOrDefault(x =>
+                string.Equals(x.Command.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (owner.Command != null)
+                throw new InvalidOperationException("GM command ." + name + " is already registered by module " + owner.ModuleId + ".");
+            _gmCommands.Add((moduleId, command));
+        }
+
         private void RegisterConnectionFilter(string moduleId, IConnectionFilterProvider provider)
         {
             ArgumentNullException.ThrowIfNull(provider);
@@ -194,7 +308,7 @@ namespace ZoneEngine_New.Core.Modules
         {
             private readonly ZoneModuleHost _host;
 
-            public ZoneModuleContext(ZoneModuleHost host, string moduleId, string moduleDirectory)
+            public ZoneModuleContext(ZoneModuleHost host, string moduleId, string moduleDirectory, CapabilityGate gate)
             {
                 _host = host;
                 ModuleId = moduleId;
@@ -202,7 +316,13 @@ namespace ZoneEngine_New.Core.Modules
                 Log = new ModuleLogger(host._logger, moduleId);
                 Events = new ModuleEventsView(host.Events, moduleId);
                 Knubot = host._knubot;
+                World = new GatedWorld(host.World, gate);
+                Actions = new GatedActions(host._actions, gate);
             }
+
+            public IZoneWorld World { get; }
+
+            public IZoneActions Actions { get; }
 
             public string ModuleId { get; }
 
@@ -225,6 +345,8 @@ namespace ZoneEngine_New.Core.Modules
 
             public void RegisterConnectionFilter(IConnectionFilterProvider provider)
                 => _host.RegisterConnectionFilter(ModuleId, provider);
+
+            public void RegisterGmCommand(ModuleGmCommand command) => _host.RegisterGmCommand(ModuleId, command);
         }
 
         private sealed class ModuleEventsView : IZoneEvents
@@ -248,6 +370,48 @@ namespace ZoneEngine_New.Core.Modules
             {
                 add => _events.PlayerDied.Add(_moduleId, value);
                 remove => _events.PlayerDied.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerPlayfieldEvent> PlayerEnteredPlayfield
+            {
+                add => _events.PlayerEnteredPlayfield.Add(_moduleId, value);
+                remove => _events.PlayerEnteredPlayfield.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerPlayfieldEvent> PlayerLeftPlayfield
+            {
+                add => _events.PlayerLeftPlayfield.Add(_moduleId, value);
+                remove => _events.PlayerLeftPlayfield.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerSessionEvent> PlayerLoggedIn
+            {
+                add => _events.PlayerLoggedIn.Add(_moduleId, value);
+                remove => _events.PlayerLoggedIn.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerSessionEvent> PlayerLoggedOut
+            {
+                add => _events.PlayerLoggedOut.Add(_moduleId, value);
+                remove => _events.PlayerLoggedOut.Remove(_moduleId, value);
+            }
+
+            public event Action<NpcSpawnEvent> NpcSpawned
+            {
+                add => _events.NpcSpawned.Add(_moduleId, value);
+                remove => _events.NpcSpawned.Remove(_moduleId, value);
+            }
+
+            public event Action<NpcSpawnEvent> NpcDespawned
+            {
+                add => _events.NpcDespawned.Add(_moduleId, value);
+                remove => _events.NpcDespawned.Remove(_moduleId, value);
+            }
+
+            public event Action<KnubotChatOpenedEvent> KnubotChatOpened
+            {
+                add => _events.KnubotChatOpened.Add(_moduleId, value);
+                remove => _events.KnubotChatOpened.Remove(_moduleId, value);
             }
         }
 

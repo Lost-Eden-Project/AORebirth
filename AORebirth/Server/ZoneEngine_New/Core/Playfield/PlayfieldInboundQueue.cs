@@ -34,6 +34,7 @@ namespace ZoneEngine_New.Core.Playfield
             TransferArrivalInboundItem => "in.transfer-arrive",
             TransferReturnInboundItem => "in.transfer-return",
             PlayerProjectionInboundItem => "in.projection",
+            PlayfieldActionInboundItem => "in.action",
             PendingSpawnInboundItem => "in.spawn",
             PendingReconnectInboundItem => "in.reconnect",
             _ => "in.other"
@@ -62,6 +63,10 @@ namespace ZoneEngine_New.Core.Playfield
                             projection.Projection();
                         else
                             projection.Player.Playfield?.DispatchPlayerProjection(projection.Player, projection.Projection);
+                        break;
+
+                    case PlayfieldActionInboundItem queued:
+                        queued.Action();
                         break;
 
                     case PendingSpawnInboundItem pendingSpawn:

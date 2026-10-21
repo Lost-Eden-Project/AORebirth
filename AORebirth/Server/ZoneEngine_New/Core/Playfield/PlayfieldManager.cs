@@ -98,6 +98,7 @@ namespace ZoneEngine_New.Core.Playfield
             Knubot = knubot;
             Gameplay = gameplay;
             ModuleEvents = modules?.Count > 0 ? modules.Events : null;
+            ModuleWorld = modules?.Count > 0 ? modules.World : null;
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(router);
             ArgumentNullException.ThrowIfNull(playerHydrator);
@@ -131,6 +132,9 @@ namespace ZoneEngine_New.Core.Playfield
             AuthoredQuests = authoredQuests ?? throw new ArgumentNullException(nameof(authoredQuests));
             ItemTemplates = itemTemplates ?? throw new ArgumentNullException(nameof(itemTemplates));
             Quests = quests;
+            // A reload that gives a visible NPC a script, or takes it away, is told to its observers on each tick.
+            if (knubot != null)
+                knubot.Catalog.Reloaded += change => ZoneEngine_New.Core.Knubot.KnubotNpcRefresh.Queue(this, change);
             _emptyPlayfieldSweep = new Timer(
                 _ => SweepEmptyPlayfields(DateTime.UtcNow),
                 null,
@@ -166,6 +170,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>External module event handlers, forwarded into every playfield container; null when no module is loaded.</summary>
         public ZoneEngine_New.Core.Modules.ZoneModuleEvents? ModuleEvents { get; }
+
+        /// <summary>The module world view, published from every playfield tick; null when no module is loaded.</summary>
+        internal ZoneEngine_New.Core.Modules.ZoneModuleWorld? ModuleWorld { get; }
 
         public static TimeSpan ResolveLinkDeadTimeout()
         {

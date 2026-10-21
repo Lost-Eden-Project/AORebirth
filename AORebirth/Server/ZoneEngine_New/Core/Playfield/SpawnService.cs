@@ -248,6 +248,7 @@ namespace ZoneEngine_New.Core.Playfield
                     position.yf,
                     position.zf));
 
+            Modules.ModuleHooks.NpcSpawned(_playfield, npc);
             return npc;
         }
 
@@ -898,6 +899,9 @@ namespace ZoneEngine_New.Core.Playfield
             OverflowGrants.Resend(player);
             if (command.Envelope != null)
                 World.EnvelopeApplier.SummonPets(_playfield, player, command.Envelope, _logger);
+            else
+                Modules.ModuleHooks.PlayerLoggedIn(_playfield, player);
+            Modules.ModuleHooks.PlayerEntered(_playfield, player);
 
             _logger.Info(
                 string.Format(
@@ -1175,6 +1179,7 @@ namespace ZoneEngine_New.Core.Playfield
             locality.UnregisterDynel(player);
             _registry.Unregister(player.Identity);
             player.Playfield = null;
+            Modules.ModuleHooks.PlayerLeft(_playfield, player);
 
             _logger.Info(
                 string.Format(
@@ -1289,6 +1294,7 @@ namespace ZoneEngine_New.Core.Playfield
             // Zone triggers then stay off for the grace period, so a step off the landing (an exit
             // door or border right beside it) cannot rezone the character straight away.
             _playfield.GetService<WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
+            Modules.ModuleHooks.PlayerEntered(_playfield, player);
 
             _logger.Info(
                 string.Format(
@@ -1317,6 +1323,7 @@ namespace ZoneEngine_New.Core.Playfield
             _playfield.GetRequiredService<PlayfieldLocality>().UnregisterDynel(npc);
             _registry.Unregister(npc.Identity);
             npc.Playfield = null;
+            Modules.ModuleHooks.NpcDespawned(_playfield, npc);
 
             _logger.Info(
                 string.Format(
@@ -1351,6 +1358,7 @@ namespace ZoneEngine_New.Core.Playfield
             }
 
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(npc);
+            Modules.ModuleHooks.NpcSpawned(_playfield, npc);
 
             _logger.Info(
                 string.Format(
@@ -1384,6 +1392,7 @@ namespace ZoneEngine_New.Core.Playfield
             _playfield.GetRequiredService<PlayfieldLocality>().UnregisterDynel(npc);
             _registry.Unregister(identity);
             npc.Playfield = null;
+            Modules.ModuleHooks.NpcDespawned(_playfield, npc);
 
             _logger.Info(
                 string.Format(
@@ -1444,6 +1453,7 @@ namespace ZoneEngine_New.Core.Playfield
             player.ConnectionPhase = PlayerConnectionPhase.LinkDead;
             player.LinkDeadUntilUtc = null;
             player.ReleaseOnlineOwnership();
+            Modules.ModuleHooks.PlayerLeft(_playfield, player);
 
             _logger.Info(
                 string.Format(
@@ -1510,6 +1520,8 @@ namespace ZoneEngine_New.Core.Playfield
             player.ReleaseOnlineOwnership();
             if (player.IsPersistenceQuarantined)
                 _snapshot.ClearOnlineIfUnowned(characterId);
+            Modules.ModuleHooks.PlayerLeft(_playfield, player);
+            Modules.ModuleHooks.PlayerLoggedOut(_playfield, characterId);
 
             _logger.Info(
                 string.Format(

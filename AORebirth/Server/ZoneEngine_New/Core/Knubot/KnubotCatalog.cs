@@ -66,15 +66,34 @@ public sealed class KnubotCatalog
 
     public int NpcCount => _byNpc.Count;
 
+    /// <summary>
+    /// Raised by <see cref="Reload"/> after the swap, with the NPC map before and after it, on the reloading thread.
+    /// Handlers only queue work: spawned NPCs whose script presence changed are refreshed on their playfield ticks.
+    /// </summary>
+    public event Action<KnubotMapChange>? Reloaded;
+
     /// <summary>Loads both folders again and swaps the result in. Scripts that fail stay out, as at startup.</summary>
     public KnubotLoadResult Reload()
     {
+        KnubotLoadResult result;
+        Dictionary<string, KnubotScript> previous;
         lock (_reloadLock)
         {
-            KnubotLoadResult result = Build();
+            result = Build();
+            previous = _byNpc;
             _byNpc = result.ByNpc;
-            return result;
         }
+
+        try
+        {
+            Reloaded?.Invoke(new KnubotMapChange(previous, result.ByNpc));
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Knubot reload: refreshing spawned NPCs failed.");
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -227,23 +246,26 @@ public sealed class KnubotCatalog
     /// The script for <paramref name="npc"/>: by its content NPC identity or placement key, then the hash it
     /// spawned from, then its template hash.
     /// </summary>
-    public bool TryResolve(NpcCharacter npc, out KnubotScript script)
+    public bool TryResolve(NpcCharacter npc, out KnubotScript script) => Resolve(_byNpc, npc, out script);
+
+    /// <summary><see cref="TryResolve"/> against one NPC map (the live one, or one from a <see cref="KnubotMapChange"/>).</summary>
+    public static bool Resolve(IReadOnlyDictionary<string, KnubotScript> byNpc, NpcCharacter npc, out KnubotScript script)
     {
         script = null!;
-        if (_byNpc.Count == 0 || npc == null)
+        if (byNpc.Count == 0 || npc == null)
             return false;
 
         if (npc.Playfield?.GetRequiredService<NpcContentActivationService>().TryGetBinding(npc, out NpcContentBinding binding) == true
-            && (Find(binding.ContentNpcIdentity, out script) || Find(binding.PlacementIdentity, out script)))
+            && (Find(byNpc, binding.ContentNpcIdentity, out script) || Find(byNpc, binding.PlacementIdentity, out script)))
             return true;
 
-        return Find(npc.SpawnHash, out script) || Find(npc.MobTemplate?.Hash, out script);
+        return Find(byNpc, npc.SpawnHash, out script) || Find(byNpc, npc.MobTemplate?.Hash, out script);
     }
 
-    bool Find(string? key, out KnubotScript script)
+    static bool Find(IReadOnlyDictionary<string, KnubotScript> byNpc, string? key, out KnubotScript script)
     {
         script = null!;
-        return !string.IsNullOrEmpty(key) && _byNpc.TryGetValue(key, out script!);
+        return !string.IsNullOrEmpty(key) && byNpc.TryGetValue(key, out script!);
     }
 
     static KnubotScript? Compile(string id, KnubotScriptFile file, KnubotLoadContext load, List<string> errors)

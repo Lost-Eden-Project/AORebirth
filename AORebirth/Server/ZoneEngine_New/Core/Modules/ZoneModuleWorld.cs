@@ -1,0 +1,366 @@
+namespace ZoneEngine_New.Core.Modules
+{
+    using System;
+    using System.Collections.Concurrent;
+    using System.Collections.Generic;
+    using System.Diagnostics;
+    using System.Threading;
+    using System.Threading.Tasks;
+
+    using AORebirth.Modules.World;
+
+    using SmokeLounge.AOtomation.Messaging.GameData;
+
+    using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Playfield;
+
+    /// <summary>
+    /// The module API's world view. Each playfield publishes an immutable snapshot at the end of its tick, but only while
+    /// a module has read it in the last <see cref="DemandLifetime"/>: with no reader a tick costs one dictionary lookup.
+    /// Readers never touch live entities off their tick. A read on the owning tick builds the snapshot in place; a read
+    /// from a module thread waits a bounded time for the next publish; a read from another playfield's tick never waits.
+    /// </summary>
+    internal sealed class ZoneModuleWorld : IZoneWorld
+    {
+        /// <summary>How long one read keeps a playfield publishing (and a stat watched).</summary>
+        internal static readonly TimeSpan DemandLifetime = TimeSpan.FromSeconds(30);
+
+        /// <summary>A snapshot older than this is not served while the playfield is publishing again.</summary>
+        static readonly long MaxAgeTicks = Stopwatch.Frequency / 2;
+
+        static readonly long DemandTicks = (long)(DemandLifetime.TotalSeconds * Stopwatch.Frequency);
+
+        /// <summary>The longest a read from a module thread waits for snapshots.</summary>
+        internal static TimeSpan WaitLimit { get; set; } = TimeSpan.FromMilliseconds(500);
+
+        readonly Lazy<PlayfieldManager> _manager;
+        readonly ConcurrentDictionary<int, Slot> _slots = new();
+
+        public ZoneModuleWorld(Func<PlayfieldManager> manager)
+        {
+            ArgumentNullException.ThrowIfNull(manager);
+            _manager = new Lazy<PlayfieldManager>(manager);
+        }
+
+        public IReadOnlyList<PlayerInfo> Players()
+        {
+            var players = new List<PlayerInfo>();
+            foreach (Snapshot snapshot in ReadAll())
+                players.AddRange(snapshot.Players);
+            return players.ToArray();
+        }
+
+        public PlayerInfo? Player(int characterId)
+        {
+            if (!_manager.Value.FindPlayer(characterId, out Player player) || player.Playfield is not Playfield playfield)
+                return null;
+            Snapshot? snapshot = Read(playfield);
+            return snapshot != null && snapshot.PlayersById.TryGetValue(characterId, out PlayerInfo? info) ? info : null;
+        }
+
+        public IReadOnlyList<int> Playfields()
+        {
+            IReadOnlyList<Playfield> playfields = _manager.Value.SnapshotPlayfields();
+            var ids = new int[playfields.Count];
+            for (int i = 0; i < ids.Length; i++)
+                ids[i] = playfields[i].Identity.Instance;
+            return ids;
+        }
+
+        public IReadOnlyList<NpcInfo> Npcs(int playfieldId)
+            => Find(playfieldId) is Playfield playfield && Read(playfield) is Snapshot snapshot ? snapshot.Npcs : Array.Empty<NpcInfo>();
+
+        public NpcInfo? Npc(int playfieldId, int instance)
+            => Find(playfieldId) is Playfield playfield && Read(playfield) is Snapshot snapshot
+                && snapshot.NpcsById.TryGetValue(instance, out NpcInfo? info) ? info : null;
+
+        public int? Stat(EntityRef entity, int statId)
+        {
+            if (entity.Type != EntityRef.CharacterType)
+                return null;
+
+            Playfield? playfield = null;
+            if (_manager.Value.FindPlayer(entity.Instance, out Player player))
+                playfield = player.Playfield;
+            else
+            {
+                foreach (Playfield candidate in _manager.Value.SnapshotPlayfields())
+                {
+                    if (Read(candidate) is Snapshot snapshot && snapshot.NpcsById.ContainsKey(entity.Instance))
+                    {
+                        playfield = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (playfield == null)
+                return null;
+
+            var key = new StatKey(entity.Instance, statId);
+            Slot slot = SlotFor(playfield);
+            long now = Stopwatch.GetTimestamp();
+            bool known = slot.Watch.ContainsKey(key);
+            slot.Watch[key] = now + DemandTicks;
+            slot.Demand(now + DemandTicks);
+            if (playfield.IsTickHeldByCurrentThread)
+                return LiveStat(playfield, key);
+
+            Snapshot? current = slot.Current;
+            if (known && current != null && current.Stats.TryGetValue(key, out int? cached))
+                return cached;
+            if (Playfield.IsOnTickThread)
+                return current != null && current.Stats.TryGetValue(key, out int? stale) ? stale : null;
+
+            // A newly watched stat is in the snapshot after the next publish.
+            Task next = slot.NextPublish;
+            next.Wait(WaitLimit);
+            return slot.Current is Snapshot published && published.Stats.TryGetValue(key, out int? value) ? value : null;
+        }
+
+        /// <summary>End of a playfield tick (its tick lock held): publish when someone is reading.</summary>
+        internal void OnTick(Playfield playfield)
+        {
+            if (!_slots.TryGetValue(playfield.Identity.Instance, out Slot? slot))
+                return;
+
+            long now = Stopwatch.GetTimestamp();
+            if (now > Volatile.Read(ref slot.DemandUntil))
+            {
+                if (slot.Current != null)
+                {
+                    slot.Current = null;
+                    slot.Watch.Clear();
+                }
+
+                return;
+            }
+
+            slot.Publish(Build(playfield, slot, now));
+        }
+
+        Playfield? Find(int playfieldId)
+        {
+            foreach (Playfield playfield in _manager.Value.SnapshotPlayfields())
+            {
+                if (playfield.Identity.Instance == playfieldId)
+                    return playfield;
+            }
+
+            return null;
+        }
+
+        Slot SlotFor(Playfield playfield) => _slots.GetOrAdd(playfield.Identity.Instance, static _ => new Slot());
+
+        Snapshot? Read(Playfield playfield)
+        {
+            Slot slot = SlotFor(playfield);
+            long now = Stopwatch.GetTimestamp();
+            slot.Demand(now + DemandTicks);
+            Snapshot? current = slot.Current;
+            if (current != null && now - current.BuiltAt <= MaxAgeTicks)
+                return current;
+            if (playfield.IsTickHeldByCurrentThread)
+            {
+                current = Build(playfield, slot, now);
+                slot.Publish(current);
+                return current;
+            }
+
+            if (Playfield.IsOnTickThread)
+                return current;
+
+            slot.NextPublish.Wait(WaitLimit);
+            return slot.Current;
+        }
+
+        List<Snapshot> ReadAll()
+        {
+            IReadOnlyList<Playfield> playfields = _manager.Value.SnapshotPlayfields();
+            long now = Stopwatch.GetTimestamp();
+            var waits = new List<Task>();
+            foreach (Playfield playfield in playfields)
+            {
+                Slot slot = SlotFor(playfield);
+                slot.Demand(now + DemandTicks);
+                Snapshot? current = slot.Current;
+                if ((current == null || now - current.BuiltAt > MaxAgeTicks) && !playfield.IsTickHeldByCurrentThread)
+                    waits.Add(slot.NextPublish);
+            }
+
+            // Every playfield publishes on its own tick: wait for all of them at once, not one after another.
+            if (waits.Count != 0 && !Playfield.IsOnTickThread)
+                Task.WaitAll(waits.ToArray(), WaitLimit);
+
+            var snapshots = new List<Snapshot>(playfields.Count);
+            foreach (Playfield playfield in playfields)
+            {
+                if (Read(playfield, wait: false) is Snapshot snapshot)
+                    snapshots.Add(snapshot);
+            }
+
+            return snapshots;
+        }
+
+        Snapshot? Read(Playfield playfield, bool wait)
+        {
+            if (wait)
+                return Read(playfield);
+            Slot slot = SlotFor(playfield);
+            if (playfield.IsTickHeldByCurrentThread)
+            {
+                long now = Stopwatch.GetTimestamp();
+                Snapshot? current = slot.Current;
+                if (current != null && now - current.BuiltAt <= MaxAgeTicks)
+                    return current;
+                current = Build(playfield, slot, now);
+                slot.Publish(current);
+                return current;
+            }
+
+            return slot.Current;
+        }
+
+        /// <summary>Copies everything a reader can ask for. Runs on <paramref name="playfield"/>'s tick only.</summary>
+        static Snapshot Build(Playfield playfield, Slot slot, long now)
+        {
+            int playfieldId = playfield.Identity.Instance;
+            Knubot.KnubotCatalog? knubot = playfield.GetService<Knubot.KnubotCatalog>();
+            DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
+            var players = new List<PlayerInfo>();
+            var npcs = new List<NpcInfo>();
+            foreach (Dynel dynel in registry.Dynels())
+            {
+                if (!ReferenceEquals(dynel.Playfield, playfield))
+                    continue;
+                if (dynel is Player player)
+                    players.Add(Project(player, playfieldId));
+                else if (dynel is NpcCharacter npc)
+                    npcs.Add(Project(npc, playfieldId, knubot));
+            }
+
+            var stats = new Dictionary<StatKey, int?>();
+            foreach (KeyValuePair<StatKey, long> watched in slot.Watch)
+            {
+                if (now > watched.Value)
+                    slot.Watch.TryRemove(watched);
+                else
+                    stats[watched.Key] = LiveStat(playfield, watched.Key);
+            }
+
+            return new Snapshot(now, players.ToArray(), npcs.ToArray(), stats);
+        }
+
+        static int? LiveStat(Playfield playfield, StatKey key)
+        {
+            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = key.Instance };
+            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(identity, out Dynel? dynel)
+                || dynel is not Character character
+                || !ReferenceEquals(character.Playfield, playfield))
+                return null;
+            if (!character.Stats.TryGetValue((CharacterStat)key.StatId, out int value) || StatCollection.IsUnset(value))
+                return null;
+            return value;
+        }
+
+        internal static PlayerInfo Project(Player player, int playfieldId)
+        {
+            AORebirth.Core.Vector.Vector3 at = player.Position;
+            Identity target = player.Target;
+            return new PlayerInfo
+            {
+                CharacterId = player.Identity.Instance,
+                Name = DebugMcp.ZoneDebugSnapshots.DisplayName(player),
+                FirstName = player.FirstName ?? string.Empty,
+                LastName = player.LastName ?? string.Empty,
+                PlayfieldId = playfieldId,
+                Position = new WorldPosition(at.xf, at.yf, at.zf),
+                HeadingDegrees = (float)(player.Rotation.yaw * (180.0 / Math.PI)),
+                Level = player.Stats.GetOrZero(CharacterStat.Level),
+                Health = player.Stats.GetOrZero(CharacterStat.Health),
+                MaxHealth = player.Stats.GetOrZero(CharacterStat.MaxHealth),
+                Nano = player.Stats.GetOrZero(CharacterStat.CurrentNano),
+                MaxNano = player.Stats.GetOrZero(CharacterStat.MaxNanoEnergy),
+                ProfessionId = player.Stats.GetOrZero(CharacterStat.Profession),
+                BreedId = player.Stats.GetOrZero(CharacterStat.Breed),
+                GmLevel = player.Stats.GetOrZero(CharacterStat.GmLevel),
+                IsDead = player.IsDead,
+                Target = target.Instance == 0 ? default : new EntityRef((int)target.Type, target.Instance),
+                IsConnected = player.Session != null
+            };
+        }
+
+        internal static NpcInfo Project(NpcCharacter npc, int playfieldId, Knubot.KnubotCatalog? knubot)
+        {
+            AORebirth.Core.Vector.Vector3 at = npc.Position;
+            return new NpcInfo
+            {
+                Instance = npc.Identity.Instance,
+                TemplateHash = npc.MobTemplate?.Hash ?? string.Empty,
+                Name = npc.Name ?? npc.MobTemplate?.Name ?? string.Empty,
+                Level = npc.Stats.GetOrZero(CharacterStat.Level),
+                PlayfieldId = playfieldId,
+                Position = new WorldPosition(at.xf, at.yf, at.zf),
+                IsDead = npc.IsDead,
+                HasKnubotScript = knubot != null && !npc.IsDead && knubot.TryResolve(npc, out _)
+            };
+        }
+
+        readonly record struct StatKey(int Instance, int StatId);
+
+        sealed record Snapshot(
+            long BuiltAt,
+            PlayerInfo[] Players,
+            NpcInfo[] Npcs,
+            Dictionary<StatKey, int?> Stats)
+        {
+            public Dictionary<int, PlayerInfo> PlayersById { get; } = Index(Players, x => x.CharacterId);
+
+            public Dictionary<int, NpcInfo> NpcsById { get; } = Index(Npcs, x => x.Instance);
+
+            static Dictionary<int, T> Index<T>(T[] items, Func<T, int> key)
+            {
+                var index = new Dictionary<int, T>(items.Length);
+                foreach (T item in items)
+                    index[key(item)] = item;
+                return index;
+            }
+        }
+
+        sealed class Slot
+        {
+            public long DemandUntil;
+            public readonly ConcurrentDictionary<StatKey, long> Watch = new();
+            volatile Snapshot? _current;
+            TaskCompletionSource _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public Snapshot? Current
+            {
+                get => _current;
+                set => _current = value;
+            }
+
+            /// <summary>Completes at the next publish.</summary>
+            public Task NextPublish => Volatile.Read(ref _next).Task;
+
+            public void Demand(long until)
+            {
+                long current = Volatile.Read(ref DemandUntil);
+                while (until > current)
+                {
+                    long seen = Interlocked.CompareExchange(ref DemandUntil, until, current);
+                    if (seen == current)
+                        return;
+                    current = seen;
+                }
+            }
+
+            public void Publish(Snapshot snapshot)
+            {
+                _current = snapshot;
+                Interlocked.Exchange(ref _next, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+                    .TrySetResult();
+            }
+        }
+    }
+}

@@ -110,6 +110,8 @@ namespace ZoneEngine_New
                 chatEngineLink = rootServices.GetRequiredService<IChatEngineLink>();
                 chatEngineLink.Start();
                 playfieldManager = rootServices.GetRequiredService<PlayfieldManager>();
+                // Module GM commands are checked against the built-ins here, before any connection.
+                _ = rootServices.GetRequiredService<GmCommandDispatcher>();
                 _ = rootServices.GetRequiredService<InventoryFlushService>();
                 // Subscribes to quest endings and starts the dungeon expiry and idle-release sweep.
                 _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>();
@@ -277,7 +279,8 @@ namespace ZoneEngine_New
             });
             services.AddSingleton(provider => ZoneEngine_New.Core.Modules.ZoneModuleHost.Load(
                 provider.GetRequiredService<IGameData>().RootPath, provider.GetRequiredService<IZoneLogger>(),
-                () => provider.GetRequiredService<ZoneEngine_New.Core.Knubot.KnubotCatalog>()));
+                () => provider.GetRequiredService<ZoneEngine_New.Core.Knubot.KnubotCatalog>(),
+                () => provider.GetRequiredService<PlayfieldManager>()));
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
             services.AddSingleton<HashItemMinter>();
             services.AddSingleton<PlayerHydrator>();

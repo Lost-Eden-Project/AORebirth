@@ -15,6 +15,64 @@ namespace AORebirth.Modules.Events
 
         /// <summary>A player died.</summary>
         event Action<PlayerDiedEvent> PlayerDied;
+
+        /// <summary>A player entered a playfield on this instance: login, zoning in, or arriving from another instance (1.2).</summary>
+        event Action<PlayerPlayfieldEvent> PlayerEnteredPlayfield;
+
+        /// <summary>A player left a playfield on this instance: logout, zoning out, or moving to another instance (1.2).</summary>
+        event Action<PlayerPlayfieldEvent> PlayerLeftPlayfield;
+
+        /// <summary>A character came into play on this instance from a login or reconnect, not a zone change (1.2).</summary>
+        event Action<PlayerSessionEvent> PlayerLoggedIn;
+
+        /// <summary>A character left play on this instance by logging out or a link-dead timeout, not a zone change (1.2).</summary>
+        event Action<PlayerSessionEvent> PlayerLoggedOut;
+
+        /// <summary>An NPC was spawned into a playfield (1.2).</summary>
+        event Action<NpcSpawnEvent> NpcSpawned;
+
+        /// <summary>An NPC left a playfield (1.2).</summary>
+        event Action<NpcSpawnEvent> NpcDespawned;
+
+        /// <summary>A player opened a Knubot chat with an NPC (1.2).</summary>
+        event Action<KnubotChatOpenedEvent> KnubotChatOpened;
+    }
+
+    public sealed class PlayerPlayfieldEvent
+    {
+        public int CharacterId { get; init; }
+
+        public int PlayfieldId { get; init; }
+    }
+
+    public sealed class PlayerSessionEvent
+    {
+        public int CharacterId { get; init; }
+
+        /// <summary>The playfield the character logged in to or out of.</summary>
+        public int PlayfieldId { get; init; }
+    }
+
+    public sealed class NpcSpawnEvent
+    {
+        public int PlayfieldId { get; init; }
+
+        public int NpcInstance { get; init; }
+
+        /// <summary>The NPC's template hash, or empty when it has none.</summary>
+        public string NpcHash { get; init; } = string.Empty;
+    }
+
+    public sealed class KnubotChatOpenedEvent
+    {
+        public int PlayfieldId { get; init; }
+
+        public int CharacterId { get; init; }
+
+        public int NpcInstance { get; init; }
+
+        /// <summary>The script's id: its path under the Knubot folder without ".json", '/'-separated.</summary>
+        public string ScriptId { get; init; } = string.Empty;
     }
 
     public sealed class NpcKilledEvent

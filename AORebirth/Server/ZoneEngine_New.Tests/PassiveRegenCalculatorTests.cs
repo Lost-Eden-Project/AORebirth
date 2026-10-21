@@ -26,21 +26,18 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void NanoDeltaUsesNanoPoolTrickleAndNanoDeltaStat()
+        public void NanoDeltaUsesBodyDevelopmentTrickleAndNanoDeltaStat()
         {
-            int delta = PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, nanoPool: 250, nanoDeltaStat: 7);
+            int delta = PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, bodyDevelopment: 250, nanoDeltaStat: 7);
 
             Assert.AreEqual(11, delta);
         }
 
         [TestMethod]
-        public void NanoDeltaDoesNotUseBodyDevelopment()
+        public void AtroxWith500BodyDevelopmentHeals9AndRegains7Nano()
         {
-            int fromPool = PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Solitus, nanoPool: 39);
-            int ifBodyWereUsed = PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Solitus, nanoPool: 270);
-
-            Assert.AreEqual(3, fromPool);
-            Assert.AreEqual(5, ifBodyWereUsed);
+            Assert.AreEqual(9, PassiveRegenCalculator.ComputeHealthDelta((int)Breed.Atrox, bodyDevelopment: 500));
+            Assert.AreEqual(7, PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, bodyDevelopment: 500));
         }
 
         [TestMethod]

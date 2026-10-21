@@ -53,6 +53,11 @@
     <Compile Include="ProceduralDungeonFoundationTests.cs" />
     <Compile Include="../../Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging.Tests/MissionLevelGraphTests.cs" Link="Missions/MissionLevelGraphTests.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(ModuleApiFocusedTests)' == 'true'">
+    <Compile Remove="@(Compile)" />
+    <Compile Include="TestDoubles.cs" />
+    <Compile Include="ModuleApiTests.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(FriendlyItemUseFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />

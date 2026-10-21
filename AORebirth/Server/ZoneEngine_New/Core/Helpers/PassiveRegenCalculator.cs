@@ -7,7 +7,8 @@ namespace ZoneEngine_New.Core.Helpers
     /// <summary>
     /// AO-Universe breed statistics §4: natural health/nano delta and tick intervals.
     /// Stored HealDelta / NanoDelta (gear, buffs, and explicit sets) are added on top.
-    /// Health trickle is Body Development / 100. Nano trickle is Nano Pool / 100.
+    /// Both trickles are Body Development / 100: nano delta depends on Body Development, not Nano Pool
+    /// (an Atrox with 500 Body Development heals 4 + 5 = 9 and regains 2 + 5 = 7 nano).
     /// Sitting halves the interval. Non-playable breeds have a 0 breed base.
     /// </summary>
     public static class PassiveRegenCalculator
@@ -15,8 +16,8 @@ namespace ZoneEngine_New.Core.Helpers
         public static int ComputeHealthDelta(int breed, int bodyDevelopment, int healDeltaStat = 0)
             => BreedHealthBase(breed) + PerHundred(bodyDevelopment) + healDeltaStat;
 
-        public static int ComputeNanoDelta(int breed, int nanoPool, int nanoDeltaStat = 0)
-            => BreedNanoBase(breed) + PerHundred(nanoPool) + nanoDeltaStat;
+        public static int ComputeNanoDelta(int breed, int bodyDevelopment, int nanoDeltaStat = 0)
+            => BreedNanoBase(breed) + PerHundred(bodyDevelopment) + nanoDeltaStat;
 
         public static double ComputeHealthIntervalSeconds(int stamina, bool sitting)
         {

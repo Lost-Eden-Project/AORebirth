@@ -29,6 +29,12 @@ namespace ZoneEngine_New.Core.Modules
         /// <summary>Modules folder; a relative path is taken from the folder that holds Config. Default "Modules".</summary>
         public string? Directory { get; init; }
 
+        /// <summary>
+        /// Module API 1.2 capabilities by module id (see AORebirth.Modules.World.ModuleCapabilities). A module with an entry
+        /// may use only what it lists; a module without one keeps 1.1 behaviour and may use everything.
+        /// </summary>
+        public Dictionary<string, List<string>>? Capabilities { get; init; }
+
         public static string? ResolvePath(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);

@@ -441,6 +441,37 @@ namespace ZoneEngine_New.Core.Playfield
             }
         }
 
+        /// <summary>True on a thread inside any playfield's tick.</summary>
+        internal static bool IsOnTickThread => t_ticking != 0;
+
+        [ThreadStatic]
+        static int t_ticking;
+
+        /// <summary>True when the calling thread is inside this playfield's tick.</summary>
+        internal bool IsTickHeldByCurrentThread => _tickSync.IsHeldByCurrentThread;
+
+        internal void RequireTick()
+        {
+            if (!_tickSync.IsHeldByCurrentThread)
+                throw new InvalidOperationException("This work requires the owning playfield tick.");
+        }
+
+        /// <summary>
+        /// Runs <paramref name="action"/> on this playfield's tick: now when the caller is already on it, otherwise on the
+        /// next drain. Never takes the tick lock from the calling thread. False when the playfield no longer accepts work.
+        /// </summary>
+        internal bool Dispatch(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            if (_tickSync.IsHeldByCurrentThread)
+            {
+                action();
+                return true;
+            }
+
+            return TryEnqueue(new PlayfieldActionInboundItem { Action = action });
+        }
+
         // Team projections may originate on another playfield. Never enter the
         // recipient tick lock synchronously while the caller owns another tick.
         public void DispatchPlayerProjection(Player player, Action projection)
@@ -693,6 +724,17 @@ namespace ZoneEngine_New.Core.Playfield
                 if (IsDisposed)
                     return;
 
+                t_ticking++;
+                try { TickLocked(deltaTime); }
+                finally { t_ticking--; }
+            }
+
+            _metrics.TickExecution.Record(ElapsedMilliseconds(tickStart));
+        }
+
+        private void TickLocked(double deltaTime)
+        {
+            {
                 SpawnService spawn = _serviceProvider.GetRequiredService<SpawnService>();
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("inbound.drain");
                 _inbound.Drain(_router, spawn, this);
@@ -743,9 +785,13 @@ namespace ZoneEngine_New.Core.Playfield
                         continue;
                     _characterSnapshot.CheckpointIfDue(player);
                 }
-            }
 
-            _metrics.TickExecution.Record(ElapsedMilliseconds(tickStart));
+                if (_playfieldManager.ModuleWorld is { } moduleWorld)
+                {
+                    ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("modules.world");
+                    moduleWorld.OnTick(this);
+                }
+            }
         }
 
         private static double ElapsedMilliseconds(long startTimestamp)

@@ -3,6 +3,7 @@ namespace AORebirth.Modules
     using AORebirth.Modules.Content;
     using AORebirth.Modules.Events;
     using AORebirth.Modules.Network;
+    using AORebirth.Modules.World;
 
     /// <summary>What the host offers a module during <see cref="IZoneModule.Initialize"/>.</summary>
     public interface IZoneModuleContext
@@ -21,6 +22,12 @@ namespace AORebirth.Modules
         /// <summary>The zone's Knubot dialog scripts: check, reload, and where overrides go (module API 1.1).</summary>
         IKnubotScripts Knubot { get; }
 
+        /// <summary>Read-only snapshots of this zone instance's players and NPCs (module API 1.2).</summary>
+        IZoneWorld World { get; }
+
+        /// <summary>Messages and NPC refreshes, run on the owning playfield tick (module API 1.2).</summary>
+        IZoneActions Actions { get; }
+
         /// <summary>
         /// Reads Modules/&lt;Id&gt;/config.json (case-insensitive, comments allowed), or returns null when it is absent.
         /// </summary>
@@ -31,5 +38,11 @@ namespace AORebirth.Modules
         /// registration fails module startup.
         /// </summary>
         void RegisterConnectionFilter(IConnectionFilterProvider provider);
+
+        /// <summary>
+        /// Adds a GM command (module API 1.2). Only during <see cref="IZoneModule.Initialize"/>. A name that a built-in
+        /// command or another module already uses fails this module's startup (the zone's, when the module is Required).
+        /// </summary>
+        void RegisterGmCommand(Commands.ModuleGmCommand command);
     }
 }
