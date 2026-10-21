@@ -11,11 +11,13 @@ set "CONFIG=Debug"
 set "CHAT_PROJ=WindowsBuildNet10\Projects\ChatEngine.WinNet10.csproj"
 set "LOGIN_PROJ=WindowsBuildNet10\Projects\LoginEngine.WinNet10.csproj"
 set "ZONE_PROJ=AORebirth\Server\ZoneEngine_New\ZoneEngine_New.csproj"
+set "WORLD_PROJ=AORebirth\Server\WorldEngine\WorldEngine.csproj"
 set "PREFLIGHT_PROJ=Tools\DatabasePreflight\DatabasePreflight.csproj"
 set "PREFLIGHT_DIR=%REPO%\AORebirth\Built\Debug\DatabasePreflight"
 set "SLN=AORebirth\AORebirth.sln"
 set "CHAT_EXE=AORebirth\Built\Debug\ChatEngine.exe"
 set "LOGIN_EXE=AORebirth\Built\Debug\LoginEngine.exe"
+set "WORLD_EXE=AORebirth\Built\Debug\WorldEngine\WorldEngine.exe"
 set "ZONE_EXE=AORebirth\Built\Debug\ZoneEngine_New\ZoneEngine_New.exe"
 
 cd /d "%REPO%"
@@ -62,6 +64,11 @@ if errorlevel 1 (
     echo [NewZoneEngineBuild] LoginEngine restore failed.
     exit /b 1
 )
+"%MSBUILD%" "%WORLD_PROJ%" /t:Restore /m:1 /nr:false /v:minimal
+if errorlevel 1 (
+    echo [NewZoneEngineBuild] WorldEngine restore failed.
+    exit /b 1
+)
 
 echo [NewZoneEngineBuild] Restoring ZoneEngine_New PackageReferences (net10.0)...
 "%MSBUILD%" "%ZONE_PROJ%" /t:Restore /m:1 /nr:false /v:minimal
@@ -78,7 +85,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/4] Building ChatEngine, LoginEngine, ZoneEngine_New (%CONFIG%)...
+echo [3/4] Building ChatEngine, LoginEngine, WorldEngine, ZoneEngine_New (%CONFIG%)...
 echo [NewZoneEngineBuild] Building the database preflight with isolated framework dependencies...
 "%MSBUILD%" "%PREFLIGHT_PROJ%" /t:Build /p:Configuration=%CONFIG% /p:OutDir="%PREFLIGHT_DIR%/" /m:1 /nr:false /v:minimal
 if errorlevel 1 (
@@ -101,6 +108,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
+"%MSBUILD%" "%WORLD_PROJ%" /t:Build /p:Configuration=%CONFIG% /m:1 /nr:false /v:minimal
+if errorlevel 1 (
+    echo [NewZoneEngineBuild] WorldEngine build failed.
+    exit /b 1
+)
+
 "%MSBUILD%" "%ZONE_PROJ%" /t:Build /p:Configuration=%CONFIG% /m:1 /nr:false /v:minimal
 if errorlevel 1 (
     echo [NewZoneEngineBuild] ZoneEngine_New build failed.
@@ -117,6 +130,10 @@ if not exist "%LOGIN_EXE%" (
     echo [NewZoneEngineBuild] Missing: %CD%\%LOGIN_EXE%
     exit /b 1
 )
+if not exist "%WORLD_EXE%" (
+    echo [NewZoneEngineBuild] Missing: %CD%\%WORLD_EXE%
+    exit /b 1
+)
 if not exist "%ZONE_EXE%" (
     echo [NewZoneEngineBuild] Missing: %CD%\%ZONE_EXE%
     exit /b 1
@@ -124,6 +141,7 @@ if not exist "%ZONE_EXE%" (
 
 echo [NewZoneEngineBuild] ChatEngine:     %CD%\%CHAT_EXE%
 echo [NewZoneEngineBuild] LoginEngine:    %CD%\%LOGIN_EXE%
+echo [NewZoneEngineBuild] WorldEngine:    %CD%\%WORLD_EXE%
 echo [NewZoneEngineBuild] ZoneEngine_New: %CD%\%ZONE_EXE%
 echo [NewZoneEngineBuild] Done.
 exit /b 0
