@@ -104,6 +104,9 @@
         "critChancePercent": {
           "type": "number"
         },
+        "maxHitPercent": {
+          "type": "number"
+        },
         "attackerFlagNano": {
           "type": "integer"
         }

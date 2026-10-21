@@ -1591,6 +1591,24 @@ namespace ZoneEngine_New.Core.Entities
             Weapons.Clear();
         }
 
+        /// <summary>
+        /// Leaves sneak when the character is sneaking, and tells everyone near (StopSneaking). Something that gives a
+        /// sneaker away calls it: an aimed shot or sneak attack, or casting a nano.
+        /// </summary>
+        public void BreakSneak()
+        {
+            if (Motor.State != MovementState.Sneak)
+                return;
+
+            Motor.ApplyAction(MovementAction.LeaveSneak);
+            Cell?.Announce(new CharacterActionMessage
+            {
+                Identity = Identity,
+                Action = CharacterActionType.StopSneaking,
+                Target = Identity.None
+            });
+        }
+
         public void ResetAllWeaponAttacks()
         {
             foreach (CharacterWeapon weapon in Weapons.Values)
@@ -3062,10 +3080,27 @@ namespace ZoneEngine_New.Core.Entities
         const int ShowSocialVisualFlag = 0x20;
         const int SocialOnlyVisualFlag = 0x40;
 
+        // Shoulder pad toggles (client OptionPanel Root.xml: VisualFlags bits 0, 1, 3 and 4).
+        const int ShowRightShoulderVisualFlag = 0x01;
+        const int ShowLeftShoulderVisualFlag = 0x02;
+        const int DoubleLeftShoulderVisualFlag = 0x08;
+        const int DoubleRightShoulderVisualFlag = 0x10;
+
+        /// <summary>Mesh positions of the right and left shoulder attractors.</summary>
+        const int RightShoulderPosition = 3;
+        const int LeftShoulderPosition = 4;
+
+        /// <summary>
+        /// True when worn pieces stack by the player's rules (<see cref="WornMeshSet"/>); otherwise the last mesh at a
+        /// position and layer wins, as for an NPC's equipment.
+        /// </summary>
+        protected virtual bool StacksWornMeshes => false;
+
         readonly Dictionary<int, int> _spawnTextures = new();
         readonly Dictionary<int, int> _wearTextures = new();
         readonly List<Mesh> _spawnMeshes = new();
-        readonly Dictionary<(int Position, int Layer), Mesh> _wearMeshes = new();
+        /// <summary>Worn meshes in wire order; a player's attractor pieces stack, several to a position.</summary>
+        readonly List<Mesh> _wearMeshes = new();
         readonly Dictionary<int, Mesh> _handMeshes = new();
         readonly List<AOTextures> _textures = new();
         readonly List<Mesh> _meshes = new();
@@ -3200,9 +3235,10 @@ namespace ZoneEngine_New.Core.Entities
         protected void RebaseWearAppearance()
         {
             var textures = new Dictionary<int, int>();
-            var meshes = new Dictionary<(int Position, int Layer), Mesh>();
+            var worn = new WornMeshSet(StacksWornMeshes);
 
             bool robe = false;
+            int pageIndex = 0;
             foreach (Container page in AppearanceWearPages)
             {
                 if (page == null)
@@ -3211,7 +3247,7 @@ namespace ZoneEngine_New.Core.Entities
                 List<KeyValuePair<int, Item>>? robes = null;
                 foreach (KeyValuePair<int, Item> slot in page.EnumerateSlots())
                 {
-                    ApplyWearAppearance(slot.Key, slot.Value, textures, meshes);
+                    ApplyWearAppearance(pageIndex, slot.Key, slot.Value, textures, worn);
                     if (WearsRobe(slot.Value))
                     {
                         robe = true;
@@ -3224,12 +3260,17 @@ namespace ZoneEngine_New.Core.Entities
                 if (robes != null)
                 {
                     foreach (KeyValuePair<int, Item> slot in robes)
-                        ApplyWearAppearance(slot.Key, slot.Value, textures, meshes);
+                        ApplyWearAppearance(pageIndex, slot.Key, slot.Value, textures, worn);
                 }
+
+                pageIndex++;
             }
 
+            int utility = 0;
             foreach (Item item in AppearanceBackMeshItems)
-                ApplyBackMesh(item, meshes);
+                ApplyBackMesh(utility++, item, worn);
+
+            List<Mesh> meshes = worn.Resolve(Stats.Get(CharacterStat.VisualFlags));
 
             if (robe == _wearRobe && SameWearAppearance(textures, meshes))
                 return;
@@ -3241,8 +3282,7 @@ namespace ZoneEngine_New.Core.Entities
                 _wearTextures[texture.Key] = texture.Value;
 
             _wearMeshes.Clear();
-            foreach (KeyValuePair<(int Position, int Layer), Mesh> mesh in meshes)
-                _wearMeshes[mesh.Key] = mesh.Value;
+            _wearMeshes.AddRange(meshes);
 
             InvalidateAppearance();
         }
@@ -3269,11 +3309,13 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         void ApplyWearAppearance(
+            int page,
             int slot,
             Item item,
             Dictionary<int, int> textures,
-            Dictionary<(int Position, int Layer), Mesh> meshes)
+            WornMeshSet worn)
         {
+            int attractor = 0;
             foreach (ItemSpell spell in item.WearSpells)
             {
                 if (!spell.MeetsRequirements(Stats))
@@ -3293,20 +3335,150 @@ namespace ZoneEngine_New.Core.Entities
                 if (!TryReadWearMesh(slot, item, spell, out Mesh mesh))
                     continue;
 
-                meshes[(mesh.Position, mesh.Layer)] = mesh;
+                WornMeshKind kind = spell.Is(FunctionType.AttractorMesh) ? WornMeshKind.Attractor
+                    : spell.Is(FunctionType.HeadMesh) ? WornMeshKind.Helmet
+                    : WornMeshKind.Piece;
+                worn.Add(page, slot, attractor, mesh, kind);
+                if (kind == WornMeshKind.Attractor)
+                    attractor++;
+
                 // A body item's Shouldermesh dresses both shoulders: live sends it at positions 3 and 4 (tank armor
                 // 28735 family, capture 2026-10-06T18:44:27Z).
                 if (spell.Is(FunctionType.Shouldermesh) && IsBodySlot(slot))
+                    worn.Add(page, slot, 0, WithPosition(mesh, LeftShoulderPosition), kind);
+                // A pad that fits either shoulder may also show on the other one (its side's "double" toggle); one
+                // made for one side only stays on its side.
+                else if (StacksWornMeshes && ShoulderSlotPosition(slot) is int shoulder && mesh.Position == shoulder
+                         && FitsBothShoulders(item))
                 {
-                    var other = new Mesh
-                    {
-                        Position = 4,
-                        Id = mesh.Id,
-                        OverrideTextureId = mesh.OverrideTextureId,
-                        Layer = mesh.Layer
-                    };
-                    meshes[(other.Position, other.Layer)] = other;
+                    int other = shoulder == RightShoulderPosition ? LeftShoulderPosition : RightShoulderPosition;
+                    worn.Add(page, slot, attractor, WithPosition(mesh, other), kind, mirrorOf: shoulder);
                 }
+            }
+        }
+
+        static Mesh WithPosition(Mesh mesh, int position) => new()
+        {
+            Position = (byte)position,
+            Id = mesh.Id,
+            OverrideTextureId = mesh.OverrideTextureId,
+            Layer = mesh.Layer
+        };
+
+        /// <summary>The mesh position of a shoulder wear slot (armor 20/22, social 52/54); null for any other slot.</summary>
+        static int? ShoulderSlotPosition(int slot) => (slot >= SocialSlotBase ? slot - SocialSlotOffset : slot) switch
+        {
+            20 => RightShoulderPosition,
+            22 => LeftShoulderPosition,
+            _ => null
+        };
+
+        /// <summary>Placement bits 4 and 6: the item can be worn on the right and the left shoulder.</summary>
+        static bool FitsBothShoulders(Item item)
+        {
+            int placement = StatCollection.Normalize(item.GetStat(CharacterStat.Slot));
+            return (placement & (1 << 4)) != 0 && (placement & (1 << 6)) != 0;
+        }
+
+        /// <summary>Social wear slots are the armor slots plus 32 (armor 17-31, social 49-63).</summary>
+        const int SocialSlotOffset = 32;
+        const int SocialSlotBase = 49;
+
+        enum WornMeshKind
+        {
+            /// <summary>Body, back and shoulder pieces (Mesh, BackMesh, Shouldermesh).</summary>
+            Piece,
+
+            /// <summary>AttractorMesh props: eyewear, pads and other pieces hung on an attractor.</summary>
+            Attractor,
+
+            /// <summary>HeadMesh: a helmet in place of the head.</summary>
+            Helmet
+        }
+
+        /// <summary>
+        /// The worn meshes of one rebuild, and which of them stack. For a player:
+        /// <list type="bullet">
+        /// <item>AttractorMesh props stack: an armor and a social pair of glasses both show.</item>
+        /// <item>Other pieces stack across slots, but the social item replaces the armor item in the same slot (a social
+        /// back item's BackMesh over the armor back item's).</item>
+        /// <item>One helmet: the social one wins. A shown helmet hides the head's attractor props.</item>
+        /// <item>Shoulders follow the pad toggles: a pad that fits both shoulders also shows on the other one while its
+        /// side's "double" toggle is on, and a side's "visible" toggle off hides the item worn in that shoulder slot
+        /// (both its meshes).</item>
+        /// </list>
+        /// Otherwise (an NPC) the last mesh at a position and layer wins.
+        /// </summary>
+        sealed class WornMeshSet(bool stacks)
+        {
+            // MirrorOf: the shoulder position a doubled pad comes from (0 for any other mesh). Source: the shoulder slot
+            // the item is worn in, as its mesh position (0 for any other slot); both the item's meshes carry it.
+            readonly List<(string Key, Mesh Mesh, WornMeshKind Kind, int MirrorOf, int Source)> _entries = new();
+
+            public void Add(int page, int slot, int index, Mesh mesh, WornMeshKind kind, int mirrorOf = 0)
+            {
+                int source = stacks ? ShoulderSlotPosition(slot) ?? 0 : 0;
+                bool mirror = mirrorOf != 0;
+                string key;
+                if (!stacks)
+                    key = mesh.Position + ":" + mesh.Layer;
+                else if (kind == WornMeshKind.Attractor)
+                    key = "A:" + page + ":" + slot + ":" + mesh.Position + ":" + index + (mirror ? ":m" : string.Empty);
+                else if (kind == WornMeshKind.Helmet)
+                    key = "H:" + mesh.Position + ":" + mesh.Layer;
+                else
+                    key = "S:" + (slot >= SocialSlotBase ? slot - SocialSlotOffset : slot) + ":" + mesh.Position + ":"
+                          + mesh.Layer + (mirror ? ":m" : string.Empty);
+
+                int existing = _entries.FindIndex(entry => entry.Key == key);
+                if (existing >= 0)
+                    _entries[existing] = (key, mesh, kind, mirrorOf, source);
+                else
+                    _entries.Add((key, mesh, kind, mirrorOf, source));
+            }
+
+            /// <summary>A utility slot's BackMesh: stacks with every other back piece.</summary>
+            public void AddUtility(int utility, Mesh mesh)
+                => Add(page: -1, slot: -1 - utility, index: 0, mesh, WornMeshKind.Piece);
+
+            public List<Mesh> Resolve(int visualFlags)
+            {
+                var meshes = new List<Mesh>(_entries.Count);
+                if (!stacks)
+                {
+                    foreach ((string _, Mesh mesh, WornMeshKind _, int _, int _) in _entries)
+                        meshes.Add(mesh);
+                    return meshes;
+                }
+
+                bool helmet = _entries.Exists(entry => entry.Kind == WornMeshKind.Helmet);
+                bool unset = StatCollection.IsUnset(visualFlags);
+                bool showRight = unset || (visualFlags & ShowRightShoulderVisualFlag) != 0;
+                bool showLeft = unset || (visualFlags & ShowLeftShoulderVisualFlag) != 0;
+                // "Double right" lets a right-slot pad that fits both shoulders also show on the left; "double left" the
+                // same for a left-slot pad on the right.
+                bool doubleRight = unset || (visualFlags & DoubleRightShoulderVisualFlag) != 0;
+                bool doubleLeft = unset || (visualFlags & DoubleLeftShoulderVisualFlag) != 0;
+
+                foreach ((string _, Mesh mesh, WornMeshKind kind, int mirrorOf, int source) in _entries)
+                {
+                    if (helmet && kind == WornMeshKind.Attractor && mesh.Position == 0)
+                        continue;
+                    if (mirrorOf == RightShoulderPosition && !doubleRight)
+                        continue;
+                    if (mirrorOf == LeftShoulderPosition && !doubleLeft)
+                        continue;
+
+                    // A side's visible toggle off hides the item in that shoulder slot: its own mesh and the copy it
+                    // doubles onto the other shoulder.
+                    if ((source == RightShoulderPosition && !showRight)
+                        || (source == LeftShoulderPosition && !showLeft))
+                        continue;
+
+                    meshes.Add(mesh);
+                }
+
+                return meshes;
             }
         }
 
@@ -3321,13 +3493,13 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Items outside <see cref="AppearanceWearPages"/> whose worn BackMesh still shows (a player's utility slots).</summary>
         protected virtual IEnumerable<Item> AppearanceBackMeshItems => [];
 
-        void ApplyBackMesh(Item item, Dictionary<(int Position, int Layer), Mesh> meshes)
+        void ApplyBackMesh(int utility, Item item, WornMeshSet worn)
         {
             foreach (ItemSpell spell in item.WearSpells)
             {
                 if (spell.Is(FunctionType.BackMesh) && spell.MeetsRequirements(Stats)
                     && TryReadWearMesh(BackSlot, item, spell, out Mesh mesh))
-                    meshes[(mesh.Position, mesh.Layer)] = mesh;
+                    worn.AddUtility(utility, mesh);
             }
         }
 
@@ -3437,9 +3609,7 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
-        bool SameWearAppearance(
-            Dictionary<int, int> textures,
-            Dictionary<(int Position, int Layer), Mesh> meshes)
+        bool SameWearAppearance(Dictionary<int, int> textures, List<Mesh> meshes)
         {
             if (textures.Count != _wearTextures.Count || meshes.Count != _wearMeshes.Count)
                 return false;
@@ -3450,11 +3620,12 @@ namespace ZoneEngine_New.Core.Entities
                     return false;
             }
 
-            foreach (KeyValuePair<(int Position, int Layer), Mesh> mesh in meshes)
+            for (int i = 0; i < meshes.Count; i++)
             {
-                if (!_wearMeshes.TryGetValue(mesh.Key, out Mesh current)
-                    || current.Id != mesh.Value.Id
-                    || current.OverrideTextureId != mesh.Value.OverrideTextureId)
+                Mesh current = _wearMeshes[i];
+                Mesh next = meshes[i];
+                if (current.Position != next.Position || current.Layer != next.Layer
+                    || current.Id != next.Id || current.OverrideTextureId != next.OverrideTextureId)
                     return false;
             }
 
@@ -3495,20 +3666,20 @@ namespace ZoneEngine_New.Core.Entities
             // over the head) the worn mesh still replaces the base one.
             _meshes.Clear();
             var positions = new SortedSet<int>(_spawnMeshes.Select(mesh => (int)mesh.Position));
-            foreach ((int position, _) in _wearMeshes.Keys)
-                positions.Add(position);
+            foreach (Mesh worn in _wearMeshes)
+                positions.Add(worn.Position);
 
             foreach (int position in positions)
             {
-                foreach (KeyValuePair<(int Position, int Layer), Mesh> worn in _wearMeshes
-                    .Where(entry => entry.Key.Position == position)
-                    .OrderBy(entry => entry.Key.Layer))
-                    _meshes.Add(worn.Value);
+                // Stable by layer, so stacked pieces keep their wear order.
+                foreach (Mesh worn in _wearMeshes.Where(mesh => mesh.Position == position).OrderBy(mesh => mesh.Layer))
+                    _meshes.Add(worn);
 
                 foreach (Mesh mesh in _spawnMeshes)
                 {
                     if (mesh.Position == position
-                        && (mesh.Layer == 0 || !_wearMeshes.ContainsKey((mesh.Position, mesh.Layer))))
+                        && (mesh.Layer == 0
+                            || !_wearMeshes.Exists(worn => worn.Position == mesh.Position && worn.Layer == mesh.Layer)))
                         _meshes.Add(mesh);
                 }
             }

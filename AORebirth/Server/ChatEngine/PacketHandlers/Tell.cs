@@ -76,6 +76,13 @@ namespace ChatEngine.PacketHandlers
                 return;
             }
 
+            // A GM command typed in a tell window runs on the sender's zone, as from vicinity chat; it is not told.
+            if (message != null && message.StartsWith("."))
+            {
+                ChatEngine.CoreServer.ChatServer.SendToZone((int)client.Character.CharacterId, message);
+                return;
+            }
+
             if (client.ChatServer().ConnectedClients.ContainsKey(playerId))
             {
                 Client tellClient = (Client)client.ChatServer().ConnectedClients[playerId];

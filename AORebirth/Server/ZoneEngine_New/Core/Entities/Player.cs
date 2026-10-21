@@ -1895,6 +1895,9 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
+        /// <summary>A player's armor and social pieces stack by the client's rules (glasses on glasses, pads per shoulder).</summary>
+        protected override bool StacksWornMeshes => true;
+
         protected override IEnumerable<Container> AppearanceWearPages
         {
             get

@@ -35,15 +35,24 @@ namespace ZoneEngine_New.Core.Chat
         readonly WorldLink _world;
         readonly IZoneLogger _logger;
         readonly Lazy<TeamService> _teams;
+        readonly Lazy<Playfield.PlayfieldManager> _playfields;
+        readonly Lazy<Commands.GmCommandDispatcher> _gmCommands;
         bool _started;
         bool _disposed;
         long _lastFailureLogMs;
 
-        public WorldChatLink(WorldLink world, IZoneLogger logger, Lazy<TeamService> teams)
+        public WorldChatLink(
+            WorldLink world,
+            IZoneLogger logger,
+            Lazy<TeamService> teams,
+            Lazy<Playfield.PlayfieldManager> playfields,
+            Lazy<Commands.GmCommandDispatcher> gmCommands)
         {
             _world = world ?? throw new ArgumentNullException(nameof(world));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _teams = teams ?? throw new ArgumentNullException(nameof(teams));
+            _playfields = playfields ?? throw new ArgumentNullException(nameof(playfields));
+            _gmCommands = gmCommands ?? throw new ArgumentNullException(nameof(gmCommands));
         }
 
         public void Start()
@@ -96,12 +105,35 @@ namespace ZoneEngine_New.Core.Chat
             CharacterChatCommand command = message.Chat.ToCharacter;
             try
             {
-                _teams.Value.TryHandleInboundChatCommand(command.CharacterId, command.Command);
+                // A ".command" typed in a chat-server channel or tell: run it as if said in vicinity chat.
+                if (command.Command.StartsWith('.'))
+                    RunGmCommand(command.CharacterId, command.Command);
+                else
+                    _teams.Value.TryHandleInboundChatCommand(command.CharacterId, command.Command);
             }
             catch (Exception exception)
             {
                 _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Inbound chat command failed: {0}", exception.Message));
             }
+        }
+
+        /// <summary>
+        /// Runs a relayed GM command on the player's own tick, with the same session and GM level checks as one typed in
+        /// vicinity chat. Dropped when this instance no longer runs the character or it is not in play.
+        /// </summary>
+        void RunGmCommand(int characterId, string text)
+        {
+            if (!_playfields.Value.FindPlayer(characterId, out Entities.Player player)
+                || player.Playfield is not Playfield.Playfield at)
+                return;
+
+            at.DispatchPlayerProjection(player, () =>
+            {
+                if (player.Session is not Network.IZoneSession session || session.State != Network.SessionState.InPlay
+                    || !ReferenceEquals(player.Playfield, at) || player.IsPersistenceQuarantined)
+                    return;
+                _gmCommands.Value.TryExecuteText(session, player, text);
+            });
         }
 
         public void Dispose()

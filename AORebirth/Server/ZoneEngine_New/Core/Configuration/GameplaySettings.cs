@@ -128,6 +128,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.damagePercent must be a finite, non-negative number.");
             if (!double.IsFinite(Pvp.CritChancePercent) || Pvp.CritChancePercent < 0)
                 throw new InvalidDataException(path + ": pvp.critChancePercent must be a finite, non-negative number.");
+            if (!double.IsFinite(Pvp.MaxHitPercent) || Pvp.MaxHitPercent <= 0)
+                throw new InvalidDataException(path + ": pvp.maxHitPercent must be a positive number (100 for no cap).");
             if (Pvp.AttackerFlagNano < 0)
                 throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
             if (SocialAggro == null
@@ -333,6 +335,12 @@ namespace ZoneEngine_New.Core.Configuration
         public double CritChancePercent { get; init; } = 100;
 
         /// <summary>
+        /// Most of the target's max health one player-on-player hit can take, in percent, after
+        /// <see cref="DamagePercent"/>. 100 is no cap.
+        /// </summary>
+        public double MaxHitPercent { get; init; } = 100;
+
+        /// <summary>
         /// The nano a player gets for starting a fight with, or aiming a hostile action at, a player (214879, the PvP
         /// flag). Landed only while the player does not already have it running. 0 turns it off.
         /// </summary>
@@ -342,18 +350,29 @@ namespace ZoneEngine_New.Core.Configuration
             => source is Entities.Player && target is Entities.Player;
 
         /// <summary>
-        /// <paramref name="damage"/> as <paramref name="source"/> deals it to <paramref name="target"/>: scaled in PvP,
-        /// rounded half up and never below 1 while there was any.
+        /// <paramref name="damage"/> as <paramref name="source"/> deals it to <paramref name="target"/>: in PvP scaled by
+        /// <see cref="DamagePercent"/> (rounded half up, never below 1 while there was any), then capped at
+        /// <see cref="MaxHitPercent"/> of the target's max health.
         /// </summary>
         public int ScaleDamage(Entities.Character? source, Entities.Character target, int damage)
         {
-            if (damage <= 0 || DamagePercent == 100 || !IsPvp(source, target))
+            if (damage <= 0 || !IsPvp(source, target))
                 return damage;
             if (DamagePercent == 0)
                 return 0;
 
-            double scaled = Math.Round(damage * DamagePercent / 100, MidpointRounding.AwayFromZero);
-            return (int)Math.Clamp(scaled, 1, int.MaxValue);
+            int scaled = DamagePercent == 100
+                ? damage
+                : (int)Math.Clamp(Math.Round(damage * DamagePercent / 100, MidpointRounding.AwayFromZero), 1, int.MaxValue);
+            if (MaxHitPercent >= 100)
+                return scaled;
+
+            int maxHealth = target.Stats.GetOrZero(SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.MaxHealth);
+            if (maxHealth <= 0)
+                return scaled;
+
+            int cap = (int)Math.Max(1, Math.Round(maxHealth * MaxHitPercent / 100, MidpointRounding.AwayFromZero));
+            return Math.Min(scaled, cap);
         }
 
         /// <summary>The percent chance to crit, <paramref name="critChance"/>, scaled in PvP.</summary>

@@ -137,6 +137,45 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 onIndoorSpawnTick);
         }
 
+        // Players sneaking as of the last tick, and when sneakers were last re-checked against everyone's Perception.
+        readonly HashSet<Player> _sneakers = new();
+        readonly List<Player> _sneakChanges = new();
+        long _lastSneakRecheckMs;
+
+        /// <summary>Re-checks a sneaker this often, for Perception or Concealment that changed while it stood still.</summary>
+        const long SneakRecheckMs = 1000;
+
+        /// <summary>
+        /// A player who starts or stops sneaking is re-shown to everyone near (hidden from those who cannot perceive it,
+        /// spawned again for the rest), and sneakers are re-checked every <see cref="SneakRecheckMs"/>.
+        /// </summary>
+        void TickSneakVisibility()
+        {
+            _sneakChanges.Clear();
+            foreach (Dynel dynel in _tracked)
+            {
+                if (dynel is not Player player)
+                    continue;
+                bool sneaking = player.Motor.State == Movement.MovementState.Sneak;
+                if (sneaking ? _sneakers.Add(player) : _sneakers.Remove(player))
+                    _sneakChanges.Add(player);
+            }
+
+            _sneakers.RemoveWhere(player => !_tracked.Contains(player));
+
+            long now = Environment.TickCount64;
+            if (_sneakers.Count > 0 && now - _lastSneakRecheckMs >= SneakRecheckMs)
+            {
+                _lastSneakRecheckMs = now;
+                foreach (Player sneaker in _sneakers)
+                    if (!_sneakChanges.Contains(sneaker))
+                        _sneakChanges.Add(sneaker);
+            }
+
+            for (int i = 0; i < _sneakChanges.Count; i++)
+                _visibility.Reconcile(_sneakChanges[i]);
+        }
+
         public void RegisterDynel(Dynel dynel)
         {
             ArgumentNullException.ThrowIfNull(dynel);
@@ -258,6 +297,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 if (!ReferenceEquals(previous, dynel.Cell))
                     _visibility.Reconcile(dynel);
             }
+
+            TickStallWatch.Stage("locality.sneak");
+            TickSneakVisibility();
 
             TickStallWatch.Stage("locality.heat");
             _heatScheduler.Tick(_tickBuffer, deltaTime);

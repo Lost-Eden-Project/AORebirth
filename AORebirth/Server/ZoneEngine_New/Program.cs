@@ -356,6 +356,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();
             services.AddSingleton<IGmCommand, ShutdownCommand>();
             services.AddSingleton<GmCommandDispatcher>();
+            services.AddSingleton(provider => new Lazy<GmCommandDispatcher>(provider.GetRequiredService<GmCommandDispatcher>));
             services.AddSingleton<ZoneLoginHandler>();
             services.AddSingleton<IZoneAdmissionGate, ZoneAdmissionGate>();
 

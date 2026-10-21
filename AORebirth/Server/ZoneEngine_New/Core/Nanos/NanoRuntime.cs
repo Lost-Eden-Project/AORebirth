@@ -153,6 +153,11 @@ namespace ZoneEngine_New.Core.Nanos
             if (refusal == NanoCastRefusal.None && !TargetCanHoldBuff(spell, recipient))
                 refusal = NanoCastRefusal.NotEnoughNcu;
 
+            // A stronger nano of the same strain already on the target: refused before the cast, so nothing is spent
+            // (a lower root on a better-rooted target used to cast, cost its nano and fail on landing).
+            if (refusal == NanoCastRefusal.None && TargetRunsBetterNano(spell, recipient))
+                refusal = NanoCastRefusal.BetterNanoRunning;
+
             if (refusal == NanoCastRefusal.None && spell.IsHostile && !IsHostileNanoTarget(caster, recipient))
                 refusal = NanoCastRefusal.InvalidTarget;
 
@@ -180,6 +185,9 @@ namespace ZoneEngine_New.Core.Nanos
                 else
                     PvpAttackerFlag.OnFriendlyAction(castingPlayer, recipient!);
             }
+
+            // Casting a nano gives a sneaking caster away, as an aimed shot or a sneak attack does.
+            caster.BreakSneak();
 
             Identity resolvedTarget = recipient!.Identity;
             var cast = new PendingNanoCast(spell, resolvedTarget, nanoCost, attackTime, nowUtc);
@@ -756,6 +764,16 @@ namespace ZoneEngine_New.Core.Nanos
             return decision != BuffApplyDecision.RefusedNotEnoughNcu;
         }
 
+        /// <summary>The landing's stacking rule, asked up front: a stronger nano of the strain already runs on the target.</summary>
+        static bool TargetRunsBetterNano(NanoSpell spell, Character? recipient)
+        {
+            if (recipient == null || !spell.IsBuff || spell.NanoStrain <= 0)
+                return false;
+
+            return BuffApplyRules.Evaluate(spell, recipient.Buffs, recipient.BuffNcuCapacity, out _)
+                == BuffApplyDecision.RefusedStrainStronger;
+        }
+
         static bool TryResolveSpell(Character caster, int nanoId, out NanoSpell? spell)
         {
             spell = null;
@@ -840,6 +858,12 @@ namespace ZoneEngine_New.Core.Nanos
                     return;
                 case NanoCastRefusal.TargetDead:
                     ClientFeedback.Send(caster, "Feedback_TargetIsAlreadyDead");
+                    return;
+                case NanoCastRefusal.BetterNanoRunning:
+                    // "NCU error: Better nano program already running." then "Unable to execute nano program. You can't
+                    // execute this nano on the target." (110/101968183, 110/184471956).
+                    ClientFeedback.Send(caster, "Feedback_NCUErrorBetterProgramRunning");
+                    ClientFeedback.Send(caster, "Feedback_UnableToExecuteOnThisTarget");
                     return;
                 default:
                     Refuse(caster, NanoCastRules.Describe(refusal));

@@ -176,7 +176,11 @@ namespace ZoneEngine_New.Core.Inventory
                 () => item.ExecuteUse(player, slot, _inventoryRepository, _items, useTarget),
                 lockTarget: locked => item.Locked = locked,
                 ResolveDelayCentiseconds(item));
-            return Enqueue(pending);
+            ItemUseStart itemStart = Enqueue(pending);
+            // Queuing an item use gives a sneaking user away.
+            if (itemStart != ItemUseStart.Rejected)
+                player.BreakSneak();
+            return itemStart;
         }
 
         /// <summary>
@@ -248,6 +252,8 @@ namespace ZoneEngine_New.Core.Inventory
             if (!player.TryPreparePerkAction(hash, out Player.PerkActionUse? use) || use == null)
                 return ItemUseStart.Rejected;
 
+            // Using a perk action gives a sneaking user away, whether it lands or misses.
+            player.BreakSneak();
             if (!player.PerkActionLands(use))
             {
                 player.FailPerkAction(use, _inventoryRepository);

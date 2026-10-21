@@ -45,23 +45,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (string.IsNullOrEmpty(text))
                 return;
 
-            if (text[0] != '.')
-            {
+            if (!_commands.TryExecuteText(session, player, text))
                 _vicinity.Relay(player, message);
-                return;
-            }
-
-            string trimmed = text.TrimStart('.');
-            if (string.IsNullOrWhiteSpace(trimmed))
-                return;
-
-            string[] parts = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0)
-                return;
-
-            string name = parts[0];
-            string[] args = parts.Length > 1 ? parts[1..] : Array.Empty<string>();
-            _commands.TryExecute(session, player, name, args);
         }
     }
 }

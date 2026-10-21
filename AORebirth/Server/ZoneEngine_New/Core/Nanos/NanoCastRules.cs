@@ -16,6 +16,9 @@ namespace ZoneEngine_New.Core.Nanos
         TargetDead,
         /// <summary>The nano's strain is still on its local cooldown for this caster.</summary>
         NanoLineLocked,
+
+        /// <summary>Start-only: the target already runs a stronger nano of the same strain (a better root, buff, ...).</summary>
+        BetterNanoRunning,
     }
 
     /// <summary>
@@ -63,6 +66,7 @@ namespace ZoneEngine_New.Core.Nanos
             NanoCastRefusal.InvalidTarget => "That is not a valid target for that nano program.",
             NanoCastRefusal.TargetDead => "Your target is dead.",
             NanoCastRefusal.NanoLineLocked => "That nano line is still cooling down.",
+            NanoCastRefusal.BetterNanoRunning => "NCU error: Better nano program already running.",
             _ => string.Empty,
         };
     }

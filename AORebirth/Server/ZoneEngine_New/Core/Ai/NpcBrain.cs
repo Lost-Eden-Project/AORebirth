@@ -801,7 +801,12 @@ namespace ZoneEngine_New.Core.Ai
             bool active = Npc.Motor.HasPath;
             // The motor drops a segment the body stopped on (wall, arrive-halt) short of its end. Replanning
             // that from scratch every tick re-announces it every tick and never lets the stuck clock run.
-            bool continuing = active || (_followAnnounced && !HasReachedSegmentEnd());
+            // A segment that ends within give-up reach of the NPC counts as reached even if the body never moved
+            // (a step it cannot climb drops the path at once). Planning again from the same spot is the same attempt:
+            // it waits the replan interval and keeps the stuck clock, rather than re-announcing the identical path
+            // every think forever.
+            bool continuing = active
+                || (_followAnnounced && (!HasReachedSegmentEnd() || IsAtSegmentStart()));
             if (continuing)
             {
                 if (IsStuck(now))
@@ -871,6 +876,7 @@ namespace ZoneEngine_New.Core.Ai
                 ResetProgress(now);
             Vector3 segmentEnd = _pathScratch[_pathScratch.Count - 1];
             _segmentEnd = new Vector3(segmentEnd.x, segmentEnd.y, segmentEnd.z);
+            _segmentStart = new Vector3(start.x, start.y, start.z);
             _segmentPlannedUtc = now;
             _segmentDestination = new Vector3(destination.x, destination.y, destination.z);
             _segmentReachesDestination = !truncated;
@@ -1020,6 +1026,20 @@ namespace ZoneEngine_New.Core.Ai
                 return guideDistance;
             return guideDistance > cornerDistance ? cornerDistance : guideDistance;
         }
+
+        /// <summary>Where the current segment was planned from.</summary>
+        Vector3 _segmentStart = new(0, 0, 0);
+
+        /// <summary>The NPC still stands where its current segment started: it has not moved along it at all.</summary>
+        bool IsAtSegmentStart()
+        {
+            double dx = Npc.Position.x - _segmentStart.x;
+            double dz = Npc.Position.z - _segmentStart.z;
+            return (dx * dx) + (dz * dz) <= SegmentStartToleranceMeters * SegmentStartToleranceMeters;
+        }
+
+        /// <summary>Movement smaller than this since a segment was planned is no movement at all.</summary>
+        const double SegmentStartToleranceMeters = 0.25;
 
         bool HasReachedSegmentEnd()
             => PathEndsUnderNpc(

@@ -253,6 +253,24 @@ namespace ZoneEngine_New.Core.Commands
             }
         }
 
+        /// <summary>
+        /// Runs <paramref name="text"/> when it is a ".name args" command line (vicinity chat, or a chat-server channel
+        /// or tell relayed through World). False when it is not a command.
+        /// </summary>
+        public bool TryExecuteText(IZoneSession session, Player player, string? text)
+        {
+            if (string.IsNullOrEmpty(text) || text[0] != '.')
+                return false;
+
+            string trimmed = text.TrimStart('.');
+            string[] parts = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+                return true;
+
+            TryExecute(session, player, parts[0], parts.Length > 1 ? parts[1..] : Array.Empty<string>());
+            return true;
+        }
+
         public void TryExecute(IZoneSession session, Player player, string name, string[] args)
         {
             ArgumentNullException.ThrowIfNull(session);

@@ -259,6 +259,10 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             {
                 if (!CanShare(recipient, source))
                 {
+                    // A source that just went out of this recipient's sight (a sneaker it cannot perceive) leaves it.
+                    if (!ReferenceEquals(recipient, source) && IsVisibleToRecipient(recipient, source)
+                        && !IsPinnedVisibility(recipient, source) && !NeverDespawns(source))
+                        LeaveVisibility(recipient, source);
                     continue;
                 }
 
@@ -568,7 +572,20 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             return recipient != null
                    && source != null
                    && !ReferenceEquals(recipient, source)
-                   && recipient.Identity != source.Identity;
+                   && recipient.Identity != source.Identity
+                   && !IsHiddenFrom(recipient, source);
+        }
+
+        /// <summary>
+        /// A sneaking player whose Concealment beats <paramref name="recipient"/>'s Perception is not on that client at
+        /// all: it is despawned there and gets none of its packets. A GM always sees sneakers.
+        /// </summary>
+        internal static bool IsHiddenFrom(Player recipient, Dynel source)
+        {
+            if (source is not Player sneaker || sneaker.Motor.State != Movement.MovementState.Sneak || recipient.IsGm)
+                return false;
+
+            return sneaker.Stats.GetOrZero(CharacterStat.Concealment) > recipient.Stats.GetOrZero(CharacterStat.Perception);
         }
 
         /// <summary>

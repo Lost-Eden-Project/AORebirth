@@ -106,8 +106,8 @@ namespace ZoneEngine_New.Core.Helpers
             if (!attacker.HasLineOfSightTo(target) || attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
                 return;
 
-            if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack && IsSneaking(attacker))
-                StopSneaking(attacker);
+            if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack)
+                attacker.BreakSneak();
 
             // Brawl and Dimach strike with a skill-tier item instead of the hand weapon's damage.
             Item? specialItem = special switch
@@ -547,17 +547,6 @@ namespace ZoneEngine_New.Core.Helpers
             if (level <= 240 && concealment > 7 * level)
                 return false;
             return true;
-        }
-
-        static void StopSneaking(Character character)
-        {
-            character.Motor.ApplyAction(MovementAction.LeaveSneak);
-            character.Cell?.Announce(new CharacterActionMessage
-            {
-                Identity = character.Identity,
-                Action = CharacterActionType.StopSneaking,
-                Target = Identity.None
-            });
         }
 
         static void SendText(Character character, string text)

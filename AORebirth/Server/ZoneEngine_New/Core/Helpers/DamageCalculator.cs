@@ -174,8 +174,9 @@ namespace ZoneEngine_New.Core.Helpers
                 : NextInt(minDamage, rolledMaximum + 1);
 
             // TODO: Determine what to do with Rocket Launchers. Rocket-ammo weapons (Rocket Launcher 266989-266993,
-            // Man Portable Anti-Vehicular Missile Launcher 264084) hit for 1 until then.
-            if (weapon != null && (AmmoType)NormalizeStat(weapon.GetStat(CharacterStat.AmmoType)) == AmmoType.Rockets)
+            // Man Portable Anti-Vehicular Missile Launcher 264084) hit for 1 until then; a GM's hit for full damage.
+            if (weapon != null && (AmmoType)NormalizeStat(weapon.GetStat(CharacterStat.AmmoType)) == AmmoType.Rockets
+                && attacker.Stats.GetOrZero(CharacterStat.GmLevel) <= 0)
                 damage = 1;
 
             return new DamageResult(true, Math.Max(1, damage), hitType);

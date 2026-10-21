@@ -19,6 +19,7 @@
   "pvp": {
     "damagePercent": 50,
     "critChancePercent": 50,
+    "maxHitPercent": 30,
     "attackerFlagNano": 214879
   },
   "wander": {
