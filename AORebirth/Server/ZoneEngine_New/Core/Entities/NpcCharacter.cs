@@ -616,10 +616,16 @@ namespace ZoneEngine_New.Core.Entities
             ClearHandMesh(RightHandMeshPosition);
             ClearHandMesh(LeftHandMeshPosition);
 
+            Item? prop = null;
             foreach (KeyValuePair<int, Item> slot in Equipment.EnumerateSlots())
             {
-                if (_combatWeaponSlots.Contains(slot.Key) || !IsVisualWeapon(slot.Value))
+                if (_combatWeaponSlots.Contains(slot.Key))
                     continue;
+                if (!IsVisualWeapon(slot.Value))
+                {
+                    prop ??= IsHandProp(slot.Value) ? slot.Value : null;
+                    continue;
+                }
 
                 VisualRightHand = slot.Value;
                 int meshId = StatCollection.Normalize(slot.Value.GetStat(CharacterStat.WeaponMesh));
@@ -627,7 +633,18 @@ namespace ZoneEngine_New.Core.Entities
                     SetHandMesh(RightHandMeshPosition, meshId, overrideTextureId: 0);
                 return;
             }
+
+            // No real weapon to show: a hand-held prop with a weapon mesh but no attack (Carlo Pinnetti's The Briefcase,
+            // no InitiativeType or AttackRange) is drawn in the hand. It is only a mesh: the monster weapons keep
+            // their own swing and range.
+            if (prop != null)
+                SetHandMesh(RightHandMeshPosition, StatCollection.Normalize(prop.GetStat(CharacterStat.WeaponMesh)), overrideTextureId: 0);
         }
+
+        /// <summary>A weapon-class item that only draws a mesh in the hand.</summary>
+        static bool IsHandProp(Item item)
+            => (ItemClass)item.GetStat(CharacterStat.ItemClass) == ItemClass.Weapon
+                && StatCollection.Normalize(item.GetStat(CharacterStat.WeaponMesh)) > 0;
 
         void ArmMonsterWeapons()
         {
