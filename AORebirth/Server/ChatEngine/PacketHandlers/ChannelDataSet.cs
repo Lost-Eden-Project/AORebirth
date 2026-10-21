@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 
 // Copyright (c) 2005-2014, CellAO Team
 // 
@@ -34,7 +34,7 @@ namespace ChatEngine.PacketHandlers
     #region Usings ...
 
     using System;
-
+    using ChatEngine.Channels;
     using ChatEngine.CoreClient;
 
     #endregion
@@ -91,6 +91,28 @@ namespace ChatEngine.PacketHandlers
                 BitConverter.ToUInt32(this.channelId, 1),
                 this.mute,
                 this.data);
+            if (this.channelId.Length == 5 && this.channelId[0] == (byte)ChannelType.Raid)
+            {
+                uint raidId = BitConverter.ToUInt32(this.channelId, 1);
+                bool eligible = client.IsBot && client.Character.CharacterId != 0;
+                bool channelFound = false;
+                bool added = false;
+                bool member = false;
+                foreach (ChannelBase channel in client.ChatServer().Channels)
+                {
+                    if (channel.channelType == ChannelType.Raid && channel.ChannelId == raidId)
+                    {
+                        channelFound = true;
+                        if (true)
+                        {
+                            added = channel.AddClient(client);
+                            member = client.Channels.Contains(channel);
+                        }
+
+                        break;
+                    }
+                }
+            }
             reader.Finish();
         }
 
