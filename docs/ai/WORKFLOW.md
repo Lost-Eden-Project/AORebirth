@@ -383,6 +383,30 @@ unresolved.
 
 ## Generated combat cohort
 
+Git LFS is retained for exactly one current tracked artifact:
+`docs/generated/capture_backed_npc_combat_inventory.json`. The accepted inventory
+is 124,999,078 bytes, exceeding GitHub's normal 100 MiB blob limit. It is an
+offline evidence/reproducibility input used by the cohort validator and retained
+combat fixtures; it is not production GameData or a core-engine build input.
+Do not remove its LFS rule or replace its pointer with ordinary Git content.
+
+In a checkout created with LFS smudging disabled, materialize that exact tracked
+artifact before Windows acceptance, generated-combat checks, or the mandatory
+integration gate. From repository root, use the existing LFS mechanism:
+
+```cmd
+git lfs fetch origin --include=docs/generated/capture_backed_npc_combat_inventory.json --exclude=
+git lfs checkout docs/generated/capture_backed_npc_combat_inventory.json
+git lfs fsck --objects --pointers HEAD
+```
+
+The fetch is scoped to the current inventory; no published history or tracking
+rules are rewritten. Checkout uses the fetched object and leaves the committed
+pointer intact. `--check` below verifies the materialized bytes against the
+committed cohort manifest. Do not regenerate the inventory merely to resolve a
+missing LFS payload, and do not prune LFS objects required by other worktrees or
+retained source history.
+
 The generated combat inventory, runtime catalog, exact-byte fixtures, active
 coverage, formula dataset, and generation manifest are one governed cohort.
 Never edit a generated member by hand and never invoke a component generator

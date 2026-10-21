@@ -1,21 +1,18 @@
 # Current Task
 
-EXPANSION ENTITLEMENTS (2026-10-21).
+ENTITLEMENT RELEASE AND REPOSITORY CLEANUP (2026-10-21).
 
-PROVEN: `Expansions.All` combines all eleven supported expansion/entitlement
-flags (2047). Registration and console account creation use that shared policy;
-new characters retain the existing account-to-expansion-stat initialization.
+The shared Expansions.All policy and scoped account/character migration remain
+unchanged. Production migration execution is separate from release validation;
+do not rerun it merely to deploy binaries.
 
-The operator migration updates only account expansion values and account-linked
-character expansion stats in one rollback-protected transaction, then sets the
-login column default. It refuses missing linked expansion stats and preserves
-unlinked characters. Repeating it changes no entitlement rows.
+The single current Git-LFS inventory remains a required offline reproducibility
+input. Its exact object has been materialized and checked; WORKFLOW.md documents
+scoped hydration for checkouts created with LFS smudging disabled. No history,
+tracking rule, required asset or generated cohort is rewritten.
 
-VALIDATION: approved Windows core build PASS; 49 focused Login checks PASS;
-152 isolated-MySQL migration/account-creation checks PASS; all four player breeds
-pass persisted new-character initialization/rollback checks; fresh hydration,
-reconnect and spawn-publication entitlement regression PASS. Unrelated account,
-statistic, inventory, equipment and progression preservation is covered.
-
-Production operations and private Linux acceptance/deployment receipts remain
-private. Original AO client acceptance remains Mike's step.
+Release validation uses current source identities. Private content selection,
+baseline preservation, Linux acceptance, deployment and cleanup evidence remain
+private. Private WaterExits and unrelated GameData must not be replaced by public
+catalogs as part of this entitlement release. Preserve existing user changes and
+migration evidence; remove only verified redundant task artifacts.
