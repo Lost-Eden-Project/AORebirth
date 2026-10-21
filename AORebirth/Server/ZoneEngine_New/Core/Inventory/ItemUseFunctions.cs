@@ -635,6 +635,12 @@ namespace ZoneEngine_New.Core.Inventory
         /// (<see cref="HashItemMinter.TryMintHighestUpTo"/>; the quality scales with the casting item's QL). A player
         /// gets it in inventory; an NPC carries it and its corpse drops it alongside the item table loot.
         /// </summary>
+        /// <summary>SpawnItem Flags: the item goes to the user's inventory rather than the world.</summary>
+        const int SpawnItemIntoInventory = 1;
+
+        /// <summary>SpawnItem Flags: RelX/Y/Z is a playfield position, not an offset from the user.</summary>
+        const int SpawnItemAbsolutePosition = 4;
+
         static bool SpawnItem(Character target, ItemSpell spell)
         {
             if (!spell.TryReadString(0, out string hash) || hash.Length == 0)
@@ -660,6 +666,31 @@ namespace ZoneEngine_New.Core.Inventory
 
             if (!player.Playfield.GetRequiredService<HashItemMinter>().TryMintHighestUpTo(hash, quality, ItemSource.Other, out Item item))
                 return false;
+
+            // Arguments: hash, max QL, min QL, TimeExist (seconds), Flags, RelX/Y/Z. Flags bit 1 puts the item in the
+            // inventory (nano 160979, Bronze Chest of the Collector 286438: 1 and 3); without it the item is placed in the
+            // world for TimeExist (Bonfire Kit 223773 and Portable Market Interface 257958: 0, at the user plus Rel;
+            // Laser Tagging Device 259782: 8). Bit 4 makes Rel an absolute position (Unicorn Scriptstarter 257352).
+            // An items.dat without these arguments keeps the inventory behaviour.
+            if (spell.TryReadInt(4, out int spawnFlags) && (spawnFlags & SpawnItemIntoInventory) == 0)
+            {
+                spell.TryReadInt(3, out int timeExist);
+                spell.TryReadInt(5, out int relX);
+                spell.TryReadInt(6, out int relY);
+                spell.TryReadInt(7, out int relZ);
+                AORebirth.Core.Vector.Vector3 at = player.Position;
+                var position = (spawnFlags & SpawnItemAbsolutePosition) != 0
+                    ? new AORebirth.Core.Vector.Vector3(relX, relY, relZ)
+                    : new AORebirth.Core.Vector.Vector3(at.x + relX, at.y + relY, at.z + relZ);
+                player.Playfield.GetRequiredService<SpawnService>().SpawnDroppedItem(
+                    item,
+                    position,
+                    player.Rotation,
+                    player.Identity,
+                    timeExist > 0 ? TimeSpan.FromSeconds(timeExist) : WorldItemTransfers.DroppedItemLifetime);
+                return true;
+            }
+
             if (InventoryStacking.TryGrantOntoStack(player, item, player.Playfield.GetService<InventoryFlushService>()))
                 return true;
             if (!player.Inventory.TryPlace(item, out Container page, out int slot))
