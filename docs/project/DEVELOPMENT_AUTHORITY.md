@@ -5,9 +5,10 @@ Status: Permanent project policy.
 ## Authority
 
 AORebirth has one authoritative gameplay source tree and one authoritative codebase.
-Application source, portability fixes, build definitions and reusable deployment
-tooling are maintained in public GitHub master. The Linux-private master ref is
-an exact mirror of that commit, not an additional source or patch layer.
+Product/runtime source is maintained in public GitHub master. The private Linux
+checkout owns the derived Linux source/build/package and required Linux-only
+adaptations, infrastructure and deployment tooling. It records the exact accepted
+public source SHA without becoming an independent product implementation.
 Windows is the authoritative development platform and source of truth. Linux is
 the production deployment platform.
 
@@ -19,6 +20,61 @@ This policy governs future AI agents, developers, contributors, validation, and
 production promotion. It complements the system description in
 `docs/project/ARCHITECTURE.md` and the approved commands in
 `docs/ai/WORKFLOW.md`.
+
+## Checkout ownership and deployment-tooling access
+
+<!-- deployment-tooling-access:start -->
+Normal source work stays in its owning checkout: PUBLIC_PRODUCT_CHECKOUT owns
+Windows/public product source; PRIVATE_LINUX_CHECKOUT owns the private derived
+Linux source, build and package; APPROVED_DEPLOYMENT_TOOLING_ROOT supplies only
+the established production deployment tooling. Exact private role bindings stay
+in private governance, never in public commits.
+
+Never silently edit product/runtime source in another checkout. The deployment
+tooling checkout is not product authority. Linux adaptations, infrastructure,
+history, configuration, credentials and protected GameData remain private.
+
+Explicit deployment authorization itself is sufficient authorization to use
+APPROVED_DEPLOYMENT_TOOLING_ROOT; no additional checkout-root waiver is required.
+It permits reading the launcher and required supporting deployment scripts and
+manifests, executing the approved deployment workflow, and using the existing
+production SSH target and credentials already authorized for that deployment.
+Do not ask again for a tooling-checkout waiver or an already-authorized connection.
+
+This read/execute exception is limited to the approved tooling directory and
+required supporting files that resolve within it. It grants no access through
+parent traversal, sibling directories or symlink escapes. It does not permit
+product/runtime edits, product rebuilds, unrelated file changes, or treating the
+tooling checkout as product authority. Tooling edits require their own task
+authorization. Existing workflow approval and private publication rules remain
+in force; this exception does not revive retired deployment workflows.
+
+Without explicit deployment authorization, this exception grants no deployment
+tooling access or production connection use. Build/package approval, historical
+deployment approval and mere possession of credentials are insufficient. A
+current instruction not to deploy takes precedence. Separately authorized
+governance/tooling maintenance does not authorize a deployment.
+
+The following access contract governs only this deployment exception:
+
+| Action | EXPLICIT_DEPLOYMENT_AUTHORIZATION | NO_DEPLOYMENT_AUTHORIZATION |
+| --- | --- | --- |
+| READ_LAUNCHER | ALLOW | DENY |
+| READ_REQUIRED_SUPPORTING_DEPLOYMENT_FILES | ALLOW | DENY |
+| EXECUTE_APPROVED_DEPLOYMENT_WORKFLOW | ALLOW | DENY |
+| USE_EXISTING_AUTHORIZED_PRODUCTION_SSH | ALLOW | DENY |
+| READ_OUTSIDE_APPROVED_TOOLING_ROOT | DENY | DENY |
+| EDIT_PRODUCT_RUNTIME_SOURCE_IN_TOOLING_CHECKOUT | DENY | DENY |
+| REBUILD_PRODUCT_SOURCE_IN_TOOLING_CHECKOUT | DENY | DENY |
+| MODIFY_UNRELATED_FILES_IN_TOOLING_CHECKOUT | DENY | DENY |
+| EDIT_DEPLOYMENT_TOOLING_WITHOUT_SEPARATE_TASK_AUTHORIZATION | DENY | DENY |
+| TREAT_TOOLING_CHECKOUT_AS_PRODUCT_AUTHORITY | DENY | DENY |
+| PUBLISH_PRIVATE_LINUX_MATERIAL_PUBLICLY | DENY | DENY |
+<!-- deployment-tooling-access:end -->
+
+Validate this governance contract with
+Tools/tests/test_deployment_tooling_governance.py; it reads policy only and never
+executes deployment tooling or contacts production.
 
 ## Windows authority
 
@@ -108,7 +164,8 @@ the Windows acceptance result.
 
 ## High-concurrency source synchronization
 
-AORebirth uses one source history for Windows and Linux. Developers may work on
+AORebirth uses one authoritative product history for Windows and Linux. Private
+Linux adaptation history remains in its owning repository. Developers may work on
 many short-lived branches, but Linux synchronization consumes integrated
 `master` commits, not developer workspaces and not copied directories.
 
@@ -136,18 +193,20 @@ Linux acceptance artifact
 SHA-gated deployment
 ```
 
-The invariant for any cross-platform acceptance event is:
+The invariant for the public product source recorded by a cross-platform
+acceptance event is:
 
 ```text
-WINDOWS_ACCEPTED_SHA == LINUX_BUILD_SHA == LINUX_DEPLOY_ARTIFACT_SHA
+WINDOWS_ACCEPTED_PUBLIC_SHA == LINUX_PUBLIC_SOURCE_SHA == PACKAGE_PUBLIC_SOURCE_SHA
 ```
 
-For a release, public `origin/master`, `linux-private/master`, build HEAD and
-the running LoginEngine/ZoneEngine_New source receipts must literally identify
-that same commit. A private child commit, even with an identical tree, fails this
-requirement. Preserve the previous live source under an archive ref before
-moving the Linux mirror. Keep server secrets and active host configuration
-external; cross-platform source repairs go through public master first.
+For a release, record the authoritative public source SHA separately from the
+derived private Linux source and package SHAs. Runtime source must match that
+accepted public source, with only documented Linux build/platform adaptations.
+Build/package and running-engine receipts must identify the exact accepted
+inputs. Keep server secrets and active host configuration private; product/runtime
+repairs go through public master first. The tooling checkout supplies operational
+files only and never changes the accepted product source authority.
 
 Linux acceptance workspaces may perform destructive checkout cleanup only when
 they are explicitly controlled build workspaces. Normal Windows developer
@@ -207,8 +266,9 @@ synchronization model.
 13. Windows validation is the production acceptance gate.
 14. Linux verification is an additional gate, not a replacement for Windows
     validation.
-15. A Linux deployment issue that requires source changes must be corrected in
-    the authoritative Windows source tree first.
+15. Product/runtime source fixes required by a Linux deployment must originate
+    in the authoritative Windows source tree. Private Linux build, packaging and
+    infrastructure-only corrections stay in their owning private checkout.
 16. AORebirth shall retain exactly one authoritative codebase.
 17. Linux build and deployment tooling must use explicit source SHAs, not
     implicit moving branch tips.
@@ -242,12 +302,13 @@ tree and pass the normal gates before it becomes the maintained solution.
 
 All AI assistants working on AORebirth must follow this policy. They must:
 
-- implement in the authoritative Windows source tree;
+- implement product/runtime changes in the authoritative Windows source tree;
 - validate on Windows using repository-approved workflows;
 - promote only Windows-validated work to Linux;
 - treat Linux checks as deployment and compatibility verification;
 - keep platform-specific code narrow and contract-compatible;
-- return every required source fix to the Windows source tree first.
+- return product/runtime fixes to the Windows source tree first; keep permitted
+  Linux infrastructure-only work in its owning private checkout.
 
 AI assistants must not:
 

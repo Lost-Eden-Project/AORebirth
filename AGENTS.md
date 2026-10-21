@@ -23,6 +23,61 @@ Current authoritative documents override stale historical descriptions.
 Historical reports never redefine current architecture. `AI_START_HERE.md` is
 the single startup index.
 
+## Checkout ownership and deployment-tooling access
+
+<!-- deployment-tooling-access:start -->
+Normal source work stays in its owning checkout: PUBLIC_PRODUCT_CHECKOUT owns
+Windows/public product source; PRIVATE_LINUX_CHECKOUT owns the private derived
+Linux source, build and package; APPROVED_DEPLOYMENT_TOOLING_ROOT supplies only
+the established production deployment tooling. Exact private role bindings stay
+in private governance, never in public commits.
+
+Never silently edit product/runtime source in another checkout. The deployment
+tooling checkout is not product authority. Linux adaptations, infrastructure,
+history, configuration, credentials and protected GameData remain private.
+
+Explicit deployment authorization itself is sufficient authorization to use
+APPROVED_DEPLOYMENT_TOOLING_ROOT; no additional checkout-root waiver is required.
+It permits reading the launcher and required supporting deployment scripts and
+manifests, executing the approved deployment workflow, and using the existing
+production SSH target and credentials already authorized for that deployment.
+Do not ask again for a tooling-checkout waiver or an already-authorized connection.
+
+This read/execute exception is limited to the approved tooling directory and
+required supporting files that resolve within it. It grants no access through
+parent traversal, sibling directories or symlink escapes. It does not permit
+product/runtime edits, product rebuilds, unrelated file changes, or treating the
+tooling checkout as product authority. Tooling edits require their own task
+authorization. Existing workflow approval and private publication rules remain
+in force; this exception does not revive retired deployment workflows.
+
+Without explicit deployment authorization, this exception grants no deployment
+tooling access or production connection use. Build/package approval, historical
+deployment approval and mere possession of credentials are insufficient. A
+current instruction not to deploy takes precedence. Separately authorized
+governance/tooling maintenance does not authorize a deployment.
+
+The following access contract governs only this deployment exception:
+
+| Action | EXPLICIT_DEPLOYMENT_AUTHORIZATION | NO_DEPLOYMENT_AUTHORIZATION |
+| --- | --- | --- |
+| READ_LAUNCHER | ALLOW | DENY |
+| READ_REQUIRED_SUPPORTING_DEPLOYMENT_FILES | ALLOW | DENY |
+| EXECUTE_APPROVED_DEPLOYMENT_WORKFLOW | ALLOW | DENY |
+| USE_EXISTING_AUTHORIZED_PRODUCTION_SSH | ALLOW | DENY |
+| READ_OUTSIDE_APPROVED_TOOLING_ROOT | DENY | DENY |
+| EDIT_PRODUCT_RUNTIME_SOURCE_IN_TOOLING_CHECKOUT | DENY | DENY |
+| REBUILD_PRODUCT_SOURCE_IN_TOOLING_CHECKOUT | DENY | DENY |
+| MODIFY_UNRELATED_FILES_IN_TOOLING_CHECKOUT | DENY | DENY |
+| EDIT_DEPLOYMENT_TOOLING_WITHOUT_SEPARATE_TASK_AUTHORIZATION | DENY | DENY |
+| TREAT_TOOLING_CHECKOUT_AS_PRODUCT_AUTHORITY | DENY | DENY |
+| PUBLISH_PRIVATE_LINUX_MATERIAL_PUBLICLY | DENY | DENY |
+<!-- deployment-tooling-access:end -->
+
+Validate this governance contract with
+Tools/tests/test_deployment_tooling_governance.py; it reads policy only and never
+executes deployment tooling or contacts production.
+
 ## Existing architecture and scope
 
 Before introducing an abstraction, replacement system, build or configuration
@@ -878,7 +933,8 @@ Do not work around these conditions silently.
 - Do not rediscover workflows.
 - Do not revalidate workflows.
 - Do not search the repository for workflows that are already documented.
-- Do not inspect workflow source code unless the workflow itself is being modified.
+- Do not inspect workflow source code unless the workflow itself is being modified
+  or the authorized deployment-tooling access exception above applies.
 - Assume approved workflows remain valid until they fail.
 
 For capture-backed tasks:
