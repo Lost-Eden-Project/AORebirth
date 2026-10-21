@@ -593,6 +593,9 @@ namespace ZoneEngine_New.Core.Inventory
                 return;
             }
 
+            // Equipping passed its ToWield/ToWear checks here, so a held-off item works again.
+            pending.Item.PlayshiftSuppressed = false;
+
             // Live finish order (surgery-clinic + pants captures):
             // unequip CharacterAction/TemplateAction → ContainerAddItem → equip CharacterAction/TemplateAction.
             // TemplateAction Unequip/Equip; Placement=(WearPage:absoluteSlot); cell-announced. A changed look follows

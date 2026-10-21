@@ -849,6 +849,8 @@ namespace ZoneEngine_New.Core.Playfield
             }
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("arrive.hydrate", characterId);
             Player player = SpawnPlayer(session, command.Hydration);
+            // Worn items this playfield's playshift requirements forbid go ineffective before FullCharacter.
+            ZoneEngine_New.Core.Inventory.PlayshiftItems.Refresh(player);
             if (command.Envelope != null)
             {
                 // Arriving from another zone instance: the zone-change rules a same-instance arrival applies.
@@ -1287,6 +1289,8 @@ namespace ZoneEngine_New.Core.Playfield
             // Buffs with a playshift requirement the character no longer meets here end on arrival, before the
             // FullCharacter the client gets lists its NCU.
             Nanos.NanoRuntime.StripPlayshiftFailures(player);
+            // Worn items go ineffective (or work again) by the same requirements.
+            ZoneEngine_New.Core.Inventory.PlayshiftItems.Refresh(player);
             _playfield.GetRequiredService<Pets.PetService>().ArriveWithOwner(player);
             player.SaveState.MarkDirty();
             // The next trigger sample has to start at this landing. Keeping the position from

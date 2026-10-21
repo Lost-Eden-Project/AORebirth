@@ -81,6 +81,13 @@ namespace ZoneEngine_New.Core.Inventory
         /// </summary>
         public int OverEquipLevel { get; internal set; }
 
+        /// <summary>
+        /// Worn but disabled: the wearer does not meet its PlayShiftRequirements in this playfield
+        /// (<see cref="PlayshiftItems"/>). No effects are active and the client gets <see cref="AORebirth.Enums.ItemFlags.Disabled"/>
+        /// in the slot flags. Runtime only; cleared when the item is equipped again.
+        /// </summary>
+        public bool PlayshiftSuppressed { get; internal set; }
+
         public ItemTemplate Definition { get; init; } = null!;
 
         public string Name => Definition.Name;
@@ -107,14 +114,16 @@ namespace ZoneEngine_New.Core.Inventory
             const int baselinePacketFlags = 0x00A1;
             const int visibilityNibble = 0x00A0;
 
+            // A worn item its PlayShiftRequirements hold off is shown disabled.
+            int disabled = PlayshiftSuppressed ? (int)AORebirth.Enums.ItemFlags.Disabled : 0;
             int flags = Flags & 0xFFFF;
             if ((flags & visibilityNibble) == 0)
-                return unchecked((short)baselinePacketFlags);
+                return unchecked((short)(baselinePacketFlags | disabled));
 
             // An owned item always shows in its container. Some templates (Blackmane's Stat Buffer, the Rings of
             // Tattered Flame / Weeping Flesh / Eternal Night) carry no Visible bit, and the client then leaves their
             // slots looking empty even though they are occupied.
-            return unchecked((short)(flags | (int)AORebirth.Enums.ItemFlags.Visible));
+            return unchecked((short)(flags | (int)AORebirth.Enums.ItemFlags.Visible | disabled));
         }
 
         /// <summary>Durable <c>item_instances</c> row for this instance at the given location.</summary>

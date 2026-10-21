@@ -1508,6 +1508,16 @@ namespace ZoneEngine_New.Core.Entities
                 return (stuck.Playfield, new Vector3(stuck.X, stuck.Y, stuck.Z));
             }
 
+            return ResolveSavePointDestination(playfield);
+        }
+
+        /// <summary>
+        /// The character's save point (an insurance terminal's SaveChar), else the new-character start (Arete Landing),
+        /// else Respawn.json. Throws when none is configured.
+        /// </summary>
+        internal (int Playfield, Vector3 Landing) ResolveSavePointDestination(Playfield playfield)
+        {
+            ArgumentNullException.ThrowIfNull(playfield);
             if (TryGetSavePoint(out int savedPlayfield, out Vector3 saved))
                 return (savedPlayfield, saved);
 

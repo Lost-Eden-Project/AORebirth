@@ -10,6 +10,7 @@
     "defaultXpPoolRecoveryPercent": 5,
     "tradeskillGrantsXp": false,
     "tradeskillXpPerQl": 5,
+    "teamMemberPercent": [100, 82.5, 75, 70, 65, 62.5],
     "caps": {
       "killXp": 10.0,
       "quest": 20.0,

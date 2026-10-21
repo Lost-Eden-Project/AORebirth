@@ -79,7 +79,7 @@ namespace ZoneEngine_New.Core.Ai
         {
             if (nowUtc < _nextAttemptUtc)
                 return;
-            if (Npc.IsDead || _brain.IsEvading || Npc.IsCastingNano || Npc.IsInNanoRecharge(nowUtc)
+            if (Npc.IsDead || Npc.IsStunned || _brain.IsEvading || Npc.IsCastingNano || Npc.IsInNanoRecharge(nowUtc)
                 || Npc.UploadedNanoIds.Count == 0 || Npc.Playfield == null)
                 return;
 
@@ -165,7 +165,7 @@ namespace ZoneEngine_New.Core.Ai
             if (HealthPercent(target) >= 100)
                 return HealOrderResult.Busy;
 
-            if (Npc.IsDead || Npc.IsCastingNano || Npc.Playfield == null || Npc.UploadedNanoIds.Count == 0)
+            if (Npc.IsDead || Npc.IsStunned || Npc.IsCastingNano || Npc.Playfield == null || Npc.UploadedNanoIds.Count == 0)
                 return HealOrderResult.Busy;
             if (Npc.IsInNanoRecharge(nowUtc))
                 return HealOrderResult.Busy;

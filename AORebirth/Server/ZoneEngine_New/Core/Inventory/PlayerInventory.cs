@@ -1036,11 +1036,13 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>Every equipped item: weapons, armor and implants (not social clothing).</summary>
-        public IEnumerable<Item> WornItems()
+        /// <summary>Equipped items that take effect; <paramref name="includeIneffective"/> adds those a playshift requirement holds off.</summary>
+        public IEnumerable<Item> WornItems(bool includeIneffective = false)
         {
             foreach (Container page in WornPages())
                 foreach (Item item in page.Content.Values)
-                    yield return item;
+                    if (includeIneffective || !item.PlayshiftSuppressed)
+                        yield return item;
         }
 
         /// <summary>Pages whose items count as equipped (stats, over-equipping, worn checks); social clothing is cosmetic.</summary>

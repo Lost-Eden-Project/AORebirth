@@ -380,6 +380,9 @@
                         EnterMissionEntrance(playfield, player, crossing.Trigger);
                     else if (crossing.Trigger.Kind == ZoneTriggerKind.ExitDoor && crossing.DestPlayfieldId == 0)
                         TellExitDestinationUnknown(player, crossing.Trigger);
+                    else if (crossing.Trigger.Kind == ZoneTriggerKind.WaterExit
+                             && crossing.DestPlayfieldId == WaterExit.ToSavePoint)
+                        SendToSavePoint(playfield, player, crossing, now);
                     else
                         TryTransfer(playfield, player, crossing, now);
                 }
@@ -702,6 +705,26 @@
                 DungeonExitDoors.LandingDoor(portal.DestDoorInstance, _gameData.GetDungeonExitDoors(portal.DestPlayfieldId)),
                 portal.DoorClearance,
                 out landing, out heading);
+        }
+
+        /// <summary>
+        /// Water whose exit is the character's save point (WaterExits.json -1): where a death would bring it back (its
+        /// save point, else the new-character start, else Respawn.json). A save point on this playfield moves it in place.
+        /// </summary>
+        void SendToSavePoint(PlayfieldType source, Player player, ZoneCrossing crossing, double now)
+        {
+            (int playfieldId, AoVector3 landing) = player.ResolveSavePointDestination(source);
+            if (playfieldId != source.Identity.Instance)
+            {
+                TryTransfer(source, player, crossing with { DestPlayfieldId = playfieldId, Landing = landing }, now);
+                return;
+            }
+
+            int id = player.Identity.Instance;
+            _zoneGraceUntil[id] = now + ZoneGrace.OnZone(id, now, playfieldId, playfieldId);
+            _playerTriggerState.Remove(id);
+            _logger.Info($"Water exit to save point character={id} within playfield={playfieldId}");
+            player.TeleportWithinPlayfield(landing);
         }
 
         void TryTransfer(PlayfieldType source, Player player, ZoneCrossing crossing, double now)

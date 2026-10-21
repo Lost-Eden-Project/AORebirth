@@ -53,7 +53,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 || dynel is not Character target || target.IsDead)
                 return;
 
-            SpecialAttacks.Perform(player, target, (CharacterStat)message.Stat);
+            // Queued, then tried at once: standing in reach it fires on this tick, as before.
+            if (SpecialAttacks.Queue(player, target, (CharacterStat)message.Stat))
+                player.TickQueuedSpecials();
         }
     }
 }

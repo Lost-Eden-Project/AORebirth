@@ -12,7 +12,8 @@ namespace ZoneEngine_New.Core.WorldSimulation
     /// a character who goes under its surface, keyed by playfield id, e.g.
     /// <c>{ "4310": { "DestinationPlayfield": 4001, "X": 826, "Y": 43.81, "Z": 822 } }</c>. The landing is the server's
     /// choice, not client data (retail capture 2026-10-20T20:59:06Z: N3Teleport from 4310's sea to 4001 (826, 822)).
-    /// Loaded once per GameData root.
+    /// <c>"DestinationPlayfield": -1</c> (<see cref="WaterExit.ToSavePoint"/>) sends the character to its save point
+    /// instead, with no coordinates. Loaded once per GameData root.
     /// </summary>
     public sealed class WaterExitCatalog
     {
@@ -63,7 +64,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 JsonSerializer.Deserialize<Dictionary<string, WaterExit>>(File.ReadAllText(path), JsonOptions);
             foreach (KeyValuePair<string, WaterExit> entry in file ?? new())
             {
-                if (entry.Value is { DestinationPlayfield: > 0 }
+                if (entry.Value is { DestinationPlayfield: > 0 or WaterExit.ToSavePoint }
                     && int.TryParse(entry.Key.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int playfieldId)
                     && playfieldId > 0)
                     exits[playfieldId] = entry.Value;
@@ -76,6 +77,9 @@ namespace ZoneEngine_New.Core.WorldSimulation
     /// <summary>Where one playfield's flagged water sends a character.</summary>
     public sealed class WaterExit
     {
+        /// <summary><see cref="DestinationPlayfield"/> that sends the character to its own save point.</summary>
+        public const int ToSavePoint = -1;
+
         public int DestinationPlayfield { get; set; }
 
         public float X { get; set; }

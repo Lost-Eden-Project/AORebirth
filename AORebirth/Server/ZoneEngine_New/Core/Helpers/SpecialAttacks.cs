@@ -51,38 +51,83 @@ namespace ZoneEngine_New.Core.Helpers
 
         static readonly BackstabGates ShadeBackstab = new(100, 235, 420);
 
+        /// <summary>What a queued special did on one try.</summary>
+        public enum FireResult
+        {
+            /// <summary>It ran (hit or missed) and locked its skill.</summary>
+            Fired,
+
+            /// <summary>Not yet: out of reach or line of sight, or a gun special while its attacker moves.</summary>
+            Waiting,
+
+            /// <summary>It never will: refused, its fight ended or moved to another target.</summary>
+            Dropped,
+        }
+
         /// <summary>
-        /// Runs <paramref name="special"/> from <paramref name="attacker"/> against <paramref name="target"/>.
+        /// A special attack request: it starts the fight with <paramref name="target"/> and goes into the attacker's
+        /// special queue (<see cref="Character.TickQueuedSpecials"/>), where it fires when it can. Live waits with gun
+        /// specials (Aimed Shot, Fling Shot, Burst, Full Auto) until the shooter stops moving, and a queued special that
+        /// has not fired when the attack stops never fires. A locked or unusable special is refused here.
         /// </summary>
-        public static void Perform(Character attacker, Character target, CharacterStat special)
+        public static bool Queue(Character attacker, Character target, CharacterStat special)
         {
             ArgumentNullException.ThrowIfNull(attacker);
             ArgumentNullException.ThrowIfNull(target);
 
-            if (!TryGetCanFlag(special, out CanFlags canFlag))
-                return;
+            if (!TryGetCanFlag(special, out _))
+                return false;
 
-            DateTime now = DateTime.UtcNow;
-            TimeSpan remaining = attacker.SkillLocks.Remaining((int)special, now);
+            TimeSpan remaining = attacker.SkillLocks.Remaining((int)special, DateTime.UtcNow);
             if (remaining > TimeSpan.Zero)
             {
                 attacker.SendSkillLocked((int)special, remaining);
-                return;
+                return false;
             }
 
             // Every special attack, player or NPC, needs a target its attacker may engage.
             if (!CombatRules.CanAttack(attacker, target))
-                return;
+                return false;
 
             if (attacker.FightingTarget.Instance == 0)
                 attacker.StartFighting(target.Identity, 0);
 
             attacker.SetFightingTarget(target.Identity);
+            attacker.QueueSpecial(special, target.Identity);
+            return true;
+        }
+
+        /// <summary>Gun specials hold while their shooter moves.</summary>
+        static bool WaitsForStandingStill(CharacterStat special)
+            => special is CharacterStat.AimedShot or CharacterStat.FlingShot or CharacterStat.Burst or CharacterStat.FullAuto;
+
+        /// <summary>
+        /// One try at a queued special from <paramref name="attacker"/> against <paramref name="target"/>.
+        /// </summary>
+        public static FireResult TryFire(Character attacker, Character target, CharacterStat special)
+        {
+            ArgumentNullException.ThrowIfNull(attacker);
+            ArgumentNullException.ThrowIfNull(target);
+
+            if (!TryGetCanFlag(special, out CanFlags canFlag))
+                return FireResult.Dropped;
+
+            DateTime now = DateTime.UtcNow;
+            if (attacker.SkillLocks.Remaining((int)special, now) > TimeSpan.Zero)
+                return FireResult.Dropped;
+
+            // Stopping the attack, or attacking something else, takes the queued specials with it.
+            if (attacker.FightingTarget != target.Identity || !CombatRules.CanAttack(attacker, target))
+                return FireResult.Dropped;
+
+            // A stun pauses specials as it pauses the weapon bars; they fire once it ends.
+            if (attacker.IsStunned || (WaitsForStandingStill(special) && attacker.Motor.IsMoving))
+                return FireResult.Waiting;
 
             if (special == CharacterStat.AimedShot && (!IsSneaking(attacker) || CanSee(target, attacker)))
             {
                 SendText(attacker, target.Name + " is aware of your presence.");
-                return;
+                return FireResult.Dropped;
             }
 
             // Sneak Attack from stealth on an unaware target; otherwise a Shade or Adventurer behind a target that
@@ -93,18 +138,18 @@ namespace ZoneEngine_New.Core.Helpers
                 if (!CanBackstab(attacker, target))
                 {
                     SendText(attacker, target.Name + " is aware of your presence.");
-                    return;
+                    return FireResult.Dropped;
                 }
 
                 backstab = true;
             }
 
             if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out int slot))
-                return;
+                return FireResult.Dropped;
 
-            // Same reach rules as an auto-attack swing; an out-of-reach special does nothing and does not lock.
+            // Same reach rules as an auto-attack swing; out of reach it stays queued and does not lock.
             if (!attacker.HasLineOfSightTo(target) || attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
-                return;
+                return FireResult.Waiting;
 
             if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack)
                 attacker.BreakSneak();
@@ -117,7 +162,7 @@ namespace ZoneEngine_New.Core.Helpers
                 _ => null
             };
             if (special == CharacterStat.Dimach && specialItem == null)
-                return;
+                return FireResult.Dropped;
 
             Resolve(attacker, target, special, weapon, slot, backstab, specialItem);
 
@@ -126,6 +171,7 @@ namespace ZoneEngine_New.Core.Helpers
             attacker.ScheduleSpecialAvailable((int)special, now.AddSeconds(seconds));
             if (attacker is Player player)
                 player.Session?.Send(Action(player, CharacterActionType.SpecialUsed, (int)special, seconds));
+            return FireResult.Fired;
         }
 
         /// <summary>Tells the client the special's skill lock has run out (CharacterAction 0xA4, Parameter2 = stat).</summary>

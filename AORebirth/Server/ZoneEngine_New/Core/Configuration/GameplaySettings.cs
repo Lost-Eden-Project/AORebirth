@@ -116,6 +116,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.defaultXpPoolRecoveryPercent must be from 0 to 100.");
             if (Xp.TradeskillXpPerQl < 0)
                 throw new InvalidDataException(path + ": xp.tradeskillXpPerQl must be 0 or more.");
+            if (Xp.TeamMemberPercent == null || Array.Exists(Xp.TeamMemberPercent, x => !double.IsFinite(x) || x < 0))
+                throw new InvalidDataException(path + ": xp.teamMemberPercent must be a list of finite, non-negative percents (it may be empty).");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
@@ -429,6 +431,25 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Per-grant caps, in percent of the current level's XP bar.</summary>
         public GameplayXpCaps Caps { get; init; } = new();
+
+        /// <summary>
+        /// Percent of the team's kill share (regular and alien XP) each nearby member gets, by how many share it: entry 0
+        /// for one, entry 1 for two, and so on; a bigger team uses the last entry. 1 100%, 2 82.5% (165% in all),
+        /// 3 75% (225%), 4 70% (280%), 5 65% (330%), 6 62.5% (375%).
+        /// NOTE: this table is NOT correct. It is a stand-in until live's team XP rule is known. Empty splits the share
+        /// evenly (100% / members).
+        /// </summary>
+        public double[] TeamMemberPercent { get; init; } = [100, 82.5, 75, 70, 65, 62.5];
+
+        /// <summary>One member's percent of the team share when <paramref name="members"/> share it.</summary>
+        public double MemberPercent(int members)
+        {
+            if (members <= 1)
+                return TeamMemberPercent.Length > 0 ? TeamMemberPercent[0] : 100;
+            if (TeamMemberPercent.Length == 0)
+                return 100.0 / members;
+            return TeamMemberPercent[Math.Min(members, TeamMemberPercent.Length) - 1];
+        }
 
         public bool GivesNoKillXp(int npcFamily) => Array.IndexOf(NoKillXpNpcFamilies, npcFamily) >= 0;
     }

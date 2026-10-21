@@ -176,6 +176,51 @@ namespace ZoneEngine_New.Core.Entities
         public void ScheduleSpecialAvailable(int statId, DateTime atUtc) => _specialsAvailableAt[statId] = atUtc;
 
         /// <summary>
+        /// Special attacks requested and not yet fired, in request order, at most one per special. They have their own
+        /// queue, apart from the weapon bars: each fires on a tick when it can (in reach, and for a gun special not
+        /// moving), and is dropped when its fight ends or moves to another target.
+        /// </summary>
+        readonly List<(CharacterStat Special, Identity Target)> _queuedSpecials = new();
+
+        /// <summary>Queues <paramref name="special"/> against <paramref name="target"/>, replacing an earlier request for it.</summary>
+        public void QueueSpecial(CharacterStat special, Identity target)
+        {
+            _queuedSpecials.RemoveAll(entry => entry.Special == special);
+            _queuedSpecials.Add((special, target));
+        }
+
+        public bool HasQueuedSpecial(CharacterStat special) => _queuedSpecials.Exists(entry => entry.Special == special);
+
+        /// <summary>Fires every queued special that can go now and drops those that never will.</summary>
+        public void TickQueuedSpecials()
+        {
+            if (_queuedSpecials.Count == 0)
+                return;
+            if (IsDead || Playfield == null)
+            {
+                _queuedSpecials.Clear();
+                return;
+            }
+
+            foreach ((CharacterStat special, Identity target) in _queuedSpecials.ToArray())
+            {
+                if (!_queuedSpecials.Contains((special, target)))
+                    continue;
+
+                Character? victim = Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel)
+                    ? dynel as Character
+                    : null;
+                SpecialAttacks.FireResult result = victim == null || victim.IsDead
+                    ? SpecialAttacks.FireResult.Dropped
+                    : SpecialAttacks.TryFire(this, victim, special);
+                if (result != SpecialAttacks.FireResult.Waiting)
+                    _queuedSpecials.Remove((special, target));
+                if (Playfield == null)
+                    return;
+            }
+        }
+
+        /// <summary>
         /// TimedEffect (53014) stat bonuses, e.g. a tutoring device's +50 Computer Literacy for two minutes. Memory
         /// only: they go with the character through zone changes and are gone after a logout.
         /// </summary>
@@ -890,7 +935,8 @@ namespace ZoneEngine_New.Core.Entities
                 if (recipients.Count == 0)
                     continue;
 
-                int each = share.Amount / recipients.Count;
+                // NOTE: Gameplay.json xp.teamMemberPercent is a stand-in table, not live's team XP rule.
+                int each = (int)Math.Min(share.Amount * xpRules.MemberPercent(recipients.Count) / 100, int.MaxValue);
                 for (int r = 0; r < recipients.Count; r++)
                 {
                     // A grey monster (more than its XPKillRange in the recipient's Xp.json row below them) is worth 1 XP,
@@ -999,6 +1045,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             int monsterLevel = Stats.GetOrOne(CharacterStat.Level);
+            GameplayXp xpRules = playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp();
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             List<GroupShare> shares = _killRewards.DivideByGroup(
                 AlienShareBasis,
@@ -1017,7 +1064,8 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     Character recipient = recipients[r];
                     long solo = SoloAlienXp(recipient.Stats.GetOrOne(CharacterStat.Level), monsterLevel);
-                    long amount = solo * share.Amount / AlienShareBasis / recipients.Count;
+                    // NOTE: Gameplay.json xp.teamMemberPercent is a stand-in table, not live's team XP rule.
+                    long amount = (long)(solo * share.Amount / AlienShareBasis * xpRules.MemberPercent(recipients.Count) / 100);
                     if (amount > 0)
                         recipient.AwardAlienXp((int)amount);
                 }
@@ -1637,6 +1685,9 @@ namespace ZoneEngine_New.Core.Entities
                 TickCombat(deltaTime);
             else
                 TickIdleRecharge(deltaTime);
+            TickQueuedSpecials();
+            if (Playfield == null)
+                return;
             TickStallWatch.Stage("char.regen", instance);
             if (!IsDead && UsesPassiveRegen)
                 TickPassiveRegen(deltaTime);
@@ -1740,7 +1791,7 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         void TickIdleRecharge(double deltaTime)
         {
-            if (IsCastingNano)
+            if (IsCastingNano || IsStunned)
                 return;
 
             foreach (CharacterWeapon weapon in Weapons.Values)
@@ -1752,8 +1803,8 @@ namespace ZoneEngine_New.Core.Entities
 
         void TickWeapons(double deltaTime)
         {
-            // A nano cast pauses both the swing and the recharge; they resume where they were.
-            if (IsCastingNano)
+            // A nano cast or a stun pauses both the swing and the recharge; they resume where they were.
+            if (IsCastingNano || IsStunned)
                 return;
 
             // Full bars waiting on range or LOS still Tick so they swing the moment they can.
@@ -2368,6 +2419,14 @@ namespace ZoneEngine_New.Core.Entities
                 spell => spell.TryReadInt(0, out int restricted) && (restricted & RestrictMovementBit) != 0)
                 || HasBuffFunction(FunctionType.Stun);
 
+        /// <summary>
+        /// A running buff holds the Stun function (53122: Neural Stunner 28625, 211405): held in place, weapon bars and
+        /// queued specials paused where they are, and no nano casts. Items and perks still work. Refreshed when buffs
+        /// change (<see cref="OnBuffsChanged"/>, at once) and on every rebase (<see cref="ApplyBuffBonuses"/>, which
+        /// covers buffs restored on login and zoning), so a tick reads one field.
+        /// </summary>
+        public bool IsStunned { get; private set; }
+
         /// <summary>A running Fear (53121) or Mind Control (53232) has taken the character's controls.</summary>
         public bool IsAiControlled => HasBuffFunction(FunctionType.Fear) || HasBuffFunction(FunctionType.MindControl);
 
@@ -2743,6 +2802,7 @@ namespace ZoneEngine_New.Core.Entities
         void OnBuffsChanged()
         {
             SyncUsedNcu();
+            IsStunned = HasBuffFunction(FunctionType.Stun);
             // A root or stun holds the character the moment it lands, not when the queued rebase gets to it: the body
             // would otherwise keep running on the last held input while its client already stands still.
             if (IsRooted)
@@ -2890,6 +2950,7 @@ namespace ZoneEngine_New.Core.Entities
             ApplyBuffStatBonuses(Stats);
 
             CombatRestricted = HasCombatRestriction;
+            IsStunned = HasBuffFunction(FunctionType.Stun);
 
             // Every buff change rebases, so a root landing stops the character here.
             if (IsRooted)

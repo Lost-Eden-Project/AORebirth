@@ -33,6 +33,10 @@ namespace ZoneEngine_New.Core.Inventory
             ArgumentNullException.ThrowIfNull(item);
             ArgumentNullException.ThrowIfNull(stats);
 
+            // Worn where its PlayShiftRequirements fail: equipped, but it adds nothing.
+            if (item.PlayshiftSuppressed)
+                return;
+
             // The client re-applies only OnWear functions at the over-equipped level (Gamecode.dll FUN_1004b624).
             Dictionary<EventType, List<ItemSpell>> spells = item.SpellList;
             if (spells.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear))

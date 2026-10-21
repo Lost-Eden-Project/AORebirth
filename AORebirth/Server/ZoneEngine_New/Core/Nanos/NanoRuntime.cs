@@ -699,6 +699,7 @@ namespace ZoneEngine_New.Core.Nanos
             => new()
             {
                 CasterIsDead = caster.IsDead,
+                CasterIsStunned = caster.IsStunned,
                 CasterIsCasting = caster.IsCastingNano,
                 CasterIsRecharging = caster.IsInNanoRecharge(nowUtc),
                 NanoLineLocked = spell.NanoStrain > 0 && caster.NanoLineLocks.IsLocked(spell.NanoStrain, nowUtc),

@@ -107,7 +107,12 @@ namespace ZoneEngine_New.Core.Inventory
                 Quality = incoming.Quality,
                 Count = incoming.StackCount
             });
-            player.Session.Send(new CharacterActionMessage
+            SendJoin(player, page, targetSlot, clientSlot);
+        }
+
+        /// <summary>The JoinItems that folds the copy the client parked at <paramref name="clientSlot"/> into <paramref name="targetSlot"/>.</summary>
+        public static void SendJoin(Player player, Container page, int targetSlot, int clientSlot)
+            => player.Session?.Send(new CharacterActionMessage
             {
                 Identity = player.Identity,
                 Action = CharacterActionType.JoinItems,
@@ -115,7 +120,6 @@ namespace ZoneEngine_New.Core.Inventory
                 Parameter1 = (int)page.Identity.Type,
                 Parameter2 = clientSlot
             });
-        }
 
         /// <summary>
         /// Wire value for an inventory Count (a 16-bit field): stacks up to <see cref="MaxStackCount"/> go out as

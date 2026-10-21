@@ -62,6 +62,13 @@
         "tradeskillXpPerQl": {
           "type": "integer"
         },
+        "teamMemberPercent": {
+          "description": "Percent of the team kill share each nearby member gets, by member count (entry 0 = 1 member; larger teams use the last entry). NOT correct: a stand-in until live's team XP rule is known.",
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
         "caps": {
           "type": "object",
           "properties": {

@@ -104,8 +104,10 @@ namespace AORebirth.Enums
         ItemTextureOverride = 0x1 << 15,
 
         /// <summary>
+        /// The item is disabled: worn, but none of its effects are active (a PlayShiftRequirements criterion is not met
+        /// where the wearer stands). Sent in the item's inventory slot flags.
         /// </summary>
-        Locked = 0x1 << 6,
+        Disabled = 0x1 << 6,
 
         /// <summary>
         /// </summary>

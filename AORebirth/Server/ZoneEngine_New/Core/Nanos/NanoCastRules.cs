@@ -19,6 +19,9 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>Start-only: the target already runs a stronger nano of the same strain (a better root, buff, ...).</summary>
         BetterNanoRunning,
+
+        /// <summary>The caster is stunned: no casting, at the start or when a running bar finishes.</summary>
+        CasterStunned,
     }
 
     /// <summary>
@@ -33,6 +36,8 @@ namespace ZoneEngine_New.Core.Nanos
         {
             if (attempt.CasterIsDead)
                 return NanoCastRefusal.CasterDead;
+            if (attempt.CasterIsStunned)
+                return NanoCastRefusal.CasterStunned;
             if (attempt.CasterIsCasting)
                 return NanoCastRefusal.AlreadyCasting;
             if (attempt.CasterIsRecharging)
@@ -57,6 +62,7 @@ namespace ZoneEngine_New.Core.Nanos
         public static string Describe(NanoCastRefusal refusal) => refusal switch
         {
             NanoCastRefusal.CasterDead => "You cannot cast nano programs while dead.",
+            NanoCastRefusal.CasterStunned => "You cannot cast nano programs while stunned.",
             NanoCastRefusal.AlreadyCasting => "You are already casting a nano program.",
             NanoCastRefusal.Recharging => "Your nano programs are still recharging.",
             NanoCastRefusal.NotUploaded => "You do not have that nano program uploaded.",
@@ -75,6 +81,8 @@ namespace ZoneEngine_New.Core.Nanos
     public readonly struct NanoCastAttempt
     {
         public bool CasterIsDead { get; init; }
+
+        public bool CasterIsStunned { get; init; }
 
         public bool CasterIsCasting { get; init; }
 

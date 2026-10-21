@@ -606,11 +606,11 @@ namespace ZoneEngine_New.Core.Trade
             int initiatorCredits = session.InitiatorOffer.Credits;
             int partnerCredits = session.PartnerOffer.Credits;
             bool durable = false;
+            var deliveries = new List<Delivery>();
             try
             {
                 _flush.WithExclusivePlayers(initiator, partner, () =>
                 {
-                    var deliveries = new List<Delivery>();
                     PlanDeliveries(session.InitiatorOffer.Items.Values, partner, deliveries);
                     PlanDeliveries(session.PartnerOffer.Items.Values, initiator, deliveries);
                     int initiatorCash = checked(initiator.Stats.GetOrZero(CharacterStat.Cash) - initiatorCredits + partnerCredits);
@@ -622,8 +622,6 @@ namespace ZoneEngine_New.Core.Trade
                     ApplyDeliveries(deliveries);
                     SetCash(initiator, initiatorCash);
                     SetCash(partner, partnerCash);
-                    foreach (Delivery delivery in deliveries)
-                        SendDelivery(delivery);
                 });
             }
             catch (Exception exception)
@@ -640,6 +638,9 @@ namespace ZoneEngine_New.Core.Trade
 
             SendCompleteClose(initiator, partner);
             SendCompleteClose(partner, initiator);
+            // After the Complete frames: the client moves the other side's items in on them (see SendTradeDelivery).
+            foreach (Delivery delivery in deliveries)
+                SendTradeDelivery(delivery);
             SendSocialStatus(initiator, 0);
             SendSocialStatus(partner, 0);
 
@@ -736,6 +737,26 @@ namespace ZoneEngine_New.Core.Trade
                 if (delivery.Page.Identity.Type == IdentityType.OverflowWindow)
                     delivery.Receiver.Inventory.NoteOverflowArrival(delivery.Item);
             }
+        }
+
+        /// <summary>
+        /// A player trade's delivery. Live sends no grant: on the Complete frames the receiving client moves the items the
+        /// other side rendered into its pane (TradeRender) into its own first free slots itself (capture
+        /// 2026-10-21T20:04:28Z and 20:04:35Z: Complete pair, then only the social status, no AddTemplate). An AddTemplate
+        /// on top made the client add the item from it and keep the rendered copy in the partner's trade pane, so the next
+        /// trade with that player showed it again. A stack merge still needs its JoinItems to fold the copy the client
+        /// placed. Overflow arrivals keep their overflow grant.
+        /// </summary>
+        static void SendTradeDelivery(Delivery delivery)
+        {
+            if (delivery.MergeTarget != null)
+            {
+                InventoryStacking.SendJoin(delivery.Receiver, delivery.Page, delivery.MergeSlot, delivery.Slot);
+                return;
+            }
+
+            if (delivery.Page.Identity.Type == IdentityType.OverflowWindow)
+                SendGrant(delivery.Receiver, delivery.Item, delivery.Page);
         }
 
         static void SendDelivery(Delivery delivery)

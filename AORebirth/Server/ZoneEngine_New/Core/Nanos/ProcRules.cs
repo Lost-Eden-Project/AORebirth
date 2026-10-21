@@ -41,13 +41,18 @@ namespace ZoneEngine_New.Core.Nanos
 
             if (holder is Player player && player.Inventory.IsHydrated)
             {
+                // Items a playshift requirement holds off proc nothing.
                 foreach (Item item in player.Inventory.Armor.Content.Values)
-                    Add(item.SpellList, EventType.OnWear, kind, ref procs);
+                    if (!item.PlayshiftSuppressed)
+                        Add(item.SpellList, EventType.OnWear, kind, ref procs);
                 foreach (Item item in player.Inventory.Implant.Content.Values)
-                    Add(item.SpellList, EventType.OnWear, kind, ref procs);
+                    if (!item.PlayshiftSuppressed)
+                        Add(item.SpellList, EventType.OnWear, kind, ref procs);
                 // Wielded weapons: defensive procs from any of them, offensive ones from the weapon that hit.
                 foreach (Item item in player.Inventory.Equipment.Content.Values)
                 {
+                    if (item.PlayshiftSuppressed)
+                        continue;
                     if (kind == FunctionType.AddDefProc || ReferenceEquals(item, weapon))
                         Add(item.SpellList, EventType.OnWear, kind, ref procs);
                 }
