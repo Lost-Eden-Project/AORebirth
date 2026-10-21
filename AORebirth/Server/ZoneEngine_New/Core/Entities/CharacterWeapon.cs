@@ -134,6 +134,19 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
+        /// A swing from this weapon would land now: a target, in this weapon's range and in sight, and not a ranged
+        /// weapon on the move.
+        /// </summary>
+        public bool CanHitNow()
+        {
+            Character? wielder = Wielder;
+            Character? target = wielder?.TryResolveFightingTarget();
+            return wielder != null && target != null
+                && !(IsRanged() && wielder.Motor.IsMoving)
+                && IsInRange() && wielder.HasLineOfSightTo(target);
+        }
+
+        /// <summary>
         /// Advances the attack/recharge clock. Returns true when this tick consumed a swing.
         /// </summary>
         public bool Tick(double deltaTime)

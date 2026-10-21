@@ -83,8 +83,10 @@ namespace ZoneEngine_New.Core.Helpers
             if (!attackerIsPlayer)
                 return armed?.VisualHand != null ? (int)WeaponSlots.Righthand : 0;
 
-            // Player synthetic fist / PhysicalInit: slot 0.
-            if (IsUnarmedPresentation(armed, weapon))
+            // Only the server-made fists swing from slot 0. A real martial arts weapon (PhysicalInit, e.g. X1-R4 Viral
+            // Force-Blades) swings from its hand like any weapon: live combined-MA weapons hit from slots 6/8 (capture
+            // 2026-10-05T13:34:38Z..13:34:45Z).
+            if (IsServerFist(armed, weapon))
                 return 0;
 
             return logicalSlot switch
@@ -136,15 +138,16 @@ namespace ZoneEngine_New.Core.Helpers
             if (armed != null && armed.SawTag != 0)
                 return false;
 
-            // Synthetic MA fists / unarmed stay AttackInfo-only. A real weapon that also carries Martial Arts (a combined-MA
-            // weapon such as the Notum-Infused Silvertail Dagger, MA 225) still swings as a weapon, so the client needs its
-            // WIFU like any other; without it the client only ever plays the MA attack.
-            if ((armed != null && armed.IsSyntheticFist)
-                || IsUnarmedPresentation(armed, item))
-                return false;
-
-            return true;
+            // Server-made fists stay AttackInfo-only. Every real weapon in a hand gets its WIFU, a martial arts one
+            // (PhysicalInit) included: the client builds a hand's attack timer from it, so without one it shows a single
+            // martial arts bar and treats the character as unarmed. Live sends a WIFU for every carried weapon
+            // (capture 2026-10-06T21:00:38Z).
+            return !IsServerFist(armed, item);
         }
+
+        /// <summary>A fist the server arms itself (no weapon, or the combined-MA fist): no inventory item behind it.</summary>
+        static bool IsServerFist(CharacterWeapon? armed, Item? weapon)
+            => (armed != null && armed.IsSyntheticFist) || weapon == null || weapon.InstanceId <= 0;
 
         /// <summary>True when the item carries a non-zero weapon mesh on either hand or the shared stat.</summary>
         public static bool HasVisibleWeaponMesh(Item? item)

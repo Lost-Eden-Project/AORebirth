@@ -1738,23 +1738,28 @@ namespace ZoneEngine_New.Core.Entities
             if (IsCastingNano)
                 return;
 
-            // A full bar waiting on range or LOS keeps the one charge slot: the next weapon charges only after it swings.
-            // Letting the others charge meanwhile fills every bar out of range, and they all land as one walks in.
-            // The client charges one bar at a time and holds recharges while one charges (Gamecode.dll FUN_1003d4bd).
+            // Full bars waiting on range or LOS still Tick so they swing the moment they can.
+            bool waiting = false;
             foreach (CharacterWeapon weapon in Weapons.Values)
             {
                 if (weapon == null || !weapon.IsFullyCharged)
                     continue;
-                weapon.Tick(deltaTime);
-                return;
+                if (weapon.Tick(deltaTime))
+                    return;
+                waiting = true;
             }
 
+            // While a full bar waits, only a weapon that could land a hit now may charge. Out of range on every weapon,
+            // the bars would otherwise all fill and land back to back as one walks in; a weapon in range (a gun while the
+            // fist is out of reach) must still cycle. The client charges one bar at a time and holds recharges while one
+            // charges (Gamecode.dll FUN_1003d4bd).
             CharacterWeapon? charging = null;
             foreach (CharacterWeapon weapon in Weapons.Values)
             {
                 if (weapon != null
                     && weapon.State == WeaponState.Attacking
-                    && !weapon.IsFullyCharged)
+                    && !weapon.IsFullyCharged
+                    && (!waiting || weapon.CanHitNow()))
                 {
                     charging = weapon;
                     break;
