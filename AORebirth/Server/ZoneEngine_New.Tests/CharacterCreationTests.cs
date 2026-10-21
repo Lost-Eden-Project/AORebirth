@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.Json.Nodes;
 using AORebirth.Core.GameData;
 using AORebirth.Database.Dao;
+using AORebirth.Enums;
 using AORebirth.Interfaces.Persistence.CharacterCreation;
 using LoginEngine.CharacterCreation;
 using LoginEngine.Packets;
@@ -95,6 +96,42 @@ public sealed class CharacterCreationTests
         Assert.AreSame(starter, NewCharacterStats.Current);
     }
 
+    [TestMethod]
+    public void AllExpansionsContainsEveryDefinedIndividualFlag()
+    {
+        int[] flags = Enum.GetValues<Expansions>().Where(value => value != Expansions.All)
+            .Select(value => (int)value).ToArray();
+        Assert.AreEqual(11, flags.Length);
+        Assert.IsTrue(flags.All(value => value > 0 && (value & (value - 1)) == 0));
+        Assert.AreEqual(2047, (int)Expansions.All);
+        Assert.AreEqual(flags.Aggregate(0, (all, flag) => all | flag), (int)Expansions.All);
+    }
+
+    [DataTestMethod]
+    [DataRow("0", "0")]
+    [DataRow("127", "1")]
+    [DataRow("2047", "511")]
+    public void ConsoleAccountCreationAlwaysGrantsAllExpansionsAndPreservesOtherFields(string expansions, string gm)
+    {
+        string[] arguments = { "adduser", "ConsoleFixture", "Console-Password-123!", "8", expansions, gm,
+            "console@example.test", "First", "Last" };
+        Type program = typeof(CharacterName).Assembly.GetType("LoginEngine.Program", throwOnError: true)!;
+        MethodInfo create = program.GetMethod("CreateAccountData", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var account = (DBLoginData)create.Invoke(null, new object[] { arguments })!;
+
+        Assert.AreEqual((int)Expansions.All, account.Expansions);
+        Assert.AreEqual(arguments[1], account.Username);
+        Assert.AreEqual(8, account.AllowedCharacters);
+        Assert.AreEqual(arguments[6], account.Email);
+        Assert.AreEqual(arguments[7], account.FirstName);
+        Assert.AreEqual(arguments[8], account.LastName);
+        Assert.AreEqual(int.Parse(gm), account.GM);
+        Assert.AreEqual(0, account.Flags);
+        Assert.AreEqual(0, account.AccountFlags);
+        Assert.IsFalse(string.IsNullOrEmpty(account.Password));
+        Assert.AreNotEqual(arguments[2], account.Password);
+    }
+
     [DataTestMethod]
     [DataRow("Stats")]
     [DataRow("Breeds")]
@@ -159,7 +196,7 @@ public sealed class CharacterCreationTests
         AccountName = "creation_fixture", Name = "CreationFixture", Breed = breed, Profession = 1,
         Gender = 0, HeadMesh = 1, MonsterScale = 100, Fatness = 0
     };
-    static DBLoginData Account() => new DBLoginData { Id = 1, Username = "creation_fixture", Expansions = 127 };
+    static DBLoginData Account() => new DBLoginData { Id = 1, Username = "creation_fixture", Expansions = (int)Expansions.All };
     static CharacterStartProfessionPackage Package() => new CharacterStartProfessionPackage(1, "fixture", "test",
         Array.Empty<CharacterStartPackageItem>(), Array.Empty<int>());
     static System.Data.IDbConnection RefuseConnection() => throw new AssertFailedException("Invalid creation opened a database connection.");

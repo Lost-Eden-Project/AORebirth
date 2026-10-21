@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using AORebirth.Core.GameData;
 using AORebirth.Database.Dao;
 using AORebirth.Database.Domain.Characters;
+using AORebirth.Enums;
 using AORebirth.Interfaces.Persistence.CharacterCreation;
 using LoginEngine.CharacterCreation;
 using LoginEngine.Packets;
@@ -27,7 +28,7 @@ static class CharacterCreationSmoke
             FixtureSql.Execute(connection, File.ReadAllText(Path.Combine(tables, name + ".sql")));
         FixtureSql.Execute(connection,
             "INSERT INTO login (Id,CreationDate,Email,FirstName,LastName,Username,Password,Expansions,GM) "
-            + "VALUES (1,'2026-01-01','','','','creation_fixture','not-an-authentication-test',127,0)");
+            + "VALUES (1,'2026-01-01','','','','creation_fixture','not-an-authentication-test'," + (int)Expansions.All + ",0)");
     }
 
     public static string RepositoryRoot()
@@ -46,7 +47,7 @@ static class CharacterCreationSmoke
             // The real default path is exercised; private/application GameData is never read.
             Environment.SetEnvironmentVariable(GameDataPaths.EnvironmentVariableName, null);
             NewCharacterStats starter = NewCharacterStats.Current;
-            var account = new DBLoginData { Id = 1, Username = AccountName, Expansions = 127, GM = 0 };
+            var account = new DBLoginData { Id = 1, Username = AccountName, Expansions = (int)Expansions.All, GM = 0 };
             var persistence = new MySqlCharacterPersistenceDao(() => fixture.Open());
             foreach (int breed in new[] { 1, 2, 3, 4 })
             {
@@ -68,6 +69,8 @@ static class CharacterCreationSmoke
                     && stats[(int)CharacterStat.Level] == starter.Stats.Single(stat => stat.Stat == (int)CharacterStat.Level).Value
                     && stats[(int)CharacterStat.Sex] == character.Gender && stats[(int)CharacterStat.Expansion] == account.Expansions,
                     "creation-identity-stats-breed-" + breed);
+                Require(stats[(int)CharacterStat.Expansion] == (int)Expansions.All,
+                    "creation-all-expansions-reloaded-breed-" + breed);
                 foreach (var stat in starter.Stats)
                     Require(stats[stat.Stat] == stat.Value, "creation-authored-stat-" + stat.Stat);
                 int[] abilityIds = { 16, 21, 20, 19, 18, 17 };

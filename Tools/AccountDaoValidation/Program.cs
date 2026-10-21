@@ -25,7 +25,8 @@ namespace AORebirth.Tools.AccountDaoValidation
 
         private static int Main(string[] args)
         {
-            if (args.Length != 1 || args[0] != "--run-disposable"
+            bool expansionsOnly = args.Length == 1 && args[0] == "--run-expansion-entitlements";
+            if (args.Length != 1 || (!expansionsOnly && args[0] != "--run-disposable")
                 || Environment.GetEnvironmentVariable("AO_REBIRTH_ALLOW_DISPOSABLE_ACCOUNT_DAO_VALIDATION") != "1")
             {
                 Console.Error.WriteLine("REFUSED: exact disposable argument and wrapper acknowledgement required.");
@@ -48,36 +49,47 @@ namespace AORebirth.Tools.AccountDaoValidation
                         + "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='login' AND COLUMN_NAME='Username'").Single();
                     Console.WriteLine("ACCOUNT_DAO_FIXTURE_USERNAME_COLLATION=" + collation);
                 }
-                category = "contract";
-                ContractChecks();
-                var dao = NewDao(application);
-                category = "reads";
-                ReadChecks(dao);
-                category = "create";
-                CreateChecks(dao);
-                category = "resolution";
-                ResolutionChecks(dao);
-                foreach (bool affected in new[] { false, true })
+                if (expansionsOnly)
                 {
-                    string connectionString = new MySqlConnectionStringBuilder(application)
-                        { UseAffectedRows = affected }.ConnectionString;
-                    category = affected ? "changed-rows" : "matched-rows";
-                    MutationChecks(connectionString, affected);
-                    LegacyGmChecks(connectionString, affected);
+                    category = "expansion-entitlements";
+                    ExpansionEntitlementMigrationChecks();
+                    Console.WriteLine("EXPANSION_ENTITLEMENT_CHECKS=" + checks.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("EXPANSION_ENTITLEMENT_MIGRATION=PASS PRODUCTION_CONTACT=NO");
+                    result = 0;
                 }
-                category = "concurrency";
-                ConcurrencyChecks(dao);
-                category = "faults";
-                SuccessfulOwnershipChecks();
-                FailureChecks();
-                category = "mock-defensive";
-                SyntheticChecks();
-                category = "consumer-adapter";
-                ConsumerAdapterChecks();
-                Console.WriteLine("ACCOUNT_DAO_TEST_MODE=ISOLATED_PRODUCTION_AND_COMPATIBILITY_ADAPTER_SOURCES");
-                Console.WriteLine("ACCOUNT_DAO_CHECKS=" + checks.ToString(CultureInfo.InvariantCulture));
-                Console.WriteLine("ACCOUNT_DAO_MYSQL_INTEGRATION=PASS");
-                result = 0;
+                else
+                {
+                    category = "contract";
+                    ContractChecks();
+                    var dao = NewDao(application);
+                    category = "reads";
+                    ReadChecks(dao);
+                    category = "create";
+                    CreateChecks(dao);
+                    category = "resolution";
+                    ResolutionChecks(dao);
+                    foreach (bool affected in new[] { false, true })
+                    {
+                        string connectionString = new MySqlConnectionStringBuilder(application)
+                            { UseAffectedRows = affected }.ConnectionString;
+                        category = affected ? "changed-rows" : "matched-rows";
+                        MutationChecks(connectionString, affected);
+                        LegacyGmChecks(connectionString, affected);
+                    }
+                    category = "concurrency";
+                    ConcurrencyChecks(dao);
+                    category = "faults";
+                    SuccessfulOwnershipChecks();
+                    FailureChecks();
+                    category = "mock-defensive";
+                    SyntheticChecks();
+                    category = "consumer-adapter";
+                    ConsumerAdapterChecks();
+                    Console.WriteLine("ACCOUNT_DAO_TEST_MODE=ISOLATED_PRODUCTION_AND_COMPATIBILITY_ADAPTER_SOURCES");
+                    Console.WriteLine("ACCOUNT_DAO_CHECKS=" + checks.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("ACCOUNT_DAO_MYSQL_INTEGRATION=PASS");
+                    result = 0;
+                }
             }
             catch (Exception exception)
             {

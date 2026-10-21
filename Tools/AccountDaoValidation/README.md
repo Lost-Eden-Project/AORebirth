@@ -6,6 +6,23 @@ Run from the chosen AORebirth checkout using the dedicated CMD wrapper:
 Tools\run_account_dao_validation.cmd
 ```
 
+For only the all-expansion data/default migration regression, use the same
+disposable fixture:
+
+```cmd
+Tools\run_account_dao_validation.cmd --expansion-entitlements
+```
+
+This mode executes the exact checked-in
+`20261021_all_expansion_entitlements.sql` through MySqlConnector against
+synthetic accounts and characters. It verifies the 106-account/121-linked-
+character correction, four untouched archived characters, exact preservation
+of unrelated account fields and stat/inventory/equipment/progression rows,
+fresh DAO stat reloads, the 2047 column default, and zero data changes on rerun.
+A missing linked expansion stat must fail before writes; an injected real stat
+UPDATE failure must roll the preceding account UPDATE back. No application
+database, production data, game engine, or AO client is used.
+
 This suite always compiles the actual account contract/implementation and the
 current LoginDataDao compatibility adapter, CharacterDao, generic mapper and required
 dependencies from this checkout. It does not replace the compatibility adapter with a mock.

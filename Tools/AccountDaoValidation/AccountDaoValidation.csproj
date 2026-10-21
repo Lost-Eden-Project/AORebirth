@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <LangVersion>7.3</LangVersion>
+    <LangVersion>8.0</LangVersion>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
   <ItemGroup>
@@ -44,6 +44,14 @@
     <Compile Include="../../SharedBuild/Compatibility/SystemDataLinqBinary.Portable.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Database/DatabaseDaoFactory.cs" />
     <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Core/Encryption/PasswordHash.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Core/Encryption/LoginEncryption.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Core/Encryption/BigInteger.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/Expansions.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.AccountBroker/AccountBrokerService.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.AccountBroker/AccountBrokerModels.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.AccountBroker/AccountBrokerException.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.AccountBroker/PasswordPolicy.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.AccountBroker/UsernamePolicy.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.79" />

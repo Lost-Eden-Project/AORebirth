@@ -84,6 +84,13 @@ namespace AORebirth.Enums
 
         /// <summary>
         /// </summary>
-        PMVObsidianEdition = 0x1 << 10
+        PMVObsidianEdition = 0x1 << 10,
+
+        /// <summary>
+        /// Every expansion and entitlement supported by AORebirth.
+        /// </summary>
+        All = NotumWars | ShadowLands | ShadowLandsPreOrder
+            | AlienInvasion | AlienInvasionPreOrder | LostEden | LostEdenPreOrder
+            | LegacyOfTheXan | LegacyOfTheXanPreOrder | Mail | PMVObsidianEdition
     }
 }
