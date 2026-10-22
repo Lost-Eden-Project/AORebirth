@@ -447,3 +447,8 @@ production database operation. See BUILD_ACCEPTANCE_BOUNDARY.md.
 NPC dialogue: Knubot scripts (`GameData/Knubot/**/*.json`, `ZoneEngine_New/Core/Knubot`) drive all NPC
 conversations; an NPC talks only when a script names it. The Arete, garden vendor, Nascence, Subway and
 Zyvania NPCs have no scripts yet and are silent.
+
+NPC scripting: `GameData/NpcScripts/*.json` programs (`ZoneEngine_New/Core/NpcScripts`) give NPCs
+server-side behaviour (routes with stops, emotes, vicinity speech, world items, gfx, health and nano
+triggers). Programs are compiled at load and bound to NPCs by hash, spawn point key or placed-NPC key
+inside the same files; an NPC without a binding runs nothing. Design: `docs/architecture/NPC_SCRIPTING_DESIGN.md`.

@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "NpcScripts.schema.json",
+  "title": "NPC scripts (GameData/NpcScripts/*.json): a program and its bindings, or a .bindings.json file.",
+  "description": "Hand-maintained next to ZoneEngine_New/Core/NpcScripts/NpcScriptCompiler.cs, which is the authority; the compiler reports anything this schema lets through. Design: docs/architecture/NPC_SCRIPTING_DESIGN.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Program id, unique over the folder. Bindings files name it in Script."
+    },
+    "Script": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Bindings file only (<name>.bindings.json): the program these bindings run."
+    },
+    "Params": {
+      "type": "object",
+      "description": "Parameters every binding must supply in Args, by name. Ops refer to them as $Name; Vector3[] params as $Name[i] or $Name[next].",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["Vector3[]", "Vector3", "ItemHash", "SocialAction", "Int", "Gfx", "Text"]
+      }
+    },
+    "Handlers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/handler" }
+    },
+    "Bindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/binding" }
+    }
+  },
+  "anyOf": [
+    { "required": ["Id", "Handlers"] },
+    { "required": ["Bindings"] }
+  ],
+  "$defs": {
+    "trigger": {
+      "type": "string",
+      "enum": ["Spawned", "Arrived", "Stuck", "HealthBelow", "Death", "Reset", "CombatStart", "CombatEnd", "NanoEnded", "Timer", "Used"]
+    },
+    "vector3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "[x, y, z] in playfield metres."
+    },
+    "range": {
+      "description": "A fixed number or [min, max], picked evenly.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      ]
+    },
+    "paramRef": {
+      "type": "string",
+      "pattern": "^\\$[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "socialAction": {
+      "description": "A SocialAction enum name (full or its short tail, e.g. Shrug for GesturesShrug), an id 1..71, or a $SocialAction param.",
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 71 },
+        { "type": "string", "minLength": 1 }
+      ]
+    },
+    "gfxId": {
+      "description": "A gfx template id (never 49999), or a $Gfx param. The template's category must match the anchor: character-anchored (On Self) or position-anchored (At, Offset, From/To).",
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "$ref": "#/$defs/paramRef" }
+      ]
+    },
+    "moveTarget": {
+      "description": "[x, y, z], \"Home\", \"$Vector3Param\", \"$Vector3ArrayParam[i]\" or \"$Vector3ArrayParam[next]\" (advances the NPC's waypoint cursor).",
+      "oneOf": [
+        { "$ref": "#/$defs/vector3" },
+        { "type": "string", "pattern": "^(Home|\\$[A-Za-z_][A-Za-z0-9_]*(\\[(next|[0-9]+)\\])?)$" }
+      ]
+    },
+    "ops": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/op" }
+    },
+    "op": {
+      "type": "object",
+      "description": "One verb per op.",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "Label": { "type": "string", "minLength": 1, "description": "A Goto / If target within this handler." },
+        "Wait": { "$ref": "#/$defs/range", "description": "Blocking delay in ms, at least 100." },
+        "WalkTo": { "$ref": "#/$defs/moveTarget", "description": "Blocking walk at walking pace; raises Arrived or Stuck." },
+        "RunTo": { "$ref": "#/$defs/moveTarget", "description": "Blocking walk at running pace; raises Arrived or Stuck." },
+        "Emote": {
+          "description": "Plays a social animation from the NPC and blocks for its duration (default 2000 ms).",
+          "oneOf": [
+            { "$ref": "#/$defs/socialAction" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["Action"],
+              "properties": {
+                "Action": { "$ref": "#/$defs/socialAction" },
+                "DurationMs": { "type": "integer", "minimum": 0 }
+              }
+            }
+          ]
+        },
+        "Say": {
+          "description": "Vicinity chat from the NPC (rate limited to one line per second). Text may be a $Text param.",
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 255 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["Text"],
+              "properties": {
+                "Text": { "type": "string", "minLength": 1, "maxLength": 255 },
+                "Type": { "type": "string", "description": "ChatMessageType name; default Say." }
+              }
+            }
+          ]
+        },
+        "SpawnWorldItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["Item", "LifetimeSeconds"],
+          "properties": {
+            "Item": { "type": "string", "minLength": 1, "description": "An item hash or a $ItemHash param." },
+            "Offset": { "$ref": "#/$defs/vector3", "description": "Relative to the NPC's position." },
+            "LifetimeSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+            "Quality": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "Gfx": {
+          "description": "GfxTrigger to the NPC's observers. A bare id plays on the NPC (type 2).",
+          "oneOf": [
+            { "$ref": "#/$defs/gfxId" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["Id"],
+              "properties": {
+                "Id": { "$ref": "#/$defs/gfxId" },
+                "On": { "type": "string", "enum": ["Self"], "description": "With At: type 4 (bound to the NPC at a position)." },
+                "At": { "$ref": "#/$defs/vector3", "description": "Type 1 at a world position." },
+                "Offset": { "$ref": "#/$defs/vector3", "description": "Type 1 at the NPC's position plus this." },
+                "From": { "$ref": "#/$defs/vector3", "description": "With To: type 3 between two positions." },
+                "To": { "$ref": "#/$defs/vector3" }
+              }
+            }
+          ]
+        },
+        "Despawn": { "type": "boolean", "description": "The NPC leaves the world as a GM despawn would." },
+        "SetStat": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["Stat", "Value"],
+          "properties": {
+            "Stat": { "type": "string", "description": "A CharacterStat enum name." },
+            "Value": { "type": "integer" }
+          }
+        },
+        "SetVar": { "$ref": "#/$defs/varOp" },
+        "AddVar": { "$ref": "#/$defs/varOp" },
+        "If": {
+          "type": "object",
+          "description": "Jumps to Goto when the condition holds. One of: Var with Eq/Ne/Lt/Gt, HealthBelow, HasTarget, Chance.",
+          "additionalProperties": false,
+          "required": ["Goto"],
+          "properties": {
+            "Goto": { "type": "string", "minLength": 1 },
+            "Var": { "type": "integer", "minimum": 0, "maximum": 7 },
+            "Eq": { "type": "integer" },
+            "Ne": { "type": "integer" },
+            "Lt": { "type": "integer" },
+            "Gt": { "type": "integer" },
+            "HealthBelow": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "HasTarget": { "type": "boolean" },
+            "Chance": { "type": "integer", "minimum": 0, "maximum": 100 }
+          }
+        },
+        "Goto": { "type": "string", "minLength": 1 },
+        "Random": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ops" },
+          "description": "Runs one of the blocks, picked evenly."
+        },
+        "Restart": { "$ref": "#/$defs/trigger", "description": "Ends this handler and starts the first handler of that trigger." },
+        "ReleaseMovement": { "type": "boolean", "description": "Gives movement back to patrol / wander / idle." },
+        "End": { "type": "boolean" }
+      }
+    },
+    "varOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Var", "Value"],
+      "properties": {
+        "Var": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "Value": { "type": "integer" }
+      }
+    },
+    "handler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["On", "Do"],
+      "properties": {
+        "On": { "$ref": "#/$defs/trigger" },
+        "Percent": { "type": "integer", "minimum": 1, "maximum": 100, "description": "HealthBelow: fires once per life when health drops to this percent or below." },
+        "Waypoint": { "type": "integer", "minimum": 0, "description": "Arrived / Stuck: only this waypoint index; omit for any." },
+        "NanoId": { "type": "integer", "minimum": 0, "description": "NanoEnded: only this nano; omit or 0 for any." },
+        "EveryMs": { "$ref": "#/$defs/range", "description": "Timer: period in ms (at least 100), re-armed after each run." },
+        "Once": { "type": "boolean", "default": false },
+        "CooldownMs": { "type": "integer", "minimum": 0, "default": 0 },
+        "ChancePercent": { "type": "integer", "minimum": 0, "maximum": 100, "default": 100 },
+        "Interrupts": { "type": "boolean", "default": false, "description": "Preempts a running handler (which resumes afterwards) instead of being dropped." },
+        "Priority": { "type": "integer", "minimum": 0, "maximum": 255, "default": 0, "description": "Among handlers of the same trigger, higher is tried first." },
+        "Do": { "$ref": "#/$defs/ops" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "description": "Exactly one target: Hash (every NPC of that template, optionally on one Playfield), SpawnPoint (HASH@x,y,z[#n], needs Playfield) or NpcKey (a PlayfieldContent Npcs.json Key, needs Playfield).",
+      "additionalProperties": false,
+      "properties": {
+        "Playfield": { "type": "integer" },
+        "Hash": { "type": "string", "minLength": 1 },
+        "SpawnPoint": { "type": "string", "pattern": "^[^@\\s]+@-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?(#[0-9]+)?$" },
+        "NpcKey": { "type": "string", "minLength": 1 },
+        "Args": {
+          "type": "object",
+          "description": "One value per program Param: Vector3[] as [[x,y,z], ...], Vector3 as [x,y,z], ItemHash and Text as strings, SocialAction as name or id, Int and Gfx as integers.",
+          "additionalProperties": true
+        },
+        "Movement": {
+          "type": "object",
+          "description": "Plain movement without a program (or alongside one): the brain's existing patrol or wander.",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 1,
+          "properties": {
+            "Patrol": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["Waypoints"],
+              "properties": {
+                "Waypoints": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/vector3" } },
+                "Run": { "type": "boolean", "default": false }
+              }
+            },
+            "Wander": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["Radius"],
+              "properties": {
+                "Radius": { "type": "number", "exclusiveMinimum": 0 },
+                "MinPauseSeconds": { "type": "number", "minimum": 0, "default": 3 },
+                "MaxPauseSeconds": { "type": "number", "minimum": 0, "default": 12 }
+              }
+            }
+          }
+        },
+        "Provenance": { "type": "string", "description": "Where the data came from, e.g. capture:<who> <date>." }
+      },
+      "oneOf": [
+        { "required": ["Hash"] },
+        { "required": ["SpawnPoint", "Playfield"] },
+        { "required": ["NpcKey", "Playfield"] }
+      ]
+    }
+  }
+}

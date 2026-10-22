@@ -1020,6 +1020,9 @@ namespace ZoneEngine_New.Core.Nanos
 
             if (owner is not Player)
                 owner.MarkRebaseDirty();
+
+            // NpcScripts: a program may react to one of its nanos running out.
+            (owner as NpcCharacter)?.Scripts?.Raise(NpcScripts.NpcScriptTrigger.NanoEnded, buff.Id);
         }
 
         static void AnnounceBuffRemoved(Character owner, Buff buff)

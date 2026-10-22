@@ -70,6 +70,16 @@ namespace ZoneEngine_New.Core.Entities
 
         public NpcBrain? Brain { get; private set; }
 
+        /// <summary>The NpcScripts program this NPC runs; null for the (vast) majority that run none.</summary>
+        public NpcScripts.NpcScriptRunner? Scripts { get; private set; }
+
+        public void AttachScript(NpcScripts.NpcScriptRunner runner)
+        {
+            ArgumentNullException.ThrowIfNull(runner);
+            Scripts?.OnDespawn();
+            Scripts = runner;
+        }
+
         /// <summary>The pet state when this NPC is someone's summoned pet; null for ordinary NPCs.</summary>
         public Pets.PetController? Pet { get; private set; }
 
@@ -139,6 +149,9 @@ namespace ZoneEngine_New.Core.Entities
         {
             ArgumentNullException.ThrowIfNull(player);
 
+            if (Scripts is { } scripts && !IsDead && player.Playfield == Playfield && GetEdgeDistanceTo(player) <= LootableDynel.OpenRange)
+                scripts.Raise(NpcScripts.NpcScriptTrigger.Used);
+
             VendingMachine? shop = Shop;
             if (shop == null || IsDead || Playfield == null || player.Playfield == null)
                 return false;
@@ -163,6 +176,8 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             ReleaseForDeath("vendor died");
+            Brain?.ScriptReleaseMovement();
+            Scripts?.Raise(NpcScripts.NpcScriptTrigger.Death);
             base.OnDeath(killer);
         }
 
@@ -293,6 +308,14 @@ namespace ZoneEngine_New.Core.Entities
 
         public override void Tick(double deltaTime)
         {
+            // Before the brain, so a walk the program asks for this tick is seen by this tick's think. A waiting
+            // runner is one compare; a dead NPC still runs its Death handler until the corpse swap takes it.
+            if (Scripts != null)
+            {
+                TickStallWatch.Stage("npc.script", Identity.Instance);
+                Scripts.Tick(Environment.TickCount64);
+            }
+
             if (!IsDead)
                 Brain?.Tick(deltaTime);
 
@@ -306,6 +329,14 @@ namespace ZoneEngine_New.Core.Entities
             // takes a share (NpcBrain.AddThreatFrom).
             if (attacker.IsPlayer || (attacker is NpcCharacter { PetOwner: Player }))
                 Brain?.AddThreatFrom(attacker, hpRemoved);
+
+            // The percent is only computed when the program listens for health thresholds.
+            if (Scripts is { } scripts && scripts.Program.Subscribes(NpcScripts.NpcScriptTrigger.HealthBelow))
+            {
+                int max = Stats.GetOrZero(CharacterStat.MaxHealth);
+                if (max > 0)
+                    scripts.Raise(NpcScripts.NpcScriptTrigger.HealthBelow, (int)Math.Clamp(Stats.GetOrZero(CharacterStat.Health) * 100L / max, 0, 100));
+            }
         }
 
         public override bool IsEvading => Brain?.IsEvading == true;
@@ -326,6 +357,12 @@ namespace ZoneEngine_New.Core.Entities
             SetFightingTarget(Identity.None);
             // Path settle is announced by NpcBrain.StopPathing before OnReset.
             Motor.ClearPath();
+
+            if (Scripts is { } scripts)
+            {
+                scripts.Raise(NpcScripts.NpcScriptTrigger.CombatEnd);
+                scripts.Raise(NpcScripts.NpcScriptTrigger.Reset);
+            }
         }
 
         /// <summary>

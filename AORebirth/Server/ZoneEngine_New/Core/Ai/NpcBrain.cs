@@ -18,6 +18,15 @@ namespace ZoneEngine_New.Core.Ai
     using Vector3 = AORebirth.Core.Vector.Vector3;
     using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
 
+    /// <summary>How a scripted walk ended, read once by the program's runner.</summary>
+    public enum ScriptMoveResult
+    {
+        None = 0,
+        Arrived = 1,
+        Stuck = 2,
+        Interrupted = 3
+    }
+
     public sealed class NpcBrain
     {
         readonly GroveGames.BehaviourTree.BehaviourTree _tree;
@@ -236,6 +245,89 @@ namespace ZoneEngine_New.Core.Ai
                 Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
         }
 
+        // Scripted movement (NpcScripts): a program holds the movement lease while it walks the NPC somewhere. The
+        // tree's scripted-move branch sits after leash and combat, so a fight or a leash takes the lease away; the
+        // runner sees Interrupted and asks again once the NPC is free. The brain stays the only writer of the motor.
+        Vector3? _scriptedDestination;
+        bool _scriptedRun;
+        ScriptMoveResult _scriptedResult;
+
+        public bool ScriptHoldsMovement => _scriptedDestination is not null;
+
+        /// <summary>Walk (or run) to <paramref name="destination"/>; the result is read with <see cref="ConsumeScriptMoveResult"/>.</summary>
+        public void ScriptMoveTo(Vector3 destination, bool run)
+        {
+            ArgumentNullException.ThrowIfNull(destination);
+            if (Npc.IsImmobile || Pet != null)
+            {
+                _scriptedResult = ScriptMoveResult.Arrived;
+                return;
+            }
+
+            _scriptedDestination = new Vector3(destination.x, destination.y, destination.z);
+            _scriptedRun = run;
+            _scriptedResult = ScriptMoveResult.None;
+        }
+
+        /// <summary>The program gives movement back to patrol / wander / idle.</summary>
+        public void ScriptReleaseMovement()
+        {
+            if (_scriptedDestination is null)
+                return;
+
+            _scriptedDestination = null;
+            StopPathing();
+            if (Npc.Motor.State == Movement.MovementState.Walk)
+                Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
+        }
+
+        public ScriptMoveResult ConsumeScriptMoveResult()
+        {
+            ScriptMoveResult result = _scriptedResult;
+            _scriptedResult = ScriptMoveResult.None;
+            return result;
+        }
+
+        /// <summary>One scripted-move think: arrive, or keep pathing at the requested pace.</summary>
+        internal void TickScriptedMove()
+        {
+            if (_scriptedDestination is not Vector3 destination)
+                return;
+
+            if (NpcAiRules.IsNearby(Npc.Position, destination, NpcAiRules.ArriveHomeMeters)
+                || (!Npc.Motor.HasPath && _followAnnounced && _segmentReachesDestination && HasReachedSegmentEnd()))
+            {
+                _scriptedDestination = null;
+                _scriptedResult = ScriptMoveResult.Arrived;
+                StopPathing();
+                return;
+            }
+
+            if (_scriptedRun)
+            {
+                if (Npc.Motor.State == Movement.MovementState.Walk)
+                    Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
+            }
+            else if (Npc.Motor.State != Movement.MovementState.Walk)
+            {
+                Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToWalk);
+            }
+
+            PathTo(destination);
+        }
+
+        /// <summary>Hate, leash or evade took over: the lease is gone; the runner re-requests the walk when free.</summary>
+        void InterruptScriptedMovement()
+        {
+            if (_scriptedDestination is null)
+                return;
+
+            _scriptedDestination = null;
+            _scriptedResult = ScriptMoveResult.Interrupted;
+            if (Npc.Motor.State == Movement.MovementState.Walk)
+                Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
+        }
+
         public HateList Hate { get; }
 
         public bool PatrolEnabled { get; set; }
@@ -317,7 +409,10 @@ namespace ZoneEngine_New.Core.Ai
             // A wanderer drops its stroll and runs as soon as it has anything to fight or flee.
             _wanderedThisThink = false;
             if (!Hate.IsEmpty || _leashing || _evading)
+            {
                 StopWandering();
+                InterruptScriptedMovement();
+            }
 
             TickStallWatch.Stage("brain.tree", Npc.Identity.Instance);
             _tree.Tick((float)deltaTime);
@@ -337,7 +432,10 @@ namespace ZoneEngine_New.Core.Ai
             if (_evading || Npc.IsPacified)
                 return;
             bool newAttacker = !Hate.Contains(identity);
+            bool firstHate = Hate.IsEmpty;
             Hate.Add(identity, amount);
+            if (firstHate)
+                Npc.Scripts?.Raise(NpcScripts.NpcScriptTrigger.CombatStart);
             if (newAttacker)
                 CallForHelp(identity);
         }
@@ -816,6 +914,16 @@ namespace ZoneEngine_New.Core.Ai
                     // the walk home that is stuck, give up on walking and let the caller snap home.
                     if (_stuckWarps >= NpcAiRules.MaxStuckWarps)
                     {
+                        // A scripted walk that cannot go on reports Stuck to its program; nothing to evade from.
+                        if (_scriptedDestination is not null)
+                        {
+                            _stuckWarps = 0;
+                            _scriptedDestination = null;
+                            _scriptedResult = ScriptMoveResult.Stuck;
+                            StopPathing();
+                            return;
+                        }
+
                         // A stroll that cannot go on is just given up; nothing is wrong enough to evade.
                         if (_wanderDestination is not null)
                         {

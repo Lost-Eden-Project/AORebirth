@@ -172,6 +172,8 @@ namespace ZoneEngine_New.Core.Ai
             Vector3 dest = points[_index];
             if (NpcAiRules.IsNearby(_brain.Npc.Position, dest, NpcAiRules.ArriveHomeMeters))
             {
+                // A program bound to this NPC may act at the waypoint (NpcScripts Arrived).
+                _brain.Npc.Scripts?.Raise(NpcScripts.NpcScriptTrigger.Arrived, _index);
                 _index = (_index + 1) % points.Count;
                 dest = points[_index];
             }
@@ -183,6 +185,28 @@ namespace ZoneEngine_New.Core.Ai
         public override void Reset()
         {
             _index = 0;
+        }
+    }
+
+    /// <summary>
+    /// A program's walk (NpcScripts): the brain holds a scripted destination and paths there at the requested pace.
+    /// Returns Success like WanderNode so the root re-checks leash and hate every think.
+    /// </summary>
+    sealed class ScriptedMoveNode : BehaviourNode
+    {
+        readonly NpcBrain _brain;
+
+        public ScriptedMoveNode(NpcBrain brain)
+            : base("scripted-move")
+        {
+            _brain = brain;
+        }
+
+        public override NodeState Evaluate(float deltaTime)
+        {
+            TickStallWatch.Stage("node.script", _brain.Npc.Identity.Instance);
+            _brain.TickScriptedMove();
+            return _nodeState = NodeState.Success;
         }
     }
 

@@ -1708,16 +1708,17 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             int breed = Stats.GetOrZero(CharacterStat.Breed);
-            int bodyDevelopment = Stats.GetOrZero(CharacterStat.BodyDevelopment);
             bool sitting = Stats.GetOrZero(CharacterStat.CurrentMovementMode) == (int)MovementState.Sit;
 
+            // Sitting: 1.5x the Body Development bonus and a one second shorter health tick.
             TickOneRegen(
                 ref _healRegenElapsed,
                 deltaTime,
                 PassiveRegenCalculator.ComputeHealthDelta(
                     breed,
-                    bodyDevelopment,
-                    Stats.GetOrZero(CharacterStat.HealDelta)),
+                    Stats.GetOrZero(CharacterStat.BodyDevelopment),
+                    Stats.GetOrZero(CharacterStat.HealDelta),
+                    sitting),
                 IsRestingPet
                     ? PetRestHealIntervalSeconds
                     : PassiveRegenCalculator.ComputeHealthIntervalSeconds(
@@ -1726,16 +1727,17 @@ namespace ZoneEngine_New.Core.Entities
                 CharacterStat.Health,
                 CharacterStat.MaxHealth);
 
+            // Sitting: 1.5x the Nano Pool bonus; the nano tick keeps its standing rate.
             TickOneRegen(
                 ref _nanoRegenElapsed,
                 deltaTime,
                 PassiveRegenCalculator.ComputeNanoDelta(
                     breed,
-                    bodyDevelopment,
-                    Stats.GetOrZero(CharacterStat.NanoDelta)),
-                PassiveRegenCalculator.ComputeNanoIntervalSeconds(
-                    Stats.GetOrZero(CharacterStat.Psychic),
+                    Stats.GetOrZero(CharacterStat.NanoPool),
+                    Stats.GetOrZero(CharacterStat.NanoDelta),
                     sitting),
+                PassiveRegenCalculator.ComputeNanoIntervalSeconds(
+                    Stats.GetOrZero(CharacterStat.Psychic)),
                 CharacterStat.CurrentNano,
                 CharacterStat.MaxNanoEnergy);
         }

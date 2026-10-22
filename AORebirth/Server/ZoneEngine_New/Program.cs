@@ -102,6 +102,8 @@ namespace ZoneEngine_New
                         gameData.HashTemplateCount,
                         gameData.HashInstanceCount,
                         gameData.MonsterDataCount));
+                // NPC scripts compile now, so a bad program is reported at startup rather than at the first spawn.
+                rootServices.GetRequiredService<ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog>();
                 // World first: no playfield builds and no client connects before this instance is registered.
                 if (!ConnectWorld(rootServices, logger, instance))
                     return 1;
@@ -334,6 +336,9 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.DungeonLayoutGenerator>();
             services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>();
 
+            //NPC scripts (GameData/NpcScripts)
+            services.AddSingleton<ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog>();
+
             //Knubot
             services.AddSingleton<ZoneEngine_New.Core.Knubot.KnubotCatalog>();
             services.AddSingleton<ZoneEngine_New.Core.Knubot.KnubotEffectServices>();
@@ -354,6 +359,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, DebugCommand>();
             services.AddSingleton<IGmCommand, OnlineCommand>();
             services.AddSingleton<IGmCommand, GameTimeCommand>();
+            services.AddSingleton<IGmCommand, WeatherCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();

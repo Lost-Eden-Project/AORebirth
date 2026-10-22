@@ -236,3 +236,21 @@ Required workflow:
 Alternatives considered: Keep growing `Playfield.cs`; only use separate VS projects for every system.
 
 Consequences: Agents extract systems into `Core/<System>/` when touching them. Wire models stay in AOtomation.Messaging.
+
+## Passive Regeneration Follows The Sitting Rules
+
+Decision (2026-10-21): `PassiveRegenCalculator` computes each natural delta as breed base + skill bonus
+(one per 100 points: Body Development for health, Nano Pool for nano) + the HealDelta / NanoDelta stat.
+Sitting multiplies only the skill bonus by 1.5 (rounded down) and shortens the health tick by one second
+(floor 1 s). The nano tick keeps its standing interval when sitting.
+
+Reason: Mike supplied the live rules: "1.5 times the Health regeneration from the Body Dev bonus sitting
+down", "1.5 times the Nano regeneration from the Nano Pool bonus sitting down", "the tick rate for
+Healdelta is increased by 1 second (a 22 second tick becomes 21)", "Nanodelta only gets an increased tick
+amount based on your Nano Pool skill but ticks just as fast".
+
+Alternatives considered: The earlier AO-Universe reading (nano bonus from Body Development, sitting halves
+both intervals), which this replaces.
+
+Consequences: Nano regeneration now scales with Nano Pool; low-Stamina characters heal slower while
+sitting than before (one second off the tick rather than half the tick).

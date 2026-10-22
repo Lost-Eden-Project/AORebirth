@@ -36,6 +36,9 @@ namespace ZoneEngine_New.Core.Ai
                 .Attach(new MoveTowardTargetNode(_brain))
                 .Attach(new StartFightingNode(_brain));
 
+            // A program's walk: after leash and combat, so a fight preempts it as it preempts a patrol.
+            root.Conditional(() => _brain.ScriptHoldsMovement, "scripted-move")
+                .Attach(new ScriptedMoveNode(_brain));
             root.Conditional(() => _brain.PatrolEnabled, "patrol-enabled")
                 .Attach(new PatrolNode(_brain));
             root.Conditional(() => _brain.WanderEnabled, "wander-enabled")

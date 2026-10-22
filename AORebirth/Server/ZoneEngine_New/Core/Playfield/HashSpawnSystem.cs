@@ -155,6 +155,9 @@ namespace ZoneEngine_New.Core.Playfield
         /// </summary>
         internal bool Wanders { get; init; }
 
+        /// <summary>NpcScripts binding key (<see cref="NpcScripts.SpawnPointKey"/>): hash, position and stack ordinal.</summary>
+        internal string? Key { get; set; }
+
         /// <summary>Accepted mission branches; keep their ordinals through sleep and reconstruction.</summary>
         internal MobTemplate[]? FrozenTemplates { get; init; }
 
@@ -240,6 +243,7 @@ namespace ZoneEngine_New.Core.Playfield
             _grid = locality.Grid;
             LoadSpawns(locality.Grid);
             LoadDistrictSpawns(locality.Grid);
+            AssignSpawnPointKeys();
             locality.AttachHashSpawns(
                 _pointsByCell.Keys,
                 OnCellSleep,
@@ -363,6 +367,26 @@ namespace ZoneEngine_New.Core.Playfield
                         skipped,
                         _playfield.Identity.Instance));
             }
+        }
+
+        /// <summary>
+        /// Every point gets its NpcScripts key, derived from the fields Spawns.json already has; points stacked at one
+        /// position are numbered in load order. Bindings that match no point are reported once per playfield.
+        /// </summary>
+        private void AssignSpawnPointKeys()
+        {
+            var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+            var keys = new List<string>(_allPoints.Count);
+            foreach (HashSpawnPoint point in _allPoints)
+            {
+                Vector3 centre = point.Sites[0].Centre;
+                string baseKey = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, 1);
+                ordinals[baseKey] = ordinals.TryGetValue(baseKey, out int seen) ? seen + 1 : 1;
+                point.Key = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, ordinals[baseKey]);
+                keys.Add(point.Key);
+            }
+
+            _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.ReportUnmatchedSpawnPoints(_playfield.Identity.Instance, keys);
         }
 
         /// <summary>A district's respawn time in seconds: Districts.json stores minutes. Zero or negative means no timer.</summary>
@@ -900,7 +924,8 @@ namespace ZoneEngine_New.Core.Playfield
                     level,
                     SpawnSource.HashSpawn,
                     spawnHash: point.HashText,
-                    configure: configure);
+                    configure: configure,
+                    spawnPointKey: point.Key);
                 point.AddMember(character);
                 _pointBySpawned[character] = point;
                 character.Died += OnSpawnedDied;

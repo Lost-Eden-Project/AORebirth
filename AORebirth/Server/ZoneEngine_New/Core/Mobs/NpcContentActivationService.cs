@@ -53,6 +53,8 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
                 if (npc.Shop != null) npc.Shop.Playfield = playfield;
                 locality.RegisterDynel(npc);
                 _activated.Add(definition.Key);
+                // NpcScripts: a placed NPC is bound by its content Key.
+                playfield.GetService<NpcScripts.NpcScriptCatalog>()?.TryAttach(npc, playfield.Identity.Instance, spawnPointKey: null, npcKey: definition.Key);
             }
             catch
             {

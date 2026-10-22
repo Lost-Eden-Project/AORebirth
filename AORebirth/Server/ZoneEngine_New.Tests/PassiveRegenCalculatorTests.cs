@@ -26,18 +26,39 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void NanoDeltaUsesBodyDevelopmentTrickleAndNanoDeltaStat()
+        public void NanoDeltaUsesNanoPoolTrickleAndNanoDeltaStat()
         {
-            int delta = PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, bodyDevelopment: 250, nanoDeltaStat: 7);
+            int delta = PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, nanoPool: 250, nanoDeltaStat: 7);
 
             Assert.AreEqual(11, delta);
         }
 
         [TestMethod]
-        public void AtroxWith500BodyDevelopmentHeals9AndRegains7Nano()
+        public void AtroxWith500SkillHeals9AndRegains7Nano()
         {
             Assert.AreEqual(9, PassiveRegenCalculator.ComputeHealthDelta((int)Breed.Atrox, bodyDevelopment: 500));
-            Assert.AreEqual(7, PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, bodyDevelopment: 500));
+            Assert.AreEqual(7, PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Atrox, nanoPool: 500));
+        }
+
+        [TestMethod]
+        public void SittingGivesOneAndAHalfTimesTheSkillBonusOnly()
+        {
+            // Solitus base 3, Body Development 400 -> bonus 4 standing, 6 sitting; the stat is not multiplied.
+            Assert.AreEqual(3 + 4 + 10, PassiveRegenCalculator.ComputeHealthDelta((int)Breed.Solitus, bodyDevelopment: 400, healDeltaStat: 10));
+            Assert.AreEqual(3 + 6 + 10, PassiveRegenCalculator.ComputeHealthDelta((int)Breed.Solitus, bodyDevelopment: 400, healDeltaStat: 10, sitting: true));
+            // Nano Pool 300 -> bonus 3 standing, 4 sitting (4.5 rounded down).
+            Assert.AreEqual(4 + 3, PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Nanomage, nanoPool: 300));
+            Assert.AreEqual(4 + 4, PassiveRegenCalculator.ComputeNanoDelta((int)Breed.Nanomage, nanoPool: 300, sitting: true));
+        }
+
+        [TestMethod]
+        public void SittingShortensTheHealthTickByOneSecondAndLeavesTheNanoTick()
+        {
+            Assert.AreEqual(22, PassiveRegenCalculator.ComputeHealthIntervalSeconds(stamina: 210, sitting: false));
+            Assert.AreEqual(21, PassiveRegenCalculator.ComputeHealthIntervalSeconds(stamina: 210, sitting: true));
+            Assert.AreEqual(2, PassiveRegenCalculator.ComputeHealthIntervalSeconds(stamina: 900, sitting: false));
+            Assert.AreEqual(1, PassiveRegenCalculator.ComputeHealthIntervalSeconds(stamina: 900, sitting: true));
+            Assert.AreEqual(24, PassiveRegenCalculator.ComputeNanoIntervalSeconds(psychic: 120));
         }
 
         [TestMethod]

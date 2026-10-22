@@ -150,7 +150,8 @@ namespace ZoneEngine_New.Core.Playfield
             string? spawnHash = null,
             Action<NpcCharacter>? configure = null,
             bool attachDefaultBrain = true,
-            Identity? fixedIdentity = null)
+            Identity? fixedIdentity = null,
+            string? spawnPointKey = null)
         {
             ArgumentNullException.ThrowIfNull(template);
             ArgumentNullException.ThrowIfNull(position);
@@ -227,6 +228,10 @@ namespace ZoneEngine_New.Core.Playfield
 
             // Anything the first spawn packet has to carry (a pet's PetMaster) goes on before it is registered.
             configure?.Invoke(npc);
+
+            // NpcScripts: the most specific binding for this spawn point / hash, if any.
+            if (spawnSource != SpawnSource.Summoned)
+                _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.TryAttach(npc, _playfield.Identity.Instance, spawnPointKey, npcKey: null);
 
             Metrics.TickStallWatch.Stage("spawn.register", identity.Instance);
             if (fixedIdentity == null)
@@ -1390,6 +1395,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             _playfield.GetRequiredService<ZoneEngine_New.Core.Mobs.NpcContentActivationService>().Detached(npc);
 
+            npc.Scripts?.OnDespawn();
             npc.SetFightingTarget(Identity.None);
             npc.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
             Identity identity = npc.Identity;
