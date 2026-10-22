@@ -8,14 +8,13 @@ namespace AORebirth.AccountBroker
 
     using AO.Core.Encryption;
     using AORebirth.Core.Encryption;
+    using AORebirth.Enums;
 
     public sealed class AccountBrokerService
     {
         private const int NormalAllowedCharacters = 6;
 
         private const int NormalAccountFlags = 0;
-
-        private const int NormalExpansions = 127;
 
         private const int NormalFlags = 0;
 
@@ -1027,7 +1026,7 @@ namespace AORebirth.AccountBroker
                     Parameter("@allowedCharacters", NormalAllowedCharacters),
                     Parameter("@flags", NormalFlags),
                     Parameter("@accountFlags", NormalAccountFlags),
-                    Parameter("@expansions", NormalExpansions),
+                    Parameter("@expansions", (int)Expansions.All),
                     Parameter("@gm", NormalGm));
                 gameAccountId = Convert.ToInt32(this.ExecuteScalar(connection, transaction, "SELECT LAST_INSERT_ID()"));
                 created = true;

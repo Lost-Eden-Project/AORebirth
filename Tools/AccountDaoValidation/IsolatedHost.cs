@@ -30,7 +30,11 @@ namespace Utility
             ErrorCount++;
             Console.Error.WriteLine("ACCOUNT_TEST_HOST_LOG=" + exception.GetType().Name);
         }
+
+        public static void Debug(DebugInfoDetail detail, string message) { }
     }
+
+    internal enum DebugInfoDetail { Database = 8 }
 }
 
 namespace Utility.Config

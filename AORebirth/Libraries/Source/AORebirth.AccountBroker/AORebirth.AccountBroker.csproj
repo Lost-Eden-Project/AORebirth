@@ -47,6 +47,10 @@
     <Compile Include="UsernamePolicy.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AORebirth.Enums\AORebirth.Enums.csproj">
+      <Project>{0C09AF43-3456-4FD6-9041-D9A6D7C3F36C}</Project>
+      <Name>AORebirth.Enums</Name>
+    </ProjectReference>
     <ProjectReference Include="..\AORebirth.BotService\AORebirth.BotService.csproj">
       <Project>{90d75b37-7da2-4c26-9bb5-7bff79a618c4}</Project>
       <Name>AORebirth.BotService</Name>

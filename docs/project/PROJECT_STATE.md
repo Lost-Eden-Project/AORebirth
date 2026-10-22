@@ -1,5 +1,13 @@
 # AORebirth Project State
 
+PROVEN EXPANSION POLICY (2026-10-21): all eleven supported flags share
+Expansions.All (2047). Registration and console account creation use it; new
+characters retain account-derived initialization. The scoped operator migration
+corrects persisted account/linked-character entitlements and the SQL default,
+with rollback, preservation and repeat-run checks. Approved Windows build,
+focused creation, isolated migration and fresh hydration/publication checks pass.
+Live client acceptance and private deployment observations remain separate.
+
 OBSERVED CLIENT ACCEPTANCE (2026-10-17, Login character creation): Mike reports
 repair 13990ce8b works and authorizes public-master integration, faithful Linux
 publication and normal live installation if Linux has the same defect. Runtime

@@ -48,6 +48,7 @@ namespace LoginEngine
     using AORebirth.Core.GameData;
     using AORebirth.Database;
     using AORebirth.Database.Dao;
+    using AORebirth.Enums;
 
     using locales;
 
@@ -177,17 +178,8 @@ namespace LoginEngine
                     }
                 }
 
-                Console.WriteLine("Expansions: Enter 2047 for all expansions (i know you want that)");
-                while (true)
-                {
-                    Console.Write("Expansions: ");
-                    string test = Console.ReadLine();
-                    if (IsNumber(test))
-                    {
-                        temp.Add(test);
-                        break;
-                    }
-                }
+                Console.WriteLine("All supported expansions are enabled for new accounts.");
+                temp.Add(((int)Expansions.All).ToString());
 
                 Console.WriteLine(
                     "GM-Level: Anything above 0 is GM, but there are differences. Full Client GM = 1 (using keyboard shortcuts) but for some items you have to be GM Level 511");
@@ -231,20 +223,7 @@ namespace LoginEngine
                 return;
             }
 
-            DBLoginData login = new DBLoginData
-                                {
-                                    Username = obj[1],
-                                    AccountFlags = 0,
-                                    AllowedCharacters = int.Parse(obj[3]),
-                                    CreationDate = DateTime.Now,
-                                    Email = obj[6],
-                                    Expansions = int.Parse(obj[4]),
-                                    FirstName = obj[7],
-                                    LastName = obj[8],
-                                    GM = int.Parse(obj[5]),
-                                    Flags = 0,
-                                    Password = new LoginEncryption().GeneratePasswordHash(obj[2])
-                                };
+            DBLoginData login = CreateAccountData(obj);
 
             try
             {
@@ -263,6 +242,26 @@ namespace LoginEngine
             Colouring.Push(ConsoleColor.Green);
             Console.WriteLine("User added successfully.");
             Colouring.Pop();
+        }
+
+        internal static DBLoginData CreateAccountData(string[] obj)
+        {
+            // Keep the existing positional command format; its expansion argument
+            // cannot restrict the shared entitlement policy for a new account.
+            return new DBLoginData
+            {
+                Username = obj[1],
+                AccountFlags = 0,
+                AllowedCharacters = int.Parse(obj[3]),
+                CreationDate = DateTime.Now,
+                Email = obj[6],
+                Expansions = (int)Expansions.All,
+                FirstName = obj[7],
+                LastName = obj[8],
+                GM = int.Parse(obj[5]),
+                Flags = 0,
+                Password = new LoginEncryption().GeneratePasswordHash(obj[2])
+            };
         }
 
         /// <summary>
@@ -290,14 +289,14 @@ namespace LoginEngine
 
             if (!int.TryParse(obj[4], out temp))
             {
-                Console.WriteLine("Error: <expansions> must be a number between 0 and 2047!");
+                Console.WriteLine("Error: <expansions> must be a number between 0 and {0}!", (int)Expansions.All);
                 failed = true;
             }
             else
             {
-                if ((temp < 0) || (temp > 2047))
+                if ((temp < 0) || (temp > (int)Expansions.All))
                 {
-                    Console.WriteLine("Error: <expansions> must be a number between 0 and 2047!");
+                    Console.WriteLine("Error: <expansions> must be a number between 0 and {0}!", (int)Expansions.All);
                     failed = true;
                 }
             }

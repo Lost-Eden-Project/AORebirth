@@ -123,6 +123,13 @@ namespace AccountBrokerValidation
             Expect("new account flags", 0, game.Flags, failures);
             Expect("new account accountflags", 0, game.AccountFlags, failures);
             Expect("new account gm", 0, game.GM, failures);
+            using (var connection = new MySqlConnection(connectionString))
+            {
+                connection.Open();
+                Expect("new account all eleven expansions", 2047,
+                    Convert.ToInt32(Scalar(connection, "SELECT Expansions FROM login WHERE Id=@id",
+                        Parameter("@id", created.GameAccountId))), failures);
+            }
             Expect("correct generated password validates", true, ValidatePassword("BrokerA1", password, game.PasswordHash), failures);
             Expect("wrong generated password rejects", false, ValidatePassword("BrokerA1", "WrongPassword", game.PasswordHash), failures);
 

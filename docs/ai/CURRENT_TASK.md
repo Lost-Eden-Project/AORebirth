@@ -1,41 +1,18 @@
 # Current Task
 
-LOGIN CHARACTER CREATION REPAIR (2026-10-17).
+ENTITLEMENT RELEASE AND REPOSITORY CLEANUP (2026-10-21).
 
-Mike authorized correcting the confirmed character-creation defects on public
-master 245cfaa41182f1e7c574f9d8a9fb4d6db8ebcf23, focused regression tests,
-the approved Windows build, and commit/push reporting. Branch:
-codex/login-character-creation. Preserve the dirty primary checkout and private
-GameData; no production character records, schema or live deployment changes.
+The shared Expansions.All policy and scoped account/character migration remain
+unchanged. Production migration execution is separate from release validation;
+do not rerun it merely to deploy binaries.
 
-Scope: stage NewCharacter.json for Login build/publish; log and eagerly validate
-Login's effective creation data; cache successful loads without caching errors;
-validate creation inputs before insertion; use one existing database transaction
-for all mandatory creation writes; return success only after commit; exclude
-incomplete historical characters from the login list without editing them.
+The single current Git-LFS inventory remains a required offline reproducibility
+input. Its exact object has been materialized and checked; WORKFLOW.md documents
+scoped hydration for checkouts created with LFS smudging disabled. No history,
+tracking rule, required asset or generated cohort is rewritten.
 
-Tests explicitly requested: all four breeds, GameData path selection and load
-failures/recovery, missing account/invalid breed, injected persistence failures,
-rollback without orphaned rows, successful mandatory state, and character-list
-filtering. Use isolated test persistence only. Mike performs AO-client checks.
-
-PROVEN: the base source has the staging, transaction, missing-stat publication
-and Lazy exception-caching defects. UNVERIFIED: Bitnykk's particular triggering
-exception and the cause of the reported GUI.dll crash. Do not conflate these.
-
-IMPLEMENTED AND VALIDATED: all mandatory creation writes share one caller-owned
-transaction. Approved Windows core build PASS; 45 focused tests PASS; actual
-four-breed creation and injected-failure rollback in disposable MySQL PASS with
-zero orphan rows and no production contact. Login's staged JSON matches source.
-Historical records and private GameData are unchanged. No backend engines were
-started or restarted. No AO client or Linux action.
-
-OBSERVED CLIENT ACCEPTANCE: Mike reports "works" for repair 13990ce8b and
-authorizes public-master integration, faithful Linux reconciliation and live
-installation if the deployed Linux version needs the same repair. His overall
-acceptance does not establish separate client coverage for every failure case.
-The original triggering exception and GUI.dll crash cause remain unverified.
-
-See docs/reports/LOGIN_CHARACTER_CREATION_REPAIR.md for exact files, commands,
-transaction boundaries and limitations. Linux build/deployment evidence remains
-private and must distinguish source integration from live installation.
+Release validation uses current source identities. Private content selection,
+baseline preservation, Linux acceptance, deployment and cleanup evidence remain
+private. Private WaterExits and unrelated GameData must not be replaced by public
+catalogs as part of this entitlement release. Preserve existing user changes and
+migration evidence; remove only verified redundant task artifacts.
