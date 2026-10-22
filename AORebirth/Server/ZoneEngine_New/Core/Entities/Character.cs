@@ -3880,7 +3880,7 @@ namespace ZoneEngine_New.Core.Entities
 
             int weaponInstanceId = carriedIdentity?.Instance
                 ?? (Playfield != null ? Playfield.AllocateWeaponInstanceId() : item.InstanceId);
-            int playfieldId = Playfield != null ? Playfield.Identity.Instance : 0;
+            int playfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0;
 
             int flags = item.Flags > 0 ? item.Flags : 0x403;
             int multipleCount = item.StackCount > 0 ? item.StackCount : 1;
@@ -4027,7 +4027,7 @@ namespace ZoneEngine_New.Core.Entities
             // bool socialOnly = (visualFlags & 0x40) != 0;
             // bool showSocial = (visualFlags & 0x20) != 0;
 
-            int playfieldId = Playfield != null ? Playfield.Identity.Instance : 0;
+            int playfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0;
 
             // Predicted movement not implemented; use current transform.
             MsgVector3 coordinates = Position ?? new MsgVector3();

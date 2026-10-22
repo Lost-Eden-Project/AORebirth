@@ -149,7 +149,7 @@ namespace ZoneEngine_New.Core.Entities
                 NpcIdentity = owner != null ? owner.Identity : Identity.None,
                 Coordinates = owner != null ? owner.Position : coordinate,
                 Heading = owner != null ? owner.Rotation : heading,
-                PlayfieldId = Playfield != null ? Playfield.Identity.Instance : 0,
+                PlayfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0,
                 Unknown4 = FullUpdateUnknown4,
                 Unknown5 = FullUpdateUnknown5,
                 Unknown6 = FullUpdateUnknown6,

@@ -220,6 +220,13 @@ namespace ZoneEngine_New.Core.Playfield
 
         public bool IsProxyInstance => ResourceId != Identity.Instance;
 
+        /// <summary>
+        /// The playfield id the client is told it is in. A door's proxy instance (<see cref="ProxyPlayfieldIds"/>) is
+        /// shown as the interior it copies, so the client loads that interior's own data and never sees the instance:
+        /// only the server knows the instance apart. Every other playfield is shown as itself.
+        /// </summary>
+        public int ClientPlayfieldId => ProxyPlayfieldIds.IsProxy(Identity.Instance) ? ResourceId : Identity.Instance;
+
         /// <summary>The walk-in door a proxy instance was entered through (full dynel instance); 0 for an ordinary playfield.</summary>
         public int ProxySourceDoorInstance { get; }
 
@@ -308,9 +315,6 @@ namespace ZoneEngine_New.Core.Playfield
         /// </summary>
         public virtual PlayfieldAnarchyFMessage CreatePlayfieldAnarchyFMessage(Vector3 characterCoordinates)
         {
-            if (IsProxyInstance)
-                return CreateProxyPlayfieldAnarchyFMessage(characterCoordinates);
-
             // TEMP: Playfields.xml 4310 (Nascense Frontier) until GameData / Playfields.xml lookup is wired.
             int playfieldX = 32321;
             int playfieldZ = 26244;
@@ -320,48 +324,26 @@ namespace ZoneEngine_New.Core.Playfield
                 Identity = new Identity
                 {
                     Type = IdentityType.Playfield2,
-                    Instance = Identity.Instance
+                    Instance = ClientPlayfieldId
                 },
                 CharacterCoordinates = characterCoordinates,
-                // The resource the client loads; a proxy instance names the interior it copies here and itself in PlayfieldId2.
                 PlayfieldId1 = new Identity
                 {
                     Type = IdentityType.Playfield1,
-                    Instance = ResourceId
+                    Instance = ClientPlayfieldId
                 },
                 // Mission / apartment / private-city PlayfieldId1 overrides not wired yet.
                 // Unknown3 / Unknown4 org-building overrides not wired yet.
                 PlayfieldId2 = new Identity
                 {
                     Type = IdentityType.Playfield2,
-                    Instance = Identity.Instance
+                    Instance = ClientPlayfieldId
                 },
                 // GeneratorPayload — ACG generator layouts not wired yet (Identity 0:0 written).
                 PlayfieldX = playfieldX,
                 PlayfieldZ = playfieldZ
             };
         }
-
-        /// <summary>
-        /// The retail shape for a proxy instance (capture: zoning into a training backyard, 2026-10-22): version 4,
-        /// proxy stream 'a', PlayfieldId1 of type 0xC79E naming the interior the client loads, Unknown3 = 1, Unknown4 =
-        /// the source door, PlayfieldId2 = this instance, and -1 world coordinates. Retail also sends a generator
-        /// (type 0xC77D) re-keying the interior's door, vendor and terminal to instance-unique identities; this server
-        /// keeps the interior's own identities, so no generator is written.
-        /// </summary>
-        PlayfieldAnarchyFMessage CreateProxyPlayfieldAnarchyFMessage(Vector3 characterCoordinates) => new()
-        {
-            Identity = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
-            Version = 4,
-            CharacterCoordinates = characterCoordinates,
-            PlayfieldProxyVersion = 0x61,
-            PlayfieldId1 = new Identity { Type = IdentityType.PlayfieldDoor, Instance = ResourceId },
-            Unknown3 = 1,
-            Unknown4 = ProxySourceDoorInstance,
-            PlayfieldId2 = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
-            PlayfieldX = -1,
-            PlayfieldZ = -1
-        };
 
         public T GetRequiredService<T>()
             where T : class

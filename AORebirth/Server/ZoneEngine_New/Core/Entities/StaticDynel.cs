@@ -104,7 +104,7 @@ namespace ZoneEngine_New.Core.Entities
                 Instance = Identity.Instance,
                 Coordinate = coordinate,
                 Heading = heading,
-                Playfield = Playfield != null ? Playfield.Identity.Instance : 0,
+                Playfield = Playfield != null ? Playfield.ClientPlayfieldId : 0,
                 Unknown1 = new Identity
                 {
                     Type = (IdentityType)SimpleItemFullUpdateUnknown1Type,

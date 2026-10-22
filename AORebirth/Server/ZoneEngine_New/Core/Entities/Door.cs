@@ -71,7 +71,7 @@ namespace ZoneEngine_New.Core.Entities
                     Z = Rotation.zf,
                     W = Rotation.wf
                 },
-                Playfield = Playfield?.Identity.Instance ?? 0,
+                Playfield = Playfield?.ClientPlayfieldId ?? 0,
                 Unknown1 = new Identity { Type = (IdentityType)0xF424F, Instance = 1 },
                 Unknown2 = 0,
                 Unknown3 = 0x6F,

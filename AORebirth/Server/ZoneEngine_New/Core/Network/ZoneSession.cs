@@ -211,7 +211,7 @@ namespace ZoneEngine_New.Core.Network
             }
 
             int receiver = Player?.Identity.Instance ?? 0;
-            int sender = Player?.Playfield?.Identity.Instance ?? 0;
+            int sender = Player?.Playfield?.ClientPlayfieldId ?? 0;
             Send(body, sender, receiver);
         }
 
@@ -311,14 +311,15 @@ namespace ZoneEngine_New.Core.Network
             }
         }
 
+        /// <param name="destinationId">The destination as the client knows it (<see cref="Playfield.ClientPlayfieldId"/>).</param>
         internal byte[][] PrepareTransferPackets(Player player, Vector3 landing,
-            AORebirth.Core.Vector.Quaternion heading, int destinationId, int destinationResourceId, int sourceDoorInstance)
+            AORebirth.Core.Vector.Quaternion heading, int destinationId)
         {
             ZoneRedirectEndpoint target = ZoneRedirectEndpoint.Configured();
             AuthorizeZoneRedirect(player.Identity.Instance, target);
             return
             [
-                _codec.Serialize(BuildNormalTeleport(player, landing, destinationId, heading, destinationResourceId, sourceDoorInstance),
+                _codec.Serialize(BuildNormalTeleport(player, landing, destinationId, heading),
                     destinationId, player.Identity.Instance),
                 _codec.Serialize(new ZoneRedirectionMessage { ServerIpAddress = target.Address, ServerPort = target.Port },
                     destinationId, player.Identity.Instance)
@@ -359,11 +360,10 @@ namespace ZoneEngine_New.Core.Network
 
         /// <summary>The N3Teleport and the redirect to the instance that now owns the character.</summary>
         internal byte[][] PrepareRemoteTransferPackets(Player player, Vector3 landing,
-            AORebirth.Core.Vector.Quaternion heading, int destinationId, int destinationResourceId, int sourceDoorInstance,
-            IPAddress address, ushort port)
+            AORebirth.Core.Vector.Quaternion heading, int destinationId, IPAddress address, ushort port)
             =>
             [
-                _codec.Serialize(BuildNormalTeleport(player, landing, destinationId, heading, destinationResourceId, sourceDoorInstance),
+                _codec.Serialize(BuildNormalTeleport(player, landing, destinationId, heading),
                     destinationId, player.Identity.Instance),
                 _codec.Serialize(new ZoneRedirectionMessage { ServerIpAddress = address, ServerPort = port },
                     destinationId, player.Identity.Instance)
@@ -381,9 +381,9 @@ namespace ZoneEngine_New.Core.Network
             if (playfield == null)
                 throw new InvalidOperationException("Player is not on a playfield.");
 
-            int playfieldId = playfield.Identity.Instance;
+            int playfieldId = playfield.ClientPlayfieldId;
             Send(
-                BuildNormalTeleport(player, landing, playfieldId, player.Rotation, playfield.ResourceId, playfield.ProxySourceDoorInstance),
+                BuildNormalTeleport(player, landing, playfieldId, player.Rotation),
                 playfieldId,
                 player.Identity.Instance);
         }
@@ -403,7 +403,7 @@ namespace ZoneEngine_New.Core.Network
 
             Send(
                 BuildIntrazoneTeleport(player, landing, heading, destinationKey),
-                playfield.Identity.Instance,
+                playfield.ClientPlayfieldId,
                 player.Identity.Instance);
         }
 
@@ -448,17 +448,13 @@ namespace ZoneEngine_New.Core.Network
         }
 
         /// <summary>
-        /// <paramref name="destPlayfieldId"/> is the playfield the character moves to; <paramref name="destResourceId"/> the
-        /// playfield data the client loads for it (the same id for an ordinary playfield; the interior for a proxy
-        /// instance). Retail (capture: zoning into a training backyard, 2026-10-22) names the resource in Playfield,
-        /// the instance in ChangePlayfield, the source door in SgId and 0x186A2:1 in the trailing identity.
+        /// <paramref name="destPlayfieldId"/> is the playfield as the client knows it: a door's proxy instance is sent as
+        /// the interior it copies (<see cref="Playfield.ClientPlayfieldId"/>), so the client zones as into that interior.
         /// </summary>
         private static N3TeleportMessage BuildNormalTeleport(Player player, Vector3 landing, int destPlayfieldId,
-            AORebirth.Core.Vector.Quaternion heading, int destResourceId, int sourceDoorInstance)
+            AORebirth.Core.Vector.Quaternion heading)
         {
             const IdentityType livePlayfieldProxyType = (IdentityType)0x0000C79E;
-            const IdentityType retailProxyTrailerType = (IdentityType)0x000186A2;
-            bool proxy = destResourceId > 0 && destResourceId != destPlayfieldId;
 
             byte[] payload = new byte[12];
             BinaryPrimitives.WriteSingleBigEndian(payload.AsSpan(0, 4), landing.xf);
@@ -486,10 +482,10 @@ namespace ZoneEngine_New.Core.Network
                 Playfield = new Identity
                 {
                     Type = livePlayfieldProxyType,
-                    Instance = proxy ? destResourceId : destPlayfieldId
+                    Instance = destPlayfieldId
                 },
                 GameServerId = 1,
-                SgId = proxy ? sourceDoorInstance : 0,
+                SgId = 0,
                 ChangePlayfield = new Identity
                 {
                     Type = IdentityType.Playfield2,
@@ -497,7 +493,7 @@ namespace ZoneEngine_New.Core.Network
                 },
                 Unknown4 = 0,
                 Unknown5 = 0,
-                Playfield2 = proxy ? new Identity { Type = retailProxyTrailerType, Instance = 1 } : Identity.None,
+                Playfield2 = Identity.None,
                 Payload = payload
             };
         }

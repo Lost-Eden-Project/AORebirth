@@ -86,7 +86,7 @@ public static class WorldNpcFactory
             var projection = packet.Deserialize<VendingMachineFullUpdateMessage>(new JsonSerializerOptions
                 { PropertyNameCaseInsensitive = true, IncludeFields = true })
                 ?? throw new InvalidOperationException("Invalid vendor companion packet.");
-            projection.Identity = shop.Identity; projection.NpcIdentity = Identity; projection.PlayfieldId = Playfield.Identity.Instance;
+            projection.Identity = shop.Identity; projection.NpcIdentity = Identity; projection.PlayfieldId = Playfield.ClientPlayfieldId;
             yield return projection;
             if (BuildKnubotStatMessage() is { } knubot) yield return knubot;
         }

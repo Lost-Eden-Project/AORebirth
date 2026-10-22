@@ -245,8 +245,10 @@ proxy playfields did. The client data has 133 such destinations: 130 indoor inte
 backyards 950, 952 and 954, so the rule is the door kind, not the destination's indoor flag. The instance id is derived from the door (`ProxyPlayfieldIds`: 0x7F000000 + the door
 instance's low 24 bits), so it needs no table and is the same on every zone instance and after a restart.
 A `Playfield` now has a `ResourceId` (the interior whose GameData it loads) beside its `Identity`; data
-lookups key on the resource, runtime identity on the identity. The client is told the resource in
-PlayfieldId1 and the instance in PlayfieldId2, the split quest dungeons already use.
+lookups key on the resource, runtime identity on the identity. The client is only ever told the resource
+(`Playfield.ClientPlayfieldId`): it zones as into the plain interior, and only the server knows the instance.
+Retail instead named the interior as a 0xC79E identity with a generator (0xC77D) re-keying the interior's
+dynels; telling the client the instance id without that generator fails ("Unable to find the playfield data").
 
 Reason: Mike: multiple Clan Ordinary/Advanced Supermarket doors in 540 (and the two supermarkets in 800) led
 to one shared shop; each door should be its own instance of the shop.

@@ -147,17 +147,14 @@ namespace ZoneEngine_New.Core.World
                     && ReferenceEquals(player.Session, session))
                 {
                     // A proxy instance hosted elsewhere: the teleport still names the interior the client loads.
-                    int resourceId = destinationPlayfield;
-                    int sourceDoor = 0;
+                    // The client is told a door's proxy instance as the interior it copies (Playfield.ClientPlayfieldId).
+                    int clientPlayfieldId = destinationPlayfield;
                     if (ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.IsProxy(destinationPlayfield)
-                        && !ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.TryResolveResource(_gameData, destinationPlayfield, out resourceId, out _, out sourceDoor))
-                    {
-                        resourceId = destinationPlayfield;
-                        sourceDoor = 0;
-                    }
+                        && !ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.TryResolveResource(_gameData, destinationPlayfield, out clientPlayfieldId, out _, out _))
+                        clientPlayfieldId = destinationPlayfield;
 
-                    foreach (byte[] packet in session.PrepareRemoteTransferPackets(player, landing, heading, destinationPlayfield,
-                        resourceId, sourceDoor, address, (ushort)reply.Target.Port))
+                    foreach (byte[] packet in session.PrepareRemoteTransferPackets(player, landing, heading, clientPlayfieldId,
+                        address, (ushort)reply.Target.Port))
                         session.Send(packet);
                 }
             }

@@ -179,8 +179,8 @@ namespace ZoneEngine_New.Core.Entities
                 return null;
 
             byte[] packet = CopyBytes(CorpseFullUpdateTemplate.PacketTemplate);
-            int sender = Playfield?.Identity.Instance ?? 0;
-            int playfieldId = Playfield?.Identity.Instance ?? 0;
+            int sender = Playfield?.ClientPlayfieldId ?? 0;
+            int playfieldId = Playfield?.ClientPlayfieldId ?? 0;
             SourceStats.TryGetValue(CharacterStat.Cash, out int cash);
             SourceStats.TryGetValue(CharacterStat.MonsterData, out int monsterData);
             TryResolveCatMesh(out int catMesh);
@@ -273,7 +273,7 @@ namespace ZoneEngine_New.Core.Entities
 
         public override MessageBody BuildSpawnMessage()
         {
-            int playfieldId = Playfield != null ? Playfield.Identity.Instance : 0;
+            int playfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0;
             MsgVector3 position = Position;
             MsgQuaternion heading = Rotation;
 

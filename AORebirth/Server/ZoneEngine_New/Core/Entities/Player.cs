@@ -259,7 +259,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             Motor.Warp(landing);
-            Session?.SendIntrazoneTeleport(landing, Rotation, playfield.Identity.Instance);
+            Session?.SendIntrazoneTeleport(landing, Rotation, playfield.ClientPlayfieldId);
             playfield.GetRequiredService<PlayfieldLocality>().Announce(this, new CharDCMoveMessage
             {
                 Identity = Identity,

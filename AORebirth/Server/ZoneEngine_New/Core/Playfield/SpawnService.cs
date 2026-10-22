@@ -1082,7 +1082,7 @@ namespace ZoneEngine_New.Core.Playfield
                 _playfield.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.WorldClock, now);
             if (session is IGameTimeSession clock)
                 clock.RecordGameTimeSynchronization(now, reading.ServerSeconds);
-            session.Send(GameClock.BuildMessage(player.Identity, reading), _playfield.Identity.Instance, player.Identity.Instance);
+            session.Send(GameClock.BuildMessage(player.Identity, reading), _playfield.ClientPlayfieldId, player.Identity.Instance);
         }
 
         private void SendRetailWorldEntryReadyBlock(IZoneSession session, Player player)
@@ -1117,7 +1117,7 @@ namespace ZoneEngine_New.Core.Playfield
             var playfieldIdentity = new Identity
             {
                 Type = IdentityType.Playfield2,
-                Instance = _playfield.Identity.Instance
+                Instance = _playfield.ClientPlayfieldId
             };
 
             session.Send(
