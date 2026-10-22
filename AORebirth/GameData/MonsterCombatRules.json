@@ -49,9 +49,19 @@
       "NoCombat"
     ]
   },
+  "N032": {
+    "Hates": [
+      1
+    ]
+  },
   "NEBG": {
     "Features": [
       "Guard"
+    ]
+  },
+  "OPBW": {
+    "Hates": [
+      2
     ]
   },
   "PEAK": {
