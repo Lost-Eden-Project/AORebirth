@@ -262,7 +262,7 @@ namespace ZoneEngine_New.Core.Playfield
 
         private void LoadSpawns(CellGrid grid)
         {
-            PlayfieldSpawnsData data = _gameData.GetPlayfieldSpawns(_playfield.Identity.Instance);
+            PlayfieldSpawnsData data = _gameData.GetPlayfieldSpawns(_playfield.ResourceId);
             PlayfieldSpawnEntry[] entries = data.Spawns ?? [];
             int skipped = 0;
 
@@ -386,7 +386,7 @@ namespace ZoneEngine_New.Core.Playfield
                 keys.Add(point.Key);
             }
 
-            _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.ReportUnmatchedSpawnPoints(_playfield.Identity.Instance, keys);
+            _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.ReportUnmatchedSpawnPoints(_playfield.ResourceId, keys);
         }
 
         /// <summary>A district's respawn time in seconds: Districts.json stores minutes. Zero or negative means no timer.</summary>
@@ -406,7 +406,7 @@ namespace ZoneEngine_New.Core.Playfield
         /// </summary>
         private void LoadDistrictSpawns(CellGrid grid)
         {
-            int playfieldId = _playfield.Identity.Instance;
+            int playfieldId = _playfield.ResourceId;
             string path = Path.Combine(_gameData.RootPath, GameDataPaths.PlayfieldDistrictsRelativePath(playfieldId));
             if (!File.Exists(path))
                 return;

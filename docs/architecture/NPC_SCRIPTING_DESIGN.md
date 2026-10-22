@@ -253,7 +253,7 @@ Instant unless marked blocking. Operands are constants or `$Param` slots.
 | Verb | Does | Notes |
 | --- | --- | --- |
 | `Wait` ms or `[min,max]` | blocking delay | clamped to >= 100 ms |
-| `WalkTo` / `RunTo` vector, `$Waypoints[i]`, `$Waypoints[next]`, `Home` | blocking: takes the movement lease, `brain.PathTo`; completes on arrival or stuck | raises `Arrived` / `Stuck` |
+| `WalkTo` / `RunTo` vector, `$Waypoints[i]`, `$Waypoints[next]`, `Home`; or `{ "To": point, "Direct": true }` | blocking: takes the movement lease, `brain.PathTo`; completes on arrival or stuck. `Direct` walks the straight line without the navmesh: the bridge across a short gap the mesh does not cover (a ramp too steep to bake, between two mesh islands). A non-direct destination is shifted per NPC by `NpcSpread` (up to 4 m, from the NPC's identity) so a group sent to one point fans out; a direct leg is walked exactly | raises `Arrived` / `Stuck` |
 | `Face` heading or target | set heading, announce | |
 | `Emote` SocialAction | the player emote message from the NPC (below); blocking for the anim's duration | 1..71 |
 | `Say` text, `Type` | `VicinityChatRelay.Speak` | rate limit 1/s per NPC |
@@ -267,6 +267,7 @@ Instant unless marked blocking. Operands are constants or `$Param` slots.
 | `Random` [blocks] | jump to one block, equal or weighted | compiled to jump table |
 | `Signal` name, radius | `Raise(Signal)` on scripted NPCs in own + adjacent cells within radius (`PlayfieldLocality.CollectNearby`) | multi-NPC scenes |
 | `ReleaseMovement` | gives movement back to patrol / wander / idle without ending the handler | |
+| `SetHome` `Here` or point | re-posts the NPC: `brain.Home` (leash, return, wander anchor) becomes the point. While a `WalkTo`/`RunTo` (or a brain patrol leg) is under way the brain's distance leash measures from the walk's target (`NpcBrain.LeashAnchor`), not the spawn, so a march or patrol may go beyond the 70 m leash range | |
 | `Restart` trigger | re-enter a handler (used by `Reset` to resume a route) | |
 | `End` | stop the handler | implicit at `End` index |
 
@@ -420,9 +421,9 @@ bytecode, bindings and args, validation), `NpcScriptCatalog.cs` (folder load, in
 project and `SharedBuild/source-inventory`.
 
 In: triggers `Spawned`, `Arrived`, `Stuck`, `HealthBelow`, `Death`, `Reset`, `CombatStart`, `CombatEnd`,
-`NanoEnded`, `Timer` (`EveryMs`), `Used`; verbs `Wait`, `WalkTo`/`RunTo`, `Emote` (optional `DurationMs`), `Say`,
+`NanoEnded`, `Timer` (`EveryMs`), `Used`; verbs `Wait`, `WalkTo`/`RunTo` (object form `To` + `Direct` for a straight-line step off the navmesh), `Emote` (optional `DurationMs`), `Say`,
 `SpawnWorldItem`, `Gfx` (anchors `On: Self`, `At`, `Offset`, `From`/`To`), `Despawn`, `SetStat`, `SetVar`/`AddVar`,
-`If` (jumps to its `Goto` label when the condition holds), `Goto`/`Label`, `Random`, `Restart`, `ReleaseMovement`,
+`If` (jumps to its `Goto` label when the condition holds), `Goto`/`Label`, `Random`, `Restart`, `ReleaseMovement`, `SetHome`,
 `End`; bindings by `Hash` (optionally per `Playfield`), `SpawnPoint`, `NpcKey`; `Movement` shorthand (`Patrol`,
 `Wander`). Timer handlers re-arm themselves and never queue up. An interrupting handler suspends the running one,
 which resumes where it was (a cut-short walk is re-issued).

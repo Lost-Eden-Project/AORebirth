@@ -326,8 +326,9 @@ namespace ZoneEngine_New.Core.Entities
         protected override void OnDamaged(Character attacker, int hpRemoved, HitType hitType)
         {
             // A player's pet draws threat like its owner does, so a mob turns on the pet that hits it, and its owner
-            // takes a share (NpcBrain.AddThreatFrom).
-            if (attacker.IsPlayer || (attacker is NpcCharacter { PetOwner: Player }))
+            // takes a share (NpcBrain.AddThreatFrom). Another NPC's hit counts the same way: the victim fights back and
+            // calls its kind for help (Gameplay.json socialAggro.npcVsNpcDefaultRadius) as it would against a player.
+            if ((attacker.IsPlayer || attacker is NpcCharacter) && !ReferenceEquals(attacker, this))
                 Brain?.AddThreatFrom(attacker, hpRemoved);
 
             // The percent is only computed when the program listens for health thresholds.
@@ -635,6 +636,29 @@ namespace ZoneEngine_New.Core.Entities
         public Item? VisualRightHand { get; private set; }
 
         /// <summary>
+        /// Rounds left in the visible ranged hand weapon's clip; -1 until the first shot fills it from the weapon's
+        /// MaxEnergy. Kept across weapon rebases so a re-arm does not reload it.
+        /// </summary>
+        int _handClipRounds = -1;
+
+        /// <summary>
+        /// The swing bound to a ranged hand weapon spends a round: AttackInfo carries the rounds left after the shot
+        /// (24 from a 25-round Ofab Shark Mk 5). An empty clip keeps firing at 0 and never reloads. Retail ICC Shuttle
+        /// Guards, capture 2026-10-22T19:35Z pf 4582: 22, 21, ... 12 and 4, 3, 2, 1, 0, 0, 0.
+        /// </summary>
+        protected override int? ConsumeRound(CharacterWeapon weapon)
+        {
+            if (weapon.VisualHand is not Item hand || Helpers.AttackInfoRules.UsesMeleeAmmo(hand))
+                return null;
+
+            if (_handClipRounds < 0)
+                _handClipRounds = Math.Max(0, StatCollection.Normalize(hand.GetStat(CharacterStat.MaxEnergy)));
+            if (_handClipRounds > 0)
+                _handClipRounds--;
+            return _handClipRounds;
+        }
+
+        /// <summary>
         /// Visual weapons fill the hands; monster weapons (equipper-expanded or assigned through
         /// <see cref="EquipCombatWeapon"/>) are the only attack cycles. No monster weapon means
         /// no auto-attack.
@@ -683,10 +707,16 @@ namespace ZoneEngine_New.Core.Entities
             => (ItemClass)item.GetStat(CharacterStat.ItemClass) == ItemClass.Weapon
                 && StatCollection.Normalize(item.GetStat(CharacterStat.WeaponMesh)) > 0;
 
+        /// <summary>
+        /// Arms each monster weapon on its own wire slot (0, 1, 2, ...). With a visible hand weapon only the first one
+        /// is bound to it: that swing shows as the hand weapon (slot 6, no tag, the hand weapon's range). Every other
+        /// monster weapon keeps its own slot, SAW tag and range. Retail ICC Shuttle Guard (capture 2026-10-22T19:18Z,
+        /// pf 4582: Ofab Shark Mk 5 in hand plus BKDD, PQEA, KLGZ, VQHW, HVJP) sends hand hits as slot 6 / ammo 0 /
+        /// instance 0 and the martial arts hits as slots 1..4 with their tags, and lists only those four in its SAW.
+        /// </summary>
         void ArmMonsterWeapons()
         {
             int armed = 0;
-            Item? rangeSource = VisualRightHand;
             foreach (KeyValuePair<int, Item> slot in Equipment.EnumerateSlots())
             {
                 if (armed >= MaxNpcCombatWeapons)
@@ -697,10 +727,10 @@ namespace ZoneEngine_New.Core.Entities
                 _equipmentSawHashes.TryGetValue(slot.Key, out string? sawHash);
                 WeaponSlot logical = (WeaponSlot)((int)WeaponSlot.Npc0 + armed);
                 ArmFromItem(logical, slot.Value, wireSlot: armed, sawHash: sawHash);
-                rangeSource ??= slot.Value;
                 CharacterWeapon weapon = Weapons[logical];
-                weapon.VisualHand = VisualRightHand;
-                weapon.RangeSource = rangeSource;
+                bool boundToHand = armed == 0 && VisualRightHand != null;
+                weapon.VisualHand = boundToHand ? VisualRightHand : null;
+                weapon.RangeSource = boundToHand ? VisualRightHand : slot.Value;
                 weapon.RefreshEffectiveSpeeds();
                 armed++;
             }
@@ -711,6 +741,7 @@ namespace ZoneEngine_New.Core.Entities
 
         const int RightHandMeshPosition = 1;
         const int LeftHandMeshPosition = 2;
-        const int MaxNpcCombatWeapons = 8;
+        /// <summary>Monster weapons armed per NPC; <see cref="WeaponSlot.Npc0"/>..<see cref="WeaponSlot.Npc15"/>.</summary>
+        const int MaxNpcCombatWeapons = 16;
     }
 }

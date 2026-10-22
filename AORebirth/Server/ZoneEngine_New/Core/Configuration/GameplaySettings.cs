@@ -136,10 +136,12 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
             if (SocialAggro == null
                 || !float.IsFinite(SocialAggro.DefaultRadius) || SocialAggro.DefaultRadius < 0
+                || !float.IsFinite(SocialAggro.NpcVsNpcDefaultRadius) || SocialAggro.NpcVsNpcDefaultRadius < 0
                 || !float.IsFinite(SocialAggro.MaxRadius) || SocialAggro.MaxRadius < 0
                 || SocialAggro.DefaultRadius >= Ai.NpcAiRules.MaxLeashRange
+                || SocialAggro.NpcVsNpcDefaultRadius >= Ai.NpcAiRules.MaxLeashRange
                 || SocialAggro.MaxRadius >= Ai.NpcAiRules.MaxLeashRange)
-                throw new InvalidDataException(path + ": socialAggro.defaultRadius and maxRadius must be 0 up to below the "
+                throw new InvalidDataException(path + ": socialAggro.defaultRadius, npcVsNpcDefaultRadius and maxRadius must be 0 up to below the "
                     + Ai.NpcAiRules.MaxLeashRange + " m leash range.");
             if (SocialAggro.MaxHelpers < 0)
                 throw new InvalidDataException(path + ": socialAggro.maxHelpers must be 0 (no limit) or more.");
@@ -304,12 +306,25 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Cap on a spawn point's AssistanceRadius, in meters edge to edge (the data reaches 200).</summary>
         public float MaxRadius { get; init; } = 30f;
 
-        /// <summary>The radius a helper with <paramref name="assistanceRadius"/> from its spawn point comes from.</summary>
-        public float RadiusFor(int assistanceRadius)
-            => Math.Min(assistanceRadius > 0 ? assistanceRadius : DefaultRadius, MaxRadius);
+        /// <summary>
+        /// Assist radius against an NPC attacker (not a player's pet) for an NPC whose spawn point has none: NPC-versus-NPC
+        /// fights (a hated family, a guard defending) pull in the victim's kind even where the spawn data gives no radius.
+        /// 0 falls back to defaultRadius.
+        /// </summary>
+        public float NpcVsNpcDefaultRadius { get; init; }
+
+        /// <summary>
+        /// The radius a helper with <paramref name="assistanceRadius"/> from its spawn point comes from;
+        /// <paramref name="npcAttacker"/> when the enemy is an NPC that is not a player's pet.
+        /// </summary>
+        public float RadiusFor(int assistanceRadius, bool npcAttacker = false)
+        {
+            float fallback = npcAttacker && NpcVsNpcDefaultRadius > 0 ? NpcVsNpcDefaultRadius : DefaultRadius;
+            return Math.Min(assistanceRadius > 0 ? assistanceRadius : fallback, MaxRadius);
+        }
 
         /// <summary>The farthest any helper can come: how far a call for help has to look.</summary>
-        public float SearchRadius => Math.Max(DefaultRadius, MaxRadius);
+        public float SearchRadius => Math.Max(Math.Max(DefaultRadius, NpcVsNpcDefaultRadius), MaxRadius);
 
         /// <summary>Helpers must share the NPC's NPCFamily (455) as well as its Side.</summary>
         public bool SameFamilyOnly { get; init; } = true;

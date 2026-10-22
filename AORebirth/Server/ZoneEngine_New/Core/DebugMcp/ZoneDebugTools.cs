@@ -307,6 +307,21 @@ namespace ZoneEngine_New.Core.DebugMcp
                 collisionRadius = npc.GetCollisionRadius(),
                 home = brain?.Home is { } home ? new { home.x, home.y, home.z } : null,
                 wanderEnabled = brain?.WanderEnabled,
+                scriptedMove = brain?.ScriptHoldsMovement,
+                scriptedDirect = brain?.ScriptMovesDirect,
+                scriptedAnchor = brain?.ScriptedAnchor is { } anchor ? new { anchor.x, anchor.y, anchor.z } : null,
+                script = npc.Scripts is { } scripts
+                    ? new
+                    {
+                        program = scripts.Program.Id,
+                        handler = scripts.CurrentTrigger,
+                        pc = scripts.ProgramCounter,
+                        waiting = scripts.WaitState,
+                        wakeInSeconds = scripts.WakeAtMs == long.MaxValue
+                            ? (double?)null
+                            : Math.Round(Math.Max(0, scripts.WakeAtMs - Environment.TickCount64) / 1000.0, 2)
+                    }
+                    : null,
                 lastThinkSecondsAgo = brain == null || brain.LastThinkUtc == default
                     ? (double?)null
                     : Math.Round((DateTime.UtcNow - brain.LastThinkUtc).TotalSeconds, 2)

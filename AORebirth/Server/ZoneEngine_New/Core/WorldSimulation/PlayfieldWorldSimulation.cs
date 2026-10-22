@@ -745,6 +745,12 @@
             if (destPlayfieldId <= 0 || destPlayfieldId == source.Identity.Instance)
                 return;
 
+            // Walking into a door that records a way back opens that door's own instance of the interior, as using the
+            // door does. The landing stays resolved on the interior's geometry, which the instance shares.
+            if (crossing.Trigger.RecordsReturn && crossing.Trigger.LandingKind == PortalLandingKind.DoorDynel)
+                destPlayfieldId = ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.ResolveTarget(
+                    _gameData, source.ResourceId, crossing.Trigger.DynelInstance, destPlayfieldId);
+
             IZoneSession? session = player.Session;
             if (session == null)
                 return;

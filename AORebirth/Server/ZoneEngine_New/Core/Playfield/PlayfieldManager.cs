@@ -89,11 +89,13 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.Modules.ZoneModuleHost? modules = null,
             ZoneEngine_New.Core.Chat.VicinityChatRelay? vicinity = null,
             ZoneEngine_New.Core.World.WorldLink? world = null,
-            ZoneEngine_New.Core.World.CrossInstanceTransfer? crossInstance = null)
+            ZoneEngine_New.Core.World.CrossInstanceTransfer? crossInstance = null,
+            ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? npcScripts = null)
         {
             World = world;
             _crossInstance = crossInstance;
             Vicinity = vicinity;
+            NpcScripts = npcScripts;
             QuestDungeons = questDungeons;
             Knubot = knubot;
             Gameplay = gameplay;
@@ -156,6 +158,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Vicinity chat, for NPCs speaking (see <see cref="Chat.VicinityChatRelay.Speak"/>).</summary>
         public ZoneEngine_New.Core.Chat.VicinityChatRelay? Vicinity { get; }
+
+        /// <summary>NPC scripts (GameData/NpcScripts), handed to every playfield's services so spawns can bind to them.</summary>
+        public ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? NpcScripts { get; }
 
         public IItemTemplateCatalog ItemTemplates { get; }
 
@@ -432,8 +437,20 @@ namespace ZoneEngine_New.Core.Playfield
                 Instance = playfieldId
             };
 
+            // A proxy instance is built from the interior its source door leads to, under its own identity.
+            int resourceId = playfieldId;
+            int sourceDoor = 0;
+            if (ProxyPlayfieldIds.IsProxy(playfieldId))
+            {
+                if (!ProxyPlayfieldIds.TryResolveResource(_gameData, playfieldId, out resourceId, out int sourcePlayfield, out sourceDoor))
+                    throw new InvalidOperationException("Proxy playfield " + playfieldId.ToString(CultureInfo.InvariantCulture)
+                        + " has no walk-in door behind it any more.");
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Proxy playfield {0} is interior {1} behind door 0x{2:X8} on playfield {3}", playfieldId, resourceId, sourceDoor, sourcePlayfield));
+            }
+
             Playfield created;
-            if (RequiresWorldSimulation(_gameData, playfieldId))
+            if (RequiresWorldSimulation(_gameData, resourceId))
             {
                 created = new ACGPlayfield(
                     identity,
@@ -451,7 +468,9 @@ namespace ZoneEngine_New.Core.Playfield
                     _trades,
                     _characterSnapshot,
                     _metricsRegistry,
-                    _shopDao);
+                    _shopDao,
+                    resourceId,
+                    sourceDoor);
             }
             else
             {
@@ -471,7 +490,9 @@ namespace ZoneEngine_New.Core.Playfield
                     _trades,
                     _characterSnapshot,
                     _metricsRegistry,
-                    _shopDao);
+                    _shopDao,
+                    resourceId,
+                    sourceDoor);
             }
 
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.build", playfieldId);
@@ -526,6 +547,13 @@ namespace ZoneEngine_New.Core.Playfield
         /// destination of a return-recording TeleportProxy; otherwise its exit boundary can never
         /// initiate the server-side area change.
         /// </summary>
+        /// <summary>
+        /// The interior a proxy instance id stands for. False when its source door is gone or no longer leads to an
+        /// indoor interior; <paramref name="sourcePlayfieldId"/> is still the door's playfield when the id decodes.
+        /// </summary>
+        public bool TryResolveProxyResource(int playfieldId, out int resourceId, out int sourcePlayfieldId)
+            => ProxyPlayfieldIds.TryResolveResource(_gameData, playfieldId, out resourceId, out sourcePlayfieldId, out _);
+
         internal static bool RequiresWorldSimulation(IGameData gameData, int playfieldId)
         {
             ArgumentNullException.ThrowIfNull(gameData);

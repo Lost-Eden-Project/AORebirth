@@ -88,6 +88,16 @@ namespace ZoneEngine_New.Core.Entities
 
         public Identity LootWinner { get; set; } = Identity.None;
 
+        /// <summary>
+        /// NPCs did the killing: no item table roll and no credits. Items the NPC was explicitly given to carry
+        /// (SpawnItem) still drop. Call before <see cref="LootableDynel.ResolveLoot"/>.
+        /// </summary>
+        public void ForfeitSpoils()
+        {
+            ItemTable = null;
+            SourceStats[CharacterStat.Cash] = 0;
+        }
+
         public DateTime ReservedUntilUtc { get; set; }
 
         protected override bool CanOpenLoot(Player player)

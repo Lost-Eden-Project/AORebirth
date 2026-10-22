@@ -35,15 +35,17 @@ namespace ZoneEngine_New.Core.World
         readonly InventoryFlushService _flush;
         readonly TradeService _trades;
         readonly IZoneLogger _logger;
+        readonly ZoneEngine_New.Core.GameData.IGameData _gameData;
 
         public CrossInstanceTransfer(WorldLink world, CharacterSnapshotService snapshot, InventoryFlushService flush,
-            TradeService trades, IZoneLogger logger)
+            TradeService trades, IZoneLogger logger, ZoneEngine_New.Core.GameData.IGameData gameData)
         {
             _world = world ?? throw new ArgumentNullException(nameof(world));
             _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
             _flush = flush ?? throw new ArgumentNullException(nameof(flush));
             _trades = trades ?? throw new ArgumentNullException(nameof(trades));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
         }
 
         /// <summary>Runs on the player's own playfield tick. False when the move could not start.</summary>
@@ -144,8 +146,18 @@ namespace ZoneEngine_New.Core.World
                 if (IPAddress.TryParse(reply.Target.Address, out IPAddress? address) && reply.Target.Port is > 0 and <= ushort.MaxValue
                     && ReferenceEquals(player.Session, session))
                 {
+                    // A proxy instance hosted elsewhere: the teleport still names the interior the client loads.
+                    int resourceId = destinationPlayfield;
+                    int sourceDoor = 0;
+                    if (ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.IsProxy(destinationPlayfield)
+                        && !ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.TryResolveResource(_gameData, destinationPlayfield, out resourceId, out _, out sourceDoor))
+                    {
+                        resourceId = destinationPlayfield;
+                        sourceDoor = 0;
+                    }
+
                     foreach (byte[] packet in session.PrepareRemoteTransferPackets(player, landing, heading, destinationPlayfield,
-                        address, (ushort)reply.Target.Port))
+                        resourceId, sourceDoor, address, (ushort)reply.Target.Port))
                         session.Send(packet);
                 }
             }

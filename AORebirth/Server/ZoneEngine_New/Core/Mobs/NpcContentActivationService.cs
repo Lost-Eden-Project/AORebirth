@@ -34,8 +34,9 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
     internal void Activate()
     {
         if (_stopped) return;
-        PlayfieldNpcContentCatalog playfieldContent = gameData?.GetPlayfieldNpcs(playfield.Identity.Instance)
-            ?? PlayfieldNpcContentCatalog.Load(GameDataPaths.ResolveRuntimeRoot(), playfield.Identity.Instance);
+        // Content is authored per resource playfield; every proxy instance of a shop places the same NPCs.
+        PlayfieldNpcContentCatalog playfieldContent = gameData?.GetPlayfieldNpcs(playfield.ResourceId)
+            ?? PlayfieldNpcContentCatalog.Load(GameDataPaths.ResolveRuntimeRoot(), playfield.ResourceId);
 
         foreach (var definition in playfieldContent.Npcs)
         {
@@ -54,7 +55,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
                 locality.RegisterDynel(npc);
                 _activated.Add(definition.Key);
                 // NpcScripts: a placed NPC is bound by its content Key.
-                playfield.GetService<NpcScripts.NpcScriptCatalog>()?.TryAttach(npc, playfield.Identity.Instance, spawnPointKey: null, npcKey: definition.Key);
+                playfield.GetService<NpcScripts.NpcScriptCatalog>()?.TryAttach(npc, playfield.ResourceId, spawnPointKey: null, npcKey: definition.Key);
             }
             catch
             {
@@ -132,7 +133,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
     {
         if (shopDao == null || gameData == null) return;
 
-        int playfieldId = playfield.Identity.Instance;
+        int playfieldId = playfield.ResourceId;
         Dictionary<int, VendingMachine[]> machinesByVendorId = registry.Dynels()
             .OfType<VendingMachine>()
             .Where(machine => machine.SpawnSource == SpawnSource.StaticDynel && machine.OwnerNpc == null)
@@ -261,7 +262,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
     // Only loaded content placement construction calls this in production. Packet handlers only query.
     internal void Bind(NpcCharacter npc, NpcContentBinding binding)
     {
-        if (_stopped || binding.PlayfieldId != playfield.Identity.Instance
+        if (_stopped || binding.PlayfieldId != playfield.ResourceId
             || string.IsNullOrWhiteSpace(binding.PlacementIdentity)
             || !IsCurrent(npc)
             || _bindings.Values.Any(existing => existing.PlacementIdentity == binding.PlacementIdentity))

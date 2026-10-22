@@ -31,6 +31,7 @@
   "socialAggro": {
     "enabled": true,
     "defaultRadius": 0,
+    "npcVsNpcDefaultRadius": 20,
     "maxRadius": 30,
     "sameFamilyOnly": true,
     "requireLineOfSight": true,

@@ -35,7 +35,7 @@ public enum ScriptOpCode : byte
 
     /// <summary>
     /// Blocking walk. D = kind: 0 program vector A; 1 param vector array A at index B; 2 param vector array A at the
-    /// runner's waypoint cursor (advancing it); 3 home. C = 1 to run, 0 to walk.
+    /// runner's waypoint cursor (advancing it); 3 home. C = flags: 1 run (else walk), 2 direct (straight line, no navmesh).
     /// </summary>
     MoveTo,
 
@@ -76,7 +76,13 @@ public enum ScriptOpCode : byte
     Restart,
 
     /// <summary>Give movement back to the brain's patrol / wander / idle without ending the handler.</summary>
-    ReleaseMovement
+    ReleaseMovement,
+
+    /// <summary>
+    /// Re-posts the NPC: its home for leash and return becomes the point. A, B, D as <see cref="MoveTo"/>; D = 4 is
+    /// the NPC's current position ("Here").
+    /// </summary>
+    SetHome
 }
 
 public enum GfxAnchor

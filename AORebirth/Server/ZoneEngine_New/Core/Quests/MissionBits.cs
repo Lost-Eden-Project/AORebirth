@@ -64,5 +64,12 @@ namespace ZoneEngine_New.Core.Quests
             (CharacterStat stat, int mask) = Locate(bit);
             stats.Set(stat, stats.GetOrZero(stat, StatDetail.Base) | mask, StatDetail.Base, dirty: true);
         }
+
+        /// <summary>Clears the bit in the stored value and queues the stat for the client.</summary>
+        public static void Clear(StatCollection stats, int bit)
+        {
+            (CharacterStat stat, int mask) = Locate(bit);
+            stats.Set(stat, stats.GetOrZero(stat, StatDetail.Base) & ~mask, StatDetail.Base, dirty: true);
+        }
     }
 }

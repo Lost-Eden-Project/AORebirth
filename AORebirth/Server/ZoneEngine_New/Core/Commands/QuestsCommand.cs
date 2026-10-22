@@ -30,19 +30,21 @@ namespace ZoneEngine_New.Core.Commands
         readonly Lazy<PlayfieldManager> _playfields;
         readonly QuestService _quests;
         readonly QuestDungeonService _dungeons;
+        readonly QuestCatalog _catalog;
 
-        public QuestsCommand(Lazy<PlayfieldManager> playfields, QuestService quests, QuestDungeonService dungeons)
+        public QuestsCommand(Lazy<PlayfieldManager> playfields, QuestService quests, QuestDungeonService dungeons, QuestCatalog catalog)
         {
             _playfields = playfields ?? throw new ArgumentNullException(nameof(playfields));
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _dungeons = dungeons ?? throw new ArgumentNullException(nameof(dungeons));
+            _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         }
 
         public string Name => "quests";
 
         public int RequiredGmLevel => 1;
 
-        public string Usage => ".quests (selected player's active quests) | .quests info <questId> [characterId] (all of a quest's details) | .quests tp <questId> (you, to its dungeon entrance)";
+        public string Usage => ".quests (selected player's active quests) | .quests info <questId> [characterId] | .quests tp <questId> | .quests done [characterId] | .quests wipe <questHash> [characterId]";
 
         public GmCommandHelp Help { get; } = new(
             "Shows and inspects quests.",
@@ -50,12 +52,18 @@ namespace ZoneEngine_New.Core.Commands
                 new(".quests", "Your look-at player's active quests (or yours)."),
                 new(".quests info <questId> [characterId]", "Every detail of one quest, in a popup."),
                 new(".quests tp <questId>", "Takes you to the quest's dungeon entrance."),
+                new(".quests done [characterId]", "Your look-at player's completed quests: every quest whose mission bit is set, plus completed journal entries."),
+                new(".quests wipe <questHash> [characterId]", "Development: clears the quest's mission bit on your look-at player, so it counts as not completed."),
             ],
             [
                 new(".quests", "Active quests of your target."),
                 new(".quests info 12", "Details of quest 12."),
                 new(".quests tp 12", "Go to quest 12's entrance."),
-            ]);
+                new(".quests done", "Completed quests of your target, each with a wipe link."),
+                new(".quests wipe ABCD", "Clear quest ABCD's mission bit on your target."),
+            ],
+            "Wipe only clears the mission bit (what HasCompletedQuest and item requirements read). A completed journal entry "
+            + "for the quest stays, so a 'quest HASH done' check still passes. Quests that share the bit are cleared with it.");
 
         public void Execute(GmCommandContext context)
         {
@@ -64,6 +72,18 @@ namespace ZoneEngine_New.Core.Commands
             if (context.Args.Length >= 1 && string.Equals(context.Args[0], "tp", StringComparison.OrdinalIgnoreCase))
             {
                 TeleportToEntrance(context);
+                return;
+            }
+
+            if (context.Args.Length >= 1 && string.Equals(context.Args[0], "done", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowCompleted(context);
+                return;
+            }
+
+            if (context.Args.Length >= 1 && string.Equals(context.Args[0], "wipe", StringComparison.OrdinalIgnoreCase))
+            {
+                WipeMissionBit(context);
                 return;
             }
 
@@ -237,6 +257,204 @@ namespace ZoneEngine_New.Core.Commands
                     : string.Format(CultureInfo.InvariantCulture, "{0} ({1}/{2})", title, i + 1, chunks.Count);
                 lines.Add(GetStatsAomlBuilder.BuildLink(chunks[i], label));
             }
+
+            GmCommandFeedback.SendLines(context.Session, context.Player, lines);
+        }
+
+        /// <summary>
+        /// The subject for <c>done</c> / <c>wipe</c>: an online character id at <paramref name="index"/>, else the look-at
+        /// player, else the GM.
+        /// </summary>
+        bool TryResolveSubject(GmCommandContext context, int index, out Player subject)
+        {
+            if (context.Args.Length > index)
+            {
+                if (!int.TryParse(context.Args[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out int characterId)
+                    || !_playfields.Value.FindPlayer(characterId, out subject))
+                {
+                    GmCommandFeedback.SendError(context.Session, context.Player, "That character is not online.");
+                    subject = null!;
+                    return false;
+                }
+
+                return true;
+            }
+
+            return context.TryResolveSubject(out subject, requirePlayerTarget: true);
+        }
+
+        static string WhoOf(Player subject)
+            => string.IsNullOrEmpty(subject.Name) ? subject.Identity.Instance.ToString(CultureInfo.InvariantCulture) : Safe(subject.Name);
+
+        /// <summary>
+        /// Completed quests: every catalog quest whose mission bit the subject has (by bit order), then completed journal
+        /// entries whose quest sets no bit. Each bit row links to <c>.quests wipe</c>.
+        /// </summary>
+        void ShowCompleted(GmCommandContext context)
+        {
+            if (!TryResolveSubject(context, 1, out Player subject))
+                return;
+
+            int characterId = subject.Identity.Instance;
+            var byBit = new SortedDictionary<int, List<QuestTemplate>>();
+            foreach (QuestTemplate template in _catalog.Templates)
+            {
+                if (template.MissionBit is not int bit || !MissionBits.Has(subject.Stats, bit))
+                    continue;
+                if (!byBit.TryGetValue(bit, out List<QuestTemplate>? list))
+                    byBit[bit] = list = new List<QuestTemplate>();
+                list.Add(template);
+            }
+
+            var journalOnly = new List<PlayerQuest>();
+            foreach (PlayerQuest quest in _quests.GetLog(subject).Quests.Values)
+            {
+                if (quest.State != QuestState.Completed)
+                    continue;
+                if (quest.Template.MissionBit is int bit && byBit.ContainsKey(bit))
+                    continue;
+                journalOnly.Add(quest);
+            }
+
+            string who = WhoOf(subject);
+            int total = 0;
+            foreach (List<QuestTemplate> list in byBit.Values)
+                total += list.Count;
+            total += journalOnly.Count;
+            if (total == 0)
+            {
+                GmCommandFeedback.Send(context.Session, context.Player, who + " has no completed quests.");
+                return;
+            }
+
+            var rows = new List<string>
+            {
+                DiagAoml.Title(who + " - completed quests"),
+                DiagAoml.Muted(string.Format(CultureInfo.InvariantCulture, "{0} by mission bit, {1} from the journal only. [Wipe] clears the bit.",
+                    total - journalOnly.Count, journalOnly.Count)),
+            };
+
+            if (byBit.Count > 0)
+            {
+                rows.Add(DiagAoml.Section("Mission bits"));
+                foreach (KeyValuePair<int, List<QuestTemplate>> pair in byBit)
+                {
+                    foreach (QuestTemplate template in pair.Value)
+                    {
+                        rows.Add(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0} {1} {2} {3}  <a href='chatcmd:///say .quests wipe {4} {5}'>{6}</a>",
+                            DiagAoml.Color(DiagAoml.Green, "+"),
+                            DiagAoml.Name(Safe(template.Name)),
+                            DiagAoml.Label("[" + Safe(template.Hash) + "]"),
+                            DiagAoml.Muted("bit " + pair.Key.ToString(CultureInfo.InvariantCulture)
+                                + (pair.Value.Count > 1 ? ", shared" : string.Empty)),
+                            Safe(template.Hash),
+                            characterId,
+                            DiagAoml.Color(DiagAoml.Red, "[Wipe]")));
+                    }
+                }
+            }
+
+            if (journalOnly.Count > 0)
+            {
+                rows.Add(DiagAoml.Section("Journal only (no mission bit)"));
+                foreach (PlayerQuest quest in journalOnly)
+                {
+                    rows.Add(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} {1} {2} {3}",
+                        DiagAoml.Color(DiagAoml.Yellow, "*"),
+                        DiagAoml.Name(Safe(quest.Template.Name)),
+                        DiagAoml.Label("[" + Safe(string.IsNullOrWhiteSpace(quest.Template.Hash) ? quest.QuestId : quest.Template.Hash) + "]"),
+                        DiagAoml.Muted("assigned " + Utc(quest.AssignedAtUtc))));
+                }
+            }
+
+            string title = string.Format(CultureInfo.InvariantCulture, "{0} completed quests ({1})", who, total);
+            IReadOnlyList<string> chunks = GetStatsAomlBuilder.ChunkRows(rows, GetStatsAomlBuilder.DefaultMaxBodyLength);
+            var lines = new List<string>(chunks.Count);
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                string label = chunks.Count == 1
+                    ? title
+                    : string.Format(CultureInfo.InvariantCulture, "{0} ({1}/{2})", title, i + 1, chunks.Count);
+                lines.Add(GetStatsAomlBuilder.BuildLink(chunks[i], label));
+            }
+
+            GmCommandFeedback.SendLines(context.Session, context.Player, lines);
+        }
+
+        /// <summary>Development: clears the quest's mission bit on the subject and reports every quest that shares it.</summary>
+        void WipeMissionBit(GmCommandContext context)
+        {
+            if (context.Args.Length < 2)
+            {
+                context.SendUsage("Usage: .quests wipe <questHash> [characterId]");
+                return;
+            }
+
+            string hash = context.Args[1].Trim();
+            if (!_catalog.TryGet(hash, out QuestTemplate template)
+                && !_catalog.TryGet(hash.ToUpperInvariant(), out template))
+            {
+                GmCommandFeedback.SendError(context.Session, context.Player, "No quest with hash " + Safe(hash) + " in Quests.json.");
+                return;
+            }
+
+            if (template.MissionBit is not int bit)
+            {
+                GmCommandFeedback.SendError(context.Session, context.Player,
+                    Safe(template.Name) + " [" + Safe(template.Hash) + "] sets no mission bit; nothing to wipe.");
+                return;
+            }
+
+            if (!TryResolveSubject(context, 2, out Player subject))
+                return;
+
+            string who = WhoOf(subject);
+            var shared = new List<string>();
+            foreach (QuestTemplate other in _catalog.Templates)
+            {
+                if (other.MissionBit == bit && !ReferenceEquals(other, template))
+                    shared.Add(Safe(other.Name) + " [" + Safe(other.Hash) + "]");
+            }
+
+            bool wasSet = MissionBits.Has(subject.Stats, bit);
+            (CharacterStat stat, int mask) = MissionBits.Locate(bit);
+            bool baseSet = (subject.Stats.GetOrZero(stat, StatDetail.Base) & mask) != 0;
+            if (baseSet)
+            {
+                MissionBits.Clear(subject.Stats, bit);
+                subject.FlushDirtyStats();
+            }
+
+            var lines = new List<string>();
+            string quest = DiagAoml.Name(Safe(template.Name)) + " " + DiagAoml.Label("[" + Safe(template.Hash) + "]");
+            string bitText = DiagAoml.Muted("bit " + bit.ToString(CultureInfo.InvariantCulture) + " (" + stat + ")");
+            if (baseSet)
+                lines.Add(DiagAoml.Color(DiagAoml.Green, "Wiped") + " " + quest + " " + bitText + " on " + DiagAoml.Name(who) + ".");
+            else if (wasSet)
+                lines.Add(DiagAoml.Color(DiagAoml.Orange, "Not stored") + " " + quest + " " + bitText + " on " + DiagAoml.Name(who)
+                    + ": the bit comes from worn gear, not the character, so it cannot be wiped here.");
+            else
+                lines.Add(DiagAoml.Color(DiagAoml.Yellow, "Already clear") + " " + quest + " " + bitText + " on " + DiagAoml.Name(who) + ".");
+
+            if (shared.Count > 0)
+                lines.Add(DiagAoml.Color(DiagAoml.Orange, "Shared bit:") + " " + DiagAoml.Muted(string.Join(", ", shared)));
+
+            bool journalDone = false;
+            foreach (PlayerQuest entry in _quests.GetLog(subject).Quests.Values)
+            {
+                if (entry.State == QuestState.Completed && string.Equals(entry.Template.Hash, template.Hash, StringComparison.Ordinal))
+                {
+                    journalDone = true;
+                    break;
+                }
+            }
+
+            if (journalDone)
+                lines.Add(DiagAoml.Color(DiagAoml.Orange, "Journal:") + " " + DiagAoml.Muted("a completed journal entry remains, so 'quest " + Safe(template.Hash) + " done' still passes."));
 
             GmCommandFeedback.SendLines(context.Session, context.Player, lines);
         }

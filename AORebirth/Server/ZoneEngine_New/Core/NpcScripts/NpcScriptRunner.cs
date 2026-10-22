@@ -42,6 +42,7 @@ public sealed class NpcScriptRunner
     int _waitWaypoint = -1;
     int _waypointCursor;
     bool _moveRun;
+    bool _moveDirect;
     Vector3? _moveDestination;
 
     // One level of suspension: an interrupting handler runs, then the suspended one resumes where it was.
@@ -341,7 +342,7 @@ public sealed class NpcScriptRunner
 
         if (_moveDestination is Vector3 destination)
         {
-            brain.ScriptMoveTo(destination, _moveRun);
+            brain.ScriptMoveTo(destination, _moveRun, _moveDirect);
             _wakeAtMs = now + ArrivePollMs;
             return false;
         }
@@ -470,6 +471,11 @@ public sealed class NpcScriptRunner
                     _moveDestination = null;
                     _npc.Brain?.ScriptReleaseMovement();
                     break;
+
+                case ScriptOpCode.SetHome:
+                    if (_npc.Brain is { } homeBrain && TryResolvePoint(op, out Vector3 newHome, out _))
+                        homeBrain.SetHome(newHome);
+                    break;
             }
         }
     }
@@ -522,12 +528,33 @@ public sealed class NpcScriptRunner
         if (brain == null || _npc.IsDead || _npc.IsImmobile)
             return false;
 
+        if (!TryResolvePoint(op, out Vector3 target, out int waypoint))
+            return false;
+
+        _moveDestination = target;
+        _moveRun = (op.C & 1) != 0;
+        _moveDirect = (op.C & 2) != 0;
+        _waitWaypoint = waypoint;
+        _waiting = WaitKind.Arrive;
+        _wakeAtMs = now + ArrivePollMs;
+        if (!brain.IsBusy)
+            brain.ScriptMoveTo(target, _moveRun, _moveDirect);
+        return true;
+    }
+
+    /// <summary>The point a MoveTo / SetHome op names through its D kind; false when it names nothing usable.</summary>
+    bool TryResolvePoint(ScriptOp op, out Vector3 point, out int waypoint)
+    {
+        point = default!;
+        waypoint = -1;
         Vector3? destination;
-        int waypoint = -1;
         switch (op.D)
         {
+            case 4:
+                destination = _npc.Position;
+                break;
             case 3:
-                destination = brain.Home;
+                destination = _npc.Brain?.Home;
                 break;
             case 2:
             {
@@ -558,13 +585,7 @@ public sealed class NpcScriptRunner
         if (destination is not Vector3 target)
             return false;
 
-        _moveDestination = target;
-        _moveRun = op.C != 0;
-        _waitWaypoint = waypoint;
-        _waiting = WaitKind.Arrive;
-        _wakeAtMs = now + ArrivePollMs;
-        if (!brain.IsBusy)
-            brain.ScriptMoveTo(target, _moveRun);
+        point = target;
         return true;
     }
 

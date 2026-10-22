@@ -1136,8 +1136,14 @@ namespace ZoneEngine_New.Core.Inventory
 
             player.Rotation = heading;
 
+            // An interior or backyard behind a walk-in door is a per-door instance (live's proxy playfields); the
+            // landing above was resolved on the interior's own geometry, which the instance shares.
+            int targetPlayfield = landsOnLine
+                ? destPlayfield
+                : ProxyPlayfieldIds.ResolveTarget(gameData, source.ResourceId, sourceDoor, destPlayfield);
+
             source.GetService<WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
-            return source.GetRequiredService<PlayfieldManager>().WithPlayfield(destPlayfield, player, arrival =>
+            return source.GetRequiredService<PlayfieldManager>().WithPlayfield(targetPlayfield, player, arrival =>
             {
                 if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
                     return;

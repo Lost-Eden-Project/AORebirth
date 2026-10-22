@@ -16,7 +16,10 @@ namespace ZoneEngine_New.Core.Entities
         OffHand = 2,
         CombinedMA = 3,
 
-        /// <summary>NPC template weapon indices 0..7 (not player WeaponPage slots).</summary>
+        /// <summary>
+        /// NPC template weapon ordinals 0..15 (not player WeaponPage slots): the monster weapons in template equipment
+        /// order, which is also the AttackInfo wire slot retail uses for them (an alien specialist carries ten).
+        /// </summary>
         Npc0 = 10,
         Npc1 = 11,
         Npc2 = 12,
@@ -24,7 +27,15 @@ namespace ZoneEngine_New.Core.Entities
         Npc4 = 14,
         Npc5 = 15,
         Npc6 = 16,
-        Npc7 = 17
+        Npc7 = 17,
+        Npc8 = 18,
+        Npc9 = 19,
+        Npc10 = 20,
+        Npc11 = 21,
+        Npc12 = 22,
+        Npc13 = 23,
+        Npc14 = 24,
+        Npc15 = 25
     }
 
     public enum WeaponState
@@ -53,7 +64,7 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Value written to AttackInfo slot fields.
-        /// Negative means derive from <see cref="LogicalSlot"/> (players). NPCs set 0..7 for template weapon ordinals.
+        /// Negative means derive from <see cref="LogicalSlot"/> (players). NPCs set 0..15 for template weapon ordinals.
         /// </summary>
         public int WireSlot { get; set; } = -1;
 

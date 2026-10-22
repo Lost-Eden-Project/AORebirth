@@ -1,0 +1,145 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "ICCShuttleport_AlienSwarm",
+  "Params": {
+    "Destination": "Vector3",
+    "Approach": "Vector3[]"
+  },
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        {
+          "Wait": [
+            2000,
+            90000
+          ]
+        },
+        {
+          "RunTo": {
+            "To": "$Approach[0]",
+            "Direct": true
+          }
+        },
+        {
+          "RunTo": {
+            "To": "$Approach[1]",
+            "Direct": true
+          }
+        },
+        {
+          "RunTo": {
+            "To": "$Approach[2]",
+            "Direct": true
+          }
+        },
+        {
+          "RunTo": "$Destination"
+        },
+        {
+          "SetHome": "Here"
+        },
+        {
+          "SetVar": {
+            "Var": 0,
+            "Value": 1
+          }
+        }
+      ]
+    },
+    {
+      "On": "Reset",
+      "Interrupts": true,
+      "Do": [
+        {
+          "If": {
+            "Var": 0,
+            "Eq": 1,
+            "Goto": "posted"
+          }
+        },
+        {
+          "Restart": "Spawned"
+        },
+        {
+          "Label": "posted"
+        }
+      ]
+    },
+    {
+      "On": "Stuck",
+      "Interrupts": true,
+      "Do": [
+        {
+          "Wait": [
+            5000,
+            10000
+          ]
+        },
+        {
+          "Restart": "Spawned"
+        }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Hash": "ACFJ",
+      "Playfield": 4582,
+      "Args": {
+        "Destination": [
+          902.3,
+          38.2,
+          829.0
+        ],
+        "Approach": [
+          [
+            841.9,
+            26.3,
+            857.8
+          ],
+          [
+            835.9,
+            35.4,
+            818.4
+          ],
+          [
+            841.9,
+            35.6,
+            822.5
+          ]
+        ]
+      },
+      "Provenance": "hand 2026-10-22; approach points off-mesh (spawn ground, foot and plateau top are separate 4582 navmesh islands)"
+    },
+    {
+      "Hash": "CRDY",
+      "Playfield": 4582,
+      "Args": {
+        "Destination": [
+          902.3,
+          38.2,
+          829.0
+        ],
+        "Approach": [
+          [
+            841.9,
+            26.3,
+            857.8
+          ],
+          [
+            835.9,
+            35.4,
+            818.4
+          ],
+          [
+            841.9,
+            35.6,
+            822.5
+          ]
+        ]
+      },
+      "Provenance": "hand 2026-10-22; approach points off-mesh (spawn ground, foot and plateau top are separate 4582 navmesh islands)"
+    }
+  ]
+}

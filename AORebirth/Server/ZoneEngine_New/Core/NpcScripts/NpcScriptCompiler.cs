@@ -420,6 +420,14 @@ public sealed class NpcScriptCompiler
                 ctx.Ops.Add(new ScriptOp(ScriptOpCode.ReleaseMovement));
                 return;
 
+            case "SetHome":
+                if (value.ValueKind == JsonValueKind.String
+                    && string.Equals(value.GetString(), "Here", StringComparison.OrdinalIgnoreCase))
+                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.SetHome, 0, 0, 0, 4));
+                else
+                    CompileMove(value, false, ctx, false, ScriptOpCode.SetHome);
+                return;
+
             case "End":
                 ctx.Ops.Add(new ScriptOp(ScriptOpCode.End));
                 return;
@@ -430,9 +438,27 @@ public sealed class NpcScriptCompiler
         }
     }
 
-    void CompileMove(JsonElement value, bool run, ProgramContext ctx)
+    /// <summary>
+    /// A move target, or its object form <c>{ "To": target, "Direct": true }</c>. Direct walks a straight line
+    /// without the navmesh: the bridge for a short gap the mesh does not cover (a steep ramp between two islands).
+    /// </summary>
+    void CompileMove(JsonElement value, bool run, ProgramContext ctx, bool direct = false, ScriptOpCode code = ScriptOpCode.MoveTo)
     {
-        int runFlag = run ? 1 : 0;
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            if (!value.TryGetProperty("To", out JsonElement to))
+            {
+                ctx.Error("WalkTo: object form needs To");
+                return;
+            }
+
+            bool directFlag = value.TryGetProperty("Direct", out JsonElement directElement)
+                && directElement.ValueKind == JsonValueKind.True;
+            CompileMove(to, run, ctx, directFlag, code);
+            return;
+        }
+
+        int runFlag = (run ? 1 : 0) | (direct ? 2 : 0);
         if (value.ValueKind == JsonValueKind.Array)
         {
             if (!TryParseVector(value, out Vector3 vector))
@@ -441,14 +467,14 @@ public sealed class NpcScriptCompiler
                 return;
             }
 
-            ctx.Ops.Add(new ScriptOp(ScriptOpCode.MoveTo, ctx.Vector(vector), 0, runFlag, 0));
+            ctx.Ops.Add(new ScriptOp(code, ctx.Vector(vector), 0, runFlag, 0));
             return;
         }
 
         string text = value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
         if (string.Equals(text, "Home", StringComparison.OrdinalIgnoreCase))
         {
-            ctx.Ops.Add(new ScriptOp(ScriptOpCode.MoveTo, 0, 0, runFlag, 3));
+            ctx.Ops.Add(new ScriptOp(code, 0, 0, runFlag, 3));
             return;
         }
 
@@ -465,7 +491,7 @@ public sealed class NpcScriptCompiler
             // A Vector3 parameter: one-element array, index 0.
             int slot = ctx.ParamSlot(name, ScriptParamType.Vector3, out bool found);
             if (slot >= 0)
-                ctx.Ops.Add(new ScriptOp(ScriptOpCode.MoveTo, ScriptOp.ParamRef(slot), 0, runFlag, 1));
+                ctx.Ops.Add(new ScriptOp(code, ScriptOp.ParamRef(slot), 0, runFlag, 1));
             return;
         }
 
@@ -483,7 +509,7 @@ public sealed class NpcScriptCompiler
 
         if (string.Equals(indexText, "next", StringComparison.OrdinalIgnoreCase))
         {
-            ctx.Ops.Add(new ScriptOp(ScriptOpCode.MoveTo, ScriptOp.ParamRef(arraySlot), 0, runFlag, 2));
+            ctx.Ops.Add(new ScriptOp(code, ScriptOp.ParamRef(arraySlot), 0, runFlag, 2));
             return;
         }
 
@@ -493,7 +519,7 @@ public sealed class NpcScriptCompiler
             return;
         }
 
-        ctx.Ops.Add(new ScriptOp(ScriptOpCode.MoveTo, ScriptOp.ParamRef(arraySlot), index, runFlag, 1));
+        ctx.Ops.Add(new ScriptOp(code, ScriptOp.ParamRef(arraySlot), index, runFlag, 1));
     }
 
     void CompileEmote(JsonElement value, ProgramContext ctx)

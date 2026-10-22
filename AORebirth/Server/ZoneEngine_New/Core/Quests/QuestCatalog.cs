@@ -31,6 +31,9 @@ namespace ZoneEngine_New.Core.Quests
         public bool TryGet(string hash, out QuestTemplate template)
             => _templates.TryGetValue(hash ?? string.Empty, out template!);
 
+        /// <summary>Every loaded template (read-only after load).</summary>
+        public IEnumerable<QuestTemplate> Templates => _templates.Values;
+
         void LoadTemplates(string path, IZoneLogger logger)
         {
             if (!File.Exists(path))

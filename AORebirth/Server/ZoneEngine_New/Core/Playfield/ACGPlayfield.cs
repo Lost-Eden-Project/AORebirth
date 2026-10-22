@@ -42,7 +42,9 @@ namespace ZoneEngine_New.Core.Playfield
             TradeService trades,
             CharacterSnapshotService characterSnapshot,
             IPlayfieldMetricsRegistry metricsRegistry,
-            IShopDao shopDao)
+            IShopDao shopDao,
+            int resourcePlayfieldId = 0,
+            int proxySourceDoorInstance = 0)
             : base(
                 playfieldIdentity,
                 playfieldLogger,
@@ -59,7 +61,9 @@ namespace ZoneEngine_New.Core.Playfield
                 trades,
                 characterSnapshot,
                 metricsRegistry,
-                shopDao)
+                shopDao,
+                resourcePlayfieldId,
+                proxySourceDoorInstance)
         {
         }
 
@@ -79,16 +83,17 @@ namespace ZoneEngine_New.Core.Playfield
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.dungeon", Identity.Instance);
                 AORebirth.World.Collision.DungeonWorldLayout? dungeon = DungeonPlayfieldBinder.TryBuild(
                     GameData.RootPath,
-                    Identity.Instance,
+                    ResourceId,
                     generator: null,
                     Logger);
                 if (dungeon != null)
                     GetRequiredService<PlayfieldLocality>().ApplyDungeonRooms(dungeon);
 
+                // The simulation reads its catalogs (destinations, exit proxy doors, routes) by the resource playfield.
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.world", Identity.Instance);
                 _world = WorldSimulation.PlayfieldWorldSimulation.Create(
-                    Identity.Instance,
-                    DungeonPlayfieldBinder.WithDungeonCollision(Identity.Instance, Geometry, dungeon),
+                    ResourceId,
+                    DungeonPlayfieldBinder.WithDungeonCollision(ResourceId, Geometry, dungeon),
                     MetaData,
                     DestinationsCatalog.Instance,
                     GameData,

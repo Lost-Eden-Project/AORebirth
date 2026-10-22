@@ -15,7 +15,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public const string QuestIdPrefix = "D";
 
-        public static bool IsDungeonPlayfield(int playfieldId) => playfieldId >= FirstPlayfield;
+        /// <summary>Dungeon ids run from <see cref="FirstPlayfield"/> up to the proxy playfield block (<see cref="ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First"/>).</summary>
+        public static bool IsDungeonPlayfield(int playfieldId)
+            => playfieldId >= FirstPlayfield && playfieldId < ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First;
 
         public static bool TryCreate(int number, out string questId, out int playfieldId)
         {

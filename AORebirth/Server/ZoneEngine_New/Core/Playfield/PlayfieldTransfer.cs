@@ -88,7 +88,8 @@ namespace ZoneEngine_New.Core.Playfield
                 try
                 {
                     // Resolve/encode both existing messages before changing destination ownership.
-                    byte[][] packets = Session.PrepareTransferPackets(Player, Landing, Heading, Destination.Identity.Instance);
+                    byte[][] packets = Session.PrepareTransferPackets(Player, Landing, Heading, Destination.Identity.Instance,
+                        Destination.ResourceId, Destination.ProxySourceDoorInstance);
                     Destination.ArriveTransferredPlayer(Player, Landing);
                     Player.Rotation = Heading;
                     foreach (byte[] packet in packets) Session.Send(packet);

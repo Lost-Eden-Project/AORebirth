@@ -1167,6 +1167,9 @@ namespace ZoneEngine_New.Core.Entities
         public bool TryGetLootWinner(out Identity identity)
             => _killRewards.TryGetLootWinner(out identity);
 
+        /// <summary>Players did enough of the damage for this death to leave spoils (<see cref="KillRewardResolver.PlayersEarnedSpoils"/>).</summary>
+        public bool PlayersEarnedSpoils() => _killRewards.PlayersEarnedSpoils();
+
         protected void ClearKillRewards()
             => _killRewards.Clear();
 
@@ -1376,12 +1379,16 @@ namespace ZoneEngine_New.Core.Entities
                     Weapons.Count));
 
             // NPC template weapons: emit live-shaped low/high/tag entries first so AttackInfo
-            // Unknown6 can match SpecialAttack.Unknown3.
-            foreach (KeyValuePair<WeaponSlot, CharacterWeapon> pair in Weapons)
+            // Unknown6 can match SpecialAttack.Unknown3. The swing bound to the visible hand weapon shows as that weapon
+            // and is not listed; the rest go highest wire slot first (retail ICC Shuttle Guard SAW: HVJP, VQHW, KLGZ,
+            // PQEA for wire slots 4..1, capture 2026-10-22T19:18Z).
+            var npcWeapons = new List<KeyValuePair<WeaponSlot, CharacterWeapon>>(Weapons);
+            npcWeapons.Sort((a, b) => (b.Value?.WireSlot ?? -1).CompareTo(a.Value?.WireSlot ?? -1));
+            foreach (KeyValuePair<WeaponSlot, CharacterWeapon> pair in npcWeapons)
             {
                 CharacterWeapon? armed = pair.Value;
                 Item? item = armed?.Item;
-                if (armed == null || item == null || armed.WireSlot < 0 || armed.SawTag == 0)
+                if (armed == null || item == null || armed.WireSlot < 0 || armed.SawTag == 0 || armed.VisualHand != null)
                     continue;
 
                 string tagName = string.IsNullOrEmpty(armed.SawTagName)
@@ -1598,6 +1605,12 @@ namespace ZoneEngine_New.Core.Entities
                 Unknown4 = name
             };
         }
+
+        /// <summary>
+        /// Spends one round for this swing and returns the rounds left for the AttackInfo ammo field; null when the
+        /// weapon keeps no clip (the ammo field then comes from <see cref="AttackInfoRules.ResolveAmmoCount"/>).
+        /// </summary>
+        protected virtual int? ConsumeRound(CharacterWeapon weapon) => null;
 
         public void SetWeapon(WeaponSlot slot, CharacterWeapon weapon)
         {
@@ -1875,6 +1888,8 @@ namespace ZoneEngine_New.Core.Entities
                 characterWeapon.LogicalSlot,
                 weapon,
                 IsPlayer);
+            // Every swing spends a round from a clip that tracks one, hit or miss.
+            int? roundsLeft = ConsumeRound(characterWeapon);
             // An evading NPC is untouchable on its way home: every swing is a miss.
             if (!result.IsHit || target.IsEvading)
             {
@@ -1912,7 +1927,7 @@ namespace ZoneEngine_New.Core.Entities
                     Identity = Identity,
                     Target = target.Identity,
                     Unknown1 = damage,
-                    Unknown2 = AttackInfoRules.ResolveAmmoCount(characterWeapon, weapon, IsPlayer),
+                    Unknown2 = roundsLeft ?? AttackInfoRules.ResolveAmmoCount(characterWeapon, weapon, IsPlayer),
                     Unknown3 = attackInfoSlot,
                     Unknown4 = killingHit ? 4 : 0,
                     Unknown5 = (int)result.HitType,
@@ -2385,7 +2400,8 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         protected override void OnEnteredPlayfield(ZoneEngine_New.Core.Playfield.Playfield playfield)
         {
-            int id = playfield.Identity.Instance;
+            // The resource playfield: in a proxy instance of a shop the client knows the shop, not the instance id.
+            int id = playfield.ResourceId;
             Stats.Set(CharacterStat.PlayfieldProxy, id, StatDetail.Base);
             Stats.Set(CharacterStat.PlayfieldType, PlayfieldEntryFlags.PlayfieldType(id, playfield.MetaData), StatDetail.Base);
             Stats.Set(CharacterStat.ExpansionPlayfield, PlayfieldEntryFlags.ExpansionPlayfield(playfield.MetaData), StatDetail.Base);
@@ -3566,6 +3582,9 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
+        /// <summary>The lowest Texture record id in the resource database (type 1010004); anything below is not a texture.</summary>
+        const int LowestTextureRecordId = 5942;
+
         static bool TryReadWearMesh(int slot, Item item, ItemSpell spell, out Mesh mesh)
         {
             mesh = default;
@@ -3597,6 +3616,12 @@ namespace ZoneEngine_New.Core.Entities
                 return false;
             if (!TryResolveMeshPosition(slot, spell, out int position))
                 return false;
+
+            // A mesh spell's Texture argument is an override only when it names a texture record. Small values (the
+            // ICC Peacekeeper Shoulderpad 286450 carries Texture 2) are not textures, and live sends override 0 for
+            // them (retail ICC Shuttle Guard SCFU, capture 2026-10-22T19:17Z: shoulder mesh 286446, override 0).
+            if (overrideTextureId > 0 && overrideTextureId < LowestTextureRecordId)
+                overrideTextureId = 0;
 
             if (ItemBehaviorContent.Current.TryResolveWornMeshOverride(
                     item,

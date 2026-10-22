@@ -96,11 +96,15 @@ namespace ZoneEngine_New.Core.Playfield
             TradeService trades,
             CharacterSnapshotService characterSnapshot,
             IPlayfieldMetricsRegistry metricsRegistry,
-            IShopDao shopDao)
+            IShopDao shopDao,
+            int resourcePlayfieldId = 0,
+            int proxySourceDoorInstance = 0)
         {
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
                 playfieldIdentity.Instance,
                 nameof(playfieldIdentity));
+            ResourceId = resourcePlayfieldId > 0 ? resourcePlayfieldId : playfieldIdentity.Instance;
+            ProxySourceDoorInstance = proxySourceDoorInstance;
             ArgumentNullException.ThrowIfNull(playfieldLogger);
             ArgumentNullException.ThrowIfNull(router);
             ArgumentNullException.ThrowIfNull(playfieldManager);
@@ -134,12 +138,13 @@ namespace ZoneEngine_New.Core.Playfield
             _shopDao = shopDao;
             _metrics = metricsRegistry.GetOrCreate(playfieldIdentity.Instance);
             int id = playfieldIdentity.Instance;
+            // Data comes from the resource playfield: for a proxy instance that is the interior it copies.
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.metadata", id);
-            MetaData = _gameData.GetPlayfieldMetaData(playfieldIdentity.Instance);
+            MetaData = _gameData.GetPlayfieldMetaData(ResourceId);
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.geometry", id);
-            Geometry = _gameData.GetPlayfieldGeometry(playfieldIdentity.Instance);
+            Geometry = _gameData.GetPlayfieldGeometry(ResourceId);
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.navmesh", id);
-            Pathfinder = TryLoadPathfinder(_gameData.RootPath, playfieldIdentity.Instance, _logger);
+            Pathfinder = TryLoadPathfinder(_gameData.RootPath, ResourceId, _logger);
 
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.services", id);
             _serviceProvider = BuildServices().BuildServiceProvider();
@@ -151,12 +156,13 @@ namespace ZoneEngine_New.Core.Playfield
             _logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "Playfield created metadata={0} walls={1} dynels={2} doors={3} collision={4}",
+                    "Playfield created resource={5} metadata={0} walls={1} dynels={2} doors={3} collision={4}",
                     MetaData == null ? "null(indoor)" : "loaded",
                     Geometry.Walls != null,
                     Geometry.Dynels != null,
                     Geometry.Doors != null,
-                    Geometry.Collision?.HasCollision ?? false));
+                    Geometry.Collision?.HasCollision ?? false,
+                    ResourceId == id ? "self" : ResourceId.ToString(CultureInfo.InvariantCulture)));
         }
 
         /// <summary>
@@ -204,6 +210,18 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         public Identity Identity { get; }
+
+        /// <summary>
+        /// The playfield whose GameData this one is built from. Equal to the identity for an ordinary playfield; for a
+        /// proxy instance (<see cref="ProxyPlayfieldIds"/>) the interior it copies. Key every data lookup on this, and
+        /// every runtime identity (registry, World, messages to the client) on <see cref="Identity"/>.
+        /// </summary>
+        public int ResourceId { get; }
+
+        public bool IsProxyInstance => ResourceId != Identity.Instance;
+
+        /// <summary>The walk-in door a proxy instance was entered through (full dynel instance); 0 for an ordinary playfield.</summary>
+        public int ProxySourceDoorInstance { get; }
 
         protected IZoneLogger Logger => _logger;
 
@@ -290,6 +308,9 @@ namespace ZoneEngine_New.Core.Playfield
         /// </summary>
         public virtual PlayfieldAnarchyFMessage CreatePlayfieldAnarchyFMessage(Vector3 characterCoordinates)
         {
+            if (IsProxyInstance)
+                return CreateProxyPlayfieldAnarchyFMessage(characterCoordinates);
+
             // TEMP: Playfields.xml 4310 (Nascense Frontier) until GameData / Playfields.xml lookup is wired.
             int playfieldX = 32321;
             int playfieldZ = 26244;
@@ -302,12 +323,13 @@ namespace ZoneEngine_New.Core.Playfield
                     Instance = Identity.Instance
                 },
                 CharacterCoordinates = characterCoordinates,
+                // The resource the client loads; a proxy instance names the interior it copies here and itself in PlayfieldId2.
                 PlayfieldId1 = new Identity
                 {
                     Type = IdentityType.Playfield1,
-                    Instance = Identity.Instance
+                    Instance = ResourceId
                 },
-                // ACG / mission / apartment / private-city PlayfieldId1 overrides not wired yet.
+                // Mission / apartment / private-city PlayfieldId1 overrides not wired yet.
                 // Unknown3 / Unknown4 org-building overrides not wired yet.
                 PlayfieldId2 = new Identity
                 {
@@ -318,9 +340,28 @@ namespace ZoneEngine_New.Core.Playfield
                 PlayfieldX = playfieldX,
                 PlayfieldZ = playfieldZ
             };
-
-            
         }
+
+        /// <summary>
+        /// The retail shape for a proxy instance (capture: zoning into a training backyard, 2026-10-22): version 4,
+        /// proxy stream 'a', PlayfieldId1 of type 0xC79E naming the interior the client loads, Unknown3 = 1, Unknown4 =
+        /// the source door, PlayfieldId2 = this instance, and -1 world coordinates. Retail also sends a generator
+        /// (type 0xC77D) re-keying the interior's door, vendor and terminal to instance-unique identities; this server
+        /// keeps the interior's own identities, so no generator is written.
+        /// </summary>
+        PlayfieldAnarchyFMessage CreateProxyPlayfieldAnarchyFMessage(Vector3 characterCoordinates) => new()
+        {
+            Identity = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
+            Version = 4,
+            CharacterCoordinates = characterCoordinates,
+            PlayfieldProxyVersion = 0x61,
+            PlayfieldId1 = new Identity { Type = IdentityType.PlayfieldDoor, Instance = ResourceId },
+            Unknown3 = 1,
+            Unknown4 = ProxySourceDoorInstance,
+            PlayfieldId2 = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
+            PlayfieldX = -1,
+            PlayfieldZ = -1
+        };
 
         public T GetRequiredService<T>()
             where T : class
@@ -859,6 +900,8 @@ namespace ZoneEngine_New.Core.Playfield
                 services.AddSingleton(_playfieldManager.QuestDungeons);
             if (_playfieldManager.Knubot != null)
                 services.AddSingleton(_playfieldManager.Knubot.Catalog);
+            if (_playfieldManager.NpcScripts != null)
+                services.AddSingleton(_playfieldManager.NpcScripts);
             if (_playfieldManager.Gameplay != null)
                 services.AddSingleton(_playfieldManager.Gameplay);
             if (_playfieldManager.ModuleEvents != null)
@@ -898,7 +941,7 @@ namespace ZoneEngine_New.Core.Playfield
                 var locality = new PlayfieldLocality(Identity.Instance, MetaData);
                 DungeonWorldLayout? layout = DungeonPlayfieldBinder.TryBuild(
                     _gameData.RootPath,
-                    Identity.Instance,
+                    ResourceId,
                     generator: null,
                     _logger);
                 if (layout != null)

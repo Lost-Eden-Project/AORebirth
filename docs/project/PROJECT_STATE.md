@@ -456,6 +456,10 @@ NPC dialogue: Knubot scripts (`GameData/Knubot/**/*.json`, `ZoneEngine_New/Core/
 conversations; an NPC talks only when a script names it. The Arete, garden vendor, Nascence, Subway and
 Zyvania NPCs have no scripts yet and are silent.
 
+Proxy playfields: interiors and training backyards behind walk-in doors that record a return are instanced per source
+door (`ZoneEngine_New/Core/Playfield/ProxyPlayfieldIds.cs`); `Playfield.ResourceId` names the interior an
+instance loads. See KNOWN_DECISIONS "Walk-In Interiors Are Per-Door Proxy Instances".
+
 NPC scripting: `GameData/NpcScripts/*.json` programs (`ZoneEngine_New/Core/NpcScripts`) give NPCs
 server-side behaviour (routes with stops, emotes, vicinity speech, world items, gfx, health and nano
 triggers). Programs are compiled at load and bound to NPCs by hash, spawn point key or placed-NPC key

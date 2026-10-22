@@ -197,6 +197,18 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 }
                 else
                 {
+                    // Saved inside a proxy instance whose door no longer leads to an interior: come back out in front of
+                    // the source playfield's door instead of failing the login.
+                    if (ProxyPlayfieldIds.IsProxy(storedPlayfield)
+                        && !_playfieldManager.TryResolveProxyResource(storedPlayfield, out _, out int sourcePlayfield)
+                        && sourcePlayfield > 0)
+                    {
+                        _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                            "Character {0} saved in proxy playfield {1} with no interior behind it; logging in on playfield {2}",
+                            characterId, storedPlayfield, sourcePlayfield));
+                        storedPlayfield = sourcePlayfield;
+                    }
+
                     playfieldAdmission = _playfieldManager.AcquirePlayfield(storedPlayfield);
                     playfield = playfieldAdmission.Playfield;
                 }

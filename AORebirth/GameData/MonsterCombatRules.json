@@ -1,12 +1,12 @@
 {
-  "ASSU": {
-    "Pets": {
-      "MaxPets": 2
-    }
-  },
   "ABGU": {
     "Features": [
       "NoCombat"
+    ]
+  },
+  "ACFJ": {
+    "Hates": [
+      0
     ]
   },
   "ARDJOP": {
@@ -29,6 +29,11 @@
       "NoCombat"
     ]
   },
+  "ASSU": {
+    "Pets": {
+      "MaxPets": 2
+    }
+  },
   "BYWH": {
     "Features": [
       "NoCombat"
@@ -39,14 +44,19 @@
       "NoCombat"
     ]
   },
-  "ICST": {
+  "CRDY": {
     "Hates": [
-      220
+      0
     ]
   },
   "HATH": {
     "Features": [
       "NoCombat"
+    ]
+  },
+  "ICST": {
+    "Hates": [
+      220
     ]
   },
   "N032": {

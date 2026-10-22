@@ -57,11 +57,22 @@ namespace ZoneEngine_New.Core.Helpers
             return weapon.GetStat(CharacterStat.AmmoType) == MeleeStyleAmmoType;
         }
 
+        /// <summary>NPC swing shown as its ranged hand weapon (retail ICC Shuttle Guard, capture 2026-10-22T19:18Z).</summary>
+        public const int NpcHandRangedAmmoCount = 0;
+
         public static int ResolveAmmoCount(CharacterWeapon? armed, Item? weapon, bool attackerIsPlayer)
         {
-            // NPC: melee style of the visual override, else the monster weapon.
             if (!attackerIsPlayer)
+            {
+                // Bound to the visible hand weapon: melee -1, ranged 0 (retail slot-6 hits carry ammo 0).
+                if (armed?.VisualHand is Item hand)
+                    return UsesMeleeAmmo(hand) ? PlayerMeleeAmmoCount : NpcHandRangedAmmoCount;
+                // A tagged monster weapon swings as itself: retail sends -1 for every one (guards' martial arts
+                // and the aliens' natural weapons alike, capture 2026-10-22T19:18Z).
+                if (armed != null && armed.SawTag != 0)
+                    return PlayerMeleeAmmoCount;
                 return UsesMeleeAmmo(armed?.DamageItem ?? weapon) ? PlayerMeleeAmmoCount : NpcRangedAmmoCount;
+            }
 
             // Player unarmed and player melee both use -1 (private-server / AOEmu melee rows).
             if (IsUnarmedPresentation(armed, weapon) || UsesMeleeAmmo(weapon))
@@ -79,9 +90,15 @@ namespace ZoneEngine_New.Core.Helpers
             Item? weapon,
             bool attackerIsPlayer = true)
         {
-            // NPC: right hand when a visual weapon is shown swinging, else 0.
+            // NPC: right hand for the swing bound to the visible hand weapon, else the monster weapon's own wire slot
+            // (retail: a guard's martial arts weapons hit from slots 1..4, a multi-weapon alien from 2 and 3, a
+            // single-weapon alien from 0; capture 2026-10-22T19:18Z).
             if (!attackerIsPlayer)
-                return armed?.VisualHand != null ? (int)WeaponSlots.Righthand : 0;
+            {
+                if (armed?.VisualHand != null)
+                    return (int)WeaponSlots.Righthand;
+                return armed != null && armed.WireSlot > 0 ? armed.WireSlot : 0;
+            }
 
             // Only the server-made fists swing from slot 0. A real martial arts weapon (PhysicalInit, e.g. X1-R4 Viral
             // Force-Blades) swings from its hand like any weapon: live combined-MA weapons hit from slots 6/8 (capture

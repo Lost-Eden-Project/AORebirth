@@ -81,11 +81,26 @@
         { "$ref": "#/$defs/paramRef" }
       ]
     },
-    "moveTarget": {
+    "movePoint": {
       "description": "[x, y, z], \"Home\", \"$Vector3Param\", \"$Vector3ArrayParam[i]\" or \"$Vector3ArrayParam[next]\" (advances the NPC's waypoint cursor).",
       "oneOf": [
         { "$ref": "#/$defs/vector3" },
         { "type": "string", "pattern": "^(Home|\\$[A-Za-z_][A-Za-z0-9_]*(\\[(next|[0-9]+)\\])?)$" }
+      ]
+    },
+    "moveTarget": {
+      "description": "A move point, or { \"To\": point, \"Direct\": true } to walk the straight line without the navmesh: a bridge across a short gap the mesh does not cover, such as a ramp between two mesh islands.",
+      "oneOf": [
+        { "$ref": "#/$defs/movePoint" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "To" ],
+          "properties": {
+            "To": { "$ref": "#/$defs/movePoint" },
+            "Direct": { "type": "boolean", "default": false, "description": "Walk straight to the point, ignoring the navmesh." }
+          }
+        }
       ]
     },
     "ops": {
@@ -201,6 +216,13 @@
         },
         "Restart": { "$ref": "#/$defs/trigger", "description": "Ends this handler and starts the first handler of that trigger." },
         "ReleaseMovement": { "type": "boolean", "description": "Gives movement back to patrol / wander / idle." },
+        "SetHome": {
+          "description": "Re-posts the NPC: \"Here\" (its current position) or a move point becomes its home for leashing and returning, so a long march does not leash back to its spawn once it ends. While a WalkTo/RunTo is under way the NPC already leashes from the walk's target rather than its spawn.",
+          "oneOf": [
+            { "const": "Here" },
+            { "$ref": "#/$defs/movePoint" }
+          ]
+        },
         "End": { "type": "boolean" }
       }
     },

@@ -97,16 +97,26 @@ namespace ZoneEngine_New.Core.Ai
             if (_brain.Npc.FightingTarget != target.Identity)
                 _brain.Npc.StartFighting(target.Identity, 0);
 
+            // In reach of some weapon: hold there while the NPC is still opening the fight, then close in until the
+            // shortest weapon reaches too (NpcBrain.HoldsFightDistance). The weapons keep swinging on the way.
             if (_brain.CanAttackNow(target))
             {
-                _brain.StopPathing();
-                return _nodeState = NodeState.Success;
+                if (_brain.HoldsFightDistance(target))
+                {
+                    _brain.StopPathing();
+                    return _nodeState = NodeState.Success;
+                }
+
+                _brain.PathTo(_brain.ApproachPoint(target));
+                return _nodeState = NodeState.Running;
             }
 
+            // Out of every weapon's reach: a plain chase; reaching it again starts with a hold.
+            _brain.ResetFightDistance();
             if (_brain.HasUnfinishedPath())
             {
                 if (_brain.CanPathTo(target))
-                    _brain.PathTo(target.Position);
+                    _brain.PathTo(_brain.ApproachPoint(target));
                 return _nodeState = NodeState.Running;
             }
 
@@ -119,7 +129,7 @@ namespace ZoneEngine_New.Core.Ai
                 return _nodeState = NodeState.Failure;
             }
 
-            _brain.PathTo(target.Position);
+            _brain.PathTo(_brain.ApproachPoint(target));
             return _nodeState = NodeState.Running;
         }
     }
@@ -164,20 +174,26 @@ namespace ZoneEngine_New.Core.Ai
             TickStallWatch.Stage("node.patrol", _brain.Npc.Identity.Instance);
             IReadOnlyList<Vector3> points = _brain.PatrolWaypoints;
             if (points.Count == 0)
+            {
+                _brain.PatrolAnchor = null;
                 return _nodeState = NodeState.Failure;
+            }
 
             if (_index >= points.Count)
                 _index = 0;
 
-            Vector3 dest = points[_index];
+            // Each NPC walks the route shifted by its own stable offset (NpcSpread), so a shared route does not stack.
+            Vector3 dest = NpcSpread.Destination(_brain.Npc, points[_index]);
             if (NpcAiRules.IsNearby(_brain.Npc.Position, dest, NpcAiRules.ArriveHomeMeters))
             {
                 // A program bound to this NPC may act at the waypoint (NpcScripts Arrived).
                 _brain.Npc.Scripts?.Raise(NpcScripts.NpcScriptTrigger.Arrived, _index);
                 _index = (_index + 1) % points.Count;
-                dest = points[_index];
+                dest = NpcSpread.Destination(_brain.Npc, points[_index]);
             }
 
+            // The leash measures from this waypoint while the patrol walks to it (NpcBrain.LeashAnchor).
+            _brain.PatrolAnchor = dest;
             _brain.PathTo(dest);
             return _nodeState = NodeState.Running;
         }
@@ -185,6 +201,7 @@ namespace ZoneEngine_New.Core.Ai
         public override void Reset()
         {
             _index = 0;
+            _brain.PatrolAnchor = null;
         }
     }
 

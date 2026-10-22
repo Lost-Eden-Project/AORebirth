@@ -231,7 +231,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             // NpcScripts: the most specific binding for this spawn point / hash, if any.
             if (spawnSource != SpawnSource.Summoned)
-                _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.TryAttach(npc, _playfield.Identity.Instance, spawnPointKey, npcKey: null);
+                _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.TryAttach(npc, _playfield.ResourceId, spawnPointKey, npcKey: null);
 
             Metrics.TickStallWatch.Stage("spawn.register", identity.Instance);
             if (fixedIdentity == null)
@@ -584,6 +584,11 @@ namespace ZoneEngine_New.Core.Playfield
                 AnnounceLootRights(lootWinner);
             }
 
+            // An NPC killed by NPCs, with no player over the damage bar, leaves no loot roll and no credits.
+            bool forfeited = dead is NpcCharacter && !dead.PlayersEarnedSpoils();
+            if (forfeited)
+                corpse.ForfeitSpoils();
+
             corpse.ResolveLoot(_hashItems);
 
             _registry.Register(corpse);
@@ -592,11 +597,12 @@ namespace ZoneEngine_New.Core.Playfield
             _logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "Spawned corpse id={0} owner={1} name={2} loot={3}",
+                    "Spawned corpse id={0} owner={1} name={2} loot={3}{4}",
                     identity.Instance,
                     dead.Identity.Instance,
                     corpse.Name,
-                    corpse.Loot.Content.Count));
+                    corpse.Loot.Content.Count,
+                    forfeited ? " spoils=forfeited (NPC kill)" : string.Empty));
 
             return corpse;
         }

@@ -56,6 +56,9 @@ namespace ZoneEngine_New.Core.Ai
         float _reachCacheMeters = NpcFollowTarget.MinAnnounceDeltaMeters;
         const double ReachCacheJitter = 0.25;
         DateTime _lastChanceUtc;
+
+        /// <summary>Whose chance <see cref="_lastChanceUtc"/> records: the grace belongs to that target alone.</summary>
+        Identity _lastChanceTarget = Identity.None;
         int _stuckWarps;
         bool _evading;
 
@@ -138,6 +141,32 @@ namespace ZoneEngine_New.Core.Ai
         public Vector3? Home { get; private set; }
 
         public bool HasHome => Home is not null;
+
+        /// <summary>
+        /// Where the running program last sent this NPC. While set, the distance leash measures from here rather than
+        /// from <see cref="Home"/>: a scripted march may legitimately go farther from the spawn than the leash range.
+        /// Cleared when the program gives movement back or re-posts the NPC with <see cref="SetHome"/>.
+        /// </summary>
+        public Vector3? ScriptedAnchor => _scriptedAnchor;
+
+        /// <summary>The patrol waypoint the NPC is walking to (PatrolNode), null when it is not patrolling.</summary>
+        internal Vector3? PatrolAnchor { get; set; }
+
+        /// <summary>
+        /// Where the distance leash measures from: the point a program or patrol is walking the NPC to while that
+        /// walk is under way, else <see cref="Home"/>. A route longer than the leash range is then not a leash.
+        /// </summary>
+        public Vector3? LeashAnchor => _scriptedAnchor ?? (PatrolEnabled ? PatrolAnchor : null) ?? Home;
+
+        /// <summary>A program re-posts the NPC: leash, return and wander anchor at <paramref name="home"/> from now on.</summary>
+        internal void SetHome(Vector3 home)
+        {
+            ArgumentNullException.ThrowIfNull(home);
+            Home = new Vector3(home.x, home.y, home.z);
+            _scriptedAnchor = null;
+            _returningHome = false;
+            _returnFailed = false;
+        }
 
         // Wandering (district spawns): strolls at walking pace to random navmesh points within the radius of Home,
         // pausing between them. Combat, leash and evade always run.
@@ -250,12 +279,21 @@ namespace ZoneEngine_New.Core.Ai
         // runner sees Interrupted and asks again once the NPC is free. The brain stays the only writer of the motor.
         Vector3? _scriptedDestination;
         bool _scriptedRun;
+        bool _scriptedDirect;
+        Vector3? _scriptedAnchor;
         ScriptMoveResult _scriptedResult;
 
         public bool ScriptHoldsMovement => _scriptedDestination is not null;
 
-        /// <summary>Walk (or run) to <paramref name="destination"/>; the result is read with <see cref="ConsumeScriptMoveResult"/>.</summary>
-        public void ScriptMoveTo(Vector3 destination, bool run)
+        /// <summary>The held scripted walk goes straight to its point instead of along the navmesh.</summary>
+        public bool ScriptMovesDirect => _scriptedDirect && _scriptedDestination is not null;
+
+        /// <summary>
+        /// Walk (or run) to <paramref name="destination"/>; the result is read with <see cref="ConsumeScriptMoveResult"/>.
+        /// <paramref name="direct"/> skips the navmesh and walks the straight line: a script's bridge across a gap
+        /// the mesh does not cover (a ramp too steep to bake, between two islands).
+        /// </summary>
+        public void ScriptMoveTo(Vector3 destination, bool run, bool direct = false)
         {
             ArgumentNullException.ThrowIfNull(destination);
             if (Npc.IsImmobile || Pet != null)
@@ -264,14 +302,24 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             }
 
-            _scriptedDestination = new Vector3(destination.x, destination.y, destination.z);
+            // A fresh leg: whatever path the body last finished (an earlier leg, a chase) must not count as this one's
+            // arrival, so the segment flags and any leftover motor path go first.
+            StopPathing();
+            // A shared script destination is spread per NPC so a group does not pile onto one point. A direct leg is
+            // an exact off-mesh bridge (a ramp) and is walked as given.
+            _scriptedDestination = direct
+                ? new Vector3(destination.x, destination.y, destination.z)
+                : NpcSpread.Destination(Npc, destination);
             _scriptedRun = run;
+            _scriptedDirect = direct;
+            _scriptedAnchor = _scriptedDestination;
             _scriptedResult = ScriptMoveResult.None;
         }
 
         /// <summary>The program gives movement back to patrol / wander / idle.</summary>
         public void ScriptReleaseMovement()
         {
+            _scriptedAnchor = null;
             if (_scriptedDestination is null)
                 return;
 
@@ -477,6 +525,7 @@ namespace ZoneEngine_New.Core.Ai
 
             int side = Npc.Stats.GetOrZero(CharacterStat.Side);
             int family = Npc.Stats.GetOrZero(CharacterStat.NPCFamily);
+            bool npcAttacker = enemy is NpcCharacter { PetOwner: null };
             playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc, rules.SearchRadius, _nearbyNpcs);
             _helpers.Clear();
             for (int i = 0; i < _nearbyNpcs.Count; i++)
@@ -490,7 +539,7 @@ namespace ZoneEngine_New.Core.Ai
                     continue;
 
                 double distance = Npc.GetEdgeDistanceTo(other);
-                if (distance > rules.RadiusFor(brain.SpawnAssistanceRadius()) || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
+                if (distance > rules.RadiusFor(brain.SpawnAssistanceRadius(), npcAttacker) || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
                     continue;
                 if (rules.RequireLineOfSight && !other.HasLineOfSightTo(Npc))
                     continue;
@@ -544,7 +593,10 @@ namespace ZoneEngine_New.Core.Ai
         {
             Hate.Clear();
             _currentTarget = Identity.None;
+            _approachTarget = Identity.None;
+            _engageTarget = Identity.None;
             _lastChanceUtc = default;
+            _lastChanceTarget = Identity.None;
         }
 
         public void OnOwnerDied()
@@ -692,7 +744,8 @@ namespace ZoneEngine_New.Core.Ai
             // A target whose reach map was too costly to build means this fight cannot be judged: reset now rather
             // than search again (and stop players standing out of reach from farming a stuck mob).
             bool leash = _evading || _resetForUnreachable || (_resetForTargetReset && Hate.IsEmpty)
-                || NpcAiRules.ShouldLeash(Hate, Home, Npc.Position, _isEngageable);
+                // A scripted march or a patrol leashes by distance from the point it is walking to, not from the spawn.
+                || NpcAiRules.ShouldLeash(Hate, LeashAnchor, Npc.Position, _isEngageable);
             _resetForUnreachable = false;
             _resetForTargetReset = false;
             if (leash)
@@ -739,17 +792,108 @@ namespace ZoneEngine_New.Core.Ai
         public bool TrySelectHighestThreat()
         {
             TickStallWatch.Stage("brain.select", Npc.Identity.Instance);
-            if (!NpcAiRules.TryHighestNearby(Hate, _isEngageable, out Identity identity, out _))
+            if (!NpcAiRules.TryHighestNearby(Hate, _isEngageable, out Identity identity, out float top))
             {
                 _currentTarget = Identity.None;
                 return false;
             }
 
-            _currentTarget = identity;
+            _currentTarget = BreakThreatTie(identity, top);
             return true;
         }
 
+        /// <summary>
+        /// Several enemies on the same top threat (a pack that only has proximity hate on everyone) are not an even
+        /// choice: one the NPC can hit now beats one it has to walk to, the one it is already fighting beats a
+        /// switch, and otherwise the nearest wins. Picking by hate-list order sent a scout running back and forth at a
+        /// guard on a raised deck it could never reach while others stood inside it.
+        /// </summary>
+        Identity BreakThreatTie(Identity first, float top)
+        {
+            Identity best = first;
+            int bestRank = int.MaxValue;
+            double bestDistance = double.MaxValue;
+            foreach (HateEntry entry in Hate.Entries)
+            {
+                if (entry.Threat < top || !_isEngageable(entry.Identity) || Resolve(entry.Identity) is not Character enemy)
+                    continue;
+
+                int rank = CanAttackNow(enemy) ? 0 : entry.Identity == _currentTarget ? 1 : 2;
+                double distance = Npc.GetEdgeDistanceTo(enemy);
+                if (rank < bestRank || (rank == bestRank && distance < bestDistance))
+                {
+                    best = entry.Identity;
+                    bestRank = rank;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
         public Character? ResolveCurrentTarget() => Resolve(_currentTarget);
+
+        // The bearing this NPC approaches its target from, fixed when the target is taken so the approach point does
+        // not swing round as the NPC closes in (NpcSpread).
+        Identity _approachTarget = Identity.None;
+        double _approachAngle;
+
+        // Set once the NPC is close enough to make the final step straight at the target; kept for that target, so
+        // the destination does not flip between the spread point and the target as the distance wobbles.
+        bool _approachDirect;
+
+        /// <summary>
+        /// Where to walk to fight <paramref name="target"/>: inside the shortest weapon's reach, fanned across an arc
+        /// by this NPC's identity so a pack does not stack on the target (best effort; see <see cref="NpcSpread"/>).
+        /// Pets keep their own formation.
+        /// </summary>
+        public Vector3 ApproachPoint(Character target)
+        {
+            ArgumentNullException.ThrowIfNull(target);
+            if (Pet != null)
+                return target.Position;
+
+            if (_approachTarget != target.Identity)
+            {
+                _approachTarget = target.Identity;
+                _approachAngle = NpcSpread.Bearing(target.Position, Npc.Position);
+                _approachDirect = false;
+            }
+
+            if (_approachDirect)
+                return target.Position;
+
+            double shortest = double.MaxValue;
+            foreach (CharacterWeapon? weapon in Npc.Weapons.Values)
+            {
+                if (weapon != null)
+                    shortest = Math.Min(shortest, weapon.GetAttackRange());
+            }
+
+            if (shortest == double.MaxValue)
+                shortest = CharacterWeapon.DefaultMeleeAttackRange;
+            double reach = Npc.GetCollisionRadius() + target.GetCollisionRadius()
+                + (Math.Min(shortest, NpcSpread.ApproachReachCap) * NpcSpread.ApproachReachFactor);
+            Vector3 point = NpcSpread.ApproachPoint(Npc, target, _approachAngle, reach);
+
+            // Only called while out of reach. A spread point this close to the NPC is a step the planner treats as
+            // "already there" (PathEndsUnderNpc) and never walks, leaving the NPC a few decimetres short of its swing
+            // for ever (a 2 m scout weapon at 2.3 m edge distance). Close in on the target itself instead.
+            double dx = point.x - Npc.Position.x;
+            double dz = point.z - Npc.Position.z;
+            double minStep = NpcAiRules.PathEndGiveUpMeters * 2.0;
+            // Close to the spread point, or already inside the ring it sits on: walking to it would only step
+            // sideways or back out. Close in on the target itself from here on.
+            double tx = target.Position.x - Npc.Position.x;
+            double tz = target.Position.z - Npc.Position.z;
+            if ((dx * dx) + (dz * dz) < minStep * minStep || (tx * tx) + (tz * tz) <= reach * reach)
+            {
+                _approachDirect = true;
+                return target.Position;
+            }
+
+            return point;
+        }
 
         public bool HasArrivedHome()
             => !HasHome || NpcAiRules.IsNearby(Npc.Position, Home, NpcAiRules.ArriveHomeMeters);
@@ -759,9 +903,10 @@ namespace ZoneEngine_New.Core.Ai
             ArgumentNullException.ThrowIfNull(target);
             if (CanAttackNow(target))
                 return true;
-            // No LOS is fine while the chase path still has travel left.
+            // No LOS is fine while the chase path still has travel left. That path is the chase of the current
+            // target, so it says nothing about anyone else on the hate list.
             // Give up only with no path, or already on the last point.
-            if (HasUnfinishedPath())
+            if (target.Identity == _currentTarget && HasUnfinishedPath())
                 return true;
             return CanPathTo(target);
         }
@@ -772,10 +917,15 @@ namespace ZoneEngine_New.Core.Ai
             if (HasChance(target))
             {
                 _lastChanceUtc = DateTime.UtcNow;
+                _lastChanceTarget = target.Identity;
                 return true;
             }
 
-            return NpcAiRules.IsWithinNoChanceGrace(_lastChanceUtc, DateTime.UtcNow);
+            // The grace covers a brief loss of the target that last had a chance (a corner, a replan). It used to be
+            // shared by the whole hate list, so an adjacent enemy kept refreshing it and an unreachable top-threat
+            // target stayed "engageable" for ever: the NPC stood still out of reach while being beaten on.
+            return target.Identity == _lastChanceTarget
+                && NpcAiRules.IsWithinNoChanceGrace(_lastChanceUtc, DateTime.UtcNow);
         }
 
         public bool HasUnfinishedPath()
@@ -829,6 +979,11 @@ namespace ZoneEngine_New.Core.Ai
             ReachAnswer answer = finder.Reaches(map, start);
             if (answer == ReachAnswer.Reachable && map.Kind == ReachMapKind.Flooded && PathEndsUnderNpc(start, map.EndPoint))
                 answer = ReachAnswer.Unreachable;
+            // Walking there is not enough: from the closest point the route gets to, some weapon must reach the
+            // target. A guard posted on a deck 3 m above the plaza is "reachable" to the foot of the deck, where a
+            // 2 m weapon never connects, and the NPC would run about beneath it for ever.
+            if (answer == ReachAnswer.Reachable && map.Kind == ReachMapKind.Flooded && !CanHitFrom(map.EndPoint, target))
+                answer = ReachAnswer.Unreachable;
             if (answer == ReachAnswer.TooLarge && (Hate.Contains(target.Identity) || Npc.FightingTarget == target.Identity))
                 _resetForUnreachable = true;
             bool reachable = answer == ReachAnswer.Reachable;
@@ -840,6 +995,37 @@ namespace ZoneEngine_New.Core.Ai
             _reachCacheSeconds = NpcFollowTarget.PathReplanSeconds * Jitter();
             _reachCacheMeters = (float)(NpcFollowTarget.MinAnnounceDeltaMeters * Jitter());
             return reachable;
+        }
+
+        /// <summary>Standing at <paramref name="at"/>, some weapon of this NPC would reach <paramref name="target"/> (edge to edge, 3D).</summary>
+        bool CanHitFrom(System.Numerics.Vector3 at, Character target)
+        {
+            double longest = 0;
+            foreach (CharacterWeapon? weapon in Npc.Weapons.Values)
+            {
+                if (weapon != null)
+                    longest = Math.Max(longest, weapon.GetAttackRange());
+            }
+
+            if (longest <= 0)
+                longest = CharacterWeapon.DefaultMeleeAttackRange;
+
+            double dx = target.Position.x - at.X;
+            double dy = target.Position.y - at.Y;
+            double dz = target.Position.z - at.Z;
+            double edge = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - Npc.GetCollisionRadius() - target.GetCollisionRadius();
+            if (edge > longest)
+                return false;
+
+            // In range is not enough either: a swing needs sight (CanAttackNow). Below the rim of a raised deck the
+            // NPC is close enough but never sees the guard on it, and stood there for ever, neither hitting nor
+            // giving up. Same eye height as Dynel.HasLineOfSightTo.
+            WorldSimulation.PlayfieldWorldSimulation? world = Npc.Playfield?.WorldAccess.Instance;
+            if (world == null)
+                return true;
+            const float eye = Movement.MovementConfig.LineOfSightEyeHeight;
+            return world.HasLineOfSight(at.X, at.Y + eye, at.Z,
+                (float)target.Position.x, (float)target.Position.y + eye, (float)target.Position.z);
         }
 
         public bool IsInAttackRange(Character target)
@@ -865,6 +1051,69 @@ namespace ZoneEngine_New.Core.Ai
         {
             ArgumentNullException.ThrowIfNull(target);
             return IsInAttackRange(target) && Npc.HasLineOfSightTo(target);
+        }
+
+        /// <summary>Base time an NPC holds and fires before each step closer.</summary>
+        public const double AdvanceDelaySeconds = 4.0;
+
+        /// <summary>Per-NPC spread of <see cref="AdvanceDelaySeconds"/> (from its identity), so a pack does not step in together.</summary>
+        public const double AdvanceDelayJitterSeconds = 3.0;
+
+        /// <summary>Longest a step closer lasts before the NPC holds and fires again while something still reaches.</summary>
+        public const double AdvanceStepSeconds = 3.0;
+
+        /// <summary>
+        /// The farthest an NPC settles from its target (edge to edge), whatever its weapons' reach: even a rifle mob
+        /// closes to this. Its shortest weapon's reach when that is less.
+        /// </summary>
+        public const double MaxFightDistanceMeters = 10.0;
+
+        // When the current target came into reach of a weapon this time (the hold/step cycle runs from there).
+        Identity _engageTarget = Identity.None;
+        DateTime _engageSinceUtc;
+
+        /// <summary>The target left every weapon's reach: the next time it is in reach starts with a hold.</summary>
+        public void ResetFightDistance() => _engageTarget = Identity.None;
+
+        /// <summary>
+        /// The chase may stop here. The NPC settles within its shortest weapon's reach, and never farther than
+        /// <see cref="MaxFightDistanceMeters"/>. Getting there alternates: hold and fire for
+        /// <see cref="AdvanceDelaySeconds"/> (plus its own jitter), then step closer for at most
+        /// <see cref="AdvanceStepSeconds"/>, and repeat. A target that backs off to stay in reach of a long weapon
+        /// therefore keeps getting shot instead of keeping the NPC running (ranged weapons do not fire on the move);
+        /// only a target out of every weapon's reach gets an uninterrupted chase. An NPC that cannot walk, or has no
+        /// route closer, holds where it is.
+        /// </summary>
+        public bool HoldsFightDistance(Character target)
+        {
+            ArgumentNullException.ThrowIfNull(target);
+            if (Pet != null || Npc.IsImmobile || Npc.IsRooted)
+                return true;
+
+            double shortest = double.MaxValue;
+            foreach (CharacterWeapon? weapon in Npc.Weapons.Values)
+            {
+                if (weapon != null)
+                    shortest = Math.Min(shortest, weapon.GetAttackRange());
+            }
+
+            double settle = Math.Min(shortest == double.MaxValue ? CharacterWeapon.DefaultMeleeAttackRange : shortest, MaxFightDistanceMeters);
+            if (Npc.GetEdgeDistanceTo(target) <= settle)
+                return true;
+
+            DateTime now = DateTime.UtcNow;
+            if (_engageTarget != target.Identity)
+            {
+                _engageTarget = target.Identity;
+                _engageSinceUtc = now;
+            }
+
+            double hold = AdvanceDelaySeconds + ((NpcSpread.Unit(Npc) - 0.5) * AdvanceDelayJitterSeconds);
+            double phase = (now - _engageSinceUtc).TotalSeconds % (hold + AdvanceStepSeconds);
+            if (phase < hold)
+                return true;
+
+            return !CanPathTo(target);
         }
 
         /// <summary>
@@ -1256,6 +1505,12 @@ namespace ZoneEngine_New.Core.Ai
             _routeScratch.Clear();
             Vector3 feet = Npc.Position;
             _routeScratch.Add(new Vector3(feet.x, feet.y, feet.z));
+            if (ScriptMovesDirect)
+            {
+                _routeScratch.Add(new Vector3(destination.x, destination.y, destination.z));
+                return;
+            }
+
             Vector3 startPos = HeightfieldOrSelf(feet);
             if (_reachPathScratch.Count > 0
                 && Vector3.Abs(destination - _reachCachePos) < NpcFollowTarget.MinAnnounceDeltaMeters

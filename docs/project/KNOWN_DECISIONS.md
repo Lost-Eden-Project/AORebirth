@@ -237,6 +237,29 @@ Alternatives considered: Keep growing `Playfield.cs`; only use separate VS proje
 
 Consequences: Agents extract systems into `Core/<System>/` when touching them. Wire models stay in AOtomation.Messaging.
 
+## Walk-In Interiors Are Per-Door Proxy Instances
+
+Decision (2026-10-22): A playfield reached through a walk-in door that records a way back (a TeleportProxy
+into a shop, a building, a training backyard) opens as its own playfield instance per source door, as live's
+proxy playfields did. The client data has 133 such destinations: 130 indoor interiors and the three training
+backyards 950, 952 and 954, so the rule is the door kind, not the destination's indoor flag. The instance id is derived from the door (`ProxyPlayfieldIds`: 0x7F000000 + the door
+instance's low 24 bits), so it needs no table and is the same on every zone instance and after a restart.
+A `Playfield` now has a `ResourceId` (the interior whose GameData it loads) beside its `Identity`; data
+lookups key on the resource, runtime identity on the identity. The client is told the resource in
+PlayfieldId1 and the instance in PlayfieldId2, the split quest dungeons already use.
+
+Reason: Mike: multiple Clan Ordinary/Advanced Supermarket doors in 540 (and the two supermarkets in 800) led
+to one shared shop; each door should be its own instance of the shop.
+
+Alternatives considered: A lookup table of instances (needs persistence and cross-instance agreement);
+instancing per player or team (not how live shops behaved); leaving interiors shared.
+
+Consequences: One-way portals (TeleportProxy2, LineTeleport) and zone borders are never instanced. Dungeon ids are now bounded
+below the proxy block. A character saved inside an instance whose door no longer leads to an interior logs
+in on the door's playfield. The legacy `teleports` table still rewrites 85 doors to a different interior
+than the client data names (for example 800's Advanced Supermarket door to 1186); those rows decide which
+interior an instance copies and need their own review.
+
 ## Passive Regeneration Follows The Sitting Rules
 
 Decision (2026-10-21): `PassiveRegenCalculator` computes each natural delta as breed base + skill bonus
@@ -254,3 +277,97 @@ both intervals), which this replaces.
 
 Consequences: Nano regeneration now scales with Nano Pool; low-Stamina characters heal slower while
 sitting than before (one second off the tick rather than half the tick).
+
+## NPC Hits Draw Threat And Social Aggro Like Player Hits
+
+Decision (2026-10-22): `NpcCharacter.OnDamaged` registers threat from any NPC attacker, not only players
+and players' pets, so an NPC hit by another NPC fights back and calls its kind for help. A call for help
+against an NPC attacker (not a player's pet) uses `socialAggro.npcVsNpcDefaultRadius` (Gameplay.json,
+20 m) when the spawn point carries no AssistanceRadius; `defaultRadius` still governs player attackers.
+
+Reason: Mike asked that NPCs social aggro in NPC-versus-NPC combat (the ICC shuttleport alien swarm on
+4582). Only 57 of 630 playfields carry any AssistanceRadius in their spawn data, 4582 none, so the
+existing per-spawn radius alone never produced helpers there; widening `defaultRadius` would also change
+every NPC's response to players.
+
+Alternatives considered: raising `defaultRadius` for everyone (changes player pulls across 573 playfields
+without spawn radii); scripting the assist per NPC (content in scripts for a general mechanic).
+
+Consequences: NPC fights now spread to same-side, same-family neighbours within 20 m; a guard struck by an
+alien draws its fellow guards, and a struck alien draws its swarm. Players' pets are unchanged.
+
+## Scripted Marches Leash From Their Target, Not Their Spawn
+
+Decision (2026-10-22): while an NPC script holds or last issued a `WalkTo`/`RunTo`, or a brain patrol is
+walking to a waypoint, the brain's distance leash measures from that walk's target (`NpcBrain.LeashAnchor`)
+instead of `Home`; the scripted anchor clears when the program releases movement or re-posts the NPC, the
+patrol anchor when the patrol stops. A new `SetHome` verb (`Here` or a point) moves `Home`
+itself, so a march that ends far from the spawn can make the destination its post.
+
+Reason: the ICC shuttleport alien swarm marches about 82 m from its spawn, past the 70 m leash range, and the
+return route is on another navmesh island, so the leash snapped every alien back to its spawn mid-march or
+on arrival.
+
+Alternatives considered: raising the leash range (changes every mob); auto-homing on arrival (implicit; a
+patrol leg would silently re-home each waypoint).
+
+Consequences: scripted marches and patrol routes of any length work; combat still leashes by "nobody engageable nearby" as
+before, and a fight that drags more than 70 m from the walk's target leashes to the current `Home`.
+
+## NPCs Spread By Identity, Not By Steering
+
+Decision (2026-10-22): `NpcSpread` gives every NPC a stable offset derived from its identity (multiplicative
+hashing). A chase walks to an approach point inside the shortest weapon's reach, fanned across a 120-degree arc
+around the target from the bearing the NPC first took it at; a scripted `WalkTo`/`RunTo` destination and a
+patrol waypoint are shifted by up to 4 m (scaled from the body size). Direct script legs, pets (own formation),
+wander (already random) and the walk home are not spread.
+
+Reason: packs chasing one target, and the shuttleport swarm arriving at one point, stacked on a single spot.
+Mike asked for a low-cost, best-effort spread: NPCs try to separate but are not required to.
+
+Alternatives considered: neighbour-aware separation steering (a locality query per replan and a feedback loop
+with the path planner); exact slot assignment (bookkeeping per target). Both cost more than the problem is
+worth for a cosmetic outcome.
+
+Consequences: no per-tick cost and no queries; two NPCs can still overlap when the arc or disc is crowded.
+Scripts that need an exact arrival point use a direct leg, or accept the shift.
+
+## NPCs Open At Long Reach, Then Close In
+
+Decision (2026-10-22): an NPC's chase no longer ends the moment any weapon can reach. It settles within its
+shortest weapon's reach and never farther than 10 m edge to edge (`NpcBrain.HoldsFightDistance`). In reach of
+some weapon it alternates: hold and fire for 4 s (plus or minus 1.5 s from its identity), step closer for at most
+3 s, repeat. A target out of every weapon's reach gets a plain chase. Pets, immobile or rooted NPCs, and NPCs
+with no route closer hold where they are.
+
+Reason: multi-weapon NPCs stopped at their longest reach and sniped (the alien specialist at 20 m with five 2 m
+weapons idle; rifle-carrying mobs at 30 m). Mike chose "close to the shortest weapon's range" plus "close in over
+time" from the options offered.
+
+Consequences: melee-capable NPCs end up in melee and rifle mobs within 10 m. Kiting a ranged NPC by backing
+off inside its reach does not keep it running: every step closer is followed by a hold in which it fires
+(ranged weapons cannot fire on the move). A data-driven per-NPC preferred range was offered and not taken yet.
+
+## NPC Kills Leave No Spoils
+
+Decision (2026-10-22): an NPC that dies with NPC damage on it and no player (a pet counts as its owner) at 20% or
+more of all damage leaves a corpse with no item table roll and no credits (`KillRewardResolver.PlayersEarnedSpoils`,
+`Corpse.ForfeitSpoils`). Items the NPC was given to carry (SpawnItem) still drop.
+
+Reason: Mike asked that an NPC killed by NPCs, where players did not do enough damage, award no credits or loot.
+Scripted NPC wars (the ICC shuttleport alien swarm) otherwise fill the area with free corpses.
+
+Consequences: uses the same 20% bar as experience; loot rights were already withheld when an NPC topped the damage.
+
+## A Target Is Only Reachable If A Weapon Connects From The Route's End
+
+Decision (2026-10-22): `NpcBrain.CanPathTo` also requires that, standing at the closest point the navmesh route
+reaches, the NPC's longest weapon reaches the target (3D edge distance). Equal-threat ties prefer a target the NPC
+can hit now, then its current target, then the nearest (`BreakThreatTie`).
+
+Reason: scouts with 2 m weapons chased an immobile guard posted on a deck 3 m above the plaza, ran back and forth
+beneath it, and ignored guards standing inside them. Reachability only asked whether the NPC could walk near the
+target, not whether it could then hit it.
+
+Consequences: such a target has no chance; after the 2 s per-target grace the NPC switches to another enemy it
+can hit, or leashes home when there is none.

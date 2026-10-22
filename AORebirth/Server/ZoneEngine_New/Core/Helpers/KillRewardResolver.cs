@@ -88,6 +88,32 @@ namespace ZoneEngine_New.Core.Helpers
             return true;
         }
 
+        /// <summary>
+        /// False when NPCs did the killing: NPC damage was dealt and no player (a pet counts as its owner) reached
+        /// <see cref="MinimumContributionPercent"/> of all damage, the same bar as "you did not do enough damage" for
+        /// experience. The corpse then carries no rolled loot and no credits. A death with no NPC damage, or with no
+        /// recorded damage at all, keeps its spoils.
+        /// </summary>
+        public bool PlayersEarnedSpoils()
+        {
+            if (_npcDamagers.Count == 0)
+                return true;
+
+            long total = 0;
+            foreach (int damage in _damage.Values)
+                total += damage;
+            if (total <= 0)
+                return true;
+
+            foreach (KeyValuePair<int, int> pair in _damage)
+            {
+                if (IsPlayerDamager(pair.Key) && pair.Value * 100L >= total * MinimumContributionPercent)
+                    return true;
+            }
+
+            return false;
+        }
+
         public List<int> GetQualifyingPlayerInstances()
         {
             var qualifiers = new List<int>();
