@@ -25,10 +25,8 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>Brawl locks for a flat 15 seconds.</summary>
         const int FlatRechargeSeconds = 15;
 
-        /// <summary>Full Auto: 5 bullets plus one per 100 skill, at most 15 and at most the clip.</summary>
+        /// <summary>Full Auto: 5 bullets plus one per 100 skill, at most the clip.</summary>
         const int FullAutoBaseBullets = 5;
-
-        const int FullAutoMaxBullets = 15;
 
         /// <summary>Full Auto total damage: halved past 10000, again past 11500, 13000 and 14500; at most 15000.</summary>
         static readonly int[] FullAutoDamageSteps = [10000, 11500, 13000, 14500];
@@ -164,13 +162,15 @@ namespace ZoneEngine_New.Core.Helpers
             if (special == CharacterStat.Dimach && specialItem == null)
                 return FireResult.Dropped;
 
-            Resolve(attacker, target, special, weapon, slot, backstab, specialItem);
-
+            // Retail order (Full Auto capture 2026-10-22): SpecialUsed first, then the hit's own messages (FullAuto
+            // rounds feedback, SpecialAttackInfo), then the target's health.
             int seconds = RechargeSeconds(attacker, special, specialItem ?? weapon.DamageItem, backstab);
             attacker.LockSkill((int)special, seconds, now);
             attacker.ScheduleSpecialAvailable((int)special, now.AddSeconds(seconds));
             if (attacker is Player player)
                 player.Session?.Send(Action(player, CharacterActionType.SpecialUsed, (int)special, seconds));
+
+            Resolve(attacker, target, special, weapon, slot, backstab, specialItem);
             return FireResult.Fired;
         }
 
@@ -199,7 +199,10 @@ namespace ZoneEngine_New.Core.Helpers
                 bullets = -1;
             }
             else if (special == CharacterStat.FullAuto)
+            {
                 result = RollFullAuto(attacker, target, item, out bullets);
+                SendFullAutoRounds(attacker, bullets);
+            }
             else if (special == CharacterStat.Burst)
                 result = RollBurst(attacker, target, item, out bullets);
             else if (special == CharacterStat.Brawl)
@@ -256,11 +259,35 @@ namespace ZoneEngine_New.Core.Helpers
                 RunItemFunctions(attacker, specialItem, target);
         }
 
+        /// <summary>
+        /// The Full Auto bullets feedback (retail capture 2026-10-22: header byte 1, then the count twice). The
+        /// client (Gamecode.dll FullAutoIIR_t apply, 0x100a0208) formats its text 110 with the first number and
+        /// ignores the second: the "You hit with N bullets" line, so the count is the bullets that can hit. Sent to
+        /// the shooter only, before the SpecialAttackInfo.
+        /// </summary>
+        static void SendFullAutoRounds(Character attacker, int rounds)
+        {
+            if (attacker is not Player player || rounds <= 0)
+                return;
+
+            player.Session?.Send(new FullAutoMessage
+            {
+                Identity = player.Identity,
+                Unknown = 1,
+                Unknown1 = rounds,
+                Unknown2 = rounds
+            });
+        }
+
         static void AnnounceSpecialHit(Character attacker, Character target, CharacterStat special, int slot, int bullets,
             int damage)
         {
             // Client reader Gamecode.dll FUN_100a1c4f: slot, damage, ammo, target, stat, then a state value the
             // client applies to the target (FUN_1005b1b8); 4 as on a killing AttackInfo.
+            // Retail Full Auto (capture 2026-10-22) sends 0 in the ammo field and reports the bullets through the
+            // FullAuto message instead.
+            if (special == CharacterStat.FullAuto)
+                bullets = 0;
             attacker.Cell?.Announce(new SpecialAttackInfo
             {
                 Identity = attacker.Identity,
@@ -277,14 +304,14 @@ namespace ZoneEngine_New.Core.Helpers
 
         /// <summary>
         /// Every bullet rolls its own hit, damage and crit; the hits are summed and the total softened past 10000.
-        /// A miss only when every bullet misses. <paramref name="bullets"/> is the rounds fired: the whole clip.
+        /// A miss only when every bullet misses. <paramref name="shots"/> is the bullets that can hit: 5 plus one
+        /// per 100 skill, at most the clip.
         /// </summary>
-        static DamageCalculator.DamageResult RollFullAuto(Character attacker, Character target, Item? weapon, out int bullets)
+        static DamageCalculator.DamageResult RollFullAuto(Character attacker, Character target, Item? weapon, out int shots)
         {
             int clip = Math.Max(1, weapon?.GetStat(CharacterStat.MaxEnergy) ?? 1);
             int skill = Math.Max(0, attacker.Stats.GetOrZero(CharacterStat.FullAuto));
-            int shots = Math.Min(Math.Min(FullAutoBaseBullets + skill / 100, FullAutoMaxBullets), clip);
-            bullets = clip;
+            shots = Math.Min(FullAutoBaseBullets + skill / 100, clip);
 
             int total = 0;
             bool anyHit = false;

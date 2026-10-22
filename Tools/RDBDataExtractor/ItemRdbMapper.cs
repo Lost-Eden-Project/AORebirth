@@ -5,26 +5,21 @@ namespace AORebirth.Tools.RDBDataExtractor
     using System.Globalization;
     using System.IO;
 
-    using AODB.Common.Enums;
     using AODB.Common.RDBObjects;
-    using AODB.Common.Structs;
+    using AODB.Common.Spells;
 
     using MsgPack;
 
     using ZoneEngine_New.Core.Inventory.Dat;
 
-    using AoEventType = AODB.Common.Enums.EventType;
-    using AoActionType = AODB.Common.Enums.ActionType;
-    using AoFunctionType = AODB.Common.Enums.FunctionType;
-    using AoOperator = AODB.Common.Enums.Operator;
     using ZeEventType = AORebirth.Enums.EventType;
     using ZeActionType = AORebirth.Enums.ActionType;
     using ZeOperator = AORebirth.Enums.Operator;
     using ZeItemTarget = AORebirth.Enums.ItemTarget;
 
     /// <summary>
-    /// Turns AODB keyed modifiers/requirements into the positional
-    /// <see cref="DatItemTemplate"/> layout ZoneEngine consumes.
+    /// Turns an AODB item or nano template into <see cref="DatItemTemplate"/>: the positional
+    /// layout ZoneEngine consumes, plus the whole template in <see cref="DatItemTemplate.Rdb"/>.
     /// </summary>
     internal static class ItemRdbMapper
     {
@@ -32,256 +27,250 @@ namespace AORebirth.Tools.RDBDataExtractor
         private const int FlagsStat = 0;
         private const int MultipleCountStat = 412;
 
-        private static readonly HashSet<FunctionOperator> MetaOperators = new HashSet<FunctionOperator>
-        {
-            FunctionOperator.Duration,
-            FunctionOperator.Interval,
-            FunctionOperator.ApplyOn,
-            FunctionOperator.TargetList,
-            FunctionOperator.Criteria,
-        };
+        /// <summary>Record type, id and version ahead of every RDB record's payload.</summary>
+        private const int RecordHeaderSize = 12;
+
+        /// <summary>Key 4 SkillPst list keys holding the attack and defense skills.</summary>
+        private const int AttackSkillList = 0xc;
+        private const int DefenseSkillList = 0xd;
+
+        /// <summary>Spell stats every spell format starts with (SpellFormat_c ctor).</summary>
+        private const int TickCountSpellStat = 3;
+        private const int TickIntervalSpellStat = 4;
+        private const int TargetSpellStat = 0x20;
+        private const int BaseArgumentCount = 4;
+
+        /// <summary>Spell argument complex type holding a four-character tag (item hash).</summary>
+        private const int HashComplexType = 6;
+
+        private const int SpecialCriteriaSpellType = 0xcf17;
+        private const int ExpressionSpellType = 0xcf20;
+
+        /// <summary>Stock TextureSpellFormat_c's own arguments, in its read order.</summary>
+        private const int TextureSpellStat = 0x39;
+        private const int TextureBodyPartSpellStat = 0x38;
+        private const int TextureSeeSkinSpellStat = 0x3a;
+        private const int TextureArg1SpellStat = 0x42;
+        private const int TextureArg2SpellStat = 0x43;
 
         private static readonly Dictionary<int, string> FunctionSets = LoadFunctionSets();
 
-        internal static DatItemTemplate Map(
-            int id,
-            int dynelType,
-            Dictionary<StatId, uint> stats,
-            Dictionary<SkillCheck, Dictionary<StatId, uint>> skillChecks,
-            Dictionary<AoEventType, Modifier> modifiers,
-            Dictionary<AoActionType, Requirement> requirements)
+        /// <param name="item">The template as the client builds it (class defaults included).</param>
+        /// <param name="fileStats">
+        /// The same record read as a plain <see cref="ItemBase"/>, so its stat lists hold only what
+        /// the file holds; <see cref="DatItemTemplate.Stats"/> has always been the file's stats.
+        /// </param>
+        /// <param name="record">The raw record, header included.</param>
+        internal static DatItemTemplate Map(ItemBase item, ItemBase fileStats, byte[] record)
         {
-            DatItemTemplate template = MapStats(id, dynelType, stats);
-            MapSkillChecks(template, skillChecks);
-            MapModifiers(template, modifiers);
-            MapRequirements(template, requirements);
-            return template;
-        }
+            if (item == null)
+                throw new ArgumentNullException("item");
+            if (fileStats == null)
+                throw new ArgumentNullException("fileStats");
 
-        internal static DatItemTemplate MapStats(int id, int dynelType, Dictionary<StatId, uint> stats)
-        {
             var template = new DatItemTemplate
             {
-                ID = id,
-                DynelType = dynelType,
+                ID = item.RecordId,
+                DynelType = item.TemplateType,
                 Quality = 1,
+                Name = item.Name,
+                Rdb = ToRdb(item),
             };
 
-            if (stats == null)
-                return template;
-
-            foreach (KeyValuePair<StatId, uint> pair in stats)
+            if ((!item.ReadComplete || item.BytesLeft > 0) && record != null && record.Length > RecordHeaderSize)
             {
-                int key = (int)pair.Key;
-                int value = unchecked((int)pair.Value);
-                template.Stats[key] = value;
-                if (key == QualityStat && value > 0)
-                    template.Quality = value;
-                else if (key == FlagsStat)
-                    template.Flags = value;
-                else if (key == MultipleCountStat)
-                    template.MultipleCount = value;
+                template.Rdb.Record = new byte[record.Length - RecordHeaderSize];
+                Array.Copy(record, RecordHeaderSize, template.Rdb.Record, 0, template.Rdb.Record.Length);
             }
 
+            MapStats(template, fileStats.Stats18);
+            MapStats(template, fileStats.Stats2B);
+            MapStats(template, fileStats.Stats);
+            MapSkillList(template.Attack, item.SkillPstLists, AttackSkillList);
+            MapSkillList(template.Defend, item.SkillPstLists, DefenseSkillList);
+            MapEvents(template, item.Events);
+            MapActions(template, item.ActionCriteria);
             return template;
         }
 
-        static void MapSkillChecks(
-            DatItemTemplate template,
-            Dictionary<SkillCheck, Dictionary<StatId, uint>> skillChecks)
+        static void MapStats(DatItemTemplate template, List<KeyValuePair<int, int>> stats)
         {
-            if (skillChecks == null)
-                return;
-
-            foreach (KeyValuePair<SkillCheck, Dictionary<StatId, uint>> group in skillChecks)
+            foreach (KeyValuePair<int, int> pair in stats)
             {
-                Dictionary<int, int> target = null;
-                if (group.Key == SkillCheck.Attack)
-                    target = template.Attack;
-                else if (group.Key == SkillCheck.Defense)
-                    target = template.Defend;
-
-                if (target == null || group.Value == null)
-                    continue;
-
-                foreach (KeyValuePair<StatId, uint> pair in group.Value)
-                    target[(int)pair.Key] = unchecked((int)pair.Value);
+                template.Stats[pair.Key] = pair.Value;
+                if (pair.Key == QualityStat && pair.Value > 0)
+                    template.Quality = pair.Value;
+                else if (pair.Key == FlagsStat)
+                    template.Flags = pair.Value;
+                else if (pair.Key == MultipleCountStat)
+                    template.MultipleCount = pair.Value;
             }
         }
 
-        static void MapModifiers(DatItemTemplate template, Dictionary<AoEventType, Modifier> modifiers)
+        /// <summary>The first value for each skill wins, as the previous reader kept it.</summary>
+        static void MapSkillList(
+            Dictionary<int, int> target,
+            Dictionary<int, List<KeyValuePair<int, int>>> lists,
+            int key)
         {
-            if (modifiers == null || modifiers.Count == 0)
+            if (!lists.TryGetValue(key, out List<KeyValuePair<int, int>> list))
                 return;
 
-            foreach (KeyValuePair<AoEventType, Modifier> eventPair in modifiers)
+            foreach (KeyValuePair<int, int> pair in list)
             {
-                List<DatFunction> functions = ToEventFunctions(eventPair.Value);
+                if (!target.ContainsKey(pair.Key))
+                    target[pair.Key] = pair.Value;
+            }
+        }
+
+        static void MapEvents(DatItemTemplate template, Dictionary<int, List<SpellData>> events)
+        {
+            foreach (KeyValuePair<int, List<SpellData>> eventPair in events)
+            {
+                var functions = new List<DatFunction>();
+                foreach (SpellData spell in eventPair.Value)
+                    functions.Add(ToFunction(spell));
+
                 if (functions.Count == 0)
                     continue;
 
                 template.Events.Add(new DatEvent
                 {
-                    EventType = (ZeEventType)(int)eventPair.Key,
+                    EventType = (ZeEventType)eventPair.Key,
                     Functions = functions,
                 });
             }
         }
 
-        /// <summary>
-        /// Every spell on the event, in client order. <see cref="Modifier.Functions"/> is the
-        /// source; the function-type dictionary is only a fallback.
-        /// </summary>
-        static List<DatFunction> ToEventFunctions(Modifier modifier)
+        static void MapActions(DatItemTemplate template, Dictionary<int, List<Criterion>> actions)
         {
-            var functions = new List<DatFunction>();
-            if (modifier == null)
-                return functions;
-
-            if (modifier.Functions != null && modifier.Functions.Count > 0)
+            foreach (KeyValuePair<int, List<Criterion>> actionPair in actions)
             {
-                foreach (SpellFunction spell in modifier.Functions)
-                {
-                    if (spell?.Operations == null)
-                        continue;
-
-                    functions.Add(ToFunction((int)spell.Function, spell.Operations));
-                }
-
-                return functions;
-            }
-
-            if (modifier.Modifiers == null)
-                return functions;
-
-            foreach (KeyValuePair<AoFunctionType, List<Dictionary<FunctionOperator, object>>> functionPair
-                     in modifier.Modifiers)
-            {
-                if (functionPair.Value == null)
+                if (actionPair.Value.Count == 0)
                     continue;
 
-                foreach (Dictionary<FunctionOperator, object> keyedArgs in functionPair.Value)
+                template.Actions.Add(new DatAction
                 {
-                    if (keyedArgs == null)
-                        continue;
-
-                    functions.Add(ToFunction((int)functionPair.Key, keyedArgs));
-                }
-            }
-
-            return functions;
-        }
-
-        static void MapRequirements(
-            DatItemTemplate template,
-            Dictionary<AoActionType, Requirement> requirements)
-        {
-            if (requirements == null || requirements.Count == 0)
-                return;
-
-            foreach (KeyValuePair<AoActionType, Requirement> actionPair in requirements)
-            {
-                if (actionPair.Value?.Criterion == null)
-                    continue;
-
-                var action = new DatAction
-                {
-                    ActionType = (ZeActionType)(int)actionPair.Key,
-                    Requirements = new List<DatRequirement>(),
-                };
-
-                foreach (KeyValuePair<AoActionType, List<RequirementCriterion>> criterionPair
-                         in actionPair.Value.Criterion)
-                {
-                    if (criterionPair.Value == null)
-                        continue;
-
-                    foreach (RequirementCriterion criterion in criterionPair.Value)
-                    {
-                        action.Requirements.Add(
-                            new DatRequirement
-                            {
-                                Statnumber = criterion.Stat,
-                                Value = unchecked((int)criterion.Value),
-                                Operator = (ZeOperator)(int)criterion.Operator,
-                                Target = ZeItemTarget.Self,
-                            });
-                    }
-                }
-
-                if (action.Requirements.Count > 0)
-                    template.Actions.Add(action);
+                    ActionType = (ZeActionType)actionPair.Key,
+                    Requirements = ToRequirements(actionPair.Value),
+                });
             }
         }
 
-        internal static DatFunction ToFunction(int functionType, Dictionary<FunctionOperator, object> keyedArgs)
+        static List<DatRequirement> ToRequirements(List<Criterion> criteria)
+        {
+            var requirements = new List<DatRequirement>(criteria.Count);
+            foreach (Criterion criterion in criteria)
+            {
+                requirements.Add(new DatRequirement
+                {
+                    Statnumber = criterion.Value1,
+                    Value = criterion.Value2,
+                    Operator = (ZeOperator)criterion.Operator,
+                    Target = ZeItemTarget.Self,
+                });
+            }
+
+            return requirements;
+        }
+
+        internal static DatFunction ToFunction(SpellData spell)
         {
             var function = new DatFunction
             {
-                FunctionType = functionType,
+                FunctionType = spell.TypeId,
                 TickCount = 1,
                 TickInterval = 0,
                 Target = 0,
                 Arguments = new DatFunctionArguments(),
-                Requirements = new List<DatRequirement>(),
+                Requirements = ToRequirements(spell.Criteria),
             };
 
-            if (TryGetInt(keyedArgs, FunctionOperator.Duration, out int duration) && duration > 0)
+            if (spell.TryGetStat(TickCountSpellStat, out int duration) && duration > 0)
                 function.TickCount = duration;
-            if (TryGetUInt(keyedArgs, FunctionOperator.Interval, out uint interval))
-                function.TickInterval = interval;
-            if (TryGetUInt(keyedArgs, FunctionOperator.ApplyOn, out uint applyOn))
-                function.Target = unchecked((int)applyOn);
+            if (spell.TryGetStat(TickIntervalSpellStat, out int interval))
+                function.TickInterval = unchecked((uint)interval);
+            if (spell.TryGetStat(TargetSpellStat, out int target))
+                function.Target = target;
 
-            if (keyedArgs.TryGetValue(FunctionOperator.Criteria, out object criteria)
-                && criteria is IEnumerable<RequirementCriterion> requirements)
-            {
-                foreach (RequirementCriterion criterion in requirements)
-                {
-                    function.Requirements.Add(new DatRequirement
-                    {
-                        Statnumber = criterion.Stat,
-                        Value = unchecked((int)criterion.Value),
-                        Operator = (ZeOperator)(int)criterion.Operator,
-                        Target = ZeItemTarget.Self,
-                    });
-                }
-            }
-
-            foreach (object value in SelectPositionalArgs(functionType, keyedArgs))
-                function.Arguments.Values.Add(ToMessagePackObject(value));
+            foreach (MessagePackObject value in SelectPositionalArgs(spell.TypeId, SpellArguments(spell)))
+                function.Arguments.Values.Add(value);
 
             return function;
         }
 
         /// <summary>
-        /// AODB stores function args keyed by <see cref="FunctionOperator"/>. Legacy
-        /// FunctionSets.cfg describes the positional consumer layout: typed tokens consume
-        /// keys in insertion order (after meta), and <c>x</c> tokens skip that many bytes
-        /// of keys (4 bytes per skipped int key). Arguments the format does not name are
-        /// still appended, so Criteria, Expression, and any spell missing from the cfg
-        /// keep their payload.
+        /// The spell's own arguments in the order its format reads them (the four every format
+        /// starts with are the tick count, interval, target and target list above). Special
+        /// criteria and an expression follow as packed arrays.
         /// </summary>
-        internal static List<object> SelectPositionalArgs(
-            int functionType,
-            Dictionary<FunctionOperator, object> keyedArgs)
+        static List<MessagePackObject> SpellArguments(SpellData spell)
         {
-            var result = new List<object>();
-            var queue = new Queue<KeyValuePair<FunctionOperator, object>>();
-            foreach (KeyValuePair<FunctionOperator, object> pair in keyedArgs)
+            var values = new List<MessagePackObject>();
+            SpellFormat format = SpellFormats.Get(spell.TypeId);
+            if (format != null)
             {
-                if (MetaOperators.Contains(pair.Key))
-                    continue;
-
-                if (pair.Value is string[] texts)
+                for (int i = BaseArgumentCount; i < format.Arguments.Count; i++)
                 {
-                    for (int t = 0; t < texts.Length; t++)
-                        queue.Enqueue(new KeyValuePair<FunctionOperator, object>(FunctionOperator.Text, texts[t]));
-                    continue;
+                    SpellArgument argument = format.Arguments[i];
+                    if (argument.IsString)
+                    {
+                        values.Add(spell.Strings[argument.Index] ?? string.Empty);
+                        continue;
+                    }
+
+                    int value = spell.TryGetStat(argument.Stat, out int stat) ? stat : argument.DefaultInteger;
+                    values.Add(argument.ComplexType == HashComplexType ? HashTag(value) : value);
                 }
 
-                queue.Enqueue(pair);
+                // TextureSpellFormat_c reads its arguments in its own override.
+                if (format.Arguments.Count == BaseArgumentCount && spell.TryGetStat(TextureSpellStat, out int texture))
+                {
+                    values.Add(texture);
+                    values.Add(SpellStatOrZero(spell, TextureBodyPartSpellStat));
+                    values.Add(SpellStatOrZero(spell, TextureSeeSkinSpellStat));
+                    int arg1 = SpellStatOrZero(spell, TextureArg1SpellStat);
+                    int arg2 = SpellStatOrZero(spell, TextureArg2SpellStat);
+                    if (arg1 != 0 || arg2 != 0)
+                    {
+                        values.Add(arg1);
+                        values.Add(arg2);
+                    }
+                }
             }
+
+            if (spell.TypeId == SpecialCriteriaSpellType && spell.SpecialCriteria.Count > 0)
+                values.Add(PackCriteria(spell.SpecialCriteria));
+            if (spell.TypeId == ExpressionSpellType)
+                values.Add(PackExpression(spell.Expression));
+
+            return values;
+        }
+
+        static int SpellStatOrZero(SpellData spell, int stat) => spell.TryGetStat(stat, out int value) ? value : 0;
+
+        /// <summary>A tag such as an item hash: its four bytes as text, high byte first.</summary>
+        static string HashTag(int value)
+        {
+            uint hash = unchecked((uint)value);
+            return new string(new[]
+            {
+                (char)(hash >> 24),
+                (char)((hash >> 16) & 0xff),
+                (char)((hash >> 8) & 0xff),
+                (char)(hash & 0xff),
+            });
+        }
+
+        /// <summary>
+        /// Legacy FunctionSets.cfg describes the positional consumer layout: typed tokens take
+        /// values in read order, and <c>x</c> tokens skip that many bytes of values (4 bytes per
+        /// skipped int). Values the format does not name are still appended.
+        /// </summary>
+        internal static List<MessagePackObject> SelectPositionalArgs(int functionType, List<MessagePackObject> values)
+        {
+            var result = new List<MessagePackObject>();
+            var queue = new Queue<MessagePackObject>(values);
 
             if (FunctionSets.TryGetValue(functionType, out string format) && !string.IsNullOrWhiteSpace(format))
             {
@@ -299,8 +288,8 @@ namespace AORebirth.Tools.RDBDataExtractor
 
                     if (kind == 'x')
                     {
-                        int skipKeys = count / 4;
-                        for (int skipped = 0; skipped < skipKeys && queue.Count > 0; skipped++)
+                        int skipValues = count / 4;
+                        for (int skipped = 0; skipped < skipValues && queue.Count > 0; skipped++)
                             queue.Dequeue();
                         continue;
                     }
@@ -310,121 +299,148 @@ namespace AORebirth.Tools.RDBDataExtractor
                         if (queue.Count == 0)
                             break;
 
-                        object value = queue.Dequeue().Value;
-                        if (kind == 's' && value is string text)
-                            value = text.TrimEnd('\0');
+                        MessagePackObject value = queue.Dequeue();
+                        if (kind == 's' && value.IsTypeOf<string>() == true)
+                            value = value.AsString().TrimEnd('\0');
                         result.Add(value);
                     }
                 }
             }
 
             while (queue.Count > 0)
-                result.Add(queue.Dequeue().Value);
+                result.Add(queue.Dequeue());
 
             return result;
         }
 
-        static bool TryGetInt(
-            Dictionary<FunctionOperator, object> keyedArgs,
-            FunctionOperator key,
-            out int value)
+        static DatRdbTemplate ToRdb(ItemBase item)
         {
-            value = 0;
-            if (!keyedArgs.TryGetValue(key, out object raw) || raw == null)
-                return false;
-
-            switch (raw)
+            var rdb = new DatRdbTemplate
             {
-                case int i:
-                    value = i;
-                    return true;
-                case uint u:
-                    value = unchecked((int)u);
-                    return true;
-                case long l:
-                    value = (int)l;
-                    return true;
-                default:
-                    return int.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+                TemplateType = item.TemplateType,
+                Description = item.Description,
+                Stats = ToPairs(item.Stats),
+                Stats18 = ToPairs(item.Stats18),
+                Stats2B = ToPairs(item.Stats2B),
+                Pairs1B = ToPairs(item.Pairs1B),
+                Pairs09 = ToPairs(item.Pairs09),
+                Entries78 = ToPairs(item.Entries78),
+                Entries88 = ToPairs(item.Entries88),
+                Flags4C = item.Flags4C,
+                ReadComplete = item.ReadComplete,
+                ReadStopReason = item.ReadStopReason,
+                BytesLeft = item.BytesLeft,
+            };
+
+            foreach (KeyValuePair<int, int> stat in item.LiveStats.All())
+                rdb.LiveStats[stat.Key] = stat.Value;
+
+            foreach (KeyValuePair<int, List<KeyValuePair<int, int>>> list in item.SkillPstLists)
+                rdb.SkillPstLists[list.Key] = ToPairs(list.Value);
+
+            foreach (KeyValuePair<int, List<SpellData>> eventPair in item.Events)
+            {
+                var spells = new List<DatSpell>(eventPair.Value.Count);
+                foreach (SpellData spell in eventPair.Value)
+                    spells.Add(ToSpell(spell));
+                rdb.Events[eventPair.Key] = spells;
             }
+
+            foreach (KeyValuePair<int, List<Criterion>> action in item.ActionCriteria)
+                rdb.ActionCriteria[action.Key] = ToCriteria(action.Value);
+
+            foreach (ShopItem line in item.ShopInventory)
+            {
+                rdb.ShopInventory.Add(new DatShopItem
+                {
+                    Hash = line.Hash,
+                    MinQl = line.MinQl,
+                    MaxQl = line.MaxQl,
+                    Amount = line.Amount,
+                    Regen = line.Regen,
+                    Extra = line.Extra,
+                    Interval = line.Interval,
+                    Unknown1 = line.Unknown1,
+                    Unknown2 = line.Unknown2,
+                    Cost = line.Cost,
+                });
+            }
+
+            if (item is NanoObject nano)
+            {
+                rdb.Nano = new DatRdbNano
+                {
+                    BuffTotalTime = nano.BuffTotalTime,
+                    FormulaRadius = nano.FormulaRadius,
+                    FieldAC = nano.FieldAC,
+                    FieldB0 = nano.FieldB0,
+                    FieldB4 = nano.FieldB4,
+                    FieldB8 = nano.FieldB8,
+                    FieldBC = nano.FieldBC,
+                };
+            }
+
+            return rdb;
         }
 
-        static bool TryGetUInt(
-            Dictionary<FunctionOperator, object> keyedArgs,
-            FunctionOperator key,
-            out uint value)
+        static DatSpell ToSpell(SpellData spell)
         {
-            value = 0;
-            if (!keyedArgs.TryGetValue(key, out object raw) || raw == null)
-                return false;
-
-            switch (raw)
+            var result = new DatSpell
             {
-                case uint u:
-                    value = u;
-                    return true;
-                case int i:
-                    value = unchecked((uint)i);
-                    return true;
-                default:
-                    return uint.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
-            }
+                TypeId = spell.TypeId,
+                Header2 = spell.Header2,
+                Version = spell.Version,
+                Strings = new List<string>(spell.Strings),
+                Criteria = ToCriteria(spell.Criteria),
+                SpecialCriteria = ToCriteria(spell.SpecialCriteria),
+                Expression = PackExpression(spell.Expression),
+            };
+
+            foreach (KeyValuePair<int, int> stat in spell.Stats)
+                result.Stats[stat.Key] = stat.Value;
+
+            return result;
         }
 
-        static MessagePackObject ToMessagePackObject(object value)
+        static List<DatIntPair> ToPairs(List<KeyValuePair<int, int>> pairs)
         {
-            switch (value)
-            {
-                case null:
-                    return MessagePackObject.Nil;
-                case string s:
-                    return s;
-                case int i:
-                    return i;
-                case uint u:
-                    return unchecked((int)u);
-                case long l:
-                    return (int)l;
-                case short s16:
-                    return (int)s16;
-                case byte b:
-                    return (int)b;
-                case bool flag:
-                    return flag ? 1 : 0;
-                case float f:
-                    return f;
-                case double d:
-                    return (float)d;
-                case string[] texts:
-                    return PackArray(PackStrings(texts));
-                case SpellExpression expression:
-                    return PackExpression(expression);
-                case IEnumerable<RequirementCriterion> criteria:
-                    return PackCriteria(criteria);
-                default:
-                    if (value is Enum)
-                        return Convert.ToInt32(value, CultureInfo.InvariantCulture);
-                    return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
-            }
+            var result = new List<DatIntPair>(pairs.Count);
+            foreach (KeyValuePair<int, int> pair in pairs)
+                result.Add(new DatIntPair { Key = pair.Key, Value = pair.Value });
+            return result;
         }
 
-        static MessagePackObject PackExpression(SpellExpression expression)
+        static List<DatCriterion> ToCriteria(List<Criterion> criteria)
         {
-            if (expression == null)
-                return MessagePackObject.Nil;
+            var result = new List<DatCriterion>(criteria.Count);
+            foreach (Criterion criterion in criteria)
+            {
+                result.Add(new DatCriterion
+                {
+                    Value1 = criterion.Value1,
+                    Value2 = criterion.Value2,
+                    Operator = criterion.Operator,
+                });
+            }
 
+            return result;
+        }
+
+        /// <summary>[1, float] leaf, [2, stat, flag] stat leaf, [3 or 4, operator, left, right].</summary>
+        static MessagePackObject PackExpression(ExpressionData expression)
+        {
             switch (expression)
             {
-                case ConstantExpression constant:
-                    return PackArray(new MessagePackObject(1), new MessagePackObject(constant.Value));
-                case StatExpression stat:
+                case LeafExpressionData leaf:
+                    return PackArray(new MessagePackObject(1), new MessagePackObject(leaf.Value));
+                case LeafStatExpressionData stat:
                     return PackArray(
                         new MessagePackObject(2),
                         new MessagePackObject(stat.Stat),
                         new MessagePackObject(stat.Flag ? 1 : 0));
-                case BinaryExpression binary:
+                case BinaryExpressionData binary:
                     return PackArray(
-                        new MessagePackObject(binary.Tag),
+                        new MessagePackObject(binary is FunctionExpressionData ? 4 : 3),
                         new MessagePackObject(binary.Operator),
                         PackExpression(binary.Left),
                         PackExpression(binary.Right));
@@ -433,46 +449,23 @@ namespace AORebirth.Tools.RDBDataExtractor
             }
         }
 
-        static MessagePackObject PackCriteria(IEnumerable<RequirementCriterion> criteria)
+        static MessagePackObject PackCriteria(List<Criterion> criteria)
         {
-            var packed = new List<MessagePackObject>();
-            if (criteria != null)
+            var packed = new MessagePackObject[criteria.Count];
+            for (int i = 0; i < criteria.Count; i++)
             {
-                foreach (RequirementCriterion criterion in criteria)
-                {
-                    packed.Add(PackArray(
-                        new MessagePackObject(criterion.Stat),
-                        new MessagePackObject(unchecked((int)criterion.Value)),
-                        new MessagePackObject((int)criterion.Operator)));
-                }
+                packed[i] = PackArray(
+                    new MessagePackObject(criteria[i].Value1),
+                    new MessagePackObject(criteria[i].Value2),
+                    new MessagePackObject(criteria[i].Operator));
             }
 
-            return PackArray(packed);
-        }
-
-        static MessagePackObject[] PackStrings(string[] texts)
-        {
-            var packed = new MessagePackObject[texts == null ? 0 : texts.Length];
-            if (texts == null)
-                return packed;
-
-            for (int i = 0; i < texts.Length; i++)
-                packed[i] = texts[i] ?? string.Empty;
-
-            return packed;
+            return new MessagePackObject(packed);
         }
 
         static MessagePackObject PackArray(params MessagePackObject[] values)
         {
-            return new MessagePackObject(values ?? new MessagePackObject[0]);
-        }
-
-        static MessagePackObject PackArray(List<MessagePackObject> values)
-        {
-            if (values == null || values.Count == 0)
-                return new MessagePackObject(new MessagePackObject[0]);
-
-            return new MessagePackObject(values.ToArray());
+            return new MessagePackObject(values);
         }
 
         static Dictionary<int, string> LoadFunctionSets()

@@ -483,7 +483,7 @@ namespace AORebirth.Tools.RDBDataExtractor
             metadata.IsIndoor = playfield.IsIndoor;
             metadata.ZoneSize = playfield.ZoneSize;
             metadata.ZoneCount = playfield.ZoneCount;
-            metadata.UnknownV9A = playfield.UnknownV9A;
+            metadata.UnknownV9A = playfield.Flags;
             metadata.UnknownV9B = playfield.UnknownV9B;
             metadata.PlayfieldTypeBits = playfield.PlayfieldTypeBits;
             metadata.UnknownV9C = playfield.UnknownV9C;

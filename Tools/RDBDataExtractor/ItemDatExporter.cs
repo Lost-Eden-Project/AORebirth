@@ -15,7 +15,8 @@ namespace AORebirth.Tools.RDBDataExtractor
 
     /// <summary>
     /// Exports AODB <see cref="ItemObject"/> and <see cref="NanoObject"/> records
-    /// into one GameData/items.dat, including name, DynelType, events, and actions.
+    /// into one GameData/items.dat: the positional layout ZoneEngine consumes and the whole
+    /// AODB template beside it (<see cref="DatItemTemplate.Rdb"/>).
     /// </summary>
     internal sealed class ItemDatExporter
     {
@@ -103,15 +104,10 @@ namespace AORebirth.Tools.RDBDataExtractor
                 if (item == null)
                     continue;
 
-                DatItemTemplate itemTemplate = ItemRdbMapper.Map(
-                    itemId,
-                    item.DynelType,
-                    item.Stats,
-                    item.SkillChecks,
-                    item.Modifiers,
-                    item.Requirements);
-                itemTemplate.Name = item.Name;
-                templates.Add(itemTemplate);
+                templates.Add(ItemRdbMapper.Map(
+                    item,
+                    this.controller.Get<ItemBase>(ResourceTypeId.RDBItem, itemId),
+                    this.controller.GetRaw((int)ResourceTypeId.RDBItem, itemId)));
             }
 
             foreach (int nanoId in this.controller.RecordTypeToId[NanoRecordType].Keys.OrderBy(id => id))
@@ -122,15 +118,10 @@ namespace AORebirth.Tools.RDBDataExtractor
                 if (nano == null)
                     continue;
 
-                DatItemTemplate nanoTemplate = ItemRdbMapper.Map(
-                    nanoId,
-                    nano.DynelType,
-                    nano.Stats,
-                    nano.SkillChecks,
-                    nano.Modifiers,
-                    nano.Requirements);
-                nanoTemplate.Name = nano.Name;
-                templates.Add(nanoTemplate);
+                templates.Add(ItemRdbMapper.Map(
+                    nano,
+                    this.controller.Get<ItemBase>((ResourceTypeId)NanoRecordType, nanoId),
+                    this.controller.GetRaw(NanoRecordType, nanoId)));
             }
 
             templates.Sort((left, right) => left.ID.CompareTo(right.ID));

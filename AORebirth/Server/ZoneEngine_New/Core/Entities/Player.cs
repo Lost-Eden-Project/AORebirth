@@ -1284,10 +1284,16 @@ namespace ZoneEngine_New.Core.Entities
         void RebasePerks()
             => RebasePerks(Stats);
 
+        /// <summary>
+        /// Applies each trained perk whose ToWear requirements pass. The client counts a perk only while they do (a
+        /// character below a perk's level keeps it trained but gets none of its bonuses), so the server matches it.
+        /// </summary>
         void RebasePerks(StatCollection stats)
         {
             foreach (ItemTemplate perk in _perkTemplates)
             {
+                if (!perk.MeetsActionRequirements(stat => stats.Get(stat), ActionType.ToWear, ResolvePerkRequirement))
+                    continue;
                 if (perk.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear))
                     StatModifierSpells.Apply(wear, stats);
             }
