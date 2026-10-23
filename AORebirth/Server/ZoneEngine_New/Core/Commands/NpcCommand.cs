@@ -43,7 +43,7 @@ namespace ZoneEngine_New.Core.Commands
 
         public int RequiredGmLevel => 1;
 
-        public string Usage => ".npc source|template|loot [roll [count]]|equipment|nanos|position";
+        public string Usage => ".npc source|template|loot [roll [count]]|equipment|nanos|position|respawn";
 
         public GmCommandHelp Help { get; } = new(
             "Inspects your selected NPC.",
@@ -55,6 +55,7 @@ namespace ZoneEngine_New.Core.Commands
                 new(".npc equipment", "Its equipment."),
                 new(".npc nanos", "Its uploaded and running nanos."),
                 new(".npc position", "Its position, home and movement state."),
+                new(".npc respawn", "Despawns it (no corpse, loot or XP) and respawns its spawn point now, from the current GameData."),
             ],
             [
                 new(".npc template", "Template of your target."),
@@ -127,7 +128,28 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
+            if (string.Equals(verb, "respawn", StringComparison.OrdinalIgnoreCase))
+            {
+                Respawn(context, npc);
+                return;
+            }
+
             context.SendUsage();
+        }
+
+        static void Respawn(GmCommandContext context, NpcCharacter npc)
+        {
+            string name = npc.Name ?? npc.Identity.Instance.ToString(CultureInfo.InvariantCulture);
+            HashSpawnSystem? spawns = npc.Playfield?.GetService<HashSpawnSystem>();
+            if (spawns == null || !spawns.TryRespawnNow(npc))
+            {
+                GmCommandFeedback.SendError(context.Session, context.Player,
+                    name + " has no spawn point that respawns (GM-spawned, pet, content placement or quest objective), or is dead; not respawned.");
+                return;
+            }
+
+            context.Player.SetTarget(Identity.None);
+            GmCommandFeedback.Send(context.Session, context.Player, "Respawned " + name + " at its spawn point.");
         }
 
         static bool TryResolveNpc(GmCommandContext context, out NpcCharacter npc)

@@ -13,6 +13,12 @@ namespace AORebirth.Core.GameData
     {
         public const string EnvironmentVariableName = "AO_REBIRTH_GAMEDATA_PATH";
 
+        /// <summary>
+        /// A writable folder laid over GameData: a file at a relative path in it replaces the shipped file at the same
+        /// relative path (<see cref="ResolveFile"/>). Unset, or the file absent there: the shipped file.
+        /// </summary>
+        public const string OverrideEnvironmentVariableName = "AO_REBIRTH_GAMEDATA_OVERRIDE_PATH";
+
         public const string RootFolderName = "GameData";
 
         public const string PlayfieldsFolderName = "Playfields";
@@ -132,6 +138,41 @@ namespace AORebirth.Core.GameData
             }
 
             return Path.Combine(baseDirectory, RootFolderName);
+        }
+
+        /// <summary>The <see cref="OverrideEnvironmentVariableName"/> folder, or null when it is not set.</summary>
+        public static string ResolveOverrideRoot()
+        {
+            string configured = Environment.GetEnvironmentVariable(OverrideEnvironmentVariableName);
+            return string.IsNullOrWhiteSpace(configured) ? null : Path.GetFullPath(configured.Trim());
+        }
+
+        /// <summary>
+        /// The file to read for <paramref name="relativePath"/> under the GameData <paramref name="root"/>: the override
+        /// folder's copy when it has one, else the shipped file (which may not exist either).
+        /// </summary>
+        public static string ResolveFile(string root, string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                throw new ArgumentException("GameData root is required.", nameof(root));
+            if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath))
+                throw new ArgumentException("A path relative to GameData is required.", nameof(relativePath));
+
+            string overrideRoot = ResolveOverrideRoot();
+            if (overrideRoot != null)
+            {
+                string candidate = Path.GetFullPath(Path.Combine(overrideRoot, relativePath));
+                if (IsUnder(candidate, overrideRoot) && File.Exists(candidate))
+                    return candidate;
+            }
+
+            return Path.GetFullPath(Path.Combine(root, relativePath));
+        }
+
+        private static bool IsUnder(string path, string root)
+        {
+            string prefix = NormalizeDirectory(root) + Path.DirectorySeparatorChar;
+            return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsProcessBaseDirectory(string baseDirectory)

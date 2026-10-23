@@ -30,6 +30,7 @@ namespace ZoneEngine_New.Core.Modules
 
         private readonly IZoneLogger _logger;
         private readonly IKnubotScripts _knubot;
+        private readonly IZoneGameData _gameData;
         private readonly List<LoadedModule> _modules = new();
         private readonly IZoneActions _actions;
         private Dictionary<string, List<string>> _capabilities = new(StringComparer.OrdinalIgnoreCase);
@@ -39,10 +40,12 @@ namespace ZoneEngine_New.Core.Modules
         private IConnectionFilterProvider? _connectionFilter;
         private string? _connectionFilterOwner;
 
-        private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, Func<Playfield.PlayfieldManager> playfields)
+        private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, IZoneGameData gameData,
+            Func<Playfield.PlayfieldManager> playfields)
         {
             _logger = logger;
             _knubot = knubot;
+            _gameData = gameData;
             Events = new ZoneModuleEvents(logger);
             World = new ZoneModuleWorld(playfields);
             _actions = new ZoneModuleActions(playfields);
@@ -59,12 +62,14 @@ namespace ZoneEngine_New.Core.Modules
             string gameDataRoot,
             IZoneLogger logger,
             Func<Knubot.KnubotCatalog> knubot,
-            Func<Playfield.PlayfieldManager> playfields)
+            Func<Playfield.PlayfieldManager> playfields,
+            Func<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>? gameData = null)
         {
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(knubot);
             ArgumentNullException.ThrowIfNull(playfields);
-            var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot), playfields);
+            var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot),
+                new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([]))), playfields);
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {
@@ -253,7 +258,8 @@ namespace ZoneEngine_New.Core.Modules
         {
             var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                ModuleCapabilities.ReadWorld, ModuleCapabilities.RefreshNpc, ModuleCapabilities.SendMessages
+                ModuleCapabilities.ReadWorld, ModuleCapabilities.RefreshNpc, ModuleCapabilities.SendMessages,
+                ModuleCapabilities.GameDataReload, ModuleCapabilities.RespawnNpc
             };
             var capabilities = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach ((string id, List<string>? names) in settings.Capabilities ?? new Dictionary<string, List<string>>())
@@ -318,9 +324,12 @@ namespace ZoneEngine_New.Core.Modules
                 Knubot = host._knubot;
                 World = new GatedWorld(host.World, gate);
                 Actions = new GatedActions(host._actions, gate);
+                GameData = new GatedGameData(host._gameData, gate);
             }
 
             public IZoneWorld World { get; }
+
+            public IZoneGameData GameData { get; }
 
             public IZoneActions Actions { get; }
 

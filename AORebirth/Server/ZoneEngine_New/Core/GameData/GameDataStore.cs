@@ -44,12 +44,14 @@ namespace ZoneEngine_New.Core.GameData
 
         private readonly Lock _playfieldSync = new();
         private readonly IZoneLogger _logger;
-        private NpcTemplateCatalog _npcTemplates = new(
+        // NpcTemplates.json and ItemTemplates.json are swapped whole by a reload (ReloadNpcTemplates /
+        // ReloadHashItems); every lookup reads the field once.
+        private volatile NpcTemplateCatalog _npcTemplates = new(
             new Dictionary<string, string[]>(StringComparer.Ordinal),
             new Dictionary<string, NpcLeaf>(StringComparer.Ordinal));
         private readonly Dictionary<string, int[]> _monsterWeapons =
             new(StringComparer.Ordinal);
-        private HashItemCatalog _hashItems = new(
+        private volatile HashItemCatalog _hashItems = new(
             new Dictionary<string, string[]>(StringComparer.Ordinal),
             new Dictionary<string, HashInstance>(StringComparer.Ordinal));
         private readonly Dictionary<int, VendingMachineDefinition> _vendingMachines = new();
@@ -88,9 +90,9 @@ namespace ZoneEngine_New.Core.GameData
             // Startup is the one place a broken start location may stop the engine: never on a tick.
             if (RespawnContent.StartLocationError is string startLocationError)
                 throw new InvalidDataException("Invalid NewCharacter.json: " + startLocationError);
-            LoadNpcTemplates();
+            ReloadNpcTemplates();
             LoadMonsterWeapons();
-            LoadHashItems();
+            ReloadHashItems();
             LoadVendingMachines();
             LoadMonsterData();
             LoadXpLevels();
@@ -148,17 +150,19 @@ namespace ZoneEngine_New.Core.GameData
         public bool TryGetMobTemplate(string hash, out MobTemplate template)
         {
             template = null!;
-            if (string.IsNullOrEmpty(hash) || !_npcTemplates.TryGetLeaf(hash, out NpcLeaf leaf))
+            NpcTemplateCatalog templates = _npcTemplates;
+            if (string.IsNullOrEmpty(hash) || !templates.TryGetLeaf(hash, out NpcLeaf leaf))
                 return false;
 
-            template = NpcTemplateCatalog.Materialize(leaf, leaf.MinLevel, _npcTemplates.RuleFeatures?.Invoke(leaf.Hash));
+            template = NpcTemplateCatalog.Materialize(leaf, leaf.MinLevel, templates.RuleFeatures?.Invoke(leaf.Hash));
             return true;
         }
 
         public bool TryResolveMobTemplate(string hash, int? level, out MobTemplate template)
         {
-            if (_npcTemplates.CanResolve(hash))
-                return _npcTemplates.TryResolve(hash, level, out template);
+            NpcTemplateCatalog templates = _npcTemplates;
+            if (templates.CanResolve(hash))
+                return templates.TryResolve(hash, level, out template);
 
             template = null!;
             return false;
@@ -470,33 +474,41 @@ namespace ZoneEngine_New.Core.GameData
 
         #region Catalog loads
 
-        private void LoadNpcTemplates()
+        /// <summary>
+        /// Reads NpcTemplates.json (through the GameData override folder) and swaps it in. On a missing file or a parse
+        /// failure the current templates stay. Startup and module reloads; never on a playfield tick.
+        /// </summary>
+        internal AORebirth.Modules.Content.GameDataReloadResult ReloadNpcTemplates()
         {
-            string path = Path.Combine(RootPath, GameDataPaths.NpcTemplatesFileName);
+            const string name = "NpcTemplates";
+            string path = GameDataPaths.ResolveFile(RootPath, GameDataPaths.NpcTemplatesFileName);
             if (!File.Exists(path))
             {
                 _logger.Warn(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "NpcTemplates.json not found at {0}; catalog empty",
+                        "NpcTemplates.json not found at {0}; catalog unchanged",
                         path));
-                return;
+                return new(name, false, _npcTemplates.LeafCount, ["NpcTemplates.json not found at " + path]);
             }
 
             try
             {
-                _npcTemplates = NpcTemplateCatalog.Parse(File.ReadAllText(path));
-                // Behaviour switches (NoCombat, Guard, ...) live in MonsterCombatRules.json beside the templates.
-                string rulesRoot = Path.GetDirectoryName(path)!;
-                _npcTemplates.RuleFeatures = hash =>
+                NpcTemplateCatalog loaded = NpcTemplateCatalog.Parse(File.ReadAllText(path));
+                // Behaviour switches (NoCombat, Guard, ...) live in MonsterCombatRules.json; read at materialize time,
+                // so a rules reload reaches the next spawn.
+                string rulesRoot = RootPath;
+                loaded.RuleFeatures = hash =>
                     Mobs.MonsterCombatRulesCatalog.For(rulesRoot).TryGet(hash, out Mobs.MonsterCombatRules rules) ? rules.Features : null;
+                _npcTemplates = loaded;
                 _logger.Info(
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "GameData npc templates leaves={0} families={1} from {2}",
-                        _npcTemplates.LeafCount,
-                        _npcTemplates.FamilyCount,
+                        loaded.LeafCount,
+                        loaded.FamilyCount,
                         path));
+                return new(name, true, loaded.LeafCount, []);
             }
             catch (Exception exception)
             {
@@ -504,8 +516,9 @@ namespace ZoneEngine_New.Core.GameData
                     exception,
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "Failed to load NpcTemplates.json from {0}; catalog empty",
+                        "Failed to load NpcTemplates.json from {0}; catalog unchanged",
                         path));
+                return new(name, false, _npcTemplates.LeafCount, ["NpcTemplates.json: " + exception.Message]);
             }
         }
 
@@ -561,29 +574,37 @@ namespace ZoneEngine_New.Core.GameData
             }
         }
 
-        private void LoadHashItems()
+        /// <summary>
+        /// Reads ItemTemplates.json (through the GameData override folder) and swaps the hash catalog in. On a missing
+        /// file or a parse failure the current catalog stays. Items already minted or spawned keep their template.
+        /// Startup and module reloads; never on a playfield tick.
+        /// </summary>
+        internal AORebirth.Modules.Content.GameDataReloadResult ReloadHashItems()
         {
-            string path = Path.Combine(RootPath, GameDataPaths.ItemTemplatesFileName);
+            const string name = "ItemTemplates";
+            string path = GameDataPaths.ResolveFile(RootPath, GameDataPaths.ItemTemplatesFileName);
             if (!File.Exists(path))
             {
                 _logger.Warn(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "ItemTemplates.json not found at {0}; hash catalog empty",
+                        "ItemTemplates.json not found at {0}; hash catalog unchanged",
                         path));
-                return;
+                return new(name, false, _hashItems.InstanceCount, ["ItemTemplates.json not found at " + path]);
             }
 
             try
             {
-                _hashItems = HashItemCatalog.Parse(File.ReadAllText(path));
+                HashItemCatalog loaded = HashItemCatalog.Parse(File.ReadAllText(path));
+                _hashItems = loaded;
                 _logger.Info(
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "GameData hash templates={0} hash instances={1} from {2}",
-                        _hashItems.CategoryCount,
-                        _hashItems.InstanceCount,
+                        loaded.CategoryCount,
+                        loaded.InstanceCount,
                         path));
+                return new(name, true, loaded.InstanceCount, []);
             }
             catch (Exception exception)
             {
@@ -591,8 +612,9 @@ namespace ZoneEngine_New.Core.GameData
                     exception,
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "Failed to load ItemTemplates.json from {0}; hash catalog empty",
+                        "Failed to load ItemTemplates.json from {0}; hash catalog unchanged",
                         path));
+                return new(name, false, _hashItems.InstanceCount, ["ItemTemplates.json: " + exception.Message]);
             }
         }
 

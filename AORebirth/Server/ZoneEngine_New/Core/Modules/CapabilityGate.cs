@@ -98,5 +98,11 @@ namespace ZoneEngine_New.Core.Modules
             gate.Require(ModuleCapabilities.SendMessages);
             return actions.SendFeedback(characterId, feedbackId);
         }
+
+        public Task<bool> RespawnNpc(int playfieldId, int instance)
+        {
+            gate.Require(ModuleCapabilities.RespawnNpc);
+            return actions.RespawnNpc(playfieldId, instance);
+        }
     }
 }

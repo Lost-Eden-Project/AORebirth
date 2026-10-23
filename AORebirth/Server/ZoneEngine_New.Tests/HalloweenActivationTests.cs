@@ -293,6 +293,7 @@ public sealed class HalloweenActivationTests
         internal World(string root, GameplaySettings settings, int id = 665, IItemTemplateCatalog? itemCatalog = null, IItemBuilder? itemBuilder = null)
         {
             Field(Playfield, "<Identity>k__BackingField", new Identity { Type = IdentityType.Playfield2, Instance = id });
+            Field(Playfield, "<ResourceId>k__BackingField", id);
             Field(Playfield, "_pendingStatRebases", new ConcurrentDictionary<Character, byte>());
             Field(Playfield, "_lifecycleSync", new Lock());
             Data = new GameDataStore(new StubLogger(), null, root);

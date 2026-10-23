@@ -58,6 +58,12 @@
     <Compile Include="TestDoubles.cs" />
     <Compile Include="ModuleApiTests.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(GameDataReloadFocusedTests)' == 'true'">
+    <Compile Remove="@(Compile)" />
+    <Compile Include="TestDoubles.cs" />
+    <Compile Include="GameDataReloadTests.cs" />
+    <Compile Include="HalloweenActivationTests.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(FriendlyItemUseFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />

@@ -28,6 +28,9 @@ namespace AORebirth.Modules
         /// <summary>Messages and NPC refreshes, run on the owning playfield tick (module API 1.2).</summary>
         IZoneActions Actions { get; }
 
+        /// <summary>Reloadable GameData and the override folder it is read through (module API 1.3).</summary>
+        IZoneGameData GameData { get; }
+
         /// <summary>
         /// Reads Modules/&lt;Id&gt;/config.json (case-insensitive, comments allowed), or returns null when it is absent.
         /// </summary>

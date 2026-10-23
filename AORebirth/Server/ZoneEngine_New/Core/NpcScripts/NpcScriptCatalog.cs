@@ -62,6 +62,9 @@ public static class SpawnPointKey
 /// <c>GameData/NpcScripts/*.json</c>: programs and their bindings, compiled at load and indexed by hash, by
 /// (playfield, spawn point key) and by (playfield, NPC key). A program or binding with a problem is logged and left
 /// out; the rest load. Resolution at spawn, most specific first: spawn point, NPC key, hash on this playfield, hash.
+/// A file in the GameData override folder (AO_REBIRTH_GAMEDATA_OVERRIDE_PATH/NpcScripts) replaces the shipped file at
+/// the same relative path, and one only there is added. <see cref="Reload"/> compiles everything again and swaps it in
+/// whole; NPCs already running a program keep it until they respawn.
 /// </summary>
 public sealed class NpcScriptCatalog
 {
@@ -74,57 +77,116 @@ public sealed class NpcScriptCatalog
         AllowTrailingCommas = true
     };
 
+    /// <summary>The name <see cref="Reload"/> is registered under.</summary>
+    public const string ReloadName = "NpcScripts";
+
     readonly IZoneLogger _logger;
-    readonly Dictionary<string, NpcScriptProgram> _programs = new(StringComparer.Ordinal);
-    readonly Dictionary<string, NpcScriptBinding> _byHash = new(StringComparer.Ordinal);
-    readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> _byHashOnPlayfield = new();
-    readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> _bySpawnPoint = new();
-    readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> _byNpcKey = new();
+    readonly IGameData _gameData;
+    readonly System.Threading.Lock _reloadLock = new();
+    volatile Snapshot _current;
 
     public NpcScriptCatalog(IGameData gameData, IZoneLogger logger)
     {
         ArgumentNullException.ThrowIfNull(gameData);
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
+        _gameData = gameData;
         Root = Path.Combine(gameData.RootPath, DirectoryName);
-        Result = Load(gameData);
-        foreach (string problem in Result.Problems)
-            _logger.Warn("NpcScripts: " + problem);
-        _logger.Info(string.Format(
-            CultureInfo.InvariantCulture,
-            "NpcScripts loaded programs={0} bindings={1} problems={2} from {3}",
-            Result.Programs,
-            Result.Bindings,
-            Result.Problems.Count,
-            Root));
+        _current = Build();
+        LogLoaded(_current.Result);
     }
 
     public string Root { get; }
 
-    public NpcScriptLoadResult Result { get; }
+    public NpcScriptLoadResult Result => _current.Result;
 
-    public int BindingCount => _byHash.Count + _byHashOnPlayfield.Count + _bySpawnPoint.Count + _byNpcKey.Count;
+    public int BindingCount => _current.BindingCount;
 
     public bool HasBindings => BindingCount > 0;
 
-    public IEnumerable<NpcScriptProgram> Programs => _programs.Values;
+    public IEnumerable<NpcScriptProgram> Programs => _current.Programs.Values;
 
-    NpcScriptLoadResult Load(IGameData gameData)
+    /// <summary>
+    /// Compiles every script again (through the override folder) and swaps the result in. A file with a problem is left
+    /// out and reported, as at startup; a folder that cannot be read keeps the current scripts. Off the playfield tick.
+    /// </summary>
+    public AORebirth.Modules.Content.GameDataReloadResult Reload()
+    {
+        lock (_reloadLock)
+        {
+            Snapshot next;
+            try
+            {
+                next = Build();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return new(ReloadName, false, _current.Result.Programs, [DirectoryName + ": " + exception.Message]);
+            }
+
+            _current = next;
+            LogLoaded(next.Result);
+            return new(ReloadName, true, next.Result.Programs, next.Result.Problems);
+        }
+    }
+
+    void LogLoaded(NpcScriptLoadResult result)
+    {
+        foreach (string problem in result.Problems)
+            _logger.Warn("NpcScripts: " + problem);
+        _logger.Info(string.Format(
+            CultureInfo.InvariantCulture,
+            "NpcScripts loaded programs={0} bindings={1} problems={2} from {3}",
+            result.Programs,
+            result.Bindings,
+            result.Problems.Count,
+            Root));
+    }
+
+    /// <summary>Every script file by its '/'-separated path under NpcScripts: the override folder's copy wins.</summary>
+    List<(string Name, string Path)> ScriptFiles()
+    {
+        var byName = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        AddFolder(byName, Root);
+        string? overrideRoot = AORebirth.Core.GameData.GameDataPaths.ResolveOverrideRoot();
+        if (overrideRoot != null)
+            AddFolder(byName, Path.Combine(overrideRoot, DirectoryName));
+
+        var files = new List<(string Name, string Path)>(byName.Count);
+        foreach (KeyValuePair<string, string> pair in byName)
+            files.Add((pair.Key, pair.Value));
+        return files;
+    }
+
+    static void AddFolder(SortedDictionary<string, string> byName, string folder)
+    {
+        if (!Directory.Exists(folder))
+            return;
+        foreach (string file in Directory.GetFiles(folder, "*.json", SearchOption.AllDirectories))
+            byName[Path.GetRelativePath(folder, file).Replace('\\', '/')] = file;
+    }
+
+    Snapshot Build()
+    {
+        var snapshot = new Snapshot();
+        snapshot.Result = Load(snapshot);
+        return snapshot;
+    }
+
+    NpcScriptLoadResult Load(Snapshot snapshot)
     {
         var problems = new List<string>();
-        if (!Directory.Exists(Root))
+        List<(string Name, string Path)> files = ScriptFiles();
+        if (files.Count == 0)
             return new NpcScriptLoadResult(0, 0, problems);
 
-        var compiler = new NpcScriptCompiler(gameData);
-        string[] files = Directory.GetFiles(Root, "*.json", SearchOption.AllDirectories);
-        Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+        var compiler = new NpcScriptCompiler(_gameData);
 
         // Programs first, so a sibling .bindings.json can name any of them.
         var bindingFiles = new List<(string File, JsonDocument Document)>();
         var documents = new List<JsonDocument>();
-        foreach (string file in files)
+        foreach ((string name, string file) in files)
         {
-            string name = Path.GetRelativePath(Root, file).Replace('\\', '/');
             JsonDocument document;
             try
             {
@@ -153,14 +215,14 @@ public sealed class NpcScriptCatalog
             NpcScriptProgram? program = compiler.CompileProgram(name, root, problems);
             if (program == null)
                 continue;
-            if (!_programs.TryAdd(program.Id, program))
+            if (!snapshot.Programs.TryAdd(program.Id, program))
             {
-                problems.Add(name + ": program id '" + program.Id + "' is already defined in " + _programs[program.Id].File);
+                problems.Add(name + ": program id '" + program.Id + "' is already defined in " + snapshot.Programs[program.Id].File);
                 continue;
             }
 
             if (root.TryGetProperty("Bindings", out JsonElement bindings))
-                AddBindings(name, bindings, program, compiler, problems);
+                AddBindings(snapshot, name, bindings, program, compiler, problems);
         }
 
         foreach ((string file, JsonDocument document) in bindingFiles)
@@ -169,7 +231,7 @@ public sealed class NpcScriptCatalog
             NpcScriptProgram? program = null;
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("Script", out JsonElement scriptId) && scriptId.ValueKind == JsonValueKind.String)
             {
-                if (!_programs.TryGetValue(scriptId.GetString()!.Trim(), out program))
+                if (!snapshot.Programs.TryGetValue(scriptId.GetString()!.Trim(), out program))
                 {
                     problems.Add(file + ": unknown Script '" + scriptId.GetString() + "'");
                     continue;
@@ -182,35 +244,35 @@ public sealed class NpcScriptCatalog
                 continue;
             }
 
-            AddBindings(file, bindings, program, compiler, problems);
+            AddBindings(snapshot, file, bindings, program, compiler, problems);
         }
 
         foreach (JsonDocument document in documents)
             document.Dispose();
 
-        foreach (NpcScriptProgram program in _programs.Values)
+        foreach (NpcScriptProgram program in snapshot.Programs.Values)
         {
-            if (!IsBound(program))
+            if (!IsBound(snapshot, program))
                 _logger.Info("NpcScripts: program '" + program.Id + "' (" + program.File + ") has no bindings");
         }
 
-        return new NpcScriptLoadResult(_programs.Count, BindingCount, problems);
+        return new NpcScriptLoadResult(snapshot.Programs.Count, snapshot.BindingCount, problems);
     }
 
-    bool IsBound(NpcScriptProgram program)
+    static bool IsBound(Snapshot snapshot, NpcScriptProgram program)
     {
-        foreach (NpcScriptBinding binding in _byHash.Values)
+        foreach (NpcScriptBinding binding in snapshot.ByHash.Values)
             if (ReferenceEquals(binding.Program, program)) return true;
-        foreach (NpcScriptBinding binding in _byHashOnPlayfield.Values)
+        foreach (NpcScriptBinding binding in snapshot.ByHashOnPlayfield.Values)
             if (ReferenceEquals(binding.Program, program)) return true;
-        foreach (NpcScriptBinding binding in _bySpawnPoint.Values)
+        foreach (NpcScriptBinding binding in snapshot.BySpawnPoint.Values)
             if (ReferenceEquals(binding.Program, program)) return true;
-        foreach (NpcScriptBinding binding in _byNpcKey.Values)
+        foreach (NpcScriptBinding binding in snapshot.ByNpcKey.Values)
             if (ReferenceEquals(binding.Program, program)) return true;
         return false;
     }
 
-    void AddBindings(string file, JsonElement bindings, NpcScriptProgram? program, NpcScriptCompiler compiler, List<string> problems)
+    static void AddBindings(Snapshot snapshot, string file, JsonElement bindings, NpcScriptProgram? program, NpcScriptCompiler compiler, List<string> problems)
     {
         if (bindings.ValueKind != JsonValueKind.Array)
         {
@@ -230,22 +292,22 @@ public sealed class NpcScriptCatalog
             switch (binding.Target)
             {
                 case ScriptBindingTarget.SpawnPoint:
-                    added = _bySpawnPoint.TryAdd((binding.PlayfieldId!.Value, binding.Key), binding);
+                    added = snapshot.BySpawnPoint.TryAdd((binding.PlayfieldId!.Value, binding.Key), binding);
                     where = "spawn point " + binding.Key + " on playfield " + binding.PlayfieldId;
                     break;
                 case ScriptBindingTarget.NpcKey:
-                    added = _byNpcKey.TryAdd((binding.PlayfieldId!.Value, binding.Key), binding);
+                    added = snapshot.ByNpcKey.TryAdd((binding.PlayfieldId!.Value, binding.Key), binding);
                     where = "NPC " + binding.Key + " on playfield " + binding.PlayfieldId;
                     break;
                 default:
                     if (binding.PlayfieldId is int pf)
                     {
-                        added = _byHashOnPlayfield.TryAdd((pf, binding.Key), binding);
+                        added = snapshot.ByHashOnPlayfield.TryAdd((pf, binding.Key), binding);
                         where = "hash " + binding.Key + " on playfield " + pf;
                     }
                     else
                     {
-                        added = _byHash.TryAdd(binding.Key, binding);
+                        added = snapshot.ByHash.TryAdd(binding.Key, binding);
                         where = "hash " + binding.Key;
                     }
 
@@ -260,16 +322,17 @@ public sealed class NpcScriptCatalog
     /// <summary>The most specific binding for an NPC, or null.</summary>
     public NpcScriptBinding? Resolve(string? hash, int playfieldId, string? spawnPointKey, string? npcKey)
     {
+        Snapshot current = _current;
         NpcScriptBinding? binding;
-        if (spawnPointKey != null && _bySpawnPoint.TryGetValue((playfieldId, spawnPointKey), out binding))
+        if (spawnPointKey != null && current.BySpawnPoint.TryGetValue((playfieldId, spawnPointKey), out binding))
             return binding;
-        if (npcKey != null && _byNpcKey.TryGetValue((playfieldId, npcKey), out binding))
+        if (npcKey != null && current.ByNpcKey.TryGetValue((playfieldId, npcKey), out binding))
             return binding;
         if (hash == null)
             return null;
-        if (_byHashOnPlayfield.TryGetValue((playfieldId, hash), out binding))
+        if (current.ByHashOnPlayfield.TryGetValue((playfieldId, hash), out binding))
             return binding;
-        return _byHash.TryGetValue(hash, out binding) ? binding : null;
+        return current.ByHash.TryGetValue(hash, out binding) ? binding : null;
     }
 
     /// <summary>
@@ -327,14 +390,29 @@ public sealed class NpcScriptCatalog
     public void ReportUnmatchedSpawnPoints(int playfieldId, IReadOnlyCollection<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
-        if (_bySpawnPoint.Count == 0)
+        Dictionary<(int Playfield, string Key), NpcScriptBinding> bySpawnPoint = _current.BySpawnPoint;
+        if (bySpawnPoint.Count == 0)
             return;
 
         var known = new HashSet<string>(keys, StringComparer.Ordinal);
-        foreach (KeyValuePair<(int Playfield, string Key), NpcScriptBinding> pair in _bySpawnPoint)
+        foreach (KeyValuePair<(int Playfield, string Key), NpcScriptBinding> pair in bySpawnPoint)
         {
             if (pair.Key.Playfield == playfieldId && !known.Contains(pair.Key.Key))
                 _logger.Warn("NpcScripts: binding " + pair.Value.Describe() + " matches no spawn point (" + pair.Value.Program?.File + ")");
         }
+    }
+
+    /// <summary>One load's programs and bindings; never changed after <see cref="Build"/>.</summary>
+    sealed class Snapshot
+    {
+        public readonly Dictionary<string, NpcScriptProgram> Programs = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, NpcScriptBinding> ByHash = new(StringComparer.Ordinal);
+        public readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> ByHashOnPlayfield = new();
+        public readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> BySpawnPoint = new();
+        public readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> ByNpcKey = new();
+
+        public NpcScriptLoadResult Result { get; set; } = new(0, 0, []);
+
+        public int BindingCount => ByHash.Count + ByHashOnPlayfield.Count + BySpawnPoint.Count + ByNpcKey.Count;
     }
 }

@@ -9,13 +9,18 @@ namespace ZoneEngine_New.Core.Mobs
     /// <summary>
     /// GameData/MonsterCombatRules.json: combat behaviour keyed by mob hash, e.g.
     /// <c>{ "ASSU": { "Pets": { "MaxPets": 2 } }, "NEBG": { "Features": [ "Guard" ] }, "MUSN": { "Hates": [ 42 ] } }</c>.
-    /// Keys are NpcTemplates.json leaf hashes. Loaded once per GameData root.
+    /// Keys are NpcTemplates.json leaf hashes. Loaded once per GameData root (through the GameData override folder) and
+    /// swapped whole by <see cref="Reload"/>: a lookup sees the old rules or the new, never a mix. NPCs already spawned
+    /// keep what they read at spawn until they respawn.
     /// </summary>
     public sealed class MonsterCombatRulesCatalog
     {
         public const string FileName = "MonsterCombatRules.json";
 
-        static readonly ConcurrentDictionary<string, MonsterCombatRulesCatalog> ByRoot = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>The name <see cref="Reload"/> is registered under.</summary>
+        public const string ReloadName = "MonsterCombatRules";
+
+        static readonly ConcurrentDictionary<string, Holder> ByRoot = new(StringComparer.OrdinalIgnoreCase);
 
         static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -34,10 +39,36 @@ namespace ZoneEngine_New.Core.Mobs
 
         public int Count => _rules.Count;
 
+        /// <summary>The current rules for <paramref name="gameDataRoot"/>; take it once per lookup.</summary>
         public static MonsterCombatRulesCatalog For(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
-            return ByRoot.GetOrAdd(gameDataRoot, Load);
+            return ByRoot.GetOrAdd(gameDataRoot, root => new Holder(Load(root))).Current;
+        }
+
+        /// <summary>
+        /// Reads the file again and swaps it in for <paramref name="gameDataRoot"/>. A file that fails to read or parse
+        /// keeps the current rules and reports why. Call off the playfield tick: it reads the file.
+        /// </summary>
+        public static AORebirth.Modules.Content.GameDataReloadResult Reload(string gameDataRoot)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
+            MonsterCombatRulesCatalog loaded;
+            try
+            {
+                loaded = Load(gameDataRoot);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException
+                or NotSupportedException)
+            {
+                int kept = ByRoot.TryGetValue(gameDataRoot, out Holder? old) ? old.Current.Count : 0;
+                return new AORebirth.Modules.Content.GameDataReloadResult(ReloadName, false, kept,
+                    [FileName + ": " + exception.Message]);
+            }
+
+            Holder holder = ByRoot.GetOrAdd(gameDataRoot, _ => new Holder(loaded));
+            holder.Current = loaded;
+            return new AORebirth.Modules.Content.GameDataReloadResult(ReloadName, true, loaded.Count, []);
         }
 
         public bool TryGet(string? hash, out MonsterCombatRules rules)
@@ -55,7 +86,7 @@ namespace ZoneEngine_New.Core.Mobs
         static MonsterCombatRulesCatalog Load(string root)
         {
             var rules = new Dictionary<string, MonsterCombatRules>(StringComparer.OrdinalIgnoreCase);
-            string path = Path.Combine(root, FileName);
+            string path = AORebirth.Core.GameData.GameDataPaths.ResolveFile(root, FileName);
             if (!File.Exists(path))
                 return new MonsterCombatRulesCatalog(rules);
 
@@ -68,6 +99,18 @@ namespace ZoneEngine_New.Core.Mobs
             }
 
             return new MonsterCombatRulesCatalog(rules);
+        }
+
+        /// <summary>One root's current rules; the reference is swapped whole.</summary>
+        sealed class Holder(MonsterCombatRulesCatalog current)
+        {
+            volatile MonsterCombatRulesCatalog _current = current;
+
+            public MonsterCombatRulesCatalog Current
+            {
+                get => _current;
+                set => _current = value;
+            }
         }
     }
 

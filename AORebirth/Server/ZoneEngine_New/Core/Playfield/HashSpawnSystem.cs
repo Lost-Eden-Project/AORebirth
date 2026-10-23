@@ -744,11 +744,11 @@ namespace ZoneEngine_New.Core.Playfield
             return true;
         }
 
-        private bool TrySpawn(HashSpawnPoint point)
+        private bool TrySpawn(HashSpawnPoint point, bool skipRespawnChance = false)
         {
             RecoverOrphanedSpawn(point);
 
-            if (point.State == HashSpawnState.Dead && !TryConsumeRespawnChance(point))
+            if (point.State == HashSpawnState.Dead && !skipRespawnChance && !TryConsumeRespawnChance(point))
                 return false;
 
             try
@@ -1066,6 +1066,48 @@ namespace ZoneEngine_New.Core.Playfield
 
             MarkMemberDead(point, instance, name);
             return true;
+        }
+
+        /// <summary>
+        /// Removes <paramref name="npc"/>'s spawn point members as if they died (no corpse, loot or XP, as GM
+        /// <c>.despawn</c>) and spawns the point again now, skipping its respawn timer and chance: GM <c>.npc respawn</c>
+        /// and the module RespawnNpc action. The new NPCs are built from the current catalogs. False, with the NPC left
+        /// in place, when it is dead or has no spawn point that respawns (GM-spawned, pets, content placements, quest
+        /// objectives, one-shot points). Tick thread only.
+        /// </summary>
+        public bool TryRespawnNow(NpcCharacter npc)
+        {
+            ArgumentNullException.ThrowIfNull(npc);
+            _playfield.RequireTick();
+            if (npc.IsDead
+                || !_pointBySpawned.TryGetValue(npc, out HashSpawnPoint? point)
+                || !point.RespawnsAfterDeath
+                || point.Retired)
+                return false;
+
+            foreach (Dynel member in point.MembersSnapshot())
+            {
+                switch (member)
+                {
+                    case NpcCharacter other when !other.IsDead:
+                        other.DespawnAsDeath();
+                        break;
+                    case StaticDynel staticMember:
+                        TryDespawnStaticAsDeath(staticMember);
+                        break;
+                }
+            }
+
+            if (TrySpawn(point, skipRespawnChance: true))
+                return true;
+
+            _logger.Warn(string.Format(
+                CultureInfo.InvariantCulture,
+                "Respawn now failed hash={0} cell={1} playfield={2}; the point waits out its respawn time",
+                point.HashText,
+                point.CellId,
+                _playfield.Identity.Instance));
+            return false;
         }
 
         /// <summary>A member died or was despawned as dead: once the point is empty it waits out its respawn time.</summary>

@@ -79,6 +79,37 @@ namespace ZoneEngine_New.Core.Modules
         /// Sends <paramref name="instance"/>'s spawn extras again to its observers, with an explicit HasKnubotData 0 when it
         /// no longer talks through a script. Runs on the owning tick.
         /// </summary>
+        public Task<bool> RespawnNpc(int playfieldId, int instance)
+        {
+            Playfield? playfield = null;
+            foreach (Playfield candidate in _manager.Value.SnapshotPlayfields())
+            {
+                if (candidate.Identity.Instance == playfieldId)
+                {
+                    playfield = candidate;
+                    break;
+                }
+            }
+
+            if (playfield == null)
+                return Task.FromResult(false);
+
+            Playfield owner = playfield;
+            return Run(owner, () => RespawnOnTick(owner, instance));
+        }
+
+        /// <summary>The NPC's spawn point, despawned as dead and spawned again now (<see cref="HashSpawnSystem.TryRespawnNow"/>).</summary>
+        internal static bool RespawnOnTick(Playfield playfield, int instance)
+        {
+            playfield.RequireTick();
+            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = instance };
+            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(identity, out Dynel? dynel)
+                || dynel is not NpcCharacter npc || !ReferenceEquals(npc.Playfield, playfield))
+                return false;
+
+            return playfield.GetService<HashSpawnSystem>()?.TryRespawnNow(npc) ?? false;
+        }
+
         internal static bool RefreshOnTick(Playfield playfield, int instance)
         {
             playfield.RequireTick();

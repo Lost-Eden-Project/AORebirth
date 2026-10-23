@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.2**.
+The current version is **1.3**.
 
 ## Loading
 
@@ -38,6 +38,7 @@ The current version is **1.2**.
 | 1.0 | `Log`, `Events` (`NpcKilled`, `PlayerDied`), `GetConfig<T>`, `RegisterConnectionFilter` |
 | 1.1 | `Knubot` (check, reload and override folder for Knubot scripts) |
 | 1.2 | `World`, `Actions`, lifecycle events, capabilities, `RegisterGmCommand` |
+| 1.3 | `GameData` (reloadable GameData and the override folder), `Actions.RespawnNpc`, the `gamedata-reload` and `respawn-npc` capabilities |
 
 ## Context members
 
@@ -50,7 +51,8 @@ The current version is **1.2**.
 | `Events` | Gameplay events (see below). |
 | `Knubot` | `Check(id, json)`, `Reload()`, `OverrideDirectory` (the `AO_REBIRTH_KNUBOT_PATH` folder). |
 | `World` | Read-only snapshots: `Players()`, `Player(id)`, `Playfields()`, `Npcs(pf)`, `Npc(pf, instance)`, `Stat(entity, statId)`. |
-| `Actions` | `RefreshNpc(pf, instance)`, `SendSystemMessage(characterId, text)`, `SendFeedback(characterId, feedbackId)`. |
+| `Actions` | `RefreshNpc(pf, instance)`, `SendSystemMessage(characterId, text)`, `SendFeedback(characterId, feedbackId)`, `RespawnNpc(pf, instance)`. |
+| `GameData` | `OverrideDirectory` (the `AO_REBIRTH_GAMEDATA_OVERRIDE_PATH` folder), `Reloadable` (the names), `Reload(name)` (see below). |
 
 `World` and `Actions` cover **this zone instance only**. A player or NPC on another instance is not found, and
 actions on it return false.
@@ -122,6 +124,8 @@ The `Capabilities` entry in Modules.json is optional.
 | `read-world` | every `World` member |
 | `refresh-npc` | `Actions.RefreshNpc` |
 | `send-messages` | `Actions.SendSystemMessage`, `Actions.SendFeedback` |
+| `gamedata-reload` | `GameData.Reload` (reading `OverrideDirectory` and `Reloadable` needs nothing) |
+| `respawn-npc` | `Actions.RespawnNpc` |
 
 ## Knubot reloads
 
@@ -134,3 +138,40 @@ After `Knubot.Reload()`, or any other catalog reload, every playfield does the f
 
 Chats that are already open keep the script they started with. `Actions.RefreshNpc` sends the same refresh for one
 NPC on demand.
+
+## GameData reloads
+
+Most GameData loads once at startup. A module can reload the catalogs below while the zone runs.
+
+**The override folder.** The `AO_REBIRTH_GAMEDATA_OVERRIDE_PATH` environment variable names a writable folder laid
+over GameData. A file at a relative path in it replaces the shipped file at the same relative path, for example
+`<override>/MonsterCombatRules.json`. With the variable unset, or the file absent there, the shipped file is used.
+For the NpcScripts folder this works per file: an override script replaces the shipped script with the same path, and
+one only in the override folder is added. `AO_REBIRTH_KNUBOT_PATH` is separate and keeps its own merge rules.
+
+**What a reload does.** `GameData.Reload(name)` reads the named catalog's files again on a worker thread, never on a
+playfield tick, and swaps the result in whole. A lookup sees the old data or the new, never a mix.
+- A file that fails to read or parse keeps the old data. The result has `Ok = false` and the error in `Problems`.
+- An unknown name returns `Ok = false` with a problem; it does not throw.
+- One reload runs at a time.
+
+**What it reaches.** A reload changes what the next lookup sees. Anything already spawned keeps its state until it
+respawns. `Actions.RespawnNpc(pf, instance)` removes an NPC as if it died (no corpse, loot or XP) and spawns its spawn
+point again at once, skipping the respawn timer and chance, from the current catalogs. Every NPC of that spawn point
+respawns together. It returns false, and leaves the NPC in place, when the NPC has no spawn point that respawns:
+GM-spawned NPCs, pets, content placements, quest objectives and one-shot points. GMs have the same as `.npc respawn`
+on the selected NPC.
+
+| Name | Reads | Notes |
+|---|---|---|
+| `MonsterCombatRules` | `MonsterCombatRules.json` | Features, hates and pets. |
+| `NpcTemplates` | `NpcTemplates.json` | |
+| `NpcScripts` | `NpcScripts/` | A running script keeps its program until the NPC respawns. A file with a problem is left out and listed, as at startup. |
+| `ItemTemplates` | `ItemTemplates.json` | Items already minted or spawned keep their template. Reloads `Knubot` too, because Knubot item conditions resolve hashes when the scripts load. |
+| `Knubot` | `Knubot/` plus `AO_REBIRTH_KNUBOT_PATH` | Same as `Knubot.Reload()`. |
+
+Everything else stays load-once, including WaterExits, PetTypes, items.dat, playfield data, navmeshes, dungeon
+generation, Gameplay.json and Config.
+
+**Instances.** Each zone instance holds its own catalogs. A module running on every instance reloads on every
+instance; nothing coordinates reloads across instances.

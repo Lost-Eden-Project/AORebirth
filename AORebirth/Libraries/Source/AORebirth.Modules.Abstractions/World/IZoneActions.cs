@@ -23,6 +23,15 @@ namespace AORebirth.Modules.World
 
         /// <summary>A client feedback message by id (the client's text table). False when the player is not in play here. Needs <c>send-messages</c>.</summary>
         Task<bool> SendFeedback(int characterId, int feedbackId);
+
+        /// <summary>
+        /// Removes the NPC as if it died (no corpse, loot or XP) and spawns its spawn point again at once, skipping the
+        /// respawn timer and chance (module API 1.3). The new NPC is built from the current catalogs, so it picks up a
+        /// GameData reload. Every NPC of that spawn point respawns together. False when the NPC is not spawned on that
+        /// playfield or has no spawn point that respawns (GM-spawned, pets, content placements, quest objectives); it is
+        /// then left in place. Needs <c>respawn-npc</c>.
+        /// </summary>
+        Task<bool> RespawnNpc(int playfieldId, int instance);
     }
 
     /// <summary>Capability names for the "Capabilities" map in Config/Modules.json.</summary>
@@ -36,5 +45,11 @@ namespace AORebirth.Modules.World
 
         /// <summary><see cref="IZoneActions.SendSystemMessage"/> and <see cref="IZoneActions.SendFeedback"/>.</summary>
         public const string SendMessages = "send-messages";
+
+        /// <summary><see cref="Content.IZoneGameData.Reload"/> (module API 1.3).</summary>
+        public const string GameDataReload = "gamedata-reload";
+
+        /// <summary><see cref="IZoneActions.RespawnNpc"/> (module API 1.3).</summary>
+        public const string RespawnNpc = "respawn-npc";
     }
 }

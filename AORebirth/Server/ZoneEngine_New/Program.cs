@@ -282,7 +282,8 @@ namespace ZoneEngine_New
             services.AddSingleton(provider => ZoneEngine_New.Core.Modules.ZoneModuleHost.Load(
                 provider.GetRequiredService<IGameData>().RootPath, provider.GetRequiredService<IZoneLogger>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.Knubot.KnubotCatalog>(),
-                () => provider.GetRequiredService<PlayfieldManager>()));
+                () => provider.GetRequiredService<PlayfieldManager>(),
+                () => provider.GetRequiredService<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>()));
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
             services.AddSingleton<HashItemMinter>();
             services.AddSingleton<PlayerHydrator>();
@@ -343,6 +344,14 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Knubot.KnubotCatalog>();
             services.AddSingleton<ZoneEngine_New.Core.Knubot.KnubotEffectServices>();
             services.AddSingleton<ZoneEngine_New.Core.Knubot.KnubotService>();
+
+            //Reloadable GameData (module API 1.3): opt-in, one registration per catalog.
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.MonsterCombatRulesReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcTemplatesReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcScriptsReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.ItemTemplatesReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.KnubotReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>();
 
             //Commands
             services.AddSingleton<IGmCommand, SpawnCommand>();
