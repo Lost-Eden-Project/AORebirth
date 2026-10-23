@@ -92,12 +92,12 @@ namespace ChatEngine.PacketHandlers
                     tellClient.Send(pname);
                     tellClient.KnownClients.Add(client.Character.CharacterId);
 
-                    // TODO: Check if status bytes are correct even for offline chars
                     client.Send(
                         BuddyOnlineStatus.Create(
                             (uint)tellClient.Character.CharacterId,
                             (uint)CharacterDao.Instance.IsOnline((int)tellClient.Character.CharacterId),
-                            new byte[] { 0x00, 0x01, 0x00 }));
+                            client.GetBuddyStatusFlags(
+                                (uint)tellClient.Character.CharacterId, new byte[] { 0x00, 0x01, 0x00 })));
                 }
 
                 byte[] pgroup = MsgPrivateGroup.Create(client.Character.CharacterId, message, string.Empty);

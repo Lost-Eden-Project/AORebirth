@@ -204,10 +204,13 @@ namespace ChatEngine.PacketHandlers
 
             client.Send(anonv);
 
+            client.ChatServer().InitializeBuddyPresence(client);
+
             /*
              * Add client to channels.
              */
             client.ChatServer().AddClientToChannels(client);
+            client.ChatServer().RestorePrivateGroupInvitations(client);
         }
 
         #endregion

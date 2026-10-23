@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 
 // Copyright (c) 2005-2014, CellAO Team
 // 
@@ -65,6 +65,16 @@ namespace ChatEngine.CoreClient
         /// </summary>
         private readonly List<uint> knownClients;
 
+        private readonly Dictionary<uint, byte[]> buddyStatusFlags = new Dictionary<uint, byte[]>();
+
+        private readonly object buddyStatusSync = new object();
+
+        private readonly object privateGroupSync = new object();
+
+        private readonly HashSet<uint> privateGroupInvitations = new HashSet<uint>();
+
+        private uint privateGroupId;
+
         /// <summary>
         /// </summary>
         private ushort packetNumber = 1;
@@ -119,6 +129,109 @@ namespace ChatEngine.CoreClient
             get
             {
                 return this.knownClients;
+            }
+        }
+
+        internal void SetBuddyStatusFlags(uint buddyId, byte[] statusFlags)
+        {
+            if (statusFlags == null || statusFlags.Length != 3)
+            {
+                return;
+            }
+
+            lock (this.buddyStatusSync)
+            {
+                this.buddyStatusFlags[buddyId] = (byte[])statusFlags.Clone();
+            }
+        }
+
+        /// <summary>
+        /// The status flags for <paramref name="buddyId"/>: what the client sent when it added the buddy, else
+        /// <paramref name="fallback"/> (00 01 01 for a stored buddy; a tell partner who is not one keeps 00 01 00).
+        /// </summary>
+        internal byte[] GetBuddyStatusFlags(uint buddyId, byte[] fallback = null)
+        {
+            lock (this.buddyStatusSync)
+            {
+                byte[] statusFlags;
+                if (this.buddyStatusFlags.TryGetValue(buddyId, out statusFlags))
+                {
+                    return (byte[])statusFlags.Clone();
+                }
+
+                return fallback != null ? (byte[])fallback.Clone() : new byte[] { 0x00, 0x01, 0x01 };
+            }
+        }
+
+        /// <summary>
+        /// This character's buddies, loaded once at login and kept current on add, so a login or logout does not read
+        /// every connected client's buddy list from the database.
+        /// </summary>
+        private readonly HashSet<uint> buddyIds = new HashSet<uint>();
+
+        internal void SetBuddies(IEnumerable<int> ids)
+        {
+            lock (this.buddyStatusSync)
+            {
+                this.buddyIds.Clear();
+                foreach (int id in ids)
+                {
+                    if (id > 0)
+                    {
+                        this.buddyIds.Add(unchecked((uint)id));
+                    }
+                }
+            }
+        }
+
+        internal void AddBuddyId(uint buddyId)
+        {
+            lock (this.buddyStatusSync)
+            {
+                this.buddyIds.Add(buddyId);
+            }
+        }
+
+        internal bool HasBuddy(uint buddyId)
+        {
+            lock (this.buddyStatusSync)
+            {
+                return this.buddyIds.Contains(buddyId);
+            }
+        }
+
+        internal uint PrivateGroupId
+        {
+            get
+            {
+                lock (this.privateGroupSync)
+                {
+                    return this.privateGroupId;
+                }
+            }
+
+            set
+            {
+                lock (this.privateGroupSync)
+                {
+                    this.privateGroupId = value;
+                }
+            }
+        }
+
+        internal void AddPrivateGroupInvitation(uint privateGroupId)
+        {
+            lock (this.privateGroupSync)
+            {
+                this.privateGroupInvitations.Add(privateGroupId);
+            }
+        }
+
+        internal bool ConsumePrivateGroupInvitation(uint privateGroupId)
+        {
+            lock (this.privateGroupSync)
+            {
+                return this.privateGroupInvitations.Remove(privateGroupId);
             }
         }
 

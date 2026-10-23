@@ -96,6 +96,13 @@ if not exist "%PREFLIGHT_DIR%\DatabasePreflight.exe" (
     echo [NewZoneEngineBuild] Missing isolated DatabasePreflight.exe.
     exit /b 1
 )
+if exist "%CHAT_EXE%" (
+    del /q "%CHAT_EXE%"
+    if exist "%CHAT_EXE%" (
+        echo [NewZoneEngineBuild] Failed to remove stale ChatEngine.exe before the .NET 10 build.
+        exit /b 1
+    )
+)
 "%MSBUILD%" "%CHAT_PROJ%" /t:Build /p:Configuration=%CONFIG% /m:1 /nr:false /v:minimal
 if errorlevel 1 (
     echo [NewZoneEngineBuild] ChatEngine build failed.

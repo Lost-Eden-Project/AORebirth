@@ -120,7 +120,7 @@ namespace ChatEngine.PacketHandlers
                     string.Empty);
                 client.Send(anonv);
 
-                // TODO: Add Buddies List/BuddyOnlineStatus messages
+                client.ChatServer().InitializeBuddyPresence(client);
 
                 foreach (ChannelBase channel in client.Channels)
                 {
@@ -136,6 +136,8 @@ namespace ChatEngine.PacketHandlers
                 // add yourself to that list
                 client.KnownClients.Add(client.Character.CharacterId);
             }
+
+            client.ChatServer().RestorePrivateGroupInvitations(client);
         }
 
         #endregion

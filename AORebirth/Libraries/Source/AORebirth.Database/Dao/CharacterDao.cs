@@ -55,22 +55,19 @@ namespace AORebirth.Database.Dao
         /// </param>
         /// <param name="buddyId">
         /// </param>
-        public void AddBuddy(int characterId, int buddyId)
+        public bool AddBuddy(int characterId, int buddyId)
         {
             DBCharacter character = this.Get(characterId);
-            if (character != null)
+            if (character == null)
             {
-                // add the buddy to the character 
-                character.AddBuddy(buddyId);
-
-                // saves to the database
-                // DynamicParameters parameters = new DynamicParameters(character);  new{character.BuddyList should do it too
-                // parameters.Add("BuddyList", character.BuddyList); not needed, AddBuddy already adds the id to the CSV string
-                // this.Save(character, new { character.BuddyList });
-
-                // New: (we need to pass the id as parameter here)
-                this.Save(character, new { character.BuddyList, character.Id });
+                return false;
             }
+
+            character.AddBuddy(buddyId);
+            this.Save(character, new { character.BuddyList, character.Id });
+
+            DBCharacter savedCharacter = this.Get(characterId);
+            return savedCharacter != null && savedCharacter.GetBuddiesIds().Contains(buddyId);
         }
 
         /// <summary>

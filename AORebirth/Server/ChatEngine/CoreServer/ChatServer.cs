@@ -72,6 +72,12 @@ namespace ChatEngine.CoreServer
         /// </summary>
         private readonly ChatSessionOwnership<Client> clientOwnership = new ChatSessionOwnership<Client>();
 
+        private readonly object privateGroupReconnectSync = new object();
+
+        /// <summary>A bot's private group members, kept while the bot is away so they are re-invited when it returns.</summary>
+        private readonly Dictionary<uint, HashSet<uint>> privateGroupReconnectMembers =
+            new Dictionary<uint, HashSet<uint>>();
+
         public IReadOnlyDictionary<uint, Client> ConnectedClients { get { return this.clientOwnership.Clients; } }
 
         /// <summary>
@@ -144,7 +150,425 @@ namespace ChatEngine.CoreServer
             }
 
             cl.Channels.Clear();
-            this.clientOwnership.Disconnect(cl.Character.CharacterId, cl, ClearOnlineIfUnowned, LftRegistry.Remove);
+            uint characterId = cl.Character.CharacterId;
+            bool released = this.clientOwnership.Disconnect(characterId, cl, ClearOnlineIfUnowned, LftRegistry.Remove);
+
+            // Buddy and private-group notices go out after the ownership lock is released: they send packets to other
+            // clients and must not hold every other login and logout up while they do.
+            if (released)
+            {
+                this.NotifyBuddyStatus(characterId, 0);
+                this.RemoveClientFromPrivateGroup(cl);
+            }
+        }
+
+        /// <summary>
+        /// Login: sends the character its buddy list (names and online state), caches it on the client, and tells every
+        /// connected player who has this character as a buddy that it is online.
+        /// </summary>
+        internal void InitializeBuddyPresence(Client client)
+        {
+            if (client == null || client.Character == null)
+            {
+                return;
+            }
+
+            List<int> buddyIds;
+            try
+            {
+                buddyIds = BuddyList.LoadBuddyList(unchecked((int)client.Character.CharacterId));
+            }
+            catch (Exception exception)
+            {
+                LogUtil.Debug(DebugInfoDetail.Error,
+                    string.Format("Could not load buddy list for character {0}: {1}",
+                        client.Character.CharacterId, exception));
+                return;
+            }
+
+            client.SetBuddies(buddyIds);
+            foreach (int buddyId in buddyIds)
+            {
+                if (buddyId <= 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    string buddyName = CharacterDao.Instance.GetCharacterNameById(buddyId);
+                    if (string.IsNullOrWhiteSpace(buddyName))
+                    {
+                        continue;
+                    }
+
+                    uint buddyCharacterId = unchecked((uint)buddyId);
+                    client.Send(PlayerName.Create(buddyCharacterId, buddyName));
+                    if (!client.KnownClients.Contains(buddyCharacterId))
+                    {
+                        client.KnownClients.Add(buddyCharacterId);
+                    }
+
+                    uint online = this.ConnectedClients.ContainsKey(buddyCharacterId)
+                        || CharacterDao.Instance.IsOnline(buddyId) > 0
+                            ? 1u
+                            : 0u;
+                    client.Send(BuddyOnlineStatus.Create(
+                        buddyCharacterId, online, client.GetBuddyStatusFlags(buddyCharacterId)));
+                }
+                catch (Exception exception)
+                {
+                    LogUtil.Debug(DebugInfoDetail.Error,
+                        string.Format("Could not restore buddy {0} for character {1}: {2}",
+                            buddyId, client.Character.CharacterId, exception));
+                }
+            }
+
+            this.NotifyBuddyStatus(client.Character.CharacterId, 1);
+        }
+
+        /// <summary>Tells every connected player with <paramref name="characterId"/> as a buddy its online state.</summary>
+        private void NotifyBuddyStatus(uint characterId, uint online)
+        {
+            foreach (Client recipient in this.ConnectedClients.Values.ToArray())
+            {
+                if (recipient == null || recipient.Character == null || !recipient.HasBuddy(characterId))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    recipient.Send(BuddyOnlineStatus.Create(
+                        characterId, online, recipient.GetBuddyStatusFlags(characterId)));
+                }
+                catch (Exception exception)
+                {
+                    LogUtil.Debug(DebugInfoDetail.Error,
+                        string.Format("Could not notify buddy status for character {0} to {1}: {2}",
+                            characterId, recipient.Character.characterName, exception));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Login: a bot re-invites the members its private group had when it left; a player is re-invited to every
+        /// connected bot's group it was in.
+        /// </summary>
+        internal void RestorePrivateGroupInvitations(Client client)
+        {
+            if (client == null || client.Character == null)
+            {
+                return;
+            }
+
+            uint characterId = client.Character.CharacterId;
+            if (client.IsBot)
+            {
+                uint[] previousMembers;
+                lock (this.privateGroupReconnectSync)
+                {
+                    HashSet<uint> memberIds;
+                    if (!this.privateGroupReconnectMembers.TryGetValue(characterId, out memberIds))
+                    {
+                        return;
+                    }
+
+                    previousMembers = memberIds.ToArray();
+                }
+
+                client.PrivateGroupId = characterId;
+                foreach (uint memberId in previousMembers)
+                {
+                    this.InvitePrivateGroupPlayer(client, memberId);
+                }
+
+                return;
+            }
+
+            uint[] groupIds;
+            lock (this.privateGroupReconnectSync)
+            {
+                groupIds = this.privateGroupReconnectMembers
+                    .Where(group => group.Value.Contains(characterId))
+                    .Select(group => group.Key)
+                    .ToArray();
+            }
+
+            foreach (uint groupId in groupIds)
+            {
+                Client bot;
+                if (this.ConnectedClients.TryGetValue(groupId, out bot) && bot != null && bot.IsBot)
+                {
+                    this.InvitePrivateGroupPlayer(bot, characterId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Invites <paramref name="invitedPlayerId"/> to the inviter's own private group (its id is the inviter's). A
+        /// member of someone else's group cannot invite into it, and while it sits in another group it hosts none.
+        /// </summary>
+        internal void InvitePrivateGroupPlayer(Client inviter, uint invitedPlayerId)
+        {
+            Client invitee;
+            if (inviter.Character == null
+                || inviter.Character.CharacterId == 0
+                || invitedPlayerId == 0
+                || !this.ConnectedClients.TryGetValue(invitedPlayerId, out invitee)
+                || invitee == null)
+            {
+                inviter.Send(PlayerIdUnknown.Create(invitedPlayerId));
+                return;
+            }
+
+            uint privateGroupId = inviter.Character.CharacterId;
+            if (inviter.PrivateGroupId != 0 && inviter.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            inviter.PrivateGroupId = privateGroupId;
+            if (inviter.IsBot)
+            {
+                this.RememberPrivateGroupMember(privateGroupId, invitedPlayerId);
+            }
+
+            if (invitee.PrivateGroupId == privateGroupId)
+            {
+                return;
+            }
+
+            this.SendKnownClient(invitee, inviter);
+            invitee.AddPrivateGroupInvitation(privateGroupId);
+            invitee.Send(PrivateGroupInvitation.Create(privateGroupId));
+        }
+
+        /// <summary>Joins a private group the client was invited to (or its own).</summary>
+        internal void JoinPrivateGroup(Client joiningClient, uint privateGroupId)
+        {
+            if (joiningClient.Character == null || privateGroupId == 0)
+            {
+                return;
+            }
+
+            uint joiningPlayerId = joiningClient.Character.CharacterId;
+            if (joiningClient.PrivateGroupId == privateGroupId)
+            {
+                joiningClient.ConsumePrivateGroupInvitation(privateGroupId);
+                return;
+            }
+
+            bool groupIsOnline = this.ConnectedClients.Values.Any(
+                connected => connected != null && connected.PrivateGroupId == privateGroupId);
+            bool isGroupOwner = joiningPlayerId == privateGroupId;
+            if (!groupIsOnline && !isGroupOwner)
+            {
+                joiningClient.Send(PlayerIdUnknown.Create(privateGroupId));
+                return;
+            }
+
+            if (!isGroupOwner && !joiningClient.ConsumePrivateGroupInvitation(privateGroupId))
+            {
+                return;
+            }
+
+            if (joiningClient.PrivateGroupId != 0)
+            {
+                this.LeavePrivateGroup(joiningClient, joiningClient.PrivateGroupId);
+            }
+
+            Client[] existingMembers = this.ConnectedClients.Values
+                .Where(connected => connected != null
+                    && connected != joiningClient
+                    && connected.PrivateGroupId == privateGroupId)
+                .ToArray();
+
+            joiningClient.PrivateGroupId = privateGroupId;
+
+            Client groupOwner;
+            if (this.ConnectedClients.TryGetValue(privateGroupId, out groupOwner)
+                && groupOwner != null
+                && groupOwner.IsBot)
+            {
+                this.RememberPrivateGroupMember(privateGroupId, joiningPlayerId);
+            }
+
+            foreach (Client member in existingMembers)
+            {
+                this.SendKnownClient(joiningClient, member);
+                joiningClient.Send(PrivateGroupPlayerJoined.Create(privateGroupId, member.Character.CharacterId));
+            }
+
+            byte[] joinedPacket = PrivateGroupPlayerJoined.Create(privateGroupId, joiningPlayerId);
+            foreach (Client member in existingMembers)
+            {
+                this.SendKnownClient(member, joiningClient);
+                member.Send(joinedPacket);
+            }
+
+            joiningClient.Send(joinedPacket);
+        }
+
+        internal void LeavePrivateGroup(Client leavingClient, uint privateGroupId)
+        {
+            if (leavingClient.Character == null || privateGroupId == 0
+                || leavingClient.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            leavingClient.PrivateGroupId = 0;
+            this.ForgetPrivateGroupMember(privateGroupId, leavingClient.Character.CharacterId);
+            this.SendToPrivateGroup(privateGroupId,
+                PrivateGroupPlayerLeft.Create(privateGroupId, leavingClient.Character.CharacterId), leavingClient);
+        }
+
+        internal void SendPrivateGroupMessage(Client sender, uint privateGroupId, string message)
+        {
+            if (sender.Character == null || sender.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            this.SendToPrivateGroup(privateGroupId,
+                PrivateGroupMessage.Create(privateGroupId, sender.Character.CharacterId, message, string.Empty), null);
+        }
+
+        /// <summary>The group owner removes one member.</summary>
+        internal void KickPrivateGroupPlayer(Client kicker, uint kickedPlayerId)
+        {
+            uint privateGroupId = kicker.PrivateGroupId;
+            Client kickedClient;
+            if (privateGroupId == 0
+                || kicker.Character == null
+                || kicker.Character.CharacterId != privateGroupId
+                || !this.ConnectedClients.TryGetValue(kickedPlayerId, out kickedClient)
+                || kickedClient == null
+                || kickedClient.PrivateGroupId != privateGroupId)
+            {
+                return;
+            }
+
+            kickedClient.PrivateGroupId = 0;
+            this.ForgetPrivateGroupMember(privateGroupId, kickedPlayerId);
+            kickedClient.Send(PrivateGroupKicked.Create(privateGroupId));
+            this.SendToPrivateGroup(privateGroupId, PrivateGroupPlayerLeft.Create(privateGroupId, kickedPlayerId), kickedClient);
+        }
+
+        /// <summary>The group owner removes everyone else.</summary>
+        internal void KickEveryoneFromPrivateGroup(Client kicker)
+        {
+            uint privateGroupId = kicker.PrivateGroupId;
+            if (privateGroupId == 0
+                || kicker.Character == null
+                || kicker.Character.CharacterId != privateGroupId)
+            {
+                return;
+            }
+
+            foreach (Client member in this.PrivateGroupMembers(privateGroupId, kicker))
+            {
+                member.PrivateGroupId = 0;
+                member.Send(PrivateGroupKicked.Create(privateGroupId));
+            }
+
+            lock (this.privateGroupReconnectSync)
+            {
+                this.privateGroupReconnectMembers.Remove(privateGroupId);
+            }
+        }
+
+        /// <summary>
+        /// A disconnecting client leaves its group. A bot that owns its group kicks the members but remembers them, to
+        /// re-invite on its return; anyone else just leaves.
+        /// </summary>
+        private void RemoveClientFromPrivateGroup(Client client)
+        {
+            if (client == null || client.PrivateGroupId == 0 || client.Character == null)
+            {
+                return;
+            }
+
+            uint privateGroupId = client.PrivateGroupId;
+            client.PrivateGroupId = 0;
+
+            if (client.IsBot && client.Character.CharacterId == privateGroupId)
+            {
+                foreach (Client member in this.PrivateGroupMembers(privateGroupId, client))
+                {
+                    this.RememberPrivateGroupMember(privateGroupId, member.Character.CharacterId);
+                    member.PrivateGroupId = 0;
+                    member.Send(PrivateGroupKicked.Create(privateGroupId));
+                }
+
+                return;
+            }
+
+            this.ForgetPrivateGroupMember(privateGroupId, client.Character.CharacterId);
+            this.SendToPrivateGroup(privateGroupId,
+                PrivateGroupPlayerLeft.Create(privateGroupId, client.Character.CharacterId), client);
+        }
+
+        private Client[] PrivateGroupMembers(uint privateGroupId, Client except)
+            => this.ConnectedClients.Values
+                .Where(connected => connected != null && connected != except && connected.PrivateGroupId == privateGroupId)
+                .ToArray();
+
+        private void SendToPrivateGroup(uint privateGroupId, byte[] packet, Client except)
+        {
+            foreach (Client member in this.PrivateGroupMembers(privateGroupId, except))
+            {
+                member.Send(packet);
+            }
+        }
+
+        private void RememberPrivateGroupMember(uint privateGroupId, uint memberId)
+        {
+            if (privateGroupId == 0 || memberId == 0 || memberId == privateGroupId)
+            {
+                return;
+            }
+
+            lock (this.privateGroupReconnectSync)
+            {
+                HashSet<uint> memberIds;
+                if (!this.privateGroupReconnectMembers.TryGetValue(privateGroupId, out memberIds))
+                {
+                    memberIds = new HashSet<uint>();
+                    this.privateGroupReconnectMembers.Add(privateGroupId, memberIds);
+                }
+
+                memberIds.Add(memberId);
+            }
+        }
+
+        private void ForgetPrivateGroupMember(uint privateGroupId, uint memberId)
+        {
+            lock (this.privateGroupReconnectSync)
+            {
+                HashSet<uint> memberIds;
+                if (this.privateGroupReconnectMembers.TryGetValue(privateGroupId, out memberIds))
+                {
+                    memberIds.Remove(memberId);
+                    if (memberIds.Count == 0)
+                    {
+                        this.privateGroupReconnectMembers.Remove(privateGroupId);
+                    }
+                }
+            }
+        }
+
+        private void SendKnownClient(Client receiver, Client subject)
+        {
+            uint characterId = subject.Character.CharacterId;
+            if (receiver == subject || receiver.KnownClients.Contains(characterId))
+            {
+                return;
+            }
+
+            receiver.Send(PlayerName.Create(subject, characterId));
+            receiver.KnownClients.Add(characterId);
         }
 
         /// <summary>The World link; set at startup before the chat listener accepts clients.</summary>
