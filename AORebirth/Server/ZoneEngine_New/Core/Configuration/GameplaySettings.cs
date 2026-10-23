@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Configuration
 {
     using System;
+    using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
     using System.Text.Json;
@@ -30,6 +31,12 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Where /stuck sends a player.</summary>
         public GameplayLocation? StuckLocation { get; init; }
 
+        /// <summary>
+        /// A reload takes rounds from a stack of the weapon's ammo. Off, clips still run dry and reload (with the same
+        /// pause), but fill without any ammo in the inventory.
+        /// </summary>
+        public bool RequireAmmo { get; init; } = true;
+
         /// <summary>XP rules.</summary>
         public GameplayXp Xp { get; init; } = new();
 
@@ -56,6 +63,9 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Seasonal population switches, read once at startup.</summary>
         public GameplayEvents Events { get; init; } = new();
+
+        /// <summary>IP Reset Points (RP) granted on reaching level milestones; the starting pool is in NewCharacter.json.</summary>
+        public GameplayResetPoints IpResetPoints { get; init; } = new();
 
         public static string ResolvePath(string gameDataRoot)
         {
@@ -162,6 +172,32 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": inventory.maxCredits must be from 1 to " + int.MaxValue + ".");
             if (Events == null || Events.Halloween == null)
                 throw new InvalidDataException(path + ": events and events.halloween must be objects.");
+        }
+    }
+
+    /// <summary>
+    /// IP Reset Points granted when a character reaches a title level (<see cref="TitleLevels"/>) or an alien level
+    /// (<see cref="AlienLevels"/>). Each milestone pays once, on the way up; a level set lower takes nothing back.
+    /// </summary>
+    public sealed class GameplayResetPoints
+    {
+        /// <summary>Title level → reset points granted on reaching it.</summary>
+        public Dictionary<int, int> TitleLevels { get; init; } = new();
+
+        /// <summary>Alien level → reset points granted on reaching it.</summary>
+        public Dictionary<int, int> AlienLevels { get; init; } = new();
+
+        /// <summary>Points for every milestone in (<paramref name="from"/>, <paramref name="to"/>].</summary>
+        public static int Between(Dictionary<int, int> milestones, int from, int to)
+        {
+            int points = 0;
+            foreach (KeyValuePair<int, int> milestone in milestones)
+            {
+                if (milestone.Key > from && milestone.Key <= to)
+                    points += milestone.Value;
+            }
+
+            return points;
         }
     }
 

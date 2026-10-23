@@ -670,9 +670,15 @@ public sealed class NpcScriptRunner
         if (minter == null || spawns == null || !minter.TryMint(hash, Math.Max(1, op.C), ItemSource.Other, out Item item))
             return;
 
+        // The offset is in the NPC's own frame: x to its right, y up, z ahead, so [1, 0, 0] lands at its right side
+        // whichever way it faces.
         Vector3 at = _npc.Position;
         if (VectorValue(op.B) is Vector3 offset)
-            at = new Vector3(at.x + offset.x, at.y + offset.y, at.z + offset.z);
+        {
+            var turned = (Vector3)_npc.Rotation.RotateVector3(offset);
+            at = new Vector3(at.x + turned.x, at.y + turned.y, at.z + turned.z);
+        }
+
         spawns.SpawnDroppedItem(item, at, _npc.Rotation, Identity.None, TimeSpan.FromSeconds(op.D));
     }
 

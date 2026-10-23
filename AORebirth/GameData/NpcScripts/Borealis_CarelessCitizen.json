@@ -1,0 +1,76 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Borealis_CarelessCitizen",
+  "Params": {
+    "Waypoints": "Vector3[]",
+    "Litter": "ItemHash",
+    "Emote": "SocialAction"
+  },
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        { "Label": "loop" },
+        { "WalkTo": { "To": "$Waypoints[0]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[1]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[2]", "Direct": true } },
+        { "WalkTo": { "To": "$Waypoints[3]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[4]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[5]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[6]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[7]", "Direct": true } },
+        { "WalkTo": { "To": "$Waypoints[8]", "Direct": true } },
+        { "WalkTo": { "To": "$Waypoints[9]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[10]", "Direct": true } },
+        { "Emote": "$Emote" },
+        { "SpawnWorldItem": { "Item": "$Litter", "Offset": [1, 0, 0], "LifetimeSeconds": 120 } },
+        { "WalkTo": { "To": "$Waypoints[11]", "Direct": true } },
+        { "WalkTo": { "To": "$Waypoints[12]", "Direct": true } },
+        { "Goto": "loop" }
+      ]
+    },
+    {
+      "On": "HealthBelow", "Percent": 50, "Once": true, "Interrupts": true,
+      "Do": [ { "Say": "Help! Somebody help!" } ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Playfield": 800,
+      "SpawnPoint": "CACZ@618.0,67.0,705.1",
+      "Args": {
+        "Waypoints": [
+          [624.0, 66.8, 692.0],
+          [643.6, 66.8, 676.2],
+          [667.9, 66.8, 672.2],
+          [670.2, 66.8, 687.2],
+          [698.1, 66.8, 694.4],
+          [745.8, 60.0, 679.3],
+          [730.8, 60.0, 628.0],
+          [718.1, 60.0, 612.8],
+          [702.2, 65.7, 613.1],
+          [699.0, 66.8, 598.0],
+          [663.3, 66.8, 602.1],
+          [658.4, 66.8, 666.3],
+          [652.8, 66.8, 672.6]
+        ],
+        "Litter": "LIPI",
+        "Emote": "DirectionsPointrig"
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@
     { "Stat": 89, "Name": "Race", "Value": 1 },
     { "Stat": 673, "Name": "VisualFlags", "Value": 31 },
     { "Stat": 37, "Name": "TitleLevel", "Value": 1 },
+    { "Stat": 199, "Name": "RP", "Value": 14 },
     { "Stat": 455, "Name": "NPCFamily", "Value": 0 },
     { "Stat": 695, "Name": "Commendations", "Value": 0 },
     { "Stat": 696, "Name": "DailyMissionResets", "Value": 0 },

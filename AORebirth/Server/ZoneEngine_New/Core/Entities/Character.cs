@@ -636,11 +636,35 @@ namespace ZoneEngine_New.Core.Entities
                 ? step.NextLevelXp
                 : 0;
 
+            int alienBefore = Stats.GetOrZero(CharacterStat.AlienLevel);
             Stats.Set(CharacterStat.AlienLevel, alienLevel, StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.AlienXP, 0, StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.AlienNextXP, next, StatDetail.Base, dirty: true);
+            GrantResetPoints(alienBefore, alienLevel, alien: true);
             FlushDirtyStats();
             return true;
+        }
+
+        /// <summary>
+        /// Adds the IP Reset Points (RP) of every milestone crossed on the way from <paramref name="before"/> up to
+        /// <paramref name="after"/> (Gameplay.json ipResetPoints): title levels (<see cref="TitleLevelFor"/>), or alien
+        /// levels for <paramref name="alien"/>. Going down grants and removes nothing.
+        /// </summary>
+        void GrantResetPoints(int before, int after, bool alien)
+        {
+            if (!IsPlayer || after <= before)
+                return;
+
+            GameplayResetPoints? table = Playfield?.GetService<GameplaySettings>()?.IpResetPoints;
+            if (table == null)
+                return;
+
+            int points = GameplayResetPoints.Between(alien ? table.AlienLevels : table.TitleLevels, before, after);
+            if (points <= 0)
+                return;
+
+            int current = Math.Max(0, Stats.GetOrZero(CharacterStat.RP, StatDetail.Base));
+            Stats.Set(CharacterStat.RP, current + points, StatDetail.Base, dirty: true);
         }
 
         void ApplyLevelUp(IGameData gameData, int levelBefore, int levelAfter, int lastGain)
@@ -648,6 +672,7 @@ namespace ZoneEngine_New.Core.Entities
             Stats.Set(CharacterStat.TitleLevel, TitleLevelFor(levelAfter), StatDetail.Base, dirty: true);
 
             ShiftLevelIpBonus(levelBefore, levelAfter);
+            GrantResetPoints(TitleLevelFor(levelBefore), TitleLevelFor(levelAfter), alien: false);
 
             ApplyLevelVitals();
 
@@ -1115,6 +1140,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             int alienLevel = Stats.GetOrZero(CharacterStat.AlienLevel);
+            int alienBefore = alienLevel;
 
             // Like kill XP, one grant is capped at xp.caps.killXp percent of the current alien level's bar.
             if (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry current) && current.NextLevelXp > 0)
@@ -1151,6 +1177,7 @@ namespace ZoneEngine_New.Core.Entities
             Stats.Set(CharacterStat.AlienLevel, alienLevel, StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.AlienXP, (int)Math.Min(progress, int.MaxValue), StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.AlienNextXP, next, StatDetail.Base, dirty: true);
+            GrantResetPoints(alienBefore, alienLevel, alien: true);
             FlushDirtyStats();
         }
 
@@ -1612,6 +1639,14 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         protected virtual int? ConsumeRound(CharacterWeapon weapon) => null;
 
+        /// <summary>False when <paramref name="weapon"/> has no round to fire this swing (an empty or reloading clip).</summary>
+        protected virtual bool HasRound(CharacterWeapon weapon) => true;
+
+        /// <summary>Runs once a swing has been shown, hit or miss (a player's clip that ran dry reloads here).</summary>
+        protected virtual void OnSwingShown(CharacterWeapon weapon)
+        {
+        }
+
         public void SetWeapon(WeaponSlot slot, CharacterWeapon weapon)
         {
             if (slot == WeaponSlot.None || weapon == null)
@@ -1879,6 +1914,9 @@ namespace ZoneEngine_New.Core.Entities
             if (GetEdgeDistanceTo(target) > characterWeapon.GetAttackRange())
                 return;
 
+            if (!HasRound(characterWeapon))
+                return;
+
             DamageCalculator.DamageResult result = DamageCalculator.CalculateFromWeapon(
                 this,
                 target,
@@ -1905,6 +1943,7 @@ namespace ZoneEngine_New.Core.Entities
                         Unknown4 = target.Identity,
                         Unknown5 = 0
                     });
+                OnSwingShown(characterWeapon);
                 return;
             }
 
@@ -1940,6 +1979,7 @@ namespace ZoneEngine_New.Core.Entities
                 ApplyOnHitProcs(target, weapon);
             Nanos.ProcRules.OnWeaponHit(this, target, weapon);
             DamageReturn.Apply(this, target, returned);
+            OnSwingShown(characterWeapon);
         }
 
         /// <summary>
@@ -3850,6 +3890,34 @@ namespace ZoneEngine_New.Core.Entities
             => new();
 
         /// <summary>
+        /// The WeaponInstance id a wielded weapon is announced under. A weapon with its own WeaponInstance identity is
+        /// announced under it, as retail does (zone-in capture 2026-10-23: WeaponItemFullUpdate C74A:25ED9085 with
+        /// Energy 50, then FullCharacter's slot 6 naming the same identity), so the client puts the clip on the weapon its
+        /// inventory holds and Reload / AttackInfo update it. Anything else gets an id allocated once per playfield and
+        /// reused, so the owner's client never holds an id the server has moved past.
+        /// </summary>
+        int HandWeaponInstanceId(Item item)
+        {
+            if (item.Identity.Type == IdentityType.WeaponInstance && item.Identity.Instance > 0)
+            {
+                item.WeaponInstanceIdentity = item.Identity;
+                return item.Identity.Instance;
+            }
+
+            if (Playfield == null)
+                return item.InstanceId;
+
+            int playfield = Playfield.Identity.Instance;
+            if (item.WeaponInstanceIdentity is Identity known && item.WeaponInstancePlayfield == playfield)
+                return known.Instance;
+
+            int id = Playfield.AllocateWeaponInstanceId();
+            item.WeaponInstanceIdentity = new Identity { Type = IdentityType.WeaponInstance, Instance = id };
+            item.WeaponInstancePlayfield = playfield;
+            return id;
+        }
+
+        /// <summary>
         /// Builds one WeaponInstance for an equipped hand-slot item, or null when it should not be announced.
         /// Only a visible weapon (non-zero weapon mesh on that hand) is sent.
         /// Fists and invisible NPC tag weapons are omitted — AttackInfo/SAW carry those hits.
@@ -3878,9 +3946,12 @@ namespace ZoneEngine_New.Core.Entities
                     return null;
             }
 
-            int weaponInstanceId = carriedIdentity?.Instance
-                ?? (Playfield != null ? Playfield.AllocateWeaponInstanceId() : item.InstanceId);
+            int weaponInstanceId = carriedIdentity?.Instance ?? HandWeaponInstanceId(item);
             int playfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0;
+
+            // Energy is the clip's rounds (retail: 24 on a part-spent gun). The client only tracks the clip of a weapon
+            // that has the stat, and AttackInfo / Reload then keep it current (WeaponAmmo).
+            uint energy = this is Player && WeaponAmmo.UsesAmmo(item) ? (uint)WeaponAmmo.Rounds(item) : 0;
 
             int flags = item.Flags > 0 ? item.Flags : 0x403;
             int multipleCount = item.StackCount > 0 ? item.StackCount : 1;
@@ -3892,7 +3963,7 @@ namespace ZoneEngine_New.Core.Entities
                 StatTuple(CharacterStat.ACGItemTemplateID, (uint)item.LowId),
                 StatTuple(CharacterStat.ACGItemTemplateID2, (uint)item.HighId),
                 StatTuple(CharacterStat.MultipleCount, (uint)multipleCount),
-                StatTuple(CharacterStat.Energy, 0)
+                StatTuple(CharacterStat.Energy, energy)
             };
 
             int attackDelay = item.GetStat(CharacterStat.AttackDelay);

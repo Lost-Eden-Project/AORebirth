@@ -1221,7 +1221,17 @@ namespace ZoneEngine_New.Core.Ai
                 new System.Numerics.Vector3((float)routeEnd.x, (float)routeEnd.y, (float)routeEnd.z)))
                 return;
 
-            bool truncated = TruncateByDistance(_routeScratch, SegmentLookaheadMeters(), _pathScratch);
+            // A direct scripted leg is one straight line with nothing to re-plan around: the whole leg goes out as one
+            // segment (observers get the destination itself), not a lookahead's worth re-sent as the NPC walks.
+            bool truncated;
+            if (ScriptMovesDirect)
+            {
+                _pathScratch.Clear();
+                _pathScratch.AddRange(_routeScratch);
+                truncated = false;
+            }
+            else
+                truncated = TruncateByDistance(_routeScratch, SegmentLookaheadMeters(), _pathScratch);
             if (active)
                 Npc.Motor.ReplacePath(_pathScratch);
             else

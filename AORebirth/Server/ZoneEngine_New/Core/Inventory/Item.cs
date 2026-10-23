@@ -82,6 +82,22 @@ namespace ZoneEngine_New.Core.Inventory
         public int OverEquipLevel { get; internal set; }
 
         /// <summary>
+        /// Rounds in this weapon's clip (<see cref="WeaponAmmo"/>); null means a full clip. Runtime only: a relog starts
+        /// with a full clip.
+        /// </summary>
+        public int? ClipRounds { get; internal set; }
+
+        /// <summary>
+        /// The WeaponInstance identity this wielded weapon is announced under (WeaponItemFullUpdate). Kept for as long as
+        /// the weapon stays on <see cref="WeaponInstancePlayfield"/>: retail keeps one per weapon (C74A:25ED9085 across
+        /// two captures), and the owner's client knows the weapon by it, so a Reload names it. Runtime only.
+        /// </summary>
+        public Identity? WeaponInstanceIdentity { get; internal set; }
+
+        /// <summary>The playfield instance <see cref="WeaponInstanceIdentity"/> was allocated on.</summary>
+        public int WeaponInstancePlayfield { get; internal set; }
+
+        /// <summary>
         /// Worn but disabled: the wearer does not meet its PlayShiftRequirements in this playfield
         /// (<see cref="PlayshiftItems"/>). No effects are active and the client gets <see cref="AORebirth.Enums.ItemFlags.Disabled"/>
         /// in the slot flags. Runtime only; cleared when the item is equipped again.
@@ -333,6 +349,40 @@ namespace ZoneEngine_New.Core.Inventory
                     SendDeleteItem(player, slotIdentity.Type, slotIdentity.Instance);
                 else
                     SendDeleteItem(player, page.Identity.Type, placement);
+            }
+
+            player.Playfield?.GetRequiredService<InventoryFlushService>().NotifyDirty(player);
+            return true;
+        }
+
+        /// <summary>
+        /// Takes <paramref name="count"/> from this stack in the main-inventory slot <paramref name="placement"/> (ammo for
+        /// a reload). A stack taken to 0 leaves inventory and is retired; the caller tells the client (a Reload's
+        /// RemoveAmmoStack drops the slot), so no DeleteItem is sent here.
+        /// </summary>
+        internal bool TakeFromStack(Player player, int placement, int count)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            if (count <= 0 || count > StackCount || Locked)
+                return false;
+
+            PlayerInventory inventory = player.Inventory;
+            Container page = inventory.Inventory;
+            if (!page.Content.TryGetValue(placement, out Item? occupant) || !ReferenceEquals(occupant, this))
+                return false;
+
+            if (count < StackCount)
+            {
+                StackCount -= count;
+                inventory.MarkDirty(this, page, placement);
+            }
+            else
+            {
+                if (page.Remove(placement) == null)
+                    return false;
+
+                StackCount = 0;
+                inventory.Discard(this, ConsumedGraveyard(player));
             }
 
             player.Playfield?.GetRequiredService<InventoryFlushService>().NotifyDirty(player);

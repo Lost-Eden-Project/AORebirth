@@ -286,7 +286,13 @@ public sealed class NpcScriptCatalog
         if (binding == null)
             return false;
 
+        // A NoCombat NPC spawns without a brain, and scripted walks (and plain patrol / wander) move through one. Such an
+        // NPC gets a brain for movement only: a brain never aggros or fights for an NPC that is not attackable
+        // (NpcBrain.CanAggro / CombatRules.CanAttack), so the Borealis Careless Citizen walks instead of emoting in place.
         NpcBrain? brain = npc.Brain;
+        if (brain == null && NeedsMovement(binding))
+            brain = NpcBrain.Create(npc, npc.Position, NpcAiProfiles.Resolve(npc.SpawnHash ?? npc.MobTemplate?.Hash));
+
         if (brain != null)
         {
             if (binding.Patrol != null)
@@ -310,6 +316,12 @@ public sealed class NpcScriptCatalog
 
         return true;
     }
+
+    /// <summary>True when the binding moves its NPC: plain patrol or wander, or a program with a walk.</summary>
+    static bool NeedsMovement(NpcScriptBinding binding)
+        => binding.Patrol != null
+           || binding.Wander != null
+           || (binding.Program != null && Array.Exists(binding.Program.Ops, op => op.Code == ScriptOpCode.MoveTo));
 
     /// <summary>Logs every spawn point binding of a playfield whose key matched none of the playfield's points.</summary>
     public void ReportUnmatchedSpawnPoints(int playfieldId, IReadOnlyCollection<string> keys)

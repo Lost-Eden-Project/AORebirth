@@ -12,6 +12,7 @@ namespace ZoneEngine_New.Core.Inventory
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Helpers;
 
     public sealed class PlayerInventory
     {
@@ -1108,15 +1109,32 @@ namespace ZoneEngine_New.Core.Inventory
             };
         }
 
+        /// <summary>FullCharacter slot flag of an entry whose object was announced on its own (retail weapons and bags).</summary>
+        const short AnnouncedInstanceFlag = 0x0002;
+
         static IEnumerable<InventorySlot> BuildPageSlots(IdentityType pageType, Container page)
         {
             foreach (KeyValuePair<int, Item> slotEntry in page.Content)
             {
                 Item item = slotEntry.Value;
+                short flags = item.ToInventoryPacketFlags();
+                // A hand weapon already announced under its own identity (WeaponItemFullUpdate, before FullCharacter)
+                // carries 0x02: the client then binds the slot to that weapon object and its Energy (the clip) instead of
+                // building one from the template with the slot count as its ammo ("1/30"). Retail zone-in 2026-10-23:
+                // the Bolter Cannon slot is flags 0x0002 with C74A:25ED9085, as is every entry announced on its own.
+                // Same test as the hand WeaponItemFullUpdate (Character.TryBuildWeaponItemFullUpdate), which is built after
+                // FullCharacter at login, so this cannot wait for it to have run.
+                if (pageType == IdentityType.WeaponPage
+                    && slotEntry.Key is (int)WeaponSlots.Righthand or (int)WeaponSlots.LeftHand
+                    && item.Identity.Type == IdentityType.WeaponInstance && item.Identity.Instance > 0
+                    && AttackInfoRules.HasVisibleWeaponMesh(item, slotEntry.Key)
+                    && AttackInfoRules.ShouldAnnounceWeaponItemFullUpdate(item))
+                    flags |= AnnouncedInstanceFlag;
+
                 yield return new InventorySlot
                 {
                     Placement = slotEntry.Key,
-                    Flags = item.ToInventoryPacketFlags(),
+                    Flags = flags,
                     Count = InventoryStacking.WireCount(item.StackCount),
                     Identity = item.Identity.Instance != 0
                         ? item.Identity

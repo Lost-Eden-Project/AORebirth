@@ -1914,6 +1914,15 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>A player's armor and social pieces stack by the client's rules (glasses on glasses, pads per shoulder).</summary>
         protected override bool StacksWornMeshes => true;
 
+        /// <summary>A gun spends a round per swing, hit or miss (<see cref="WeaponAmmo"/>).</summary>
+        protected override int? ConsumeRound(CharacterWeapon weapon) => WeaponAmmo.Spend(weapon, 1);
+
+        /// <summary>An empty or reloading clip does not fire; an empty one with ammo to hand starts a reload.</summary>
+        protected override bool HasRound(CharacterWeapon weapon) => WeaponAmmo.CanFire(this, weapon);
+
+        /// <summary>A clip the shot emptied reloads after its AttackInfo, as retail orders them.</summary>
+        protected override void OnSwingShown(CharacterWeapon weapon) => WeaponAmmo.ReloadIfEmptied(this, weapon);
+
         protected override IEnumerable<Container> AppearanceWearPages
         {
             get
@@ -2145,7 +2154,19 @@ namespace ZoneEngine_New.Core.Entities
             if (wifu == null)
                 return;
 
-            Playfield?.GetRequiredService<PlayfieldLocality>().Announce(this, wifu, includeSelf: true);
+            Playfield?.GetRequiredService<PlayfieldLocality>().Announce(this, wifu, includeSelf: false);
+
+            // This client already holds the weapon under its own identity (its inventory registered it), and a second
+            // object under that identity mid-session crashed the client (the social-hand case), so it gets the weapon
+            // under a fresh instance id as before.
+            if (Session != null && Playfield != null
+                && Inventory.Equipment.Content.GetValueOrDefault(slot.Placement) is Item item)
+            {
+                var fresh = new Identity { Type = IdentityType.WeaponInstance, Instance = Playfield.AllocateWeaponInstanceId() };
+                WeaponItemFullUpdateMessage? own = TryBuildWeaponItemFullUpdate(item, slot.Placement, carriedIdentity: fresh);
+                if (own != null)
+                    Session.Send(own);
+            }
         }
 
         WeaponItemFullUpdateMessage? TryBuildEquippedHandWifu(int equipmentSlot)

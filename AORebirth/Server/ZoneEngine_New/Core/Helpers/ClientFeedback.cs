@@ -126,6 +126,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"evaded" (category 110), the verb live puts in <see cref="TargetVerbYourAction"/>.</summary>
         public const int Evaded = 114064052;
 
+        /// <summary>"No ammo was found for %s!" (category 110), the weapon's name as the argument (retail 2026-10-23).</summary>
+        public const int NoAmmoFoundFor = 62734319;
+
+        /// <summary>"%s is already fully loaded." (category 110), the weapon's name as the argument (retail 2026-10-23).</summary>
+        public const int AlreadyFullyLoaded = 54186628;
+
         /// <summary>A text argument the client looks up itself: 'R' + base-85 category + base-85 message id.</summary>
         public readonly record struct TextReference(int Category, int MessageId);
 
@@ -172,6 +178,9 @@ namespace ZoneEngine_New.Core.Helpers
                     text.Append('s').Append((char)(value.Length + 1)).Append(value);
                 }
             }
+
+            // Retail closes the formatted text with '~' (no-ammo capture 2026-10-23, "...s\x19Bolter Cannon 42mm - 40C~").
+            text.Append('~');
 
             player.Session.Send(new FormatFeedbackMessage
             {

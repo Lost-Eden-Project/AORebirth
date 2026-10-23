@@ -85,10 +85,13 @@ namespace ZoneEngine_New.Core.Inventory
 
         /// <summary>
         /// A non-stackable weapon that fires ammo: its MaxEnergy is the clip size. Given that as its count the
-        /// client sees a stack and will neither loot nor equip it.
+        /// client sees a stack and will neither loot nor equip it. Ammo carries an AmmoType too, but ItemClass 0
+        /// (every "Ammo:" box; weapons are 1), and its MaxEnergy is the rounds in the box (50000 in Box of Energy
+        /// Weapon Ammo; retail's box read 49650 after a few clips).
         /// </summary>
         public bool IsClipWeapon
             => Stats.TryGetValue(CharacterStat.AmmoType, out int ammoType) && ammoType >= 1
+                && Stats.TryGetValue(CharacterStat.ItemClass, out int itemClass) && itemClass > 0
                 && !(Stats.TryGetValue(CharacterStat.Can, out int can) && ((CanFlags)(uint)can & CanFlags.Stackable) != 0);
 
         /// <summary>

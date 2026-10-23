@@ -257,7 +257,7 @@ Instant unless marked blocking. Operands are constants or `$Param` slots.
 | `Face` heading or target | set heading, announce | |
 | `Emote` SocialAction | the player emote message from the NPC (below); blocking for the anim's duration | 1..71 |
 | `Say` text, `Type` | `VicinityChatRelay.Speak` | rate limit 1/s per NPC |
-| `SpawnWorldItem` item, offset, lifetime, `Count` | mint via `HashItemMinter`, `SpawnDroppedItem` with no owner | lifetime mandatory, per-runner live cap (8) |
+| `SpawnWorldItem` item, offset (in the NPC's frame: x right, y up, z ahead), lifetime, `Count` | mint via `HashItemMinter`, `SpawnDroppedItem` with no owner | lifetime mandatory, per-runner live cap (8) |
 | `SpawnNpc` hash, offset, `DespawnWithOwner` | `SpawnMob` with `SpawnSource.Script`; tracked by the runner | cap (4) |
 | `Despawn` | `SpawnService.DespawnNpc(self)`, ends the program | |
 | `Gfx` id, `On` / `At` / `From`+`To` | `GfxTriggerMessage` (below) to the NPC's observers | |

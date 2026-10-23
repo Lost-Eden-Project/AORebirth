@@ -163,6 +163,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         && _dungeons?.TryDuplicate(player, message.Target[0], message.Target[1]) == true)
                         Acknowledge(session, message, message.Target[1]);
                     else if (message.Target is { Length: >= 2 }
+                        && TryReloadFromDrop(player, message.Target[0], message.Target[1], out bool reloaded))
+                    {
+                        // Ammo dropped on a worn gun (N3Msg_UseItemOnItem, client checks 1006940f): Reload answers it.
+                        if (reloaded)
+                            Acknowledge(session, message, message.Target[1]);
+                        else
+                            Deny(session, message);
+                    }
+                    else if (message.Target is { Length: >= 2 }
                         && TryUseItemOnItem(player, playfield, message.Target[0], message.Target[1]))
                         Acknowledge(session, message, message.Target[1]);
                     else if (message.Target is { Length: >= 2 } && _tradeskills != null
@@ -375,6 +384,36 @@ namespace ZoneEngine_New.Core.MessageHandlers
             }
 
             Acknowledge(session, message, dynel.Identity);
+        }
+
+        /// <summary>
+        /// True when <paramref name="target"/> is one of the player's worn guns and <paramref name="sourceSlot"/> a main
+        /// inventory slot: the drop is a reload from that stack. <paramref name="reloaded"/> says whether it happened.
+        /// </summary>
+        static bool TryReloadFromDrop(Player player, Identity sourceSlot, Identity target, out bool reloaded)
+        {
+            reloaded = false;
+            if (sourceSlot.Type != IdentityType.Inventory || !player.Inventory.IsHydrated
+                || !WeaponAmmo.TryGetArmedWeapon(player, target, out CharacterWeapon weapon)
+                || !WeaponAmmo.UsesAmmo(weapon.Item))
+                return false;
+
+            WeaponAmmo.ReloadResult result = WeaponAmmo.TryReload(player, weapon, sourceSlot.Instance);
+            switch (result)
+            {
+                case WeaponAmmo.ReloadResult.AlreadyReloading:
+                    ClientFeedback.Send(player, "Feedback_AlreadyReloading");
+                    break;
+                case WeaponAmmo.ReloadResult.AmmoMismatch:
+                    ClientFeedback.Send(player, "Feedback_AmmoMismatch");
+                    break;
+                case WeaponAmmo.ReloadResult.AlreadyFull:
+                    ClientFeedback.Send(player, "Feedback_WeaponIsAlreadyFullyLoaded");
+                    break;
+            }
+
+            reloaded = result == WeaponAmmo.ReloadResult.Reloaded;
+            return true;
         }
 
         /// <summary>

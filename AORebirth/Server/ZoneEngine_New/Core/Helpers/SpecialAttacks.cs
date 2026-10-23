@@ -145,6 +145,10 @@ namespace ZoneEngine_New.Core.Helpers
             if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out int slot))
                 return FireResult.Dropped;
 
+            // A reloading gun fires no special (the client holds them too); an empty one with no ammo never will.
+            if (attacker is Player shooter && !WeaponAmmo.CanFire(shooter, weapon))
+                return weapon.IsReloading ? FireResult.Waiting : FireResult.Dropped;
+
             // Same reach rules as an auto-attack swing; out of reach it stays queued and does not lock.
             if (!attacker.HasLineOfSightTo(target) || attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
                 return FireResult.Waiting;
@@ -192,23 +196,37 @@ namespace ZoneEngine_New.Core.Helpers
                 return;
             }
 
+            // A player's gun fires from its clip (WeaponAmmo); anything else from a full magazine.
+            Player? shooter = attacker as Player;
+            int clip = shooter != null && WeaponAmmo.UsesAmmo(item)
+                ? WeaponAmmo.Rounds(item!)
+                : Math.Max(0, item?.GetStat(CharacterStat.MaxEnergy) ?? 0);
+            int roundsFired = 1;
+
             if (special == CharacterStat.Dimach)
             {
                 // Dimach never misses; attack rating still scales its damage.
                 result = DamageCalculator.CalculateFromWeapon(attacker, target, specialItem, special, alwaysHits: true);
                 bullets = -1;
+                roundsFired = 0;
             }
             else if (special == CharacterStat.FullAuto)
             {
-                result = RollFullAuto(attacker, target, item, out bullets);
+                // Full Auto empties the magazine (retail's ammo field reads 0 after it).
+                result = RollFullAuto(attacker, target, item, clip, out bullets);
                 SendFullAutoRounds(attacker, bullets);
+                roundsFired = clip;
             }
             else if (special == CharacterStat.Burst)
-                result = RollBurst(attacker, target, item, out bullets);
+            {
+                result = RollBurst(attacker, target, item, clip, out bullets);
+                roundsFired = bullets;
+            }
             else if (special == CharacterStat.Brawl)
             {
                 result = DamageCalculator.CalculateFromWeapon(attacker, target, specialItem ?? item, special);
                 bullets = -1;
+                roundsFired = 0;
             }
             else if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack)
             {
@@ -221,6 +239,10 @@ namespace ZoneEngine_New.Core.Helpers
                 bullets = AttackInfoRules.UsesMeleeAmmo(item) ? -1 : 1;
             }
 
+            // The rounds go whether the special lands or not; the ammo field then shows what is left (retail Burst: 12
+            // before, 9 after, capture 2026-10-23).
+            int? roundsLeft = shooter != null ? WeaponAmmo.Spend(weapon, roundsFired) : null;
+
             if (!result.IsHit || target.IsEvading)
             {
                 attacker.Cell?.Announce(new MissedAttackInfoMessage
@@ -232,6 +254,8 @@ namespace ZoneEngine_New.Core.Helpers
                     Unknown4 = target.Identity,
                     Unknown5 = (int)special
                 });
+                if (shooter != null)
+                    WeaponAmmo.ReloadIfEmptied(shooter, weapon);
                 return;
             }
 
@@ -247,11 +271,13 @@ namespace ZoneEngine_New.Core.Helpers
             DamageReturn.Announce(attacker, target, returned);
             target.ApplyDamage(attacker, damage, result.HitType);
             if (target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
-                AnnounceSpecialHit(attacker, target, special, slot, bullets, damage);
+                AnnounceSpecialHit(attacker, target, special, slot, roundsLeft ?? bullets, damage);
 
             // A special is a weapon hit too: offensive and defensive procs roll on it.
             Nanos.ProcRules.OnWeaponHit(attacker, target, specialItem ?? weapon.Item);
             DamageReturn.Apply(attacker, target, returned);
+            if (shooter != null)
+                WeaponAmmo.ReloadIfEmptied(shooter, weapon);
 
             // A landed Brawl or Dimach also runs its item's OnUse on the struck target (Brawl Item: 20% stun 211405 on
             // the fighting target).
@@ -279,13 +305,14 @@ namespace ZoneEngine_New.Core.Helpers
             });
         }
 
+        /// <param name="bullets">The ammo field: a player's gun sends the rounds left in its clip.</param>
         static void AnnounceSpecialHit(Character attacker, Character target, CharacterStat special, int slot, int bullets,
             int damage)
         {
             // Client reader Gamecode.dll FUN_100a1c4f: slot, damage, ammo, target, stat, then a state value the
             // client applies to the target (FUN_1005b1b8); 4 as on a killing AttackInfo.
-            // Retail Full Auto (capture 2026-10-22) sends 0 in the ammo field and reports the bullets through the
-            // FullAuto message instead.
+            // Retail Full Auto (capture 2026-10-22) sends 0 in the ammo field, the emptied magazine, and reports the
+            // bullets through the FullAuto message instead.
             if (special == CharacterStat.FullAuto)
                 bullets = 0;
             attacker.Cell?.Announce(new SpecialAttackInfo
@@ -305,11 +332,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>
         /// Every bullet rolls its own hit, damage and crit; the hits are summed and the total softened past 10000.
         /// A miss only when every bullet misses. <paramref name="shots"/> is the bullets that can hit: 5 plus one
-        /// per 100 skill, at most the clip.
+        /// per 100 skill, at most the rounds in the clip.
         /// </summary>
-        static DamageCalculator.DamageResult RollFullAuto(Character attacker, Character target, Item? weapon, out int shots)
+        static DamageCalculator.DamageResult RollFullAuto(
+            Character attacker, Character target, Item? weapon, int clip, out int shots)
         {
-            int clip = Math.Max(1, weapon?.GetStat(CharacterStat.MaxEnergy) ?? 1);
+            clip = Math.Max(1, clip);
             int skill = Math.Max(0, attacker.Stats.GetOrZero(CharacterStat.FullAuto));
             shots = Math.Min(FullAutoBaseBullets + skill / 100, clip);
 
@@ -366,9 +394,9 @@ namespace ZoneEngine_New.Core.Helpers
         /// Burst: up to three shots (limited by the clip), each rolled on its own for hit and damage, landing together.
         /// Burst never crits (DamageCalculator). <paramref name="bullets"/> is the rounds used.
         /// </summary>
-        static DamageCalculator.DamageResult RollBurst(Character attacker, Character target, Item? weapon, out int bullets)
+        static DamageCalculator.DamageResult RollBurst(
+            Character attacker, Character target, Item? weapon, int clip, out int bullets)
         {
-            int clip = weapon?.GetStat(CharacterStat.MaxEnergy) ?? 0;
             bullets = clip > 0 ? Math.Min(BurstShots, clip) : BurstShots;
 
             int total = 0;

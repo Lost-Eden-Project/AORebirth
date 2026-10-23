@@ -35,6 +35,9 @@
       },
       "additionalProperties": false
     },
+    "requireAmmo": {
+      "type": "boolean"
+    },
     "xp": {
       "type": "object",
       "properties": {
@@ -233,6 +236,24 @@
             }
           },
           "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ipResetPoints": {
+      "type": "object",
+      "properties": {
+        "titleLevels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "alienLevels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
         }
       },
       "additionalProperties": false

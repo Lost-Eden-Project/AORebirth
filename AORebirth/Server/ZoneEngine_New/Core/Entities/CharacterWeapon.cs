@@ -113,6 +113,17 @@ namespace ZoneEngine_New.Core.Entities
 
         public bool IsFullyCharged => State == WeaponState.Attacking && _timer >= AttackSpeed;
 
+        /// <summary>
+        /// While a reload runs (<see cref="Inventory.WeaponAmmo"/>), until this time, the weapon neither swings nor
+        /// advances its clock. MinValue when not reloading.
+        /// </summary>
+        public DateTime ReloadingUntilUtc { get; set; } = DateTime.MinValue;
+
+        public bool IsReloading => DateTime.UtcNow < ReloadingUntilUtc;
+
+        /// <summary>The clip ran dry on the last shot: <see cref="Inventory.WeaponAmmo"/> reloads once that shot is shown.</summary>
+        internal bool ReloadPending { get; set; }
+
         public event Action? Attacked;
 
         public double GetAttackRange()
@@ -166,6 +177,9 @@ namespace ZoneEngine_New.Core.Entities
                 return false;
 
             if (IsRanged() && Wielder?.Motor.IsMoving == true)
+                return false;
+
+            if (IsReloading)
                 return false;
 
             _timer += deltaTime;

@@ -204,6 +204,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
                 }
 
+                case CharacterActionType.Reload:
+                    // Reload button / hotkey (Gamecode.dll special action 0x6E → 100697c0): names no ammo or weapon, so
+                    // every worn gun tops up from the first stack of its ammo.
+                    WeaponAmmo.ReloadAll(player);
+                    break;
+
                 case CharacterActionType.UsePerk:
                     // Perk Actions button (Gamecode.dll 0x1004277c): Parameter2 = the button's action hash.
                     player.Playfield?.GetService<ItemUseService>()?.TryBeginPerkAction(player, message.Parameter2);
