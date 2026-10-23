@@ -4116,6 +4116,19 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
+        /// The Flags (stat 0) bits every retail NPC spawns with, whatever its template holds: Fragmented Soul, Workman
+        /// Striker, Filth Flea, Infector, Redundant Scan and others in a retail capture all send CharacterFlags 0x10081201
+        /// = Visible | TellCollision | Stationary | WantCollision | CanBeAttacked, while their templates hold 0.
+        /// TellCollision and WantCollision make the client track the NPC's collisions; without them a client never
+        /// registers an NPC walking into a door, so the door stays shut on screen. CanBeAttacked is added only for an
+        /// attackable NPC (every captured one was a mob).
+        /// </summary>
+        const int RetailNpcCharacterFlags = (int)(AORebirth.Enums.ItemFlags.Visible
+            | AORebirth.Enums.ItemFlags.TellCollision
+            | AORebirth.Enums.ItemFlags.Stationary
+            | AORebirth.Enums.ItemFlags.WantCollision);
+
+        /// <summary>
         /// Builds a SimpleCharFullUpdate (SCFU) spawn packet from current character state.
         /// Structure follows ZoneEngine SimpleCharFullUpdate.ConstructMessage without capture/runtime special cases.
         /// </summary>
@@ -4134,6 +4147,12 @@ namespace ZoneEngine_New.Core.Entities
 
             string? name = Name;
             int characterFlags = Stats.Get(CharacterStat.Flags);
+            if (this is NpcCharacter npcCharacter)
+            {
+                characterFlags = (Entities.StatCollection.IsUnset(characterFlags) ? 0 : characterFlags) | RetailNpcCharacterFlags;
+                if (npcCharacter.Attackable)
+                    characterFlags |= (int)AORebirth.Enums.ItemFlags.CanBeAttacked;
+            }
             if (Stats.TryGetValue(CharacterStat.GmLevel, out int gmLevel) && gmLevel > 0)
             {
                 // The blue name marks a GM. The name itself stays as stored: a " [GM]" suffix broke %t in chat.

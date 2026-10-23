@@ -116,8 +116,17 @@ namespace ZoneEngine_New.Core.Ai
             if (_brain.HasUnfinishedPath())
             {
                 if (_brain.CanPathTo(target))
+                {
                     _brain.PathTo(_brain.ApproachPoint(target));
-                return _nodeState = NodeState.Running;
+                    return _nodeState = NodeState.Running;
+                }
+
+                // No route from here: the old path is a chance only while it still moves the NPC. One that stalled
+                // (stranded off the navmesh, seen live 3 m under a 127 floor with no surface beneath it) used to keep
+                // "a chance" for ever and stand there in combat; drop the path and give up below like any other.
+                if (!_brain.IsPathStalled())
+                    return _nodeState = NodeState.Running;
+                _brain.StopPathing();
             }
 
             if (!_brain.CanPathTo(target))

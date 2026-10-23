@@ -146,6 +146,10 @@ namespace ZoneEngine_New.Core.Entities
             return true;
         }
 
+        /// <summary>Sends the door's state to everyone who sees it (a change no client saw happen).</summary>
+        public void AnnounceStatus()
+            => Playfield?.GetRequiredService<PlayfieldLocality>().Announce(this, StatusMessage(Identity, IsOpen, IsLocked), includeSelf: true);
+
         /// <summary>The last character in contact with the door left it: every client closes it then.</summary>
         public bool CloseAfterTouch()
         {

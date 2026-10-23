@@ -1064,9 +1064,9 @@ namespace ZoneEngine_New.Core.Ai
 
         /// <summary>
         /// The farthest an NPC settles from its target (edge to edge), whatever its weapons' reach: even a rifle mob
-        /// closes to this. Its shortest weapon's reach when that is less.
+        /// closes to this. Its shortest weapon's reach when that is less. NPCs want to fight up close, within 5 m.
         /// </summary>
-        public const double MaxFightDistanceMeters = 10.0;
+        public const double MaxFightDistanceMeters = 5.0;
 
         // When the current target came into reach of a weapon this time (the hold/step cycle runs from there).
         Identity _engageTarget = Identity.None;
@@ -1461,6 +1461,9 @@ namespace ZoneEngine_New.Core.Ai
             float timed = (float)(velocity * NpcFollowTarget.PathLookaheadSeconds);
             return MathF.Max(timed, ReplanRemainingMeters() + (float)(velocity * NpcFollowTarget.PathReplanSeconds));
         }
+
+        /// <summary>The NPC has a path but has not made progress along it for the stuck time.</summary>
+        public bool IsPathStalled() => Npc.Motor.HasPath && IsStuck(DateTime.UtcNow);
 
         bool IsStuck(DateTime now)
         {

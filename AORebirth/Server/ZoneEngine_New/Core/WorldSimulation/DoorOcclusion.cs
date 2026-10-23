@@ -25,6 +25,14 @@ namespace ZoneEngine_New.Core.WorldSimulation
     /// standing in the doorway (10.71 s). So a door here opens on contact and closes when its contact ends; an
     /// arriving client gets each static door's state in a DoorStatusUpdate at zone-in.
     /// <para>
+    /// Any living character in the sphere holds the door open, one standing still included: retail clients show doors
+    /// open with an NPC standing in them, and the retail server sends that state (DoorStatusUpdate open=1 among the
+    /// spawns of a visibility refresh). A client sees a character move in or out and moves the door itself, so those
+    /// changes send nothing. A change no client can see - a character that appears inside (a spawn) or vanishes from
+    /// inside (a despawn or a death) - is sent to everyone as a DoorStatusUpdate, as retail sends a door's state
+    /// alongside the spawns of NPCs standing in it.
+    /// </para>
+    /// <para>
     /// A door is a vertical panel through its position, across its heading. Its template's collision sphere
     /// (DynelCollision.json, the sphere the client's contacts use) gives the panel's height (twice the sphere centre)
     /// and half width (the rest of the radius), and the touch reach (sphere radius plus the player's).
@@ -34,6 +42,12 @@ namespace ZoneEngine_New.Core.WorldSimulation
     {
         /// <summary>Seconds between contact checks: how far the server may trail a client's door.</summary>
         const double TouchIntervalSeconds = 0.1;
+
+        /// <summary>
+        /// How far outside the touch sphere a character is watched, so an approach is seen before contact. A runner
+        /// covers about 1 m per check.
+        /// </summary>
+        const float ApproachMargin = 3f;
 
         readonly List<Blocker> _blockers = new();
         readonly List<Character> _nearby = new();
@@ -142,16 +156,20 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 if (d.IsLocked && !d.IsOpen)
                     continue;
 
-                bool touched = IsTouched(locality, d);
+                bool touched = IsTouched(locality, d, out bool sendOpen, out bool sendClose);
                 if (touched && !d.IsOpen)
                 {
                     d.Open();
                     changed = true;
+                    if (sendOpen)
+                        SendStatus(playfield, d);
                 }
                 else if (!touched && d.Touched && d.IsOpen)
                 {
                     d.Close();
                     changed = true;
+                    if (sendClose)
+                        SendStatus(playfield, d);
                 }
 
                 d.Touched = touched;
@@ -162,10 +180,20 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 Changed?.Invoke();
         }
 
-        bool IsTouched(PlayfieldLocality locality, Blocker d)
+        /// <summary>
+        /// True while a living character is in the sphere. <paramref name="sendOpen"/>: a character came into contact
+        /// without clients seeing it move in - it was neither inside nor just outside last check (it spawned there).
+        /// <paramref name="sendClose"/>: one left without being seen to move out - it is neither inside nor just outside
+        /// now (it despawned or died there).
+        /// </summary>
+        bool IsTouched(PlayfieldLocality locality, Blocker d, out bool sendOpen, out bool sendClose)
         {
+            sendOpen = false;
             float reach = d.Radius + _touchRadius;
-            locality.CollectNear(new AoVector3(d.X, d.Y, d.Z), reach, _nearby);
+            float watch = reach + ApproachMargin;
+            locality.CollectNear(new AoVector3(d.X, d.Y, d.Z), watch, _nearby);
+            d.NextInContact.Clear();
+            d.NextApproaching.Clear();
             foreach (Character character in _nearby)
             {
                 if (character.IsDead)
@@ -173,11 +201,47 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 float dx = character.Position.xf - d.X;
                 float dy = character.Position.yf + _touchCenterY - (d.Y + d.CenterY);
                 float dz = character.Position.zf - d.Z;
-                if ((dx * dx) + (dy * dy) + (dz * dz) <= reach * reach)
-                    return true;
+                float distanceSquared = (dx * dx) + (dy * dy) + (dz * dz);
+                if (distanceSquared <= reach * reach)
+                {
+                    d.NextInContact.Add(character);
+                    if (!d.InContact.Contains(character) && !d.Approaching.Contains(character))
+                        sendOpen = true;
+                }
+                else if (distanceSquared <= watch * watch)
+                {
+                    d.NextApproaching.Add(character);
+                }
             }
 
-            return false;
+            sendClose = false;
+            foreach (Character previous in d.InContact)
+            {
+                if (!d.NextInContact.Contains(previous) && !d.NextApproaching.Contains(previous))
+                {
+                    sendClose = true;
+                    break;
+                }
+            }
+
+            d.SwapContacts();
+            return d.InContact.Count > 0;
+        }
+
+        /// <summary>Tells every client the door's state: a quest dungeon door to those who see it, a static door to the playfield.</summary>
+        static void SendStatus(PlayfieldType playfield, Blocker d)
+        {
+            if (d.Entity is Door door)
+            {
+                door.AnnounceStatus();
+                return;
+            }
+
+            if (d.StaticIdentity is not { } identity)
+                return;
+            var message = Door.StatusMessage(identity, d.IsOpen, d.IsLocked);
+            foreach (Player player in playfield.GetRequiredService<DynelRegistry>().PlayerEntities())
+                player.Session?.Send(message);
         }
 
         sealed class Blocker
@@ -224,12 +288,33 @@ namespace ZoneEngine_New.Core.WorldSimulation
             /// <summary>Set for a door from the playfield data; a quest dungeon door is its entity's.</summary>
             public Identity? StaticIdentity { get; init; }
 
+            public Door? Entity => _door;
+
             public bool IsOpen => _door?.IsOpen ?? _open;
 
             public bool IsLocked => _door?.IsLocked ?? _locked;
 
             /// <summary>A character was in contact at the last check.</summary>
             public bool Touched { get; set; }
+
+            /// <summary>Characters that moved into the sphere and are still in it.</summary>
+            public HashSet<Character> InContact { get; private set; } = new();
+
+            /// <summary>Characters just outside the sphere at the last check.</summary>
+            public HashSet<Character> Approaching { get; private set; } = new();
+
+            public HashSet<Character> NextInContact { get; private set; } = new();
+
+            public HashSet<Character> NextApproaching { get; private set; } = new();
+
+            /// <summary>The sets built this check become current; the old ones are reused next check.</summary>
+            public void SwapContacts()
+            {
+                (InContact, NextInContact) = (NextInContact, InContact);
+                (Approaching, NextApproaching) = (NextApproaching, Approaching);
+                NextInContact.Clear();
+                NextApproaching.Clear();
+            }
 
             public void Open()
             {
