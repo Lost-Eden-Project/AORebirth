@@ -949,6 +949,10 @@ namespace ZoneEngine_New.Core.Entities
                 if (!registry.TryGet(identity, out Dynel? dynel) || dynel is not Character killer)
                     continue;
 
+                // A raid earns no regular XP, only alien XP (AwardAlienXp); its share of this kill goes unpaid.
+                if (killer is Player raider && playfield.GetService<TeamService>()?.GetTeam(raider) is { IsRaid: true })
+                    continue;
+
                 tooLow.Clear();
                 List<Character> recipients = CollectNearbyTeam(playfield, registry, killer, tooLow);
                 for (int t = 0; t < tooLow.Count; t++)
@@ -2028,6 +2032,10 @@ namespace ZoneEngine_New.Core.Entities
             if (!ReferenceEquals(attacker, this) && !CombatRules.CanAttack(attacker, this))
                 return false;
 
+            damage -= AbsorbIntoNano(damage);
+            if (damage <= 0)
+                return false;
+
             int previousHealth = Math.Max(0, Stats.GetOrZero(CharacterStat.Health));
             int newHealth = Math.Max(0, previousHealth - damage);
             int hpRemoved = previousHealth - newHealth;
@@ -2057,6 +2065,26 @@ namespace ZoneEngine_New.Core.Entities
 
             OnDeath(attacker);
             return true;
+        }
+
+        /// <summary>
+        /// DamageToNano (659, set by buffs such as Nanobot Defense 260761 at 70 and Superior Nanobot Shelter 301610 at 25):
+        /// that percent of a hit comes out of current nano instead of health, as far as the nano lasts. Returns the
+        /// damage taken by nano.
+        /// </summary>
+        int AbsorbIntoNano(int damage)
+        {
+            int percent = Math.Clamp(StatCollection.Normalize(Stats.GetOrZero(CharacterStat.DamageToNano)), 0, 100);
+            if (percent == 0)
+                return 0;
+
+            int nano = Math.Max(0, Stats.GetOrZero(CharacterStat.CurrentNano));
+            int absorbed = Math.Min(nano, (int)((long)damage * percent / 100));
+            if (absorbed <= 0)
+                return 0;
+
+            Stats.Set(CharacterStat.CurrentNano, nano - absorbed, StatDetail.Base, dirty: true);
+            return absorbed;
         }
 
         /// <summary>

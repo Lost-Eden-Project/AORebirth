@@ -76,6 +76,36 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             }
 
             int cellId = center.Cell?.Id ?? (_grid.TryGetCellId(center.Position, out int resolved) ? resolved : CellGrid.NonLocalCellId);
+            CollectAround(cellId, reachMeters, results);
+        }
+
+        /// <summary>
+        /// Same as <see cref="CollectNearby{T}(Dynel, float, List{T})"/> around a point rather than a dynel (a door
+        /// the client creates from the playfield data, which the server holds no dynel for). Tick thread only.
+        /// </summary>
+        internal void CollectNear<T>(AORebirth.Core.Vector.Vector3 position, float reachMeters, List<T> results)
+            where T : Dynel
+        {
+            ArgumentNullException.ThrowIfNull(results);
+            results.Clear();
+
+            if (!_grid.IsOutdoor || _grid.IsDungeon)
+            {
+                foreach (Dynel dynel in _grid.OccupantsInAllCells())
+                {
+                    if (dynel is T typed)
+                        results.Add(typed);
+                }
+
+                return;
+            }
+
+            CollectAround(_grid.TryGetCellId(position, out int cellId) ? cellId : CellGrid.NonLocalCellId, reachMeters, results);
+        }
+
+        void CollectAround<T>(int cellId, float reachMeters, List<T> results)
+            where T : Dynel
+        {
             if (cellId == CellGrid.NonLocalCellId)
                 return;
 

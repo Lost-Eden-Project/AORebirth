@@ -48,6 +48,7 @@
         readonly Dictionary<int, double> _zoneGraceUntil = new();
         readonly Dictionary<int, LosCacheEntry> _losCache = new();
         readonly HashSet<int> _exitProxyDoors = new();
+        readonly DoorOcclusion _doors;
         readonly int _playfieldId;
         int _nextTriggerId = 1;
         bool _disposed;
@@ -66,6 +67,9 @@
             _destinations = destinations;
             _gameData = gameData;
             _logger = logger;
+            CollisionSphereData? player = gameData.PlayerCollisionSphere;
+            _doors = new DoorOcclusion(player?.Radius ?? 0.25f, player?.CenterY ?? 0.25f);
+            _doors.Changed += _losCache.Clear;
         }
 
         /// <summary>The terrain and static meshes as built for the vehicles; null with no geometry.</summary>
@@ -126,6 +130,7 @@
                 : gameData.GetExitProxyDoorInstances(playfieldId));
             world.BakeTeleportalTriggers(geometry.Collision?.Teleportals);
             world.BakeWaterExitTriggers(gameData.RootPath, playfieldId);
+            world.BakeDoorBlockers(geometry.Dynels, itemTemplates);
 
             int terrainChunks = surface?.Terrain != null ? geometry.Collision!.Terrain!.Chunks.Count : 0;
             logger.Info(
@@ -133,7 +138,8 @@
                 + $" surfaceCells={surface?.PopulatedCellCount ?? 0} surfaceTriangles={surface?.TriangleCount ?? 0}"
                 + $" wallTriggers={world.WallTriggerCount} portalTriggers={world.PortalTriggerCount}"
                 + $" vicinityTriggers={world.VicinityTriggerCount} exitTriggers={world.ExitTriggerCount}"
-                + $" teleportals={world.TeleportalTriggerCount} waterExits={world.WaterExitTriggerCount}");
+                + $" teleportals={world.TeleportalTriggerCount} waterExits={world.WaterExitTriggerCount}"
+                + $" doors={world._doors.Count}");
             if (surface != null && surface.OutsideTriangleCount > 0)
             {
                 logger.Warn(
@@ -320,9 +326,11 @@
         /// </summary>
         bool IsSegmentClear(Vec3 from, Vec3 to)
         {
-            if (Surface == null)
-                return true;
             if ((to - from).LengthSquared < 1e-8f)
+                return true;
+            if (_doors.Count > 0 && _doors.Blocks(from, to))
+                return false;
+            if (Surface == null)
                 return true;
 
             return !Surface.GetLineIntersection(from, to, out _, out _, false, null)
@@ -334,6 +342,7 @@
         public void TickSoftTriggers(PlayfieldType playfield, double deltaTime)
         {
             ArgumentNullException.ThrowIfNull(playfield);
+            _doors.Tick(playfield, deltaTime);
             double now = Environment.TickCount64 / 1000.0;
 
             foreach (Player player in playfield.GetRequiredService<DynelRegistry>().PlayerEntities())
@@ -1031,6 +1040,33 @@
         }
 
         /// <summary>Mesh (12) and Scale (360) a placed dynel's own stats set; 0 for each it does not set.</summary>
+        /// <summary>A stat the placed dynel's own blob sets over its template, if any.</summary>
+        static bool TryPlacedStat(PlayfieldDynel dynel, int statId, out int value)
+        {
+            value = 0;
+            if (dynel.Blob == null || dynel.Blob.Length <= 12)
+                return false;
+
+            try
+            {
+                AODB.Common.RDBObjects.DynelBlob blob = new AODB.Common.RDBObjects.ItemBase().ReadDynelBlob(dynel.Blob);
+                foreach (KeyValuePair<int, int> stat in blob.AppliedStats)
+                {
+                    if (stat.Key == statId)
+                    {
+                        value = stat.Value;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // An unreadable blob keeps the template's stats.
+            }
+
+            return false;
+        }
+
         static void PlacedLook(PlayfieldDynel dynel, out int mesh, out int scale)
         {
             mesh = 0;
@@ -1282,6 +1318,63 @@
                     ApplyClientSphere(pad, d, x, y, z);
                 _triggers.Add(pad);
             }
+        }
+
+        /// <summary>Doors as sight blockers: the playfield's static doors, plus quest dungeon doors as they spawn.</summary>
+        public DoorOcclusion Doors => _doors;
+
+        /// <summary>
+        /// Makes a quest dungeon door block line of sight while closed (see <see cref="DoorOcclusion"/>). A template
+        /// without a collision sphere does not block; false then.
+        /// </summary>
+        public bool RegisterDoorBlocker(Door door)
+        {
+            ArgumentNullException.ThrowIfNull(door);
+            if (!_gameData.TryGetDynelCollisionSphere(door.TemplateId, out float radius, out float centerY))
+                return false;
+            _doors.Add(door, radius, centerY);
+            return true;
+        }
+
+        /// <summary>A door opened or closed: cached sight lines through it are stale.</summary>
+        public void InvalidateLineOfSight() => _losCache.Clear();
+
+        /// <summary>
+        /// The doors placed in the playfield data, which every client creates itself: closed ones block sight until
+        /// touched (see <see cref="DoorOcclusion"/>). Open and locked come from the template's Flags, which a placed
+        /// door's own stats override.
+        /// </summary>
+        void BakeDoorBlockers(PlayfieldDynels? dynels, IItemTemplateCatalog? itemTemplates)
+        {
+            if (dynels?.Dynels == null)
+                return;
+
+            int skipped = 0;
+            foreach (PlayfieldDynel d in dynels.Dynels)
+            {
+                if (d.IdentityType != (int)IdentityType.Door)
+                    continue;
+
+                PlacedLook(d, out int mesh, out int scale);
+                if (!_gameData.TryGetDynelCollisionSphere(d.TemplateId, mesh, scale, out float radius, out float centerY))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                int flags = itemTemplates != null && itemTemplates.TryGet(d.TemplateId, out ItemTemplate? template)
+                    && template != null && template.Stats.TryGetValue(CharacterStat.Flags, out int baseFlags)
+                    ? baseFlags
+                    : 0;
+                if (TryPlacedStat(d, (int)CharacterStat.Flags, out int placedFlags))
+                    flags = placedFlags;
+
+                _doors.Add(d.IdentityInstance, new AoVector3(d.Position.X, d.Position.Y, d.Position.Z), d.Heading.Y, d.Heading.W,
+                    radius, centerY, flags);
+            }
+
+            if (skipped > 0)
+                _logger.Warn($"World bake playfield={_playfieldId}: {skipped} door(s) have no collision sphere and do not block sight");
         }
 
         /// <summary>

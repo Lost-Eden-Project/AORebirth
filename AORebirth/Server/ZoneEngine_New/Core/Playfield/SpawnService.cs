@@ -874,6 +874,8 @@ namespace ZoneEngine_New.Core.Playfield
             Metrics.TickStallWatch.Stage("arrive.self", characterId);
             session.State = SessionState.SpawnReady;
             // InitiateCompression + ChatServerInfo + PlayfieldAnarchyF + GameTime are sent from ZoneLoginHandler.
+            // Retail follows PlayfieldAnarchyF with a DoorStatusUpdate per door, before any SimpleCharFullUpdate.
+            _playfield.WorldAccess.Instance?.Doors.SendStates(session);
 
             _playfieldManager.Teams.AttachPlayer(player);
             // From another instance with a team: the client's team window stays; FullCharacter carries its stats.

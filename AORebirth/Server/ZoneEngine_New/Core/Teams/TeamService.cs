@@ -906,13 +906,14 @@ namespace ZoneEngine_New.Core.Teams
                 if (!AnnounceNow(viewer, id, team)) return;
                 _publishedRosters.TryGetValue(viewerId, out published);
                 if (id == viewerId) continue;
-                // Captured paired max values; unresolved vitals are omitted, never synthesized as 469.
+                // Captured paired max values, nano then health (retail: 2EAC 2EAC 4AC0 4AC0 for a member whose CurrentNano caps
+                // at 0x2EAC and whose InfoPacket health is 0x4AC0); unresolved vitals are omitted, never synthesized as 469.
                 MemberData? data = DataOf(id);
                 if (data is { HasVitals: true })
                 {
                     SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = CharacterIdentity(id),
-                        Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
-                        Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
+                        Unknown3 = data.MaxNano, Unknown4 = data.MaxNano,
+                        Unknown5 = data.MaxHealth, Unknown6 = data.MaxHealth });
                 }
                 SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
             }
@@ -980,16 +981,16 @@ namespace ZoneEngine_New.Core.Teams
             Identity target = CharacterIdentity(targetId);
             if (data.HasVitals)
                 SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target,
-                    Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
-                    Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
+                    Unknown3 = data.MaxNano, Unknown4 = data.MaxNano,
+                    Unknown5 = data.MaxHealth, Unknown6 = data.MaxHealth });
             SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
             // Capture 20260924-213512: TeamMemberLeft Parameter2=0 (reassign), not leave (-1).
             if (!RemovePublishedMemberNow(viewer, _publishedRosters[viewer.Identity.Instance], targetId, 0)) return;
             if (!AnnounceNow(viewer, targetId, team)) return;
             if (data.HasVitals)
                 SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target,
-                    Unknown3 = data.MaxHealth, Unknown4 = data.MaxHealth,
-                    Unknown5 = data.MaxNano, Unknown6 = data.MaxNano });
+                    Unknown3 = data.MaxNano, Unknown4 = data.MaxNano,
+                    Unknown5 = data.MaxHealth, Unknown6 = data.MaxHealth });
             SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
         }
 

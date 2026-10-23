@@ -108,7 +108,50 @@ namespace ZoneEngine_New.Core.Entities
                 return false;
 
             Flags ^= OpenFlag;
-            Playfield.GetRequiredService<PlayfieldLocality>().Announce(this, BuildSpawnMessage(), includeSelf: true);
+            Playfield.WorldAccess.Instance?.InvalidateLineOfSight();
+            var locality = Playfield.GetRequiredService<PlayfieldLocality>();
+            locality.Announce(this, BuildSpawnMessage(), includeSelf: true);
+            // A client that already has the door ignores a second full update; the status update moves it.
+            locality.Announce(this, StatusMessage(Identity, IsOpen, IsLocked), includeSelf: true);
+            return true;
+        }
+
+        /// <summary>
+        /// DoorStatusUpdate: sets a door the client already has open or closed, locked or unlocked (Gamecode.dll
+        /// DoorStatusUpdateIIR_t, read 0x100A010A, applied 0x1009FF34). The body is version 2, locked, open,
+        /// AccessKey (stat 195), a flag byte and an identity list; retail sends one per door at zone-in
+        /// (every captured door closed and unlocked: 00000002 00 00 00000000 00 03F1).
+        /// </summary>
+        public static DoorStatusUpdateMessage StatusMessage(Identity door, bool open, bool locked) => new()
+        {
+            Identity = door,
+            Unknown = 0,
+            Unknown1 = 2,
+            Unknown2 = (byte)(locked ? 1 : 0),
+            Unknown3 = (byte)(open ? 1 : 0),
+            Unknown4 = 0,
+            Unknown5 = 0,
+            Unknown6 = []
+        };
+
+        /// <summary>
+        /// A character walked into the closed, unlocked door: every client opens it on that contact (Gamecode.dll
+        /// Door_t contact handler, 0x1007FAA9), so it is open here too, and new viewers get it open in the spawn.
+        /// </summary>
+        public bool OpenByTouch()
+        {
+            if (IsOpen || IsLocked)
+                return false;
+            Flags |= OpenFlag;
+            return true;
+        }
+
+        /// <summary>The last character in contact with the door left it: every client closes it then.</summary>
+        public bool CloseAfterTouch()
+        {
+            if (!IsOpen)
+                return false;
+            Flags &= ~OpenFlag;
             return true;
         }
 
@@ -130,6 +173,7 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             Flags = (Flags & ~LockedFlag) | OpenFlag;
+            Playfield.WorldAccess.Instance?.InvalidateLineOfSight();
             Playfield.GetRequiredService<PlayfieldLocality>().Announce(this,
                 BreakAndEnterActions.Result(Identity, player.Identity, BreakAndEnterActions.Unlocked), includeSelf: true);
             return BreakAndEnterResult.Unlocked;

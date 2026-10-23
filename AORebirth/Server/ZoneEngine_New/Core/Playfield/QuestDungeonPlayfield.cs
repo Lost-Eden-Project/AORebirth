@@ -460,6 +460,8 @@ public sealed class QuestDungeonPlayfield : Playfield
             };
             registry.Register(door);
             locality.RegisterDynel(door);
+            if (_simulation != null && !_simulation.RegisterDoorBlocker(door))
+                Logger.Warn("Dungeon door template " + templateId + " has no collision sphere; it does not block sight");
 
             if (placement.IsExit)
                 RegisterExit(door);
