@@ -80,7 +80,10 @@ namespace ZoneEngine_New.Core.Ai
             Character owner = pet.Owner;
             if (pet.HasExpired(DateTime.UtcNow))
                 return true;
-            return owner.IsDead || owner.Playfield == null || !ReferenceEquals(owner.Playfield, brain.Npc.Playfield);
+            // An NPC's pet goes with its dead owner; a player's waits for the player to come back.
+            if (owner.IsDead && !pet.IsPlayerPet)
+                return true;
+            return owner.Playfield == null || !ReferenceEquals(owner.Playfield, brain.Npc.Playfield);
         }
 
         /// <summary>

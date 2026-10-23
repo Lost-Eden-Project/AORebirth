@@ -44,7 +44,9 @@ namespace ZoneEngine_New.Core.DebugMcp
         int BreedId,
         string? Breed,
         int ActiveNanoCount,
-        bool PersistenceQuarantined);
+        bool PersistenceQuarantined,
+        double MaxVelocity,
+        int RunSpeed);
 
     public static class ZoneDebugSnapshots
     {
@@ -86,7 +88,9 @@ namespace ZoneEngine_New.Core.DebugMcp
                 breedId,
                 EnumName<Breed>(breedId),
                 player.Buffs.Count,
-                player.IsPersistenceQuarantined);
+                player.IsPersistenceQuarantined,
+                player.Motor.Vehicle.MaxVel,
+                player.Stats.GetOrZero(CharacterStat.RunSpeed));
         }
 
         public static DynelView ProjectDynel(Dynel dynel)

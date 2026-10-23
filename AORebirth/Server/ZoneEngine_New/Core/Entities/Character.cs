@@ -387,8 +387,8 @@ namespace ZoneEngine_New.Core.Entities
             _deathNotified = true;
             InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
 
-            // Dying sends this character's pets away.
-            if (OwnedPets.Count > 0)
+            // An NPC's pets go with it; a player's stay (they follow the player again once revived).
+            if (OwnedPets.Count > 0 && this is not Player)
                 Playfield?.GetService<Pets.PetService>()?.DismissAll(this, "owner died");
             SetFightingTarget(Identity.None);
             NanoRuntime.ClearBuffsOnDeath(this);

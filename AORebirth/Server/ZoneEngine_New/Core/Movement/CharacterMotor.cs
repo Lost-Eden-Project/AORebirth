@@ -273,7 +273,7 @@ namespace ZoneEngine_New.Core.Movement
         /// <summary>The full (buffed) values of the stats the movement rules read.</summary>
         MovementStats BuildMovementStats() => new()
         {
-            RunSpeed = _character.Stats.GetOrZero(CharacterStat.RunSpeed),
+            RunSpeed = MovementRunSpeed(),
             Strength = _character.Stats.GetOrZero(CharacterStat.Strength),
             Agility = _character.Stats.GetOrZero(CharacterStat.Agility),
             GmLevel = _character.Stats.GetOrZero(CharacterStat.GmLevel),
@@ -283,6 +283,18 @@ namespace ZoneEngine_New.Core.Movement
             MechData = _character.Stats.GetOrZero(CharacterStat.MechData),
             Scale = _character.Stats.GetOrZero(CharacterStat.Scale)
         };
+
+        /// <summary>
+        /// Run Speed as the movement rules take it: a player's full Run Speed without its ability trickle. With the trickle
+        /// in, Delmus (Run Speed 1623, trickle 294) moved at 10.90 against the client's 9.83.
+        /// </summary>
+        int MovementRunSpeed()
+        {
+            int runSpeed = _character.Stats.GetOrZero(CharacterStat.RunSpeed);
+            if (_character is Player player)
+                runSpeed -= player.SkillCatalog.Trickle(_character.Stats, CharacterStat.RunSpeed);
+            return Math.Max(0, runSpeed);
+        }
 
         /// <summary>
         /// Features (stat 224) is the body's MonsterData record: an NPC has it copied on at spawn, a player never stores
@@ -309,6 +321,8 @@ namespace ZoneEngine_New.Core.Movement
                 case CharacterStat.RunSpeed:
                 case CharacterStat.Strength:
                 case CharacterStat.Agility:
+                case CharacterStat.Stamina:
+                case CharacterStat.Sense:
                 case CharacterStat.GmLevel:
                 case CharacterStat.Features:
                 case CharacterStat.MonsterData:
