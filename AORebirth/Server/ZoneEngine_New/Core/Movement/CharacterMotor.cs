@@ -259,6 +259,9 @@ namespace ZoneEngine_New.Core.Movement
             || HasPath
             || _sim.Speed > MovementConfig.SpeedStopEpsilon;
 
+        /// <summary>In the air (falling or jumping) and not flying.</summary>
+        public bool IsFalling => _sim.Airborne && _move.State != (int)MovementState.Fly;
+
         public event Action? PathCompleted;
 
         /// <summary>Raised when a jump actually starts (not a failed sit/unarmed attempt).</summary>

@@ -16,6 +16,7 @@ namespace ZoneEngine_New.Core.Nanos
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
+    using ZoneEngine_New.Core.Movement;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Playfield.Locality;
@@ -148,6 +149,8 @@ namespace ZoneEngine_New.Core.Nanos
             int nanoCost = ResolveNanoCost(caster, spell);
             NanoCastAttempt attempt = BuildAttempt(caster, spell, recipient, nanoCost, nowUtc);
             NanoCastRefusal refusal = NanoCastRules.Evaluate(attempt);
+            if (refusal == NanoCastRefusal.None && caster is Player)
+                refusal = PlayerCastGate(caster, spell, recipient);
             // Start-only: do not begin a cast the target cannot hold. Land-time NCU is checked
             // again in TryApplyBuff; a mid-cast capacity change still finishes the cast.
             if (refusal == NanoCastRefusal.None && !TargetCanHoldBuff(spell, recipient))
@@ -160,6 +163,9 @@ namespace ZoneEngine_New.Core.Nanos
 
             if (refusal == NanoCastRefusal.None && spell.IsHostile && !IsHostileNanoTarget(caster, recipient))
                 refusal = NanoCastRefusal.InvalidTarget;
+
+            if (refusal == NanoCastRefusal.None && !spell.IsHostile)
+                refusal = FriendlyNanoTargetRefusal(caster, recipient);
 
             if (refusal == NanoCastRefusal.None && (IsNoCombat(caster) || IsNoCombat(recipient)))
                 refusal = NanoCastRefusal.InvalidTarget;
@@ -237,7 +243,9 @@ namespace ZoneEngine_New.Core.Nanos
                 return false;
             if (!TargetCanHoldBuff(spell, recipient))
                 return false;
-            return !spell.IsHostile || IsHostileNanoTarget(caster, recipient);
+            return spell.IsHostile
+                ? IsHostileNanoTarget(caster, recipient)
+                : FriendlyNanoTargetRefusal(caster, recipient) == NanoCastRefusal.None;
         }
 
         /// <summary>
@@ -567,6 +575,16 @@ namespace ZoneEngine_New.Core.Nanos
                 return;
             }
 
+            NanoCastRefusal friendlyRefusal = spell.IsHostile
+                ? NanoCastRefusal.None
+                : FriendlyNanoTargetRefusal(caster, recipient);
+            if (friendlyRefusal != NanoCastRefusal.None)
+            {
+                AnnounceCastInterrupted(caster, spell.Id);
+                Refuse(caster, friendlyRefusal);
+                return;
+            }
+
             // Duplicate instant-cast packets can both reach Complete before the land window closes.
             if (!caster.TryClaimNanoLand(spell.Id, cast.Target, nowUtc))
             {
@@ -816,6 +834,111 @@ namespace ZoneEngine_New.Core.Nanos
         static bool IsHostileNanoTarget(Character caster, Character? target)
             => target != null && (ReferenceEquals(caster, target) || CombatRules.CanAttack(caster, target));
 
+        /// <summary>Side (stat 33) of monsters.</summary>
+        const int MonsterSide = 3;
+
+        /// <summary>The client's nano range ceiling in metres (Gamecode.dll 1008636b).</summary>
+        const int MaxNanoRange = 40;
+
+        /// <summary>
+        /// The client's own gates on a player starting a nano (Gamecode.dll 1004f9c4), in its order, so a modified client
+        /// cannot skip them: not in a vehicle, standing still, not swimming, crawling or falling, standing up, a target not
+        /// in a vehicle, a CannotRefresh nano only when its strain is not already running on the caster (1004f96d), the
+        /// target in range (1008636b) and in line of sight (10058c2f). A cast on oneself skips range and line of sight.
+        /// </summary>
+        static NanoCastRefusal PlayerCastGate(Character caster, NanoSpell spell, Character? recipient)
+        {
+            if (caster.Stats.GetOrZero(CharacterStat.MechData) != 0)
+                return NanoCastRefusal.CasterInVehicle;
+            if (caster.Motor.IsMoving)
+                return NanoCastRefusal.MustStandStill;
+
+            switch ((MovementState)caster.Stats.GetOrZero(CharacterStat.CurrentMovementMode))
+            {
+                case MovementState.Swim:
+                    return NanoCastRefusal.Swimming;
+                case MovementState.Crawl:
+                    return NanoCastRefusal.Crawling;
+            }
+
+            if (caster.Motor.IsFalling)
+                return NanoCastRefusal.Falling;
+
+            switch ((MovementState)caster.Stats.GetOrZero(CharacterStat.CurrentMovementMode))
+            {
+                case MovementState.Sit:
+                case MovementState.RootedCanSit:
+                case MovementState.Sleep:
+                case MovementState.Lounge:
+                    return NanoCastRefusal.MustStandUp;
+            }
+
+            if (recipient == null || ReferenceEquals(recipient, caster))
+                return recipient == null ? NanoCastRefusal.None : CantReplaceRefusal(caster, spell);
+            if (recipient.Stats.GetOrZero(CharacterStat.MechData) != 0)
+                return NanoCastRefusal.TargetInVehicle;
+
+            NanoCastRefusal replace = CantReplaceRefusal(caster, spell);
+            if (replace != NanoCastRefusal.None)
+                return replace;
+
+            if (Math.Floor(caster.GetEdgeDistanceTo(recipient)) > NanoRange(caster, spell))
+                return NanoCastRefusal.OutOfRange;
+            if (!caster.HasLineOfSightTo(recipient))
+                return NanoCastRefusal.NoLineOfSight;
+            return NanoCastRefusal.None;
+        }
+
+        /// <summary>A CannotRefresh nano cannot go up while its strain already runs on the caster (client 1004f96d).</summary>
+        static NanoCastRefusal CantReplaceRefusal(Character caster, NanoSpell spell)
+        {
+            if (((NanoFlags)spell.Flags & NanoFlags.CannotRefresh) == 0 || spell.NanoStrain <= 0)
+                return NanoCastRefusal.None;
+            foreach (Buff running in caster.Buffs)
+            {
+                if (running.NanoStrain == spell.NanoStrain)
+                    return NanoCastRefusal.CantReplaceOther;
+            }
+
+            return NanoCastRefusal.None;
+        }
+
+        /// <summary>
+        /// Client 1008636b: the nano's AttackRange (stat 287) raised by the caster's NanoRange percent (stat 381),
+        /// truncated, at most <see cref="MaxNanoRange"/>.
+        /// </summary>
+        static int NanoRange(Character caster, NanoSpell spell)
+        {
+            int baseRange = spell.Stats.TryGetValue(CharacterStat.AttackRange, out int value)
+                ? StatCollection.Normalize(value)
+                : 0;
+            double range = baseRange + baseRange * caster.Stats.GetOrZero(CharacterStat.NanoRange) / 100.0;
+            return Math.Min((int)range, MaxNanoRange);
+        }
+
+        /// <summary>
+        /// The client's friendly-nano target checks, in its order. Self and the caster's own pets (N3Msg_IsMyPetID's
+        /// list) always pass; null (target gone) is left to the other gates.
+        /// <list type="number">
+        ///   <item>Gamecode.dll 1004f9c4: a player may not run a friendly nano on any other NPC
+        ///     ("Feedback_MolecularStructurePreventsUse"). An NPC caster is exempt.</item>
+        ///   <item>1004eb0f: nor on a monster-side target unless the caster is monster-side too
+        ///     ("Feedback_YouAreNotAllowedToExecuteFriendlyOnEnemy").</item>
+        /// </list>
+        /// </summary>
+        static NanoCastRefusal FriendlyNanoTargetRefusal(Character caster, Character? target)
+        {
+            if (target == null || ReferenceEquals(caster, target)
+                || (target is NpcCharacter pet && ReferenceEquals(pet.PetOwner, caster)))
+                return NanoCastRefusal.None;
+            if (target is NpcCharacter && caster is Player)
+                return NanoCastRefusal.FriendlyOnNpc;
+            if (target.Stats.GetOrZero(CharacterStat.Side) == MonsterSide
+                && caster.Stats.GetOrZero(CharacterStat.Side) != MonsterSide)
+                return NanoCastRefusal.FriendlyOnEnemy;
+            return NanoCastRefusal.None;
+        }
+
         /// <summary>Self, or a character in the same playfield. Null means the target is gone.</summary>
         static Character? ResolveTarget(Character caster, Identity target)
         {
@@ -859,6 +982,42 @@ namespace ZoneEngine_New.Core.Nanos
                     return;
                 case NanoCastRefusal.TargetDead:
                     ClientFeedback.Send(caster, "Feedback_TargetIsAlreadyDead");
+                    return;
+                case NanoCastRefusal.CasterInVehicle:
+                    ClientFeedback.Send(caster, "Feedback_NotInVehicle");
+                    return;
+                case NanoCastRefusal.MustStandStill:
+                    ClientFeedback.Send(caster, "Feedback_UnableToExecuteProgramsMustStandStill");
+                    return;
+                case NanoCastRefusal.Swimming:
+                    ClientFeedback.Send(caster, "Feedback_YouCantExecuteNanoprogramsWhileSwimming");
+                    return;
+                case NanoCastRefusal.Crawling:
+                    ClientFeedback.Send(caster, "Feedback_YouCantExecuteNanoprogramsWhileCrawling");
+                    return;
+                case NanoCastRefusal.Falling:
+                    ClientFeedback.Send(caster, "Feedback_YouCantExecuteNanoprogramsWhileFalling");
+                    return;
+                case NanoCastRefusal.MustStandUp:
+                    ClientFeedback.Send(caster, "Feedback_YouMustBeStandingUpToExecuteNanoprogram");
+                    return;
+                case NanoCastRefusal.TargetInVehicle:
+                    ClientFeedback.Send(caster, "Feedback_YouCantUseOnVehicles");
+                    return;
+                case NanoCastRefusal.CantReplaceOther:
+                    ClientFeedback.Send(caster, "Feedback_NCUErrorNanoprogramCantReplaceOther");
+                    return;
+                case NanoCastRefusal.OutOfRange:
+                    ClientFeedback.Send(caster, "Feedback_TargetOutOfRangeForNanoprogram");
+                    return;
+                case NanoCastRefusal.NoLineOfSight:
+                    ClientFeedback.Send(caster, "Feedback_TargetNotInLineOfSight");
+                    return;
+                case NanoCastRefusal.FriendlyOnNpc:
+                    ClientFeedback.Send(caster, "Feedback_MolecularStructurePreventsUse");
+                    return;
+                case NanoCastRefusal.FriendlyOnEnemy:
+                    ClientFeedback.Send(caster, "Feedback_YouAreNotAllowedToExecuteFriendlyOnEnemy");
                     return;
                 case NanoCastRefusal.BetterNanoRunning:
                     // "NCU error: Better nano program already running." then "Unable to execute nano program. You can't

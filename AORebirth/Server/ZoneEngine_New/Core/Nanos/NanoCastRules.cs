@@ -22,6 +22,40 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>The caster is stunned: no casting, at the start or when a running bar finishes.</summary>
         CasterStunned,
+
+        /// <summary>A player's friendly nano at an NPC that is not the player's own pet (client 1004f9c4).</summary>
+        FriendlyOnNpc,
+
+        /// <summary>A friendly nano at a monster-side target that is not the caster's pet (client 1004eb0f).</summary>
+        FriendlyOnEnemy,
+
+        // The player cast gates below follow the client's cast start (Gamecode.dll 1004f9c4), in its order.
+
+        /// <summary>The caster is in a vehicle (MechData set).</summary>
+        CasterInVehicle,
+
+        /// <summary>The caster is moving.</summary>
+        MustStandStill,
+
+        Swimming,
+
+        Crawling,
+
+        Falling,
+
+        /// <summary>The caster is sitting, sleeping or lounging.</summary>
+        MustStandUp,
+
+        /// <summary>The target is in a vehicle (MechData set).</summary>
+        TargetInVehicle,
+
+        /// <summary>A CannotRefresh nano while the caster already runs its strain.</summary>
+        CantReplaceOther,
+
+        /// <summary>The target is beyond the nano's range (attack range scaled by the caster's NanoRange, at most 40 m).</summary>
+        OutOfRange,
+
+        NoLineOfSight,
     }
 
     /// <summary>
