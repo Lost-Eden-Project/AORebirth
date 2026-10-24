@@ -54,6 +54,9 @@ namespace ZoneEngine_New.Core.Playfield
         private readonly IShopDao _shopDao;
         private ServiceProvider _serviceProvider;
         private readonly DynelRegistry _dynelRegistry;
+
+        /// <summary>Per-tick player snapshot (navmesh prefetch, checkpoint); avoids a list copy per pass.</summary>
+        readonly System.Collections.Generic.List<Player> _tickPlayers = new();
         private readonly PlayfieldInboundQueue _inbound = new();
         private PlayfieldHeartbeat? _heartBeat;
 
@@ -429,7 +432,7 @@ namespace ZoneEngine_New.Core.Playfield
                     return false;
 
                 if (_admissions != 0 || !_incomingTransfers.IsEmpty || !_outgoingTransfers.IsEmpty
-                    || _dynelRegistry.PlayerEntities().Any())
+                    || _dynelRegistry.HasPlayers())
                 {
                     _emptySinceUtc = null;
                     return false;
@@ -786,7 +789,8 @@ namespace ZoneEngine_New.Core.Playfield
                 if (Pathfinder is { } finder)
                 {
                     ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("navmesh.prefetch");
-                    foreach (Player player in _dynelRegistry.PlayerEntities())
+                    _dynelRegistry.CopyPlayers(_tickPlayers);
+                    foreach (Player player in _tickPlayers)
                     {
                         if (player.Session == null)
                             continue;
@@ -802,7 +806,8 @@ namespace ZoneEngine_New.Core.Playfield
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("knubot");
                 _playfieldManager.Knubot?.Tick(this);
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("checkpoint");
-                foreach (Player player in new System.Collections.Generic.List<Player>(_dynelRegistry.PlayerEntities()))
+                _dynelRegistry.CopyPlayers(_tickPlayers);
+                foreach (Player player in _tickPlayers)
                 {
                     if (!ReferenceEquals(player.Playfield, this))
                         continue;

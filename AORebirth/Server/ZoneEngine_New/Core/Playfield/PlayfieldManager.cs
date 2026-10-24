@@ -742,7 +742,7 @@ namespace ZoneEngine_New.Core.Playfield
                 {
                     if (playfield is not QuestDungeonPlayfield dungeon) continue;
                     int id = dungeon.Identity.Instance;
-                    if (withPlayers.Contains(dungeon) || dungeon.GetRequiredService<DynelRegistry>().PlayerEntities().Any())
+                    if (withPlayers.Contains(dungeon) || dungeon.GetRequiredService<DynelRegistry>().HasPlayers())
                     {
                         _dungeonEmptySince.Remove(id);
                         continue;
@@ -790,7 +790,7 @@ namespace ZoneEngine_New.Core.Playfield
 
         // Caller holds _sync.
         bool IsOccupied(Playfield playfield)
-            => playfield.GetRequiredService<DynelRegistry>().PlayerEntities().Any()
+            => playfield.GetRequiredService<DynelRegistry>().HasPlayers()
                 || _playersByCharacterId.Values.Any(player => ReferenceEquals(player.Playfield, playfield));
 
         void DisposeReleased(List<QuestDungeonPlayfield> released)

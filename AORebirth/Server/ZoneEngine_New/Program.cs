@@ -128,6 +128,7 @@ namespace ZoneEngine_New
                     Shutdown();
                     throw;
                 }
+                CompactStartupHeap(logger);
                 RuntimeStartup.NotifyService("READY=1\nSTATUS=ZoneEngine_New ready");
                 Console.WriteLine("ZONEENGINE_NEW_READY");
                 logger.Info("ZoneEngine_New root container started.");
@@ -570,6 +571,22 @@ namespace ZoneEngine_New
 
             Console.WriteLine(message);
             LogUtil.Debug(DebugInfoDetail.Engine, message);
+        }
+
+        /// <summary>
+        /// One compacting collection before the engine takes players. Loading GameData leaves the large-object heap
+        /// mostly holes (measured 653 MB free of 777 MB), and the GC never compacts the LOH on its own; that memory
+        /// stayed committed for the process lifetime on the memory-tight production host.
+        /// </summary>
+        private static void CompactStartupHeap(IZoneLogger logger)
+        {
+            long before = GC.GetGCMemoryInfo().TotalCommittedBytes;
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            long after = GC.GetGCMemoryInfo().TotalCommittedBytes;
+            logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "Startup heap compaction: committed {0:F0} MB -> {1:F0} MB (server GC {2})",
+                before / 1048576.0, after / 1048576.0, System.Runtime.GCSettings.IsServerGC));
         }
 
         private static void StartShutdownFileWatcher(string[] args)

@@ -319,6 +319,24 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             return Math.Max(Math.Abs(ax - bx), Math.Abs(az - bz));
         }
 
+        /// <summary>Ids of cells with occupants into the caller's buffer (cleared first); the per-tick form.</summary>
+        internal void CollectPopulatedCells(List<int> results)
+        {
+            results.Clear();
+            foreach (KeyValuePair<int, Cell> pair in _cells)
+            {
+                if (pair.Value.OccupantCount > 0)
+                    results.Add(pair.Key);
+            }
+        }
+
+        /// <summary>The cell's occupants appended to the caller's buffer; nothing for an unknown cell.</summary>
+        internal void CopyOccupants(int cellId, List<Dynel> results)
+        {
+            if (_cells.TryGetValue(cellId, out Cell? cell))
+                results.AddRange(cell.Occupants);
+        }
+
         internal IEnumerable<int> EnumeratePopulatedCells()
         {
             foreach (KeyValuePair<int, Cell> pair in _cells)

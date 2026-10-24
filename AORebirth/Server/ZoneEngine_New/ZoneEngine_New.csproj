@@ -13,6 +13,15 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <AORebirthRepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../..'))</AORebirthRepositoryRoot>
+    <!--
+      Server GC: the engine runs one tick thread per playfield over a multi-GB heap, and workstation GC marked that
+      heap single-threaded while every tick thread waited (50-90 ms gen1 pauses whenever a playfield was built).
+      Dynamic adaptation (DATAS) keeps the server-GC heap count and size proportional to load, for the memory-tight
+      production host. The other Linux engine projects already use server GC.
+    -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <GarbageCollectionAdaptationMode>1</GarbageCollectionAdaptationMode>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

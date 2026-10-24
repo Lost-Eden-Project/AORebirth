@@ -119,9 +119,39 @@ namespace AORebirth.World.Collision
             triangles = 0;
             populated = 0;
             outside = 0;
-            var perCell = new List<Vec3>?[cells.CellCount];
             float worldX = cells.CellsX * cellSize;
             float worldZ = cells.CellsZ * cellSize;
+
+            // Two passes: count each cell's triangles, then fill exact-size vertex arrays. Growing a list per cell
+            // and copying it out allocated several times the final data on every playfield build, and those bursts
+            // (hundreds of MB) were what stalled the tick threads with GC pauses.
+            var counts = new int[cells.CellCount];
+            for (int m = 0; m < meshes.Count; m++)
+            {
+                Vector3[] vertices = meshes[m].Vertices;
+                CollisionTriangle[] tris = meshes[m].Triangles;
+                for (int t = 0; t < tris.Length; t++)
+                {
+                    if (!TryCellRange(cells, vertices, tris[t], cellSize, worldX, worldZ, out int x0, out int x1, out int z0, out int z1, out bool isOutside))
+                    {
+                        if (isOutside)
+                            outside++;
+                        continue;
+                    }
+
+                    for (int cz = z0; cz <= z1; cz++)
+                        for (int cx = x0; cx <= x1; cx++)
+                            counts[(cz * cells.CellsX) + cx]++;
+                }
+            }
+
+            var perCell = new Vec3[]?[cells.CellCount];
+            var cursor = new int[cells.CellCount];
+            for (int cell = 0; cell < counts.Length; cell++)
+            {
+                if (counts[cell] > 0)
+                    perCell[cell] = new Vec3[counts[cell] * 3];
+            }
 
             for (int m = 0; m < meshes.Count; m++)
             {
@@ -130,36 +160,23 @@ namespace AORebirth.World.Collision
                 for (int t = 0; t < tris.Length; t++)
                 {
                     CollisionTriangle tri = tris[t];
-                    if ((uint)tri.A >= (uint)vertices.Length
-                        || (uint)tri.B >= (uint)vertices.Length
-                        || (uint)tri.C >= (uint)vertices.Length)
+                    if (!TryCellRange(cells, vertices, tri, cellSize, worldX, worldZ, out int x0, out int x1, out int z0, out int z1, out _))
                         continue;
 
                     Vector3 a = vertices[tri.A];
                     Vector3 b = vertices[tri.B];
                     Vector3 c = vertices[tri.C];
-                    float minX = MathF.Min(a.X, MathF.Min(b.X, c.X));
-                    float maxX = MathF.Max(a.X, MathF.Max(b.X, c.X));
-                    float minZ = MathF.Min(a.Z, MathF.Min(b.Z, c.Z));
-                    float maxZ = MathF.Max(a.Z, MathF.Max(b.Z, c.Z));
-                    if (maxX < 0f || maxZ < 0f || minX > worldX || minZ > worldZ)
-                    {
-                        outside++;
-                        continue;
-                    }
-
-                    int x0 = Math.Clamp((int)MathF.Floor(minX / cellSize), 0, cells.CellsX - 1);
-                    int x1 = Math.Clamp((int)MathF.Floor(maxX / cellSize), 0, cells.CellsX - 1);
-                    int z0 = Math.Clamp((int)MathF.Floor(minZ / cellSize), 0, cells.CellsZ - 1);
-                    int z1 = Math.Clamp((int)MathF.Floor(maxZ / cellSize), 0, cells.CellsZ - 1);
                     for (int cz = z0; cz <= z1; cz++)
                     {
                         for (int cx = x0; cx <= x1; cx++)
                         {
-                            List<Vec3> list = perCell[(cz * cells.CellsX) + cx] ??= new List<Vec3>();
-                            list.Add(new Vec3(a.X, a.Y, a.Z));
-                            list.Add(new Vec3(b.X, b.Y, b.Z));
-                            list.Add(new Vec3(c.X, c.Y, c.Z));
+                            int cell = (cz * cells.CellsX) + cx;
+                            Vec3[] verts = perCell[cell]!;
+                            int at = cursor[cell];
+                            verts[at] = new Vec3(a.X, a.Y, a.Z);
+                            verts[at + 1] = new Vec3(b.X, b.Y, b.Z);
+                            verts[at + 2] = new Vec3(c.X, c.Y, c.Z);
+                            cursor[cell] = at + 3;
                             triangles++;
                         }
                     }
@@ -168,11 +185,10 @@ namespace AORebirth.World.Collision
 
             for (int cell = 0; cell < perCell.Length; cell++)
             {
-                List<Vec3>? list = perCell[cell];
-                if (list == null)
+                Vec3[]? verts = perCell[cell];
+                if (verts == null)
                     continue;
 
-                Vec3[] verts = list.ToArray();
                 var indices = new int[verts.Length];
                 for (int i = 0; i < indices.Length; i++)
                     indices[i] = i;
@@ -181,6 +197,50 @@ namespace AORebirth.World.Collision
                 cells.SetSurfaceForCell(cell, surface);
                 populated++;
             }
+        }
+
+        /// <summary>
+        /// The cell range a triangle's XZ bounds touch. False for a triangle with an index outside its mesh (ignored)
+        /// or one entirely outside the grid (<paramref name="isOutside"/>).
+        /// </summary>
+        static bool TryCellRange(
+            CellSurface cells,
+            Vector3[] vertices,
+            CollisionTriangle tri,
+            float cellSize,
+            float worldX,
+            float worldZ,
+            out int x0,
+            out int x1,
+            out int z0,
+            out int z1,
+            out bool isOutside)
+        {
+            x0 = x1 = z0 = z1 = 0;
+            isOutside = false;
+            if ((uint)tri.A >= (uint)vertices.Length
+                || (uint)tri.B >= (uint)vertices.Length
+                || (uint)tri.C >= (uint)vertices.Length)
+                return false;
+
+            Vector3 a = vertices[tri.A];
+            Vector3 b = vertices[tri.B];
+            Vector3 c = vertices[tri.C];
+            float minX = MathF.Min(a.X, MathF.Min(b.X, c.X));
+            float maxX = MathF.Max(a.X, MathF.Max(b.X, c.X));
+            float minZ = MathF.Min(a.Z, MathF.Min(b.Z, c.Z));
+            float maxZ = MathF.Max(a.Z, MathF.Max(b.Z, c.Z));
+            if (maxX < 0f || maxZ < 0f || minX > worldX || minZ > worldZ)
+            {
+                isOutside = true;
+                return false;
+            }
+
+            x0 = Math.Clamp((int)MathF.Floor(minX / cellSize), 0, cells.CellsX - 1);
+            x1 = Math.Clamp((int)MathF.Floor(maxX / cellSize), 0, cells.CellsX - 1);
+            z0 = Math.Clamp((int)MathF.Floor(minZ / cellSize), 0, cells.CellsZ - 1);
+            z1 = Math.Clamp((int)MathF.Floor(maxZ / cellSize), 0, cells.CellsZ - 1);
+            return true;
         }
     }
 

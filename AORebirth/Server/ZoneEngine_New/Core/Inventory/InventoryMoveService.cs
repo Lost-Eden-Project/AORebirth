@@ -61,14 +61,15 @@ namespace ZoneEngine_New.Core.Inventory
             if (deltaTime <= 0)
                 return;
 
-            List<PendingEquip> due = [];
-            List<PendingEquip> stale = [];
+            // Lists only when something is pending: this runs every tick on every playfield.
+            List<PendingEquip>? due = null;
+            List<PendingEquip>? stale = null;
             lock (_gate)
             {
                 if (_pending.Count == 0)
                     return;
 
-                List<int> remove = [];
+                List<int>? remove = null;
                 foreach (KeyValuePair<int, PendingEquip> pair in _pending)
                 {
                     PendingEquip pending = pair.Value;
@@ -77,8 +78,8 @@ namespace ZoneEngine_New.Core.Inventory
 
                     if (!ReferenceEquals(pending.Player.Playfield, playfield))
                     {
-                        stale.Add(pending);
-                        remove.Add(pair.Key);
+                        (stale ??= []).Add(pending);
+                        (remove ??= []).Add(pair.Key);
                         continue;
                     }
 
@@ -86,19 +87,22 @@ namespace ZoneEngine_New.Core.Inventory
                     if (pending.RemainingSeconds > 0)
                         continue;
 
-                    due.Add(pending);
-                    remove.Add(pair.Key);
+                    (due ??= []).Add(pending);
+                    (remove ??= []).Add(pair.Key);
                 }
 
-                foreach (int id in remove)
-                    _pending.Remove(id);
+                if (remove != null)
+                    foreach (int id in remove)
+                        _pending.Remove(id);
             }
 
-            foreach (PendingEquip pending in stale)
-                SetMoveLock(pending, false);
+            if (stale != null)
+                foreach (PendingEquip pending in stale)
+                    SetMoveLock(pending, false);
 
-            foreach (PendingEquip pending in due)
-                CompletePending(pending);
+            if (due != null)
+                foreach (PendingEquip pending in due)
+                    CompletePending(pending);
         }
 
         public void Handle(Player player, ClientMoveItemToInventoryMessage message)

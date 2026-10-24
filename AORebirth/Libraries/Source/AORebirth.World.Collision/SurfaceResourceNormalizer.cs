@@ -7,6 +7,8 @@ namespace AORebirth.World.Collision
 
     using AODB.Common.RDBObjects;
 
+    using AodbVector3 = AODB.Common.Structs.Vector3;
+
     /// <summary>Flattens AODB <see cref="SurfaceResource"/> meshes into engine-agnostic triangle meshes.</summary>
     internal static class SurfaceResourceNormalizer
     {
@@ -34,6 +36,11 @@ namespace AORebirth.World.Collision
             }
         }
 
+        /// <summary>
+        /// AODB stores vertices as <see cref="AodbVector3"/> and triangles as <see cref="Int3"/>; those are read
+        /// directly. Anything else goes through reflection (boxing every value), which a playfield build cannot
+        /// afford for its hundreds of thousands of vertices.
+        /// </summary>
         static bool TryNormalize(
             IList vertices,
             IList triangles,
@@ -44,37 +51,63 @@ namespace AORebirth.World.Collision
             int vertexCount = vertices.Count;
             int triangleCount = triangles.Count;
             var verts = new Vector3[vertexCount];
-            for (int i = 0; i < vertexCount; i++)
+            if (vertices is List<AodbVector3> typedVertices)
             {
-                object? vertex = vertices[i];
-                if (vertex == null)
-                    return false;
-                verts[i] = ReadVec(vertex);
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    AodbVector3 v = typedVertices[i];
+                    verts[i] = new Vector3(v.X, v.Y, v.Z);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    object? vertex = vertices[i];
+                    if (vertex == null)
+                        return false;
+                    verts[i] = ReadVec(vertex);
+                }
             }
 
-            var tris = new List<CollisionTriangle>(triangleCount);
-            for (int t = 0; t < triangleCount; t++)
+            var tris = new CollisionTriangle[triangleCount];
+            int valid = 0;
+            if (triangles is List<Int3> typedTriangles)
             {
-                object? triObj = triangles[t];
-                if (triObj == null)
-                    continue;
+                for (int t = 0; t < triangleCount; t++)
+                {
+                    Int3 tri = typedTriangles[t];
+                    if (IsValid(tri.A, tri.B, tri.C, vertexCount))
+                        tris[valid++] = new CollisionTriangle(tri.A, tri.B, tri.C);
+                }
+            }
+            else
+            {
+                for (int t = 0; t < triangleCount; t++)
+                {
+                    object? triObj = triangles[t];
+                    if (triObj == null)
+                        continue;
 
-                int aIdx = ReadIndex(triObj, "A");
-                int bIdx = ReadIndex(triObj, "B");
-                int cIdx = ReadIndex(triObj, "C");
-                if (aIdx < 0 || bIdx < 0 || cIdx < 0
-                    || aIdx >= vertexCount || bIdx >= vertexCount || cIdx >= vertexCount)
-                    continue;
-
-                tris.Add(new CollisionTriangle(aIdx, bIdx, cIdx));
+                    int aIdx = ReadIndex(triObj, "A");
+                    int bIdx = ReadIndex(triObj, "B");
+                    int cIdx = ReadIndex(triObj, "C");
+                    if (IsValid(aIdx, bIdx, cIdx, vertexCount))
+                        tris[valid++] = new CollisionTriangle(aIdx, bIdx, cIdx);
+                }
             }
 
-            if (tris.Count == 0)
+            if (valid == 0)
                 return false;
+            if (valid < tris.Length)
+                Array.Resize(ref tris, valid);
 
-            mesh = new CollisionTriangleMesh(verts, tris.ToArray(), cellId);
+            mesh = new CollisionTriangleMesh(verts, tris, cellId);
             return true;
         }
+
+        static bool IsValid(int a, int b, int c, int vertexCount)
+            => (uint)a < (uint)vertexCount && (uint)b < (uint)vertexCount && (uint)c < (uint)vertexCount;
 
         static int ReadIndex(object tri, string name)
         {
@@ -92,6 +125,8 @@ namespace AORebirth.World.Collision
         {
             if (v is Vector3 numerics)
                 return numerics;
+            if (v is AodbVector3 aodb)
+                return new Vector3(aodb.X, aodb.Y, aodb.Z);
 
             Type t = v.GetType();
             float x = Convert.ToSingle(t.GetProperty("X")?.GetValue(v) ?? t.GetField("X")?.GetValue(v) ?? 0);

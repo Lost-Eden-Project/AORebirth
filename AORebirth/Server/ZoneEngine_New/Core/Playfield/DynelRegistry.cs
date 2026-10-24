@@ -161,6 +161,36 @@ namespace ZoneEngine_New.Core.Playfield
             }
         }
 
+        /// <summary>A snapshot of the players into the caller's buffer (cleared first), for per-tick passes.</summary>
+        public void CopyPlayers(List<Player> buffer)
+        {
+            ArgumentNullException.ThrowIfNull(buffer);
+            buffer.Clear();
+            lock (_sync)
+            {
+                foreach (Dynel dynel in _dynels.Values)
+                {
+                    if (dynel is Player player)
+                        buffer.Add(player);
+                }
+            }
+        }
+
+        /// <summary>Whether any player is registered, without copying the list.</summary>
+        public bool HasPlayers()
+        {
+            lock (_sync)
+            {
+                foreach (Dynel dynel in _dynels.Values)
+                {
+                    if (dynel is Player)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>A snapshot of every dynel into the caller's buffer (cleared first), for per-tick passes.</summary>
         public void CopyDynels(List<Dynel> buffer)
         {

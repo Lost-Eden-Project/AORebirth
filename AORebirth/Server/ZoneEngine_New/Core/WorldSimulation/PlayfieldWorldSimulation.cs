@@ -40,6 +40,9 @@
     public sealed class PlayfieldWorldSimulation : IDisposable
     {
         readonly TriggerVolumeCatalog _triggers = new();
+
+        /// <summary>Per-tick player snapshot for <see cref="TickSoftTriggers"/>; a transfer may remove the player mid-pass.</summary>
+        readonly List<Player> _tickPlayers = new();
         readonly DestinationsCatalog _destinations;
         readonly PlayfieldGeometryData _geometry;
         readonly IGameData _gameData;
@@ -342,10 +345,13 @@
         public void TickSoftTriggers(PlayfieldType playfield, double deltaTime)
         {
             ArgumentNullException.ThrowIfNull(playfield);
+            Metrics.TickStallWatch.Stage("world.doors");
             _doors.Tick(playfield, deltaTime);
             double now = Environment.TickCount64 / 1000.0;
 
-            foreach (Player player in playfield.GetRequiredService<DynelRegistry>().PlayerEntities())
+            Metrics.TickStallWatch.Stage("world.triggers");
+            playfield.GetRequiredService<DynelRegistry>().CopyPlayers(_tickPlayers);
+            foreach (Player player in _tickPlayers)
             {
                 if (player?.Session == null)
                     continue;
@@ -383,6 +389,9 @@
                         ReadProxyReturn(player),
                         out ZoneCrossing crossing))
                 {
+                    // A crossing can transfer the player synchronously (destination already loaded): the watchdog
+                    // names it rather than the whole soft-trigger pass.
+                    Metrics.TickStallWatch.Stage("world.crossing", id);
                     if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity)
                         FireTargetVicinity(playfield, player, crossing.Trigger);
                     else if (crossing.Trigger.Kind == ZoneTriggerKind.MissionEntrance)

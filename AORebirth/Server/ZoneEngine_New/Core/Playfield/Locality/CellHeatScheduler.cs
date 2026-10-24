@@ -48,6 +48,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private readonly HashSet<int> _seenCells = new();
         private readonly HashSet<int> _collectedCells = new();
         private readonly List<int> _staleCells = new();
+        private readonly List<int> _populatedCellBuffer = new();
         private Action<int>? _onCellSleep;
         private Action<int>? _onCellTick;
         private Action? _onIndoorSpawnTick;
@@ -202,8 +203,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
                 // Snapshot: Tick may despawn NPCs and spawn corpses into this cell.
                 _tickDynelBuffer.Clear();
-                foreach (Dynel dynel in _grid.OccupantsInCell(cellId))
-                    _tickDynelBuffer.Add(dynel);
+                _grid.CopyOccupants(cellId, _tickDynelBuffer);
 
                 for (int i = 0; i < _tickDynelBuffer.Count; i++)
                 {
@@ -242,10 +242,11 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             HashSet<int> added = _collectedCells;
             added.Clear();
 
-            foreach (int cellId in _grid.EnumeratePopulatedCells())
+            _grid.CollectPopulatedCells(_populatedCellBuffer);
+            for (int i = 0; i < _populatedCellBuffer.Count; i++)
             {
-                if (added.Add(cellId))
-                    results.Add(cellId);
+                if (added.Add(_populatedCellBuffer[i]))
+                    results.Add(_populatedCellBuffer[i]);
             }
 
             foreach (int cellId in _spawnCellIds)

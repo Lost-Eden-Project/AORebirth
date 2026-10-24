@@ -295,13 +295,29 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
 
     internal void Tick()
     {
-        // Dead actors retain the death subscription until the shared corpse swap fires.
-        foreach (var npc in _bindings.Keys.Where(npc => !IsCurrent(npc) && (!npc.IsDead
-            || !registry.TryGet(npc.Identity, out var current) || !ReferenceEquals(current, npc))).ToArray())
-            Detached(npc);
-        foreach (var shop in _standaloneShops.Keys.Where(shop => !ReferenceEquals(shop.Playfield, playfield)
-            || !registry.TryGet(shop.Identity, out var current) || !ReferenceEquals(current, shop)).ToArray())
-            _standaloneShops.Remove(shop);
+        // Dead actors retain the death subscription until the shared corpse swap fires. Gone entries are gathered
+        // first (removal mutates the maps) into lists made only when there are any: this runs every tick.
+        List<NpcCharacter>? detached = null;
+        foreach (NpcCharacter npc in _bindings.Keys)
+        {
+            if (!IsCurrent(npc) && (!npc.IsDead
+                || !registry.TryGet(npc.Identity, out var current) || !ReferenceEquals(current, npc)))
+                (detached ??= []).Add(npc);
+        }
+        if (detached != null)
+            foreach (NpcCharacter npc in detached)
+                Detached(npc);
+
+        List<VendingMachine>? goneShops = null;
+        foreach (VendingMachine shop in _standaloneShops.Keys)
+        {
+            if (!ReferenceEquals(shop.Playfield, playfield)
+                || !registry.TryGet(shop.Identity, out var current) || !ReferenceEquals(current, shop))
+                (goneShops ??= []).Add(shop);
+        }
+        if (goneShops != null)
+            foreach (VendingMachine shop in goneShops)
+                _standaloneShops.Remove(shop);
     }
 
     internal void Detached(NpcCharacter npc)
