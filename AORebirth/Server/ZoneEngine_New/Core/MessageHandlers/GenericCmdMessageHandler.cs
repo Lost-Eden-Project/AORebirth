@@ -228,6 +228,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     HandleUseInventoryItem(message, session, player, playfield, target);
                     break;
 
+                // Picking up an open bag: the client asks to close it with a Use on the bag's own container, and opens it
+                // again only once the close has been confirmed (without it, it took a close and a second open).
+                case IdentityType.Container when player.Inventory.TryGetBackpackPage(target, out Container bag):
+                    Item.CloseBackpack(player, bag, target);
+                    Acknowledge(session, message, target);
+                    break;
+
                 default:
                     player.Logger.Info(
                         string.Format(

@@ -1061,7 +1061,8 @@ namespace ZoneEngine_New.Core.Teams
             if (player.Playfield is not { } playfield || playfield.Identity.Instance <= 0) return;
             // ChatEngine.Lists.LftPlayfieldRegistry: expansion 1 = Rubi-Ka, 2 = Shadowlands.
             int expansion = PlayfieldEntryFlags.ExpansionPlayfield(playfield.MetaData) == 1 ? 2 : 1;
-            var location = (playfield.Identity.Instance, expansion);
+            // Other players see this in LFT: the playfield the client knows, never a proxy instance's own id.
+            var location = (playfield.ClientPlayfieldId, expansion);
             int id = player.Identity.Instance;
             if (_lftLocations.TryGetValue(id, out var sent) && sent == location) return;
             _lftLocations[id] = location;

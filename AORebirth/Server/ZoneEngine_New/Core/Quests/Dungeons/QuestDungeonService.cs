@@ -1253,7 +1253,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 MsgVersion = 0x0B,
                 Identitytype = (int)player.Identity.Type,
                 Instance = player.Identity.Instance,
-                Playfield = player.Playfield.Identity.Instance,
+                Playfield = player.Playfield.ClientPlayfieldId,
                 Unknown1 = new Identity { Type = (IdentityType)0xF424F, Instance = 0 },
                 Unknown2 = 0x71,
                 Unknown3 = (byte)placement,

@@ -443,13 +443,16 @@ namespace ZoneEngine_New.Core.Inventory
             page = inventory.GetOrCreateBackpackPage(this, containerIdentity, slotIdentity);
             inventory.HydrateBackpack(page, inventoryRepository, items);
 
+            // The bag's ChestItemFullUpdate names the playfield the client thinks it is in (ClientPlayfieldId): in a proxy
+            // interior instance the server's own instance id is unknown to the client, which then drops the bag and no
+            // backpack opens there.
             Playfield playfield = player.Playfield!;
             if (page.Content.Count > 0)
             {
                 int handle = EnsureHandle(page, inventory, playfield, containerIdentity);
                 RegisterParentSlotHandle(inventory, slotIdentity, containerIdentity);
                 player.Session!.Send(
-                    page.BuildChestItemFullUpdate(player.Identity, playfield.Identity.Instance, slotIdentity));
+                    page.BuildChestItemFullUpdate(player.Identity, playfield.ClientPlayfieldId, slotIdentity));
                 player.Session.Send(
                     page.BuildInventoryUpdateMessage(
                         player.Identity,
@@ -472,7 +475,7 @@ namespace ZoneEngine_New.Core.Inventory
                         unknown1: BackpackInventoryUpdateUnknown1,
                         unknown2: 0));
                 player.Session.Send(
-                    page.BuildChestItemFullUpdate(player.Identity, playfield.Identity.Instance, slotIdentity));
+                    page.BuildChestItemFullUpdate(player.Identity, playfield.ClientPlayfieldId, slotIdentity));
                 player.Session.Send(
                     page.BuildInventoryUpdateMessage(
                         player.Identity,
@@ -539,6 +542,16 @@ namespace ZoneEngine_New.Core.Inventory
                     ActionIdentity = OpenActionIdentity,
                     Target = player.Identity
                 });
+        }
+
+        /// <summary>Confirms a bag closed at the client's request (it was picked up while open).</summary>
+        public static void CloseBackpack(Player player, Container page, Identity containerIdentity)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(page);
+            if (player.Session != null)
+                SendCloseAction(player, containerIdentity);
+            page.IsOpen = false;
         }
 
         static void SendCloseAction(Player player, Identity containerIdentity)

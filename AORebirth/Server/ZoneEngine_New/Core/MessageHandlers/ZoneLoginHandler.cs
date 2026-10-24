@@ -397,7 +397,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
         {
             session.Send(
                 playfield.CreatePlayfieldAnarchyFMessage(characterCoordinates),
-                playfield.Identity.Instance,
+                playfield.ClientPlayfieldId,
                 characterId);
         }
 
