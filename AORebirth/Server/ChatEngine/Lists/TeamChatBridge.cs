@@ -94,6 +94,8 @@ namespace ChatEngine.Lists
                     client.Channels.Remove(teamChannel);
                     raidChannel.AddClient(client);
                 }
+
+                DropIfEmpty(server, teamChannel);
             }
 
             // Capture: every convert notifies each teammate's chat. Do not rely on Team
@@ -101,7 +103,7 @@ namespace ChatEngine.Lists
             Client commandClient = ResolveClient(server, chatCommand.CharacterId);
             if (commandClient != null)
             {
-                RemoveClientFromChannel(commandClient, ChannelType.Team, teamId);
+                RemoveClientFromChannel(server, commandClient, ChannelType.Team, teamId);
                 raidChannel.AddClient(commandClient);
             }
 
@@ -122,8 +124,8 @@ namespace ChatEngine.Lists
                 return true;
             }
 
-            RemoveClientFromChannel(client, ChannelType.Team, teamId);
-            RemoveClientFromChannel(client, ChannelType.Raid, teamId);
+            RemoveClientFromChannel(server, client, ChannelType.Team, teamId);
+            RemoveClientFromChannel(server, client, ChannelType.Raid, teamId);
             return true;
         }
 
@@ -175,6 +177,18 @@ namespace ChatEngine.Lists
             return null;
         }
 
+        /// <summary>
+        /// A team or raid channel with nobody left is forgotten; team ids are not reused while the zone runs, and a
+        /// kept channel would otherwise live for the chat server's lifetime.
+        /// </summary>
+        private static void DropIfEmpty(ChatServer server, ChannelBase channel)
+        {
+            if (channel.SnapshotConnectedClients().Length == 0)
+            {
+                server.Channels.Remove(channel);
+            }
+        }
+
         private static TeamChannel GetOrCreateTeamChannel(ChatServer server, uint teamId)
         {
             TeamChannel existing = FindChannel(server, ChannelType.Team, teamId) as TeamChannel;
@@ -201,7 +215,7 @@ namespace ChatEngine.Lists
             return channel;
         }
 
-        private static void RemoveClientFromChannel(Client client, ChannelType type, uint channelId)
+        private static void RemoveClientFromChannel(ChatServer server, Client client, ChannelType type, uint channelId)
         {
             ChannelBase found = null;
             foreach (ChannelBase channel in client.Channels)
@@ -220,6 +234,7 @@ namespace ChatEngine.Lists
 
             found.RemoveClient(client);
             client.Channels.Remove(found);
+            DropIfEmpty(server, found);
 
             // Close the client's tab too; otherwise it keeps a Team/Raid tab it can no longer use.
             byte[] leaveId = new byte[5];

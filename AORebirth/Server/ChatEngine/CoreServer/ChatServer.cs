@@ -661,10 +661,9 @@ namespace ChatEngine.CoreServer
                 channel.AddClient(client);
             }
 
-            foreach (ChannelBase channel in this.ChannelsByType<TeamChannel>())
-            {
-                channel.AddClient(client);
-            }
+            // Team and raid channels are joined only on the zone's #aorebirth-team-join / raid-convert for that
+            // character (TeamChatBridge); joining every existing team channel here put each new login into every
+            // team's chat.
 
             foreach (ChannelBase channel in this.ChannelsByType<OrganizationChannel>())
             {
