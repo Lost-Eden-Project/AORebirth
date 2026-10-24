@@ -9,8 +9,9 @@ using ZoneEngine_New.Core.Pets;
 
 /// <summary>
 /// PetCommand from the pet window or /pet (Gamecode.dll PetCommandIIR_c 0x100763de): Unknown2 is the command
-/// code, Unknown3 its argument, Identities the pets it is for. The owner's own pets on its playfield obey
-/// follow, wait, guard, attack (at the owner's target) and terminate; everything else is ignored.
+/// code, Unknown3 its argument, Identities the pets it is for, Name the new name for rename. The owner's own pets on its
+/// playfield obey follow, wait, guard, attack (at the owner's target), heal, terminate, report and rename; everything
+/// else is ignored.
 /// </summary>
 public sealed class PetCommandMessageHandler : IMessageHandler<PetCommandMessage>
 {
@@ -28,6 +29,6 @@ public sealed class PetCommandMessageHandler : IMessageHandler<PetCommandMessage
             return;
 
         Identity[] pets = message.Identities ?? [];
-        player.Playfield.GetRequiredService<PetService>().Command(player, (PetCommandCode)message.Unknown2, pets);
+        player.Playfield.GetRequiredService<PetService>().Command(player, (PetCommandCode)message.Unknown2, pets, message.Name);
     }
 }

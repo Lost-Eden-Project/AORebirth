@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Config/Config.xml" Link="Config.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(AORebirthRepositoryRoot)/AORebirth/Config/NameFilter.json" Link="Config/NameFilter.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/GameData/StartPackages.json" Link="GameData/StartPackages.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(AORebirthRepositoryRoot)/AORebirth/GameData/NewCharacter.json" Link="GameData/NewCharacter.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

@@ -60,6 +60,9 @@ namespace ZoneEngine_New.Core.Pets
 
         public PetMode Mode { get; private set; }
 
+        /// <summary>The PetReplies.json key the pet last answered with, and when (Environment.TickCount64).</summary>
+        public (string Key, long AtMs) LastAnswer { get; set; }
+
         /// <summary>What an attack order returns to once its target is gone.</summary>
         public PetMode ModeBeforeAttack { get; private set; } = PetMode.Guard;
 

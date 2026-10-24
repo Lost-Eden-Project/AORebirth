@@ -1,0 +1,28 @@
+{
+  "Summoned": [
+    "My powers are at your disposal, master!",
+    "I'm ready to serve you..."
+  ],
+  "Attack": [
+    "Yes! Let me kill it, master!",
+    "I will kill it for you, master!"
+  ],
+  "AttackRefused": [
+    "No! I will not attack."
+  ],
+  "Heal": [
+    "Commencing the healing process now, master."
+  ],
+  "HealRefused": [
+    "It is beyond my powers to heal that, master."
+  ],
+  "Wait": [
+    "I shall wait right here, master."
+  ],
+  "Follow": [
+    "I shall follow you, master!"
+  ],
+  "Terminate": [
+    "Your wish is my command, master! Terminating..."
+  ]
+}

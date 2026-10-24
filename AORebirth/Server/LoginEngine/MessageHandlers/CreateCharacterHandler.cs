@@ -84,6 +84,14 @@ namespace LoginEngine.MessageHandlers
                                     MonsterScale = createCharacterMessage.MonsterScale,
                                     Fatness = (int)createCharacterMessage.Fatness
                                 };
+            // Config/NameFilter.json: the worst names are refused as if taken (the only name refusal the client knows).
+            if (!AORebirth.Core.Text.NameFilter.For(AORebirth.Core.GameData.GameDataPaths.ResolveRuntimeRoot())
+                    .IsAllowed(createCharacterMessage.Name))
+            {
+                client.Send(0x0000FFFF, new NameInUseMessage());
+                return;
+            }
+
             int characterId;
             try
             {

@@ -104,7 +104,11 @@ namespace ZoneEngine_New.Core.Pets
             owner.OwnedPets.Add(pet);
             PublishPetsStat(owner);
             if (owner is Player player)
+            {
                 SendAddPet(player, pet);
+                Answer(player, pet, PetReplyCatalog.Summoned);
+            }
+
             RefreshOverEquip(pet);
 
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
@@ -403,7 +407,7 @@ namespace ZoneEngine_New.Core.Pets
         /// A PetCommand from the owner's client. Only the owner's own pets on this playfield obey; an attack order
         /// goes at the owner's current target.
         /// </summary>
-        public void Command(Player owner, PetCommandCode command, IReadOnlyList<Identity> petIdentities)
+        public void Command(Player owner, PetCommandCode command, IReadOnlyList<Identity> petIdentities, string? name = null)
         {
             ArgumentNullException.ThrowIfNull(owner);
             ArgumentNullException.ThrowIfNull(petIdentities);
@@ -426,6 +430,7 @@ namespace ZoneEngine_New.Core.Pets
                         if (healPet)
                             controller.EndHeal();
                         StandDown(pet);
+                        Answer(owner, pet, command.ToString());
                         break;
                     case PetCommandCode.Guard:
                         // A heal pet's guard is a heal order on its owner; a mezz pet's guard is follow, so it
@@ -450,22 +455,45 @@ namespace ZoneEngine_New.Core.Pets
                         if (healPet)
                             controller.EndHeal();
                         StandDown(pet);
+                        Answer(owner, pet, command.ToString());
                         break;
                     case PetCommandCode.Attack:
                         if (ResolveAttackTarget(owner, pet) is Character target)
+                        {
                             controller.Attack(target.Identity);
+                            Answer(owner, pet, command.ToString());
+                        }
+                        else
+                        {
+                            Answer(owner, pet, PetReplyCatalog.AttackRefused);
+                        }
+
                         break;
                     case PetCommandCode.Heal:
                         // A heal pet only heals out of follow and wait, so a heal order puts it back on duty.
+                        // A heal pet sent at what it cannot heal (an enemy, an unowned NPC) refuses; no target heals
+                        // the owner.
+                        if (healPet && !TryResolveHealTarget(owner, out _))
+                        {
+                            Answer(owner, pet, PetReplyCatalog.HealRefused);
+                            break;
+                        }
+
                         if (healPet && controller.Mode is PetMode.Follow or PetMode.Wait)
                             controller.Order(PetMode.Guard);
                         controller.Heal(ResolveHealTarget(owner).Identity);
+                        if (healPet)
+                            Answer(owner, pet, command.ToString());
                         break;
                     case PetCommandCode.Terminate:
+                        Answer(owner, pet, command.ToString());
                         Dismiss(pet, "terminated by owner");
                         break;
                     case PetCommandCode.Report:
                         Report(owner, pet);
+                        break;
+                    case PetCommandCode.Rename:
+                        Rename(owner, pet, name);
                         break;
                 }
             }
@@ -490,6 +518,92 @@ namespace ZoneEngine_New.Core.Pets
                 (int)pet.Position.x,
                 (int)pet.Position.z);
             Helpers.ClientFeedback.SendFormatted(owner, Helpers.ClientFeedback.PlainText, line);
+        }
+
+        /// <summary>
+        /// The longest pet name every client shows: the client's SetName reader ignores a name of 32 bytes or more
+        /// (Gamecode.dll 0x10076E6E), so a longer one would leave the pet named as before on every screen.
+        /// </summary>
+        public const int MaxPetNameLength = 31;
+
+        /// <summary>
+        /// /pet rename: the client sends the name in the PetCommand (font tags already escaped, "&lt;font ...&gt;", so
+        /// they show as text); live renames the pet and sends everyone who sees it SetName with the owner's text
+        /// (capture 2026-10-24: "Target-Dummy_99"). A name the client could not show (empty, too long, non-printable)
+        /// is refused with a line to the owner; live echoed even an 86-byte name, which no client then applied.
+        /// </summary>
+        void Rename(Player owner, NpcCharacter pet, string? requested)
+        {
+            string name = requested?.Trim() ?? string.Empty;
+            if (!AORebirth.Core.Text.NameFilter.For(_playfield.GetRequiredService<IGameData>().RootPath).IsAllowed(name))
+            {
+                Helpers.ClientFeedback.SendFormatted(owner, Helpers.ClientFeedback.PlainText, "That pet name is not allowed.");
+                return;
+            }
+
+            if (!IsShowablePetName(name))
+            {
+                Helpers.ClientFeedback.SendFormatted(owner, Helpers.ClientFeedback.PlainText, string.Format(
+                    CultureInfo.InvariantCulture,
+                    "A pet name must be 1 to {0} printable characters.",
+                    MaxPetNameLength));
+                return;
+            }
+
+            pet.Name = name;
+            _playfield.GetRequiredService<PlayfieldLocality>().Announce(pet, new SetNameMessage
+            {
+                Identity = pet.Identity,
+                Unknown = 0,
+                Kind = 3,
+                Flag = 0,
+                Name = name,
+                Unknown1 = Identity.None,
+                Unknown2 = 0,
+                Unknown3 = 0
+            });
+        }
+
+        /// <summary>1 to <see cref="MaxPetNameLength"/> printable ASCII characters.</summary>
+        internal static bool IsShowablePetName(string name)
+        {
+            if (name.Length is 0 or > MaxPetNameLength)
+                return false;
+            foreach (char c in name)
+            {
+                if (c is < ' ' or > '~')
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>How long a pet stays quiet before giving the same answer again.</summary>
+        const long RepeatAnswerCooldownMs = 1000;
+
+        /// <summary>
+        /// The pet's answer to a command its owner gave (GameData/PetReplies.json): "&lt;owner&gt;'s pet, &lt;pet&gt;:
+        /// &lt;line&gt;" to the owner from the chat server, as live sends it. Nothing when the command has no lines or the
+        /// chat server cannot be reached.
+        /// </summary>
+        void Answer(Player owner, NpcCharacter pet, string key)
+        {
+            // The same answer again within a second (the follow button clicked repeatedly) is not repeated.
+            long now = Environment.TickCount64;
+            if (pet.Pet is PetController controller)
+            {
+                (string lastKey, long lastAtMs) = controller.LastAnswer;
+                if (string.Equals(lastKey, key, StringComparison.OrdinalIgnoreCase) && now - lastAtMs < RepeatAnswerCooldownMs)
+                    return;
+                controller.LastAnswer = (key, now);
+            }
+
+            string? line = PetReplyCatalog.For(_playfield.GetRequiredService<IGameData>().RootPath).Pick(key);
+            if (line == null)
+                return;
+            string text = string.Format(CultureInfo.InvariantCulture, "{0}'s pet, {1}: {2}", owner.Name, pet.Name, line);
+            _playfield.GetService<Chat.VicinityChatRelay>()?.Announce(text, [owner.Identity.Instance],
+                Chat.VicinityChatRelay.PetAnswerBlob);
         }
 
         static int Percent(int current, int max) => max <= 0 ? 100 : (int)(100L * Math.Max(0, current) / max);
@@ -546,14 +660,27 @@ namespace ZoneEngine_New.Core.Pets
         /// pet), otherwise for the owner.
         /// </summary>
         Character ResolveHealTarget(Player owner)
-        {
-            if (owner.Target.Instance != 0
-                && _playfield.GetRequiredService<DynelRegistry>().TryGet(owner.Target, out Dynel? dynel)
-                && dynel is Character target && !target.IsDead
-                && (target is Player || target is NpcCharacter { PetOwner: Player }))
-                return target;
+            => TryResolveHealTarget(owner, out Character target) ? target : owner;
 
-            return owner;
+        /// <summary>
+        /// The owner's target when it is a living player or player's pet; the owner with no target. False for a target
+        /// that cannot be healed.
+        /// </summary>
+        bool TryResolveHealTarget(Player owner, out Character target)
+        {
+            target = owner;
+            if (owner.Target.Instance == 0 || owner.Target == owner.Identity)
+                return true;
+
+            if (_playfield.GetRequiredService<DynelRegistry>().TryGet(owner.Target, out Dynel? dynel)
+                && dynel is Character character && !character.IsDead
+                && (character is Player || character is NpcCharacter { PetOwner: Player }))
+            {
+                target = character;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
