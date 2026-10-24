@@ -62,12 +62,6 @@ namespace ChatEngine.PacketHandlers
         private static readonly int LevelStatId =
             (int)StatIds.level;
 
-        private const string LftSeedCommandPrefix =
-            "#aorebirth-lft-seed";
-
-        private const int SeedSettleMilliseconds =
-            1500;
-
         private const uint LocationThisPlayfield =
             0;
 
@@ -638,15 +632,11 @@ namespace ChatEngine.PacketHandlers
              * ========================================================
              */
 
-            NotifyZoneToSeedRemoteCandidates(
-                client,
-                matches);
-
+            // Zones keep LftPlayfieldRegistry current (#aorebirth-pf) as players move, so the reply goes out at once. A
+            // "#aorebirth-lft-seed" command and a 1.5 s sleep used to sit here: no zone handles that command, so every
+            // search with results stalled this client's receive thread for 1.5 s for nothing.
             if (matches.Count > 0)
             {
-                Thread.Sleep(
-                    SeedSettleMilliseconds);
-
                 for (int i = 0;
                      i < matches.Count;
                      i++)
@@ -865,54 +855,6 @@ namespace ChatEngine.PacketHandlers
             }
 
             return 0;
-        }
-
-        /// <summary>
-        /// Tell ZoneEngine to seed remote candidates.
-        /// </summary>
-        private static void NotifyZoneToSeedRemoteCandidates(
-            Client client,
-            List<LftQueryReply.Entry> matches)
-        {
-            if (client == null
-                || matches == null
-                || matches.Count == 0)
-            {
-                return;
-            }
-
-            StringBuilder command =
-                new StringBuilder(
-                    LftSeedCommandPrefix);
-
-            for (int i = 0;
-                 i < matches.Count;
-                 i++)
-            {
-                LftQueryReply.Entry entry =
-                    matches[i];
-
-                command.Append(' ');
-                command.Append(
-                    entry.CharacterId);
-
-                if (!string.IsNullOrWhiteSpace(
-                        entry.Name))
-                {
-                    command.Append(':');
-
-                    command.Append(
-                        entry.Name
-                            .Trim()
-                            .Replace(
-                                ' ',
-                                '_'));
-                }
-            }
-
-            ChatEngine.CoreServer.ChatServer.SendToZone(
-                unchecked((int)client.Character.CharacterId),
-                command.ToString());
         }
 
         /// <summary>

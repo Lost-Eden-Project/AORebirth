@@ -51,11 +51,36 @@ namespace ChatEngine.Packets
         /// </returns>
         public static byte[] Create(string arg1, string msg, string blob)
         {
+            // Live writes an empty name and blob as zero-length strings (0000). PacketWriter.WriteString writes "" as one
+            // NUL byte (0001 00), which the client takes as a name and shows ": text".
             PacketWriter writer = new PacketWriter(35);
-            writer.WriteString(arg1);
-            writer.WriteString(msg);
-            writer.WriteString(blob);
+            WriteString(writer, arg1);
+            WriteString(writer, msg);
+            WriteString(writer, blob);
             return writer.Finish();
+        }
+
+        /// <summary>
+        /// Same, with a raw blob: live sends one byte telling the client what the line is (04 a pet's answer, 06 a loot
+        /// announcement; none for loot rights).
+        /// </summary>
+        public static byte[] Create(string name, string msg, byte[] blob)
+        {
+            PacketWriter writer = new PacketWriter(35);
+            WriteString(writer, name);
+            WriteString(writer, msg);
+            writer.WriteUInt16((ushort)(blob?.Length ?? 0));
+            if (blob != null && blob.Length > 0)
+                writer.WriteBytes(blob);
+            return writer.Finish();
+        }
+
+        private static void WriteString(PacketWriter writer, string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                writer.WriteUInt16(0);
+            else
+                writer.WriteString(value);
         }
 
         #endregion

@@ -539,9 +539,14 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>
         /// Tells whoever holds loot rights before the corpse spawns. A solo winner gets "You can loot these remains."
         /// (live zone Feedback, capture 2026-10-05T01:45:30Z). A team shares the rights (<see cref="Corpse"/>), so every
-        /// member on this playfield gets "All team members can loot these remains." (text.mdb category 110). Live's
-        /// team line did not arrive on the zone connection; sending it as zone Feedback shows the same text.
+        /// member gets "All team members can loot these remains." (text.mdb category 110), on any playfield. Live sends
+        /// that line from the chat server as an anonymous vicinity message (type 0x23, empty name and blob, capture
+        /// 17:37:31; the client shows it yellow), so it goes there; zone Feedback with the same text to the members on
+        /// this playfield only when the chat server cannot be reached.
         /// </summary>
+        /// <summary>Live's chat-server text for a team's shared loot rights.</summary>
+        const string AllTeamMembersCanLootText = "All team members can loot these remains.";
+
         void AnnounceLootRights(Identity lootWinner)
         {
             if (!_registry.TryGet(lootWinner, out Dynel? winnerDynel) || winnerDynel is not Player winner)
@@ -553,6 +558,9 @@ namespace ZoneEngine_New.Core.Playfield
                 ClientFeedback.Send(winner, ClientFeedback.CanLootRemains);
                 return;
             }
+
+            if (_playfield.GetService<Chat.VicinityChatRelay>()?.Announce(AllTeamMembersCanLootText, team.MemberIds) == true)
+                return;
 
             foreach (int memberId in team.MemberIds)
             {

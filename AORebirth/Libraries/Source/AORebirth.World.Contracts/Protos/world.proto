@@ -629,6 +629,10 @@ message VicinityMessage {
   bytes payload = 6;
   // An NPC speaking (quest lines); empty for players.
   string sender_name = 7;
+  // A line from no one (chat-server type 0x23, VIS_ANON_MESSAGE): no sender, no name lookup, e.g. live's
+  // "All team members can loot these remains." sender and sender_name are ignored; payload is the message's blob
+  // (live: empty for loot rights, 04 for a pet's answer, 06 for a loot announcement).
+  bool anonymous = 8;
 }
 
 message LftUpdate {

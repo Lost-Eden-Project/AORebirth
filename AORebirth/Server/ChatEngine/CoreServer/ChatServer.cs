@@ -713,6 +713,10 @@ namespace ChatEngine.CoreServer
             {
                 switch (chat.BodyCase)
                 {
+                    case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.Vicinity when chat.Vicinity.Anonymous:
+                        this.DistributeAnonymousVicinity(chat.Vicinity.Recipients, chat.Vicinity.Text,
+                            chat.Vicinity.Payload.ToByteArray());
+                        break;
                     case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.Vicinity:
                         this.DistributeVicinityChat(new VicinityChatMessage
                         {
@@ -1061,6 +1065,21 @@ namespace ChatEngine.CoreServer
                 + message.CharacterId
                 + " name="
                 + wantName);
+        }
+
+        /// <summary>
+        /// A vicinity line from no one (type 0x23, empty name and blob), as live sends "All team members can loot these
+        /// remains." to each team member.
+        /// </summary>
+        private void DistributeAnonymousVicinity(IEnumerable<int> characterIds, string text, byte[] blob)
+        {
+            byte[] packet = MsgAnonymousVicinity.Create(string.Empty, text ?? string.Empty, blob);
+            var wanted = new HashSet<int>(characterIds);
+            foreach (Client cli in this.ConnectedClients.Values)
+            {
+                if (cli.Character != null && wanted.Contains((int)cli.Character.CharacterId))
+                    cli.Send(packet);
+            }
         }
 
         private void DistributeVicinityChat(VicinityChatMessage vicinityChatMessage)

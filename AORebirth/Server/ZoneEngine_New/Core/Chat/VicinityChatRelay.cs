@@ -47,6 +47,21 @@ namespace ZoneEngine_New.Core.Chat
                 Send(speaker, type, text, speaker.Name);
         }
 
+        /// <summary>
+        /// A line from no one (chat-server type 0x23) to <paramref name="recipients"/>, wherever they are, with the
+        /// message's blob (<see cref="PetAnswerBlob"/> for a pet's answer; none for loot rights). False when the chat
+        /// server could not be reached.
+        /// </summary>
+        public bool Announce(string text, IReadOnlyList<int> recipients, byte[]? blob = null)
+        {
+            ArgumentNullException.ThrowIfNull(recipients);
+            return !string.IsNullOrEmpty(text) && recipients.Count > 0
+                && _chatLink.SendAnonymousVicinity(text, recipients, blob);
+        }
+
+        /// <summary>The blob live sends with a pet's answer to its owner (capture 2026-10-24T02:22).</summary>
+        public static readonly byte[] PetAnswerBlob = [0x04];
+
         private void Send(Character speaker, ChatMessageType type, string text, string? senderName)
         {
             Playfield? playfield = speaker.Playfield;

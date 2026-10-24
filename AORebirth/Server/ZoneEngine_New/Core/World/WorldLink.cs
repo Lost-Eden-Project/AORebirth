@@ -125,6 +125,11 @@ namespace ZoneEngine_New.Core.World
                     {
                         existing.Token = token;
                         if (!string.IsNullOrEmpty(account)) existing.Account = account;
+                        // A new token can mean a new lease at World (a relog creates one with no name card or level), and
+                        // presence sent under the old token was refused as stale: send it all again on the next
+                        // heartbeat. Otherwise World keeps level 0 and team invites to this character fail with
+                        // "Team invite target level is unavailable." until something in the presence changes.
+                        existing.SentPresence = null;
                     }
 
                     return existing;

@@ -22,6 +22,12 @@ namespace ZoneEngine_New.Core.Chat
 
         /// <summary>Vicinity chat for ChatEngine to deliver to the recipients it names.</summary>
         bool SendVicinity(int senderId, string? senderName, byte messageType, string text, IReadOnlyList<int> recipients);
+
+        /// <summary>
+        /// A vicinity line from no one (chat-server type 0x23) for ChatEngine to deliver to <paramref name="recipients"/>.
+        /// False when it could not be handed to World.
+        /// </summary>
+        bool SendAnonymousVicinity(string text, IReadOnlyList<int> recipients, byte[]? blob = null);
     }
 
     /// <summary>
@@ -78,6 +84,15 @@ namespace ZoneEngine_New.Core.Chat
                 ChannelType = messageType,
                 Text = text ?? string.Empty
             };
+            vicinity.Recipients.AddRange(recipients);
+            return Publish(new ChatEvent { Vicinity = vicinity });
+        }
+
+        public bool SendAnonymousVicinity(string text, IReadOnlyList<int> recipients, byte[]? blob = null)
+        {
+            var vicinity = new VicinityMessage { Anonymous = true, Text = text ?? string.Empty };
+            if (blob is { Length: > 0 })
+                vicinity.Payload = Google.Protobuf.ByteString.CopyFrom(blob);
             vicinity.Recipients.AddRange(recipients);
             return Publish(new ChatEvent { Vicinity = vicinity });
         }
