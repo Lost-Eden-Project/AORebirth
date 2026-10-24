@@ -5,6 +5,7 @@
   "requireAmmo": true,
   "xp": {
     "killPercentPerLevelDifference": 2.5,
+    "alienMinimumXp": 150,
     "sideBonusPercent": 10,
     "noKillXpNpcFamilies": [0],
     "deathXpLossGraceLevel": 20,

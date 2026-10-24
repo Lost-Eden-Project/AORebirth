@@ -47,6 +47,10 @@
         "killPercentPerLevelDifference": {
           "type": "number"
         },
+        "alienMinimumXp": {
+          "type": "integer",
+          "minimum": 0
+        },
         "noKillXpNpcFamilies": {
           "type": "array",
           "items": {

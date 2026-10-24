@@ -1075,6 +1075,7 @@ namespace ZoneEngine_New.Core.Entities
 
             int monsterLevel = Stats.GetOrOne(CharacterStat.Level);
             GameplayXp xpRules = playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp();
+            IGameData gameData = playfield.GetRequiredService<IGameData>();
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             List<GroupShare> shares = _killRewards.DivideByGroup(
                 AlienShareBasis,
@@ -1092,11 +1093,16 @@ namespace ZoneEngine_New.Core.Entities
                 for (int r = 0; r < recipients.Count; r++)
                 {
                     Character recipient = recipients[r];
+                    // Grey aliens pay nothing. Any other pays the recipient's cut of the formula, but at least the
+                    // configured minimum, solo or in a team.
+                    if (IsGreyFor(recipient, monsterLevel, gameData))
+                        continue;
                     long solo = SoloAlienXp(recipient.Stats.GetOrOne(CharacterStat.Level), monsterLevel);
                     // NOTE: Gameplay.json xp.teamMemberPercent is a stand-in table, not live's team XP rule.
                     long amount = (long)(solo * share.Amount / AlienShareBasis * xpRules.MemberPercent(recipients.Count) / 100);
+                    amount = Math.Max(amount, xpRules.AlienMinimumXp);
                     if (amount > 0)
-                        recipient.AwardAlienXp((int)amount);
+                        recipient.AwardAlienXp((int)Math.Min(amount, int.MaxValue));
                 }
             }
         }

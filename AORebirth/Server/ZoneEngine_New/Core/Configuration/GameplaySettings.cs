@@ -458,6 +458,13 @@ namespace ZoneEngine_New.Core.Configuration
         public double KillPercentPerLevelDifference { get; init; } = 2.5;
 
         /// <summary>
+        /// Least alien XP each recipient gets from an alien that is not grey to them (grey: more than the recipient's
+        /// Xp.json XPKillRange below them, as for regular XP), solo or as a team member's cut. The solo formula reaches
+        /// 0 at about 1.5x the alien's level, well inside the levels the client still shows green.
+        /// </summary>
+        public int AlienMinimumXp { get; init; } = 150;
+
+        /// <summary>
         /// NPCFamily (455) values whose kills give no XP at all, not even the grey 1 XP. Family 0 is the guards and
         /// civilians (Newland Militia Guard and some 78 other templates). An NPC with no NPCFamily stat is not family 0.
         /// </summary>
