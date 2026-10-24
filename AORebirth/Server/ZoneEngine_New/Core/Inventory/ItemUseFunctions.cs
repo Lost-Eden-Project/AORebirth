@@ -290,7 +290,9 @@ namespace ZoneEngine_New.Core.Inventory
                 if (dynel is not Character candidate || candidate.IsDead || ReferenceEquals(candidate, caster)
                     || !ReferenceEquals(candidate.Playfield, playfield)
                     || center.Distance3D(candidate) > radius
-                    || !Helpers.CombatRules.CanAttack(caster, candidate))
+                    || !Helpers.CombatRules.CanAttack(caster, candidate)
+                    // The blast reaches only what its centre can see: a wall or a closed door shelters the candidate.
+                    || !center.HasLineOfSightTo(candidate))
                     continue;
 
                 ApplyHealthDelta(candidate, caster, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage);

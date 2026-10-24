@@ -154,6 +154,10 @@ namespace ZoneEngine_New.Core.Nanos
                     continue;
                 if (!AcceptsRecipient(caster, candidate, child))
                     continue;
+                // The area spreads from its centre only to what that centre can see: a wall or a closed door between
+                // them shelters the candidate (area nukes such as 100198).
+                if (!center.HasLineOfSightTo(candidate))
+                    continue;
 
                 NanoRuntime.TryApplyImmediate(caster, candidate, nanoId, items, inventory, nowUtc);
             }
