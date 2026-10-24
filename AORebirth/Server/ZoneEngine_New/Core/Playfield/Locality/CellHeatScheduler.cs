@@ -42,6 +42,12 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private readonly List<int> _heatCellBuffer = new();
         private readonly List<int> _neighborBuffer = new();
         private readonly List<Dynel> _tickDynelBuffer = new();
+        // Per-tick scratch sets, kept so their arrays are not reallocated every heartbeat (they were 85% of the
+        // engine's steady-state garbage; a playfield tracks thousands of cells).
+        private readonly HashSet<int> _connectedPlayerInstances = new();
+        private readonly HashSet<int> _seenCells = new();
+        private readonly HashSet<int> _collectedCells = new();
+        private readonly List<int> _staleCells = new();
         private Action<int>? _onCellSleep;
         private Action<int>? _onCellTick;
         private Action? _onIndoorSpawnTick;
@@ -111,7 +117,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _forcedHotCells.Clear();
             _vendorCells.Clear();
 
-            HashSet<int> connectedPlayerInstances = new();
+            HashSet<int> connectedPlayerInstances = _connectedPlayerInstances;
+            connectedPlayerInstances.Clear();
 
             foreach (Dynel dynel in tracked)
             {
@@ -142,7 +149,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private void TrackHeatTransitions(DateTime now, double heartbeatDeltaTime)
         {
             CollectHeatCells(_heatCellBuffer);
-            HashSet<int> seenCells = new();
+            HashSet<int> seenCells = _seenCells;
+            seenCells.Clear();
 
             foreach (int cellId in _heatCellBuffer)
             {
@@ -206,7 +214,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 }
             }
 
-            List<int> staleCells = new();
+            List<int> staleCells = _staleCells;
+            staleCells.Clear();
             foreach (int cellId in _heatByCell.Keys)
             {
                 if (!seenCells.Contains(cellId) && !_spawnCellIds.Contains(cellId))
@@ -230,7 +239,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private void CollectHeatCells(List<int> results)
         {
             results.Clear();
-            HashSet<int> added = new();
+            HashSet<int> added = _collectedCells;
+            added.Clear();
 
             foreach (int cellId in _grid.EnumeratePopulatedCells())
             {

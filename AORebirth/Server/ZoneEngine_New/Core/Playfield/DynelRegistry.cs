@@ -161,6 +161,17 @@ namespace ZoneEngine_New.Core.Playfield
             }
         }
 
+        /// <summary>A snapshot of every dynel into the caller's buffer (cleared first), for per-tick passes.</summary>
+        public void CopyDynels(List<Dynel> buffer)
+        {
+            ArgumentNullException.ThrowIfNull(buffer);
+            buffer.Clear();
+            lock (_sync)
+            {
+                buffer.AddRange(_dynels.Values);
+            }
+        }
+
         public IEnumerable<Dynel> Players()
         {
             lock (_sync)

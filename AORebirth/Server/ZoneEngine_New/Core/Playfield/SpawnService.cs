@@ -676,23 +676,31 @@ namespace ZoneEngine_New.Core.Playfield
             return dynel;
         }
 
+        /// <summary>One registry snapshot per tick for the expiry passes (a fresh copy per pass was 10% of tick garbage).</summary>
+        readonly List<Dynel> _tickSnapshot = new();
+
         /// <summary>Lifetime / expiry pass. Called from <see cref="Playfield.Tick"/> after inbound drain.</summary>
         public void Tick()
         {
             DespawnExpiredLinkDeadPlayers();
-            DespawnExpiredCorpses();
-            DespawnEmptyLootables();
-            DespawnExpiredWorldItems();
+            _registry.CopyDynels(_tickSnapshot);
+            DespawnExpiredCorpses(_tickSnapshot);
+            DespawnEmptyLootables(_tickSnapshot);
+            DespawnExpiredWorldItems(_tickSnapshot);
+            _tickSnapshot.Clear();
         }
 
+        /// <summary>Still on this playfield: an earlier pass this tick may have despawned it (Playfield is then null).</summary>
+        bool IsLive(Dynel dynel) => ReferenceEquals(dynel.Playfield, _playfield);
+
         /// <summary>Temporary world items (player drops) leave once their lifetime is up.</summary>
-        void DespawnExpiredWorldItems()
+        void DespawnExpiredWorldItems(List<Dynel> snapshot)
         {
             DateTime now = DateTime.UtcNow;
             List<WorldItem>? expired = null;
-            foreach (Dynel dynel in _registry.Dynels())
+            for (int i = 0; i < snapshot.Count; i++)
             {
-                if (dynel is WorldItem item && item.IsExpired(now))
+                if (snapshot[i] is WorldItem item && IsLive(item) && item.IsExpired(now))
                     (expired ??= new List<WorldItem>()).Add(item);
             }
 
@@ -702,11 +710,11 @@ namespace ZoneEngine_New.Core.Playfield
                 DespawnStatic(item);
         }
 
-        void DespawnExpiredCorpses()
+        void DespawnExpiredCorpses(List<Dynel> snapshot)
         {
-            foreach (Dynel dynel in _registry.Dynels())
+            for (int i = 0; i < snapshot.Count; i++)
             {
-                if (dynel is not Corpse corpse || !corpse.IsExpired)
+                if (snapshot[i] is not Corpse corpse || !IsLive(corpse) || !corpse.IsExpired)
                     continue;
 
                 DespawnLootable(corpse);
@@ -716,11 +724,11 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>
         /// Despawns opened lootables whose loot is empty after the 1s delay.
         /// </summary>
-        void DespawnEmptyLootables()
+        void DespawnEmptyLootables(List<Dynel> snapshot)
         {
-            foreach (Dynel dynel in _registry.Dynels())
+            for (int i = 0; i < snapshot.Count; i++)
             {
-                if (dynel is not LootableDynel lootable || !lootable.ShouldDespawnEmpty)
+                if (snapshot[i] is not LootableDynel lootable || !IsLive(lootable) || !lootable.ShouldDespawnEmpty)
                     continue;
 
                 DespawnLootable(lootable);
