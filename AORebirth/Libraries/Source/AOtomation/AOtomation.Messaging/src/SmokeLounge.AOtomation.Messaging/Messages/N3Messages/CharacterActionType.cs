@@ -48,6 +48,12 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
         UseItemOnItem = 0x00000051,
 
         /// <summary>
+        /// Server→client: an item dropped on another made no combination. Live sends it before the "No combination
+        /// found!" Feedback with Target = (2, 0), Parameter1 = 2, Parameter2 = 0 (retail capture 2026-10-24T17:01:44Z).
+        /// </summary>
+        UseItemOnItemNoCombination = 0x00000054,
+
+        /// <summary>
         /// Server→client: perk action queued (capture 20260715-194155 UsePerk reply).
         /// </summary>
         QueuePerk = 0x00000050,

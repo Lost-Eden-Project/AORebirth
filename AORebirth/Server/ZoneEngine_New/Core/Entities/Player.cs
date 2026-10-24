@@ -769,6 +769,7 @@ namespace ZoneEngine_New.Core.Entities
 
             _perkTemplates = templates.ToArray();
             RebasePerkActions();
+            RebasePerkPulses();
         }
 
         /// <summary>The ShadowBreedTemplate item <see cref="PerkTemplates"/> was last built with (0 for none).</summary>
@@ -1301,6 +1302,86 @@ namespace ZoneEngine_New.Core.Entities
 
 
         /// <summary>
+        /// A perk's pulsing OnWear cast: Duration -1 with an Interval in centiseconds, e.g. Bureaucrat Directorship 223630
+        /// TeamCastNano every 180 s and Commanding Presence 210931 every 60 s. Each tier's function requires HasPerk of its
+        /// tier and not the next, so only the highest trained tier fires.
+        /// </summary>
+        readonly record struct PerkPulse(int PerkItemId, int SpellIndex, ItemTemplate Perk, ItemSpell Spell, TimeSpan Interval);
+
+        const double CentisecondsPerMillisecond = 0.1;
+
+        PerkPulse[] _perkPulses = [];
+        DateTime[] _perkPulseDueUtc = [];
+        DateTime _nextPerkPulseUtc = DateTime.MaxValue;
+
+        /// <summary>
+        /// Rebuilds the pulse list from <see cref="_perkTemplates"/> (one entry per perk item, though each trained tier
+        /// lists it again). A pulse that was already scheduled keeps its time; a new one fires on the next tick.
+        /// </summary>
+        void RebasePerkPulses()
+        {
+            var previous = new Dictionary<(int, int), DateTime>();
+            for (int i = 0; i < _perkPulses.Length; i++)
+                previous[(_perkPulses[i].PerkItemId, _perkPulses[i].SpellIndex)] = _perkPulseDueUtc[i];
+
+            var pulses = new List<PerkPulse>();
+            var seen = new HashSet<int>();
+            foreach (ItemTemplate perk in _perkTemplates)
+            {
+                if (!seen.Add(perk.Id) || !perk.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear))
+                    continue;
+                for (int i = 0; i < wear.Count; i++)
+                {
+                    ItemSpell spell = wear[i];
+                    if (spell.TickCount < 0 && spell.TickInterval > 0 && WearCastNano.IsCastFunction(spell))
+                        pulses.Add(new PerkPulse(perk.Id, i, perk, spell,
+                            TimeSpan.FromMilliseconds(spell.TickInterval / CentisecondsPerMillisecond)));
+                }
+            }
+
+            _perkPulses = pulses.ToArray();
+            _perkPulseDueUtc = new DateTime[_perkPulses.Length];
+            for (int i = 0; i < _perkPulses.Length; i++)
+                _perkPulseDueUtc[i] = previous.TryGetValue((_perkPulses[i].PerkItemId, _perkPulses[i].SpellIndex), out DateTime due)
+                    ? due : DateTime.MinValue;
+            _nextPerkPulseUtc = _perkPulseDueUtc.Length == 0 ? DateTime.MaxValue : _perkPulseDueUtc.Min();
+        }
+
+        /// <summary>Fires each due perk pulse whose perk and function requirements pass, then schedules its next one.</summary>
+        void TickPerkPulses()
+        {
+            if (_perkPulses.Length == 0 || IsDead || Playfield == null)
+                return;
+            DateTime nowUtc = DateTime.UtcNow;
+            if (nowUtc < _nextPerkPulseUtc)
+                return;
+            IInventoryRepository? inventory = Playfield.GetService<IInventoryRepository>();
+            if (inventory == null)
+                return;
+
+            DateTime next = DateTime.MaxValue;
+            for (int i = 0; i < _perkPulses.Length; i++)
+            {
+                if (_perkPulseDueUtc[i] <= nowUtc)
+                {
+                    PerkPulse pulse = _perkPulses[i];
+                    _perkPulseDueUtc[i] = nowUtc + pulse.Interval;
+                    if (pulse.Perk.MeetsActionRequirements(stat => Stats.Get(stat), ActionType.ToWear, ResolvePerkRequirement)
+                        && ItemTemplate.MeetsRequirements(pulse.Spell.Requirements, stat => Stats.Get(stat), ResolvePerkRequirement))
+                    {
+                        using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("perk.pulse", pulse.PerkItemId))
+                            Nanos.NanoCastFunctions.TryExecute(this, this, pulse.Spell, _items, inventory);
+                    }
+                }
+
+                if (_perkPulseDueUtc[i] < next)
+                    next = _perkPulseDueUtc[i];
+            }
+
+            _nextPerkPulseUtc = next;
+        }
+
+        /// <summary>
         /// Bit on <see cref="CharacterStat.SelectedTargetType"/> when the look-at target is an
         /// <see cref="NpcCharacter"/>. Item ToUse rows such as Health and Nano Stim require
         /// <c>NotBitAnd</c> this flag.
@@ -1375,6 +1456,7 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             TickPerkLocks();
+            TickPerkPulses();
             TickSelfTermination();
             if (QuestLog?.Quests.Values.Any(quest => quest.IsRewardPending
                 || quest.IsActive && quest.NpcObjectiveCommitPending) == true)

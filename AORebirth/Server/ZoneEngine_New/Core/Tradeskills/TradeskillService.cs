@@ -12,6 +12,7 @@ namespace ZoneEngine_New.Core.Tradeskills
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Logging;
 
@@ -28,6 +29,8 @@ namespace ZoneEngine_New.Core.Tradeskills
     /// Result (captures 2026-07-21/26, Arete combines): inputs deleted, FormatFeedback "You combined ...", then the
     /// result as an Overflow TemplateAction and ContainerAddItem; the client moves it to its first free slot, which is
     /// where it is persisted.
+    /// Feedback is category 110 text the client formats (retail 2026-10-24): CombinedResult on success; CombineNeedsSkill
+    /// then CombineFailed when skill is short; NoCombination for a drop no recipe takes.
     /// </summary>
     public sealed class TradeskillService
     {
@@ -42,14 +45,18 @@ namespace ZoneEngine_New.Core.Tradeskills
             Combined
         }
 
-        const string CombinedText = "You combined \"{0}\" with \"{1}\" and the result is a quality level {2} \"{3}\".";
         const int OverflowNextFreeSlot = 0x6f;
+
+        /// <summary>UseItemOnItemNoCombination's Target and Parameter1 as live sends them (meaning unknown).</summary>
+        static readonly Identity NoCombinationTarget = new() { Type = (IdentityType)2, Instance = 0 };
+        const int NoCombinationParameter1 = 2;
 
         readonly TradeskillCatalog _catalog;
         readonly InventoryActionService _inventory;
         readonly IItemBuilder _items;
         readonly IItemTemplateCatalog _templates;
         readonly IZoneLogger _logger;
+        readonly Lazy<IReadOnlyDictionary<int, string>> _skillNames;
         readonly ConditionalWeakTable<Player, Window> _windows = new();
 
         sealed class Window
@@ -69,17 +76,20 @@ namespace ZoneEngine_New.Core.Tradeskills
             public int MaxQl;
             public int OutOfRangeMinQl;
             public string? Refusal;
+            public bool SkillRefusal;
             public List<(int Stat, int Needed)> MissingSkills = new();
         }
 
         public TradeskillService(TradeskillCatalog catalog, InventoryActionService inventory, IItemBuilder items,
-            IItemTemplateCatalog templates, IZoneLogger logger)
+            IItemTemplateCatalog templates, IZoneLogger logger, GameData.IGameData gameData)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _items = items ?? throw new ArgumentNullException(nameof(items));
             _templates = templates ?? throw new ArgumentNullException(nameof(templates));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            ArgumentNullException.ThrowIfNull(gameData);
+            _skillNames = new Lazy<IReadOnlyDictionary<int, string>>(() => LoadSkillNames(gameData.RootPath));
         }
 
         public TradeskillCatalog Catalog => _catalog;
@@ -157,6 +167,16 @@ namespace ZoneEngine_New.Core.Tradeskills
             return Combine(player, source.Instance, target.Instance, requestedQl: null);
         }
 
+        /// <summary>
+        /// An inventory item dropped on another (CharacterAction UseItemOnItem) that no recipe takes. Live answers
+        /// UseItemOnItemNoCombination, then Feedback "No combination found!" (retail 2026-10-24T17:01:44Z).
+        /// </summary>
+        public static void NoCombination(Player player)
+        {
+            Send(player, CharacterActionType.UseItemOnItemNoCombination, NoCombinationTarget, NoCombinationParameter1, 0);
+            ClientFeedback.Send(player, ClientFeedback.NoCombinationFound);
+        }
+
         // ------------------------------------------------------------------ combine
 
         CombineOutcome Combine(Player player, int sourceSlot, int targetSlot, int? requestedQl)
@@ -178,6 +198,15 @@ namespace ZoneEngine_New.Core.Tradeskills
                 Feedback(player, "It is not possible to assemble those two items. Maybe the order was wrong?");
                 return CombineOutcome.NoRecipe;
             }
+            if (plan.SkillRefusal)
+            {
+                // Live: one FormatFeedback naming the skill short, then "Combine failed!" (retail 2026-10-24).
+                foreach ((int stat, int needed) in plan.MissingSkills)
+                    ClientFeedback.SendFormatted(player, ClientFeedback.CombineNeedsSkill,
+                        NameOf(plan.RecipeSource), NameOf(plan.RecipeTarget), needed, SkillName(stat));
+                ClientFeedback.Send(player, ClientFeedback.CombineFailed);
+                return CombineOutcome.Refused;
+            }
             if (plan.Refusal != null)
             {
                 Feedback(player, plan.Refusal);
@@ -187,7 +216,7 @@ namespace ZoneEngine_New.Core.Tradeskills
             TradeskillRecipe recipe = plan.Recipe;
             int quality = requestedQl is int asked ? Math.Clamp(asked, plan.MinQl, plan.MaxQl) : plan.MaxQl;
             (int low, int high) = ResultIds(recipe);
-            if (Trade.TradeRules.WouldDuplicateUnique(player, low, high))
+            if (IsUniqueResult(low, high) && Trade.TradeRules.WouldDuplicateUnique(player, low, high))
             {
                 Feedback(player, "You can only have one of the resulting item.");
                 return CombineOutcome.Refused;
@@ -247,7 +276,7 @@ namespace ZoneEngine_New.Core.Tradeskills
                         throw new InvalidOperationException("Reserved tradeskill result slot changed.");
                     if (!ReferenceEquals(resultPage, page))
                         player.Inventory.NoteOverflowArrival(result);
-                    Feedback(player, string.Format(CultureInfo.InvariantCulture, CombinedText, sourceName, targetName, result.Quality, NameOf(result)));
+                    ClientFeedback.SendFormatted(player, ClientFeedback.CombinedResult, sourceName, targetName, result.Quality, NameOf(result));
                     player.Session?.Send(new TemplateActionMessage
                     {
                         Identity = player.Identity, ItemLowId = result.LowId, ItemHighId = result.HighId, Quality = result.Quality,
@@ -328,6 +357,8 @@ namespace ZoneEngine_New.Core.Tradeskills
                 if (skill.PerBump > 0)
                     bumps = Math.Min(bumps, Math.Max(0, (have - needed) / skill.PerBump));
             }
+            if (plan.MissingSkills.Count > 0 && plan.Refusal == null)
+                plan.SkillRefusal = true;
             if (plan.MissingSkills.Count > 0)
                 plan.Refusal ??= string.Format(CultureInfo.InvariantCulture, "You need {0} more skill to combine these.",
                     string.Join(", ", plan.MissingSkills.Select(m => m.Needed + " " + (CharacterStat)m.Stat)));
@@ -382,6 +413,11 @@ namespace ZoneEngine_New.Core.Tradeskills
             return (low, high);
         }
 
+        /// <summary>The result template carries the Unique item flag (either end of its QL pair).</summary>
+        bool IsUniqueResult(int low, int high)
+            => (_templates.TryGet(low, out ItemTemplate l) && (l.Flags & (int)AORebirth.Enums.ItemFlags.Unique) != 0)
+                || (_templates.TryGet(high, out ItemTemplate h) && (h.Flags & (int)AORebirth.Enums.ItemFlags.Unique) != 0);
+
         (int Min, int Max) ResultQlRange(TradeskillRecipe recipe)
         {
             (int low, int high) = ResultIds(recipe);
@@ -408,6 +444,27 @@ namespace ZoneEngine_New.Core.Tradeskills
             if (!string.IsNullOrEmpty(item.Definition?.Name))
                 return item.Definition!.Name;
             return _templates.TryGet(item.LowId, out ItemTemplate template) && !string.IsNullOrEmpty(template.Name) ? template.Name : "item";
+        }
+
+        /// <summary>The client's short skill name (Text.json category 2003, e.g. 159 "Pharma Tech").</summary>
+        string SkillName(int stat)
+            => _skillNames.Value.TryGetValue(stat, out string? name) ? name : ((CharacterStat)stat).ToString();
+
+        static IReadOnlyDictionary<int, string> LoadSkillNames(string gameDataRoot)
+        {
+            var names = new Dictionary<int, string>();
+            string path = System.IO.Path.Combine(gameDataRoot, "Text.json");
+            if (!System.IO.File.Exists(path))
+                return names;
+            using var document = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path));
+            foreach (System.Text.Json.JsonElement entry in document.RootElement.EnumerateArray())
+            {
+                if (entry.TryGetProperty("category", out var category) && category.GetInt32() == ClientFeedback.StatNameCategory
+                    && entry.TryGetProperty("id", out var id) && entry.TryGetProperty("text", out var text)
+                    && !string.IsNullOrEmpty(text.GetString()))
+                    names.TryAdd(id.GetInt32(), text.GetString()!);
+            }
+            return names;
         }
 
         static Item? InventoryItem(Player player, int slot)

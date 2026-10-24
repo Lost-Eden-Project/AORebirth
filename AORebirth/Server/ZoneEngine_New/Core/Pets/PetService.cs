@@ -458,6 +458,9 @@ namespace ZoneEngine_New.Core.Pets
                         Answer(owner, pet, command.ToString());
                         break;
                     case PetCommandCode.Attack:
+                        // A heal pet never fights on command.
+                        if (healPet)
+                            break;
                         if (ResolveAttackTarget(owner, pet) is Character target)
                         {
                             controller.Attack(target.Identity);

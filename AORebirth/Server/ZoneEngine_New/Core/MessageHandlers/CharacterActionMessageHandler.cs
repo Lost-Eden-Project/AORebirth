@@ -197,6 +197,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     // Parameter1/Parameter2 = the container type and slot it was dropped on.
                     var droppedOn = new Identity { Type = (IdentityType)message.Parameter1, Instance = message.Parameter2 };
                     var outcome = _tradeskills?.TryCombineDrag(player, message.Target, droppedOn);
+                    if (outcome == Tradeskills.TradeskillService.CombineOutcome.NoRecipe)
+                        Tradeskills.TradeskillService.NoCombination(player);
                     player.Logger.Info(string.Format(CultureInfo.InvariantCulture,
                         "CharacterAction UseItemOnItem character={0} source={1}:{2} target={3}:{4} tradeskill={5}",
                         player.Identity.Instance, message.Target.Type, message.Target.Instance, droppedOn.Type, droppedOn.Instance,

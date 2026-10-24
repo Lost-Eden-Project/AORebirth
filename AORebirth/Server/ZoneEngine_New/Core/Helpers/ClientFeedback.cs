@@ -132,6 +132,24 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"%s is already fully loaded." (category 110), the weapon's name as the argument (retail 2026-10-23).</summary>
         public const int AlreadyFullyLoaded = 54186628;
 
+        /// <summary>"No combination found!" (category 110). An inventory item dropped on another with no recipe (retail 2026-10-24).</summary>
+        public const int NoCombinationFound = 87316052;
+
+        /// <summary>"Combine failed!" (category 110). Follows <see cref="CombineNeedsSkill"/> (retail 2026-10-24).</summary>
+        public const int CombineFailed = 220669556;
+
+        /// <summary>
+        /// "It is theoretically possible to combine \"%s\" with \"%s\". But you need at least %u in %s." (category 110,
+        /// FormatFeedback): source name, target name, skill needed, the skill's client name (retail 2026-10-24).
+        /// </summary>
+        public const int CombineNeedsSkill = 263676236;
+
+        /// <summary>
+        /// "You combined \"%s\" with \"%s\" and the result is a quality level %u \"%s\"." (category 110, FormatFeedback):
+        /// source name, target name, result QL, result name (retail 2026-10-24).
+        /// </summary>
+        public const int CombinedResult = 102719811;
+
         /// <summary>A text argument the client looks up itself: 'R' + base-85 category + base-85 message id.</summary>
         public readonly record struct TextReference(int Category, int MessageId);
 

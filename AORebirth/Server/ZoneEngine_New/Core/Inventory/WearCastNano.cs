@@ -10,7 +10,7 @@ namespace ZoneEngine_New.Core.Inventory
     using ZoneEngine_New.Core.Nanos;
 
     /// <summary>
-    /// One-shot OnWear / OnWield CastNano-family functions. Not part of rebase.
+    /// One-shot OnWear / OnWield CastNano-family functions. Not part of rebase. Perks' pulsing ones run from Player.TickPerkPulses.
     /// </summary>
     internal static class WearCastNano
     {
@@ -68,7 +68,7 @@ namespace ZoneEngine_New.Core.Inventory
             }
         }
 
-        static bool IsCastFunction(ItemSpell spell)
+        internal static bool IsCastFunction(ItemSpell spell)
             => spell.Is(FunctionType.CastNano)
                 || spell.Is(FunctionType.CastNanoIfPossible)
                 || spell.Is(FunctionType.NpcCastNanoIfPossible)
