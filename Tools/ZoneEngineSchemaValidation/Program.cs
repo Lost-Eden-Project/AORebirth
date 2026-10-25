@@ -21,10 +21,14 @@ if (args.Length != 1 || args[0] != "--run-character-creation")
     return 64;
 }
 #else
-bool connected = args.Length == 5 && args[0] == "--run-connected" && args[3] == "--login-engine" && File.Exists(args[4]);
+bool connectedChests = args.Length == 7 && args[0] == "--run-connected-chests" && args[3] == "--login-engine"
+    && File.Exists(args[4]) && args[5] == "--world-engine" && File.Exists(args[6]);
+bool connectedLifecycle = args.Length == 7 && args[0] == "--run-connected-lifecycle" && args[3] == "--login-engine"
+    && File.Exists(args[4]) && args[5] == "--world-engine" && File.Exists(args[6]);
+bool connected = connectedChests || connectedLifecycle || args.Length == 5 && args[0] == "--run-connected" && args[3] == "--login-engine" && File.Exists(args[4]);
 if ((!connected && (args.Length != 3 || args[0] != "--run-disposable")) || args[1] != "--engine" || !File.Exists(args[2]))
 {
-    Console.Error.WriteLine("USAGE: ZoneEngineSchemaValidation --run-disposable --engine <absolute ZoneEngine_New.dll> OR --run-connected --engine <absolute ZoneEngine_New.dll> --login-engine <absolute LoginEngine.exe-or-dll>. Creates its own loopback-only, labeled disposable MySQL. Never reads production connection settings.");
+    Console.Error.WriteLine("USAGE: ZoneEngineSchemaValidation --run-disposable --engine <absolute ZoneEngine_New.dll> OR --run-connected --engine <absolute ZoneEngine_New.dll> --login-engine <absolute LoginEngine.exe-or-dll> OR --run-connected-chests/--run-connected-lifecycle --engine <absolute ZoneEngine_New.dll> --login-engine <absolute LoginEngine.exe-or-dll> --world-engine <absolute WorldEngine.dll>. Creates its own loopback-only, labeled disposable MySQL. Never reads production connection settings.");
     return 64;
 }
 #endif
@@ -33,21 +37,53 @@ try
     using var fixture = new DisposableSchemaDatabase();
     fixture.Start();
     using var connection = fixture.Open();
-    FixtureSql.CreateBaseline(connection);
 #if LOGIN_CHARACTER_CREATION_TESTS
+    FixtureSql.CreateBaseline(connection);
     CharacterCreationSmoke.CreateBaseline(connection);
     Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "creation-explicit-migration");
     CharacterCreationSmoke.Validate(fixture, connection);
     Console.WriteLine("CHARACTER_CREATION_VALIDATION=PASS PRODUCTION_CONTACT=NO ENGINES_STARTED=NO");
     return 0;
 #else
-    AuthoredMissionSmoke.CreateBaseline(connection);
+    string? chestSchema = connectedChests || connectedLifecycle
+        ? Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_FIXTURE_SCHEMA_PATH") : null;
+    if (connectedLifecycle)
+    {
+        Require(!string.IsNullOrWhiteSpace(chestSchema), "connected-lifecycle-requires-empty-schema-snapshot");
+    }
+    if (!string.IsNullOrWhiteSpace(chestSchema))
+    {
+        // Import only into the database just created and owned by this fixture. This
+        // allows a current schema-only snapshot to exercise chests without migrations.
+        Require(connection.Database == DisposableSchemaDatabase.DatabaseName, "chest-schema-target");
+        FixtureSql.Execute(connection, File.ReadAllText(Path.GetFullPath(chestSchema)), 180);
+        foreach (string table in new[] { "characters", "item_instances", "characterquests", "generatedquests", "missionflags", "login" })
+            Require(FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM " + table) == 0, "chest-schema-must-exclude-player-rows-" + table);
+        FixtureSql.Execute(connection, File.ReadAllText(Path.Combine(ConnectedAcceptanceSmoke.RepositoryRoot(),
+            "AORebirth/Libraries/Source/AORebirth.Database/SqlTables/teleports.sql")), 180);
+        Console.WriteLine("CONNECTED_CHEST_SCHEMA=IMPORTED_EMPTY_SNAPSHOT MIGRATIONS_EXECUTED=0");
+    }
+    else
+    {
+        FixtureSql.CreateBaseline(connection);
+        AuthoredMissionSmoke.CreateBaseline(connection);
+    }
     if (connected)
     {
-        Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "connected-explicit-migration");
+        if (string.IsNullOrWhiteSpace(chestSchema))
+            Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "connected-explicit-migration");
         EngineSmoke.Validate(args[2], fixture, SchemaState.SCHEMA_CURRENT);
+        if (connectedChests || connectedLifecycle)
+        {
+            ConnectedAcceptanceSmoke.ValidateChests(args[2], args[4], args[6], fixture, connection, lifecycleOnly: connectedLifecycle);
+            return 0;
+        }
+#if !MISSION_CHEST_CONNECTED_TESTS
         ConnectedAcceptanceSmoke.Validate(args[2], args[4], fixture, connection);
         return ConnectedAcceptanceSmoke.HandoffRejected ? 0 : 2;
+#else
+        throw new FixtureFailure("chest-focused-build-requires-run-connected-chests");
+#endif
     }
     FixtureSql.Execute(connection, "INSERT INTO instanceditems (Id,ContainerType,ContainerInstance,ContainerPlacement,Itemtype,LowId,HighId,Quality,MultipleCount) VALUES (42,1001,104,1,0,10,10,1,2); INSERT INTO items (ContainerType,ContainerInstance,ContainerPlacement,LowId,HighId,Quality,MultipleCount) VALUES (1001,104,2,11,11,1,1)");
     string before = FixtureSql.Fingerprint(connection);
@@ -446,6 +482,8 @@ sealed class DisposableSchemaDatabase : IDisposable
     public string ConnectionString { get; private set; } = string.Empty;
     public int ZonePort { get; private set; }
     public int LoginPort { get; private set; }
+    public int WorldPort { get; private set; }
+    public string WorldToken { get; private set; } = string.Empty;
     public string FixtureId => name;
     public string ConfigPath => Path.Combine(DirectoryPath, "Config.xml");
     public void Start()
@@ -483,6 +521,22 @@ sealed class DisposableSchemaDatabase : IDisposable
         File.WriteAllText(ConfigPath, "<?xml version=\"1.0\"?><Config><SQLType>MySql</SQLType><MysqlConnection>REPLACE_WITH_DISPOSABLE_RUNTIME_SECRET</MysqlConnection><ListenIP>127.0.0.1</ListenIP><ChatIP>127.0.0.1</ChatIP><ISCommLocalIP>127.0.0.1</ISCommLocalIP><ZoneIP>127.0.0.1</ZoneIP><ZonePort>" + ZonePort.ToString(CultureInfo.InvariantCulture) + "</ZonePort><LoginPort>17500</LoginPort><CommPort>" + communicationPort.ToString(CultureInfo.InvariantCulture) + "</CommPort><ChatPort>17512</ChatPort><DefaultPlayfield>4582</DefaultPlayfield></Config>");
     }
     public MySqlConnection Open() { var connection = new MySqlConnection(ConnectionString); connection.Open(); return connection; }
+
+    public void ConfigureOwnedWorld()
+    {
+        if (WorldPort != 0)
+            throw new FixtureFailure("fixture-world-already-configured");
+        WorldPort = AvailablePort();
+        WorldToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var xml = System.Xml.Linq.XDocument.Load(ConfigPath);
+        xml.Root!.SetElementValue("ChatPort", AvailablePort());
+        xml.Root.Add(new System.Xml.Linq.XElement("World",
+            new System.Xml.Linq.XElement("ListenIP", "127.0.0.1"),
+            new System.Xml.Linq.XElement("Port", WorldPort),
+            new System.Xml.Linq.XElement("Url", "http://127.0.0.1:" + WorldPort.ToString(CultureInfo.InvariantCulture)),
+            new System.Xml.Linq.XElement("StatusPort", -1)));
+        xml.Save(ConfigPath);
+    }
     public void Dispose()
     {
         bool resourcesCreated = created || networkCreated;

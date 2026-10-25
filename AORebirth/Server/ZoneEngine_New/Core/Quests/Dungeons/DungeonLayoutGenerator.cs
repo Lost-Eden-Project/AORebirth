@@ -96,6 +96,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             public DungeonFindItemPolicy? ReturnItem { get; set; }
             public DungeonRepairMachinePolicy? RepairMachine { get; set; }
             public DungeonNpcObjectivePolicy? NpcObjectives { get; set; }
+            public MissionChestPolicy? Chests { get; set; }
             public MissionTokenRewardPolicy? TokenReward { get; set; }
             public List<GenerationProfile> Profiles { get; set; } = [];
         }
@@ -115,6 +116,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         internal DungeonFindItemPolicy? ReturnItemPolicy => _policy?.ReturnItem;
         internal DungeonRepairMachinePolicy? RepairMachinePolicy => _policy?.RepairMachine;
         internal DungeonNpcObjectivePolicy? NpcObjectivePolicy => _policy?.NpcObjectives;
+
+        public MissionChestPolicy? ChestPolicy => _policy?.Chests;
 
         sealed class DoorStylesFile
         {
@@ -157,6 +160,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (_policy == null || _policy.Population?.IsValid(gameData) != true || _policy.FloorHeight is <= 0 or > 255
                     || (_policy.TokenReward != null && !_policy.TokenReward.IsValid)
+                    || (_policy.Chests != null && !_policy.Chests.IsValid)
                     || _policy.LockedDoorChancePercent is < 0 or > 100 || _policy.Profiles.Count == 0
                     || _policy.Profiles.Any(p => p.MinQuality < 1 || p.MinQuality > p.MaxQuality
                         || p.Styles.Length == 0 || p.Styles.Any(s => s <= 0) || p.Floors < (p.Team ? 2 : 1) || p.Floors > 8

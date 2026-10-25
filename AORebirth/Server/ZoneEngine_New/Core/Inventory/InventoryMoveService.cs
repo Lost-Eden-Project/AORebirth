@@ -109,7 +109,18 @@ namespace ZoneEngine_New.Core.Inventory
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(message);
+            Chest? chest = FindChestSource(player, message.SourceContainer);
+            if (chest != null)
+            {
+                lock (player.PersistenceGate)
+                    lock (chest.LootGate) HandleMove(player, message);
+                return;
+            }
+            HandleMove(player, message);
+        }
 
+        void HandleMove(Player player, ClientMoveItemToInventoryMessage message)
+        {
             if (!player.Inventory.IsHydrated || player.Session == null || player.Playfield == null)
                 return;
 
@@ -159,6 +170,8 @@ namespace ZoneEngine_New.Core.Inventory
             destPage.Content.TryGetValue(destSlot, out Item? destOccupant);
             if (destOccupant != null && destOccupant.Locked)
                 return;
+            if (lootSource is Chest && destOccupant != null)
+                return;
 
             // Occupied wear or unequip-onto-occupied bag is a swap. Bag-to-bag stays empty-only.
             if (destOccupant != null && !destIsWear && !sourceIsWear)
@@ -184,7 +197,11 @@ namespace ZoneEngine_New.Core.Inventory
             if (!ApplyMove(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource))
                 return;
 
-            SendAck(player, message.SourceContainer, player.Identity, destSlot);
+            // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F).
+            // Ownership still uses the resolved physical slot, committed by ApplyMove above.
+            int acknowledgementPlacement = lootSource is Chest && message.TargetPlacement == 0x6F
+                ? message.TargetPlacement : destSlot;
+            SendAck(player, message.SourceContainer, player.Identity, acknowledgementPlacement);
         }
 
         public void Handle(Player player, ClientContainerAddItemMessage message)
@@ -553,7 +570,36 @@ namespace ZoneEngine_New.Core.Inventory
             return page != null && (page.Flags & ContainerFlags.CanRemove) != 0;
         }
 
+        internal static Chest? FindChestSource(Player player, Identity source)
+        {
+            if (source.Type != IdentityType.Backpack || player.Playfield == null)
+                return null;
+            int handle = DecodeBackpackHandle(source);
+            if (handle == 0)
+                return null;
+            if (player.Inventory.TryGetOwnedBackpackPageByHandle(handle, out _))
+                return null;
+            DynelRegistry? registry = player.Playfield.GetService<DynelRegistry>();
+            if (registry == null)
+                return null;
+            foreach (Dynel dynel in registry.Dynels())
+                if (dynel is Chest chest && chest.InventoryHandle == handle)
+                    return chest;
+            return null;
+        }
+
         void CompletePending(PendingEquip pending)
+        {
+            if (pending.LootSource is Chest chest)
+            {
+                lock (pending.Player.PersistenceGate)
+                    lock (chest.LootGate) CompletePendingCore(pending);
+                return;
+            }
+            CompletePendingCore(pending);
+        }
+
+        void CompletePendingCore(PendingEquip pending)
         {
             SetMoveLock(pending, false);
 
@@ -856,7 +902,22 @@ namespace ZoneEngine_New.Core.Inventory
             Item item,
             LootableDynel? lootSource)
         {
+            if (lootSource is Chest chest)
+            {
+                lock (player.PersistenceGate)
+                    lock (chest.LootGate)
+                        return chest.CanTransferLoot(player)
+                            && ApplyMoveCore(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource);
+            }
+            return ApplyMoveCore(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource);
+        }
+
+        bool ApplyMoveCore(Player player, Container sourcePage, int sourceSlot, Container destPage, int destSlot,
+            Item item, LootableDynel? lootSource)
+        {
             Item? existingDest = destPage.Content.GetValueOrDefault(destSlot);
+            if (lootSource is Chest && existingDest != null)
+                return false;
             if (ReferenceEquals(sourcePage, destPage) && sourceSlot == destSlot)
                 return true;
             player.InvalidateOwnedItemCache();
@@ -891,6 +952,8 @@ namespace ZoneEngine_New.Core.Inventory
             };
             if (existingDest != null)
                 changes.Add(new InventoryRowChange(existingDest, sourcePage.Identity, sourceSlot, existingDest.StackCount));
+            ItemInstanceRecord[] expectedSources = lootSource != null && item.IsPersisted
+                ? [item.ToRecord(sourcePage.Identity, sourceSlot, item.StackCount)] : [];
             bool committed = _actions.TryCommit(player, changes,
                 () => !item.Locked && existingDest?.Locked != true
                     && sourcePage.Content.TryGetValue(sourceSlot, out Item? current) && ReferenceEquals(current, item)
@@ -906,7 +969,7 @@ namespace ZoneEngine_New.Core.Inventory
                     }
                     if (!destPage.Add(destSlot, item))
                         throw new InvalidOperationException("Reserved inventory move destination changed.");
-                });
+                }, expectedSources: expectedSources);
             if (committed) lootSource?.NotifyLootChanged();
             return committed;
         }

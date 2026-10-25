@@ -921,6 +921,7 @@ namespace ZoneEngine_New.Core.Playfield
             _playfieldManager.Teams.RefreshPlayer(player, preserveRoster: command.Envelope?.Team != null);
 
             Metrics.TickStallWatch.Stage("arrive.visibility", characterId);
+            TryEnsureMissionChests();
             // Visibility must activate even when journal/quest restore fails; otherwise nearby
             // hash-spawns never send SCFU and the client cannot see or tab NPCs.
             _playfield.GetRequiredService<PlayfieldLocality>().ActivatePlayerVisibility(player);
@@ -1021,6 +1022,7 @@ namespace ZoneEngine_New.Core.Playfield
             bool freshClient = !player.ZoneReconnectPending;
             player.ZoneReconnectPending = false;
 
+            TryEnsureMissionChests();
             _playfield.GetRequiredService<PlayfieldLocality>().ActivatePlayerVisibility(player);
             TryRestorePostSpawnContent(player);
             if (freshClient)
@@ -1296,8 +1298,20 @@ namespace ZoneEngine_New.Core.Playfield
             player.SyncLastPerkResetTime();
             player.FlushDirtyStats();
 
+            TryEnsureMissionChests();
             locality.ActivatePlayerVisibility(player);
             return true;
+        }
+
+        private void TryEnsureMissionChests()
+        {
+            if (_playfield is not QuestDungeonPlayfield dungeon)
+                return;
+            try { dungeon.EnsureChestPopulation(); }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Mission chest admission initialization failed; continuing world visibility quest=" + dungeon.QuestId);
+            }
         }
 
         /// <summary>

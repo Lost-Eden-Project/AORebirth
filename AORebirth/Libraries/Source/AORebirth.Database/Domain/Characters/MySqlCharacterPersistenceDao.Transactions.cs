@@ -63,6 +63,7 @@ namespace AORebirth.Database.Domain.Characters
             if (mutation.CharacterId <= 0) throw new ArgumentOutOfRangeException(nameof(mutation));
             Transaction((c, t) =>
             {
+                AssertExpectedSources(c, t, mutation);
                 WriteItems(c, t, mutation.Inserts, mutation.Locations);
                 AssertContainersEmpty(c, t, mutation.EmptyContainersBeforeRetire);
                 WriteStacks(c, t, mutation.Stacks);

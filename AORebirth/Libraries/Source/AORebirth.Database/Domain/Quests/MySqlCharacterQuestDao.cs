@@ -5,6 +5,9 @@ namespace AORebirth.Database.Domain.Quests
     using System;
     using System.Collections.Generic;
     using System.Data;
+    using System.Globalization;
+    using AORebirth.Database.Domain.Missions;
+    using AORebirth.Interfaces.Persistence.Missions;
 
     /// <summary>One row of <c>characterquests</c>: a player's state on one quest.</summary>
     public sealed class CharacterQuestRow
@@ -524,10 +527,74 @@ namespace AORebirth.Database.Domain.Quests
 
                 var parameters = new List<object>();
                 string list = InList(ids, "@Q", parameters);
+                foreach (string questId in ids)
+                    PurgeChestContents(c, t, questId);
                 Execute(c, t, "DELETE FROM characterquests WHERE QuestId IN (" + list + ")", parameters.ToArray());
                 Execute(c, t, "DELETE FROM generatedquests WHERE QuestId IN (" + list + ")", parameters.ToArray());
                 return ids.Count;
             });
+        }
+
+        private sealed class ChestCleanupFlag
+        {
+            public int Id;
+            public string Key;
+            public string Value;
+        }
+
+        static void PurgeChestContents(IDbConnection c, IDbTransaction t, string questId)
+        {
+            int owner;
+            long assigned;
+            using (IDbCommand command = Prepare(c, t,
+                "SELECT g.OwnerId,c.AssignedAtUtcTicks FROM generatedquests g JOIN characterquests c "
+                + "ON c.QuestId=g.QuestId AND c.CharacterId=g.OwnerId AND c.Source=1 WHERE g.QuestId=@Quest AND g.OwnerType=0 FOR UPDATE",
+                new object[] { "@Quest", questId }))
+            using (IDataReader reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                    return;
+                owner = reader.GetInt32(0);
+                assigned = reader.GetInt64(1);
+            }
+            // Older quests cannot carry this capability's strictly positive accepted-run keys.
+            if (assigned <= 0)
+                return;
+            string prefix = MissionChestPopulationFlags.Prefix(assigned);
+            var flags = new List<ChestCleanupFlag>();
+            using (IDbCommand command = Prepare(c, t,
+                "SELECT Id,FlagKey,`Value` FROM missionflags WHERE CharacterId=@Owner AND QuestId=@Quest AND FlagKey LIKE @Prefix FOR UPDATE",
+                new object[] { "@Owner", owner, "@Quest", questId, "@Prefix", prefix + "%" }))
+            using (IDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                    flags.Add(new ChestCleanupFlag { Id = reader.GetInt32(0), Key = reader.GetString(1), Value = reader.IsDBNull(2) ? null : reader.GetString(2) });
+            }
+            if (flags.Count == 0)
+                return;
+            ChestCleanupFlag seal = flags.Find(flag => flag.Key == MissionChestPopulationFlags.Seal(assigned));
+            int count;
+            if (seal == null || !int.TryParse(seal.Value, NumberStyles.None, CultureInfo.InvariantCulture, out count)
+                || count < 0 || flags.Count - 1 != count)
+                throw new InvalidOperationException("The chest population cannot be purged without its complete durable seal.");
+            var containers = new HashSet<int>();
+            for (int index = 0; index < count; index++)
+            {
+                ChestCleanupFlag snapshot = flags.Find(flag => flag.Key == MissionChestPopulationFlags.Chest(assigned, index));
+                if (snapshot == null || !containers.Add(MySqlMissionDao.ReadChestSnapshotContainer(snapshot.Value)))
+                    throw new InvalidOperationException("The chest population has missing or duplicate durable identities.");
+            }
+            foreach (int container in containers)
+            {
+                using (IDbCommand command = Prepare(c, t,
+                    "SELECT InstanceId FROM item_instances WHERE InstanceId=@Container FOR UPDATE", new object[] { "@Container", container }))
+                    if (command.ExecuteScalar() != null)
+                        throw new InvalidOperationException("Chest cleanup cannot retire the contents of an item-owned container.");
+                Execute(c, t, "DELETE FROM item_instances WHERE ContainerType=0xC749 AND ContainerInstance=@Container", "@Container", container);
+            }
+            foreach (ChestCleanupFlag flag in flags)
+                Execute(c, t, "DELETE FROM missionflags WHERE Id=@Id AND CharacterId=@Owner AND QuestId=@Quest",
+                    "@Id", flag.Id, "@Owner", owner, "@Quest", questId);
         }
 
         /// <summary>Marks every still-active character row of <paramref name="questId"/> with <paramref name="state"/>.</summary>

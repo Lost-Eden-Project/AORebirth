@@ -40,6 +40,9 @@ using ZoneEngine_New.Core.WorldSimulation;
 public sealed class QuestDungeonPlayfield : Playfield
 {
     PlayfieldWorldSimulation? _simulation;
+    AORebirth.World.Collision.DungeonWorldLayout? _chestDungeon;
+    bool _chestsReady;
+    Exception? _chestPopulationFailure;
     readonly MissionItemObjectiveBinding? _objectiveItem;
     readonly MissionNpcObjectiveBinding? _objectiveNpc;
     readonly bool _spawnNpcObjective;
@@ -51,7 +54,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         InventoryMoveService moves, InventoryFlushService flush, TradeService trades, CharacterSnapshotService snapshot,
         IPlayfieldMetricsRegistry metrics, IShopDao shopDao, MissionItemObjectiveBinding? objectiveItem = null,
         Func<Player, MissionObjectiveItem, bool>? collectObjective = null, MissionNpcObjectiveBinding? npcObjective = null,
-        MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true)
+        MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true, MissionChestPopulation? chestPopulation = null)
         : base(new Identity { Type = IdentityType.Playfield, Instance = playfieldId }, logger, router,
             manager, hydrator, data, items, hashItems, inventory, ids, moves, flush, trades, snapshot, metrics, shopDao)
     {
@@ -72,6 +75,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         _spawnNpcObjective = spawnNpcObjective;
         TokenProgress = tokenProgress;
         TokenProgress?.Attach(this, logger);
+        ChestPopulation = chestPopulation;
     }
 
     public string QuestId { get; }
@@ -79,6 +83,8 @@ public sealed class QuestDungeonPlayfield : Playfield
     public DungeonLayout Layout { get; }
 
     public MissionTokenProgress? TokenProgress { get; }
+
+    public MissionChestPopulation? ChestPopulation { get; }
 
     /// <summary>Where the dungeon is entered from, and where its occupants return to.</summary>
     public MissionEntrancePlacement Entrance { get; }
@@ -95,6 +101,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         var locality = GetRequiredService<PlayfieldLocality>();
         AORebirth.World.Collision.DungeonWorldLayout? dungeon = DungeonPlayfieldBinder.TryBuild(
             GameData.RootPath, Identity.Instance, Layout.Generator, Logger);
+        _chestDungeon = dungeon;
         if (dungeon == null && TokenProgress != null)
             throw new InvalidDataException("Mission token population cannot initialize without dungeon geometry.");
         if (dungeon != null)
@@ -121,9 +128,35 @@ public sealed class QuestDungeonPlayfield : Playfield
             SpawnObjectiveItem(dungeon, locality);
         }
 
+        EnsureChestPopulation();
+
         TokenProgress?.Seal();
 
         MarkBuilt();
+    }
+
+    /// <summary>Called during build and on the existing destination admission tick before visibility activates.</summary>
+    internal bool EnsureChestPopulation()
+    {
+        if (_chestsReady || ChestPopulation == null || IsDisposed)
+            return true;
+        if (_chestPopulationFailure != null)
+            throw new InvalidDataException("The mission chest population requires fresh dungeon reconstruction.", _chestPopulationFailure);
+        if (_chestDungeon == null)
+            return ChestPopulation.Defer("dungeon-geometry-unavailable");
+        if (_simulation == null)
+            return ChestPopulation.Defer("world-simulation-unavailable");
+        try
+        {
+            _chestsReady = ChestPopulation.Populate(this, _chestDungeon, _simulation);
+            return _chestsReady;
+        }
+        catch (Exception exception)
+        {
+            _chestPopulationFailure = exception;
+            ChestPopulation.Retire();
+            throw;
+        }
     }
 
     static readonly ConcurrentDictionary<(string Root, int Style), PlayfieldDistrictsData?> StyleDistricts = new();
@@ -493,6 +526,7 @@ public sealed class QuestDungeonPlayfield : Playfield
 
     protected override void OnDispose()
     {
+        ChestPopulation?.Retire();
         _simulation?.Dispose();
         _simulation = null;
         base.OnDispose();

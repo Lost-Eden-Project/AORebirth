@@ -120,6 +120,7 @@
     <Compile Include="Domain\Missions\MySqlMissionDao.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.Generated.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.Inventory.cs" />
+    <Compile Include="Domain\Missions\MySqlMissionDao.Chests.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.CharacterQuests.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.Legacy.cs" />
     <Compile Include="Domain\Shops\MySqlShopDao.cs" />

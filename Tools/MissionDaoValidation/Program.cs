@@ -37,7 +37,8 @@ namespace AORebirth.Tools.MissionDaoValidation
         private static int Main(string[] args)
         {
             bool generatedIdentityOnly = args.Length == 2 && args[1] == "--generated-identity-only";
-            if ((args.Length != 1 && !generatedIdentityOnly) || !string.Equals(args[0], "--run-disposable", StringComparison.Ordinal))
+            bool chestsOnly = args.Length == 2 && args[1] == "--chests-only";
+            if ((args.Length != 1 && !generatedIdentityOnly && !chestsOnly) || !string.Equals(args[0], "--run-disposable", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine("REFUSED: exact --run-disposable argument required.");
                 return 2;
@@ -65,6 +66,14 @@ namespace AORebirth.Tools.MissionDaoValidation
                 }
 
                 var dao = new MySqlMissionDao(() => Open(disposable.ApplicationConnectionString));
+                if (chestsOnly)
+                {
+                    ValidateChestPopulation(dao, disposable.ApplicationConnectionString);
+                    Console.WriteLine("MISSION_DAO_TEST_MODE=ISOLATED_PRODUCTION_SOURCES");
+                    Console.WriteLine("MISSION_CHEST_MYSQL=PASS");
+                    Console.WriteLine("MISSION_CHEST_CHECKS=" + checks.ToString(CultureInfo.InvariantCulture));
+                    return 0;
+                }
                 if (generatedIdentityOnly)
                 {
                     ValidateGeneratedEntranceIdentity(dao, disposable.ApplicationConnectionString);
@@ -83,6 +92,7 @@ namespace AORebirth.Tools.MissionDaoValidation
                 ValidateHardening(dao, disposable.ApplicationConnectionString);
                 ValidateCutoverReconciliation(disposable.ApplicationConnectionString);
                 ValidateCharacterQuestCompletion(dao, disposable.ApplicationConnectionString);
+                ValidateChestPopulation(dao, disposable.ApplicationConnectionString);
 
 #if MISSION_DAO_ISOLATED_TESTS
                 Console.WriteLine("MISSION_DAO_TEST_MODE=ISOLATED_PRODUCTION_SOURCES");

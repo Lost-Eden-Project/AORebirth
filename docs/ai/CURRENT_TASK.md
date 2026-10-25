@@ -1,18 +1,13 @@
 # Current Task
 
-ENTITLEMENT RELEASE AND REPOSITORY CLEANUP (2026-10-21).
+Integrate mission chests into current public master in this isolated worktree.
 
-The shared Expansions.All policy and scoped account/character migration remain
-unchanged. Production migration execution is separate from release validation;
-do not rerun it merely to deploy binaries.
-
-The single current Git-LFS inventory remains a required offline reproducibility
-input. Its exact object has been materialized and checked; WORKFLOW.md documents
-scoped hydration for checkouts created with LFS smudging disabled. No history,
-tracking rule, required asset or generated cohort is rewritten.
-
-Release validation uses current source identities. Private content selection,
-baseline preservation, Linux acceptance, deployment and cleanup evidence remain
-private. Private WaterExits and unrelated GameData must not be replaced by public
-catalogs as part of this entitlement release. Preserve existing user changes and
-migration evidence; remove only verified redundant task artifacts.
+- Branch: codex/mission-chests-master-integration.
+- Starting master: 4f66c4c20d0e6f5f6e300082d81482944b028680.
+- Chest source: 72e2ee62a49ff0a72d953aa43fc9c99c376ace8f (all five unique commits).
+- Preserve current Unique/overflow/inventory, WorldEngine routing, doors/NPC visibility and lifecycle behavior.
+- Exclude typed mission content. Preserve saved chest populations and existing loot policy.
+- Run requested focused tests, isolated MySQL and connected synthetic-client acceptance with bounded timeouts/owned cleanup.
+- Do not alter running Windows/Linux servers, actual player databases, private GameData or schema; never control the AO client.
+- User corrected publication destination to existing PUBLIC origin/subarumike/AORebirth. Commit/push only this feature branch after validation; no master merge or deployment.
+- Report: docs/reports/MISSION_CHEST_MASTER_INTEGRATION.md.

@@ -7,7 +7,7 @@ using AORebirth.Interfaces.Persistence.Missions;
 using SmokeLounge.AOtomation.Messaging.GameData;
 
 /// <summary>Transactional test storage: mutations operate on a private copy and publish only at commit.</summary>
-internal sealed class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransaction, IMissionInventoryMutationTransaction
+internal sealed partial class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransaction, IMissionInventoryMutationTransaction
 {
     internal Dictionary<MissionKeyData, MissionStateData> Missions = [];
     internal Dictionary<MissionObjectiveKeyData, MissionObjectiveProgressData> Objectives = [];
@@ -17,6 +17,7 @@ internal sealed class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransacti
     internal HashSet<string> Observations = [];
     internal Dictionary<int, MissionItemInstanceData> Items = [];
     internal Dictionary<int, long> Stats = [];
+    internal CharacterQuestCompletionSnapshotData? CharacterQuest;
     internal int Calls;
     internal Exception? Failure;
     internal bool UnknownCommit;
@@ -31,7 +32,7 @@ internal sealed class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransacti
         Calls++;
         var working = new AuthoredMissionTestDao
         {
-            CharacterId = characterId, AccountKey = accountKey!,
+            CharacterId = characterId, AccountKey = accountKey!, CharacterQuest = CloneCharacterQuest(CharacterQuest),
             Missions = Missions.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()),
             Objectives = Objectives.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()),
             Flags = Flags.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()),
@@ -43,6 +44,7 @@ internal sealed class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransacti
         BeforeCommit?.Invoke(working);
         if (Failure != null) throw Failure;
         Missions = working.Missions; Objectives = working.Objectives; Flags = working.Flags; AccountFlags = working.AccountFlags;
+        CharacterQuest = working.CharacterQuest;
         Rewards = working.Rewards; Observations = working.Observations; Items = working.Items; Stats = working.Stats;
         if (UnknownCommit) throw new MissionCommitOutcomeUnknownException(new InvalidOperationException("Transport lost after database commit."));
         return result;
@@ -98,6 +100,16 @@ internal sealed class AuthoredMissionTestDao : IMissionDao, IMissionDaoTransacti
             Items.Add(row.InstanceId, Copy(row));
         }
     }
+    internal static CharacterQuestCompletionSnapshotData? CloneCharacterQuest(CharacterQuestCompletionSnapshotData? row)
+        => row == null ? null : new()
+        {
+            CharacterId = row.CharacterId, QuestId = row.QuestId, Source = row.Source, State = row.State,
+            Progress = row.Progress, RequiredCount = row.RequiredCount, AssignedAtUtcTicks = row.AssignedAtUtcTicks,
+            UpdatedAtUtcTicks = row.UpdatedAtUtcTicks, OwnerType = row.OwnerType, OwnerId = row.OwnerId,
+            ExpiresAtUtcTicks = row.ExpiresAtUtcTicks, DefinitionJson = row.DefinitionJson,
+            AcgBuildingGeneratorJson = row.AcgBuildingGeneratorJson
+        };
+
     internal static MissionItemInstanceData Copy(MissionItemInstanceData row) => new() { InstanceId = row.InstanceId, ContainerType = row.ContainerType,
         ContainerInstance = row.ContainerInstance, ContainerPlacement = row.ContainerPlacement, ItemType = row.ItemType, LowId = row.LowId, HighId = row.HighId,
         Quality = row.Quality, StackCount = row.StackCount, Source = row.Source };

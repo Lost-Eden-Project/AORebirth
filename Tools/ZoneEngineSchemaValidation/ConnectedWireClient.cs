@@ -45,7 +45,13 @@ sealed class ConnectedWireClient : IDisposable
         {
             MessageBody? body;
             try { body = Read(); }
-            catch (IOException) { throw new FixtureFailure("connected-read-failed-waiting-" + typeof(T).Name); }
+            catch (IOException exception)
+            {
+                string reason = exception is EndOfStreamException ? "end-of-stream"
+                    : exception.InnerException is SocketException socket ? socket.SocketErrorCode.ToString()
+                    : exception.GetType().Name;
+                throw new FixtureFailure("connected-read-failed-waiting-" + typeof(T).Name + "-" + reason);
+            }
             Console.WriteLine("WIRE_RECEIVED=" + (body?.GetType().Name ?? "transport-or-unmapped"));
             if (body != null) Received.Add(body);
             if (body is T result && (matches == null || matches(result))) return result;
@@ -75,7 +81,39 @@ sealed class ConnectedWireClient : IDisposable
         }
         Packets.Add(packet);
         using var stream = new MemoryStream(packet);
-        return serializer.Deserialize(stream)?.Body;
+        SerializationContext? context = null;
+        try
+        {
+            return serializer.Deserialize(stream, out context)?.Body;
+        }
+        catch (Exception exception)
+        {
+            short frameType = BinaryPrimitives.ReadInt16BigEndian(header.AsSpan(2, 2));
+            string key = frameType == (short)PacketType.N3Message && packet.Length >= 20
+                ? " N3_TYPE=0x" + BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(16, 4)).ToString("X8") : "";
+            Console.Error.WriteLine("WIRE_DECODE_FAILED FRAME=0x" + ((ushort)frameType).ToString("X4") + key
+                + " LENGTH=" + packet.Length + " OFFSET=" + stream.Position + " ERROR=" + exception.GetType().Name);
+            // Only N3 messages carry gameplay data. Never print authentication payloads or diagnostic values.
+            if (frameType == (short)PacketType.N3Message)
+            {
+                Exception? error = exception;
+                for (int depth = 0; error != null && depth < 8; depth++, error = error.InnerException)
+                {
+                    string firstLine = error.Message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                    Console.Error.WriteLine("WIRE_DECODE_EXCEPTION TYPE=" + error.GetType().Name + " MESSAGE="
+                        + firstLine[..Math.Min(firstLine.Length, 512)]);
+                }
+                DiagnosticInfo? field = context?.DiagnosticInfos.LastOrDefault();
+                for (int depth = 0; field != null && depth < 16; depth++)
+                {
+                    var property = field.PropertyMetaData?.Property;
+                    Console.Error.WriteLine("WIRE_DECODE_FIELD NAME=" + (property == null ? "<body>" : property.DeclaringType?.Name + "." + property.Name)
+                        + " OFFSET=" + field.Offset + " LENGTH=" + field.Length);
+                    field = field.DiagnosticInfos.LastOrDefault();
+                }
+            }
+            throw;
+        }
     }
     public bool AdmissionRejected(int characterId)
     {

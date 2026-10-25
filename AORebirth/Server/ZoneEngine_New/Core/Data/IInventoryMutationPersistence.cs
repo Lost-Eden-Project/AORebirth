@@ -8,6 +8,7 @@ namespace ZoneEngine_New.Core.Data
         IReadOnlyList<ItemInstanceRecord> Inserts, IReadOnlyList<ItemLocationUpdate> Locations,
         IReadOnlyList<ItemStackUpdate> Stacks, IReadOnlyList<int> UploadedNanoIds)
     {
+        public IReadOnlyList<ItemInstanceRecord> ExpectedSources { get; init; } = [];
         public IReadOnlyList<StatRecord> FinalStats { get; init; } = [];
         public IReadOnlyList<int> EmptyContainersBeforeRetire { get; init; } = [];
     }

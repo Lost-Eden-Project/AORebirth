@@ -64,6 +64,45 @@ accepts an unauthenticated character. Positive lifecycle PASS does not override
 that negative gate. Retain the console log under `build-verify` and link the
 actual SHA in `NEWENGINE_CUTOVER_VALIDATION_RECEIPT.md`.
 
+For current generated mission chest acceptance, use the same disposable fixture:
+
+```cmd
+cmd /d /c Tools\run_newengine_connected_acceptance.cmd --engine <absolute-built-ZoneEngine_New.dll> --login-engine <absolute-built-LoginEngine.exe-or-dll> --chests-only --world-engine <absolute-built-WorldEngine.dll>
+```
+
+This opt-in cohort compiles the current chest path and existing shared wire,
+authentication, process and database helpers. The default cohort still reports
+its older fixture API failures. Set the existing `AO_REBIRTH_GAMEDATA_PATH` to
+the complete dataset. The chest cohort rolls/accepts through TCP and checks
+opening, transfers, authenticated reconnect and distinct-process restart using
+its own labelled database and WorldEngine on a fresh loopback endpoint, with a
+fixture-only token and the World status listener disabled. The World binary is
+required; this cohort never falls back to the normal World endpoint. Indoor positioning uses direct-control packets;
+this does not establish original-client visuals or player walking. Preserve
+running outputs by using separate standard MSBuild `OutDir` paths when needed.
+
+When migrations are prohibited, set `AO_REBIRTH_CHEST_FIXTURE_SCHEMA_PATH` to a
+current schema-only SQL snapshot containing the existing schema migration ledger
+and allocator metadata, with no player, inventory or mission rows. The chest
+cohort imports it only into its newly created disposable database, seeds the
+canonical teleport definitions there, and checks schema readiness without
+executing migrations. Keep this snapshot private under ignored `build-verify`.
+
+For an isolated startup/stop comparison against an exact baseline binary, replace
+`--chests-only` with `--lifecycle-only`, retaining all three binary arguments.
+This mode requires the empty snapshot, starts only its owned World/Login/Zone,
+and stops after readiness without character setup or gameplay. Stop records each
+process's binary hash, numeric exit and ordered shutdown failure types; every
+nonzero exit remains a failure.
+
+Only chest acceptance may opt in with
+`AO_REBIRTH_CHEST_ALLOW_PROVEN_SHUTDOWN_BASELINE=1` after the exact `4f66c4c20d0e6f5f6e300082d81482944b028680`
+baseline reproduction: Zone exit `3` with exactly the ordered failure types
+`NotSupportedException,ObjectDisposedException`. The actual exit/signature remain
+logged and the final result becomes `PASS_WITH_PROVEN_BASELINE_EXCEPTIONS` if used.
+The flag is cleared from child environments; lifecycle/default modes, Login/World,
+other exits and other signatures remain strict.
+
 Run:
 
 ```cmd

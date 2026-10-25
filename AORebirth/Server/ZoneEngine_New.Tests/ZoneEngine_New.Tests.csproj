@@ -103,4 +103,24 @@
     <Compile Remove="CharacterCreationTests.cs" />
     <Compile Remove="CharacterListTests.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(MissionChestFocusedTests)' == 'true'">
+    <Compile Remove="@(Compile)" />
+    <Compile Include="TestDoubles.cs" />
+    <Compile Include="InventoryActionTests.cs" />
+    <Compile Include="MissionChestLootTests.cs" />
+    <Compile Include="MissionChestPlacementTests.cs" />
+    <Compile Include="MissionChestPersistenceTests.cs" />
+    <Compile Include="MissionChestProtocolTests.cs" />
+    <Compile Include="MissionChestPopulationTests.cs" />
+    <Compile Include="MissionChestObjectiveIntegrationTests.cs" />
+    <Compile Include="AuthoredMissionTestDao.cs" />
+    <Compile Include="PlayerInventoryOverflowTests.cs" />
+    <Compile Include="ReconnectVisibilityTests.cs" />
+    <Compile Include="ExactSpawnVisibilityTests.cs" />
+    <Compile Include="FindItemRewardTests.cs" />
+    <Compile Include="QuestDungeonDestinationTests.cs" />
+    <Compile Include="ProceduralDungeonFoundationTests.cs" />
+    <Compile Include="MissionDestinationIntegrationTests.cs" />
+    <Compile Include="../../Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging.Tests/MissionLevelGraphTests.cs" Link="Missions/MissionLevelGraphTests.cs" />
+  </ItemGroup>
 </Project>

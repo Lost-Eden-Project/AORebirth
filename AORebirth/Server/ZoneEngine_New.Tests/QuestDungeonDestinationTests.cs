@@ -713,7 +713,7 @@ public sealed class QuestDungeonDestinationTests
         QuestDungeonPlayfield world = f.CreateObjectiveWorld((_, item) => { attempts++; f.PublishObjective(item); return true; }, out var binding);
         f.Player.Playfield = world;
         f.Player.Position = new Vector3(binding.X, binding.Y, binding.Z);
-        var handler = new ZoneEngine_New.Core.MessageHandlers.ClientGetItemMessageHandler();
+        var handler = new ZoneEngine_New.Core.MessageHandlers.ClientGetItemMessageHandler(f.Actions);
         handler.Handle(new ClientGetItemMessage { Identity = Identity.None, Identity1 = binding.Identity }, f.Session);
         handler.Handle(new ClientGetItemMessage { Identity = f.Player.Identity, Identity1 = Identity.None }, f.Session);
         Assert.AreEqual(0, attempts);
@@ -733,7 +733,7 @@ public sealed class QuestDungeonDestinationTests
     internal sealed class Fixture : IDisposable
     {
         internal readonly MissionEntrancePlacement Entrance;
-        internal readonly Player Player = TestWorld.CreatePlayer(77);
+        internal readonly Player Player;
         internal readonly Session Session = new();
         internal readonly QuestStore Store = new();
         internal readonly OfferDao Offers = new();
@@ -744,19 +744,26 @@ public sealed class QuestDungeonDestinationTests
         internal QuestDungeonService Service = null!;
         readonly DiagnosticLogger _logger = new();
         readonly IItemBuilder _items;
-        readonly StubCatalog _templates = new();
-        readonly StubInstanceIdAllocator _ids = new();
+        readonly IItemTemplateCatalog _templates;
+        readonly IItemInstanceIdAllocator _ids;
         readonly InventoryFlushService _flush;
         readonly InventoryActionService _actions;
         readonly QuestService _quests;
         internal QuestService Quests => _quests;
         internal IItemBuilder Items => _items;
+        internal IReadOnlyList<string> Information => _logger.Information;
+        internal InventoryActionService Actions => _actions;
         internal IGameData GameData => RuntimeData.Value;
         readonly Playfield _exterior = Blank<Playfield>();
 
         internal Fixture(IMissionDao? completionDao = null, IItemBuilder? items = null, Func<DateTime>? now = null,
-            CharacterSnapshotService? snapshots = null)
+            CharacterSnapshotService? snapshots = null, IItemTemplateCatalog? templates = null,
+            IInventoryRepository? inventory = null, IItemInstanceIdAllocator? ids = null, int playerId = 77,
+            bool enableMissionPopulationPersistence = false)
         {
+            Player = TestWorld.CreatePlayer(playerId);
+            _templates = templates ?? new StubCatalog();
+            _ids = ids ?? new StubInstanceIdAllocator();
             _items = items ?? new StubItemBuilder();
             Entrance = Catalog.Value.Placements.First(row => row.IdentityInstance > int.MaxValue && Catalog.Value.TryGetWorldPosition(row.Identity, out _));
             Assert.IsTrue(Catalog.Value.TryGetWorldPosition(Entrance.Identity, out var worldPos));
@@ -779,11 +786,20 @@ public sealed class QuestDungeonDestinationTests
                 now ?? (() => DateTime.UtcNow), completionDao, snapshots);
             Layouts = new DungeonLayoutGenerator(RuntimeData.Value, _logger);
             Assert.IsTrue(Layouts.IsAvailable, "Existing runtime GameData must contain the configured procedural styles. Root=" + RuntimeData.Value.RootPath + "; " + _logger.Errors);
+            if (!enableMissionPopulationPersistence)
+            {
+                // Destination and independent reward fixtures do not own persisted NPC/chest populations.
+                // Integrated objective fixtures opt into the configured population owners explicitly.
+                object policy = typeof(DungeonLayoutGenerator).GetField("_policy", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(Layouts)!;
+                policy.GetType().GetProperty("TokenReward")!.SetValue(policy, null);
+                policy.GetType().GetProperty("Chests")!.SetValue(policy, null);
+            }
             var minter = new HashItemMinter(RuntimeData.Value, _templates, _items);
             var authored = new AuthoredQuestService(null!, _flush, _items, _templates, _ids,
                 new AuthoredQuestCatalog(new InteractionContent()), _logger);
             Manager = new PlayfieldManager(_logger, new MessageRouter([], _logger), new PlayerHydrator(_items, RuntimeData.Value),
-                RuntimeData.Value, _items, minter, new StubInventoryRepository(), _ids,
+                RuntimeData.Value, _items, minter, inventory ?? new StubInventoryRepository(), _ids,
                 new InventoryMoveService(_logger, _flush, _actions), _flush,
                 new TradeService(_logger, RuntimeData.Value, _templates, minter, _ids, _flush, Persistence),
                 Blank<CharacterSnapshotService>(), new PlayfieldMetricsRegistry(), new TeamService(), authored, _templates, new Shops(), _quests);
@@ -809,7 +825,7 @@ public sealed class QuestDungeonDestinationTests
                 QuestDungeonParameters parameters = Parameters();
                 Assert.IsTrue(Layouts.TryGenerate(parameters, out var layout));
                 Assert.IsNotNull(layout.Doors, "Existing style data must provide its door templates.");
-                _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
+                AddFixtureTemplates(layout.Doors.DoorTemplate, layout.Doors.ExitTemplate);
             }
             return result;
         }
@@ -850,7 +866,7 @@ public sealed class QuestDungeonDestinationTests
                 X = point.xf, Y = point.yf, Z = point.zf, QuestInstanceStat = 1, WorldFlags = worldFlags
             };
             Assert.IsNotNull(layout.Doors);
-            _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
+            AddFixtureTemplates(layout.Doors.DoorTemplate, layout.Doors.ExitTemplate);
             return Manager.GetOrCreateQuestDungeon(parameters.DungeonPlayfield, binding.QuestId, layout, Entrance,
                 quality: parameters.Quality, objectiveItem: binding, collectObjective: collect);
         }
@@ -867,14 +883,25 @@ public sealed class QuestDungeonDestinationTests
                 parameters.LayoutPlan!.StyleId = style.Value;
             Assert.IsTrue(Layouts.TryGenerate(parameters, out DungeonLayout layout));
             Assert.IsNotNull(layout.Doors);
-            _templates.Add(layout.Doors.DoorTemplate, 1).Add(layout.Doors.ExitTemplate, 1);
+            AddFixtureTemplates(layout.Doors.DoorTemplate, layout.Doors.ExitTemplate);
             foreach (var transition in layout.FloorTransitions)
                 foreach (var endpoint in new[] { transition.From, transition.To })
-                    _templates.Add(endpoint.PlatformTemplateId, 1).Add(endpoint.ButtonTemplateId, 1);
+                    AddFixtureTemplates(endpoint.PlatformTemplateId, endpoint.ButtonTemplateId);
             return Manager.GetOrCreateQuestDungeon(parameters.DungeonPlayfield, "GFOUNDATION", layout, Entrance, targetHash, quality);
         }
         internal void SetExteriorIdentity(int playfield) => typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(_exterior, new Identity { Type = IdentityType.Playfield, Instance = playfield });
+        void AddFixtureTemplates(params int[] ids)
+        {
+            if (_templates is StubCatalog templates)
+            {
+                foreach (int id in ids)
+                {
+                    templates.Add(id, 1);
+                }
+            }
+        }
+
         internal void RestartService()
         {
             Service?.Dispose();
@@ -890,8 +917,9 @@ public sealed class QuestDungeonDestinationTests
     sealed class DiagnosticLogger : ZoneEngine_New.Core.Logging.IZoneLogger
     {
         internal string Errors = string.Empty;
+        internal readonly List<string> Information = [];
         public void Debug(string message) { }
-        public void Info(string message) { }
+        public void Info(string message) => Information.Add(message);
         public void Warn(string message) { }
         public void Error(string message) => Errors += message + Environment.NewLine;
         public void Error(Exception exception, string message) => Errors += message + " " + exception + Environment.NewLine;
@@ -964,6 +992,19 @@ public sealed class QuestDungeonDestinationTests
             Generated = quest; Character = characterRow; Keys.Add(key); Links.Add(key.InstanceId, quest.QuestId);
             return true;
         }
+        internal readonly List<QuestDungeonKeyItemRow> SourceItems = [];
+        public bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
+            CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow? sourceItem, long nowUtcTicks)
+        {
+            if (!TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, nowUtcTicks))
+                return false;
+            if (sourceItem != null)
+            {
+                SourceItems.Add(sourceItem);
+            }
+            return true;
+        }
+
         public string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks)
         {
             if (!Links.TryGetValue(sourceKeyInstanceId, out string? quest) || Links.Count >= maxKeys) return null;
