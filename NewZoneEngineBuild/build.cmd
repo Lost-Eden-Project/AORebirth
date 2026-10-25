@@ -26,6 +26,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Every real Windows product build owns one fresh source/content attempt.
+rem A child marker alone cannot bypass this check: the helper validates its live parent capability.
+if not "%AO_REBIRTH_BUILD_CHILD%"=="1" (
+    call "%REPO%\tools\windows_release_contract.cmd" run-build --repository-root "%CD%" -- "%ComSpec%" /d /c "%~f0" %*
+    exit /b !errorlevel!
+)
+call "%REPO%\tools\windows_release_contract.cmd" verify-build-token --repository-root "%CD%" --entrypoint NewZoneEngineBuild/build.cmd
+if errorlevel 1 exit /b 1
+
 if not exist "%VSWHERE%" (
     echo [NewZoneEngineBuild] vswhere.exe not found. Install Visual Studio with MSBuild.
     exit /b 1

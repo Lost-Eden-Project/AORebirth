@@ -7,7 +7,8 @@ param(
     [switch]$PrintEngineSelection,
     [switch]$ValidateEngineSelectionOnly,
     [switch]$ValidateSchemaOnly,
-    [int]$StartupTimeoutSeconds = 60
+    [int]$StartupTimeoutSeconds = 60,
+    [string]$ReleaseBuildAttempt = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,6 +42,18 @@ if (-not [string]::IsNullOrEmpty($processPath)) {
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$releaseAttemptInfo = $null
+$releaseAttemptPath = $null
+$releaseAttemptHash = $null
+if (-not [string]::IsNullOrWhiteSpace($ReleaseBuildAttempt)) {
+    & (Join-Path $root "tools\windows_release_contract.cmd") verify-startup-attempt --repository-root $root --build-attempt $ReleaseBuildAttempt
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release startup requires a successful current source/content/build attempt."
+    }
+    $releaseAttemptPath = [IO.Path]::GetFullPath((Join-Path $root $ReleaseBuildAttempt))
+    $releaseAttemptHash = (Get-FileHash -LiteralPath $releaseAttemptPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $releaseAttemptInfo = Get-Content -LiteralPath $releaseAttemptPath -Raw | ConvertFrom-Json
+}
 $engineDir = Join-Path $root "AORebirth\Built\Debug"
 $configPath = $env:AO_REBIRTH_CONFIG_PATH
 $useDefaultConfigPath = [string]::IsNullOrWhiteSpace($configPath)
@@ -366,6 +379,9 @@ foreach ($engine in $engines) {
             $env:AO_REBIRTH_CONFIG_PATH = Join-Path $root "AORebirth\Config\ChatEngine.Config.xml"
         }
 
+        # Start-Process inherits these exact process values. Keep selection evidence beside the existing PID metadata.
+        $launchGameData = [Environment]::GetEnvironmentVariable("AO_REBIRTH_GAMEDATA_PATH", "Process")
+        $launchGameDataOverride = [Environment]::GetEnvironmentVariable("AO_REBIRTH_GAMEDATA_OVERRIDE_PATH", "Process")
         if ($Visible) {
             $process = Start-Process -FilePath $exePath -ArgumentList $arguments -WorkingDirectory $workingDirectory -WindowStyle $windowStyle -PassThru
         }
@@ -400,6 +416,49 @@ foreach ($engine in $engines) {
             ShutdownFile = $shutdownFile
         })
 
+    if ($null -ne $releaseAttemptInfo) {
+        try {
+            if ((Get-FileHash -LiteralPath $releaseAttemptPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseAttemptHash) {
+                throw "Build attempt changed during release startup."
+            }
+            $resolvedGameData = if ([string]::IsNullOrWhiteSpace($launchGameData)) {
+                Join-Path (Split-Path -Parent $exePath) "GameData"
+            } elseif ([IO.Path]::IsPathRooted($launchGameData.Trim())) {
+                [IO.Path]::GetFullPath($launchGameData.Trim())
+            } else {
+                [IO.Path]::GetFullPath((Join-Path $workingDirectory $launchGameData.Trim()))
+            }
+            $selection = [ordered]@{
+                Engine = $processName
+                Pid = $process.Id
+                Path = $exePath
+                ProcessStartUtc = $process.StartTime.ToUniversalTime().ToString("o")
+                CapturedUtc = [DateTime]::UtcNow.ToString("o")
+                InheritedGameData = $launchGameData
+                InheritedOverride = $launchGameDataOverride
+                ResolvedGameDataRoot = [IO.Path]::GetFullPath($resolvedGameData)
+                BuildAttemptSha256 = $releaseAttemptHash
+                PublicMasterSha = $releaseAttemptInfo.PUBLIC_MASTER_SHA
+                GameDataManifest = $releaseAttemptInfo.WINDOWS_GAMEDATA_MANIFEST
+                LauncherSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+            $metadata.ReleaseSelection = $selection
+            $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $pidFile -Encoding UTF8
+            $selectionDir = Join-Path (Split-Path -Parent $releaseAttemptPath) "startup-selection"
+            [IO.Directory]::CreateDirectory($selectionDir) | Out-Null
+            $selectionFile = Join-Path $selectionDir ("{0}-{1}-{2}.json" -f $processName, $process.Id, $process.StartTime.ToUniversalTime().Ticks)
+            $selectionStream = [IO.File]::Open($selectionFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try {
+                $selectionBytes = [Text.Encoding]::UTF8.GetBytes(($selection | ConvertTo-Json -Depth 6))
+                $selectionStream.Write($selectionBytes, 0, $selectionBytes.Length)
+            } finally {
+                $selectionStream.Dispose()
+            }
+        } catch {
+            $failures.Add("Release process/data selection could not be recorded: $($_.Exception.Message)")
+            break
+        }
+    }
     Write-Host "Started $($engine.File) pid=$($process.Id)"
 
     if (-not (Wait-EngineOwnership -EngineName $processName -TimeoutSeconds $StartupTimeoutSeconds -Process $process -Ports $engine.Ports)) {

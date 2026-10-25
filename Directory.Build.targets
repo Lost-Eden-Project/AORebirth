@@ -1,0 +1,26 @@
+<Project TreatAsLocalProperty="AORebirthProductEntry;AORebirthNormalizedProjectDirectory;AORebirthServerOwner;AORebirthLibraryOwner">
+  <!-- The approved wrapper creates the live capability; direct product MSBuild cannot mint one. -->
+  <PropertyGroup>
+    <AORebirthNormalizedProjectDirectory>$([System.String]::Copy($([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)'))).Replace('\', '/').ToUpperInvariant())/</AORebirthNormalizedProjectDirectory>
+    <AORebirthServerOwner>$([System.String]::Copy($([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)AORebirth/Server'))).Replace('\', '/').ToUpperInvariant())/</AORebirthServerOwner>
+    <AORebirthLibraryOwner>$([System.String]::Copy($([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)AORebirth/Libraries'))).Replace('\', '/').ToUpperInvariant())/</AORebirthLibraryOwner>
+    <AORebirthProductEntry Condition="$([System.String]::Copy('$(AORebirthNormalizedProjectDirectory)').StartsWith('$(AORebirthServerOwner)')) Or $([System.String]::Copy('$(AORebirthNormalizedProjectDirectory)').StartsWith('$(AORebirthLibraryOwner)'))">true</AORebirthProductEntry>
+    <AORebirthProductEntry Condition="'$(MSBuildProjectName)' == 'ChatEngine.WinNet10' Or '$(MSBuildProjectName)' == 'LoginEngine.WinNet10' Or '$(MSBuildProjectName)' == 'ChatEngine' Or '$(MSBuildProjectName)' == 'LoginEngine' Or '$(MSBuildProjectName)' == 'WorldEngine' Or '$(MSBuildProjectName)' == 'ZoneEngine_New' Or '$(MSBuildProjectName)' == 'WebEngine'">true</AORebirthProductEntry>
+  </PropertyGroup>
+  <Target Name="RequireGovernedWindowsProductBuild" BeforeTargets="PrepareForBuild;CoreCompile"
+          Condition="'$(OS)' == 'Windows_NT' And '$(AORebirthProductEntry)' == 'true' And !$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux')) And !('$(DesignTimeBuild)' == 'true' And '$(SkipCompilerExecution)' == 'true')">
+    <Exec Command="call &quot;$(MSBuildThisFileDirectory)tools\windows_release_contract.cmd&quot; verify-build-token --repository-root &quot;$(MSBuildThisFileDirectory).&quot; --product &quot;$(MSBuildProjectName)&quot;" />
+  </Target>
+  <Target Name="RequireGovernedOnlineLinuxProductBuild" BeforeTargets="PrepareForBuild;CoreCompile"
+          Condition="'$(AORebirthProductEntry)' == 'true' And ('$(OS)' != 'Windows_NT' Or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux'))) And !('$(DesignTimeBuild)' == 'true' And '$(SkipCompilerExecution)' == 'true')">
+    <Error Text="Linux product output requires the governed online release builder." />
+  </Target>
+  <Target Name="RequireGovernedWindowsProductPublish" BeforeTargets="PrepareForPublish;ComputeFilesToPublish;Publish"
+          Condition="'$(OS)' == 'Windows_NT' And '$(AORebirthProductEntry)' == 'true' And !$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux'))">
+    <Exec Command="call &quot;$(MSBuildThisFileDirectory)tools\windows_release_contract.cmd&quot; verify-build-token --repository-root &quot;$(MSBuildThisFileDirectory).&quot; --product &quot;$(MSBuildProjectName)&quot;" />
+  </Target>
+  <Target Name="RequireGovernedOnlineLinuxProductPublish" BeforeTargets="PrepareForPublish;ComputeFilesToPublish;Publish"
+          Condition="'$(AORebirthProductEntry)' == 'true' And ('$(OS)' != 'Windows_NT' Or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux')))">
+    <Error Text="Linux product output requires the governed online release builder." />
+  </Target>
+</Project>

@@ -9,8 +9,9 @@ Product/runtime source is maintained in public GitHub master. The private Linux
 checkout owns the derived Linux source/build/package and required Linux-only
 adaptations, infrastructure and deployment tooling. It records the exact accepted
 public source SHA without becoming an independent product implementation.
-Windows is the authoritative development platform and source of truth. Linux is
-the production deployment platform.
+Windows is the development/integration platform; public GitHub master is the
+only product/runtime source of truth. The local checkout never becomes an
+independent product authority. Linux is the production deployment platform.
 
 There is no separate Linux implementation and no separate Windows
 implementation. Linux hosts builds produced from the same AORebirth source tree;
@@ -20,6 +21,13 @@ This policy governs future AI agents, developers, contributors, validation, and
 production promotion. It complements the system description in
 `docs/project/ARCHITECTURE.md` and the approved commands in
 `docs/ai/WORKFLOW.md`.
+
+The permanent [build/release contract](BUILD_RELEASE_CONTRACT.md) defines the
+mandatory source/content checks, Mike's explicit Windows acceptance, frozen
+release inputs, online Linux/live-server builder and identical Windows/Linux/live
+GameData manifest chain. Apply it before any build or release; older descriptions
+must not bypass its acceptance stop or replace accepted inputs with moving tips.
+Exact private content/repository/tooling bindings remain in private governance.
 
 ## Checkout ownership and deployment-tooling access
 
@@ -87,8 +95,12 @@ All development work originates on Windows, including:
 - acceptance testing;
 - approval of work for deployment.
 
-All feature work begins in the authoritative Windows source tree. Windows
-validation remains the acceptance gate for production.
+All feature work originates in public master through Windows development. Before
+each Windows build, synchronize the local integration checkout to freshly
+fetched public master and reconcile all approved private upstream content
+changes. Windows build/startup readiness stops for Mike's testing; only his
+explicit acceptance of the exact source/dump/manifest/receipt permits Linux
+release work. Automated readiness does not imply user acceptance.
 
 ## Linux role
 
@@ -137,28 +149,28 @@ separate audited policy explicitly changes them.
 ## Authoritative workflow
 
 ```text
-Windows development
+Fetch public master and private content upstream
         |
-Implementation
+Synchronize Windows and reconcile all approved content changes
         |
-Unit testing
+Windows build/startup readiness and deterministic GameData manifest
         |
-Integration testing
+STOP for Mike's testing and explicit Windows acceptance
         |
-Regression testing
+Freeze accepted public SHA, dump SHA and Windows GameData manifest
         |
-Acceptance testing
+Existing private GitHub Actions Linux/live-server package build
         |
-Approved Windows-validated source/build
+Linux/package validation and identical Windows/Linux GameData manifests
         |
-Linux deployment build
+Separately authorized normal deployment of the complete accepted result
         |
-Linux compatibility and deployment verification
-        |
-Production promotion
+Compute live manifest and require Windows == Linux == live
 ```
 
-Every production deployment must originate from Windows-validated source.
+Every production deployment must originate from Mike's explicitly accepted
+Windows source and canonical GameData. Test suites run only when separately
+authorized under `AGENTS.md`.
 Linux deployment verification may block promotion, but it does not supersede
 the Windows acceptance result.
 
@@ -184,6 +196,12 @@ master integration commit
 exact source SHA
         |
         v
+Mike's explicit acceptance of source, content and Windows build
+        |
+        v
+frozen source/dump/GameData manifest tuple
+        |
+        v
 controlled Linux build workspace
         |
         v
@@ -198,6 +216,7 @@ acceptance event is:
 
 ```text
 WINDOWS_ACCEPTED_PUBLIC_SHA == LINUX_PUBLIC_SOURCE_SHA == PACKAGE_PUBLIC_SOURCE_SHA
+WINDOWS_ACCEPTED_GAMEDATA_MANIFEST == LINUX_GAMEDATA_MANIFEST == LIVE_GAMEDATA_MANIFEST
 ```
 
 For a release, record the authoritative public source SHA separately from the
@@ -262,8 +281,10 @@ synchronization model.
     and other operating-system boundaries.
 11. The production Linux server must never diverge into an independent
     implementation.
-12. Every production deployment must originate from Windows-validated source.
-13. Windows validation is the production acceptance gate.
+12. Every production deployment must originate from Mike's explicitly accepted
+    Windows source and canonical GameData.
+13. Windows build/startup readiness stops for Mike's explicit acceptance;
+    automated checks or deployment approval cannot manufacture that acceptance.
 14. Linux verification is an additional gate, not a replacement for Windows
     validation.
 15. Product/runtime source fixes required by a Linux deployment must originate
@@ -277,6 +298,19 @@ synchronization model.
 19. Destructive checkout/reset/clean operations are permitted only inside
     controlled Linux acceptance workspaces, never arbitrary developer
     worktrees.
+20. Fetch/check private content upstream on every build/release attempt; reconcile
+    every approved addition, modification and removal before Windows build while
+    preserving legitimate private/generated content and canonical repairs.
+21. Freeze accepted source/dump/manifest inputs. Newer tips belong to the next
+    release unless Mike requests re-reconciliation and accepts the new build.
+22. Build Linux and live-server package files only through the existing private
+    GitHub Actions online builder; local Docker/WSL or production builds are not
+    substitutes.
+23. Supply Linux with the exact Windows-accepted canonical data and require the
+    same complete deterministic manifest through Windows, Linux and live.
+24. Deploy the complete accepted content delta, including removals; fail closed
+    on missing authority, access, acceptance, provenance, content or manifest
+    equality.
 
 Platform-specific adapters are permitted only when required by the operating
 system. They must implement the same shared contracts and preserve observable
@@ -304,7 +338,8 @@ All AI assistants working on AORebirth must follow this policy. They must:
 
 - implement product/runtime changes in the authoritative Windows source tree;
 - validate on Windows using repository-approved workflows;
-- promote only Windows-validated work to Linux;
+- stop for Mike's explicit Windows acceptance before Linux release work;
+- promote only the frozen Windows-accepted source and canonical GameData;
 - treat Linux checks as deployment and compatibility verification;
 - keep platform-specific code narrow and contract-compatible;
 - return product/runtime fixes to the Windows source tree first; keep permitted

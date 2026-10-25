@@ -18,6 +18,11 @@ Expected startup context/read order:
 8. [docs/project/ARCHITECTURE.md](docs/project/ARCHITECTURE.md)
 9. [docs/ai/WORKFLOW.md](docs/ai/WORKFLOW.md)
 
+Before any product build or release, also read the permanent
+[build/release contract](docs/project/BUILD_RELEASE_CONTRACT.md). It requires
+fresh source/content intake, Mike's explicit Windows acceptance, frozen release
+inputs, the online Linux/live-server builder and identical GameData manifests.
+
 Before editing source code, project files, or build/deployment implementation,
 also read [docs/ai/CODE_STANDARDS.md](docs/ai/CODE_STANDARDS.md).
 

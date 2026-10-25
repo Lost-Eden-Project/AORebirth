@@ -1,0 +1,1225 @@
+"""Fail-closed Windows release intake, canonical reconciliation and human acceptance.
+
+Private role bindings belong in the ignored local profile, never in this file.
+The existing build wrapper owns compilation; this module never builds an engine.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import ctypes
+import hashlib
+import json
+import ntpath
+import os
+from pathlib import Path, PurePosixPath
+import re
+import shutil
+import stat
+import subprocess
+import sys
+from datetime import datetime, timezone
+import uuid
+
+PUBLIC_REPOSITORY = "subarumike/AORebirth"
+TUPLE = ("PUBLIC_MASTER_SHA", "CONTENT_DUMP_SHA", "WINDOWS_GAMEDATA_MANIFEST")
+OUTPUTS = (
+    "AORebirth/Built/Debug/ChatEngine.exe", "AORebirth/Built/Debug/ChatEngine.dll",
+    "AORebirth/Built/Debug/LoginEngine.exe", "AORebirth/Built/Debug/LoginEngine.dll",
+    "AORebirth/Built/Debug/WorldEngine/WorldEngine.exe", "AORebirth/Built/Debug/WorldEngine/WorldEngine.dll",
+    "AORebirth/Built/Debug/ZoneEngine_New/ZoneEngine_New.exe", "AORebirth/Built/Debug/ZoneEngine_New/ZoneEngine_New.dll",
+)
+PRODUCT_PATHS = ("AORebirth/Server", "AORebirth/Libraries", "AORebirth/Config", "WindowsBuildNet10",
+                 "NewZoneEngineBuild", "Directory.Build.targets", "tools/windows_release_contract.py",
+                 "tools/windows_release_contract.cmd", "tools/build_aorebirth_debug.cmd", "start-engines.cmd", "start-engines.ps1")
+CONFIG_OVERRIDES = {"AORebirth/Config/Config.xml", "AORebirth/Config/ChatEngine.Config.xml"}
+MISSING = object()
+
+
+class ContentConflict(ValueError):
+    def __init__(self, pointer, hashes):
+        super().__init__("Unresolved private-content conflict at " + (pointer or "/"))
+        self.pointer, self.hashes = pointer, hashes
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def timestamp(value):
+    if not isinstance(value, str):
+        raise ValueError("Measured UTC timestamp required")
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        raise ValueError("Timestamp must identify its timezone")
+    return result.astimezone(timezone.utc)
+
+
+def encoded(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def blob(data):
+    return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
+
+
+def pairs(items):
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError("Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"), object_pairs_hook=pairs)
+
+
+def write_json(path, value, exclusive=False):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("xb" if exclusive else "wb") as stream:
+        stream.write(encoded(value))
+
+
+def relative(value):
+    if not isinstance(value, str) or "\\" in value or ":" in value:
+        raise ValueError("Evidence path must be portable and relative")
+    path = PurePosixPath(value)
+    if not value or path.is_absolute() or any(x in ("", ".", "..") for x in value.split("/")):
+        raise ValueError("Evidence path traversal rejected")
+    return path
+
+
+def checked(root, value, exists=True):
+    root = Path(root).resolve(strict=True)
+    path = root.joinpath(*relative(value).parts)
+    current = root
+    for part in relative(value).parts:
+        current = current / part
+        if current.is_symlink() or getattr(current, "is_junction", lambda: False)():
+            raise ValueError("Evidence symlink/junction rejected")
+    resolved = path.resolve(strict=exists)
+    if not resolved.is_relative_to(root):
+        raise ValueError("Evidence escaped its bundle")
+    return resolved
+
+
+def descriptor(bundle, path):
+    path = Path(path)
+    return {"PATH": path.relative_to(bundle).as_posix(), "SHA256": digest(path.read_bytes())}
+
+
+def load_descriptor(bundle, item):
+    if not isinstance(item, dict) or set(item) != {"PATH", "SHA256"}:
+        raise ValueError("Hash-bound descriptor required")
+    path = checked(bundle, item["PATH"])
+    if not path.is_file() or digest(path.read_bytes()) != item["SHA256"]:
+        raise ValueError("Evidence digest mismatch")
+    return path
+
+
+def command(args, cwd=None, role="command"):
+    result = subprocess.run(args, cwd=cwd, capture_output=True, check=False)
+    if result.returncode:
+        # Git/GitHub diagnostics can contain private URLs or credentials.
+        raise ValueError(role + " failed")
+    return result.stdout
+
+
+def git(root, *args):
+    return command(["git", "-C", str(root), *args], role="Git operation")
+
+
+def gh(profile, endpoint, raw=False):
+    headers = ["-H", "Cache-Control: no-cache"]
+    if raw:
+        headers += ["-H", "Accept: application/vnd.github.raw+json"]
+    data = command(["gh", "api", *headers, "repos/" + profile["PRIVATE_CONTENT_REPOSITORY"] + "/" + endpoint],
+                   role="Private content authority fetch")
+    return data if raw else json.loads(data)
+
+
+def file_state(path):
+    info = path.stat(follow_symlinks=False)
+    return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def content_states(root):
+    root = Path(root)
+    if root.is_symlink() or getattr(root, "is_junction", lambda: False)() or not root.is_dir():
+        raise ValueError("Canonical GameData must be one real directory")
+    files, directories = {}, {"": file_state(root)}
+    for directory, dirs, names in os.walk(root, followlinks=False):
+        for name in dirs:
+            child = Path(directory) / name
+            if child.is_symlink() or getattr(child, "is_junction", lambda: False)():
+                raise ValueError("Canonical GameData directory link rejected")
+            directories[child.relative_to(root).as_posix()] = file_state(child)
+        for name in names:
+            path = Path(directory) / name
+            if not stat.S_ISREG(path.lstat().st_mode):
+                raise ValueError("Canonical GameData special file rejected")
+            files[path.relative_to(root).as_posix()] = file_state(path)
+    return files, directories
+
+
+def inventory(root):
+    root = Path(root)
+    before_files, before_dirs = content_states(root)
+    rows, states = [], {}
+    for rel, before in sorted(before_files.items()):
+        path = root / rel
+        if file_state(path) != before:
+            raise ValueError("Canonical GameData changed before measurement")
+        sha, git_blob = hashlib.sha256(), hashlib.sha1(f"blob {before[2]}\0".encode())
+        with path.open("rb") as stream:
+            first = True
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                if first and block.startswith(b"version https://git-lfs.github.com/spec/v1"):
+                    raise ValueError("LFS pointer is not canonical content")
+                first = False
+                sha.update(block)
+                git_blob.update(block)
+        if file_state(path) != before:
+            raise ValueError("Canonical GameData changed during measurement")
+        rows.append({"path": rel, "size": before[2], "sha256": sha.hexdigest(), "blob": git_blob.hexdigest()})
+        states[rel] = before
+    if content_states(root) != (before_files, before_dirs):
+        raise ValueError("Canonical path set/directory state changed during measurement")
+    return sorted(rows, key=lambda row: row["path"]), states
+
+
+def validate_manifest(rows):
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Complete canonical manifest required")
+    names = []
+    for row in rows:
+        if set(row) != {"path", "size", "sha256", "blob"}:
+            raise ValueError("Canonical manifest row schema differs")
+        relative(row["path"])
+        if (type(row["size"]) is not int or row["size"] < 0
+                or not re.fullmatch("[0-9a-f]{64}", row["sha256"])
+                or not re.fullmatch("[0-9a-f]{40}", row["blob"])):
+            raise ValueError("Invalid canonical manifest identity")
+        names.append(row["path"])
+    if names != sorted(set(names)):
+        raise ValueError("Canonical manifest duplicate or unordered paths")
+    return digest(encoded(rows))
+
+
+def profile_for(root, selected=None):
+    root = Path(root).resolve(strict=True)
+    selected = selected or os.environ.get("AO_REBIRTH_RELEASE_CONFIG") or root / ".local/release-contract.json"
+    selected = Path(selected).resolve(strict=True)
+    if not selected.is_relative_to(root) or git(root, "check-ignore", "--", str(selected)).strip() == b"":
+        raise ValueError("Private role profile must be Git-ignored inside the product checkout")
+    profile = read_json(selected)
+    required = ("PRIVATE_CONTENT_REPOSITORY", "PRIVATE_CONTENT_BRANCH", "PRIVATE_CONTENT_PREFIX",
+                "CANONICAL_GAMEDATA_ROOT", "INITIAL_PROVENANCE", "INITIAL_PROVENANCE_SHA256", "STATE_ROOT")
+    if profile.get("FORMAT_VERSION") != 1 or any(not profile.get(key) for key in required):
+        raise ValueError("Private role bindings are incomplete")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", profile["PRIVATE_CONTENT_REPOSITORY"]):
+        raise ValueError("Private content authority binding invalid")
+    state = Path(profile["STATE_ROOT"]).resolve()
+    if not state.is_relative_to(root) or git(root, "check-ignore", "--", str(state / "probe.json")).strip() == b"":
+        raise ValueError("Release state must remain Git-ignored")
+    profile["STATE_ROOT"] = str(state)
+    if digest(Path(profile["INITIAL_PROVENANCE"]).read_bytes()) != profile["INITIAL_PROVENANCE_SHA256"]:
+        raise ValueError("Initial approved canonical provenance was changed")
+    return profile
+
+
+def source_exact(root, public_sha, overrides=()):
+    if git(root, "rev-parse", "HEAD").decode().strip() != public_sha:
+        raise ValueError("LOCAL_WINDOWS_SOURCE_SHA differs from PUBLIC_MASTER_SHA")
+    if set(overrides) - CONFIG_OVERRIDES:
+        raise ValueError("Operational configuration allowlist cannot permit product drift")
+    changed = git(root, "diff", "--name-only", public_sha, "--", *PRODUCT_PATHS).decode().splitlines()
+    untracked = git(root, "ls-files", "--others", "--exclude-standard", "--", *PRODUCT_PATHS).decode().splitlines()
+    if any(path not in overrides for path in changed) or untracked:
+        raise ValueError("Local Windows runtime/build source differs from public master")
+
+
+def fresh_sources(root, profile):
+    remote = profile.get("PUBLIC_PRODUCT_REMOTE", "origin")
+    url = git(root, "remote", "get-url", remote).decode().strip().removesuffix(".git")
+    if url not in ("https://github.com/" + PUBLIC_REPOSITORY, "git@github.com:" + PUBLIC_REPOSITORY):
+        raise ValueError("Public product remote is not the configured product authority")
+    git(root, "fetch", "--no-tags", remote, "+refs/heads/master:refs/remotes/" + remote + "/master")
+    public_sha = git(root, "rev-parse", "refs/remotes/" + remote + "/master").decode().strip()
+    public_fetch = {"ROLE": "PUBLIC_PRODUCT", "METHOD": "GIT_FETCH", "RESULT": "SUCCESS",
+                    "TIP_SHA": public_sha, "FETCHED_AT_UTC": now()}
+    source_exact(root, public_sha, profile.get("LOCAL_CONFIG_OVERRIDES", ()))
+    commit = gh(profile, "commits/" + profile["PRIVATE_CONTENT_BRANCH"])
+    sha = commit.get("sha", "")
+    tree_sha = commit.get("commit", {}).get("tree", {}).get("sha", "")
+    if not re.fullmatch("[0-9a-f]{40}", sha) or not re.fullmatch("[0-9a-f]{40}", tree_sha):
+        raise ValueError("Fresh content-dump SHA/tree is unknown")
+    content_fetch = {"ROLE": "PRIVATE_CONTENT_UPSTREAM", "METHOD": "AUTHENTICATED_GITHUB_API",
+                     "RESULT": "SUCCESS", "TIP_SHA": sha, "TREE_SHA": tree_sha, "FETCHED_AT_UTC": now()}
+    return public_sha, sha, public_fetch, content_fetch
+
+
+def tree_files(root, profile, authority, sha):
+    if authority == "PRIVATE_CONTENT_UPSTREAM":
+        value = gh(profile, "git/trees/" + sha + "?recursive=1")
+        if value.get("truncated") is not False:
+            raise ValueError("Complete upstream tree is required")
+        prefix = profile["PRIVATE_CONTENT_PREFIX"].strip("/") + "/"
+        result = {}
+        for row in value["tree"]:
+            if row["path"].startswith(prefix) and row["type"] != "tree":
+                if row["type"] != "blob" or row["mode"] not in ("100644", "100755"):
+                    raise ValueError("Upstream content special file rejected")
+                rel = row["path"][len(prefix):]
+                relative(rel)
+                result[rel] = {"blob": row["sha"], "size": row["size"]}
+        if not result:
+            raise ValueError("Published private content projection is empty")
+        return result
+    result = {}
+    for record in git(root, "ls-tree", "-rz", sha, "--", "AORebirth/GameData/").split(b"\0"):
+        if not record:
+            continue
+        meta, path = record.decode().split("\t")
+        mode, kind, identity = meta.split()
+        if kind != "blob" or mode not in ("100644", "100755"):
+            raise ValueError("Public content special file rejected")
+        rel = path.removeprefix("AORebirth/GameData/")
+        relative(rel)
+        result[rel] = {"blob": identity, "size": int(git(root, "cat-file", "-s", identity))}
+    return result
+
+
+def source_blob(root, profile, authority, identity):
+    if authority == "PRIVATE_CONTENT_UPSTREAM":
+        value = gh(profile, "git/blobs/" + identity)
+        if value.get("encoding") != "base64":
+            raise ValueError("Private content blob encoding is unknown")
+        data = base64.b64decode(value["content"].replace("\n", ""), validate=True)
+    else:
+        data = git(root, "cat-file", "blob", identity)
+    if data.startswith(b"version https://git-lfs.github.com/spec/v1") or blob(data) != identity:
+        raise ValueError("Upstream blob is unavailable, changed or an LFS pointer")
+    return data
+
+
+def value_hash(value):
+    return "MISSING" if value is MISSING else digest(encoded(value))
+
+
+def merge_value(base, incoming, private, resolutions, pointer=""):
+    """Three-way merge; independently owned keys survive and conflicts fail closed."""
+    if value_hash(private) == value_hash(base):
+        return incoming
+    if value_hash(incoming) == value_hash(base) or value_hash(incoming) == value_hash(private):
+        return private
+    if isinstance(base, dict) and isinstance(private, dict) and (isinstance(incoming, dict) or incoming is MISSING):
+        incoming_missing = incoming is MISSING
+        incoming = {} if incoming is MISSING else incoming
+        result = {}
+        for key in dict.fromkeys([*private, *incoming, *base]):
+            child = pointer + "/" + key.replace("~", "~0").replace("/", "~1")
+            value = merge_value(base.get(key, MISSING), incoming.get(key, MISSING), private.get(key, MISSING), resolutions, child)
+            if value is not MISSING:
+                result[key] = value
+        return MISSING if incoming_missing and not result else result
+    if base is MISSING and isinstance(incoming, dict) and isinstance(private, dict):
+        return merge_value({}, incoming, private, resolutions, pointer)
+    resolution = resolutions.get(pointer)
+    expected = {"BASE": value_hash(base), "UPSTREAM": value_hash(incoming), "PRIVATE": value_hash(private)}
+    if (not isinstance(resolution, dict) or resolution.get("INPUT_HASHES") != expected
+            or not resolution.get("APPROVAL") or resolution.get("ACTION") not in ("PRESERVE_PRIVATE", "RESOLVED_VALUE")):
+        raise ContentConflict(pointer, expected)
+    return private if resolution["ACTION"] == "PRESERVE_PRIVATE" else resolution["VALUE"]
+
+
+def merge_bytes(base, incoming, private, resolutions):
+    if private == base:
+        return incoming
+    if incoming == base or incoming == private:
+        return private
+    def parse(value):
+        return MISSING if value is None else json.loads(value.decode("utf-8-sig"), object_pairs_hook=pairs)
+    result = merge_value(parse(base), parse(incoming), parse(private), resolutions)
+    if result is MISSING:
+        return None
+    for raw in (private, incoming):
+        if raw is not None and value_hash(parse(raw)) == value_hash(result):
+            return raw
+    return (json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode()
+
+
+def changes(before, after):
+    return [(path, "A" if path not in before else "D" if path not in after else "M")
+            for path in sorted(before.keys() | after.keys()) if before.get(path) != after.get(path)]
+
+
+def stash(bundle, name, data):
+    if data is None:
+        return None
+    path = bundle / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return descriptor(bundle, path)
+
+
+def load_optional(bundle, item):
+    return None if item is None else load_descriptor(bundle, item).read_bytes()
+
+
+def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before_rows, resolutions=None):
+    resolutions = resolutions or {}
+    canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"]).resolve(strict=True)
+    snapshots, records, projected = {}, [], {}
+    for authority, base_sha, target_sha in (
+            ("PRIVATE_CONTENT_UPSTREAM", baseline["CONTENT_DUMP_SHA"], dump_sha),
+            ("PUBLIC_PRODUCT_DATA", baseline["PUBLIC_MASTER_SHA"], public_sha)):
+        old = tree_files(root, profile, authority, base_sha)
+        new = tree_files(root, profile, authority, target_sha)
+        snapshots[authority] = {"BASE_SHA": base_sha, "CURRENT_SHA": target_sha, "BEFORE": old, "AFTER": new}
+        for path, action in changes(old, new):
+            target = checked(canonical, path, exists=False)
+            private = projected[path] if path in projected else target.read_bytes() if target.is_file() else None
+            base = source_blob(root, profile, authority, old[path]["blob"]) if path in old else None
+            incoming = source_blob(root, profile, authority, new[path]["blob"]) if path in new else None
+            resolved = resolutions.get(authority + ":" + path, {})
+            try:
+                result = merge_bytes(base, incoming, private, resolved)
+            except ContentConflict as conflict:
+                write_json(bundle / "conflict.json", {"AUTHORITY": authority, "PATH": path,
+                           "POINTER": conflict.pointer, "INPUT_HASHES": conflict.hashes,
+                           "UPSTREAM_BEFORE": stash(bundle, "conflict/upstream-before", base),
+                           "UPSTREAM_AFTER": stash(bundle, "conflict/upstream-after", incoming),
+                           "CANONICAL_BEFORE": stash(bundle, "conflict/canonical-before", private)})
+                raise
+            if path in profile.get("PROTECTED_GENERATED_FILES", ()) and result != private:
+                raise ValueError("Required independently generated content would be overwritten")
+            prefix = "reconciliation-payload/" + str(len(records)) + "/"
+            records.append({"AUTHORITY": authority, "PATH": path, "STATUS": action,
+                            "UPSTREAM_BEFORE": stash(bundle, prefix + "upstream-before", base),
+                            "UPSTREAM_AFTER": stash(bundle, prefix + "upstream-after", incoming),
+                            "CANONICAL_BEFORE": stash(bundle, prefix + "canonical-before", private),
+                            "CANONICAL_AFTER": stash(bundle, prefix + "canonical-after", result),
+                            "RESOLUTIONS": resolved})
+            projected[path] = result
+    expected = {row["path"]: row for row in before_rows}
+    for path, data in projected.items():
+        if data is None:
+            expected.pop(path, None)
+        else:
+            expected[path] = {"path": path, "size": len(data), "sha256": digest(data), "blob": blob(data)}
+    after_rows = sorted(expected.values(), key=lambda row: row["path"])
+    plan = {"FORMAT_VERSION": 1, "PUBLIC_MASTER_SHA": public_sha, "CONTENT_DUMP_SHA": dump_sha,
+            "CANONICAL_BEFORE_MANIFEST": digest(encoded(before_rows)),
+            "WINDOWS_GAMEDATA_MANIFEST": digest(encoded(after_rows)), "SOURCE_SNAPSHOTS": snapshots,
+            "CHANGES": records, "PROTECTED_GENERATED_FILES": profile.get("PROTECTED_GENERATED_FILES", []),
+            "BEFORE_MANIFEST": descriptor(bundle, bundle / "before-manifest.json")}
+    if baseline.get("APPLIED_RECONCILIATION_BUNDLE"):
+        previous = Path(baseline["APPLIED_RECONCILIATION_BUNDLE"])
+        if not previous.resolve().is_relative_to(Path(profile["STATE_ROOT"]).resolve()):
+            raise ValueError("Prior reconciliation escaped local release state")
+        prior_file = previous / "reconciliation.json"
+        if digest(prior_file.read_bytes()) != baseline["APPLIED_RECONCILIATION_SHA256"]:
+            raise ValueError("Prior applied reconciliation was changed")
+        prior = read_json(prior_file)
+        validate_reconciliation(previous, prior)
+        if (prior["WINDOWS_GAMEDATA_MANIFEST"] != baseline["WINDOWS_GAMEDATA_MANIFEST"]
+                or any(prior[key] != baseline[key] for key in ("PUBLIC_MASTER_SHA", "CONTENT_DUMP_SHA"))):
+            raise ValueError("Canonical baseline differs from its applied reconciliation")
+        state_root = Path(profile["STATE_ROOT"]).resolve()
+        plan["PRIOR_LOCAL_RECONCILIATION"] = {"STATE_ROOT": str(state_root),
+                    "RECONCILIATION": descriptor(state_root, prior_file)}
+    write_json(bundle / "manifest.json", after_rows)
+    plan["CANONICAL_MANIFEST"] = descriptor(bundle, bundle / "manifest.json")
+    write_json(bundle / "reconciliation.json", plan)
+    return plan, projected
+
+
+def validate_reconciliation(bundle, reconciliation):
+    before = read_json(load_descriptor(bundle, reconciliation["BEFORE_MANIFEST"]))
+    after = read_json(load_descriptor(bundle, reconciliation["CANONICAL_MANIFEST"]))
+    if validate_manifest(before) != reconciliation["CANONICAL_BEFORE_MANIFEST"]:
+        raise ValueError("Reconciliation base manifest differs")
+    if reconciliation.get("PRIOR_LOCAL_RECONCILIATION"):
+        prior_local = reconciliation["PRIOR_LOCAL_RECONCILIATION"]
+        state_root = Path(prior_local["STATE_ROOT"]).resolve(strict=True)
+        if not Path(bundle).resolve().is_relative_to(state_root):
+            raise ValueError("Local replay history escaped ignored release state")
+        prior_path = load_descriptor(state_root, prior_local["RECONCILIATION"])
+        prior = read_json(prior_path)
+        validate_reconciliation(prior_path.parent, prior)
+        if prior["WINDOWS_GAMEDATA_MANIFEST"] != reconciliation["CANONICAL_BEFORE_MANIFEST"]:
+            raise ValueError("Approved reconciliation history does not bind the canonical baseline")
+        snapshots = reconciliation["SOURCE_SNAPSHOTS"]
+        if (snapshots["PRIVATE_CONTENT_UPSTREAM"]["BASE_SHA"] != prior["CONTENT_DUMP_SHA"]
+                or snapshots["PUBLIC_PRODUCT_DATA"]["BASE_SHA"] != prior["PUBLIC_MASTER_SHA"]):
+            raise ValueError("Reconciliation history skips an upstream transition")
+    expected_changes = set()
+    for authority, snapshot in reconciliation["SOURCE_SNAPSHOTS"].items():
+        if authority not in ("PRIVATE_CONTENT_UPSTREAM", "PUBLIC_PRODUCT_DATA"):
+            raise ValueError("Unknown content authority")
+        expected_changes |= {(authority, path, action) for path, action in changes(snapshot["BEFORE"], snapshot["AFTER"])}
+    if set(reconciliation["SOURCE_SNAPSHOTS"]) != {"PRIVATE_CONTENT_UPSTREAM", "PUBLIC_PRODUCT_DATA"}:
+        raise ValueError("Both private upstream and public resource transitions must be accounted for")
+    if (reconciliation["SOURCE_SNAPSHOTS"]["PRIVATE_CONTENT_UPSTREAM"]["CURRENT_SHA"] != reconciliation["CONTENT_DUMP_SHA"]
+            or reconciliation["SOURCE_SNAPSHOTS"]["PUBLIC_PRODUCT_DATA"]["CURRENT_SHA"] != reconciliation["PUBLIC_MASTER_SHA"]):
+        raise ValueError("Reconciliation snapshots do not bind the frozen source/dump tuple")
+    actual_changes, actual = set(), {row["path"]: row for row in before}
+    previous_results = {}
+    for change in reconciliation["CHANGES"]:
+        authority, path, action = change["AUTHORITY"], change["PATH"], change["STATUS"]
+        key = authority, path, action
+        if key in actual_changes:
+            raise ValueError("Duplicate content transition")
+        actual_changes.add(key)
+        snapshot = reconciliation["SOURCE_SNAPSHOTS"][authority]
+        base = load_optional(bundle, change["UPSTREAM_BEFORE"])
+        incoming = load_optional(bundle, change["UPSTREAM_AFTER"])
+        private = load_optional(bundle, change["CANONICAL_BEFORE"])
+        result = load_optional(bundle, change["CANONICAL_AFTER"])
+        for rows, data in ((snapshot["BEFORE"], base), (snapshot["AFTER"], incoming)):
+            if (data is None) != (path not in rows) or (data is not None and
+                    (blob(data) != rows[path]["blob"] or len(data) != rows[path]["size"])):
+                raise ValueError("Upstream payload does not match freshly fetched blob states")
+        old = actual.get(path)
+        if ((private is None) != (old is None) or (private is not None and
+                (digest(private) != old["sha256"] or blob(private) != old["blob"] or len(private) != old["size"]))):
+            raise ValueError("Canonical before-payload differs from the complete manifest")
+        if merge_bytes(base, incoming, private, change["RESOLUTIONS"]) != result:
+            raise ValueError("Content result is not the guarded three-way reconciliation")
+        if path in reconciliation["PROTECTED_GENERATED_FILES"] and private != result:
+            raise ValueError("Required generated/private content was overwritten")
+        if result is None:
+            actual.pop(path, None)
+        else:
+            actual[path] = {"path": path, "size": len(result), "sha256": digest(result), "blob": blob(result)}
+        previous_results[path] = result
+    if actual_changes != expected_changes:
+        raise ValueError("Approved upstream additions/modifications/removals are incomplete")
+    if sorted(actual.values(), key=lambda row: row["path"]) != after:
+        raise ValueError("Canonical manifest loses or changes unrelated private content")
+    if validate_manifest(after) != reconciliation["WINDOWS_GAMEDATA_MANIFEST"]:
+        raise ValueError("Canonical result digest differs")
+    return after
+
+
+def intake(root, profile, resolutions=None):
+    attempt_id, started = uuid.uuid4().hex, now()
+    public_sha, dump_sha, public_fetch, dump_fetch = fresh_sources(root, profile)
+    public_fetch["ATTEMPT_ID"] = dump_fetch["ATTEMPT_ID"] = attempt_id
+    state_root = Path(profile["STATE_ROOT"])
+    state_root.mkdir(parents=True, exist_ok=True)
+    baseline_path = state_root / "canonical-state.json"
+    baseline = read_json(baseline_path if baseline_path.is_file() else profile["INITIAL_PROVENANCE"])
+    if baseline_path.is_file() and not baseline.get("APPLIED_RECONCILIATION_BUNDLE"):
+        raise ValueError("Canonical state lacks an actually applied reconciliation")
+    for key in ("PUBLIC_MASTER_SHA", "CONTENT_DUMP_SHA", "WINDOWS_GAMEDATA_MANIFEST"):
+        if not baseline.get(key):
+            raise ValueError("Canonical content baseline is unknown")
+    rows, states = inventory(profile["CANONICAL_GAMEDATA_ROOT"])
+    if validate_manifest(rows) != baseline["WINDOWS_GAMEDATA_MANIFEST"]:
+        raise ValueError("Canonical GameData changed without approved reconciliation")
+    bundle = state_root / ("attempt-" + uuid.uuid4().hex)
+    bundle.mkdir()
+    write_json(bundle / "before-manifest.json", rows)
+    plan, projected = reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, rows, resolutions)
+    validate_reconciliation(bundle, plan)
+    attempt = {"FORMAT_VERSION": 1, "PUBLIC_MASTER_SHA": public_sha, "LOCAL_WINDOWS_SOURCE_SHA": public_sha,
+               "ATTEMPT_ID": attempt_id, "ATTEMPT_STARTED_UTC": started,
+               "CONTENT_DUMP_SHA": dump_sha, "WINDOWS_GAMEDATA_MANIFEST": plan["WINDOWS_GAMEDATA_MANIFEST"],
+               "PUBLIC_FETCH": public_fetch, "CONTENT_DUMP_FETCH": dump_fetch,
+               "CREATED_UTC": now(), "WINDOWS_BUILD": "NOT_RUN", "WINDOWS_USER_ACCEPTED": "NO",
+               "RECONCILIATION": descriptor(bundle, bundle / "reconciliation.json"),
+               "CANONICAL_MANIFEST": descriptor(bundle, bundle / "manifest.json"),
+               "LAUNCHER_SHA256": digest((Path(root) / "start-engines.ps1").read_bytes())}
+    write_json(bundle / "prepared.json", attempt)
+    write_json(state_root / "latest-plan.json", {"BUNDLE": str(bundle), "PLAN_SHA256": digest(encoded(plan))})
+    return bundle, attempt, plan, projected, states
+
+
+def apply_content(root, profile, approved_plan_sha256, resolutions=None):
+    bundle, attempt, plan, projected, states = intake(root, profile, resolutions)
+    if digest(encoded(plan)) != approved_plan_sha256:
+        raise ValueError("Fresh content plan differs from the approved plan")
+    canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"])
+    old = {}
+    try:
+        if {row["path"]: file_state(checked(canonical, row["path"])) for row in read_json(bundle / "before-manifest.json")} != states:
+            raise ValueError("Canonical data changed before reconciliation")
+        for path, data in projected.items():
+            target = checked(canonical, path, exists=False)
+            old[path] = target.read_bytes() if target.is_file() else None
+            if data is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temporary = target.with_name(target.name + ".release-contract-tmp")
+                if temporary.exists():
+                    raise ValueError("Canonical temporary path already exists")
+                temporary.write_bytes(data)
+                os.replace(temporary, target)
+        actual, _ = inventory(canonical)
+        if actual != read_json(bundle / "manifest.json"):
+            raise ValueError("Reconciled physical content differs from approved complete result")
+    except Exception:
+        for path, data in old.items():
+            target = checked(canonical, path, exists=False)
+            if data is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.write_bytes(data)
+        raise
+    write_json(Path(profile["STATE_ROOT"]) / "canonical-state.json",
+               {**{key: attempt[key] for key in TUPLE}, "APPLIED_RECONCILIATION_BUNDLE": str(bundle),
+                "APPLIED_RECONCILIATION_SHA256": digest((bundle / "reconciliation.json").read_bytes())})
+    return bundle
+
+
+def process_parent(pid):
+    if os.name != "nt":
+        try:
+            return int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return 0
+    from ctypes import wintypes
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", wintypes.LONG), ("dwFlags", wintypes.DWORD), ("szExeFile", wintypes.WCHAR * 260)]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    kernel.Process32FirstW.restype = wintypes.BOOL
+    kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    kernel.Process32NextW.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateToolhelp32Snapshot(2, 0)
+    if handle == ctypes.c_void_p(-1).value:
+        return 0
+    entry = Entry()
+    entry.dwSize = ctypes.sizeof(entry)
+    try:
+        more = kernel.Process32FirstW(handle, ctypes.byref(entry))
+        while more:
+            if entry.th32ProcessID == pid:
+                return int(entry.th32ParentProcessID)
+            more = kernel.Process32NextW(handle, ctypes.byref(entry))
+    finally:
+        kernel.CloseHandle(handle)
+    return 0
+
+
+def verify_build_token(root, profile, entrypoint=None, product=None):
+    state_path = Path(os.environ.get("AO_REBIRTH_BUILD_STATE", ""))
+    state_root = Path(profile["STATE_ROOT"]).resolve()
+    if not state_path.is_file() or not state_path.resolve().is_relative_to(state_root):
+        raise ValueError("Direct product MSBuild lacks a live governed build attempt")
+    state = read_json(state_path)
+    token = os.environ.get("AO_REBIRTH_BUILD_TOKEN", "")
+    if not token or digest(token.encode()) != state["TOKEN_SHA256"]:
+        raise ValueError("Build capability is missing or forged")
+    pid, visited = os.getpid(), set()
+    while pid and pid not in visited and pid != state["OWNER_PID"]:
+        visited.add(pid)
+        pid = process_parent(pid)
+    if not pid or pid != state["OWNER_PID"]:
+        raise ValueError("Build attempt is stale or not an ancestor of this compiler")
+    source_exact(root, state["PUBLIC_MASTER_SHA"], profile.get("LOCAL_CONFIG_OVERRIDES", ()))
+    canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"])
+    actual, directories = content_states(canonical)
+    if actual != state["FILE_STATES"] or directories != state["DIRECTORY_STATES"]:
+        raise ValueError("Canonical file set/state changed during build")
+    observations = []
+    if entrypoint:
+        if entrypoint != "NewZoneEngineBuild/build.cmd":
+            raise ValueError("Unknown governed build entrypoint")
+        observations.append(("WRAPPER", entrypoint))
+    if product:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", product):
+            raise ValueError("Unknown product compiler hook")
+        observations.append(("PRODUCT", product))
+    event_root = state_path.parent / "build-observations"
+    if event_root.is_symlink() or getattr(event_root, "is_junction", lambda: False)():
+        raise ValueError("Build observation directory link rejected")
+    event_root.mkdir(exist_ok=True)
+    state_hash = digest(state_path.read_bytes())
+    for kind, name in observations:
+        write_json(event_root / (uuid.uuid4().hex + ".json"),
+                   {"STATE_SHA256": state_hash, "KIND": kind, "NAME": name,
+                    "OBSERVED_PID": os.getpid(), "OBSERVED_AT_UTC": now()}, exclusive=True)
+    return state
+
+
+def collect_build_observations(state_path):
+    """Aggregate immutable per-hook events after the approved build child has exited."""
+    state_path = Path(state_path)
+    state, state_hash = read_json(state_path), digest(state_path.read_bytes())
+    event_root = checked(state_path.parent, "build-observations")
+    wrapper, products = False, set()
+    for path in sorted(event_root.iterdir()):
+        event = read_json(checked(event_root, path.name))
+        if (set(event) != {"STATE_SHA256", "KIND", "NAME", "OBSERVED_PID", "OBSERVED_AT_UTC"}
+                or event["STATE_SHA256"] != state_hash
+                or type(event["OBSERVED_PID"]) is not int or event["OBSERVED_PID"] <= 0
+                or timestamp(event["OBSERVED_AT_UTC"]) < timestamp(state["CREATED_UTC"])):
+            raise ValueError("Build observation does not bind immutable live capability")
+        if event["KIND"] == "WRAPPER" and event["NAME"] == "NewZoneEngineBuild/build.cmd":
+            wrapper = True
+        elif event["KIND"] == "PRODUCT" and re.fullmatch(r"[A-Za-z0-9_.-]+", event["NAME"]):
+            products.add(event["NAME"])
+        else:
+            raise ValueError("Unknown governed build observation")
+    return {"WRAPPER_ENTERED": wrapper, "PRODUCT_HOOKS": sorted(products)}
+
+
+def run_build(root, profile, child):
+    approved = [os.environ.get("ComSpec", r"C:\Windows\System32\cmd.exe"), "/d", "/c",
+                str(Path(root) / "NewZoneEngineBuild/build.cmd")]
+    if len(child) != len(approved) or any(os.path.normcase(os.path.normpath(actual)) != os.path.normcase(os.path.normpath(expected))
+                                        for actual, expected in zip(child, approved)):
+        raise ValueError("run-build may invoke only the tracked approved build entrypoint without overrides")
+    bundle, attempt, plan, projected, states = intake(root, profile)
+    if plan["CANONICAL_BEFORE_MANIFEST"] != plan["WINDOWS_GAMEDATA_MANIFEST"]:
+        raise ValueError("Approved content A/M/D must be reconciled before Windows build; inspect latest-plan.json")
+    current_states, directories = content_states(profile["CANONICAL_GAMEDATA_ROOT"])
+    if current_states != states:
+        raise ValueError("Canonical file set/state changed before compilation")
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    active = bundle / "active.json"
+    write_json(active, {"TOKEN_SHA256": digest(token.encode()), "OWNER_PID": os.getpid(),
+                        "PUBLIC_MASTER_SHA": attempt["PUBLIC_MASTER_SHA"], "FILE_STATES": states,
+                        "DIRECTORY_STATES": directories, "CREATED_UTC": now()}, exclusive=True)
+    env = dict(os.environ, AO_REBIRTH_BUILD_STATE=str(active), AO_REBIRTH_BUILD_TOKEN=token,
+               AO_REBIRTH_BUILD_CHILD="1")
+    attempt["BUILD_STARTED_UTC"] = now()
+    try:
+        result = subprocess.run(child, cwd=root, env=env, check=False)
+        attempt["WINDOWS_BUILD_EXIT_CODE"] = result.returncode
+        attempt["BUILD_FINISHED_UTC"] = now()
+        if result.returncode:
+            attempt["WINDOWS_BUILD"] = "FAIL"
+        else:
+            observed = collect_build_observations(active)
+            required = {"ChatEngine.WinNet10", "LoginEngine.WinNet10", "WorldEngine", "ZoneEngine_New"}
+            if observed.get("WRAPPER_ENTERED") is not True or not required <= set(observed.get("PRODUCT_HOOKS", [])):
+                raise ValueError("Approved wrapper and all four product compiler hooks were not observed")
+            attempt["APPROVED_BUILD_ENTRYPOINT"] = "NewZoneEngineBuild/build.cmd"
+            attempt["PRODUCT_COMPILER_HOOKS"] = observed["PRODUCT_HOOKS"]
+            source_exact(root, attempt["PUBLIC_MASTER_SHA"], profile.get("LOCAL_CONFIG_OVERRIDES", ()))
+            after, _ = inventory(profile["CANONICAL_GAMEDATA_ROOT"])
+            if validate_manifest(after) != attempt["WINDOWS_GAMEDATA_MANIFEST"]:
+                raise ValueError("Canonical content mutated during compilation")
+            binaries = []
+            for name in OUTPUTS:
+                output = checked(root, name)
+                before = file_state(output)
+                output_hash = digest(output.read_bytes())
+                if file_state(output) != before:
+                    raise ValueError("Windows output changed during final measurement")
+                binaries.append({"path": name, "bytes": before[2], "sha256": output_hash})
+            attempt["BINARIES"] = binaries
+            summary = summarize_reconciliation(bundle, plan)
+            write_json(bundle / "reconciliation-summary.json", summary, exclusive=True)
+            attempt["RECONCILIATION"] = descriptor(bundle, bundle / "reconciliation-summary.json")
+            attempt["WINDOWS_CONTENT_VALIDATION"] = {"METHOD": "LOCAL_GUARDED_REPLAY_AND_WHOLE_TREE_MEASUREMENT",
+                        "SUMMARY_SHA256": attempt["RECONCILIATION"]["SHA256"],
+                        "LOCAL_REPLAY_SHA256": summary["LOCAL_REPLAY_SHA256"],
+                        "CANONICAL_MANIFEST": attempt["WINDOWS_GAMEDATA_MANIFEST"], "VALIDATED_AT_UTC": now()}
+            attempt["WINDOWS_BUILD"] = "PASS"
+        write_json(bundle / "build-attempt.json", attempt, exclusive=True)
+        print("BUILD_ATTEMPT_RECEIPT=" + (bundle / "build-attempt.json").relative_to(root).as_posix())
+        print("WINDOWS_USER_ACCEPTED=NO")
+        return result.returncode
+    except Exception as error:
+        if not (bundle / "build-attempt.json").exists():
+            attempt.update(WINDOWS_BUILD="FAIL", BUILD_FINISHED_UTC=now(), VALIDATION_FAILURE_TYPE=type(error).__name__)
+            write_json(bundle / "build-attempt.json", attempt, exclusive=True)
+        raise
+    finally:
+        active.unlink(missing_ok=True)
+
+
+def content_identity(data, path=None):
+    if data is None:
+        return None
+    result = {"size": len(data), "sha256": digest(data), "blob": blob(data)}
+    return {"path": path, **result} if path is not None else result
+
+
+def summarize_reconciliation(bundle, reconciliation):
+    """Export identities only after the ignored local three-way payload replay succeeds."""
+    validate_reconciliation(bundle, reconciliation)
+    records = []
+    for change in reconciliation["CHANGES"]:
+        approvals = {}
+        for pointer, resolution in change["RESOLUTIONS"].items():
+            approvals[pointer] = {key: resolution[key] for key in ("ACTION", "INPUT_HASHES", "APPROVAL")}
+            if resolution["ACTION"] == "RESOLVED_VALUE":
+                approvals[pointer]["RESOLVED_VALUE_SHA256"] = value_hash(resolution["VALUE"])
+        records.append({**{key: change[key] for key in ("AUTHORITY", "PATH", "STATUS")},
+                        **{key: content_identity(load_optional(bundle, change[key]),
+                                                change["PATH"] if key.startswith("CANONICAL_") else None)
+                           for key in ("UPSTREAM_BEFORE", "UPSTREAM_AFTER", "CANONICAL_BEFORE", "CANONICAL_AFTER")},
+                        "RESOLUTION_APPROVALS": approvals})
+    summary = {key: reconciliation[key] for key in ("FORMAT_VERSION", *TUPLE, "CANONICAL_BEFORE_MANIFEST",
+                "SOURCE_SNAPSHOTS", "PROTECTED_GENERATED_FILES", "BEFORE_MANIFEST", "CANONICAL_MANIFEST")}
+    summary.update(PROOF_KIND="PORTABLE_MEASURED_RECONCILIATION_V1", CHANGES=records,
+                   LOCAL_REPLAY_SHA256=digest(encoded(reconciliation)))
+    prior = reconciliation.get("PRIOR_LOCAL_RECONCILIATION")
+    if prior:
+        prior_path = load_descriptor(Path(prior["STATE_ROOT"]), prior["RECONCILIATION"])
+        prior_value = read_json(prior_path)
+        summary["PRIOR_CHECKPOINT"] = {**{key: prior_value[key] for key in TUPLE},
+                                       "LOCAL_REPLAY_SHA256": digest(encoded(prior_value))}
+    validate_reconciliation_summary(bundle, summary)
+    return summary
+
+
+def validate_reconciliation_summary(bundle, summary):
+    required = {"FORMAT_VERSION", *TUPLE, "CANONICAL_BEFORE_MANIFEST", "SOURCE_SNAPSHOTS",
+                "PROTECTED_GENERATED_FILES", "BEFORE_MANIFEST", "CANONICAL_MANIFEST", "PROOF_KIND",
+                "CHANGES", "LOCAL_REPLAY_SHA256"}
+    if (set(summary) not in (required, required | {"PRIOR_CHECKPOINT"}) or summary["FORMAT_VERSION"] != 1
+            or summary["PROOF_KIND"] != "PORTABLE_MEASURED_RECONCILIATION_V1"
+            or not re.fullmatch("[0-9a-f]{64}", summary["LOCAL_REPLAY_SHA256"])):
+        raise ValueError("One bounded measured reconciliation summary is required")
+    before = read_json(load_descriptor(bundle, summary["BEFORE_MANIFEST"]))
+    after = read_json(load_descriptor(bundle, summary["CANONICAL_MANIFEST"]))
+    if (validate_manifest(before) != summary["CANONICAL_BEFORE_MANIFEST"]
+            or validate_manifest(after) != summary["WINDOWS_GAMEDATA_MANIFEST"]):
+        raise ValueError("Complete reconciliation summary manifests differ")
+    snapshots, expected = summary["SOURCE_SNAPSHOTS"], set()
+    if set(snapshots) != {"PRIVATE_CONTENT_UPSTREAM", "PUBLIC_PRODUCT_DATA"}:
+        raise ValueError("Both complete authority snapshots are required")
+    for authority, snapshot in snapshots.items():
+        if (set(snapshot) != {"BASE_SHA", "CURRENT_SHA", "BEFORE", "AFTER"}
+                or any(not re.fullmatch("[0-9a-f]{40}", snapshot[key]) for key in ("BASE_SHA", "CURRENT_SHA"))):
+            raise ValueError("Authority snapshot identity differs")
+        target = summary["CONTENT_DUMP_SHA" if authority == "PRIVATE_CONTENT_UPSTREAM" else "PUBLIC_MASTER_SHA"]
+        if snapshot["CURRENT_SHA"] != target:
+            raise ValueError("Authority snapshot does not bind frozen source")
+        for state in (snapshot["BEFORE"], snapshot["AFTER"]):
+            if not isinstance(state, dict):
+                raise ValueError("Complete authority path state required")
+            for path, row in state.items():
+                relative(path)
+                if (set(row) != {"blob", "size"} or type(row["size"]) is not int or row["size"] < 0
+                        or not re.fullmatch("[0-9a-f]{40}", row["blob"])):
+                    raise ValueError("Authority path identity differs")
+        expected |= {(authority, path, action) for path, action in changes(snapshot["BEFORE"], snapshot["AFTER"])}
+    if "PRIOR_CHECKPOINT" in summary:
+        prior = summary["PRIOR_CHECKPOINT"]
+        if (set(prior) != {*TUPLE, "LOCAL_REPLAY_SHA256"}
+                or not re.fullmatch("[0-9a-f]{64}", prior["LOCAL_REPLAY_SHA256"])
+                or prior["WINDOWS_GAMEDATA_MANIFEST"] != summary["CANONICAL_BEFORE_MANIFEST"]
+                or snapshots["PRIVATE_CONTENT_UPSTREAM"]["BASE_SHA"] != prior["CONTENT_DUMP_SHA"]
+                or snapshots["PUBLIC_PRODUCT_DATA"]["BASE_SHA"] != prior["PUBLIC_MASTER_SHA"]):
+            raise ValueError("Measured canonical checkpoint/source identity differs")
+    actual, seen = {row["path"]: row for row in before}, set()
+    for change in summary["CHANGES"]:
+        if set(change) != {"AUTHORITY", "PATH", "STATUS", "UPSTREAM_BEFORE", "UPSTREAM_AFTER", "CANONICAL_BEFORE", "CANONICAL_AFTER", "RESOLUTION_APPROVALS"}:
+            raise ValueError("Bounded content transition schema differs")
+        authority, path, action = change["AUTHORITY"], change["PATH"], change["STATUS"]
+        relative(path)
+        key = authority, path, action
+        if key not in expected or key in seen:
+            raise ValueError("Unexpected or duplicate authority transition")
+        seen.add(key)
+        for field, state in (("UPSTREAM_BEFORE", "BEFORE"), ("UPSTREAM_AFTER", "AFTER")):
+            identity, source = change[field], snapshots[authority][state].get(path)
+            if (identity is None) != (source is None):
+                raise ValueError("Upstream addition/removal summary differs")
+            if identity is not None and (set(identity) != {"size", "sha256", "blob"}
+                    or type(identity["size"]) is not int or identity["size"] < 0
+                    or not re.fullmatch("[0-9a-f]{64}", identity["sha256"])
+                    or {key: identity[key] for key in ("size", "blob")} != source):
+                raise ValueError("Upstream summary blob/size/hash differs")
+        for field in ("CANONICAL_BEFORE", "CANONICAL_AFTER"):
+            if change[field] is not None:
+                validate_manifest([change[field]])
+                if change[field]["path"] != path:
+                    raise ValueError("Canonical transition path differs")
+        if change["CANONICAL_BEFORE"] != actual.get(path):
+            raise ValueError("Canonical transition does not bind full before manifest")
+        approvals = change["RESOLUTION_APPROVALS"]
+        if not isinstance(approvals, dict):
+            raise ValueError("Explicit resolution bindings required")
+        for pointer, approval in approvals.items():
+            fields = {"ACTION", "INPUT_HASHES", "APPROVAL"}
+            if approval.get("ACTION") == "RESOLVED_VALUE":
+                fields.add("RESOLVED_VALUE_SHA256")
+            if (not isinstance(pointer, str) or set(approval) != fields or not approval["APPROVAL"]
+                    or approval["ACTION"] not in ("PRESERVE_PRIVATE", "RESOLVED_VALUE")
+                    or set(approval["INPUT_HASHES"]) != {"BASE", "UPSTREAM", "PRIVATE"}
+                    or any(value != "MISSING" and not re.fullmatch("[0-9a-f]{64}", value)
+                           for value in approval["INPUT_HASHES"].values())
+                    or ("RESOLVED_VALUE_SHA256" in approval and not re.fullmatch("[0-9a-f]{64}", approval["RESOLVED_VALUE_SHA256"]))):
+                raise ValueError("Explicit resolution approval/hash binding differs")
+        if path in summary["PROTECTED_GENERATED_FILES"] and change["CANONICAL_BEFORE"] != change["CANONICAL_AFTER"]:
+            raise ValueError("Required generated/private content changed")
+        if change["CANONICAL_AFTER"] is None:
+            actual.pop(path, None)
+        else:
+            actual[path] = change["CANONICAL_AFTER"]
+    if seen != expected or sorted(actual.values(), key=lambda row: row["path"]) != after:
+        raise ValueError("Complete A/M/D or unrelated canonical path preservation differs")
+    return after
+
+
+def export_accepted_bundle(repository_root, bundle, acceptance_path):
+    """Copy only the fixed portable metadata/evidence graph; raw replay scratch stays local."""
+    context = load_accepted_release(repository_root, acceptance_path)
+    acceptance, windows, attempt = context["acceptance"], context["windows"], context["build_attempt"]
+    summary = context["reconciliation"]
+    files = {Path(acceptance_path).relative_to(bundle).as_posix()}
+    objects = (acceptance, windows, attempt, summary)
+    def collect(value):
+        if isinstance(value, dict):
+            if set(value) == {"PATH", "SHA256"}:
+                files.add(load_descriptor(bundle, value).relative_to(bundle).as_posix())
+            else:
+                for nested in value.values():
+                    collect(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                collect(nested)
+    for value in objects:
+        collect(value)
+    files.update(windows["EVIDENCE"])
+    target = bundle.parent / ("portable-" + attempt["ATTEMPT_ID"])
+    target.mkdir()
+    for name in sorted(files):
+        source, destination = checked(bundle, name), target.joinpath(*relative(name).parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    result = target / Path(acceptance_path).relative_to(bundle)
+    load_accepted_release(repository_root, result)
+    return result
+
+
+def require_successful_attempt(bundle, attempt):
+    if (attempt.get("FORMAT_VERSION") != 1 or attempt.get("WINDOWS_BUILD") != "PASS"
+            or attempt.get("WINDOWS_BUILD_EXIT_CODE") != 0 or not attempt.get("BUILD_FINISHED_UTC")
+            or not attempt.get("BUILD_STARTED_UTC") or timestamp(attempt["BUILD_STARTED_UTC"]) > timestamp(attempt["BUILD_FINISHED_UTC"])
+            or attempt.get("LOCAL_WINDOWS_SOURCE_SHA") != attempt.get("PUBLIC_MASTER_SHA")):
+        raise ValueError("Prepared, failed or unfinished Windows build cannot be accepted")
+    if (not re.fullmatch("[0-9a-f]{32}", attempt.get("ATTEMPT_ID", ""))
+            or attempt.get("APPROVED_BUILD_ENTRYPOINT") != "NewZoneEngineBuild/build.cmd"
+            or not {"ChatEngine.WinNet10", "LoginEngine.WinNet10", "WorldEngine", "ZoneEngine_New"}
+                <= set(attempt.get("PRODUCT_COMPILER_HOOKS", []))):
+        raise ValueError("Successful approved wrapper and product build observations are required")
+    if any(not re.fullmatch("[0-9a-f]{40}", attempt.get(key, "")) for key in ("PUBLIC_MASTER_SHA", "CONTENT_DUMP_SHA")):
+        raise ValueError("Exact public and dump source SHAs are required")
+    for key, field in (("PUBLIC_FETCH", "PUBLIC_MASTER_SHA"), ("CONTENT_DUMP_FETCH", "CONTENT_DUMP_SHA")):
+        fetch = attempt.get(key, {})
+        expected_role, expected_method = (("PUBLIC_PRODUCT", "GIT_FETCH") if key == "PUBLIC_FETCH"
+                                         else ("PRIVATE_CONTENT_UPSTREAM", "AUTHENTICATED_GITHUB_API"))
+        if (fetch.get("RESULT") != "SUCCESS" or fetch.get("TIP_SHA") != attempt[field]
+                or fetch.get("ATTEMPT_ID") != attempt["ATTEMPT_ID"] or fetch.get("ROLE") != expected_role
+                or fetch.get("METHOD") != expected_method or not fetch.get("FETCHED_AT_UTC")
+                or not timestamp(attempt["ATTEMPT_STARTED_UTC"]) <= timestamp(fetch["FETCHED_AT_UTC"]) <= timestamp(attempt["BUILD_STARTED_UTC"])):
+            raise ValueError("Fresh successful pre-build source/content fetch is required")
+    binaries = attempt.get("BINARIES", [])
+    if {row["path"] for row in binaries} != set(OUTPUTS) or len(binaries) != len(OUTPUTS):
+        raise ValueError("All eight actual current build outputs must be bound")
+    for row in binaries:
+        if type(row.get("bytes")) is not int or row["bytes"] <= 0 or not re.fullmatch("[0-9a-f]{64}", row.get("sha256", "")):
+            raise ValueError("Measured Windows output identity is invalid")
+    reconciliation = read_json(load_descriptor(bundle, attempt["RECONCILIATION"]))
+    rows = validate_reconciliation_summary(bundle, reconciliation)
+    validation = attempt.get("WINDOWS_CONTENT_VALIDATION", {})
+    if (set(validation) != {"METHOD", "SUMMARY_SHA256", "LOCAL_REPLAY_SHA256", "CANONICAL_MANIFEST", "VALIDATED_AT_UTC"}
+            or validation["METHOD"] != "LOCAL_GUARDED_REPLAY_AND_WHOLE_TREE_MEASUREMENT"
+            or validation["SUMMARY_SHA256"] != attempt["RECONCILIATION"]["SHA256"]
+            or validation["LOCAL_REPLAY_SHA256"] != reconciliation["LOCAL_REPLAY_SHA256"]
+            or validation["CANONICAL_MANIFEST"] != attempt["WINDOWS_GAMEDATA_MANIFEST"]
+            or timestamp(validation["VALIDATED_AT_UTC"]) < timestamp(attempt["BUILD_FINISHED_UTC"])):
+        raise ValueError("Successful Windows local replay and whole-tree measurement attestation required")
+    if (any(attempt[key] != reconciliation[key] for key in TUPLE)
+            or read_json(load_descriptor(bundle, attempt["CANONICAL_MANIFEST"])) != rows):
+        raise ValueError("Build tuple/content reconciliation mismatch")
+    return rows, reconciliation
+
+
+def current_matches(root, profile, bundle, attempt):
+    require_successful_attempt(bundle, attempt)
+    source_exact(root, attempt["PUBLIC_MASTER_SHA"], profile.get("LOCAL_CONFIG_OVERRIDES", ()))
+    rows, _ = inventory(profile["CANONICAL_GAMEDATA_ROOT"])
+    if validate_manifest(rows) != attempt["WINDOWS_GAMEDATA_MANIFEST"]:
+        raise ValueError("Current Windows GameData differs from the build handed to Mike")
+    for row in attempt["BINARIES"]:
+        path = checked(root, row["path"])
+        if path.stat().st_size != row["bytes"] or digest(path.read_bytes()) != row["sha256"]:
+            raise ValueError("Current Windows binary differs from the completed build")
+
+
+def validate_startup(bundle, windows, attempt):
+    if (windows.get("WINDOWS_BUILD") != "PASS" or windows.get("WINDOWS_STARTUP") != "PASS"
+            or windows.get("WINDOWS_PRODUCT_SOURCE_SHA") != attempt["PUBLIC_MASTER_SHA"]
+            or windows.get("WINDOWS_RUNTIME_DIFFS") != 0
+            or any(windows.get(key) != attempt[key] for key in TUPLE)
+            or windows.get("WORLD_RECOVERY_COMPLETE") is not True):
+        raise ValueError("Actual successful current-tuple Windows startup required")
+    if {row["path"]: (row["sha256"], row["bytes"]) for row in windows.get("BINARIES", [])} != {
+            row["path"]: (row["sha256"], row["bytes"]) for row in attempt["BINARIES"]}:
+        raise ValueError("Startup binary identity differs from actual build")
+    evidence = windows.get("EVIDENCE", {})
+    for name, expected in evidence.items():
+        if digest(checked(bundle, name).read_bytes()) != expected:
+            raise ValueError("Raw Windows evidence changed")
+    raw = read_json(load_descriptor(bundle, windows["RAW_WINDOWS_RECEIPT"]))
+    if (any(raw.get(key) != windows.get(key) for key in (*TUPLE, "WINDOWS_PRODUCT_SOURCE_SHA", "WINDOWS_RUNTIME_DIFFS", "WINDOWS_BUILD", "WINDOWS_STARTUP", "WORLD_EPOCH", "BINARIES"))
+            or sorted(raw.get("EVIDENCE", {}).values()) != sorted(evidence.values())):
+        raise ValueError("Derived readiness receipt differs from its immutable actual raw receipt")
+    ready_paths = [path for path in evidence if PurePosixPath(path).name == "startup-ready.json"]
+    world_paths = [path for path in evidence if PurePosixPath(path).name == "world-status.json"]
+    observation_paths = [path for path in evidence if PurePosixPath(path).name == "world-status-observation.json"]
+    status_paths = [path for path in evidence if PurePosixPath(path).name == "status.log"]
+    if any(len(paths) != 1 for paths in (ready_paths, world_paths, observation_paths, status_paths)):
+        raise ValueError("Actual startup process/status and raw World evidence required")
+    ready, world = read_json(checked(bundle, ready_paths[0])), read_json(checked(bundle, world_paths[0]))
+    startup = ready.get("COMMANDS", {}).get("startup", {})
+    status = ready.get("COMMANDS", {}).get("status", {})
+    if (ready.get("PUBLIC_MASTER_SHA") != attempt["PUBLIC_MASTER_SHA"] or ready.get("FAILURE") is not None
+            or startup.get("exit_code") != 0 or status.get("exit_code") != 0
+            or not startup.get("started_utc") or timestamp(startup["started_utc"]) < timestamp(attempt["BUILD_FINISHED_UTC"])
+            or set(row["engine"] for row in ready.get("HELD_PROCESSES", [])) != {"ChatEngine", "LoginEngine", "WorldEngine", "ZoneEngine_New"}
+            or any(row.get("handle_opened") is not True for row in ready["HELD_PROCESSES"])):
+        raise ValueError("Startup does not prove a fresh successful measured generation")
+    held = ready["HELD_PROCESSES"]
+    if len(held) != 4 or len({row.get("pid") for row in held}) != 4:
+        raise ValueError("Actual retained startup process identities are incomplete")
+    status_text = checked(bundle, status_paths[0]).read_text(encoding="utf-8-sig")
+    for row in held:
+        engine = row["engine"]
+        suffix = next(path for path in OUTPUTS if path.endswith("/" + engine + ".exe")).lower()
+        executable = row.get("executable", "").replace("\\", "/").lower()
+        if (type(row.get("pid")) is not int or row["pid"] <= 0 or not executable.endswith("/" + suffix)
+                or executable != row.get("expected_executable", "").replace("\\", "/").lower()
+                or timestamp(row["start_time_utc"]) < timestamp(attempt["BUILD_FINISHED_UTC"])
+                or not re.search(r"engine=" + re.escape(engine) + r"\b[^\r\n]*processPid=" + str(row["pid"]) + r"\b[^\r\n]*ownership=PASS", status_text)):
+            raise ValueError("Actual current executable/listener ownership is unproven")
+    selections = [read_json(load_descriptor(bundle, item)) for item in windows.get("GAMEDATA_SELECTION_EVIDENCE", [])]
+    if len(selections) != 4 or {row.get("Engine") for row in selections} != {row["engine"] for row in held}:
+        raise ValueError("Measured launcher GameData selection is missing")
+    selected_root = windows.get("CANONICAL_GAMEDATA_ROOT_AT_STARTUP", "")
+    if not selected_root or read_json(load_descriptor(bundle, windows["STARTUP_GAMEDATA_MANIFEST"])) != read_json(load_descriptor(bundle, attempt["CANONICAL_MANIFEST"])):
+        raise ValueError("Started engines are not bound to the complete canonical manifest")
+    for selection in selections:
+        process = next(row for row in held if row["engine"] == selection["Engine"])
+        if (selection.get("Pid") != process["pid"]
+                or timestamp(selection["ProcessStartUtc"]) != timestamp(process["start_time_utc"])
+                or ntpath.normcase(ntpath.normpath(selection.get("Path", ""))) != ntpath.normcase(ntpath.normpath(process["executable"]))
+                or selection.get("BuildAttemptSha256") != windows["BUILD_ATTEMPT_RECEIPT"]["SHA256"]
+                or selection.get("PublicMasterSha") != attempt["PUBLIC_MASTER_SHA"]
+                or selection.get("GameDataManifest") != attempt["WINDOWS_GAMEDATA_MANIFEST"]
+                or selection.get("LauncherSha256") != attempt["LAUNCHER_SHA256"]
+                or (selection.get("InheritedOverride") or "").strip()
+                or ntpath.normcase(ntpath.normpath(selection.get("ResolvedGameDataRoot", ""))) != ntpath.normcase(ntpath.normpath(selected_root))):
+            raise ValueError("Started process used a different data root/overlay/generation/build")
+    for name, marker in (("LoginEngine.out.full.log", "LoginEngine GameData root: "),
+                         ("ZoneEngine_New.out.delta.log", "GameData ready root=")):
+        paths = [path for path in evidence if PurePosixPath(path).name == name]
+        if len(paths) != 1:
+            raise ValueError("Actual Login/Zone loader-root logs are required")
+        matches = [line.split(marker, 1)[1].strip() for line in checked(bundle, paths[0]).read_text(encoding="utf-8-sig").splitlines() if marker in line]
+        if name.startswith("Zone"):
+            matches = [value.rsplit(" mobs=", 1)[0] for value in matches]
+        if not matches or any(ntpath.normcase(ntpath.normpath(value)) != ntpath.normcase(ntpath.normpath(selected_root)) for value in matches):
+            raise ValueError("Loader selected GameData differs from the measured canonical root")
+    current = world.get("world", {})
+    roles = {row.get("role") for row in current.get("instances", []) if row.get("connected") is True
+             and 0 <= row.get("heartbeatAgeMs", -1) <= windows.get("WORLD_LEASE_TTL_MS", 15000)}
+    if current.get("recovering") is not False or current.get("epoch") != windows.get("WORLD_EPOCH") or not {"RoleChat", "RoleZone"} <= roles:
+        raise ValueError("Fresh World recovery/current registrations are unproven")
+    observation = read_json(checked(bundle, observation_paths[0]))
+    if (observation.get("sha256") != digest(checked(bundle, world_paths[0]).read_bytes())
+            or observation.get("source") != attempt["PUBLIC_MASTER_SHA"]
+            or timestamp(observation["requested_utc"]) < timestamp(startup["started_utc"])
+            or timestamp(observation["captured_utc"]) < timestamp(observation["requested_utc"])):
+        raise ValueError("Raw World observation is not bound to this fresh startup")
+
+
+def explicit_mike_acceptance(evidence, expected):
+    if (evidence.get("AUTHOR") != "Mike" or evidence.get("ROLE") != "user" or evidence.get("EXPLICIT_ACCEPTANCE") is not True
+            or not evidence.get("MESSAGE_ID") or not evidence.get("RECORDED_UTC")
+            or any(evidence.get(key) != value for key, value in expected.items())):
+        raise ValueError("Explicit Mike acceptance of this exact frozen tuple/receipt is missing")
+    timestamp(evidence["RECORDED_UTC"])
+    text = evidence.get("TEXT", "").strip().lower().replace("\u2019", "'")
+    negative = r"\b(?:haven't|have not|hasn't|has not|didn't|did not|doesn't|does not|don't|do not|not|never|won't|will not|isn't|is not)\s+(?:\w+\s+){0,3}(?:accept(?:ed|ing)?|approv(?:e|ed|ing)|work(?:s|ing)?|pass(?:ed)?|good|ready)\b"
+    if re.search(negative, text) or re.search(r"\breject(?:ed|ing)?\b", text):
+        raise ValueError("Human evidence does not explicitly accept this build")
+    # Questions and isolated approval vocabulary cannot manufacture a human acceptance.
+    affirmative = r"(?:^|[.!;\n]\s*)(?:i (?:accept|approve)\b|looks good\b|works on windows\b|working on windows\b|windows works\b|(?:this|it|the build|windows build) (?:works|is good|is accepted|is approved)\b)"
+    direct = any("?" not in sentence and re.search(affirmative, sentence)
+                 for sentence in re.split(r"(?<=[.!;\n])", text))
+    prompted = text in ("yes", "yes.", "accept", "approve") and all(
+        value in evidence.get("ACCEPTANCE_PROMPT", "") for value in expected.values())
+    if not direct and not prompted:
+        raise ValueError("A YES boolean or unrelated human text is not Windows acceptance")
+
+
+def record_startup(root, profile, attempt_path, raw_receipt_path):
+    attempt_path = checked(root, Path(attempt_path).as_posix())
+    bundle, attempt = attempt_path.parent, read_json(attempt_path)
+    current_matches(root, profile, bundle, attempt)
+    raw = checked(root, Path(raw_receipt_path).as_posix())
+    windows = read_json(raw)
+    # Copy only the explicitly named raw evidence into the portable job bundle.
+    copied = {}
+    for index, (path, expected) in enumerate(windows.get("EVIDENCE", {}).items()):
+        source = checked(root, path)
+        if digest(source.read_bytes()) != expected:
+            raise ValueError("Windows raw evidence digest mismatch")
+        target = bundle / "startup-evidence" / str(index) / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        copied[target.relative_to(bundle).as_posix()] = expected
+    windows["EVIDENCE"] = copied
+    windows["BUILD_ATTEMPT_RECEIPT"] = descriptor(bundle, attempt_path)
+    windows["RAW_WINDOWS_RECEIPT"] = stash(bundle, "raw-windows-receipt.json", raw.read_bytes())
+    windows["WINDOWS_USER_ACCEPTED"] = "NO"
+    selections = bundle / "startup-selection"
+    if not selections.is_dir():
+        raise ValueError("Release-mode launcher selection evidence is absent")
+    ready_path = next((path for path in copied if PurePosixPath(path).name == "startup-ready.json"), None)
+    if ready_path is None:
+        raise ValueError("Retained startup generation evidence is absent")
+    held = read_json(checked(bundle, ready_path))["HELD_PROCESSES"]
+    selected = []
+    for path in selections.glob("*.json"):
+        value = read_json(path)
+        if any(value.get("Engine") == row["engine"] and value.get("Pid") == row["pid"]
+               and timestamp(value["ProcessStartUtc"]) == timestamp(row["start_time_utc"]) for row in held):
+            selected.append(descriptor(bundle, path))
+    windows["GAMEDATA_SELECTION_EVIDENCE"] = selected
+    windows["CANONICAL_GAMEDATA_ROOT_AT_STARTUP"] = str(Path(profile["CANONICAL_GAMEDATA_ROOT"]).resolve())
+    windows["STARTUP_GAMEDATA_MANIFEST"] = attempt["CANONICAL_MANIFEST"]
+    validate_startup(bundle, windows, attempt)
+    target = bundle / "windows-receipt.json"
+    write_json(target, windows, exclusive=True)
+    print("WINDOWS_USER_ACCEPTED=NO")
+    print("STOP_FOR_MIKE_TESTING=YES")
+    return target
+
+
+def accept_windows(root, profile, windows_path, evidence_path):
+    windows_path = checked(root, Path(windows_path).as_posix())
+    bundle, windows = windows_path.parent, read_json(windows_path)
+    attempt_path = load_descriptor(bundle, windows["BUILD_ATTEMPT_RECEIPT"])
+    attempt = read_json(attempt_path)
+    current_matches(root, profile, bundle, attempt)
+    validate_startup(bundle, windows, attempt)
+    evidence_path = checked(root, Path(evidence_path).as_posix())
+    evidence = read_json(evidence_path)
+    expected = {**{key: attempt[key] for key in TUPLE}, "WINDOWS_RECEIPT_SHA256": digest(windows_path.read_bytes())}
+    explicit_mike_acceptance(evidence, expected)
+    if timestamp(evidence["RECORDED_UTC"]) < timestamp(windows["CREATED_UTC"]):
+        raise ValueError("Human acceptance predates the current Windows readiness receipt")
+    receipt = {"FORMAT_VERSION": 1, **expected, "WINDOWS_USER_ACCEPTED": "YES", "ACCEPTED_BY": "Mike",
+               "ACCEPTED_UTC": now(), "EXPLICIT_ACCEPTANCE_EVIDENCE": stash(bundle, "explicit-mike-acceptance.json", evidence_path.read_bytes()),
+               "BUILD_ATTEMPT_RECEIPT": descriptor(bundle, attempt_path), "WINDOWS_RECEIPT": descriptor(bundle, windows_path)}
+    target = bundle / "acceptance.json"
+    write_json(target, receipt, exclusive=True)
+    load_accepted_release(root, target)
+    return export_accepted_bundle(root, bundle, target)
+
+
+def load_accepted_release(repository_root, acceptance_path):
+    """Validate one portable immutable accepted bundle; no fetches or source writes."""
+    repository_root = Path(repository_root).resolve(strict=True)
+    acceptance_path = Path(acceptance_path)
+    if acceptance_path.is_absolute():
+        acceptance_path = checked(repository_root, acceptance_path.relative_to(repository_root).as_posix())
+    else:
+        acceptance_path = checked(repository_root, acceptance_path.as_posix())
+    bundle, acceptance = acceptance_path.parent, read_json(acceptance_path)
+    if (acceptance.get("FORMAT_VERSION") != 1 or acceptance.get("WINDOWS_USER_ACCEPTED") != "YES"
+            or acceptance.get("ACCEPTED_BY") != "Mike" or not acceptance.get("ACCEPTED_UTC")):
+        raise ValueError("Explicit accepted Windows release is required")
+    attempt_path = load_descriptor(bundle, acceptance["BUILD_ATTEMPT_RECEIPT"])
+    windows_path = load_descriptor(bundle, acceptance["WINDOWS_RECEIPT"])
+    attempt, windows = read_json(attempt_path), read_json(windows_path)
+    rows, reconciliation = require_successful_attempt(bundle, attempt)
+    validate_startup(bundle, windows, attempt)
+    if windows["BUILD_ATTEMPT_RECEIPT"] != acceptance["BUILD_ATTEMPT_RECEIPT"]:
+        raise ValueError("Windows receipt is bound to a different build attempt")
+    expected = {**{key: attempt[key] for key in TUPLE}, "WINDOWS_RECEIPT_SHA256": digest(windows_path.read_bytes())}
+    evidence = read_json(load_descriptor(bundle, acceptance["EXPLICIT_ACCEPTANCE_EVIDENCE"]))
+    if any(acceptance.get(key) != value for key, value in expected.items()):
+        raise ValueError("Acceptance evidence/receipt/tuple differs")
+    explicit_mike_acceptance(evidence, expected)
+    if not timestamp(windows["CREATED_UTC"]) <= timestamp(evidence["RECORDED_UTC"]) <= timestamp(acceptance["ACCEPTED_UTC"]):
+        raise ValueError("Human acceptance chronology differs from the measured Windows receipt")
+    return {"acceptance": acceptance, "windows": windows, "build_attempt": attempt, "manifest": rows,
+            "reconciliation": reconciliation, "tuple": expected,
+            "descriptors": {"bundle": bundle, "windows_path": windows_path, "attempt_path": attempt_path}}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("mode", choices=("prepare-build", "reconcile-content", "run-build", "verify-build-token", "verify-startup-attempt", "record-startup", "accept-windows"))
+    parser.add_argument("--repository-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--profile", type=Path)
+    parser.add_argument("--approved-plan-sha256")
+    parser.add_argument("--resolutions", type=Path)
+    parser.add_argument("--build-attempt")
+    parser.add_argument("--windows-receipt")
+    parser.add_argument("--acceptance-evidence")
+    parser.add_argument("--entrypoint")
+    parser.add_argument("--product")
+    args, child = parser.parse_known_args(argv)
+    try:
+        root = args.repository_root.resolve(strict=True)
+        profile = profile_for(root, args.profile)
+        if args.mode == "verify-build-token":
+            verify_build_token(root, profile, args.entrypoint, args.product)
+        elif args.mode == "verify-startup-attempt":
+            if not args.build_attempt:
+                raise ValueError("A successful current build attempt is required")
+            attempt_path = checked(root, args.build_attempt)
+            current_matches(root, profile, attempt_path.parent, read_json(attempt_path))
+        elif args.mode == "run-build":
+            child = child[1:] if child[:1] == ["--"] else child
+            if not child:
+                raise ValueError("Existing build child command is required")
+            return run_build(root, profile, child)
+        elif child:
+            raise ValueError("Unknown contract command arguments")
+        elif args.mode == "reconcile-content":
+            if not args.approved_plan_sha256:
+                raise ValueError("Explicit hash-bound safe content-plan approval required")
+            apply_content(root, profile, args.approved_plan_sha256, read_json(args.resolutions) if args.resolutions else None)
+        elif args.mode == "prepare-build":
+            bundle, attempt, plan, _, _ = intake(root, profile, read_json(args.resolutions) if args.resolutions else None)
+            print("CONTENT_PLAN_SHA256=" + digest(encoded(plan)))
+            print("BUILD_ATTEMPT_RECEIPT=" + (bundle / "prepared.json").relative_to(root).as_posix())
+            if plan["CANONICAL_BEFORE_MANIFEST"] != plan["WINDOWS_GAMEDATA_MANIFEST"]:
+                raise ValueError("Canonical content must be reconciled before build")
+        elif args.mode == "record-startup":
+            if not args.build_attempt or not args.windows_receipt:
+                raise ValueError("Successful actual build attempt and raw startup receipt required")
+            record_startup(root, profile, args.build_attempt, args.windows_receipt)
+        elif args.mode == "accept-windows":
+            if not args.windows_receipt or not args.acceptance_evidence:
+                raise ValueError("Frozen Windows receipt and explicit Mike acceptance evidence required")
+            print("WINDOWS_ACCEPTANCE=" + accept_windows(root, profile, args.windows_receipt, args.acceptance_evidence).relative_to(root).as_posix())
+        return 0
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print("WINDOWS_RELEASE_CONTRACT=FAIL " + str(error), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

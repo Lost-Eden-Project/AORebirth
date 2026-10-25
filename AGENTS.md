@@ -23,6 +23,46 @@ Current authoritative documents override stale historical descriptions.
 Historical reports never redefine current architecture. `AI_START_HERE.md` is
 the single startup index.
 
+## Permanent build and release contract
+
+The [build/release contract](docs/project/BUILD_RELEASE_CONTRACT.md) governs
+every build and release. Its mandatory sequence is:
+
+`fetch public master and private content -> synchronize Windows -> reconcile all approved content changes -> Windows build/startup -> STOP for Mike -> explicit Windows acceptance -> freeze inputs -> online Linux build/package -> authorized deployment -> verify live manifest`
+
+Public GitHub `subarumike/AORebirth` branch `master` is the only product/runtime
+source authority. The local Windows checkout is an integration/build environment,
+not an independent authority. Before every Windows build require
+`LOCAL_WINDOWS_SOURCE_SHA == PUBLIC_MASTER_SHA` for the freshly fetched master.
+
+Check the configured private content upstream on every build/release attempt;
+unknown or inaccessible upstream content fails closed. Reconcile every approved
+addition, modification and removal into the canonical Windows GameData while
+preserving legitimate private/generated content and canonical repairs. A cached
+tree or older package cannot substitute for this check or redefine authority.
+
+After Windows build/startup readiness, stop for Mike's testing. Automated
+validation and deployment authorization do not imply `WINDOWS_USER_ACCEPTED=YES`.
+Linux release work must not begin until Mike explicitly accepts the exact
+Windows source, content-dump SHA, GameData manifest and build/startup receipt.
+Freeze `PUBLIC_MASTER_SHA`, `CONTENT_DUMP_SHA` and `WINDOWS_GAMEDATA_MANIFEST`
+for that accepted release. Newer master or content tips belong to the next
+release unless Mike explicitly requests re-reconciliation and accepts it again.
+
+Linux consumes that accepted source with `PUBLIC_RUNTIME_DIFFS=0`, apart from
+explicitly allowlisted Linux build/packaging/service adaptations, and the exact
+Windows-accepted canonical GameData. Do not construct a separate Linux data set.
+Use the existing private GitHub Actions online builder for Linux binaries and
+live-server packages; local Docker/WSL Linux builds and production rebuilds are
+not permitted substitutes.
+
+Deployment requires separate explicit authorization and installs the complete
+accepted content delta, including removals. Require the deterministic manifest
+chain `WINDOWS_ACCEPTED_GAMEDATA_MANIFEST == LINUX_GAMEDATA_MANIFEST == LIVE_GAMEDATA_MANIFEST`.
+Any missing acceptance, unknown identity, source/content mismatch, omitted
+content operation or builder bypass fails closed. Private role bindings,
+content, credentials, tooling and release evidence remain private.
+
 ## Checkout ownership and deployment-tooling access
 
 <!-- deployment-tooling-access:start -->
@@ -169,9 +209,10 @@ They are NOT current workflow authority.
 
 ## CURRENT LINUX WORKFLOW
 
-The normal Linux workflow is:
+The normal Linux workflow, after Mike explicitly accepts and freezes the
+Windows release inputs, is:
 
-`public GitHub master -> port/reconcile to Linux -> build -> validate -> package -> push to private Linux Git`
+`accepted public-master SHA + accepted canonical Windows GameData -> port/reconcile to Linux -> online build -> validate -> package -> push to private Linux Git`
 
 That is the Linux engineering workflow.
 
@@ -186,10 +227,12 @@ Normal deployment means:
 1. verify the approved package;
 2. stop the required live services;
 3. take a current backup of the actual live database if schema changes are involved;
-4. apply the migrations required by current public master;
-5. install the approved Linux package;
+4. apply the migrations required by the accepted public-master release SHA;
+5. install the approved online-built Linux package and every accepted GameData
+   addition, modification and removal;
 6. start services;
-7. verify startup, logs, listeners, and provenance;
+7. verify startup, logs, listeners, provenance and equality of live, Linux and
+   accepted Windows GameData manifests;
 8. Mike performs live AO client acceptance.
 
 Do NOT automatically introduce:
@@ -213,11 +256,11 @@ Database migrations in public master are ordinary versioned schema changes.
 
 Treat them as:
 
-`current live schema -> migrations required by current public master`
+`current live schema -> migrations required by the accepted public-master release SHA`
 
 Do NOT reinterpret ordinary migrations as evidence that an engine cutover is occurring.
 
-If current master requires migrations:
+If the accepted public-master release requires migrations:
 
 * identify the outstanding migrations;
 * back up the actual live database;
@@ -239,7 +282,9 @@ They matter only for:
 
 They do NOT define what Linux should become.
 
-Linux should become the current authoritative public master plus only required Linux-specific adaptations.
+Linux must consume the exact public-master SHA explicitly accepted by Mike for
+the release, plus only required allowlisted Linux adaptations. A newer master
+tip does not silently replace frozen accepted inputs.
 
 ## NO WORKFLOW ARCHAEOLOGY
 
@@ -296,7 +341,7 @@ Windows developers:
 
 Linux workstream:
 
-* ports current public master faithfully;
+* ports the Windows-accepted public-master release faithfully;
 * fixes Linux-specific build/package/deployment problems;
 * deploys the resulting Linux package when authorized.
 
@@ -466,17 +511,14 @@ Default action:
 
 Public master may continue moving while Linux is being ported.
 
-When it moves:
+After Mike accepts Windows, retain the exact accepted product/content/manifest
+tuple for the release. New public-master or private-content tips belong to the
+next release. Record newly observed tips without changing accepted inputs.
 
-1. fetch new public master;
-2. audit the delta;
-3. reconcile the Linux port;
-4. retain valid Linux adaptations;
-5. drop adaptations superseded by public master;
-6. regenerate Linux adaptation/provenance receipts;
-7. rerun affected Linux validation.
-
-Do not attempt to freeze or control Windows development.
+Only Mike's explicit re-reconciliation request starts a new Windows
+synchronization, full approved content reconciliation, build/startup and user
+acceptance cycle. Do not silently advance Linux or reuse the old acceptance
+for changed inputs. Freezing release inputs does not freeze Windows development.
 
 ## LINUX PORT AUTHORITY
 
@@ -522,10 +564,12 @@ If Linux behavior would differ from public master, stop and classify the issue.
 
 Required workflow:
 
-public Windows/master
-→ fetch exact SHA
+freshly synchronized public Windows/master and canonical private content
+→ Windows build/startup readiness
+→ Mike explicitly accepts the exact inputs
+→ freeze source SHA, dump SHA and Windows GameData manifest
 → port/reconcile to Linux
-→ build Linux
+→ build Linux through the private GitHub Actions online builder
 → validate Linux
 → package/validate
 → push Linux result to private Linux Git
@@ -623,9 +667,11 @@ product fixes.
 
 Before every Linux build:
 
-1. Fetch current public `origin/master`.
-2. Record the exact authoritative SHA.
-3. Compare the Linux source/tree against that SHA.
+1. Validate Mike's explicit Windows acceptance and the immutable release inputs.
+2. Check the private content upstream and record the observed tip without
+   replacing the frozen accepted dump SHA or canonical data.
+3. Record the accepted authoritative public SHA and compare the Linux source/tree
+   against it; require the accepted Windows GameData manifest unchanged.
 4. Inventory every difference.
 5. Classify every difference as:
 
@@ -644,24 +690,30 @@ Never assume an existing Linux-private change is legitimate merely because it al
 
 ## WINDOWS TO LINUX PIPELINE
 
-Public Windows/master remains the authoritative product/runtime source.
-
-Every Linux port starts from the exact current public Windows/master SHA.
+Public Windows/master remains the only authoritative product/runtime source.
+Every Linux port starts from the exact public-master SHA explicitly accepted
+by Mike together with the canonical Windows GameData.
 
 Required sequence:
 
-public Windows/master implementation
-→ Windows validation
-→ public master commit/push
-→ fetch exact public master SHA
+fetch public master and private content upstream
+→ synchronize the Windows checkout to the exact current public-master SHA
+→ reconcile all approved content additions/modifications/removals
+→ deterministic Windows GameData manifest
+→ Windows build/startup readiness
+→ stop for Mike's explicit Windows acceptance
+→ freeze the accepted source SHA, dump SHA and GameData manifest
 → reconcile/port that source to Linux
-→ Linux build/test
+→ supply the same accepted canonical GameData
+→ online Linux build and required target-platform validation
 → Linux package construction/validation
 → push validated Linux port commits to PRIVATE Linux Git
 
 Never reverse this sequence. Stop here unless Mike explicitly authorizes normal deployment under NORMAL LIVE DEPLOYMENT.
 
 The Linux private repository must preserve traceability to the exact public-master SHA it was derived from.
+Linux/package and authorized live deployment must preserve the accepted Windows
+GameData manifest exactly; an accepted content removal is part of the release.
 
 ## EXACT-SHA REQUIREMENT
 
@@ -734,7 +786,7 @@ Public GitHub `master` is authoritative for AORebirth product/runtime behavior, 
 
 The required relationship is:
 
-`public GitHub master -> fetch exact authoritative SHA -> port/reconcile to Linux -> build -> validate -> package/validate -> push Linux result to PRIVATE Linux Git`
+`fetch public master/private content -> synchronize/reconcile Windows -> Windows build/startup -> Mike explicitly accepts -> freeze exact inputs -> port/reconcile to Linux -> online build -> validate -> package/validate -> push Linux result to PRIVATE Linux Git`
 
 Production deployment is separate and requires Mike's explicit authorization.
 
@@ -794,9 +846,11 @@ Any product fix must still be accepted on public Windows/master first.
 After the Windows developers or the authorized absolute-blocker work complete it:
 
 public master fix/validation/push
-→ fetch new exact public master SHA
-→ reconcile/port that new SHA to Linux
-→ build
+→ fetch/synchronize the new exact public-master SHA and reconcile private content
+→ Windows build/startup and Mike's explicit acceptance of the new inputs
+→ freeze the accepted source/dump/manifest tuple
+→ reconcile/port that accepted SHA and canonical data to Linux
+→ online build
 → validate
 → package
 → push resulting Linux port to private Linux Git
@@ -869,7 +923,19 @@ Do not work around these conditions silently.
 
 ## GameData authority
 
-- `D:\AORebirth-fresh\GameData` is Mike's private full GameData dataset.
+- The configured `PRIVATE_CONTENT_UPSTREAM` is the upstream authority for
+  private GameData/content changes. Its exact private binding stays private.
+- `D:\AORebirth-fresh\GameData` is the canonical private Windows integration
+  dataset derived from that upstream and legitimate coexisting private/generated
+  content. It is not an independent upstream authority.
+- Fetch/check the upstream on every build/release attempt and record
+  `CONTENT_DUMP_SHA`. Before Windows build, compare the current upstream content
+  against its recorded canonical basis and reconcile all approved additions,
+  modifications and removals. Preserve required canonical repairs and generated
+  content; fail closed on unexplained conflicts or unreconciled changes.
+- After Mike accepts Windows, freeze the exact source/dump/manifest tuple.
+  New upstream tips are next-release inputs unless Mike explicitly requests
+  re-reconciliation and accepts the new Windows build.
 - `AORebirth\GameData` is the public GitHub distributable/placeholder dataset.
 - Differences between private and public catalogs are intentional and are not
   automatically drift.
@@ -878,8 +944,11 @@ Do not work around these conditions silently.
 - Do not redesign GameData staging or selection when that existing mechanism
   satisfies the requirement.
 - Never commit private GameData to public GitHub.
-- `AO-Content-Dump-main` is extraction, reference, and upstream material; it is
-  not the runtime GameData root.
+- Supply Linux with the exact Windows-accepted canonical dataset. No separate
+  Linux reconstruction, stale replacement or partial accepted content delta is
+  permitted; Windows/Linux/live manifests must match.
+- An upstream checkout is input to reconciliation, not the selected runtime
+  GameData root.
 
 - This agent works only on AORebirth. Never work on AO Rebuild or AO stripdown, and never switch to either workspace.
 - Read `AI_START_HERE.md` first.

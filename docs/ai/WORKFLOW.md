@@ -205,6 +205,53 @@ Stop-after-success rule:
 
 ## Build And Engines
 
+### Permanent build/release contract
+
+Follow [BUILD_RELEASE_CONTRACT.md](../project/BUILD_RELEASE_CONTRACT.md) before
+every product build/release attempt. The local Windows integration checkout
+must match freshly fetched public master. Check the configured private content
+upstream every attempt, reconcile every approved addition/modification/removal,
+and preserve legitimate canonical repairs and private/generated content before
+the Windows build.
+
+The public Windows contract entrypoint is:
+
+```cmd
+cmd /d /c tools\windows_release_contract.cmd --help
+```
+
+Its `prepare-build` operation records fresh source/content intake and the complete
+canonical GameData manifest. `reconcile-content` applies only approved content
+decisions. The normal product build wrapper enforces the same pre-build intake;
+direct product builds must not bypass it. Private role bindings and canonical
+data remain in the configured private intake settings.
+
+For release startup, pass the completed build-attempt receipt to the existing
+CMD launcher:
+
+```cmd
+cmd /d /c start-engines.cmd -ReleaseBuildAttempt "<build-attempt-receipt-path>"
+```
+
+This opt-in release mode records the actual launched process generation and
+selected data root against the measured build attempt. Ordinary testing starts
+without that option remain unchanged. After the existing startup/status checks,
+use `record-startup` with the exact build/startup receipt and its captured release
+startup evidence. This records readiness with user acceptance still
+`NO`. Stop and hand the build to Mike for testing. Only after his explicit
+acceptance may `accept-windows` bind that user evidence to the exact public SHA,
+dump SHA, canonical manifest and Windows receipt hash. Command-specific required
+arguments are described by the entrypoint help; do not manufacture acceptance
+evidence or treat a successful build as Mike's approval.
+
+Freeze the accepted tuple for Linux and any separately authorized deployment.
+New upstream tips are next-release inputs, not automatic replacements or reasons
+to invalidate accepted inputs. Linux and live-server binaries/packages must be
+built by the existing private GitHub Actions online builder. Supply the exact
+Windows-accepted canonical dataset and require identical complete Windows,
+Linux and live GameData manifests. Incremental packaging must include every
+accepted addition/modification/removal and produce that complete result.
+
 ### Editable NewEngine content
 
 NPC, vendor, quest and dialogue definitions live in the validated editable
@@ -1144,11 +1191,12 @@ Required workflow for every server repair or gameplay/runtime source change:
    SHA.
 3. Record the deployed Linux release name and exact source SHA in repository
    evidence or project-state documentation.
-4. Before starting the next server repair, compare the current Windows
-   `master` server-source delta against the active Linux release source SHA.
-5. If Windows contains server-code commits that are not represented in the
-   active Linux release, reconcile/deploy that delta before using live Linux
-   behavior as acceptance evidence for the next repair.
+4. Before using live Linux behavior as evidence for a repair, compare the exact
+   Windows source under investigation with the active Linux release source SHA.
+5. Do not claim live acceptance for code absent from the live release. A new
+   release still requires fresh Windows intake, Mike's explicit acceptance and
+   frozen inputs before Linux work, plus separate deployment authorization.
+   Pending changes do not silently advance an already accepted candidate.
 
 Client-patch-only and docs-only commits after a deployed server SHA do not
 require a Linux server redeploy, but they must be explicitly identified as
@@ -1175,12 +1223,16 @@ The wrapper also validates raw-independent accepted generated-combat integrity
 with `--check`; it must not call the strict historical `--validate-current` gate.
 
 Production build, packaging, target-platform acceptance and deployment commands
-are maintained in `LinuxBuild`. Follow `LinuxBuild/README.md`; they consume the
-exact Windows-accepted public-master SHA and verify packaged editable content.
-`linux-private/master` must mirror that exact SHA. Private child commits and
-source patches are forbidden. Server-specific configuration remains external.
+are maintained in the owning private Linux repository. They consume the exact
+Mike-accepted public-master SHA and canonical Windows GameData. The private
+derived commit may include explicit Linux build/packaging/service adaptations;
+it is recorded separately from the public base SHA and must retain
+`PUBLIC_RUNTIME_DIFFS=0`. Do not merge private Linux history or infrastructure
+into public Git. Server-specific configuration remains private and external.
 NewEngine content architecture validation replaces the historical official
 placement allowlist; Legacy/offline evidence validation remains separate.
-Public Windows acceptance verifies Windows metadata contracts and runtime tests;
-it does not claim Linux production-platform acceptance. See
+Public Windows validation verifies applicable Windows metadata and build/startup
+contracts; suites run only when separately authorized. Automated validation does
+not imply Mike's user acceptance and does not claim Linux production-platform
+acceptance. See
 `docs/project/BUILD_ACCEPTANCE_BOUNDARY.md`.
