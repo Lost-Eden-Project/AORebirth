@@ -82,7 +82,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// the quest is over (completed): an ended dungeon keeps whoever is inside but can no longer be entered or rebuilt.
         /// </summary>
         sealed record CachedDungeon(QuestDungeonParameters Parameters, long ExpiresAtUtcTicks, string? TargetHash, bool Ended = false,
-            int OwnerId = 0, long AssignedAtUtcTicks = 0);
+            int OwnerId = 0, long AssignedAtUtcTicks = 0, string FrozenJson = "");
 
         readonly ICharacterQuestStore _store;
         readonly QuestService _quests;
@@ -285,7 +285,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
                     _dungeons[questId] = new CachedDungeon(parameters, expires.Ticks,
                         parameters.ObjectiveNpc == null ? KillTarget(template) : null,
-                        OwnerId: player.Identity.Instance, AssignedAtUtcTicks: now.Ticks);
+                        OwnerId: player.Identity.Instance, AssignedAtUtcTicks: now.Ticks, FrozenJson: parametersJson);
                     plan.PublishAfterCommit(notify: false);
                     SendKey(player, key, plan.Rows[0].ContainerPlacement, parameters.EntranceName);
                     if (sourceItem != null)
@@ -423,7 +423,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
                             dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
                             tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
-                            spawnNpcObjective: unfinishedNpc != null);
+                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: CreateChestPopulation(questId, dungeon));
                     }
                     catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
                     {
@@ -536,7 +536,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
                             dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
                             tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
-                            spawnNpcObjective: unfinishedNpc != null), layout.Spawn, null);
+                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: CreateChestPopulation(questId, dungeon)), layout.Spawn, null);
                     }
                     catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
                     {
@@ -816,6 +816,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 if (evict)
                 {
+                    dungeon.ChestPopulation?.Retire();
                     var landing = new Vector3(dungeon.Entrance.LocalX, dungeon.Entrance.LocalY, dungeon.Entrance.LocalZ);
                     foreach (Player inside in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities().ToArray())
                         dungeon.DispatchPlayerProjection(inside, () =>
@@ -925,7 +926,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             }
 
             dungeon = new CachedDungeon(parameters, row.ExpiresAtUtcTicks,
-                parameters.ObjectiveNpc == null ? KillTarget(template) : null, ended, row.OwnerId, assignedAtUtcTicks);
+                parameters.ObjectiveNpc == null ? KillTarget(template) : null, ended, row.OwnerId, assignedAtUtcTicks,
+                row.AcgBuildingGeneratorJson ?? string.Empty);
             if (row.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks)
                 _dungeons[questId] = dungeon;
             return true;
@@ -933,6 +935,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         MissionTokenProgress? CreateTokenProgress(string questId, CachedDungeon dungeon)
             => _quests.CreateTokenProgress(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters.TokenReward);
+
+        MissionChestPopulation? CreateChestPopulation(string questId, CachedDungeon dungeon)
+            => _quests.CreateChestPopulation(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks,
+                dungeon.FrozenJson, dungeon.Parameters, _layouts.ChestPolicy);
 
         /// <summary>The NPC hash a kill quest wants, or null for other quests.</summary>
         static string? KillTarget(QuestTemplate? template)

@@ -609,7 +609,12 @@ public sealed class FindItemRewardTests
         public void UpsertForCharacter(int characterId, IReadOnlyList<StatRecord> stats) => throw new NotSupportedException();
         public MissionStateData GetMission(MissionKeyData key) => throw new NotSupportedException();
         public IList<MissionStateData> GetMissions(int characterId) => throw new NotSupportedException();
-        public MissionCharacterSnapshotData ReadCharacter(int characterId) => throw new NotSupportedException();
+        public MissionCharacterSnapshotData ReadCharacter(int characterId)
+        {
+            Assert.AreEqual(CharacterId, characterId);
+            // This standalone reward fixture has no stored chest populations; its generation policy is disabled locally.
+            return new MissionCharacterSnapshotData(characterId, [], [], [], []);
+        }
         public string ResolveCharacterAccountKey(int characterId) => throw new NotSupportedException();
         public MissionAccountFlagData GetAccountFlag(string accountKey, string flagKey) => throw new NotSupportedException();
         public IList<MissionAccountFlagData> GetAccountFlags(string accountKey) => throw new NotSupportedException();

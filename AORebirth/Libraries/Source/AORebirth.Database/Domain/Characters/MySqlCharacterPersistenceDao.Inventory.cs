@@ -4,6 +4,7 @@ namespace AORebirth.Database.Domain.Characters
     using System.Collections.Generic;
     using System.Data;
     using System.Globalization;
+    using System.Linq;
     using System.Text;
     using AORebirth.Interfaces.Persistence.Characters;
     using SmokeLounge.AOtomation.Messaging.GameData;
@@ -121,6 +122,34 @@ namespace AORebirth.Database.Domain.Characters
             for (int i = 0; i < locations.Count; i++) WriteItemLocation(c, t, locations[i], -(i + 1));
             foreach (var item in inserts) WriteItem(c, t, item);
             foreach (var location in locations) WriteItemLocation(c, t, location, location.ContainerPlacement);
+        }
+
+        private static void AssertExpectedSources(IDbConnection c, IDbTransaction t, CharacterInventoryMutationData mutation)
+        {
+            if (mutation.ExpectedSources == null)
+                throw new ArgumentNullException(nameof(mutation.ExpectedSources));
+            if (mutation.ExpectedSources.Any(v => v == null || v.InstanceId <= 0 || v.ContainerInstance <= 0
+                    || v.ContainerPlacement < 0 || v.StackCount <= 0
+                    || mutation.Locations.Count(location => location.InstanceId == v.InstanceId) != 1
+                    || mutation.Inserts.Any(item => item.InstanceId == v.InstanceId))
+                || mutation.ExpectedSources.Select(v => v.InstanceId).Distinct().Count() != mutation.ExpectedSources.Count)
+                throw new ArgumentException("Expected inventory sources must identify distinct existing rows being relocated.");
+
+            // Validate before unique-slot staging and retain the row locks until all destinations commit.
+            foreach (PersistedItemData source in mutation.ExpectedSources.OrderBy(v => v.InstanceId))
+            {
+                using (var command = Command(c, t,
+                    "SELECT InstanceId FROM item_instances WHERE InstanceId=@Id AND ContainerType=@Type AND ContainerInstance=@Owner "
+                    + "AND ContainerPlacement=@Slot AND ItemType=@ItemType AND LowId=@Low AND HighId=@High "
+                    + "AND Quality=@Quality AND StackCount=@Count AND Source=@Source FOR UPDATE",
+                    "@Id", source.InstanceId, "@Type", source.ContainerType, "@Owner", source.ContainerInstance,
+                    "@Slot", source.ContainerPlacement, "@ItemType", source.ItemType, "@Low", source.LowId,
+                    "@High", source.HighId, "@Quality", source.Quality, "@Count", source.StackCount, "@Source", source.Source))
+                {
+                    if (command.ExecuteScalar() == null)
+                        throw new InvalidOperationException("The shared container item was moved or changed before the transfer could commit.");
+                }
+            }
         }
 
         private static void WriteStacks(IDbConnection c, IDbTransaction t, IList<ItemStackData> stacks)

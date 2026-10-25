@@ -418,12 +418,20 @@ namespace ZoneEngine_New.Tests
             public Dictionary<int, int> Stats = new();
             public int Calls;
             public Exception? Failure;
+            public Exception? AfterCommitFailure;
             public Action<InventoryMutationBatch>? BeforeCommit;
             public void Persist(InventoryMutationBatch batch)
             {
                 Calls++; BeforeCommit?.Invoke(batch);
                 var next = new Dictionary<int, ItemInstanceRecord>(Rows);
                 var nextStats = new Dictionary<int, int>(Stats);
+                foreach (ItemInstanceRecord expected in batch.ExpectedSources)
+                    if (!next.TryGetValue(expected.InstanceId, out ItemInstanceRecord? actual)
+                        || actual.ContainerType != expected.ContainerType || actual.ContainerInstance != expected.ContainerInstance
+                        || actual.ContainerPlacement != expected.ContainerPlacement || actual.ItemType != expected.ItemType
+                        || actual.LowId != expected.LowId || actual.HighId != expected.HighId || actual.Quality != expected.Quality
+                        || actual.StackCount != expected.StackCount || actual.Source != expected.Source)
+                        throw new InvalidOperationException("stale shared container source");
                 foreach (var row in batch.Inserts) next.Add(row.InstanceId, row);
                 foreach (var location in batch.Locations)
                 {
@@ -443,6 +451,7 @@ namespace ZoneEngine_New.Tests
                 if (Failure != null) throw Failure;
                 Rows = next;
                 Stats = nextStats;
+                if (AfterCommitFailure != null) throw AfterCommitFailure;
             }
             static ItemInstanceRecord Copy(ItemInstanceRecord r, int type, int owner, int placement, int count) => new()
             {

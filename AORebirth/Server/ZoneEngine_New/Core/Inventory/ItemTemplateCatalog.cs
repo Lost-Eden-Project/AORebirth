@@ -35,6 +35,8 @@ namespace ZoneEngine_New.Core.Inventory
                     _templates.Count));
         }
 
+        public IReadOnlyCollection<ItemTemplate> Templates => _templates.Values;
+
         public bool TryGet(int aoid, out ItemTemplate template)
             => _templates.TryGetValue(aoid, out template!);
 

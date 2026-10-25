@@ -1,18 +1,11 @@
 # Current Task
 
-ENTITLEMENT RELEASE AND REPOSITORY CLEANUP (2026-10-21).
+Integrate validated mission chests into current public master.
 
-The shared Expansions.All policy and scoped account/character migration remain
-unchanged. Production migration execution is separate from release validation;
-do not rerun it merely to deploy binaries.
-
-The single current Git-LFS inventory remains a required offline reproducibility
-input. Its exact object has been materialized and checked; WORKFLOW.md documents
-scoped hydration for checkouts created with LFS smudging disabled. No history,
-tracking rule, required asset or generated cohort is rewritten.
-
-Release validation uses current source identities. Private content selection,
-baseline preservation, Linux acceptance, deployment and cleanup evidence remain
-private. Private WaterExits and unrelated GameData must not be replaced by public
-catalogs as part of this entitlement release. Preserve existing user changes and
-migration evidence; remove only verified redundant task artifacts.
+- Starting public master: `4f66c4c20d0e6f5f6e300082d81482944b028680`.
+- Validated integration: `2b339363d3aab9eea34fa2bb9b6941357ec558a0`; implementation `152a5d2cac40e955b1d085363677477c8140ad0b`.
+- Pending merge is isolated; preserve original dirty checkout, stashes, worktrees, configuration and private data.
+- Validate all four Windows engines, 104 real caves, focused protected regressions, isolated MySQL and owned TCP acceptance before master publication.
+- Exclude typed content; no migrations, client control, service changes or deployment.
+- After public publication, inspect permitted private Linux build preparation only; no private push or deployment tooling/production access.
+- Report: `docs/reports/MISSION_CHEST_MASTER_MERGE_FINAL.md`.

@@ -17,6 +17,7 @@ namespace ZoneEngine_New.Core.Data
         public void Persist(InventoryMutationBatch batch) => Run(() => _persistence.CommitInventoryMutation(new CharacterInventoryMutationData
         {
             CharacterId = batch.CharacterId, Inserts = batch.Inserts.Select(Map).ToArray(), Locations = batch.Locations.Select(Map).ToArray(),
+            ExpectedSources = batch.ExpectedSources.Select(Map).ToArray(),
             Stacks = batch.Stacks.Select(v => new ItemStackData { InstanceId = v.InstanceId, ExpectedCount = v.ExpectedCount, FinalCount = v.FinalCount }).ToArray(),
             UploadedNanoIds = batch.UploadedNanoIds.ToArray(), FinalStats = batch.FinalStats.Select(Map).ToArray(), EmptyContainersBeforeRetire = batch.EmptyContainersBeforeRetire.ToArray()
         }));

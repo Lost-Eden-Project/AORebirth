@@ -73,16 +73,30 @@ namespace ZoneEngine_New.Core.Inventory
 
         public bool TryDelete(Player player, Identity slot, int expectedInstanceId)
         {
+            Chest? chest = InventoryMoveService.FindChestSource(player, slot);
+            if (chest != null)
+            {
+                lock (player.PersistenceGate)
+                    lock (chest.LootGate)
+                        return chest.CanTransferLoot(player) && TryDeleteCore(player, slot, expectedInstanceId);
+            }
+            return TryDeleteCore(player, slot, expectedInstanceId);
+        }
+
+        bool TryDeleteCore(Player player, Identity slot, int expectedInstanceId)
+        {
             if (!TryResolveDeleteSlot(player, slot, out Container page, out int placement, out Item item, out LootableDynel? loot)
                 || item.InstanceId != expectedInstanceId) return false;
             if (InventoryMoveService.IsBagItem(item)
                 && player.Inventory.TryGetBackpackPage(item.Identity, out Container bagPage)
                 && bagPage.Content.Count != 0) return false;
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
+            ItemInstanceRecord[] expectedSources = loot != null && item.IsPersisted
+                ? [item.ToRecord(page.Identity, placement, item.StackCount)] : [];
             bool result = TryCommit(player,
                 [new InventoryRowChange(item, graveyard, item.InstanceId, item.StackCount, Retired: true)],
                 () => IsCurrent(page, placement, item, expectedInstanceId),
-                () => page.Content.Remove(placement));
+                () => page.Content.Remove(placement), expectedSources: expectedSources);
             if (result)
                 loot?.NotifyLootChanged();
             if (result && page.Identity.Type.IsWearPage())
@@ -246,7 +260,8 @@ namespace ZoneEngine_New.Core.Inventory
                 && page.Content.TryGetValue(slot, out Item? current) && ReferenceEquals(current, expected);
 
         internal bool TryCommit(Player player, IReadOnlyList<InventoryRowChange> changes,
-            Func<bool> validate, Action publish, IReadOnlyList<StatRecord>? finalStats = null)
+            Func<bool> validate, Action publish, IReadOnlyList<StatRecord>? finalStats = null,
+            IReadOnlyList<ItemInstanceRecord>? expectedSources = null)
         {
             bool committed = false;
             player.InvalidateOwnedItemCache();
@@ -286,6 +301,7 @@ namespace ZoneEngine_New.Core.Inventory
                             inserts.Values.ToArray(), locations.Values.ToArray(), stacks,
                             nanos)
                         {
+                            ExpectedSources = expectedSources ?? [],
                             FinalStats = finalStats ?? [],
                             EmptyContainersBeforeRetire = changes.Where(change => change.Retired
                                 && InventoryMoveService.IsBagItem(change.Item)).Select(change => change.Item.InstanceId).ToArray()
