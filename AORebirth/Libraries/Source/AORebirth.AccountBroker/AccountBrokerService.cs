@@ -12,7 +12,7 @@ namespace AORebirth.AccountBroker
 
     public sealed class AccountBrokerService
     {
-        private const int NormalAllowedCharacters = 6;
+        private const int NormalAllowedCharacters = 14;
 
         private const int NormalAccountFlags = 0;
 

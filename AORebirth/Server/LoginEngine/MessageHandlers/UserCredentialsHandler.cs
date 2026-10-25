@@ -116,8 +116,6 @@ namespace LoginEngine.MessageHandlers
             }
 
 
-            /* This checks your expansions and
-               number of characters allowed (num. of chars doesn't work)*/
             DBLoginData loginData =
                 LoginDataDao.Instance.GetByUsername(
                     challengedAccount);
@@ -135,8 +133,8 @@ namespace LoginEngine.MessageHandlers
             int expansions =
                 loginData.Expansions;
 
-            int allowedCharacters =
-                loginData.AllowedCharacters;
+            // Every account receives fourteen slots, including existing rows with older allowances.
+            int allowedCharacters = 14;
 
             IEnumerable<LoginCharacterInfo> characters =
                 from c in CharacterList.LoadCharacters(

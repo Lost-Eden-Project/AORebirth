@@ -167,16 +167,8 @@ namespace LoginEngine
                     break;
                 }
 
-                while (true)
-                {
-                    Console.WriteLine("Number of character slots: ");
-                    string test = Console.ReadLine();
-                    if (IsNumber(test))
-                    {
-                        temp.Add(test);
-                        break;
-                    }
-                }
+                Console.WriteLine("Fourteen character slots are enabled for new accounts.");
+                temp.Add("14");
 
                 Console.WriteLine("All supported expansions are enabled for new accounts.");
                 temp.Add(((int)Expansions.All).ToString());
@@ -246,13 +238,13 @@ namespace LoginEngine
 
         internal static DBLoginData CreateAccountData(string[] obj)
         {
-            // Keep the existing positional command format; its expansion argument
-            // cannot restrict the shared entitlement policy for a new account.
+            // Keep the existing positional command format; its slot and expansion arguments
+            // cannot restrict the entitlement policy for a new account.
             return new DBLoginData
             {
                 Username = obj[1],
                 AccountFlags = 0,
-                AllowedCharacters = int.Parse(obj[3]),
+                AllowedCharacters = 14,
                 CreationDate = DateTime.Now,
                 Email = obj[6],
                 Expansions = (int)Expansions.All,
