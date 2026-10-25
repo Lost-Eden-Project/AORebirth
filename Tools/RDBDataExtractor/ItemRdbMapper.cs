@@ -186,7 +186,9 @@ namespace AORebirth.Tools.RDBDataExtractor
                 Requirements = ToRequirements(spell.Criteria),
             };
 
-            if (spell.TryGetStat(TickCountSpellStat, out int duration) && duration > 0)
+            // Duration -1 repeats for as long as the item is worn or the nano runs (perk auras such as Aura of Revival
+            // 212161 pulse every Interval); only an unset or 0 duration means a single application.
+            if (spell.TryGetStat(TickCountSpellStat, out int duration) && duration != 0)
                 function.TickCount = duration;
             if (spell.TryGetStat(TickIntervalSpellStat, out int interval))
                 function.TickInterval = unchecked((uint)interval);

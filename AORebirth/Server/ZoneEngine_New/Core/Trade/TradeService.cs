@@ -342,7 +342,10 @@ namespace ZoneEngine_New.Core.Trade
                 return;
             }
 
-            if (session.AddShopPick(stockIndex) < 0)
+            // Ammo and other stackables: every pick of the same line lands in one stack, so the line is one item of the
+            // pane's twenty however many times it is picked (2,000 rounds was the most a 100-round line could reach).
+            bool stackable = InventoryStacking.IsStackable(_minter.Create(picked.LowId, picked.HighId, picked.Quality, ItemSource.Vendor));
+            if (session.AddShopPick(stockIndex, stackable) < 0)
             {
                 ClientFeedback.Send(player, "Feedback_CantTradeMoreItems");
                 return;

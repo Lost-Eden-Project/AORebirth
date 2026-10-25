@@ -26,7 +26,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
 
             Player? player = session.Player;
-            if (player?.Cell == null)
+            if (player == null)
+                return;
+
+            // From here on the client's positions are its own in this zone (CharDCMoveMessageHandler).
+            player.ClientInPlay = true;
+            if (player.Cell == null)
                 return;
 
             player.Cell.Announce(

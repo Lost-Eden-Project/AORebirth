@@ -31,12 +31,15 @@
     "minPauseSeconds": 5,
     "maxPauseSeconds": 20
   },
+  "proximityAggro": {
+    "maxWalkFactor": 2
+  },
   "socialAggro": {
     "enabled": true,
     "defaultRadius": 0,
     "npcVsNpcDefaultRadius": 20,
     "maxRadius": 30,
-    "sameFamilyOnly": true,
+    "sameClanOnly": true,
     "requireLineOfSight": true,
     "maxHelpers": 0,
     "chain": false

@@ -254,6 +254,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IPerkLockRepository, MySqlPerkLockRepository>();
             services.AddSingleton<IResearchRepository, MySqlResearchRepository>();
             services.AddSingleton<INanoLineLockRepository, MySqlNanoLineLockRepository>();
+            services.AddSingleton<IPetNameRepository, MySqlPetNameRepository>();
             services.AddSingleton<ICharacterCoalesceCommit, MySqlCharacterCoalesceCommit>();
             services.AddSingleton<IItemInstanceIdAllocator, ItemInstanceIdAllocator>();
             services.AddSingleton<IItemTemplateCatalog, ItemTemplateCatalog>();

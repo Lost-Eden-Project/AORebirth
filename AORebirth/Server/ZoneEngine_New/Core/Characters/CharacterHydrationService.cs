@@ -21,6 +21,7 @@ namespace ZoneEngine_New.Core.Characters
         private readonly IPerkLockRepository? _perkLocks;
         private readonly IResearchRepository? _research;
         private readonly INanoLineLockRepository? _nanoLineLocks;
+        private readonly IPetNameRepository? _petNames;
         private readonly IZoneLogger _logger;
 
         public CharacterHydrationService(
@@ -34,7 +35,8 @@ namespace ZoneEngine_New.Core.Characters
             ITrainedPerkRepository? trainedPerks = null,
             IPerkLockRepository? perkLocks = null,
             IResearchRepository? research = null,
-            INanoLineLockRepository? nanoLineLocks = null)
+            INanoLineLockRepository? nanoLineLocks = null,
+            IPetNameRepository? petNames = null)
         {
             ArgumentNullException.ThrowIfNull(skillLocks);
             ArgumentNullException.ThrowIfNull(characters);
@@ -54,6 +56,7 @@ namespace ZoneEngine_New.Core.Characters
             _perkLocks = perkLocks;
             _research = research;
             _nanoLineLocks = nanoLineLocks;
+            _petNames = petNames;
             _logger = logger;
         }
 
@@ -77,7 +80,8 @@ namespace ZoneEngine_New.Core.Characters
                 TrainedPerkIds = _trainedPerks?.GetForCharacter(characterId) ?? [],
                 PerkLocks = _perkLocks?.GetForCharacter(characterId) ?? [],
                 Research = _research?.GetForCharacter(characterId) ?? [],
-                NanoLineLocks = _nanoLineLocks?.GetForCharacter(characterId) ?? []
+                NanoLineLocks = _nanoLineLocks?.GetForCharacter(characterId) ?? [],
+                PetNames = _petNames?.GetForCharacter(characterId) ?? []
             };
 
             CharacterHydrationValidationResult validation = CharacterHydrationValidator.Validate(result);

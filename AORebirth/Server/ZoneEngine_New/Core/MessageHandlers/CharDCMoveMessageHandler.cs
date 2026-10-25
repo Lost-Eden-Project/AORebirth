@@ -54,13 +54,19 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         message.Coordinates.Z));
             }
 
-            if (!player.Motor.Consume(message))
+            // Only once the client says it is in play (CharInPlay): a client still loading a zone reports where it
+            // was, not where it landed.
+            if (!player.AcceptsClientMoves(DateTime.UtcNow))
                 return;
 
-            // Rooted but the client moved (walked or teleported): snap it back in place with a soft
-            // intrazone teleport; heading is kept.
-            if (player.Motor.RootCorrectionDue && player.Playfield != null)
+            bool accepted = player.Motor.Consume(message);
+
+            // Rooted but the client moved, or a hop the character could not have made: snap it back in place with a
+            // soft intrazone teleport; heading is kept.
+            if ((player.Motor.RootCorrectionDue || player.Motor.JumpCorrectionDue) && player.Playfield != null)
                 session.SendIntrazoneTeleport(player.Position, player.Rotation, player.Playfield.ClientPlayfieldId);
+            if (!accepted)
+                return;
 
             message.Identity = player.Identity;
             // S2C CharDCMove uses unknown 0. The client default of 1 is a local direct-control

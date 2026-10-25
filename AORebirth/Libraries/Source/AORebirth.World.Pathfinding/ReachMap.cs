@@ -36,9 +36,10 @@ namespace AORebirth.World.Pathfinding
     /// </summary>
     public sealed class ReachMap
     {
-        readonly HashSet<long>? _polys;
+        // Each flooded polygon with the walking cost (meters along the flood) from the target to it.
+        readonly Dictionary<long, float>? _polys;
 
-        internal ReachMap(ReachMapKind kind, HashSet<long>? polys, Vector3 endPoint, int polyCount, long builtStamp)
+        internal ReachMap(ReachMapKind kind, Dictionary<long, float>? polys, Vector3 endPoint, int polyCount, long builtStamp)
         {
             Kind = kind;
             _polys = polys;
@@ -58,6 +59,13 @@ namespace AORebirth.World.Pathfinding
         /// <summary>Polygons flooded (the work it took).</summary>
         public int PolyCount { get; }
 
-        internal bool Contains(long polyRef) => _polys != null && _polys.Contains(polyRef);
+        internal bool Contains(long polyRef) => _polys != null && _polys.ContainsKey(polyRef);
+
+        /// <summary>The walking cost from the target to <paramref name="polyRef"/>, when the flood reached it.</summary>
+        internal bool TryGetCost(long polyRef, out float cost)
+        {
+            cost = 0f;
+            return _polys != null && _polys.TryGetValue(polyRef, out cost);
+        }
     }
 }

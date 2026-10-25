@@ -33,5 +33,14 @@ namespace ZoneEngine_New.Core.Movement
         public const float VoidProbeDepth = 4096f;
 
         public const float LineOfSightEyeHeight = 1.6f;
+
+        /// <summary>Client move check: a reported position may be this far (XZ) from the server's whatever the speed.</summary>
+        public const float ClientMoveSlackMeters = 5f;
+
+        /// <summary>Client move check: travel time granted on top of the time since the last accepted move, for lag.</summary>
+        public const float ClientMoveLagAllowanceSeconds = 1.5f;
+
+        /// <summary>Client move check: the most time since the last accepted move that earns travel, so a quiet client cannot bank a hop.</summary>
+        public const float ClientMoveElapsedCreditSeconds = 10f;
     }
 }

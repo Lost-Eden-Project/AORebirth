@@ -49,6 +49,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Nearby NPCs joining a fight one of their own is drawn into.</summary>
         public GameplaySocialAggro SocialAggro { get; init; } = new();
 
+        /// <summary>Unprovoked (proximity) aggro limits.</summary>
+        public GameplayProximityAggro ProximityAggro { get; init; } = new();
+
         /// <summary>How much of a fight a player's pet starts falls back on the player.</summary>
         public GameplayPets Pets { get; init; } = new();
 
@@ -147,6 +150,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.maxHitPercent must be a positive number (100 for no cap).");
             if (Pvp.AttackerFlagNano < 0)
                 throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
+            if (ProximityAggro == null || !float.IsFinite(ProximityAggro.MaxWalkFactor) || ProximityAggro.MaxWalkFactor < 0)
+                throw new InvalidDataException(path + ": proximityAggro.maxWalkFactor must be a finite number, 0 or more.");
             if (SocialAggro == null
                 || !float.IsFinite(SocialAggro.DefaultRadius) || SocialAggro.DefaultRadius < 0
                 || !float.IsFinite(SocialAggro.NpcVsNpcDefaultRadius) || SocialAggro.NpcVsNpcDefaultRadius < 0
@@ -331,6 +336,17 @@ namespace ZoneEngine_New.Core.Configuration
     /// AssistanceRadius (GameData Playfields/{id}/Spawns.json); 0 there means it never assists. Pets, non-attackable,
     /// evading and pacified NPCs never join.
     /// </summary>
+    /// <summary>Unprovoked (proximity) aggro limits.</summary>
+    public sealed class GameplayProximityAggro
+    {
+        /// <summary>
+        /// An NPC only aggroes a player it can walk to within this many times its aggro range: one under a bridge sees
+        /// the player overhead, but the way up is far longer than that, so it stays put. 0 turns the check off. Fights
+        /// already started (attacks, calls for help) chase as before.
+        /// </summary>
+        public float MaxWalkFactor { get; init; } = 2f;
+    }
+
     public sealed class GameplaySocialAggro
     {
         /// <summary>Off: no NPC answers a call for help.</summary>
@@ -365,8 +381,8 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>The farthest any helper can come: how far a call for help has to look.</summary>
         public float SearchRadius => Math.Max(Math.Max(DefaultRadius, NpcVsNpcDefaultRadius), MaxRadius);
 
-        /// <summary>Helpers must share the NPC's NPCFamily (455) as well as its Side.</summary>
-        public bool SameFamilyOnly { get; init; } = true;
+        /// <summary>Helpers must share the NPC's Clan (5), its kind of creature, as well as its Side.</summary>
+        public bool SameClanOnly { get; init; } = true;
 
         /// <summary>Helpers must have line of sight to the NPC under attack.</summary>
         public bool RequireLineOfSight { get; init; } = true;

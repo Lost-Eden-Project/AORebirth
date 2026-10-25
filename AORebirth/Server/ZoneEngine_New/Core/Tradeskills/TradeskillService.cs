@@ -75,6 +75,8 @@ namespace ZoneEngine_New.Core.Tradeskills
             public int MinQl;
             public int MaxQl;
             public int OutOfRangeMinQl;
+            /// <summary>The target is below the recipe's MinTargetQl.</summary>
+            public bool TargetBelowMinQl;
             public string? Refusal;
             public bool SkillRefusal;
             public List<(int Stat, int Needed)> MissingSkills = new();
@@ -144,7 +146,7 @@ namespace ZoneEngine_New.Core.Tradeskills
         {
             if (!_windows.TryGetValue(player, out Window? window) || window.SourceSlot < 0 || window.TargetSlot < 0)
             {
-                Feedback(player, "It is not possible to assemble those two items. Maybe the order was wrong?");
+                ClientFeedback.Send(player, ClientFeedback.CombineNotPossible);
                 return;
             }
 
@@ -188,14 +190,14 @@ namespace ZoneEngine_New.Core.Tradeskills
             Item? target = InventoryItem(player, targetSlot);
             if (source == null || target == null || source.Locked || target.Locked)
             {
-                Feedback(player, "It is not possible to assemble those two items. Maybe the order was wrong?");
+                ClientFeedback.Send(player, ClientFeedback.CombineNotPossible);
                 return CombineOutcome.Refused;
             }
 
             Plan? plan = MakePlan(player, source, target, requestedQl);
             if (plan == null)
             {
-                Feedback(player, "It is not possible to assemble those two items. Maybe the order was wrong?");
+                ClientFeedback.Send(player, ClientFeedback.CombineNotPossible);
                 return CombineOutcome.NoRecipe;
             }
             if (plan.SkillRefusal)
@@ -205,6 +207,18 @@ namespace ZoneEngine_New.Core.Tradeskills
                     ClientFeedback.SendFormatted(player, ClientFeedback.CombineNeedsSkill,
                         NameOf(plan.RecipeSource), NameOf(plan.RecipeTarget), needed, SkillName(stat));
                 ClientFeedback.Send(player, ClientFeedback.CombineFailed);
+                return CombineOutcome.Refused;
+            }
+            // The client's own texts for a QL that is too low (a raw string here showed as an empty chat line).
+            if (plan.TargetBelowMinQl)
+            {
+                ClientFeedback.SendFormatted(player, ClientFeedback.CombineItemQlTooLow, NameOf(plan.RecipeTarget), plan.Recipe.MinTargetQl);
+                return CombineOutcome.Refused;
+            }
+            if (plan.OutOfRangeMinQl > 0)
+            {
+                ClientFeedback.SendFormatted(player, ClientFeedback.CombineSourceQlTooLow, NameOf(plan.RecipeSource),
+                    NameOf(plan.RecipeTarget), plan.RecipeTarget.Quality, NameOf(plan.RecipeSource), plan.OutOfRangeMinQl);
                 return CombineOutcome.Refused;
             }
             if (plan.Refusal != null)
@@ -334,7 +348,10 @@ namespace ZoneEngine_New.Core.Tradeskills
             int sourceQl = plan.RecipeSource.Quality;
 
             if (recipe.MinTargetQl > 0 && targetQl < recipe.MinTargetQl)
+            {
+                plan.TargetBelowMinQl = true;
                 plan.Refusal = string.Format(CultureInfo.InvariantCulture, "The target must be at least quality level {0}.", recipe.MinTargetQl);
+            }
 
             if (!InRange(recipe, sourceQl, targetQl))
             {
@@ -476,10 +493,11 @@ namespace ZoneEngine_New.Core.Tradeskills
                 Identity = player.Identity, Action = action, Target = target, Parameter1 = parameter1, Parameter2 = parameter2
             });
 
+        /// <summary>
+        /// A server-worded line as plain-text feedback (category 110 / <see cref="ClientFeedback.PlainText"/>). A bare
+        /// FormatFeedback string is not a format the client reads: it showed an empty chat line.
+        /// </summary>
         static void Feedback(Player player, string text)
-            => player.Session?.Send(new FormatFeedbackMessage
-            {
-                Identity = player.Identity, Unknown = 1, Unknown1 = 0, FormattedMessage = text
-            });
+            => ClientFeedback.SendFormatted(player, ClientFeedback.PlainText, text);
     }
 }

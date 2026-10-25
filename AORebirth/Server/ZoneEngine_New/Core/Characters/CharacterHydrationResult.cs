@@ -32,6 +32,9 @@ namespace ZoneEngine_New.Core.Characters
         /// <summary>Stored nano line cooldowns (StatId = nano strain). Expired entries are dropped on apply.</summary>
         public IReadOnlyList<SkillLockRecord> NanoLineLocks { get; init; } = [];
 
+        /// <summary>Stored /pet rename names per pet type from characterpetnames.</summary>
+        public IReadOnlyList<PetNameRecord> PetNames { get; init; } = [];
+
         public bool IsSpawnReady => CharacterHydrationValidator.Validate(this).IsValid;
     }
 }

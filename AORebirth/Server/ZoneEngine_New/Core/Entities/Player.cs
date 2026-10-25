@@ -83,6 +83,29 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         internal bool ZoneReconnectPending { get; set; }
 
+        /// <summary>
+        /// The client said it is in play (CharInPlay) since the server last put this session in play. Until then its
+        /// moves are not applied: while it loads a zone it reports where it was, not where it landed, and such a stale
+        /// position swept the character over a zone border (Lost Eden 2026-10-25).
+        /// </summary>
+        internal bool ClientInPlay { get; set; }
+
+        /// <summary>When the server last put this player's session in play.</summary>
+        internal DateTime InPlaySinceUtc { get; private set; }
+
+        /// <summary>A client that never sends CharInPlay has its moves applied after this long anyway.</summary>
+        const double ClientInPlayFallbackSeconds = 10.0;
+
+        /// <summary>The session is in play from the server's side; the client has yet to say so.</summary>
+        internal void MarkServerInPlay(DateTime nowUtc)
+        {
+            ClientInPlay = false;
+            InPlaySinceUtc = nowUtc;
+        }
+
+        internal bool AcceptsClientMoves(DateTime nowUtc)
+            => ClientInPlay || (nowUtc - InPlaySinceUtc).TotalSeconds >= ClientInPlayFallbackSeconds;
+
         /// <summary>An in-zone respawn has despawned this player for observers; the respawn itself runs next tick.</summary>
         bool _respawnObserversCleared;
         double _respawnRemainingSeconds;
@@ -643,6 +666,9 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Personal research tiers in progress and the research XP each still needs (characterresearch).</summary>
         public ResearchProgress Research { get; } = new();
 
+        /// <summary>/pet rename names per pet type; a summoned pet of that type takes its name (characterpetnames).</summary>
+        public PetNames PetNames { get; } = new();
+
         /// <summary>Login: the stored progress, minus any tier already trained (a crash between the two writes).</summary>
         public void LoadResearch(IEnumerable<ResearchProgressRecord> rows)
         {
@@ -1118,15 +1144,29 @@ namespace ZoneEngine_New.Core.Entities
             else if (template.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells)
                 && spells.Exists(spell => spell.Target is (int)ItemTarget.Target or (int)ItemTarget.Fightingtarget))
             {
-                bool preferSelected = (can & CanFlags.ApplyOnFriendly) != 0
+                bool friendly = (can & CanFlags.ApplyOnFriendly) != 0;
+                bool preferSelected = friendly
                     || template.Actions.Exists(action => action.ActionType == (int)ActionType.ToUse
                         && action.Requirements.Exists(requirement => (Operator)requirement.Operator == Operator.OnTarget));
-                Character? resolved = ResolvePerkActionTarget(preferSelected);
+                // A friendly action (Lay on Hands 215791) is used on whoever is selected, the player included.
+                Character? resolved = ResolvePerkActionTarget(preferSelected, allowSelf: friendly);
                 if (resolved == null)
                 {
                     RequirementFeedback.SendText(this, "You need a target to use this.");
                     return false;
                 }
+
+                // ...and only on a friendly one, as a friendly nano: never on a monster or an enemy.
+                if (friendly && (can & CanFlags.ApplyOnHostile) == 0)
+                {
+                    Nanos.NanoCastRefusal friendlyRefusal = Nanos.NanoRuntime.FriendlyNanoTargetRefusal(this, resolved);
+                    if (friendlyRefusal != Nanos.NanoCastRefusal.None)
+                    {
+                        Nanos.NanoRuntime.Refuse(this, friendlyRefusal);
+                        return false;
+                    }
+                }
+
                 target = resolved;
             }
 
@@ -1292,12 +1332,18 @@ namespace ZoneEngine_New.Core.Entities
             return range > 0 ? range : 1;
         }
 
-        /// <summary>Explicit friendly/target criteria use selection; other actions prefer the fighting target.</summary>
-        Character? ResolvePerkActionTarget(bool preferSelected = false)
+        /// <summary>
+        /// Explicit friendly/target criteria use selection; other actions prefer the fighting target. With
+        /// <paramref name="allowSelf"/>, selecting yourself targets yourself.
+        /// </summary>
+        Character? ResolvePerkActionTarget(bool preferSelected = false, bool allowSelf = false)
         {
             Character? fighting = TryResolveFightingTarget();
             if (!preferSelected && fighting != null)
                 return fighting;
+
+            if (allowSelf && Target == Identity)
+                return this;
 
             if (Target.Instance == 0 || Target == Identity || Playfield == null
                 || !Playfield.GetRequiredService<DynelRegistry>().TryGet(Target, out Dynel? dynel)
@@ -1369,12 +1415,18 @@ namespace ZoneEngine_New.Core.Entities
             return (_items.CreateTemplate(tier.LowId, tier.HighId, quality), tier.LowId, tier.HighId, quality);
         }
 
-        /// <summary>Attack skill map (stat to percent) weighted against this player's skills.</summary>
+        /// <summary>
+        /// Attack skill map (stat to percent) weighted against this player's skills. AMS (22) is the full attack rating
+        /// of the wielded weapon (<see cref="DamageCalculator.ResolveAttackRating(Character)"/>), Add All Off. included.
+        /// </summary>
         int WeightedSkill(IReadOnlyDictionary<CharacterStat, int> attack)
         {
             long total = 0;
             foreach ((CharacterStat stat, int percent) in attack)
-                total += (long)Stats.GetOrZero(stat) * percent;
+            {
+                int skill = stat == CharacterStat.AMS ? DamageCalculator.ResolveAttackRating(this) : Stats.GetOrZero(stat);
+                total += (long)skill * percent;
+            }
             return (int)Math.Clamp(total / 100, 0, int.MaxValue);
         }
 

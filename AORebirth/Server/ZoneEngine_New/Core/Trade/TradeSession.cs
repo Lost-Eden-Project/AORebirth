@@ -179,13 +179,45 @@ namespace ZoneEngine_New.Core.Trade
             PartnerOffer.Ended = false;
         }
 
-        public int AddShopPick(int stockIndex)
+        /// <summary>
+        /// Queues one pick of a stock line. The buy pane holds <see cref="TradeOffer.Capacity"/> items; a stackable line
+        /// (ammo) picked again is the same stack, so it takes one item of that however often it is picked, while every
+        /// other pick is an item of its own. -1 when the pane is full.
+        /// </summary>
+        public int AddShopPick(int stockIndex, bool stackable = false)
         {
-            if (_shopPicks.Count >= TradeOffer.Capacity)
+            if (stackable)
+                _stackableShopLines.Add(stockIndex);
+            bool newEntry = !stackable || !_shopPicks.Contains(stockIndex);
+            if (newEntry && CountShopPaneItems() >= TradeOffer.Capacity)
                 return -1;
 
             _shopPicks.Add(stockIndex);
             return _shopPicks.Count - 1;
+        }
+
+        readonly HashSet<int> _stackableShopLines = new();
+
+        /// <summary>Items in the buy pane as the capacity counts them: each stackable line once, every other pick once.</summary>
+        int CountShopPaneItems()
+        {
+            int items = 0;
+            var stackableSeen = new HashSet<int>();
+            for (int i = 0; i < _shopPicks.Count; i++)
+            {
+                int index = _shopPicks[i];
+                if (_stackableShopLines.Contains(index))
+                {
+                    if (stackableSeen.Add(index))
+                        items++;
+                }
+                else
+                {
+                    items++;
+                }
+            }
+
+            return items;
         }
 
         /// <summary>

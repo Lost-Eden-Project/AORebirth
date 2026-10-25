@@ -88,7 +88,7 @@ namespace ZoneEngine_New.Core.Helpers
                 return false;
 
             if (attacker.FightingTarget.Instance == 0)
-                attacker.StartFighting(target.Identity, 0);
+                attacker.StartFightingForSpecial(target.Identity);
 
             attacker.SetFightingTarget(target.Identity);
             attacker.QueueSpecial(special, target.Identity);
@@ -639,7 +639,8 @@ namespace ZoneEngine_New.Core.Helpers
         /// Whether <paramref name="observer"/> notices <paramref name="sneaker"/>: hidden when concealment beats
         /// 5x the observer's level (up to level 200) or 7x (up to 240); above 240 always seen. Perception is not used.
         /// </summary>
-        static bool CanSee(Character observer, Character sneaker)
+        /// <summary>The observer notices the sneaker: its level is not beaten by the sneaker's Concealment.</summary>
+        internal static bool CanSee(Character observer, Character sneaker)
         {
             int level = observer.Stats.GetOrOne(CharacterStat.Level);
             int concealment = sneaker.Stats.GetOrZero(CharacterStat.Concealment);

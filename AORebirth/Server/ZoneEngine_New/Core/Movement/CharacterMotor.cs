@@ -567,6 +567,8 @@ namespace ZoneEngine_New.Core.Movement
             _character.Position = position;
             _sim.Position = ToVec3(position);
             _holdingOverVoid = false;
+            // The server placed the body: the client's next move is measured from here and from now.
+            _lastAcceptedMoveUtc = DateTime.UtcNow;
             if (rotation != null)
             {
                 _character.Rotation = rotation;
@@ -589,6 +591,7 @@ namespace ZoneEngine_New.Core.Movement
         public bool Consume(CharDCMoveMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
+            JumpCorrectionDue = false;
             if (_character.IsRooted)
                 return ConsumeRooted(message);
 
@@ -613,6 +616,49 @@ namespace ZoneEngine_New.Core.Movement
 
         /// <summary>True when the last rooted move drifted and the client needs the server position again.</summary>
         public bool RootCorrectionDue { get; private set; }
+
+        /// <summary>True when the last move was refused as a hop the character could not have made (<see cref="IsPlausibleClientMove"/>).</summary>
+        public bool JumpCorrectionDue { get; private set; }
+
+        DateTime _lastAcceptedMoveUtc;
+        DateTime _lastJumpCorrectionUtc;
+
+        /// <summary>
+        /// EXPLOIT guard: a reported position farther (XZ) from the server's than the character could have run since its
+        /// last accepted move is refused and the client pulled back (<see cref="JumpCorrectionDue"/>): the vehicle's top
+        /// speed over the time elapsed (credited up to <see cref="MovementConfig.ClientMoveElapsedCreditSeconds"/>) plus
+        /// a lag allowance and a little slack. A server placement (<see cref="Warp"/>) restarts the clock, so a stale
+        /// position sent after a teleport or zone landing is refused too. Flying is judged the same way: a flyer's top
+        /// speed is its run speed. A GM is not judged.
+        /// </summary>
+        bool IsPlausibleClientMove(Player player, float x, float z, DateTime now)
+        {
+            if (player.Stats.GetOrZero(CharacterStat.GmLevel) > 0)
+                return true;
+
+            double elapsed = _lastAcceptedMoveUtc == default
+                ? 0.0
+                : Math.Clamp((now - _lastAcceptedMoveUtc).TotalSeconds, 0.0, MovementConfig.ClientMoveElapsedCreditSeconds);
+            double allowed = MovementConfig.ClientMoveSlackMeters
+                + (Math.Max(0f, _sim.MaxVel) * (elapsed + MovementConfig.ClientMoveLagAllowanceSeconds));
+            double dx = x - _character.Position.x;
+            double dz = z - _character.Position.z;
+            double distance = Math.Sqrt((dx * dx) + (dz * dz));
+            if (distance <= allowed)
+                return true;
+
+            if ((now - _lastJumpCorrectionUtc).TotalSeconds >= RootCorrectionSeconds)
+            {
+                JumpCorrectionDue = true;
+                _lastJumpCorrectionUtc = now;
+                player.Logger.Warn(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Rejected CharDCMove hop character={0} from=({1:F1},{2:F1}) to=({3:F1},{4:F1}) distance={5:F1}m allowed={6:F1}m maxVel={7:F1}",
+                    player.Identity.Instance, _character.Position.x, _character.Position.z, x, z, distance, allowed, _sim.MaxVel));
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// Rooted: heading and turns still apply, but the position stays the server's and every
@@ -662,7 +708,7 @@ namespace ZoneEngine_New.Core.Movement
 
         bool TryAcceptClientPosition(CharDCMoveMessage message)
         {
-            // EXPLOIT: client XYZ is applied unclamped vs speed/last update. Playfield XZ is gated below.
+            // Playfield XZ is gated below; the distance since the last accepted move by IsPlausibleClientMove.
             if (message.Coordinates == null)
                 return true;
 
@@ -694,6 +740,10 @@ namespace ZoneEngine_New.Core.Movement
                 }
             }
 
+            DateTime now = DateTime.UtcNow;
+            if (_character is Player mover && !IsPlausibleClientMove(mover, x, z, now))
+                return false;
+
             var requested = new Vector3(x, y, z);
             if (playfield != null
                 && playfield.TrySnapFeetToFloor(requested, out Vector3 floor)
@@ -705,6 +755,7 @@ namespace ZoneEngine_New.Core.Movement
 
             _character.Position = new Vector3(x, y, z);
             _sim.Position = new Vec3(x, y, z);
+            _lastAcceptedMoveUtc = now;
             return true;
         }
 

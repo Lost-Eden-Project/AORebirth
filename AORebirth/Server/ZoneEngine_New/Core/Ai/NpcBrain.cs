@@ -524,7 +524,7 @@ namespace ZoneEngine_New.Core.Ai
                 return;
 
             int side = Npc.Stats.GetOrZero(CharacterStat.Side);
-            int family = Npc.Stats.GetOrZero(CharacterStat.NPCFamily);
+            int clan = Npc.Stats.GetOrZero(CharacterStat.Clan);
             bool npcAttacker = enemy is NpcCharacter { PetOwner: null };
             playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc, rules.SearchRadius, _nearbyNpcs);
             _helpers.Clear();
@@ -535,7 +535,7 @@ namespace ZoneEngine_New.Core.Ai
                     || brain.Pet != null || brain._evading || other.IsPacified || brain.Hate.Contains(attacker))
                     continue;
                 if (other.Stats.GetOrZero(CharacterStat.Side) != side
-                    || (rules.SameFamilyOnly && other.Stats.GetOrZero(CharacterStat.NPCFamily) != family))
+                    || (rules.SameClanOnly && other.Stats.GetOrZero(CharacterStat.Clan) != clan))
                     continue;
 
                 double distance = Npc.GetEdgeDistanceTo(other);
@@ -733,9 +733,31 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             if (!HasChance(player))
                 return;
+            if (!WithinProximityWalk(player, range))
+                return;
 
             Hate.Add(player.Identity, NpcAiRules.ProximityHate);
             CallForHelp(player.Identity);
+        }
+
+        /// <summary>
+        /// The walk to <paramref name="player"/> is short enough for unprovoked aggro: at most proximityAggro.maxWalkFactor
+        /// times the aggro <paramref name="range"/> (Gameplay.json), measured along the navmesh by the target's shared reach
+        /// map. Seeing a player on a bridge overhead is not enough when the way up is far round. True when the walk is not
+        /// known (no navmesh, off the mesh) or the check is off.
+        /// </summary>
+        bool WithinProximityWalk(Character player, float range)
+        {
+            float factor = Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.ProximityAggro.MaxWalkFactor ?? 0f;
+            NavMeshPathfinder? finder = Npc.Playfield?.Pathfinder;
+            if (factor <= 0f || finder == null)
+                return true;
+
+            Vector3 feet = HeightfieldOrSelf(Npc.Position);
+            ReachMap map = Npc.Playfield!.GetRequiredService<ReachMaps>().Get(player, finder, HeightfieldOrSelf(player.Position));
+            var start = new System.Numerics.Vector3((float)feet.x, (float)feet.y, (float)feet.z);
+            return !finder.TryGetWalkDistance(map, start, out float walk)
+                || walk <= (range + Npc.GetCollisionRadius() + player.GetCollisionRadius()) * factor;
         }
 
         public bool ShouldLeash()
@@ -875,6 +897,17 @@ namespace ZoneEngine_New.Core.Ai
             double reach = Npc.GetCollisionRadius() + target.GetCollisionRadius()
                 + (Math.Min(shortest, NpcSpread.ApproachReachCap) * NpcSpread.ApproachReachFactor);
             Vector3 point = NpcSpread.ApproachPoint(Npc, target, _approachAngle, reach);
+
+            // The spread point beside a target in a corner or at a ledge can fall in the wall or off the edge. No route
+            // ends there (EndOffMesh), and the route's straight-line fallback ran the NPC into the wall and off the
+            // drop; close in on the target itself instead, which the reach check already found a path to.
+            NavMeshPathfinder? finder = Npc.Playfield?.Pathfinder;
+            if (finder != null
+                && !finder.IsDestinationOnMesh(new System.Numerics.Vector3((float)point.x, (float)point.y, (float)point.z)))
+            {
+                _approachDirect = true;
+                return target.Position;
+            }
 
             // Only called while out of reach. A spread point this close to the NPC is a step the planner treats as
             // "already there" (PathEndsUnderNpc) and never walks, leaving the NPC a few decimetres short of its swing
@@ -1510,8 +1543,8 @@ namespace ZoneEngine_New.Core.Ai
         /// <summary>
         /// Full route from the NPC's position to <paramref name="destination"/> into <see cref="_routeScratch"/>,
         /// starting with the current position.
-        /// Reuses the <see cref="CanPathTo"/> path when it was planned from here to the same place; with no
-        /// navmesh, or no path found, the route is a straight line.
+        /// Reuses the <see cref="CanPathTo"/> path when it was planned from here to the same place. With no navmesh the
+        /// route is a straight line; with one and no path found, the route is only the current position (no walk).
         /// </summary>
         void PlanRoute(Vector3 destination)
         {
@@ -1537,15 +1570,15 @@ namespace ZoneEngine_New.Core.Ai
             NavMeshPathfinder? finder = Npc.Playfield?.Pathfinder;
             if (finder != null)
             {
+                // With a navmesh, no route means no walk: a straight line ran NPCs into walls and off ledges.
                 var start = new System.Numerics.Vector3((float)startPos.x, (float)startPos.y, (float)startPos.z);
                 var end = new System.Numerics.Vector3((float)destination.x, (float)destination.y, (float)destination.z);
                 if (PathDiag.TryFindPath(finder, start, end, _planScratch, PathDiag.Route) && _planScratch.Count > 0)
-                {
                     AppendRoute(_planScratch);
-                    return;
-                }
+                return;
             }
 
+            // A playfield without a navmesh has nothing to route over: the straight line is all there is.
             _routeScratch.Add(new Vector3(destination.x, destination.y, destination.z));
         }
 

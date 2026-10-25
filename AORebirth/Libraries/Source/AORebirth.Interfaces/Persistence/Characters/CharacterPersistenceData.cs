@@ -112,6 +112,13 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public long ExpiresAtUtcTicks { get; set; }
     }
 
+    /// <summary>One /pet rename: the pet type (the slot a summon fills) and the name its pets of that type take.</summary>
+    public sealed class PersistedPetNameData
+    {
+        public int PetType { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
     /// <summary>One nano line cooldown: the locked nano strain (stat 75) and absolute UTC expiry.</summary>
     public sealed class PersistedNanoLineLockData
     {

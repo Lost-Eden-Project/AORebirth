@@ -12,6 +12,7 @@ namespace ZoneEngine_New.Core.Nanos
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Playfield;
+    using ZoneEngine_New.Core.Playfield.Locality;
     using ZoneEngine_New.Core.Teams;
 
     /// <summary>
@@ -200,9 +201,15 @@ namespace ZoneEngine_New.Core.Nanos
                 return true;
             }
 
+            // Only teammates the team's centre can see: on its playfield and in its client's cell visibility
+            // (PlayfieldLocality). The centre itself always gets it.
+            PlayfieldLocality? locality = playfield?.GetService<PlayfieldLocality>();
             for (int i = 0; i < team.MemberIds.Count; i++)
             {
                 if (!manager.FindPlayer(team.MemberIds[i], out Player? mate) || mate == null || mate.IsDead)
+                    continue;
+                if (!ReferenceEquals(mate, player)
+                    && (!ReferenceEquals(mate.Playfield, playfield) || locality == null || !locality.IsVisibleTo(mate, player)))
                     continue;
 
                 NanoRuntime.TryApplyImmediate(caster, mate, nanoId, items, inventory, nowUtc);

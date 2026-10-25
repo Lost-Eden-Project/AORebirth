@@ -245,6 +245,30 @@ namespace AORebirth.Database.Domain.Characters
             });
         }
 
+        public IList<PersistedPetNameData> LoadPetNames(int characterId)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            return Query("SELECT PetType,Name FROM characterpetnames WHERE CharacterId=@Id ORDER BY PetType",
+                r => new PersistedPetNameData { PetType = r.GetInt32(0), Name = r.GetString(1) }, "@Id", characterId);
+        }
+
+        public void SavePetNames(int characterId, IList<PersistedPetNameData> petNames)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (petNames == null) throw new ArgumentNullException(nameof(petNames));
+            if (petNames.Any(n => string.IsNullOrEmpty(n.Name) || n.Name.Length > 32)
+                || petNames.Select(n => n.PetType).Distinct().Count() != petNames.Count)
+                throw new ArgumentException("Invalid or duplicate pet name.", nameof(petNames));
+            Transaction((c, t) =>
+            {
+                Execute(c, t, "DELETE FROM characterpetnames WHERE CharacterId=@Id", "@Id", characterId);
+                foreach (var petName in petNames)
+                    Execute(c, t, "INSERT INTO characterpetnames (CharacterId,PetType,Name) VALUES (@Id,@Type,@Name)",
+                        "@Id", characterId, "@Type", petName.PetType, "@Name", petName.Name);
+                return 0;
+            });
+        }
+
         public IList<PersistedResearchData> LoadResearch(int characterId)
         {
             if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));

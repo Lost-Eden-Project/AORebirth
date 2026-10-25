@@ -683,6 +683,11 @@ namespace ZoneEngine_New.Core.Entities
                     player.Session.Send(BuildNewLevelMessage(gameData, gained, lastGain));
             }
 
+            // Alien XP held full by the old level's cap takes the alien levels the new level allows (after NewLevel, as
+            // its stats flush).
+            if (IsPlayer && levelAfter > levelBefore)
+                SettleAlienXp(gameData, Stats.GetOrZero(CharacterStat.AlienXP));
+
             FlushDirtyStats();
         }
 
@@ -1150,7 +1155,6 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             int alienLevel = Stats.GetOrZero(CharacterStat.AlienLevel);
-            int alienBefore = alienLevel;
 
             // Like kill XP, one grant is capped at xp.caps.killXp percent of the current alien level's bar.
             if (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry current) && current.NextLevelXp > 0)
@@ -1158,7 +1162,18 @@ namespace ZoneEngine_New.Core.Entities
                 amount = (int)Math.Min(amount, GameplayXpCaps.Of(XpCaps.KillXp, current.NextLevelXp));
             }
 
-            long progress = (long)Stats.GetOrZero(CharacterStat.AlienXP) + amount;
+            SettleAlienXp(gameData, (long)Stats.GetOrZero(CharacterStat.AlienXP) + amount);
+        }
+
+        /// <summary>
+        /// Takes alien levels while <paramref name="progress"/> covers the next step and the character level allows it
+        /// (AlienXp.json MinLevel), then stores what is left. A bar held full by the level cap is settled again on a level
+        /// up, so the alien level comes at once (level 14 at 9000/9000 reaching 15 becomes AI 3 without another kill).
+        /// </summary>
+        void SettleAlienXp(IGameData gameData, long progress)
+        {
+            int alienLevel = Stats.GetOrZero(CharacterStat.AlienLevel);
+            int alienBefore = alienLevel;
             int next = 0;
             int level = Stats.GetOrOne(CharacterStat.Level);
             while (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry step) && step.NextLevelXp > 0)
@@ -1353,6 +1368,25 @@ namespace ZoneEngine_New.Core.Entities
         protected virtual void SpawnDeathCorpse()
             => Playfield?.GetRequiredService<SpawnService>().SpawnCorpse(this);
 
+        bool _keepingSneakForSpecial;
+
+        /// <summary>
+        /// <see cref="StartFighting"/> for a special attack request: a sneaker stays in sneak when the target has not
+        /// noticed them, so an Aimed Shot or Sneak Attack can still come from stealth.
+        /// </summary>
+        public void StartFightingForSpecial(Identity target)
+        {
+            _keepingSneakForSpecial = true;
+            try
+            {
+                StartFighting(target, 0);
+            }
+            finally
+            {
+                _keepingSneakForSpecial = false;
+            }
+        }
+
         /// <summary>
         /// Engage auto-attack: SpecialAttackWeapon first so observers have specials, then Attack.
         /// </summary>
@@ -1367,6 +1401,14 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             Motor.StandUp();
+            // Starting a fight gives a sneaker away. Only a special that starts it (StartFightingForSpecial) on a target
+            // that has not noticed them keeps stealth: the Aimed Shot or Sneak Attack then leaves sneak when it fires.
+            if (!_keepingSneakForSpecial
+                || (Playfield != null
+                    && Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? opponent)
+                    && opponent is Character aware && SpecialAttacks.CanSee(aware, this)))
+                BreakSneak();
+
             // The weapon clocks carry on: a repeated or retargeted Attack must not restart a recharge (the client keeps
             // its bars too, Gamecode.dll FUN_1006810e). Ending the fight resets them (SetFightingTarget(None)).
             SetFightingTarget(target);
@@ -1699,7 +1741,8 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Leaves sneak when the character is sneaking, and tells everyone near (StopSneaking). Something that gives a
-        /// sneaker away calls it: an aimed shot or sneak attack, or casting a nano.
+        /// sneaker away calls it: starting a fight on a target that notices them, a swing, an aimed shot or sneak
+        /// attack, or casting a nano.
         /// </summary>
         public void BreakSneak()
         {
@@ -1936,6 +1979,8 @@ namespace ZoneEngine_New.Core.Entities
                 characterWeapon.LogicalSlot,
                 weapon,
                 IsPlayer);
+            // A swing gives a sneaker away, hit or miss.
+            BreakSneak();
             // Every swing spends a round from a clip that tracks one, hit or miss.
             int? roundsLeft = ConsumeRound(characterWeapon);
             // An evading NPC is untouchable on its way home: every swing is a miss.
@@ -2443,6 +2488,12 @@ namespace ZoneEngine_New.Core.Entities
         public virtual bool? ResolveRequirement(ItemRequirement requirement)
         {
             ArgumentNullException.ThrowIfNull(requirement);
+
+            // AMS (22) is not a stored stat: it is the attack rating the wielded weapon gives (Force Opponent 252313
+            // picks its DoT tier by "OnCaster AMS GreaterThan 466").
+            if ((CharacterStat)requirement.StatNumber == CharacterStat.AMS)
+                return ItemTemplate.EvaluateRequirement(DamageCalculator.ResolveAttackRating(this), requirement);
+
             int value = requirement.Value;
             return (Operator)requirement.Operator switch
             {

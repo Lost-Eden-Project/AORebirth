@@ -287,6 +287,18 @@ namespace AORebirth.World.Pathfinding
             return true;
         }
 
+        /// <summary>
+        /// True when <paramref name="destination"/> lies on the navmesh as a path's end must (<see cref="TryFindPath"/>
+        /// fails with <see cref="PathSearchOutcome.EndOffMesh"/> otherwise): a point inside a wall, a cliff face or past
+        /// a ledge is not.
+        /// </summary>
+        public bool IsDestinationOnMesh(Vector3 destination)
+        {
+            EnsureAround(destination, _extents.X);
+            DtStatus status = _query.FindNearestPoly(destination, _extents, _filter, out long polyRef, out RcVec3f snapped, out _);
+            return !status.Failed() && polyRef != 0 && IsOnMesh(destination, snapped);
+        }
+
         public bool TryCanReach(Vector3 start, Vector3 end)
         {
             EnsurePathRegion(start, end, widest: false);
@@ -402,9 +414,9 @@ namespace AORebirth.World.Pathfinding
             if (flood.Failed() || count > maxPolys)
                 return new ReachMap(ReachMapKind.TooLarge, null, end, count, stamp);
 
-            var polys = new HashSet<long>(count);
+            var polys = new Dictionary<long, float>(count);
             for (int i = 0; i < count; i++)
-                polys.Add(_reachRefs[i]);
+                polys[_reachRefs[i]] = _reachCosts[i];
             return new ReachMap(ReachMapKind.Flooded, polys, end, count, stamp);
         }
 
@@ -434,6 +446,22 @@ namespace AORebirth.World.Pathfinding
                 return ReachAnswer.Reachable;
 
             return map.Contains(startRef) ? ReachAnswer.Reachable : ReachAnswer.Unreachable;
+        }
+
+        /// <summary>
+        /// How far a walker at <paramref name="start"/> has to walk to <paramref name="map"/>'s target: the flood's cost
+        /// to the walker's polygon. False when that is not known (no flooded map, or the walker off the mesh or
+        /// outside the flood).
+        /// </summary>
+        public bool TryGetWalkDistance(ReachMap map, Vector3 start, out float meters)
+        {
+            ArgumentNullException.ThrowIfNull(map);
+            meters = 0f;
+            if (map.Kind != ReachMapKind.Flooded || !TrySnap(start, out _))
+                return false;
+
+            DtStatus status = _query.FindNearestPoly(start, _extents, _filter, out long startRef, out _, out _);
+            return !status.Failed() && startRef != 0 && map.TryGetCost(startRef, out meters);
         }
 
         public void Dispose()

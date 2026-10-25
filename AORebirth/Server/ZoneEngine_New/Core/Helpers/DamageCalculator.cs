@@ -220,6 +220,24 @@ namespace ZoneEngine_New.Core.Helpers
             return NextDouble() <= hitPercentage;
         }
 
+        /// <summary>
+        /// The character's attack rating (the AMS stat, 22): its wielded weapon's Attack skills weighted against the
+        /// character, plus Add All Off., as a swing with that weapon rolls it. The main hand, else the combined martial
+        /// arts slot, else the off hand; with no weapon, Add All Off. alone.
+        /// </summary>
+        public static int ResolveAttackRating(Character attacker)
+        {
+            ArgumentNullException.ThrowIfNull(attacker);
+            CharacterWeapon? weapon = null;
+            foreach (WeaponSlot slot in (ReadOnlySpan<WeaponSlot>)[WeaponSlot.MainHand, WeaponSlot.CombinedMA, WeaponSlot.OffHand])
+            {
+                if (attacker.Weapons.TryGetValue(slot, out weapon) && weapon != null)
+                    break;
+            }
+
+            return ResolveAttackRating(attacker, weapon?.DamageItem?.Definition);
+        }
+
         static int ResolveAttackRating(Character attacker, ItemTemplate? template)
         {
             int attackRating = 0;

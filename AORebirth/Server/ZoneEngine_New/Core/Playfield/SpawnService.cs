@@ -913,6 +913,7 @@ namespace ZoneEngine_New.Core.Playfield
             SendRetailWorldEntryReadyBlock(session, player);
             session.Send(full);
             SendRetailWorldEntryCompletion(session, player);
+            player.MarkServerInPlay(DateTime.UtcNow);
             session.State = SessionState.InPlay;
             player.SendPerkActions();
 
@@ -1011,6 +1012,7 @@ namespace ZoneEngine_New.Core.Playfield
             SendRetailWorldEntryReadyBlock(session, player);
             session.Send(reconnectFull);
             SendRetailWorldEntryCompletion(session, player);
+            player.MarkServerInPlay(DateTime.UtcNow);
             session.State = SessionState.InPlay;
             player.SendPerkActions();
 

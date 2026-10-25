@@ -136,6 +136,18 @@
       },
       "additionalProperties": false
     },
+    "proximityAggro": {
+      "type": "object",
+      "description": "Unprovoked (proximity) aggro limits.",
+      "properties": {
+        "maxWalkFactor": {
+          "type": "number",
+          "minimum": 0,
+          "description": "An NPC only aggroes a player it can walk to within this many times its aggro range: one under a bridge stays put. 0 turns the check off."
+        }
+      },
+      "additionalProperties": false
+    },
     "socialAggro": {
       "type": "object",
       "properties": {
@@ -151,8 +163,9 @@
         "searchRadius": {
           "type": "number"
         },
-        "sameFamilyOnly": {
-          "type": "boolean"
+        "sameClanOnly": {
+          "type": "boolean",
+          "description": "Helpers must share the attacked NPC's Clan stat (its kind of creature) as well as its Side."
         },
         "requireLineOfSight": {
           "type": "boolean"

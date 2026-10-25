@@ -279,6 +279,10 @@ namespace AORebirth.Database.Dao
                 new { CharacterId = id },
                 transaction);
             connection.Execute(
+                "DELETE FROM characterpetnames WHERE CharacterId=@CharacterId",
+                new { CharacterId = id },
+                transaction);
+            connection.Execute(
                 "DELETE FROM characterresearch WHERE CharacterId=@CharacterId",
                 new { CharacterId = id },
                 transaction);

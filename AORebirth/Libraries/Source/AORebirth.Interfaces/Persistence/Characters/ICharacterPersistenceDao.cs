@@ -34,6 +34,10 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<PersistedNanoLineLockData> LoadNanoLineLocks(int characterId);
         /// <summary>Replaces the character's nano line locks in one transaction.</summary>
         void SaveNanoLineLocks(int characterId, IList<PersistedNanoLineLockData> nanoLineLocks);
+        /// <summary>Pet names per pet type (characterpetnames).</summary>
+        IList<PersistedPetNameData> LoadPetNames(int characterId);
+        /// <summary>Replaces the character's pet names in one transaction.</summary>
+        void SavePetNames(int characterId, IList<PersistedPetNameData> petNames);
         /// <summary>Personal research tiers in progress (characterresearch).</summary>
         IList<PersistedResearchData> LoadResearch(int characterId);
         /// <summary>Replaces the character's research progress in one transaction.</summary>

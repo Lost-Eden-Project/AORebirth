@@ -94,6 +94,9 @@ namespace ZoneEngine_New.Core.Pets
                 {
                     npc.Stats.Set(CharacterStat.PetMaster, owner.Identity.Instance);
                     npc.Stats.Set(CharacterStat.PetType, type);
+                    // A pet of a type its owner named before takes that name again.
+                    if (owner is Player namer && namer.PetNames.TryGet(type, out string savedName))
+                        npc.Name = savedName;
                     npc.Stats.Set(CharacterStat.Side, owner.Stats.GetOrZero(CharacterStat.Side, StatDetail.Base));
                     MatchOwnerRunSpeed(npc, owner);
                     npc.BindPet(controller);
@@ -276,6 +279,8 @@ namespace ZoneEngine_New.Core.Pets
             // The pet state is gone first, so the nano's own end (ExecuteBuffEnd) finds nothing more to end here; its
             // OnTerminate runs on the NPC as itself.
             NanoRuntime.StripBuff(npc, charm.NanoId);
+            // Then nothing anyone ran on it while charmed stays: its NCU is emptied.
+            NanoRuntime.ClearBuffsOnCharmEnd(npc);
 
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Charm ended npc id={0} owner={1} reason={2}", npc.Identity.Instance, owner.Identity.Instance, reason));
@@ -537,6 +542,13 @@ namespace ZoneEngine_New.Core.Pets
         /// </summary>
         void Rename(Player owner, NpcCharacter pet, string? requested)
         {
+            // A charmed NPC is borrowed, not the owner's pet: it keeps its own name.
+            if (pet.Pet is { IsCharmed: true })
+            {
+                Helpers.ClientFeedback.SendFormatted(owner, Helpers.ClientFeedback.PlainText, "You cannot rename a charmed creature.");
+                return;
+            }
+
             string name = requested?.Trim() ?? string.Empty;
             if (!AORebirth.Core.Text.NameFilter.For(_playfield.GetRequiredService<IGameData>().RootPath).IsAllowed(name))
             {
@@ -554,6 +566,13 @@ namespace ZoneEngine_New.Core.Pets
             }
 
             pet.Name = name;
+            // Kept for the pet's type, so the next summon of that type takes the name too.
+            if (pet.Pet is { } controller)
+            {
+                owner.PetNames.Set(controller.Type, name);
+                _playfield.GetService<Inventory.InventoryFlushService>()?.NotifyDirty(owner);
+            }
+
             _playfield.GetRequiredService<PlayfieldLocality>().Announce(pet, new SetNameMessage
             {
                 Identity = pet.Identity,

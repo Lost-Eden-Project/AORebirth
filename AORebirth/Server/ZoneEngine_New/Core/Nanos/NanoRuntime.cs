@@ -106,6 +106,20 @@ namespace ZoneEngine_New.Core.Nanos
         }
 
         /// <summary>
+        /// A charm's end empties the released NPC's NCU: buffs its charmer and their friends ran on it while it served
+        /// must not stay on a monster that turns back on them. Removed as stripped, so no buff end effect runs.
+        /// </summary>
+        public static void ClearBuffsOnCharmEnd(Character character)
+        {
+            ArgumentNullException.ThrowIfNull(character);
+
+            character.CancelNanoCast();
+            List<Buff> removed = character.RemoveAllBuffs(BuffRemovalReason.Stripped);
+            for (int i = 0; i < removed.Count; i++)
+                AnnounceBuffRemoved(character, removed[i]);
+        }
+
+        /// <summary>
         /// Up-front gate for a client cast request. On success the cast bar starts and the world
         /// sees CastNanoSpell; the buff itself lands only when the bar finishes.
         /// </summary>
@@ -960,7 +974,7 @@ namespace ZoneEngine_New.Core.Nanos
         ///     ("Feedback_YouAreNotAllowedToExecuteFriendlyOnEnemy").</item>
         /// </list>
         /// </summary>
-        static NanoCastRefusal FriendlyNanoTargetRefusal(Character caster, Character? target)
+        internal static NanoCastRefusal FriendlyNanoTargetRefusal(Character caster, Character? target)
         {
             if (target == null || ReferenceEquals(caster, target)
                 || (target is NpcCharacter pet && ReferenceEquals(pet.PetOwner, caster)))
@@ -989,7 +1003,7 @@ namespace ZoneEngine_New.Core.Nanos
                 : null;
         }
 
-        static void Refuse(Character caster, NanoCastRefusal refusal)
+        internal static void Refuse(Character caster, NanoCastRefusal refusal)
         {
             switch (refusal)
             {

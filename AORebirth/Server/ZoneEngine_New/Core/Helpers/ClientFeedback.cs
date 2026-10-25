@@ -156,6 +156,18 @@ namespace ZoneEngine_New.Core.Helpers
         /// </summary>
         public const int CombinedResult = 102719811;
 
+        /// <summary>
+        /// "\"%s\" is of a too low quality level. With \"%s\" at quality of %u , the \"%s\" must be at least at quality %u."
+        /// (category 110, FormatFeedback): source name, target name, target QL, source name, the lowest source QL that works.
+        /// </summary>
+        public const int CombineSourceQlTooLow = 171196092;
+
+        /// <summary>"\"%s\" is of a too low quality level. It must be at least at quality %u." (category 110): item name, QL.</summary>
+        public const int CombineItemQlTooLow = 253484164;
+
+        /// <summary>"It is not possible to assemble those two items. Maybe the order was wrong?" (category 110).</summary>
+        public const int CombineNotPossible = 46513671;
+
         /// <summary>A text argument the client looks up itself: 'R' + base-85 category + base-85 message id.</summary>
         public readonly record struct TextReference(int Category, int MessageId);
 
