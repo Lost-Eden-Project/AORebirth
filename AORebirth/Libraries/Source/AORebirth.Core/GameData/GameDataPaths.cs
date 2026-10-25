@@ -37,6 +37,8 @@ namespace AORebirth.Core.GameData
 
         public const string MonsterWeaponsFileName = "MonsterWeapons.json";
 
+        public const string ComboNamesFileName = "ComboNames.json";
+
         public const string ItemTemplatesFileName = "ItemTemplates.json";
 
         public const string VendingMachinesFileName = "VendingMachines.json";

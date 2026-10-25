@@ -663,6 +663,26 @@ namespace ZoneEngine_New.Core.Nanos
                 return;
             }
 
+            // Resisted: the target's nano defense (Nano Resist + Add All Def.) beat the nano's attack skills + Add All
+            // Off. See DamageCalculator.ResolveNanoLand; the curve may need tuning.
+            if (spell.IsHostile
+                && !DamageCalculator.ResolveNanoLand(caster, recipient!, spell, out int attackRating, out int defenseRating, out int landChance))
+            {
+                ClientFeedback.Send(caster, ClientFeedback.TargetResisted);
+                LogUtil.Debug(
+                    DebugInfoDetail.Engine,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Nano resisted caster={0} nano={1} target={2} attack={3} defense={4} landChance={5}%",
+                        caster.Identity.Instance,
+                        spell.Id,
+                        cast.Target.Instance,
+                        attackRating,
+                        defenseRating,
+                        landChance));
+                return;
+            }
+
             if (!spell.IsBuff)
             {
                 ClientFeedback.Send(caster, ClientFeedback.NanoExecutedSuccessfully);

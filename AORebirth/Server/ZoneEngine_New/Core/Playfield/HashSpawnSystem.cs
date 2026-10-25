@@ -146,6 +146,12 @@ namespace ZoneEngine_New.Core.Playfield
 
         internal DateTime NextSpawnTime { get; set; }
 
+        /// <summary>
+        /// The point has spawned since the playfield loaded. Its first spawn skips the respawn chance, so a fresh
+        /// playfield starts populated; later respawns roll as usual.
+        /// </summary>
+        internal bool HasSpawned { get; set; }
+
         /// <summary>False for one-shot points (quest dungeons): once its NPC is killed the point never spawns again.</summary>
         internal bool RespawnsAfterDeath { get; init; } = true;
 
@@ -748,7 +754,9 @@ namespace ZoneEngine_New.Core.Playfield
         {
             RecoverOrphanedSpawn(point);
 
-            if (point.State == HashSpawnState.Dead && !skipRespawnChance && !TryConsumeRespawnChance(point))
+            // A 0% point never spawns, first time included.
+            bool firstSpawn = !point.HasSpawned && point.RespawnChance > 0;
+            if (point.State == HashSpawnState.Dead && !skipRespawnChance && !firstSpawn && !TryConsumeRespawnChance(point))
                 return false;
 
             try
@@ -761,6 +769,7 @@ namespace ZoneEngine_New.Core.Playfield
                     return false;
 
                 point.State = HashSpawnState.Alive;
+                point.HasSpawned = true;
                 return true;
             }
             catch (Exception exception)

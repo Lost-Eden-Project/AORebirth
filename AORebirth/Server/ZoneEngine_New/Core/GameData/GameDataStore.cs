@@ -92,6 +92,7 @@ namespace ZoneEngine_New.Core.GameData
                 throw new InvalidDataException("Invalid NewCharacter.json: " + startLocationError);
             ReloadNpcTemplates();
             LoadMonsterWeapons();
+            ComboNames = ComboNameCatalog.Load(RootPath, _logger);
             ReloadHashItems();
             LoadVendingMachines();
             LoadMonsterData();
@@ -102,6 +103,8 @@ namespace ZoneEngine_New.Core.GameData
         public string RootPath { get; }
 
         public RespawnContentCatalog RespawnContent { get; }
+
+        public ComboNameCatalog ComboNames { get; }
 
         public string PlayfieldsPath { get; }
 

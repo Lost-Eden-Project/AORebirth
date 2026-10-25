@@ -2073,23 +2073,34 @@ namespace ZoneEngine_New.Core.Entities
             return true;
         }
 
+        /// <summary>Nano spent per point of absorbed damage when no DamageToNanoMultiplier is set: 1 to 1.</summary>
+        const int DefaultDamageToNanoMultiplierPercent = 100;
+
         /// <summary>
-        /// DamageToNano (659, set by buffs such as Nanobot Defense 260761 at 70 and Superior Nanobot Shelter 301610 at 25):
-        /// that percent of a hit comes out of current nano instead of health, as far as the nano lasts. Returns the
-        /// damage taken by nano.
+        /// Nano shields (Superior Nanobot Shelter 301610: DamageToNano 25, DamageToNanoMultiplier 110). DamageToNano (659)
+        /// is the percent of a hit the shield takes instead of health; DamageToNanoMultiplier (661) is the nano spent per
+        /// absorbed point, in percent. A 100 hit at 70 / 125 costs 30 health and 70 x 1.25 nano. The shield takes only as
+        /// much as the current nano can pay for. Returns the damage absorbed (kept off health).
         /// </summary>
         int AbsorbIntoNano(int damage)
         {
             int percent = Math.Clamp(StatCollection.Normalize(Stats.GetOrZero(CharacterStat.DamageToNano)), 0, 100);
-            if (percent == 0)
+            if (percent == 0 || damage <= 0)
                 return 0;
 
+            int multiplier = StatCollection.Normalize(Stats.GetOrZero(CharacterStat.DamageToNanoMultiplier));
+            if (multiplier <= 0)
+                multiplier = DefaultDamageToNanoMultiplierPercent;
+
             int nano = Math.Max(0, Stats.GetOrZero(CharacterStat.CurrentNano));
-            int absorbed = Math.Min(nano, (int)((long)damage * percent / 100));
+            long wanted = (long)damage * percent / 100;
+            long affordable = (long)nano * 100 / multiplier;
+            int absorbed = (int)Math.Min(wanted, affordable);
             if (absorbed <= 0)
                 return 0;
 
-            Stats.Set(CharacterStat.CurrentNano, nano - absorbed, StatDetail.Base, dirty: true);
+            int cost = (int)Math.Min(nano, ((long)absorbed * multiplier + 99) / 100);
+            Stats.Set(CharacterStat.CurrentNano, nano - cost, StatDetail.Base, dirty: true);
             return absorbed;
         }
 

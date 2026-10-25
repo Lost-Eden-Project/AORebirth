@@ -404,7 +404,35 @@ namespace ZoneEngine_New.Core.Entities
 
                 TickStallWatch.Stage("equip.weapon", lowId);
                 TryExpandMonsterWeapon(gameData, item, quality, logger);
+                ApplyComboName(gameData, item);
             }
+        }
+
+        /// <summary>A ComboNameGen item (the boss "Name Giver") renames the NPC from ComboNames.json by its Clan stat.</summary>
+        void ApplyComboName(IGameData gameData, Item item)
+        {
+            if (!HasFunction(item, FunctionType.ComboNameGen))
+                return;
+            if (gameData.ComboNames.TryGenerate(Stats.GetOrZero(CharacterStat.Clan), Random.Shared, out string name))
+                Name = name;
+        }
+
+        static bool HasFunction(Item item, FunctionType function)
+        {
+            foreach (KeyValuePair<EventType, List<ItemSpell>> pair in item.SpellList)
+            {
+                List<ItemSpell>? spells = pair.Value;
+                if (spells == null)
+                    continue;
+
+                for (int i = 0; i < spells.Count; i++)
+                {
+                    if (spells[i].Is(function))
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Equipment items named "Boss Modifier Item (…)" are alternatives: each spawn keeps one at random.</summary>

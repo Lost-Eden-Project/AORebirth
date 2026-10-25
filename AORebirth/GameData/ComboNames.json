@@ -1,0 +1,538 @@
+{
+  "StandaloneEndChancePercent": 50,
+  "Clans": {
+    "4": {
+      "Creature": "Android",
+      "Name": {
+        "Words": ["Wire", "Chip", "Servo", "Laser", "Circuit", "Micro"],
+        "Standalone": [],
+        "Endings": ["head", "brain", "mind", "bot", "slave"]
+      },
+      "Title": {
+        "Words": ["Hyper-XT", "Mega-N9", "Hyper-ZX", "Hyper-VZ", "Mega-T6", "Mega-C5", "Mega-L2", "JouleShock-CC", "JouleShock-AA", "JouleShock-BB", "JouleShock-DD", "ElectroStor-8H", "ElectroStor-5K", "ElectroStor-2M", "ElectroStor-6S"],
+        "Standalone": ["the Overclocked"],
+        "Endings": ["177-T5", "230-T4", "430-T9", "599-Z45", "601-Z01", "340-Z37", "999-T3", "006-T7", "182-T1"]
+      }
+    },
+    "5": {
+      "Creature": "Anun",
+      "Name": {
+        "Words": ["Blood", "Bile", "Tendon", "Talon", "Claw"],
+        "Standalone": [],
+        "Endings": ["wound", "gash", "slash", "slice", "shred"]
+      },
+      "Title": {
+        "Words": ["the Red", "the Black", "the Dark", "the Frenzied", "the Ravenous"],
+        "Standalone": ["of the Crimson Sky", "the Bloody", "the Scavenger"],
+        "Endings": [" Slayer", " Slaughterer", " Destroyer", " Flesh-tearer"]
+      }
+    },
+    "7": {
+      "Creature": "Aquaan",
+      "Name": {
+        "Words": ["Primus", "Principal", "Master", "Magistrate", "Chief", "Hierophant", "Examiner", "Taskmaster"],
+        "Standalone": [],
+        "Endings": [" Esok", " Sota", " Rebus", " Bobik", " Mubo", " Nepson", " Mobosi", " Nosolea"]
+      },
+      "Title": {
+        "Words": ["the Shallow", "the Slime", "the Deep", "the Reef"],
+        "Standalone": ["of the Depths", "of the Abyss", "of the Deep", "of the Hivemind", "of the First", "the Webbed", "the Wise", "the Elder"],
+        "Endings": ["dipper", "swimmer", "bather", "diver"]
+      }
+    },
+    "11": {
+      "Creature": "Bileswarm",
+      "Name": {
+        "Words": ["Blood", "Pain", "Sulphur", "Doom", "Bile"],
+        "Standalone": [],
+        "Endings": ["swarm", "horde", "hive", "stinger"]
+      },
+      "Title": {
+        "Words": ["Yty", "Mup", "Nef", "Gnat", "Zhem", "Ito", "Nen", "Avra", "Izu", "Kap", "Groh", "Efe", "Syze", "Gic", "Tveh", "Drok"],
+        "Standalone": [],
+        "Endings": ["'zhaf", "'znudd", "'zhub", "'zhozi", "'zhin", "'zhego", "'zhyd", "'zhup", "'zoht", "'zhig", "'zvub", "'zhaud", "'znol", "'zhar", "'zrac", "'zrug", "'zokli", "'zddi", "'zyrr", "'zvef"]
+      }
+    },
+    "12": {
+      "Creature": "Biofreak",
+      "Name": {
+        "Words": ["Boca", "Chief", "Boss", "Killer", "Avron", "Zheat", "Zhyl", "Avenger"],
+        "Standalone": [],
+        "Endings": [" Verata", " Osha", " Kleta", " Kradero", " Aphino", " Zhola", " Mablus", " Nismo"]
+      },
+      "Title": {
+        "Words": ["the Red", "the Black", "the Yellow", "the Pus"],
+        "Standalone": ["the Decayed", "of the Outcast", "of the Sewers", "the Hunted", "of the Rejected", "of the Scorned"],
+        "Endings": [" Handed", " Eyed"]
+      }
+    },
+    "13": {
+      "Creature": "Blubbag",
+      "Name": {
+        "Words": ["Rock", "Boulder", "Cliff", "Crag", "Volcano"],
+        "Standalone": [],
+        "Endings": ["Gnaw", "Gnash", "Bite", "Grind", "Crunch", "Chomp", "Munch"]
+      },
+      "Title": {
+        "Words": ["Pebble", "Mountain", "Stone", "Rubble", "Lava"],
+        "Standalone": [],
+        "Endings": ["spitter", "heaver", "flinger", "slinger"]
+      }
+    },
+    "14": {
+      "Creature": "Breiflabb",
+      "Name": {
+        "Words": ["Jezu", "Reda", "Shod", "Cela", "Ussa", "Mala", "Crek", "Daru"],
+        "Standalone": [],
+        "Endings": ["-aluk", "-olar", "-usav", "-enot", "-elok", "-ahut", "-awul"]
+      },
+      "Title": {
+        "Words": ["the Marsh", "the Bog", "the Swamp", "the Bloated", "the Scaled", "the Slippery"],
+        "Standalone": ["the Bloated", "the Scaled", "the Slippery", "of the Marsh", "of the Wetlands", "of the Lake", "of the Swamp", "of the Bog", "the Slimed", "the Screamer", "of the Slimy Scales", "the Howler", "the Bog Dweller", "the Marsh Dweller", "the Caterwauler"],
+        "Endings": [" Howler", " Screamer", " Roarer", " Wailer", " Caterwauler"]
+      }
+    },
+    "15": {
+      "Creature": "Bronto Mama",
+      "Name": {
+        "Words": ["Miss", "Lady", "Matron", "Matriarch", "Mistress", "Dame"],
+        "Standalone": [],
+        "Endings": [" Tuttia", " Jetta", " Coyma", " Nella", " Jebba", " Nemmona", " Mionna", " Dranna"]
+      },
+      "Title": {
+        "Words": ["the Grassland", "the Plains", "the Forest"],
+        "Standalone": ["of the Herd", "the Strong", "the Wise", "of the Thunderfoot", "the Tall", "the Proud", "the Old", "the Younger"],
+        "Endings": [" Walker", " Strider", " Runner"]
+      }
+    },
+    "18": {
+      "Creature": "Clawfinger",
+      "Name": {
+        "Words": ["Impaler", "Skewer", "Boss", "Killer", "Chief", "Clawfinger", "Avenger", "Punisher"],
+        "Standalone": [],
+        "Endings": [" Noss", " Abram", " Beza", " Ordo", " Poscho", " Usher", " Koss", " Uzzu"]
+      },
+      "Title": {
+        "Words": ["the Pitiless", "the Merciless", "the Bloody", "the Cruel", "the Heartless", "the Savage", "the Brutal"],
+        "Standalone": ["the Exiled", "the Grim", "of the Lost", "of the Outcast", "of the Sewers", "the Dismal", "of the Rejected", "of the Scorned"],
+        "Endings": [" Slasher", " Gutter", " Flayer", " Slicer"]
+      }
+    },
+    "19": {
+      "Creature": "Cyborg",
+      "Name": {
+        "Words": ["Sergeant", "Lieutenant", "Major", "Colonel", "General", "Marshal", "Brigadier", "Commander"],
+        "Standalone": [],
+        "Endings": [" Zoprea", " Krin", " Chira", " Benna", " Zhuzi", " Fekla", " Torra", " Niala", " Gyss", " Freg", " Ekroy", " Khimer", " Rell", " Shur", " Trobin", " Krup"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["Otanok", "Tranitson", "Sulanol", "Minnoha", "Nickel", "Balloa", "Tesyon", "Krebb", "Chorrason", "Tefrel", "Moddua", "Dekrun", "Klukson", "Toboe", "Ranne", "Triod"],
+        "Endings": []
+      }
+    },
+    "20": {
+      "Creature": "Desert Aquaan",
+      "Name": {
+        "Words": ["Alaster the", "Caim the", "Eblis the", "Flereous the", "Nergal the", "Urobach the", "Xaphan the", "Zepar the"],
+        "Standalone": [],
+        "Endings": [" Burning", " Fiery", " Blazing", " Searing", " Smouldering", " Flaming"]
+      },
+      "Title": {
+        "Words": ["Fiend", "Demon", "Incubus"],
+        "Standalone": [],
+        "Endings": [" of the Dunes", " of the Sands", " of the Desert", " of the Burning Sands", " of the Endless Dunes", " of the Burning Desert", " of the Endless Desert", " of the Burning Dunes", " of the Burning Desert"]
+      }
+    },
+    "22": {
+      "Creature": "Enigma",
+      "Name": {
+        "Words": ["Sylvan", "Liege", "Transmuter", "Warder", "Protector", "Advisor", "Ranger", "Keeper", "Treesinger", "Rootweaver", "Leafcaller", "Druid"],
+        "Standalone": [],
+        "Endings": [" Becho", " Yglo", " Knor", " Bork", " Berion", " Beklas", " Mokru", " Fauss"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["of the Root", "of the Ancients", "the Enigma", "the Wise", "the Old", "of the Forest", "the Green", "of the Grove", "of the Sacred Grove", "of the Eternal Grove", "the Sap Singer", "the Eternal", "of the Midnight Grove", "the Natural", "of the Desecrated Grove", "of the Consecrated Grove", "of the Endless Forest", "of the Tangled Roots"],
+        "Endings": []
+      }
+    },
+    "24": {
+      "Creature": "Eye Mutant",
+      "Name": {
+        "Words": ["Seer", "Augur", "Boss", "Killer", "Chief", "Gazer", "Lookout", "Punisher", "Prophet"],
+        "Standalone": [],
+        "Endings": [" Kopa", " Cutu", " Skupro", " Peuss", " Odron", " Djole", " Blick", " Zesis"]
+      },
+      "Title": {
+        "Words": ["the Patient", "the Vigilant", "the Eternal", "the Grim", "the Blind", "the Sightless"],
+        "Standalone": ["the Headless", "the Grim", "of the Lost", "of the Outcast", "the Blind", "the Watchful", "of the Rejected", "of the Failed"],
+        "Endings": [" Watcher", " Guardian", " Warden", " Keeper"]
+      }
+    },
+    "25": {
+      "Creature": "Flea",
+      "Name": {
+        "Words": ["Black", "Blood", "Red", "Gore", "Bitter", "Scab"],
+        "Standalone": [],
+        "Endings": ["bite", "sting", "itch", "gnaw", "jab"]
+      },
+      "Title": {
+        "Words": ["the Frenzied", "the Furious", "the Diseased", "the Plagued", "the Virulent", "the Pestilent", "the Contagious", "the Infectious", "the Noxious", "the Putrid"],
+        "Standalone": [],
+        "Endings": [" Leaper", " Jumper", " Stabber", " Biter", " Stinger"]
+      }
+    },
+    "26": {
+      "Creature": "Gator",
+      "Name": {
+        "Words": ["Thunder", "Rumble", "Gore", "Emerald", "Dread", "Blister", "Blast", "Shock", "Jolt", "Spark"],
+        "Standalone": ["Raptus", "Rex", "Deinos"],
+        "Endings": ["tail", "jaw", "tooth", "fang", "scale"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["the Cold Blooded", "of the Scaled", "the Thorned", "the Spiked", "the Storm Rider", "of the Scaled Brotherhood", "the Immense", "the Terrible", "the Gluttenous", "the Implacable", "the Indominable", "the Unconquered", "of the Craggy Reaches"],
+        "Endings": []
+      }
+    },
+    "27": {
+      "Creature": "Giant Snake",
+      "Name": {
+        "Words": ["Slither", "Poison", "Slime", "Scale", "Slip", "Dread", "Writhe"],
+        "Standalone": [],
+        "Endings": ["fang", "coil", "knot", "slidder", "tongue"]
+      },
+      "Title": {
+        "Words": ["Slime", "Venom", "Death", "Bane"],
+        "Standalone": ["of the Pit", "of the Jungle", "of the Plains", "of the Wastes", "the Envenomed", "the Constrictor", "the Toxic"],
+        "Endings": ["scale", "twister"]
+      }
+    },
+    "30": {
+      "Creature": "Hammerbeast",
+      "Name": {
+        "Words": ["Thunder", "Strong", "Heavy", "Mighty", "Hammer", "Beast"],
+        "Standalone": [],
+        "Endings": ["head", "foot", "hoof"]
+      },
+      "Title": {
+        "Words": ["the Pale", "the Gray", "the Vicious", "the Savage", "the Brutal"],
+        "Standalone": ["Tinytail", "the Beastly", "the Ponderous", "of the Herd", "of the Flock", "the Steadfast", "the Protector"],
+        "Endings": [" Wanderer", " Strider", " Vagrant", " Nomad", " Protector", " Broodling"]
+      }
+    },
+    "31": {
+      "Creature": "Scavenger Dog",
+      "Name": {
+        "Words": ["Snarl", "Snap", "Rabid", "Red", "Blood", "Growl"],
+        "Standalone": ["Scruffy"],
+        "Endings": ["mouth", "fang", "fangs", "maw", "jaw", "snout"]
+      },
+      "Title": {
+        "Words": ["the", "the", "the"],
+        "Standalone": ["of the Wastelands", "of the Pack", "of the Deep Wastes"],
+        "Endings": [" Hungry", " Voracious", " Mangy", " Diseased", " Outcast", " Scavenger", " Prowler", " Waste Prowler", " Pack Leader"]
+      }
+    },
+    "33": {
+      "Creature": "Manteze",
+      "Name": {
+        "Words": ["Dnaga", "Ganuga", "Koasa", "Pasuri", "Okol", "Rasama", "Tiansa", "Lubas", "Zutumi", "Nokata", "Sinzi", "Polat", "Kuwese", "Ritma", "Stap", "Gnas", "Lanto", "Benga", "Gartange", "Yotar"],
+        "Standalone": [],
+        "Endings": ["'Sol", "'Gruso", "'Nar", "'Kew", "'Asare", "'Kasy", "'Polat", "'He", "'Se", "'Pe", "'Dozat", "'Zon", "'We", "'Hyestan", "'Fru", "'Jer", "'Onig", "'Tyte", "'Zim", "'Zam"]
+      },
+      "Title": {
+        "Words": ["A", "Qu", "Er", "Zam", "Zim", "Tu", "Arig", "Ho", "Esku", "Iz", "Kan", "Eso", "Xin", "Ham", "Fel", "Japre", "Kalu", "Mono", "Amit", "Git"],
+        "Standalone": [],
+        "Endings": ["'Malasmis", "'Fremsipos", "'Rularmak", "'Krastipus", "'Jangorast", "'Sakarmot", "'Gustorpat", "'Tesmatir", "'Zumabarotas", "'Osar", "'Kotarbazin", "'Nungasto", "'Rogarmatik", "'Almatzen", "'Kyfirmaka", "'Golanrit", "'Totarkotobal", "'Jaiuze", "'Zatmese", "'Kiack"]
+      }
+    },
+    "36": {
+      "Creature": "Leet",
+      "Name": {
+        "Words": ["Scuttle", "Dart", "Flurry", "Scurry", "Swift", "Glitter", "Shiny", "Sparkle"],
+        "Standalone": ["Redeye", "Pwns", "McRoxxor"],
+        "Endings": ["foot", "tail", "flutter"]
+      },
+      "Title": {
+        "Words": ["the Noob", "the Dood", "the Supa", "the Twink", "the Jolly", "the Frantic", "the Fearless", "the Phearsome", "the Pheared", "the Supa Pheared"],
+        "Standalone": ["the Agitated", "the Frantic", "the Troubled", "the Jolly", "the Anxious", "the Fearless", "of the Phat Loot", "the Phearsome", "the Pheared", "the Supa Pheared", "the Twink"],
+        "Endings": [" Hunter", " Slayer", " Destroyer", " Wrecker", " Smasher", " Exterminator"]
+      }
+    },
+    "37": {
+      "Creature": "Lizard",
+      "Name": {
+        "Words": ["Bright", "Dull", "Clean", "Bloody", "Sharp"],
+        "Standalone": [],
+        "Endings": ["scale", "eye", "claw", "tooth", "talon"]
+      },
+      "Title": {
+        "Words": ["the Horned", "the Spiny", "the Voracious", "the Boneplated", "the Bearded", "the Angry", "the Spiked", "the Tormented", "the Maddened"],
+        "Standalone": [],
+        "Endings": [" Lizard", " Grecko", " Igruana", " Mornitor", " Agrama", " Grila Monster"]
+      }
+    },
+    "38": {
+      "Creature": "Malle",
+      "Name": {
+        "Words": ["Slime", "Broken", "Cracked", "Rotten", "Ooze", "Sludge", "Muck"],
+        "Standalone": [],
+        "Endings": ["skin", "tail", "bulb", "foot", "jaw"]
+      },
+      "Title": {
+        "Words": ["the Slimy", "the Poisonous", "the Toxic", "the Festering", "the Diseased", "the Contaminated", "the Abominable", "the Noxious", "the Putrid", "the Pestilent", "the Fetid"],
+        "Standalone": [],
+        "Endings": [" Malle", " Swamp-walker"]
+      }
+    },
+    "39": {
+      "Creature": "Mutant Mantis",
+      "Name": {
+        "Words": ["Annihilator", "Devastator", "Destroyer", "Violator", "Slayer", "Reaper", "Vindicator", "Avenger"],
+        "Standalone": [],
+        "Endings": [" Zshoron", " Zshed", " Zshoul", " Zshiab", " Xhedre", " Xhuha", " Xhaw", " Xhur"]
+      },
+      "Title": {
+        "Words": ["of the Eternal", "of the Endless", "of the Rampaging", "of the", "of the Limitless", "of the Countless", "of the Fathomless"],
+        "Standalone": ["of the Many", "of the Multitude", "the Brood Master", "the Hive Master"],
+        "Endings": [" Hive", " Brood", " Swarm", " Horde"]
+      }
+    },
+    "40": {
+      "Creature": "Mechdog",
+      "Name": {
+        "Words": ["Advanced", "Cybernetic", "Enhanced", "Hunter-Killer", "Bio-Enhanced"],
+        "Standalone": [],
+        "Endings": [" Guard", " Combat", " Patrol", " Sentry"]
+      },
+      "Title": {
+        "Words": ["Mechdog"],
+        "Standalone": [],
+        "Endings": [" MK II", " MK III", " MK IV", " MK V", " Series 2", " Prototype"]
+      }
+    },
+    "41": {
+      "Creature": "Medusa",
+      "Name": {
+        "Words": ["Huntress", "Matron", "Councillor", "Astrologer", "Prophet", "Elder", "Mistress", "Entviner"],
+        "Standalone": [],
+        "Endings": [" Krakla", " Corba", " Pinadra", " Herene", " Zhudrea", " Tolla", " Faroe", " Joli"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["of the Council", "the Initiate", "the Elder", "of the Young", "of the Green", "of the Red", "of the Black", "of the Entvined", "of the Blue", "of the Yellow"],
+        "Endings": []
+      }
+    },
+    "42": {
+      "Creature": "Minibull",
+      "Name": {
+        "Words": [],
+        "Standalone": ["Charger", "Impaler", "Stomper", "Dominator", "Herdleader", "Beastmaster"],
+        "Endings": []
+      },
+      "Title": {
+        "Words": ["Thunder", "Hammer", "Grim", "Rumble", "Maul", "Grind", "Iron"],
+        "Standalone": ["Mallus", "Tauron"],
+        "Endings": ["hoof", "horn"]
+      }
+    },
+    "44": {
+      "Creature": "Nanofreak",
+      "Name": {
+        "Words": ["Nanofreak", "Nanoaddict", "Nanohead", "Nanolord", "Nanoharvester", "Nanomaster", "Nanomancer"],
+        "Standalone": [],
+        "Endings": [" Cyro", " Kano", " Plubo", " Kora", " Ximi", " Memmio", " Irydim", " Tatra", " Veyzig", " Yerok", " Wevea", " Cazel", " Biniz", " Liorez", " Geniom"]
+      },
+      "Title": {
+        "Words": ["the"],
+        "Standalone": [],
+        "Endings": [" Chaos Minion", " Mind Havester", " Soulstepper", " Grevious Wounder", " Lifebleeder", " Fatestealer", " Fearplanter", " Chaos Spinner", " Soul Harvester", " Soul Warped", " Fatebringer", " Fear Lord", " Devourer", " Notum Warped", " Soulless", " Corrupt", " Chaos Lord", " Fate Killer"]
+      }
+    },
+    "45": {
+      "Creature": "Ninjadroid",
+      "Name": {
+        "Words": ["Series", "Prototype", "Augmented", "Sentient", "Warped"],
+        "Standalone": [],
+        "Endings": [" 71-Alpha", " 72-Alpha", " 73-Alpha", " 71-Beta", " 72-Beta", " 73-Beta", " 71-Theta", " 72-Theta", " 73-Theta", " 71-Gamma", " 72-Gamma", " 73-Gamma", " 71-Omega", " 72-Omega", " 73-Omega", " 71-Omicron", " 72-Omicron", " 73-Omicron", " 71-Zeta", " 72-Zeta", " 73-Zeta"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["Devastator", "Assassin", "Ninja", "Ninjadroid", "Stalker", "Hunter-Killer", "Tracker"],
+        "Endings": []
+      }
+    },
+    "50": {
+      "Creature": "Pit Lizard",
+      "Name": {
+        "Words": ["Lord", "Draco", "Devourer"],
+        "Standalone": [],
+        "Endings": [" Blackscale", " Vermithrax", " Voroth", " Smychein", " Smolen", " Ferox", " Vorax", " Ardorvoc", " Charscale"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["the Bottomless", "of the Pit", "of the Abyss", "the Sinister", "the Ferocious", "the Malign", "the Malevolent", "the Voracious", "of the Far Reaches", "the Infernal", "the Consumed"],
+        "Endings": []
+      }
+    },
+    "53": {
+      "Creature": "Reet",
+      "Name": {
+        "Words": ["Azure", "Emerald", "Yellow", "Purple", "Golden", "Rainbow"],
+        "Standalone": ["Polly", "Loreeta"],
+        "Endings": ["feather", "break", "wing", "tail", "plume", "talon"]
+      },
+      "Title": {
+        "Words": ["the"],
+        "Standalone": [],
+        "Endings": [" Raucous", " Squawker", " Reet", " Featherball", " Preener", " Covetous", " Ruffled", " Plumed", " Warbler", " Shrike", " Pareet"]
+      }
+    },
+    "54": {
+      "Creature": "Rhinoman",
+      "Name": {
+        "Words": ["Warlord Bone", "Warlord Skull", "Warlord Spine", "Warlord Rib", "Warlord Face", "Warlord Back", "Berserker Bone", "Berserker Skull", "Berserker Spine", "Berserker Rib", "Berserker Face", "Berserker Back", "Warmaster Bone", "Warmaster Skull", "Warmaster Spine", "Warmaster Rib", "Warmaster Face", "Warmaster Back", "Warchief Bone", "Warchief Skull", "Warchief Spine", "Warchief Rib", "Warchief Face", "Warchief Back", "Chief Bone", "Chief Skull", "Chief Spine", "Chief Rib", "Chief Face", "Chief Back"],
+        "Standalone": [],
+        "Endings": ["crusher", "breaker", "grabber", "snapper", "smasher", "basher", "pulper", "pounder", "cracker"]
+      },
+      "Title": {
+        "Words": ["Rumble", "Iron", "Stone", "Rock", "Steel", "Thunder", "Storm", "Titan"],
+        "Standalone": ["the Brutal", "the Ruthless", "the Destroyer"],
+        "Endings": ["arms", "guts", "hands", "head", "thews"]
+      }
+    },
+    "55": {
+      "Creature": "Rollerrat",
+      "Name": {
+        "Words": ["Fury", "Malice", "Wicked", "Ire", "Spite", "Grudge", "Bane", "Hate"],
+        "Standalone": [],
+        "Endings": ["spine", "shriek", "spike", "spine"]
+      },
+      "Title": {
+        "Words": ["the Dune", "the Rage", "the Desert", "the Waste", "the Foul", "the Screaming", "the Spiked", "the Wasteland", "the Blight", "the Berserk", "the Warped", "the Corrupted", "the Frenzied"],
+        "Standalone": [],
+        "Endings": [" Roller"]
+      }
+    },
+    "57": {
+      "Creature": "Salamander",
+      "Name": {
+        "Words": ["Fire", "Flame", "Burn", "Char", "Scorch", "Blister"],
+        "Standalone": ["Zhatet", "Grulu", "Lumma", "Dayflare"],
+        "Endings": ["scale", "tooth", "eye", "claw", "tongue"]
+      },
+      "Title": {
+        "Words": ["the Fiery", "the Burning", "the Blazing", "the Searing", "the Smouldering", "the Flaming", "the Infernal"],
+        "Standalone": ["the Inferno"],
+        "Endings": [" Salamander", " Muddevil", " Mudpuppy"]
+      }
+    },
+    "58": {
+      "Creature": "Sandworm",
+      "Name": {
+        "Words": [],
+        "Standalone": ["Klyess", "Ubbefi", "Ogebry", "Klaknu", "Ziddihu", "Zhilell", "Vroheuk", "Krognu", "Kresso", "Mefuak", "Anuttu", "Remmek", "Kiddilo", "Zhemja", "Groynnir", "Kloshik", "Brutok", "Trazneb", "Tiadre", "Kafnia", "Rasked", "Knaglo", "Jorrao"],
+        "Endings": []
+      },
+      "Title": {
+        "Words": ["the Greater", "the Gargantuan", "the Colossal", "the Massive", "the Gigantic", "the Ancient", "the Bloated", "the Corpulent", "the Immense", "the Ponderous", "the Tremendous", "the Grand", "the Mighty"],
+        "Standalone": [],
+        "Endings": [" Sandworm", " Duneworm", " Saltworm", " Whaleworm", " Bushworm"]
+      }
+    },
+    "59": {
+      "Creature": "Scorpiod",
+      "Name": {
+        "Words": ["Poison", "Toxic", "Venom", "Noxious", "Quick", "Fatal"],
+        "Standalone": ["Scorpius", "Scorpio"],
+        "Endings": ["sting", "bite", "pinch", "claw"]
+      },
+      "Title": {
+        "Words": ["the Yellow", "the Red", "the Black", "the Wasteland", "the Desert", "the Obsidian", "the Death"],
+        "Standalone": ["of the Brood", "of the Hive", "of the Desert", "of the Wastes"],
+        "Endings": [" Hunter", " Stalker", " Prowler", " Stinger"]
+      }
+    },
+    "60": {
+      "Creature": "Shadowmutant",
+      "Name": {
+        "Words": ["Dark", "Deep", "Night", "Shadow", "Black"],
+        "Standalone": ["Nox", "Vertex", "Gelu"],
+        "Endings": ["shade", "vortex", "gloom", "dusk", "mist"]
+      },
+      "Title": {
+        "Words": ["the Night", "the Shade", "the Shadow", "the Dark"],
+        "Standalone": ["the Tenebrous", "of the Dark", "of the Shadows", "the Umbral", "the Occult", "the Blind", "the Shunned", "the Lightkiller"],
+        "Endings": ["dweller", "caller", "bringer", "master", "servant", "slave"]
+      }
+    },
+    "63": {
+      "Creature": "Skin Spider",
+      "Name": {
+        "Words": ["Fright", "Fear", "Dread", "Savage", "Doom", "Blood", "Terror", "Horror", "Venom"],
+        "Standalone": ["Arak", "Verik", "Voron"],
+        "Endings": ["brood", "creep", "crawl", "fang", "spawn", "spinner", "web"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["of the Hive", "the Watcher", "the Venemous", "of the Ancients", "the Ancient", "the Old", "the Bloody", "the Corruptor", "the Web Lord", "the Mistress of the Web", "the Brood Lord", "the Brood Mistress"],
+        "Endings": []
+      }
+    },
+    "69": {
+      "Creature": "Technoscavenger",
+      "Name": {
+        "Words": [],
+        "Standalone": ["Sparky", "Blackout", "Sparepart", "Powersurge", "Powersight", "Junkyard", "Rustbucket", "Scrapiron", "Short-circuit", "High-voltage", "Cyberjunkie", "Scraps", "Overdrive", "Circuit-breaker"],
+        "Endings": []
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["the Chainsaw", "the Bladeslinger", "the Blade", "the Rusty", "the Buzzsaw", "the Carver", "the Slicer", "the Curret", "of the Rusted Blade", "the Cleaver", "of the Dull Blade", "the Ripper", "the Saw", "the Dicer", "the Stabber", "the Sentient", "the Corroded", "the TechnoFusion", "the TechnoSlave", "the TechnoMaster"],
+        "Endings": []
+      }
+    },
+    "70": {
+      "Creature": "Tentacle Mutant",
+      "Name": {
+        "Words": ["Constrictor", "Strangulator", "Boss", "Killer", "Chief", "Throttler", "Avenger", "Punisher"],
+        "Standalone": [],
+        "Endings": [" Stom", " Croak", " Toss", " Krupp", " Krus", " Blugo", " Komer", " Urekos"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["the Shunned", "the Grim", "of the Lost", "of the Outcast", "the Blind", "the Sightless", "of the Rejected", "of the Failed", "the Gripper", "of the Slimy Grip", "the Dominator", "the Squid", "the Octopus"],
+        "Endings": []
+      }
+    },
+    "73": {
+      "Creature": "Unfinished Breed",
+      "Name": {
+        "Words": ["Deficient", "Incomplete", "Rejected", "Failed", "Discarded", "Warped"],
+        "Standalone": ["Replicant"],
+        "Endings": [" Specimen", " Sample", " Clone", " Mutation", " Replicant"]
+      },
+      "Title": {
+        "Words": ["V2-", "V3-", "Z4-", "B9-", "V1-", "V4-", "V5-", "V6-", "V7-", "V8-", "V9-", "Z1-", "Z2-", "Z3-", "Z5-", "Z6-", "Z7-", "Z8-", "Z9-", "B1-", "B2-", "B3-", "B4-", "B5-", "B6-", "B7-", "B8-"],
+        "Standalone": ["A-III", "VV-12", "B-II", "Variant-S", "Variant-Y"],
+        "Endings": ["Alpha", "Transgenic", "Gamma", "Omega", "Epsilon", "Theta"]
+      }
+    },
+    "77": {
+      "Creature": "Ottous",
+      "Name": {
+        "Words": ["Sage", "Master", "Mystic", "Venerable"],
+        "Standalone": [],
+        "Endings": [" Nemmeth", " Messa", " Moad", " Keblo", " Gremel", " Sekla", " Sasotten", " Propri", " Unnop", " Yanu", " Nulamer", " Decamer"]
+      },
+      "Title": {
+        "Words": [],
+        "Standalone": ["the Wise", "the Old", "the Ponderous", "the Elder", "the Philosopher", "the Erudite", "the Thinker", "the Scribe", "the Contemplator", "the Student", "the Reflective", "the Ruminator", "the Meditative", "the Cogitator", "the Logical"],
+        "Endings": []
+      }
+    }
+  }
+}

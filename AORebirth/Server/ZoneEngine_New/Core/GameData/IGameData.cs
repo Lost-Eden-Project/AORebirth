@@ -29,6 +29,9 @@ namespace ZoneEngine_New.Core.GameData
 
         RespawnContentCatalog RespawnContent => RespawnContentCatalog.Load(RootPath);
 
+        /// <summary>ComboNames.json: what a ComboNameGen item names its NPC.</summary>
+        ComboNameCatalog ComboNames => ComboNameCatalog.Empty;
+
         int MobTemplateCount { get; }
 
         int HashTemplateCount { get; }

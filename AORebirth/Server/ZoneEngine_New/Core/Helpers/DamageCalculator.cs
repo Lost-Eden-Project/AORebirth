@@ -190,6 +190,36 @@ namespace ZoneEngine_New.Core.Helpers
             return new DamageResult(false, 0, HitType.Normal);
         }
 
+        /// <summary>
+        /// Whether a hostile nano lands or is resisted. The nano's Attack skills (its nano skill lines) plus the caster's
+        /// Add All Off. make the attack rating; its Defend skills plus the target's Add All Def. make the defense rating.
+        /// A nano without Defend skills defends with Nano Resist. The two ratings go through the weapon hit curve.
+        /// NOTE: the retail nano-resist formula is not known. This reuses the weapon hit curve so a nano skill against an
+        /// equal Nano Resist lands about as often as an equal weapon skill hits; it may need tuning once players report
+        /// land rates.
+        /// </summary>
+        public static bool ResolveNanoLand(
+            Character caster,
+            Character target,
+            ItemTemplate nano,
+            out int attackRating,
+            out int defenseRating,
+            out int landChancePercent)
+        {
+            ArgumentNullException.ThrowIfNull(caster);
+            ArgumentNullException.ThrowIfNull(target);
+            ArgumentNullException.ThrowIfNull(nano);
+
+            attackRating = ResolveAttackRating(caster, nano);
+            defenseRating = nano.Defend is { Count: > 0 }
+                ? ResolveDefenseRating(target, nano)
+                : NormalizeStat(target.Stats.GetOrZero(CharacterStat.NanoAC))
+                    + NormalizeStat(target.Stats.GetOrZero(CharacterStat.DMSModifier));
+            double hitPercentage = HitPercentage(attackRating, defenseRating);
+            landChancePercent = (int)Math.Round(Math.Clamp(hitPercentage, 0, 1) * 100);
+            return NextDouble() <= hitPercentage;
+        }
+
         static int ResolveAttackRating(Character attacker, ItemTemplate? template)
         {
             int attackRating = 0;
@@ -217,12 +247,11 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         static bool ResolveHit(int attackRating, int defenseRating)
-        {
-            double hitPercentage =
-                (HitCoefficientA * (attackRating + HitCoefficientK) / (defenseRating + HitCoefficientL))
+            => NextDouble() <= HitPercentage(attackRating, defenseRating);
+
+        static double HitPercentage(int attackRating, int defenseRating)
+            => (HitCoefficientA * (attackRating + HitCoefficientK) / (defenseRating + HitCoefficientL))
                 + HitCoefficientB;
-            return NextDouble() <= hitPercentage;
-        }
 
         static bool TryGetArmorStat(int rawDamageType, out CharacterStat armorStat)
         {
