@@ -20,6 +20,9 @@ namespace ZoneEngine_New.Core.Nanos
         /// <summary>Start-only: the target already runs a stronger nano of the same strain (a better root, buff, ...).</summary>
         BetterNanoRunning,
 
+        /// <summary>The nano's SpawnItem can only make a Unique the caster already holds (Engineer pet nanos).</summary>
+        UniqueItemHeld,
+
         /// <summary>The caster is stunned: no casting, at the start or when a running bar finishes.</summary>
         CasterStunned,
 

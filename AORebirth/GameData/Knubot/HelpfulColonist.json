@@ -1,0 +1,231 @@
+{
+  "Notes": "Helpful Colonist (HLCO), Arrival hall (4604) at (205.7, 1.0, 245.0). Rebuilt from 2 QuestDialogCapture dumps (Helpful_Colonist_HLCO, 2026-10-20, character Soldaman, no quest state). A question hub: the six opening questions come back after 'something else' replies.",
+  "Npcs": [
+    "HLCO"
+  ],
+  "Openers": [
+    {
+      "Say": "welcome"
+    }
+  ],
+  "Replies": {
+    "what_place": {
+      "Text": "What is this place?",
+      "Goto": "this_place"
+    },
+    "who_are_you": {
+      "Text": "Who are you?",
+      "Goto": "who"
+    },
+    "where_go": {
+      "Text": "Where do I go from here?",
+      "Goto": "where_go"
+    },
+    "difficult_choice": {
+      "Text": "What's this difficult choice I have to make?",
+      "Goto": "choice"
+    },
+    "talk_people": {
+      "Text": "How do I talk to other people?",
+      "Goto": "talk"
+    },
+    "thanks": {
+      "Text": "Thank you for your assistance!",
+      "Goto": "welcome_luck"
+    },
+    "omni1": {
+      "Text": "Omni-1?",
+      "Goto": "omni1"
+    },
+    "something_else": {
+      "Text": "There is something else I'd like to know....",
+      "Goto": "all_the_time"
+    },
+    "omnitek": {
+      "Text": "What's the Omni-Tek Corporation?",
+      "Goto": "omnitek"
+    },
+    "what_rk": {
+      "Text": "What is Rubi-Ka?",
+      "Goto": "rubika"
+    },
+    "ask_else": {
+      "Text": "I was really going to ask you about something else...",
+      "Goto": "no_problem"
+    },
+    "clans": {
+      "Text": "Who are the clans?",
+      "Goto": "clans"
+    },
+    "neutrals": {
+      "Text": "Who are the neutrals?",
+      "Goto": "neutrals"
+    },
+    "whats_icc": {
+      "Text": "What's the ICC?",
+      "Goto": "icc"
+    },
+    "curious_else": {
+      "Text": "I am curious about something else...",
+      "Goto": "go_ahead"
+    }
+  },
+  "Lines": {
+    "welcome": {
+      "Text": "Welcome my friend! I can tell you are new to Rubi-Ka - you look confused.  If you have any questions, ask away!  After all, you have a difficult choice to make.",
+      "Replies": [
+        "what_place",
+        "who_are_you",
+        "where_go",
+        "difficult_choice",
+        "talk_people",
+        "thanks"
+      ]
+    },
+    "this_place": {
+      "Text": "This is the main arrival hall in the Omni-1 spaceport.",
+      "Replies": [
+        "omni1",
+        "something_else"
+      ]
+    },
+    "omni1": {
+      "Text": "Omni-1 is Rubi-Ka's official capital city, governed by the Omni-Tek Corporation of Rubi-Ka.",
+      "Replies": [
+        "omnitek",
+        "what_rk",
+        "ask_else"
+      ]
+    },
+    "omnitek": {
+      "Text": "It's the galaxy's most powerful hyper-corporation.  I'm sure you've heard of it.  After all, you arrived here onboard one of their colonial ships.  They lease a large number of colonies, including Rubi-Ka.  Currently there is a conflict between them and the clans and the neutrals are caught between the two.",
+      "Replies": [
+        "omnitek",
+        "clans",
+        "neutrals",
+        "what_rk",
+        "something_else"
+      ]
+    },
+    "clans": {
+      "Text": "The clans represent the people who are unsatisifed with the Omni-Tek Corporation's rule, and they've decided to fight - militarily or politically - against the corporate government.",
+      "Replies": [
+        "omnitek",
+        "clans",
+        "neutrals",
+        "what_rk",
+        "something_else"
+      ]
+    },
+    "neutrals": {
+      "Text": "The neutrals are people who, for various reasons, have decided to stay out of the conflict between the Omni-Tek Corporation and the clans.  They don't really have a common goal, although they're under the protection of the ICC.",
+      "Replies": [
+        "whats_icc",
+        "clans",
+        "what_rk",
+        "something_else"
+      ]
+    },
+    "icc": {
+      "Text": "The Interstellar Confederation of Corporations.  They regulate and oversee all the corporations in the galaxy, including the Omni-Tek Corporation, and all corporate colonies, including Rubi-Ka.  Their links to the clans and the neutrals are more indirect.",
+      "Replies": [
+        "omnitek",
+        "clans",
+        "neutrals",
+        "what_rk",
+        "something_else"
+      ]
+    },
+    "rubika": {
+      "Text": "You must be really confused. Rubi-Ka is the name of this planet, your new home!  We're a corporate colony leased and administrated by the Omni-Tek Corporation of Rubi-Ka.  Rubi-Ka was discovered almost eight hundred years ago, in 28702, by Omni-Tek prospectors.  The planet is now under Omni-Tek's control but their rule is contested by the clans, while the neutrals object to the conflict altogether.",
+      "Replies": [
+        "omnitek",
+        "clans",
+        "neutrals",
+        "curious_else"
+      ]
+    },
+    "go_ahead": {
+      "Text": "Alright, go ahead.",
+      "Replies": [
+        "what_place",
+        "who_are_you",
+        "where_go",
+        "difficult_choice",
+        "talk_people",
+        "thanks"
+      ]
+    },
+    "who": {
+      "Text": "I'm just a helpful soul who knows how confusing all this can be to new arrivals.  After the ICC forced the Omni-Tek Corporation to loosen restrictions on immigration, there've been a lot of people like yourself coming to Rubi-Ka.",
+      "Replies": [
+        "omnitek",
+        "whats_icc",
+        "what_rk",
+        "something_else"
+      ]
+    },
+    "all_the_time": {
+      "Text": "Go ahead, I've got all the time in the world.  What is it?",
+      "Replies": [
+        "what_place",
+        "who_are_you",
+        "where_go",
+        "difficult_choice",
+        "talk_people",
+        "thanks"
+      ]
+    },
+    "where_go": {
+      "Text": [
+        "Good question.  Luckily, you have a lot more freedom than I did when I first arrived.  Back then everyone had to start working for the Omni-Tek Corporation.  Now, you have a choice between Omni-Tek or the clans, or you can just stay neutral.  You can even sign up with Jobe Research, which will allow you to go straight to the Shadowlands. ",
+        "{delay 1}\\n\\nSee those exit gates? ",
+        "{delay 4} Someone over there ought to be able to help you make that choice."
+      ],
+      "Replies": [
+        "omnitek",
+        "clans",
+        "neutrals",
+        "curious_else"
+      ]
+    },
+    "choice": {
+      "Text": [
+        "You have to pick a side in the ongoing conflict on Rubi-Ka.  You have a choice between the Omni-Tek Corporation, the clans, or the neutrals.  Your choice of side will be very important to your future, although you can switch sides later on, if you're unhappy with your first choice.",
+        "{delay 1}  Right now I guess all of them are more busy fighting aliens than each other.  They will probably be glad to get some help from you, no matter what side you choose to belong to! "
+      ],
+      "Replies": [
+        "omnitek",
+        "clans",
+        "neutrals",
+        "what_rk",
+        "something_else"
+      ]
+    },
+    "talk": {
+      "Text": "Just walk up to them and start talking!  Most are really friendly, and some will start talking to you when you are close enough.  Not everyone's as talkative as me, though, so you might have to prompt them before they'll say anything at all.",
+      "Replies": [
+        "what_place",
+        "who_are_you",
+        "where_go",
+        "difficult_choice",
+        "talk_people",
+        "thanks"
+      ]
+    },
+    "welcome_luck": {
+      "Text": "You're welcome.  And hey - good luck out there!"
+    },
+    "no_problem": {
+      "Text": "No problem!  What is it?",
+      "Replies": [
+        "what_place",
+        "who_are_you",
+        "where_go",
+        "difficult_choice",
+        "talk_people",
+        "thanks"
+      ]
+    }
+  }
+}

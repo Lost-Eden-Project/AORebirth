@@ -1,0 +1,319 @@
+{
+  "Notes": "Clan Recruiter (CCRI), ICC Shuttleport (4582) at (918.9, 47.1, 862.3). Rebuilt from 14 QuestDialogCapture dumps (Clan_Recruiter_CCRI, 2026-10-20, characters Soldmen, Complicado). State is the player's Side, not quests: Side 2 (Omni, signed) gets the 'regret' line, Side 1 (signed clanner) gets the signed menu and the access card. Not expressible yet: handing out the Clan Application Form, the access card and the maps (item hashes not in the captures), and the 'already holding an unsigned form' opener menu (needs a 'has FORMHASH' check).",
+  "Npcs": [
+    "CCRI"
+  ],
+  "Openers": [
+    {
+      "Requirements": [
+        {
+          "Stat": "Side",
+          "Operator": "EqualTo",
+          "Value": 2
+        }
+      ],
+      "Say": "omni_regret"
+    },
+    {
+      "Requirements": [
+        {
+          "Stat": "Side",
+          "Operator": "EqualTo",
+          "Value": 1
+        }
+      ],
+      "Say": "greeting_signed"
+    },
+    {
+      "Say": "greeting"
+    }
+  ],
+  "Replies": {
+    "sign_now": {
+      "Text": "Yes, I'll sign an application form right away!",
+      "Goto": "form_given"
+    },
+    "take_form_info": {
+      "Text": "I'll take an application form, but I'd like some more information before I sign it.",
+      "Goto": "info_menu"
+    },
+    "no_way": {
+      "Text": "Heh, no way. I'm not gonna sign that thing!",
+      "Goto": "disappointing"
+    },
+    "no_way_omni": {
+      "Text": "Heh, no way. I'm not gonna sign that thing!",
+      "Goto": ""
+    },
+    "mainland": {
+      "Text": "How do I get to the mainland?",
+      "Goto": "pitch"
+    },
+    "mainland_has_form": {
+      "Text": "How do I get to the mainland?",
+      "Goto": "pitch_has_form"
+    },
+    "sounds_fair": {
+      "Text": "Sounds fair. I'll sign an application form.",
+      "Goto": "form_given_fair"
+    },
+    "more_info": {
+      "Text": "I'd like some more information before I sign it.",
+      "Goto": "not_signed"
+    },
+    "about_clans": {
+      "Text": "What can you tell me about The Clans?",
+      "Goto": "clans"
+    },
+    "about_omni": {
+      "Text": "What can you tell me about Omni-Tek?",
+      "Goto": "omni"
+    },
+    "about_neutrals": {
+      "Text": "What can you tell me about the neutrals?",
+      "Goto": "neutrals"
+    },
+    "who_leads": {
+      "Text": "Who leads The Clans?",
+      "Goto": "clans_leader"
+    },
+    "when_clans": {
+      "Text": "When did clans first appear?",
+      "Goto": "clans_when"
+    },
+    "clans_do": {
+      "Text": "What can the clans do for me?",
+      "Goto": "clans_do"
+    },
+    "clans_teleport": {
+      "Text": "If I join the clans and teleport to the mainland, where will I end up?",
+      "Goto": "clans_teleport"
+    },
+    "something_else": {
+      "Text": "I would like to talk about something else actually.",
+      "Goto": "go_ahead"
+    },
+    "just_sign": {
+      "Text": "I'll just sign the application form.",
+      "Goto": "glad_sign"
+    },
+    "signed_now_what": {
+      "Text": "I've signed The Clans Application Form, now what?",
+      "Goto": "welcome_clan"
+    },
+    "mainland_from_here": {
+      "Text": "How do I get to the mainland from here?",
+      "Goto": "card"
+    },
+    "thank_you": {
+      "Text": "Thank you for your help.",
+      "Goto": "happy_assist"
+    },
+    "where_teleport": {
+      "Text": "Where will I teleport to on the mainland?",
+      "Goto": "card_west_athen"
+    }
+  },
+  "Lines": {
+    "greeting": {
+      "Text": "Hello there! Are you interested in joining the fight for freedom, justice and the Rubi-Kan way? The Clans could always use a new recruit in their struggle against corporate oppression! And don't let their propaganda convince you. ICC regulations state that you are free to settle wherever you wish, and that includes clan-run territories! By signing a Clan Application Form, you have made your first stand against the tyranny of Omni-Tek!",
+      "Replies": [
+        "sign_now",
+        "take_form_info",
+        "no_way",
+        "mainland"
+      ]
+    },
+    "greeting_signed": {
+      "Text": "Hello there! Are you interested in joining the fight for freedom, justice and the Rubi-Kan way? The Clans could always use a new recruit in their struggle against corporate oppression! And don't let their propaganda convince you. ICC regulations state that you are free to settle wherever you wish, and that includes clan-run territories! By signing a Clan Application Form, you have made your first stand against the tyranny of Omni-Tek!",
+      "Replies": [
+        "signed_now_what",
+        "mainland_from_here"
+      ]
+    },
+    "omni_regret": {
+      "Text": "I see you have made a choice you will surely regret one day, citizen.",
+      "Replies": [
+        "no_way_omni"
+      ]
+    },
+    "form_given": {
+      "Text": [
+        "Good to hear, my friend! Here's the application form, let me know when you've signed it.",
+        "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, left click the application form and read it's description.{/emote}"
+      ],
+      "Replies": [
+        "mainland_has_form",
+        "more_info"
+      ]
+    },
+    "form_given_fair": {
+      "Text": [
+        "Good to hear, my friend! Here's the application form, let me know when you've signed it.",
+        "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, left click the application form and read it's description.{/emote}"
+      ],
+      "Replies": [
+        "more_info"
+      ]
+    },
+    "pitch": {
+      "Text": [
+        "I have access cards that will give you authorization to use the teleport,",
+        "{delay 2} but the cost of running the teleport is high, and I'm only allowed to give the cards to fellow clanners.",
+        "{delay 3}\\nBut if you're interested, why not sign an application form to be a part of The Clans, and I'll grant you access to the teleport right away?"
+      ],
+      "Replies": [
+        "take_form_info",
+        "no_way",
+        "sounds_fair"
+      ]
+    },
+    "pitch_has_form": {
+      "Text": [
+        "I have access cards that will give you authorization to use the teleport,",
+        "{delay 2} but the cost of running the teleport is high, and I'm only allowed to give the cards to fellow clanners.",
+        "{delay 3}\\nBut if you're interested, why not sign an application form to be a part of The Clans, and I'll grant you access to the teleport right away?"
+      ],
+      "Replies": [
+        "sounds_fair"
+      ]
+    },
+    "disappointing": {
+      "Text": "How very disappointing."
+    },
+    "info_menu": {
+      "Text": "Of course, my friend! That's my job, to answer any and all questions that you have. What do you want to know?",
+      "Replies": [
+        "mainland",
+        "about_clans",
+        "about_omni",
+        "about_neutrals"
+      ]
+    },
+    "not_signed": {
+      "Text": [
+        "Yes, it appears you haven't signed the application form yet.",
+        "{delay 1}\\n",
+        "{delay 1}What questions may I answer for you?"
+      ],
+      "Replies": [
+        "mainland_has_form",
+        "who_leads",
+        "about_omni",
+        "about_neutrals",
+        "just_sign"
+      ]
+    },
+    "clans": {
+      "Text": "We are a people united by cause and divided by rhetoric, as Henry Radiman once said. The Clans are groups of people who believe in the basic right for freedom from the corporation. Each clan has a different agenda, a different dogma, but we're all fighting for the same thing. An end to Omni-Tek's corporate hegemony. ",
+      "Replies": [
+        "who_leads",
+        "when_clans",
+        "clans_do",
+        "clans_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "clans_leader": {
+      "Text": "We don't have one leader. The most influential single individual is Henry Radiman, who is respected by The Clans and even Omni-Tek, at least to some degree. The Clans represent independence and freedom for all, and it's up to each clan-member to decide whom to follow, when, where, and why. Some clans believe that freedom can only be won through violence, while others place their faith in diplomacy.",
+      "Replies": [
+        "when_clans",
+        "clans_do",
+        "clans_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "clans_when": {
+      "Text": "The first clan-members were workers in the Rubi-Kan notum mines. They got fed up with Omni-Tek's mistreatment, and formed the Manual Labourers Guild. That was back in 29191. The first true clan appeared in 29202, and from then on, there was no stopping it. Dissatisfied employees broke away from Omni-Tek in the thousands to join the growing ranks of clan-members.",
+      "Replies": [
+        "who_leads",
+        "clans_do",
+        "clans_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "clans_do": {
+      "Text": "You get to decide your own future, free of the corporate shackles. Isn't that enough? There are all kinds of people in the clans. Fighters, politicians, traders, farmers. There is no standard to follow, except to stand up against oppression and injustice, and to aid your fellow clan-members in times of need, and in times of war. ",
+      "Replies": [
+        "who_leads",
+        "when_clans",
+        "clans_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "clans_teleport": {
+      "Text": "You will be teleported to West Athen, which has many things for a new freedom fighter: many shops, apartments, and the subway is within the city.",
+      "Replies": [
+        "who_leads",
+        "when_clans",
+        "clans_do",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "go_ahead": {
+      "Text": "Alright, go ahead.",
+      "Replies": [
+        "mainland",
+        "about_omni",
+        "about_neutrals"
+      ]
+    },
+    "omni": {
+      "Text": "Not much, I'm afraid. You'd be better off asking the Omni-Tek Recruitment Officer near here, although he'll only give you the corporate line. Don't be swayed by their lies. Omni-Tek is a fascist regime that values profit over anything or anyone else. Soon, they will fall, and Rubi-Ka will belong to the people of The Clans.",
+      "Replies": [
+        "mainland",
+        "about_clans",
+        "about_neutrals",
+        "just_sign"
+      ]
+    },
+    "neutrals": {
+      "Text": "The neutrals are hard to categorize. They don't have a common goal, they refuse to make any sacrifices, and they're gutless. Other than that, there's nothing wrong with them! But why join with the neutrals? They have no future, unless it involves hiding under the skirts of the ICC.",
+      "Replies": [
+        "mainland",
+        "about_clans",
+        "about_omni",
+        "just_sign"
+      ]
+    },
+    "glad_sign": {
+      "Text": "Glad to hear that, my friend! Let me know when you've signed it.",
+      "Replies": [
+        "mainland",
+        "about_clans"
+      ]
+    },
+    "welcome_clan": {
+      "Text": "Welcome to Rubi-Ka and to The Clans! Take great pride in your decision today, it is a very important one. Since you are now among The Clans, go seek out the Clan Equipment Vendor. She is able to offer you armor upgrades and new equipment.",
+      "Replies": [
+        "about_clans",
+        "mainland_from_here"
+      ]
+    },
+    "card": {
+      "Text": [
+        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.",
+        "{delay 4}But remember, once you leave here and go to the mainland, you will be unable to return to here, so do keep that in mind. ",
+        "{delay 2}Oh, and you might find it useful to have these maps! "
+      ],
+      "Replies": [
+        "thank_you",
+        "where_teleport"
+      ]
+    },
+    "card_west_athen": {
+      "Text": "You will be teleported to West Athen, which has many things for a new freedom fighter: many shops, apartments, and the subway is within the city.",
+      "Replies": [
+        "thank_you"
+      ]
+    },
+    "happy_assist": {
+      "Text": " I'm only happy to have been of assistance. If there's anything else you want to know, don't hesitate to ask! And good luck out there. Rubi-Ka is a dangerous place. Beautiful, but dangerous. Keep your eyes open at all times!"
+    }
+  }
+}

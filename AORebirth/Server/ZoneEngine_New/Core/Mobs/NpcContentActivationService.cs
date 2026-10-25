@@ -134,6 +134,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
         if (shopDao == null || gameData == null) return;
 
         int playfieldId = playfield.ResourceId;
+        bool preferDatabaseStock = playfield.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Shops.PreferDatabaseStock ?? true;
         Dictionary<int, VendingMachine[]> machinesByVendorId = registry.Dynels()
             .OfType<VendingMachine>()
             .Where(machine => machine.SpawnSource == SpawnSource.StaticDynel && machine.OwnerNpc == null)
@@ -156,6 +157,16 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
             if (machine.Stock.IsConfiguredSnapshot)
             {
                 // An exact accepted content binding already owns this runtime endpoint.
+                continue;
+            }
+
+            // The shop's own record carries its stock list; the database row stands in only while
+            // Gameplay.json shops.preferDatabaseStock holds (the vetted set until the record lists are checked).
+            if (machine.Template.ShopInventory.Count > 0 && !preferDatabaseStock)
+            {
+                _unavailableVendorEndpoints[key] = "Database vendor " + vendor.VendorId
+                    + " not applied: shops.preferDatabaseStock is off and template " + machine.Template.Id
+                    + " carries its own ShopInventory.";
                 continue;
             }
 

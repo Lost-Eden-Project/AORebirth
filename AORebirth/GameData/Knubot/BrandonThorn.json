@@ -1,113 +1,383 @@
 {
-  "Notes": "Brandon Thorn. Captured by QuestDialogCapture in ICC Shuttleport (4582) at (934.9, 24.4, 760.6). Nearest HashSpawnPoint BNTO at (934.9, 24.8, 760.6), 0.4m away.",
-  "Npcs": ["BNTO"],
+  "Notes": "Brandon Thorn (BNTO), ICC Shuttleport (4582) at (934.9, 24.4, 760.6). Rebuilt from 25 QuestDialogCapture dumps (Brandon_Thorn_BNTO, 2026-10-20, characters Soldmen, Breneced, Complicado). The Find chain is L5G4 > 97YJ > QAP2 > 37A1 > C8MH (talk back); the Kill chain is 91S8 > 0NEC > GFM9 > R1FQ > Q5V8 (talk back).",
+  "Npcs": [
+    "BNTO"
+  ],
   "Openers": [
-    { "If": ["!HasCompletedQuest H38F"], "Say": "1" },
-    { "If": ["HasQuest T8Q1"], "Say": "8" },
-    { "If": ["HasAnyQuest 91S8,0NEC,GFM9,R1FQ"], "Vicinity": "If you want something more to do, I suggest you go talk to Manager Travis Molen. He's up by the control tower!" },
-    { "If": ["HasQuest Q5V8"], "Say": "11" },
-    { "If": ["HasCompletedQuest Q5V8"], "Say": "14" },
-    { "If": ["HasCompletedQuest T8Q1"], "Say": "13" },
-    { "Say": "6" }
+    {
+      "If": [
+        "HasQuest C8MH",
+        "HasQuest Q5V8"
+      ],
+      "Say": "both_back"
+    },
+    {
+      "If": [
+        "HasQuest C8MH"
+      ],
+      "Say": "found_back"
+    },
+    {
+      "If": [
+        "HasQuest Q5V8"
+      ],
+      "Say": "killed_back"
+    },
+    {
+      "If": [
+        "HasAnyQuest 91S8,0NEC,GFM9,R1FQ"
+      ],
+      "Vicinity": "If you want something more to do, I suggest you go talk to Manager Travis Molen. He's up by the control tower!"
+    },
+    {
+      "If": [
+        "HasAnyQuest L5G4,97YJ,QAP2,37A1"
+      ],
+      "Say": "hello_finding"
+    },
+    {
+      "If": [
+        "HasCompletedQuest Q5V8"
+      ],
+      "Say": "hello_after"
+    },
+    {
+      "If": [
+        "HasCompletedQuest C8MH"
+      ],
+      "Say": "hello_found"
+    },
+    {
+      "If": [
+        "!HasCompletedQuest H38F"
+      ],
+      "Say": "welcome"
+    },
+    {
+      "Say": "ready"
+    }
   ],
   "Replies": {
-    "yes": { "Text": "Yes!", "If": ["!HasQuest L5G4"], "Goto": "7" },
-    "explain_skills": { "Text": "Can you explain the skill system to me?" },
-    "check_equipment": { "Text": "How do I check my equipment?" },
-    "how_fight": { "Text": "How do I fight?" },
-    "shuttle": { "Text": "What happened to the shuttle I was on?" },
-    "what_skills": { "Text": "What are skills exactly?" },
-    "aliens": { "Text": "There are aliens on this island?" },
-    "help_aliens": { "Text": "Can I help against the aliens?" },
-    "found_creatures": { "Text": "I found all the creatures.", "Goto": "9" },
-    "sure": { "Text": "Sure. No problem.", "Goto": "10" },
-    "killed_animals": { "Text": "I killed one of each of the animals now.", "Goto": "12" },
-    "monster_parts": { "Text": "Monster parts?" },
-    "dont_have_any": { "Text": "I don't have any." },
-    "find_stacklund": { "Text": "Where can I find Mr. Stacklund?" },
-    "what_now": { "Text": "What do I do now?", "Goto": "15" },
-    "belt": { "Text": "What do I do with this belt you gave me?" },
-    "have_3_parts": { "Text": "I have 3 monster parts for you.", "Goto": "16" },
-    "be_right_back": { "Text": "All right. I'll be right back with three monster parts for you in a bit." },
-    "find_inspector": { "Text": "How do I find the inspector?" },
-    "have_parts_here": { "Text": "I have three monster parts for you right here.", "Goto": "16" },
-    "found_other_things": { "Text": "Ok. I found some  other things too though." }
+    "yes": {
+      "Text": "Yes!",
+      "If": [
+        "!HasAnyQuest 97YJ,QAP2,37A1,C8MH"
+      ],
+      "Goto": "find_given"
+    },
+    "yes_again": {
+      "Text": "Yes!",
+      "If": [
+        "HasAnyQuest 97YJ,QAP2,37A1,C8MH"
+      ],
+      "Goto": "find_again"
+    },
+    "explain_skills": {
+      "Text": "Can you explain the skill system to me?",
+      "Goto": "skills"
+    },
+    "what_skills": {
+      "Text": "What are skills exactly?",
+      "Goto": "skills"
+    },
+    "check_equipment": {
+      "Text": "How do I check my equipment?",
+      "Goto": "equipment"
+    },
+    "how_fight": {
+      "Text": "How do I fight?",
+      "Goto": "fight"
+    },
+    "shuttle": {
+      "Text": "What happened to the shuttle I was on?",
+      "Goto": "shuttle"
+    },
+    "aliens": {
+      "Text": "There are aliens on this island?",
+      "Goto": "aliens"
+    },
+    "help_aliens": {
+      "Text": "Can I help against the aliens?",
+      "Goto": "help_aliens"
+    },
+    "good_idea": {
+      "Text": "Sounds like a good idea.  What do I do?",
+      "Goto": "find_more"
+    },
+    "like_tough": {
+      "Text": "I like it tough. I'll go hunt some aliens.",
+      "Goto": "your_choice"
+    },
+    "where_aliens": {
+      "Text": "So where do I find these aliens?",
+      "Goto": "main_compound"
+    },
+    "something_else": {
+      "Text": "Is there something else I can do?",
+      "Goto": "find_given"
+    },
+    "ok_right": {
+      "Text": "Ok, you're right.",
+      "Goto": "holo"
+    },
+    "found_creatures": {
+      "Text": "I found all the creatures.",
+      "Goto": "holo"
+    },
+    "sure": {
+      "Text": "Sure. No problem.",
+      "Goto": "kill_four"
+    },
+    "killed_animals": {
+      "Text": "I killed one of each of the animals now.",
+      "Goto": "well_done"
+    },
+    "monster_parts": {
+      "Text": "Monster parts?",
+      "Goto": "first_aid"
+    },
+    "dont_have_any": {
+      "Text": "I don't have any.",
+      "Goto": "too_bad"
+    },
+    "find_stacklund": {
+      "Text": "Where can I find Mr. Stacklund?",
+      "Goto": "stacklund_where"
+    },
+    "medical_supplies": {
+      "Text": "Medical supplies? Here?",
+      "Goto": "not_medical"
+    },
+    "be_right_back": {
+      "Text": "All right. I'll be back with three monster parts for you in a bit.",
+      "Goto": "see_you"
+    },
+    "found_other_things": {
+      "Text": "Ok. I found some other things too though.",
+      "Goto": "other_things"
+    },
+    "have_parts_here": {
+      "Text": "I have three monster parts for you right here.",
+      "Goto": "give_parts"
+    },
+    "what_now": {
+      "Text": "What do I do now?",
+      "Goto": "what_now",
+      "If": [
+        "!quest HYIY done"
+      ]
+    },
+    "what_now_again": {
+      "Text": "What do I do now?",
+      "If": [
+        "quest HYIY done"
+      ],
+      "Goto": "what_now_again"
+    },
+    "anything_else": {
+      "Text": "Anything else I can do?",
+      "Goto": "what_now",
+      "If": [
+        "!quest HYIY done"
+      ]
+    },
+    "anything_else_again": {
+      "Text": "Anything else I can do?",
+      "If": [
+        "quest HYIY done"
+      ],
+      "Goto": "what_now_again"
+    },
+    "belt": {
+      "Text": "What do I do with this belt you gave me?",
+      "If": [
+        "HasQuest MWTD"
+      ],
+      "Goto": "belt"
+    },
+    "have_3_parts": {
+      "Text": "I have 3 monster parts for you.",
+      "Goto": "give_parts"
+    },
+    "find_inspector": {
+      "Text": "How do I find the inspector?",
+      "Goto": "inspector_where"
+    }
   },
   "Lines": {
-    "1": {
+    "welcome": {
       "Text": [
         "{givequest H38F}",
         "{completequest H38F}",
-        "Welcome ashore, my friend. Lucky thing the shuttle landed in the water, huh?",
+        "{delay 2}Welcome ashore, my friend. Lucky thing the shuttle landed in the water, huh?",
         "{delay 1}\\nAnyway, I'm Brandon Thorn, I'm a paramedic here at the ICC Shuttleport. I can provide you with the standard issue gear for all newcomers to Rubi-Ka. Because I use nanobots to assemble the equipment straight into your inventory. {emote}You can open your inventory by pressing 'i' or using the inventory icon on your gui.{/emote}\\nI hope you feel good enough to start working, we need all the help we can get here!",
         "{delay 2}\\nAre you ready?"
       ],
-      "Replies": ["yes", "explain_skills"]
+      "Replies": [
+        "yes",
+        "yes_again",
+        "explain_skills"
+      ]
     },
-    "2": {
+    "ready": {
+      "Text": "Hello there, are you ready to help me?",
+      "Replies": [
+        "yes",
+        "yes_again",
+        "explain_skills"
+      ]
+    },
+    "hello_finding": {
+      "Text": "Hello there, how may I help you?",
+      "Replies": [
+        "yes",
+        "yes_again",
+        "explain_skills"
+      ]
+    },
+    "find_given": {
+      "Text": [
+        "{givequest L5G4}",
+        "{delay 1}Well, first have a look around, and see whether you can find one of each of the four species living around where we stand now, then return to me.",
+        "{delay 2}\\n{emote}You got a new mission. To look at the mission, open the mission window which can be done by either using the menu on the bottom right side of the screen, or by pressing CTRL+4. {/emote}",
+        "{delay 2}{emote}Left click the mission to see the details.{/emote}"
+      ]
+    },
+    "find_more": {
+      "Text": [
+        "{delay 1}Well, first have a look around, and see whether you can find one of each of the four species living around where we stand now, then return to me.",
+        "{delay 2}\\n{emote}You got a new mission. To look at the mission, open the mission window which can be done by either using the menu on the bottom right side of the screen, or by pressing CTRL+4.{/emote}",
+        "{delay 2}{emote}Left click the mission to see the details.{/emote}"
+      ],
+      "Replies": [
+        "check_equipment",
+        "what_skills",
+        "how_fight"
+      ]
+    },
+    "skills": {
       "Text": [
         "Your skills define what you can do, and how good you are at it. Items require different skills to use or equip. The nano programs you will need have skill requirements for uploading and executing them, and many actions demand a certain amount in a specific skill or two to have any chance of succeeding. As you get more experienced on Rubi-Ka you get more improvement points to spend on your skills.",
         "{delay 3}\\n{emote}Improvement points are granted every time you level. You can access your skill view to learn more from the left hand menu or by pressing 'U'.{/emote}"
       ],
-      "Replies": ["check_equipment", "how_fight"]
+      "Replies": [
+        "check_equipment",
+        "how_fight"
+      ]
     },
-    "3": {
+    "equipment": {
       "Text": "{emote}To look at your inventory, open it by using the menu on the bottom left side of the screen, or by pressing 'I'. To examine a specific item, hold down Shift and left-click on the item. Equip your selected weapon by right-clicking it.{/emote}",
-      "Replies": ["shuttle", "what_skills", "how_fight"]
+      "Replies": [
+        "shuttle",
+        "what_skills",
+        "how_fight"
+      ]
     },
-    "4": {
+    "fight": {
+      "Text": [
+        "Attack a creature by targeting it and pressing the 'Q' key once on the keyboard. To stop attacking, press Q again.",
+        "{delay 2}\\nClicking on the corpse of a defeated creature will open the loot window. If it contains no loot the window will close again automatically. If it has items you can take you can click on them to move them to your inventory."
+      ],
+      "Replies": [
+        "shuttle",
+        "check_equipment",
+        "what_skills"
+      ]
+    },
+    "shuttle": {
       "Text": "It was shot down, by aliens I imagine.  They seem to be everywhere these days, even on this island.  Lucky thing the shuttle didn't explode, and that you landed in the water.",
-      "Replies": ["aliens"]
+      "Replies": [
+        "aliens"
+      ]
     },
-    "5": {
+    "aliens": {
       "Text": [
         "Yes.  Lots of them.  One of their ships landed here, and aliens are pouring out.  They have overrun the docks and the main landing platform. ",
         "{delay 3} The guards are still here, holding the aliens back, but apart from some key personnel everybody else has been evacuated by now."
       ],
-      "Replies": ["help_aliens"]
-    },
-    "6": {
-      "Text": "{delay 1}Hello there, are you ready to help me?",
-      "Replies": ["yes", "explain_skills"]
-    },
-    "7": {
-      "Text": [
-        "{givequest L5G4}",
-        "{delay 1}Well, first have a look around, and see whether you can find one of each of the four species living around where we stand now, then return to me.",
-        "{delay 2}\\n{emote}You got a new mission. To look at the mission, open the mission window which can be done by either using the menu on the bottom right side of the screen, or by pressing CTRL+4. {/emote}"
+      "Replies": [
+        "help_aliens"
       ]
     },
-    "8": {
+    "help_aliens": {
+      "Text": "I'm sure you can. In a while, at least.  I suggest you practice on some easier opponents first though, like here on the beach.  The aliens are quite tough.",
+      "Replies": [
+        "good_idea",
+        "like_tough"
+      ]
+    },
+    "your_choice": {
+      "Text": "All right.  Your choice to make.  And it's not like you'll die permanently anyway, now that you've been scanned.  Don't say I didn't warn you though.",
+      "Replies": [
+        "where_aliens"
+      ]
+    },
+    "main_compound": {
+      "Text": "Up on the main compound, but I strongly encourage you to get some fighting experience first.",
+      "Replies": [
+        "something_else",
+        "ok_right"
+      ]
+    },
+    "found_back": {
       "Text": [
-        "{completequest T8Q1}",
+        "{completequest C8MH}",
         "So, how did it go?"
       ],
-      "Replies": ["found_creatures", "explain_skills"]
+      "Replies": [
+        "found_creatures",
+        "explain_skills"
+      ]
     },
-    "9": {
+    "both_back": {
+      "Text": [
+        "{completequest C8MH}",
+        "{completequest Q5V8}",
+        "So, how did it go?"
+      ],
+      "Replies": [
+        "killed_animals",
+        "explain_skills"
+      ]
+    },
+    "hello_found": {
+      "Text": "Hello there, how may I help you?",
+      "Replies": [
+        "found_creatures"
+      ]
+    },
+    "holo": {
       "Text": [
         "Great!",
         "{delay 2}\\nNormally we would use a holo chamber simulation to test your reflexes and get you used to the standard equipment, but since this isn't possible at the moment, I will have to ask you to fight some of the local wildlife to prove your fitness, I hope that's all right. "
       ],
-      "Replies": ["sure"]
+      "Replies": [
+        "sure"
+      ]
     },
-    "10": {
+    "kill_four": {
       "Text": [
         "Good.",
         "{delay 1} ",
         "{givequest 91S8}",
         "{delay 1} What you should do is kill one of each of the four creatures you located. Check your equipment and skills before starting out. It will make handling the local wildlife a lot easier."
       ],
-      "Replies": ["check_equipment", "what_skills", "how_fight"]
+      "Replies": [
+        "check_equipment",
+        "what_skills",
+        "how_fight"
+      ]
     },
-    "11": {
+    "killed_back": {
       "Text": [
         "{completequest Q5V8}",
         "So, how did it go?"
       ],
-      "Replies": ["killed_animals"]
+      "Replies": [
+        "killed_animals"
+      ]
     },
-    "12": {
+    "well_done": {
       "Text": [
         "Well done.",
         "{delay 1}{givequest MWTD}",
@@ -115,40 +385,141 @@
         "{delay 1} He has a few items for sale that you might be interested in too.",
         "{delay 1}\\nOh, and if you have any sizable monster parts, I would be interested in getting a few..."
       ],
-      "Replies": ["monster_parts", "dont_have_any", "find_stacklund"]
+      "Replies": [
+        "monster_parts",
+        "dont_have_any",
+        "find_stacklund"
+      ]
     },
-    "13": {
-      "Text": "Hello there, how may I help you?",
-      "Replies": ["found_creatures"]
+    "first_aid": {
+      "Text": "I can make some simple first aid kits from the blood plasma extracted from those monster parts. Those will help a lot on treating the wounded from the crash.  If you bring me 3 monster parts, I'll give you a stack of first aid kits. I'm sure those will come in handy while you're on this island.",
+      "Replies": [
+        "medical_supplies",
+        "be_right_back",
+        "have_parts_here"
+      ]
     },
-    "14": {
-      "Text": "Hello there, how may I help you?",
-      "Replies": ["what_now", "belt", "have_3_parts"]
+    "not_medical": {
+      "Text": "Not exactly medical supplies.  Rather components for making medical supplies.  We can extract blood plasma from the small animals living here, and use those for first aid kits and such.",
+      "Replies": [
+        "be_right_back",
+        "found_other_things",
+        "have_parts_here"
+      ]
     },
-    "15": {
+    "too_bad": {
       "Text": [
-        "Well, if you haven't already, you could go talk to the ICC Bio-Inspector. I'm sure he will find something for you to do, he's always swamped. Later, when you have your bearings of the island, you could head up to the platform and talk to the Shuttleport manager.",
-        "{givequest HYIY}"
+        "Too bad, but no worries.  Just keep killing the animals, and you'll come across some sizable parts. ",
+        "{delay 2}\\n\\nI can make some simple first aid kits from the blood plasma extracted from those monster parts.  Those will help a lot on treating the wounded from the crash. If you bring me three monster parts, I'll give you a stack of first aid kits.  I'm sure those will come in handy while you're on this island. "
       ],
-      "Replies": ["be_right_back", "find_inspector", "have_parts_here"]
+      "Replies": [
+        "be_right_back",
+        "found_other_things"
+      ]
     },
-    "16": {
-      "Text": "Excellent!{opentrade}"
+    "see_you": {
+      "Text": "Great. I'll see you then."
     },
-    "17": {
+    "other_things": {
+      "Text": "You did? Might be something Antonio Stacklund will give you a bit of cash for. He's one of the few people who stayed on the island when they evacuated people.  He has a few items for sale that you might be interested in too.",
+      "Replies": [
+        "find_stacklund"
+      ]
+    },
+    "stacklund_where": {
+      "Text": "A bit west of here there's a tunnel in the rock surface. It will take you to the ramp up to the main building. Mr. Stacklund most likely stays a bit away from the battle, at the control tower. Talk to the ICC Bio-Inspector by the tunnel entrance if you need more directions."
+    },
+    "hello_after": {
+      "Text": "Hello there, how may I help you?",
+      "Replies": [
+        "what_now",
+        "what_now_again",
+        "belt",
+        "have_3_parts"
+      ]
+    },
+    "what_now": {
+      "Text": [
+        "{givequest HYIY}",
+        "Well, if you haven't already, you could go talk to the ICC Bio-Inspector. I'm sure he will find something for you to do, he's always swamped. Later, when you have your bearings of the island, you could head up to the platform and talk to the Shuttleport manager.",
+        "{delay 1} Or you could get me more monster parts."
+      ],
+      "Replies": [
+        "be_right_back",
+        "find_inspector",
+        "have_parts_here"
+      ]
+    },
+    "inspector_where": {
+      "Text": "A bit west of here, there's a tunnel in the rock surface. The Inspector is likely to be in that area."
+    },
+    "belt": {
+      "Text": [
+        "{delay 1}The belt was something I found, take it to Equipment Vendor Antonio Stacklund and he'll help identify it for you.",
+        "{delay 1} He has a few items for sale that you might be interested in too."
+      ],
+      "Replies": [
+        "find_stacklund",
+        "anything_else",
+        "anything_else_again"
+      ]
+    },
+    "give_parts": {
+      "Text": [
+        "Excellent!",
+        "{delay 1}\\n{emote}To give Brandon Thorn the monster parts, click the Give Items button (the one with a hand holding a box), put the monster parts into the slots that appear, and confirm the trade by clicking the check (v) button. Note that you have to give him 3 monster parts.  Any fewer, and he will just return the items.{/emote}"
+      ]
+    },
+    "parts_taken": {
       "Text": [
         "Thank you.  Excellent work!  Here are some first aid kits for the trouble.  If you get more parts, please don't hesitate to bring them to me.",
         "{spawn TALA level}",
         "{spawn BSNR level}"
       ],
-      "Replies": ["found_other_things", "what_now"]
+      "Replies": [
+        "found_other_things",
+        "what_now",
+        "what_now_again"
+      ]
+    },
+    "find_again": {
+      "Text": [
+        "{delay 1}Well, first have a look around, and see whether you can find one of each of the four species living around where we stand now, then return to me.",
+        "{delay 2}\\n{emote}You got a new mission. To look at the mission, open the mission window which can be done by either using the menu on the bottom right side of the screen, or by pressing CTRL+4. {/emote}",
+        "{delay 2}{emote}Left click the mission to see the details.{/emote}"
+      ]
+    },
+    "what_now_again": {
+      "Text": [
+        "Well, if you haven't already, you could go talk to the ICC Bio-Inspector. I'm sure he will find something for you to do, he's always swamped. Later, when you have your bearings of the island, you could head up to the platform and talk to the Shuttleport manager.",
+        "{delay 1} Or you could get me more monster parts."
+      ],
+      "Replies": [
+        "be_right_back",
+        "find_inspector",
+        "have_parts_here"
+      ]
+    },
+    "trade_refused": {
+      "Text": [
+        "Hm? ",
+        "{delay 1}No, I need three of those. Bring me all three at once and I'll give you some first aid kits."
+      ]
     }
   },
   "Trades": {
     "monster_parts": {
-      "If": ["HasCompletedQuest Q5V8"],
-      "Items": [{ "Hash": "MOPA", "Count": 3 }],
-      "Goto": "17"
+      "If": [
+        "HasCompletedQuest Q5V8"
+      ],
+      "Items": [
+        {
+          "Hash": "MOPA",
+          "Count": 3
+        }
+      ],
+      "Goto": "parts_taken"
     }
-  }
+  },
+  "TradeRefused": "trade_refused"
 }

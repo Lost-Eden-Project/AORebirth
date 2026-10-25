@@ -1,0 +1,338 @@
+{
+  "Notes": "Omni-Tek Recruitment Officer (ONRE), ICC Shuttleport (4582) at (935.5, 47.0, 859.0). Rebuilt from 11 QuestDialogCapture dumps (Omni-Tek_Recruitment_Officer_ONRE, 2026-10-20, character Soldmen). State is the player's Side, not quests: Side 2 (signed employee) gets the signed menu and the access card. Retail answers 'Who's in charge of Omni-Tek?' with the same text as 'What can you tell me about Omni-Tek?'. Not expressible yet: handing out the Omni-Tek Application Form, the access card and the maps (item hashes not in the captures), the 'already holding an unsigned form' opener menu, and a Side 1 (clanner) opener (never captured).",
+  "Npcs": [
+    "ONRE"
+  ],
+  "Openers": [
+    {
+      "Requirements": [
+        {
+          "Stat": "Side",
+          "Operator": "EqualTo",
+          "Value": 2
+        }
+      ],
+      "Say": "greeting_signed"
+    },
+    {
+      "Say": "greeting"
+    }
+  ],
+  "Replies": {
+    "sign_now": {
+      "Text": "Yes, sir! I'll sign an application form right away!",
+      "Goto": "form_given"
+    },
+    "take_form_info": {
+      "Text": "I'll take an application form, but I'd like some more information before I sign it.",
+      "Goto": "info_menu"
+    },
+    "no_way": {
+      "Text": "Heh, no way. I'm not gonna sign that thing!",
+      "Goto": "regret"
+    },
+    "mainland": {
+      "Text": "How do I get to the mainland?",
+      "Goto": "pitch"
+    },
+    "sounds_fair": {
+      "Text": "Sounds fair. I'll sign an application form.",
+      "Goto": "form_given_fair"
+    },
+    "more_info": {
+      "Text": "I'd like some more information before I sign it.",
+      "Goto": "not_signed"
+    },
+    "more_info_sure": {
+      "Text": "I'd like some more information before I sign it.",
+      "Goto": "sure_questions"
+    },
+    "about_omni": {
+      "Text": "What can you tell me about Omni-Tek?",
+      "Goto": "omni"
+    },
+    "about_clans": {
+      "Text": "What can you tell me about the clans?",
+      "Goto": "clans"
+    },
+    "about_neutrals": {
+      "Text": "What can you tell me about the neutrals?",
+      "Goto": "neutrals"
+    },
+    "who_charge": {
+      "Text": "Who's in charge of Omni-Tek?",
+      "Goto": "omni_charge"
+    },
+    "newcomers": {
+      "Text": "How come newcomers are allowed to become clan or neutral immigrants?",
+      "Goto": "omni_newcomers"
+    },
+    "dont_join": {
+      "Text": "What happens if I don't join Omni-Tek?",
+      "Goto": "omni_dont_join"
+    },
+    "omni_offer": {
+      "Text": "What can Omni-Tek offer me?",
+      "Goto": "omni_offer"
+    },
+    "omni_teleport": {
+      "Text": "Where will I teleport to on the mainland if I'm an Omni-Tek employee?",
+      "Goto": "omni_teleport"
+    },
+    "something_else": {
+      "Text": "I would like to talk about something else.",
+      "Goto": "what_is_it"
+    },
+    "just_sign": {
+      "Text": "I'll just sign the application form.",
+      "Goto": "excellent_sign"
+    },
+    "signed_now_what": {
+      "Text": "I've signed the Omni-Tek Application Form, now what?",
+      "Goto": "welcome_omni"
+    },
+    "mainland_from_here": {
+      "Text": "How do I get to the mainland from here?",
+      "Goto": "card"
+    },
+    "thank_you": {
+      "Text": "Thank you for your help.",
+      "Goto": "best_of_luck"
+    },
+    "where_teleport": {
+      "Text": "Where will I teleport to on the mainland?",
+      "Goto": "card_rome_blue"
+    }
+  },
+  "Lines": {
+    "greeting": {
+      "Text": [
+        "Hello citizen!",
+        "{delay 1}\\nAs a newcomer to Rubi-Ka, you're under contract with the Omni-Tek Corporation of Rubi-Ka, which means you're expected to apply for a position with the Corporation upon your arrival.",
+        "{delay 3}\\nBy signing an Omni-Tek Application Form, you will be guaranteed a secure job as an Omni-Tek employee."
+      ],
+      "Replies": [
+        "sign_now",
+        "take_form_info",
+        "no_way",
+        "mainland"
+      ]
+    },
+    "greeting_signed": {
+      "Text": [
+        "Hello citizen!",
+        "{delay 1}\\nAs a newcomer to Rubi-Ka, you're under contract with the Omni-Tek Corporation of Rubi-Ka, which means you're expected to apply for a position with the Corporation upon your arrival.",
+        "{delay 3}\\nBy signing an Omni-Tek Application Form, you will be guaranteed a secure job as an Omni-Tek employee."
+      ],
+      "Replies": [
+        "signed_now_what",
+        "mainland_from_here"
+      ]
+    },
+    "regret": {
+      "Text": "An action you will surely regret one day, citizen."
+    },
+    "form_given": {
+      "Text": [
+        "Good to hear, citizen! Here's the application form, let me know when you've signed it.",
+        "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, Shift + left click the application form and read its description.{/emote}"
+      ],
+      "Replies": [
+        "mainland",
+        "more_info"
+      ]
+    },
+    "form_given_fair": {
+      "Text": [
+        "Excellent choice, citizen! Here's the application form, let me know when you've signed it.",
+        "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, left click the application form and read it's description.{/emote}"
+      ],
+      "Replies": [
+        "no_way",
+        "mainland",
+        "more_info_sure"
+      ]
+    },
+    "pitch": {
+      "Text": [
+        "Well, I have an access card that will give you authorization to use the teleport...",
+        "{delay 3} but because Omni-Tek then will pay for the travel costs, I will only give this item to a loyal Omni-Tek employee.",
+        "{delay 3}\\nIf you're interested, sign an Omni-Tek Application form to become an Omni-Tek employee, and I'll grant you access to the teleport, sound fair?"
+      ],
+      "Replies": [
+        "take_form_info",
+        "no_way",
+        "sounds_fair"
+      ]
+    },
+    "info_menu": {
+      "Text": "Certainly, citizen! That's why I'm here - to give you the information you need to be the best employee that you can be.",
+      "Replies": [
+        "mainland",
+        "about_omni",
+        "about_clans",
+        "about_neutrals"
+      ]
+    },
+    "not_signed": {
+      "Text": [
+        "Yes, it appears you haven't signed the application form yet.",
+        "{delay 1}\\n",
+        "{delay 1}What questions may I answer for you?"
+      ],
+      "Replies": [
+        "mainland",
+        "who_charge",
+        "about_clans",
+        "about_neutrals",
+        "just_sign"
+      ]
+    },
+    "sure_questions": {
+      "Text": [
+        "Sure! ",
+        "{delay 1} What questions may I answer for you?"
+      ],
+      "Replies": [
+        "who_charge",
+        "about_clans",
+        "about_neutrals",
+        "mainland_from_here"
+      ]
+    },
+    "omni": {
+      "Text": "The Omni-Tek Corporation of Rubi-Ka was founded in 28708, and is currently the legal owner and governor of the planet...at least until 29500, when our lease is up for review. Omni-Tek consists of a number of departments and sub-departments, with a variety of possible career paths for enthusiastic and loyal employees.",
+      "Replies": [
+        "who_charge",
+        "newcomers",
+        "dont_join",
+        "omni_offer",
+        "omni_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "omni_charge": {
+      "Text": "The Omni-Tek Corporation of Rubi-Ka was founded in 28708, and is currently the legal owner and governor of the planet...at least until 29500, when our lease is up for review. Omni-Tek consists of a number of departments and sub-departments, with a variety of possible career paths for enthusiastic and loyal employees.",
+      "Replies": [
+        "newcomers",
+        "dont_join",
+        "omni_offer",
+        "omni_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "omni_newcomers": {
+      "Text": "New ICC regulations state that citizens are free to settle in the area of their choice. Of course, if you do choose to travel to Old Athen or Borealis, you will not be able to fulfill your contract with the Omni-Tek Corporation, and your permanent record will reflect this.",
+      "Replies": [
+        "who_charge",
+        "dont_join",
+        "omni_offer",
+        "omni_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "omni_dont_join": {
+      "Text": "While the Corporation is currently restricted by ICC regulations, your permanent record will reflect your desertion. When the Corporation regains full and total control over Rubi-Ka, you might have to face a corporate trial. But, hey, if you're not willing to do an honest day's work for the Corporation that brought you here, it's your funeral.",
+      "Replies": [
+        "who_charge",
+        "newcomers",
+        "omni_offer",
+        "omni_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "omni_offer": {
+      "Text": "The question you should be asking, citizen, is 'what can I offer the Corporation?' You get what you give. If you dedicate yourself to serving Omni-Tek, Omni-Tek will serve you, protect you, and help you become all that you can be. And more. The Corporation will be your family, citizen. That's more than can be said for the clans and the neutrals.",
+      "Replies": [
+        "who_charge",
+        "newcomers",
+        "dont_join",
+        "omni_teleport",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "omni_teleport": {
+      "Text": "You will be teleported to Rome Blue, which has many things to offer a new employee: many shops, high-rise apartment complexes, and the subway is just outside of the city gates.",
+      "Replies": [
+        "who_charge",
+        "newcomers",
+        "dont_join",
+        "omni_offer",
+        "something_else",
+        "sounds_fair"
+      ]
+    },
+    "what_is_it": {
+      "Text": "Alright then. What is it?",
+      "Replies": [
+        "mainland",
+        "about_omni",
+        "about_clans",
+        "about_neutrals"
+      ]
+    },
+    "clans": {
+      "Text": "The clans? They call themselves 'freedom fighters', but they're radicals and criminals, the lot of them. They've occupied territory that, by all rights, belongs to the Corporation, and still they demand more! They claim that Omni-Tek is the oppressor, but yet the clans attack loyal employees without thought or motive. One day soon, the clans will suffer for their insolence.",
+      "Replies": [
+        "mainland",
+        "about_omni",
+        "about_neutrals",
+        "just_sign"
+      ]
+    },
+    "neutrals": {
+      "Text": "The neutrals are nothing. They are employees who've never done an honest day's work. They have no leadership, no army, no ambitions, and no backbone. We don't worry ourselves with the neutrals, although they're mothered by the ICC - the Interstellar, uh...something-or-other.",
+      "Replies": [
+        "mainland",
+        "about_omni",
+        "about_clans",
+        "just_sign"
+      ]
+    },
+    "excellent_sign": {
+      "Text": "Excellent choice, citizen! Let me know when you've signed it.",
+      "Replies": [
+        "mainland",
+        "about_omni"
+      ]
+    },
+    "welcome_omni": {
+      "Text": [
+        "Excellent! Welcome to Rubi-Ka!",
+        "{delay 1} I trust you will be a loyal and dedicated Omni-Tek employee.",
+        "{delay 3}\\nOne of the first benefits you are given as an Omni-Tek employee, is the ability to access the Omni-Tek Equipment Vendor's shop here at the ICC Shuttleport.",
+        "{delay 4}\\nThe Omni-Tek Equipment Vendor is able to offer you armor upgrades and sell you new equipment.",
+        "{delay 3}\\nGo have a chat with him, he should be able to help you out."
+      ],
+      "Replies": [
+        "about_omni",
+        "mainland_from_here"
+      ]
+    },
+    "card": {
+      "Text": [
+        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.",
+        "{delay 4}But remember, once you leave here and go to the mainland, you will be unable to return to here, so do keep that in mind. ",
+        "{delay 2}Oh, and you might find it useful to have these maps! "
+      ],
+      "Replies": [
+        "thank_you",
+        "where_teleport"
+      ]
+    },
+    "card_rome_blue": {
+      "Text": "You will be teleported to Rome Blue, which has many things to offer a new employee: shops and supermarkets, high-rise apartment complexes, and the subway is just outside of the city gates.",
+      "Replies": [
+        "thank_you"
+      ]
+    },
+    "best_of_luck": {
+      "Text": "The best of luck to you. There are many exciting, new adventures awaiting you on the mainland."
+    }
+  }
+}

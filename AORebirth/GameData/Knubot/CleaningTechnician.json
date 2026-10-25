@@ -1,0 +1,48 @@
+{
+  "Notes": "Cleaning Technician (CETE), Arrival_hall (4604) at (222.4, 1.0, 227.5). Rebuilt from 1 QuestDialogCapture dump (Cleaning_Technician_CETE, 2026-10-20, character Soldaman).",
+  "Npcs": [
+    "CETE"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "what_doing": {
+      "Text": "What are you doing?",
+      "Goto": "cleaning"
+    },
+    "graffiti": {
+      "Text": "Is it hard to get the graffiti off the walls?",
+      "Goto": "chemicals"
+    },
+    "not_really": {
+      "Text": "Not really. I have yet to register.",
+      "Goto": "busy"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": "Hello.",
+      "Replies": [
+        "what_doing"
+      ]
+    },
+    "cleaning": {
+      "Text": "I am a cleaning technician. I clean this place.",
+      "Replies": [
+        "graffiti"
+      ]
+    },
+    "chemicals": {
+      "Text": "A bit. Depends on the chemicals. Wanna try?",
+      "Replies": [
+        "not_really"
+      ]
+    },
+    "busy": {
+      "Text": "OK, I am busy anyway."
+    }
+  }
+}

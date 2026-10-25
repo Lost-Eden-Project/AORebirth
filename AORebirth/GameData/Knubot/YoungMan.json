@@ -1,0 +1,31 @@
+{
+  "Notes": "Young Man (EXKI), Arrival hall (4604) at (208.7, 1.0, 185.2). Rebuilt from 1 QuestDialogCapture dump (Young_Man_EXKI, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "EXKI"
+  ],
+  "Openers": [
+    {
+      "Say": "drink"
+    }
+  ],
+  "Replies": {
+    "healthy": {
+      "Text": "Uhm, are you sure it is as healthy as it is tasty?",
+      "Goto": "healthy"
+    }
+  },
+  "Lines": {
+    "drink": {
+      "Text": [
+        "This drink is just awesome. I love it! ",
+        "{delay 3}Everything about it. This fizz-sound when I open it. The pressure beneath the tongue when I drink it. The slight sting in the throat when I swallow the bubbly stuff. If I only knew how they make it!"
+      ],
+      "Replies": [
+        "healthy"
+      ]
+    },
+    "healthy": {
+      "Text": "You're worried about my weight are you? Haha, don't worry, I'll be fine. Cardiac arrests are a thing of the past you know. Nanotechnology will keep me alive regardless of how many sodas I scoff down, with all those tiny machines cleaning up my arteries. And if I feel a little dodgy; a short trip to the next surgery clinic with a fresh Stamina chest implant and woosh! I am as good as gold! Life is all about excesses and pleasures!"
+    }
+  }
+}

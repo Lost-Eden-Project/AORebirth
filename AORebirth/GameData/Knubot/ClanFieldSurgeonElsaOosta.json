@@ -1,0 +1,218 @@
+{
+  "Notes": "Clan Field Surgeon Elsa Oosta (CLFI), ICC Shuttleport. Rebuilt from 8 QuestDialogCapture dumps (Clan_Field_Surgeon_Elsa_Oosta_CLFI, 2026-10-20, characters Soldmen, Complicado). PPK6 (Talk to the Medic) completes on open; S4WX > 6PMI > IIG3 scanner chain, IIG3 is the Meta Roentgen Scanner (MERO) trade; the injury report gives M78S. Retail re-gave S4WX even when it was already done, so the scanner line is not guarded. A Soldmen capture also completed an unresolved quest '?Talk_to_the_Clan_Field_Surge___' on open (no hash in Quests.json), which is not scripted.",
+  "Npcs": [
+    "CLFI"
+  ],
+  "Openers": [
+    {
+      "If": [
+        "HasQuest IIG3"
+      ],
+      "Say": "back"
+    },
+    {
+      "If": [
+        "HasQuest PPK6"
+      ],
+      "Say": "intro_medic"
+    },
+    {
+      "Say": "intro"
+    }
+  ],
+  "Replies": {
+    "soldiers": {
+      "Text": "What are the soldiers doing?",
+      "Goto": "soldiers"
+    },
+    "doing": {
+      "Text": "What are you doing?",
+      "Goto": "doing"
+    },
+    "help": {
+      "Text": "Is there anything I can do to help?",
+      "Goto": "help"
+    },
+    "yes_help": {
+      "Text": "Yes, I'll help you.",
+      "Goto": "scanner_given"
+    },
+    "no_thanks": {
+      "Text": "No thanks!...I don't have a death wish.",
+      "Goto": "sorry"
+    },
+    "okay_fine": {
+      "Text": "Okay..fine I'll help.",
+      "Goto": "scanner_given"
+    },
+    "have_scanner": {
+      "Text": "I'm back again!  I have the scanner for you.",
+      "If": [
+        "HasQuest IIG3"
+      ],
+      "Goto": "look_at_it"
+    },
+    "report": {
+      "Text": "Uhmm..Travis Molen wanted a report from you.",
+      "If": [
+        "HasQuest 360X"
+      ],
+      "Goto": "report"
+    }
+  },
+  "Lines": {
+    "intro_medic": {
+      "Text": [
+        "{completequest PPK6}",
+        "{delay 1}Oh!  Hello there.",
+        "{delay 2}\\nHave you been hurt in the crash?",
+        "{delay 2}{emote}Elsa Takes a close look at you, checking for injuries.{/emote}",
+        "{delay 3}Thank goodness, you seem to be ok.",
+        "{delay 2}\\nYou are one of the lucky ones today...",
+        "{delay 2}\\nBetween the shuttle crash victims and the soldier's injuries I am almost at the end of my rope...not to mention my resources."
+      ],
+      "Replies": [
+        "soldiers",
+        "doing"
+      ]
+    },
+    "intro": {
+      "Text": [
+        "{delay 1}Oh!  Hello there.",
+        "{delay 2}\\nHave you been hurt in the crash?",
+        "{delay 2}{emote}Elsa Takes a close look at you, checking for injuries.{/emote}",
+        "{delay 3}Thank goodness, you seem to be ok.",
+        "{delay 2}\\nYou are one of the lucky ones today...",
+        "{delay 2}\\nBetween the shuttle crash victims and the soldier's injuries I am almost at the end of my rope...not to mention my resources."
+      ],
+      "Replies": [
+        "soldiers",
+        "doing"
+      ]
+    },
+    "soldiers": {
+      "Text": [
+        "The Unicorn Company were here earlier killing off the heavy invaders.",
+        "{delay 3}{emote}Elsa looks around to make sure no one is listening{/emote}",
+        "{delay 2}...and anyone else that got in the way..",
+        "{delay 2}{emote}Elsa looks out over the battle{/emote}",
+        "{delay 3}Once their ''Corporate Directive'' was complete they jumped on their ships and left the spaceport soldiers and guards to try and clean up the mess.",
+        "{delay 5} \\nThey do that all the time...",
+        "{delay 2}\\nOmni-Tek only wants to ''Protect their investment.''",
+        "{delay 2}{emote}Elsa looks around again and whispers.{/emote}",
+        "{delay 2}I'm glad they're gone though...those guys will do ANYTHING to get their job done.",
+        "{delay 3}\\nThey don't care who gets hurt, or what they have to do."
+      ],
+      "Replies": [
+        "help",
+        "doing"
+      ]
+    },
+    "doing": {
+      "Text": [
+        "I'm trying to keep ahead of the injuries to the guards and soldiers and trying to make sure you colonists all arrived ok.",
+        "{delay 4}\\nThere were only 11 new colonists on board according to the ships list, but I have seen 13 of you so far...",
+        "{delay 3}\\nI'm not sure I'm going to have enough healing kits for all of you."
+      ],
+      "Replies": [
+        "help",
+        "soldiers"
+      ]
+    },
+    "help": {
+      "Text": [
+        "That would be great, if it's not too much trouble.",
+        "{delay 2}\\nThe heal kits I got from the supply manager don't seem to be healing the soldiers very well..",
+        "{delay 3}\\nI suspect the energy field around the aliens is hurting the soldiers on a different nano frequency.",
+        "{delay 3}{emote}She wrinkles her nose and smiles.{/emote}",
+        "{delay 2}If you could scan one of the aliens on the northwest end of the island it would be a big help.",
+        "{delay 3}\\nThen I could compare it to a scan of a normal Rubi-Ka lifeform.",
+        "{delay 2}\\nThat might just work!",
+        "{delay 1}\\nI might be able to make better healing kits with the data you collect.",
+        "{delay 2}\\nCan you help me?"
+      ],
+      "Replies": [
+        "yes_help",
+        "no_thanks"
+      ]
+    },
+    "sorry": {
+      "Text": [
+        "I'm sorry you feel that way...",
+        "{delay 2}\\nAnyways...",
+        "{delay 1}\\nI'm really busy, so if you can't find it in your heart to help I can't spend any more time with you.",
+        "{delay 3}{emote}She returns to watching over the soldiers.{/emote}"
+      ],
+      "Replies": [
+        "okay_fine"
+      ]
+    },
+    "scanner_given": {
+      "Text": [
+        "Great!",
+        "{delay 2}\\nVery nice of you!",
+        "{delay 2}\\nHere is the scanner.",
+        "{givequest S4WX}",
+        "{delay 2}{emote}Elsa gives you the scanner.{/emote}",
+        "{delay 2}The scanner will automatically update information about the creatures you target. When you have scanned the Alien Spider and the Reef Salamander bring the scanner back to me.",
+        "{delay 2}\\nI'd love to see the data, and I hope we can use it to make some better healkits for these poor soldiers!",
+        "{delay 3}\\nGood luck...and be careful!"
+      ]
+    },
+    "back": {
+      "Text": "{delay 1}Oh!  Hello there, {player}.",
+      "Replies": [
+        "have_scanner"
+      ]
+    },
+    "look_at_it": {
+      "Text": [
+        "Great!  Let me have a look at it.",
+        "{delay 2}{emote}Elsa smiles{/emote}"
+      ]
+    },
+    "scanner_taken": {
+      "Text": [
+        "{completequest IIG3}",
+        "{delay 1}{emote}Elsa removes a small memory chip from the scanner and looks at it carefully.{/emote}",
+        "{delay 3}Yes...this could work quite well.",
+        "{delay 2}\\nI think we might have something here.",
+        "{delay 2}\\nWith this information I should be able to end some of the senseless suffering here today!",
+        "{delay 3}\\nGood work, {player}!",
+        "{delay 2}\\nYou deserve a reward for your selfless efforts!",
+        "{delay 1}\\nI don't have much to offer, but here you go!",
+        "{delay 2}\\nLet me know if there is anything else you need."
+      ],
+      "Replies": [
+        "report"
+      ]
+    },
+    "report": {
+      "Text": [
+        "Oops!",
+        "{delay 1}\\nOf course Travis would want to know how things are going.",
+        "{delay 1}{givequest M78S}",
+        "{emote}Elsa gives you the injury report.{/emote}",
+        "{delay 2}\\nThanks again for all your help!"
+      ]
+    },
+    "want_scanner": {
+      "Text": "Can I have the scanner please?"
+    }
+  },
+  "Trades": {
+    "scanner": {
+      "If": [
+        "HasQuest IIG3"
+      ],
+      "Items": [
+        {
+          "Hash": "MERO",
+          "Count": 1
+        }
+      ],
+      "Goto": "scanner_taken"
+    }
+  },
+  "TradeRefused": "want_scanner"
+}

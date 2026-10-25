@@ -16,6 +16,15 @@ namespace ZoneEngine_New.Core.Data
         /// </summary>
         IReadOnlyList<ItemInstanceRecord> GetContainerItems(int containerInstanceId);
 
+        /// <summary>The contents of several containers; one round trip where the store can do it.</summary>
+        IReadOnlyList<ItemInstanceRecord> GetContainerItems(IReadOnlyList<int> containerInstanceIds)
+        {
+            var rows = new List<ItemInstanceRecord>();
+            foreach (int id in containerInstanceIds)
+                rows.AddRange(GetContainerItems(id));
+            return rows;
+        }
+
         /// <summary>
         /// Atomically leases <paramref name="count"/> InstanceIds from the shared sequence.
         /// Returns the inclusive start of the half-open range <c>[start, start+count)</c>.

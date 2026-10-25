@@ -1,0 +1,38 @@
+{
+  "Notes": "Colonist (ACCL), Arrival hall (4604) at (219.8, 1.0, 194.8). Rebuilt from 1 QuestDialogCapture dump (Colonist_ACCL, 2026-10-20, character Soldaman, no quest state). ACCI, ACCL, ACCO and ARTV all captured the same dialog.",
+  "Npcs": [
+    "ACCL"
+  ],
+  "Openers": [
+    {
+      "Say": "hi"
+    }
+  ],
+  "Replies": {
+    "disturbing": {
+      "Text": "Am I disturbing you?",
+      "Goto": "not_really"
+    },
+    "going": {
+      "Text": "Going somewhere?",
+      "Goto": "gates"
+    }
+  },
+  "Lines": {
+    "hi": {
+      "Text": "Hi, there. Sorry I didn't notice you.",
+      "Replies": [
+        "disturbing"
+      ]
+    },
+    "not_really": {
+      "Text": "Not really.",
+      "Replies": [
+        "going"
+      ]
+    },
+    "gates": {
+      "Text": "Yeah, out one of the gates."
+    }
+  }
+}

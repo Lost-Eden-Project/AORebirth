@@ -129,13 +129,19 @@ namespace ZoneEngine_New.Core.Trade
                     return false;
                 machine.Stock.EnsureConfiguredFresh(Random.Shared);
             }
+            else if (machine.Template.ShopInventory.Count > 0)
+            {
+                // The shop's own stock list (items.dat ShopInventory): the primary source. A database vendor row
+                // overrides it only while Gameplay.json shops.preferDatabaseStock holds (NpcContentActivationService).
+                machine.Stock.EnsureFreshFromShopInventory(machine.Template.ShopInventory, _minter, Random.Shared);
+            }
             else
             {
                 if (!_gameData.TryGetVendingMachine(templateId, out VendingMachineDefinition definition))
                 {
                     Tell(player, "This shop has no stock list yet.");
                     _logger.Warn(string.Format(CultureInfo.InvariantCulture,
-                        "Vending machine {0} has no VendingMachines.json entry", templateId));
+                        "Vending machine {0} has no ShopInventory and no VendingMachines.json entry", templateId));
                     return false;
                 }
                 machine.Stock.EnsureFresh(definition, _minter, Random.Shared);
@@ -156,11 +162,12 @@ namespace ZoneEngine_New.Core.Trade
             _logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "Shop opened player={0} machine={1} template={2} stock={3}",
+                    "Shop opened player={0} machine={1} template={2} stock={3} source={4}",
                     player.Identity.Instance,
                     shopIdentity.Instance,
                     templateId,
-                    machine.Stock.Slots.Count));
+                    machine.Stock.Slots.Count,
+                    machine.Stock.IsConfiguredSnapshot ? "configured" : machine.Template.ShopInventory.Count > 0 ? "template" : "json"));
 
             return true;
         }
@@ -323,8 +330,17 @@ namespace ZoneEngine_New.Core.Trade
         {
             VendingMachine machine = session.Machine!;
             int stockIndex = message.Container.Instance;
-            if (!machine.Stock.TryGetSlot(stockIndex, out _))
+            if (!machine.Stock.TryGetSlot(stockIndex, out ShopStockSlot picked))
                 return;
+
+            if (_catalog.TryGet(picked.LowId, out ItemTemplate pickedTemplate) && (pickedTemplate.Flags & (int)ItemFlags.Unique) != 0
+                && (TradeRules.WouldDuplicateUnique(player, picked.LowId, picked.HighId) || session.ShopPicks.Any(index =>
+                    machine.Stock.TryGetSlot(index, out ShopStockSlot other) && (other.LowId == picked.LowId || other.HighId == picked.HighId))))
+            {
+                ClientFeedback.SendFormatted(player, ClientFeedback.AlreadyHaveUniqueItem, pickedTemplate.Name);
+                LogShopPick(player, session, message, "refused unique");
+                return;
+            }
 
             if (session.AddShopPick(stockIndex) < 0)
             {
@@ -382,6 +398,13 @@ namespace ZoneEngine_New.Core.Trade
             if (TradeRules.IsNoDrop(item))
             {
                 ClientFeedback.Send(player, "Feedback_NoDropItemCantBeTraded");
+                return;
+            }
+
+            if (TradeRules.IsUnique(item) && session.Kind == TradeKind.Player
+                && session.Other(player) is Player partner && TradeRules.WouldDuplicateUnique(partner, item.LowId, item.HighId))
+            {
+                ClientFeedback.SendFormatted(player, ClientFeedback.TradePartnerHasUniqueItem, item.Name);
                 return;
             }
 
@@ -559,10 +582,16 @@ namespace ZoneEngine_New.Core.Trade
             if (!receiver.Inventory.HasRoomFor(given.Count))
                 return receiver.Name + " does not have enough free inventory slots.";
 
+            if (UniqueItems.HasRepeatedUnique(given.Items.Values.ToList(), out string repeated))
+                return receiver.Name + " can only receive one " + repeated + ".";
+
             foreach (Item item in given.Items.Values)
             {
                 if (TradeRules.IsNoDrop(item))
                     return item.Name + " cannot be traded.";
+
+                if (UniqueItems.WouldDuplicate(receiver, item, out string bagUnique, except: held => given.Items.Values.Contains(held)))
+                    return receiver.Name + " already has " + bagUnique + ".";
 
                 if (TradeRules.IsUnique(item) && TradeRules.WouldDuplicateUnique(receiver, item.LowId, item.HighId))
                     return receiver.Name + " already has " + item.Name + ".";
@@ -939,6 +968,8 @@ namespace ZoneEngine_New.Core.Trade
                     TradeRules.ItemValue(_catalog, stock.LowId, stock.HighId, stock.Quality),
                     machine.SellModifier,
                     buySkillSteps);
+                // A stock line's own price percentage (items.dat ShopInventory Cost; the client applies the same line).
+                price = (int)Math.Min(int.MaxValue, Math.Max(0, (long)price * stock.PricePercent / 100));
                 purchases.Add(new Purchase(stock, price));
                 buyTotal += price;
             }

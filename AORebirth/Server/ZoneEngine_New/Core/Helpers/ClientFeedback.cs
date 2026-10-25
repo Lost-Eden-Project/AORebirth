@@ -132,6 +132,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"%s is already fully loaded." (category 110), the weapon's name as the argument (retail 2026-10-23).</summary>
         public const int AlreadyFullyLoaded = 54186628;
 
+        /// <summary>"You already have this unique item: %s" (category 110, FormatFeedback with the item name; retail 2026-10-25).</summary>
+        public const int AlreadyHaveUniqueItem = 128711717;
+
+        /// <summary>"Your trade partner already has this unique item: %s" (category 110, FormatFeedback with the item name).</summary>
+        public const int TradePartnerHasUniqueItem = 205739797;
+
         /// <summary>"No combination found!" (category 110). An inventory item dropped on another with no recipe (retail 2026-10-24).</summary>
         public const int NoCombinationFound = 87316052;
 

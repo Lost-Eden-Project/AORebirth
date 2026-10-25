@@ -112,6 +112,11 @@ namespace ZoneEngine_New.Core.Inventory
 
             Item item = items.CreateWithNewInstance(worldItem.LowId, worldItem.HighId, worldItem.Quality, ItemSource.Other);
             item.StackCount = Math.Max(1, worldItem.StackCount);
+            if (UniqueItems.WouldDuplicate(player, item, out string uniqueName))
+            {
+                Helpers.ClientFeedback.SendFormatted(player, Helpers.ClientFeedback.AlreadyHaveUniqueItem, uniqueName);
+                return false;
+            }
             bool committed = inventoryActions.TryCommit(player,
                 [new InventoryRowChange(item, page.Identity, placement, item.StackCount)],
                 () => !page.Content.ContainsKey(placement) && registry.TryGet(worldItem.Identity, out Dynel? still)

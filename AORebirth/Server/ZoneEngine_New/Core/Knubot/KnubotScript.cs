@@ -24,6 +24,13 @@ public sealed class KnubotScriptFile
     /// <c>{opentrade}</c> or by the player directly.
     /// </summary>
     public Dictionary<string, KnubotTradeFile> Trades { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Line said when the player accepts a Give Item window no trade takes: the items go back and the NPC says this
+    /// (Brandon Thorn: "Hm? No, I need three of those."). Empty: the window just closes. A script with no Trades and
+    /// a TradeRefused still opens the window, so the NPC can turn down whatever is offered (Travis Molen).
+    /// </summary>
+    public string? TradeRefused { get; set; }
 }
 
 /// <summary>
@@ -127,7 +134,7 @@ public sealed class KnubotRequirementFile
 
 /// <summary>A validated, read-only script.</summary>
 public sealed class KnubotScript(string id, string[] npcs, KnubotOpener[] openers, IReadOnlyDictionary<string, KnubotLine> lines,
-    KnubotTrade[] trades)
+    KnubotTrade[] trades, string? tradeRefused = null)
 {
     public const string CloseTarget = "close";
     public const string OpenerTarget = "opener";
@@ -140,6 +147,9 @@ public sealed class KnubotScript(string id, string[] npcs, KnubotOpener[] opener
     public KnubotOpener[] Openers { get; } = openers;
     public IReadOnlyDictionary<string, KnubotLine> Lines { get; } = lines;
     public KnubotTrade[] Trades { get; } = trades;
+
+    /// <summary>Line id said when an accepted Give Item window matches no trade; null when the script has none.</summary>
+    public string? TradeRefused { get; } = tradeRefused;
 
     /// <summary>A reply with no content behind it yet: the engine says a debug line and offers the same replies again.</summary>
     public bool IsDeadEnd(KnubotReply reply)

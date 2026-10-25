@@ -166,6 +166,13 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
+            if (UniqueItems.WouldDuplicate(subject, item, out string uniqueName))
+            {
+                GmCommandFeedback.Send(context.Session, context.Player,
+                    PlayerSubjectName(subject, context.Player) + " already has the unique item " + uniqueName + ".");
+                return;
+            }
+
             if (InventoryStacking.TryGrantOntoStack(subject, item, _flush))
             {
                 GmCommandFeedback.Send(

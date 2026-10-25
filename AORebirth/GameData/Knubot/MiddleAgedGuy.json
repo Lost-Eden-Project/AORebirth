@@ -1,0 +1,63 @@
+{
+  "Notes": "Middle-aged Guy (MIGU), Arrival hall (4604) at (217.9, 1.0, 195.8). Rebuilt from 3 QuestDialogCapture dumps (Middle-aged_Guy_MIGU, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "MIGU"
+  ],
+  "Openers": [
+    {
+      "Say": "politics"
+    }
+  ],
+  "Replies": {
+    "solution": {
+      "Text": "Is there no solution to the conflict?",
+      "Goto": "solution"
+    },
+    "which_gate": {
+      "Text": "What exit gate do you think I should choose to go through?",
+      "Goto": "jobe"
+    },
+    "recommend_jobe": {
+      "Text": "So you recommend Jobe?",
+      "Goto": "recommend"
+    },
+    "aliens": {
+      "Text": "Aliens?",
+      "Goto": "aliens"
+    }
+  },
+  "Lines": {
+    "politics": {
+      "Text": "Hi there! What do you think about the political situation on Rubi-Ka?  I just don't get it.  Honest, I don't.  Clans or Omni-Tek, it doesn't matter.  All they do is bicker and fight.  Never, ever have they looked for a rational solution.  Instead they just go back and forth, back and forth, accomplishing nothing.  It's getting old real fast, if you ask me, and it's about time somebody did.",
+      "Replies": [
+        "solution",
+        "which_gate"
+      ]
+    },
+    "solution": {
+      "Text": "Sure there is.  Get the ICC to intervene, cancel Omni-Tek's lease, arrest clan terrorists, and get some proper law-enforcement.  Heck, give the lease to the Sol Banking Corporation!  I'm sure they'll make a better job of it than Omni-Tek has.  Or put Jobe in control.  They seem to know what they're doing."
+    },
+    "jobe": {
+      "Text": [
+        "Jobe! ",
+        "{delay 2} When I came here I chose to be neutral, and I do not regret that.  But back then I did not have the option to go to and work with the scientists in Jobe and get an apartment in the sky-city."
+      ],
+      "Replies": [
+        "recommend_jobe"
+      ]
+    },
+    "recommend": {
+      "Text": "Yes!  It will ensure you more knowledge and power, plus it is very exciting.  And it keeps you away from the aliens. ",
+      "Replies": [
+        "solution",
+        "aliens"
+      ]
+    },
+    "aliens": {
+      "Text": [
+        "Yes!  Haven't you heard?  As if the ongoing conflict between Omni-Tek and The Clans isn't enough, some strange creatures have found their way to Rubi-Ka, and their ships are attacking homes of innocent people! ",
+        "{delay 1} No, you better go to the Shadowlands if you want to live life the easy way. "
+      ]
+    }
+  }
+}

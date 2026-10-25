@@ -109,7 +109,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (item.IsBackpackUse)
                 return item.Use(player, slot, _inventoryRepository, _items) ? ItemUseStart.Executed : ItemUseStart.Rejected;
 
-            if (RejectMissingSpawnHash(player, item.Definition))
+            if (RejectMissingSpawnHash(player, item.Definition) || RejectHeldUniqueSpawn(player, item.Definition))
                 return ItemUseStart.Rejected;
 
             player.SyncCharState();
@@ -197,7 +197,7 @@ namespace ZoneEngine_New.Core.Inventory
                 || _moves.HasPending(player.Identity.Instance))
                 return ItemUseStart.Rejected;
 
-            if (RejectMissingSpawnHash(player, dynel.Template))
+            if (RejectMissingSpawnHash(player, dynel.Template) || RejectHeldUniqueSpawn(player, dynel.Template))
                 return ItemUseStart.Rejected;
 
             // As for an item: a skill the use would lock that is still locked refuses it before anything runs (a
@@ -293,6 +293,20 @@ namespace ZoneEngine_New.Core.Inventory
         /// A use that would spawn an item or NPC hash the server has no data for is refused before anything runs, with
         /// a chat line naming the hash so the player can report it.
         /// </summary>
+        /// <summary>
+        /// A use whose SpawnItem can only make a Unique the player already holds is refused before anything runs:
+        /// "You already have this unique item: %s".
+        /// </summary>
+        bool RejectHeldUniqueSpawn(Player player, ItemTemplate template)
+        {
+            if (!UniqueSpawnCheck.TryFindHeldUniqueOnly(template, player, _playfield.GetRequiredService<IGameData>(),
+                    _playfield.GetRequiredService<IItemTemplateCatalog>(), out string name))
+                return false;
+
+            ClientFeedback.SendFormatted(player, ClientFeedback.AlreadyHaveUniqueItem, name);
+            return true;
+        }
+
         bool RejectMissingSpawnHash(Player player, ItemTemplate template)
         {
             if (!SpawnHashCheck.TryFindMissingHash(template, _playfield.GetRequiredService<IGameData>(), out string hash))

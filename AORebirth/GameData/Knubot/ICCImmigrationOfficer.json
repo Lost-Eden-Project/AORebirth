@@ -1,0 +1,122 @@
+{
+  "Notes": "ICC Immigration Officer (NEOB), Arrival hall (4604) at (192.3, 1.0, 163.4). Rebuilt from 3 QuestDialogCapture dumps (ICC_Immigration_Officer_NEOB, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "NEOB"
+  ],
+  "Openers": [
+    {
+      "Say": "greetings"
+    }
+  ],
+  "Replies": {
+    "questions": {
+      "Text": "Yes, thank you.  I've got some questions for you, if you've got time.",
+      "Goto": "absolutely"
+    },
+    "not_sure": {
+      "Text": "I'm not sure where to go from here.",
+      "Goto": "where_go"
+    },
+    "immigration": {
+      "Text": "What's Rubi-Ka Immigration?",
+      "Goto": "immigration"
+    },
+    "jobe_program": {
+      "Text": "What can you tell me of the Jobe Research Program?",
+      "Goto": "jobe"
+    },
+    "like_rk": {
+      "Text": "What's it like on Rubi-Ka?",
+      "Goto": "like_rk"
+    },
+    "orientation": {
+      "Text": "Orientation and training in what?",
+      "Goto": "orientation"
+    },
+    "luck": {
+      "Text": "Wow, sounds exciting! Thanks for the information. Wish me luck!",
+      "Goto": "safe_travels"
+    }
+  },
+  "Lines": {
+    "greetings": {
+      "Text": [
+        "Greetings, newcomer!",
+        "{delay 2}\\nI trust your trip from the Morningstar Space Station was a safe one."
+      ],
+      "Replies": [
+        "questions"
+      ]
+    },
+    "absolutely": {
+      "Text": "Absolutely.  That's what I'm here for.",
+      "Replies": [
+        "not_sure",
+        "immigration",
+        "jobe_program"
+      ]
+    },
+    "where_go": {
+      "Text": [
+        "Well, I'm sure you've overheard conversations of the travellers while going through the Arrival Hall.",
+        "{delay 4}\\nAnd perhaps you've also had a chance to chat with them.",
+        "{delay 2}\\nSome of them have settled down on Rubi-Ka, and others have chosen to join the Jobe Research Program.",
+        "{delay 4}  The choice is up to you."
+      ],
+      "Replies": [
+        "immigration",
+        "like_rk",
+        "jobe_program"
+      ]
+    },
+    "immigration": {
+      "Text": [
+        "Due to heavy immigration and colonization of Rubi-Ka and the recent Alien attacks, security measures have been increased.",
+        "{delay 5}\\nIf you choose to immigrate to Rubi-Ka, you'll be shuttled to the ICC Shuttleport until background checks have been run and you can be granted proper citizenship.",
+        "{delay 6}\\nThe ICC Shuttleport is located in the ocean off the southern coast of terraformed Rubi-Ka.",
+        "{delay 4}\\nWhile you're there, you'll also go through some basic orientation and training."
+      ],
+      "Replies": [
+        "orientation"
+      ]
+    },
+    "orientation": {
+      "Text": "You'll be given the opportunity to better familiarize yourself with the basics of Rubi-Ka wildlife, technology, and survival techniques.",
+      "Replies": [
+        "like_rk",
+        "luck"
+      ]
+    },
+    "like_rk": {
+      "Text": [
+        "It's an exciting time to immigrate to Rubi-Ka.",
+        "{delay 2}\\nThere are a lot of new towns being established throughout Rubi-Ka, but be careful of the Alien threat.",
+        "{delay 3}\\n{emote}The ICC Immigration Officer pauses for a moment and looks at you intently.{/emote}",
+        "{delay 5}\\nBut perhaps... ",
+        "{delay 2}that's why you are coming here at this time...",
+        "{delay 3} to fulfill your destiny.",
+        "{delay 3}\\nTo protect and defend Humanity against the Alien threat.",
+        "{delay 2}\\n{emote}He smiles at you and nods knowingly.{/emote}"
+      ],
+      "Replies": [
+        "luck"
+      ]
+    },
+    "safe_travels": {
+      "Text": [
+        "Safe travels to you, newcomer!",
+        "{delay 2}\\nMay the twin suns of Rubi-Ka always shine on you."
+      ]
+    },
+    "jobe": {
+      "Text": [
+        "I suggest you go have a chat with the Jobe Research Scientist over there.",
+        "{delay 3}\\nShe can answer your questions."
+      ],
+      "Replies": [
+        "immigration",
+        "like_rk"
+      ]
+    }
+  }
+}

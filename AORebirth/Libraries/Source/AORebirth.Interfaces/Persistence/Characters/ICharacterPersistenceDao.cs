@@ -16,6 +16,8 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<PersistedItemData> LoadCarriedItems(int characterId);
         IList<PersistedItemData> LoadBankItems(int characterId);
         IList<PersistedItemData> LoadContainerItems(int containerInstanceId);
+        /// <summary>The contents of several containers in one query (bags kept in the bank, read without opening them).</summary>
+        IList<PersistedItemData> LoadContainerItems(IList<int> containerInstanceIds);
         IDictionary<int, string> LoadItemNames();
         IList<int> LoadUploadedNanos(int characterId);
         IList<PersistedActiveNanoData> LoadActiveNanos(int characterId);

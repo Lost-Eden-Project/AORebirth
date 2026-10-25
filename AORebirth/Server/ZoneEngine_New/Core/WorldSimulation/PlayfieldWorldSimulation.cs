@@ -401,7 +401,7 @@
                     else if (crossing.Trigger.Kind == ZoneTriggerKind.WaterExit
                              && crossing.DestPlayfieldId == WaterExit.ToSavePoint)
                         SendToSavePoint(playfield, player, crossing, now);
-                    else
+                    else if (MayWalkThrough(player, crossing.Trigger))
                         TryTransfer(playfield, player, crossing, now);
                 }
             }
@@ -820,6 +820,36 @@
                     return true;
                 }));
         }
+
+        /// <summary>
+        /// A portal's teleport function carries criteria (a dungeon's level cap). When they fail the character stays
+        /// and hears the portal's Text functions whose own criteria pass, as the client's walk-in does; a portal with no
+        /// criteria on its teleport always lets the character through.
+        /// </summary>
+        static bool MayWalkThrough(Player player, ZoneTriggerVolume trigger)
+        {
+            if (trigger.Kind != ZoneTriggerKind.PortalDynel || trigger.WalkIn is not { Count: > 0 } spells)
+                return true;
+
+            Inventory.ItemSpell? teleport = spells.Find(IsTeleport);
+            if (teleport == null || Passes(player, teleport))
+                return true;
+
+            foreach (Inventory.ItemSpell spell in spells)
+            {
+                if ((spell.Is(AORebirth.Enums.FunctionType.Text) || spell.Is(AORebirth.Enums.FunctionType.SystemText)) && Passes(player, spell))
+                    Inventory.ItemUseFunctions.SendText(player, spell);
+            }
+
+            return false;
+        }
+
+        static bool IsTeleport(Inventory.ItemSpell spell)
+            => spell.Is(AORebirth.Enums.FunctionType.TeleportProxy) || spell.Is(AORebirth.Enums.FunctionType.TeleportProxy2)
+                || spell.Is(AORebirth.Enums.FunctionType.Teleport) || spell.Is(AORebirth.Enums.FunctionType.LineTeleport);
+
+        static bool Passes(Player player, Inventory.ItemSpell spell)
+            => Inventory.ItemTemplate.MeetsRequirements(spell.Requirements, stat => player.Stats.Get(stat), player.ResolveRequirement);
 
         static ProxyReturn ReadProxyReturn(Player player)
             => new()
@@ -1547,7 +1577,8 @@
                         DoorClearance = portal.DoorClearance,
                         DestIndex = portal.DestinationIndex,
                         RecordsReturn = portal.RecordsReturn,
-                        Landing = portal.Landing
+                        Landing = portal.Landing,
+                        WalkIn = DynelEventSpells.ReadWalkIn(d)
                     };
                 ApplyClientSphere(door, d, x, y, z,
                     d.IdentityType == (int)IdentityType.Door ? DoorRotation(d) : null);

@@ -4,6 +4,7 @@ namespace AORebirth.Database.Domain.Characters
     using System.Collections.Generic;
     using System.Data;
     using System.Globalization;
+    using System.Text;
     using AORebirth.Interfaces.Persistence.Characters;
     using SmokeLounge.AOtomation.Messaging.GameData;
 
@@ -22,6 +23,28 @@ namespace AORebirth.Database.Domain.Characters
 
         public IList<PersistedItemData> LoadBankItems(int characterId) { return LoadItems((int)IdentityType.BankByRef, characterId); }
         public IList<PersistedItemData> LoadContainerItems(int containerInstanceId) { return LoadItems((int)IdentityType.Container, containerInstanceId); }
+
+        public IList<PersistedItemData> LoadContainerItems(IList<int> containerInstanceIds)
+        {
+            if (containerInstanceIds == null) throw new ArgumentNullException(nameof(containerInstanceIds));
+            var ids = new List<int>();
+            foreach (int id in containerInstanceIds) if (id > 0 && !ids.Contains(id)) ids.Add(id);
+            if (ids.Count == 0) return new List<PersistedItemData>();
+            if (ids.Count == 1) return LoadItems((int)IdentityType.Container, ids[0]);
+
+            // One IN (...) query with a parameter per id; ids never reach the SQL text.
+            var sql = new StringBuilder("SELECT " + ItemColumns + " FROM item_instances WHERE ContainerType=@Type AND ContainerInstance IN (");
+            var parameters = new List<object> { "@Type", (int)IdentityType.Container };
+            for (int i = 0; i < ids.Count; i++)
+            {
+                string name = "@Id" + i.ToString(CultureInfo.InvariantCulture);
+                sql.Append(i == 0 ? name : "," + name);
+                parameters.Add(name);
+                parameters.Add(ids[i]);
+            }
+            sql.Append(')');
+            return Query(sql.ToString(), ReadItem, parameters.ToArray());
+        }
 
         private IList<PersistedItemData> LoadItems(int type, int instance)
         {

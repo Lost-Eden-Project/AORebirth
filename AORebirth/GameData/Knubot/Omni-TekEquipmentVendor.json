@@ -1,0 +1,107 @@
+{
+  "Notes": "Omni-Tek Equipment Vendor (OITA), ICC Shuttleport (4582) at (933.3, 47.4, 859.0). Rebuilt from 4 QuestDialogCapture dumps (Omni-Tek_Equipment_Vendor_OITA, 2026-10-20, character Soldmen, an Omni-Tek member). Only Omni-side dialog was captured. Retail's ' Umm... no, thanks anyways.' reply has a leading space. {shop} is placed where he points at the shopping basket for 'New equipment'.",
+  "Npcs": [
+    "OITA"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "upgrades": {
+      "Text": "Armor upgrades?",
+      "Goto": "upgrades"
+    },
+    "no_thanks": {
+      "Text": " Umm... no, thanks anyways.",
+      "Goto": "suit_yourself"
+    },
+    "new_equipment": {
+      "Text": "New equipment, you say? Let's see what you've got for sale.",
+      "Goto": "for_sale"
+    },
+    "got_armor": {
+      "Text": "I've got some Newcomer's Armor. How do I upgrade it?",
+      "Goto": "how_upgrade"
+    },
+    "no_armor": {
+      "Text": "I don't have any Newcomer's Armor yet.",
+      "Goto": "get_armor"
+    },
+    "sounds_great": {
+      "Text": "Sounds great! I'll be back a little bit later.",
+      "Goto": "be_safe"
+    },
+    "thanks_info": {
+      "Text": "Great! Thanks for the info.",
+      "Goto": "pleasure"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": [
+        "Greetings, newcomer!",
+        "{delay 2}\\nI see you have chosen to become a loyal and hard-working Omni-Tek employee.",
+        "{delay 3} Excellent choice!",
+        "{delay 1}\\n{emote}The Omni-Tek Equipment Vendor nods at you approvingly.{/emote}",
+        "{delay 2}\\nYou will be rewarded for your dedication and service to this great corporation.",
+        "{delay 3}\\nIf you need armor upgrades and new equipment, you've come to the right person."
+      ],
+      "Replies": [
+        "upgrades",
+        "no_thanks",
+        "new_equipment"
+      ]
+    },
+    "upgrades": {
+      "Text": [
+        "Yep! Great stuff, only wearable by Omni-Tek Employees!",
+        "{delay 2}\\nAll you need is some Newcomer's Armor to upgrade."
+      ],
+      "Replies": [
+        "no_thanks",
+        "got_armor",
+        "no_armor"
+      ]
+    },
+    "suit_yourself": {
+      "Text": "Okay, suit yourself."
+    },
+    "for_sale": {
+      "Text": [
+        "You bet! I'm sure you'll find something you need.",
+        "{delay 2}{shop}\\n{emote}Click on the shopping basket to open the shop window.{/emote}"
+      ]
+    },
+    "get_armor": {
+      "Text": [
+        "Well, then why don't you go and get it? Either talk talk to the Equipment Vendor over by the Control Bridge.",
+        "{delay 3} He sells the Newcomer's Armor.\\nOr talk to the Shuttleport Manger, Travis Molen, I have heard that you can get the armor from him if you help him out.\\nCome back here when you've gotten some Newcomer's Armor and I'll help you get it upgraded, sound like a plan?"
+      ],
+      "Replies": [
+        "sounds_great",
+        "no_thanks"
+      ]
+    },
+    "be_safe": {
+      "Text": "Looking forward to talking to you again soon. Be safe out there!"
+    },
+    "how_upgrade": {
+      "Text": [
+        "Check out my shop inventory.",
+        "{delay 2}\\n{emote}Click on the shopping basket to open the shop window.{/emote}",
+        "{delay 5}\\nSee the Omni-Tek Badge there?",
+        "{delay 4}\\nYou'll want to buy one Omni-Tek Badge for each piece of Newcomer's Armor you want to upgrade.",
+        "{delay 4}\\nTo upgrade, first make sure you're not wearing your armor, then attach an Omni-Tek Badge to an armor piece.",
+        "{delay 6}\\nThis will start a chemical reaction which will change the molecular structure of the armor - it will become Omni-Tek Newcomer's Armor."
+      ],
+      "Replies": [
+        "thanks_info"
+      ]
+    },
+    "pleasure": {
+      "Text": "My pleasure! Be safe out there."
+    }
+  }
+}

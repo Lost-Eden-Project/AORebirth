@@ -1,0 +1,202 @@
+{
+  "Notes": "Jobe Research Scientist (JORE), Arrival hall (4604) at (172.2, 1.0, 166.1). Rebuilt from 1 QuestDialogCapture dump (Jobe_Research_Scientist_JORE, 2026-10-20, character Soldaman, no quest state). Retail sent several long lines out of order and kept talking after the reply list appeared; pieces are kept in captured order.",
+  "Npcs": [
+    "JORE"
+  ],
+  "Openers": [
+    {
+      "Say": "welcome"
+    }
+  ],
+  "Replies": {
+    "city": {
+      "Text": "Jobe? Is that the City in the Sky?",
+      "Goto": "city"
+    },
+    "shadowlands": {
+      "Text": "Tell me about the Shadowlands experiment.",
+      "Goto": "shadowlands"
+    },
+    "conflict": {
+      "Text": "About this conflict...",
+      "Goto": "conflict"
+    },
+    "who_lives": {
+      "Text": "Who lives in Jobe?",
+      "Goto": "who_lives"
+    },
+    "who_leads": {
+      "Text": "Who leads the Jobeans?",
+      "Goto": "who_leads"
+    },
+    "dogma": {
+      "Text": "Is there a Jobean Dogma? These days everyone seems to live by some doctrine or the other.",
+      "Goto": "dogma"
+    },
+    "talk_else": {
+      "Text": "I want to talk about something else.",
+      "Goto": "talk_else"
+    },
+    "omni": {
+      "Text": "What can you tell me about Omni-Tek?",
+      "Goto": "omni"
+    },
+    "clans": {
+      "Text": "What can you tell me about the clans?",
+      "Goto": "clans"
+    },
+    "neutrals": {
+      "Text": "What can you tell me about the neutrals?",
+      "Goto": "neutrals"
+    },
+    "enough": {
+      "Text": "Enough about the conflict..",
+      "Goto": "enough"
+    }
+  },
+  "Lines": {
+    "welcome": {
+      "Text": [
+        "Welcome to the Jobe Research signup! You are making the right choice by signing up with me! A bright future awaits you as a citizen of Jobe.",
+        "{delay 8}\\n\\nFollowing a short period as a test subject in the Shadowlands experiment, you will receive your very own apartment in the great City in the Sky, safe from the violent conflict that rages on Rubi-Ka.",
+        "{delay 8}\\n\\nCurious about this prospect? Just ask away!"
+      ],
+      "Replies": [
+        "city",
+        "shadowlands",
+        "conflict"
+      ]
+    },
+    "city": {
+      "Text": [
+        "Yes, it is. It floats on three airborne islands in the outer stratosphere. It is completely man-made and is a testament to the ingenuity of our great species.",
+        "{delay 10}\\n\\nIt is run by a technocratic city council, manned by the world's most qualified and rational people. It is its own juristiction and thus, a safe haven from the ongoing conflict between the clans and Omni-Tek. ",
+        "{delay 8}\\n\\nThe meridian achievement of the creators of Jobe is the opening of the portal into the Shadowlands inside one of the islands."
+      ],
+      "Replies": [
+        "who_lives"
+      ]
+    },
+    "who_lives": {
+      "Text": [
+        "The citizens of Jobe are people that have risen above the ongoing conflict and simply ignore it.",
+        "{delay 4}\\n\\nThey are visionaries! Progressive, scientifically motivated people, choosing to live in Jobe under the guidance of the scientists that run it.",
+        "{delay 6}\\n\\n",
+        "The feeling of living there you might say was similar to that of our ancestors, when they had discovered how to bring fire to life and decided turn their backs to the cold and huddle around the flame.",
+        "{delay 8}The first citizens of Jobe were really the ones that built it. A group of thirty-eight scientists quietly broke away from Omni-Tek and built the sky-city around themselves."
+      ],
+      "Replies": [
+        "who_leads"
+      ]
+    },
+    "who_leads": {
+      "Text": [
+        "Jobe is run by the city council and the council consists of the thirteen scientists who were leaders among the thirty-eight that built the city.",
+        "{delay 2}\\n\\n",
+        "{delay 8}\\n\\nAt first, the project did not attract much attention. Architects were amazed at the splendor of the spectacle and creation won the admiration of nano technicians and meta-physicitsts alike, for the powers of the thirty-eight were unlike anything witnessed before.",
+        "Lord Kaldrani Skallagrim is the leader of the council, and the other twelve are the foremost nano-technicians, meta-physicists and bureaucrats you are likely to find anywhere."
+      ],
+      "Replies": [
+        "dogma"
+      ]
+    },
+    "dogma": {
+      "Text": [
+        "Dogma? Hm, let me answer it abstractly.",
+        "{delay 3}\\n\\n",
+        "Four hundred thousand years ago, the dogma of the \"Jobe citizens\" of that era developed tools to improve the quality of living.",
+        "{delay 5}\\n\\nOnce they found a way to open a portal from Jobe into the Shadowlands, which is a dimension parallel to our own, people began flocking there at once.They sensed that the answer had been found.",
+        "{delay 1}\\n\\n",
+        "Thirty thousand years ago the \"Jobe citizens\" of that era developed an alphabet to preserve contemporary wisdom.",
+        "{delay 5}\\n\\n",
+        "Ten thousand years ago the \"Jobe citizens\" of that era took mankind to space to expand its horizon.",
+        "{delay 4}\\n\\nTo be honest, it is hard to answer who was really the first citizen. Being a citizen of Jobe is really about being in an advanced state of mind, rather than belonging to a geographical location.",
+        "{delay 2}\\n\\nAnd Jobe citiziens of the current era have opened a dimensional portal into the Shadowlands to expand Universe itself!",
+        "{delay 5}\\n\\n",
+        "I hope this gives you a hint of what the Jobean dogma is."
+      ],
+      "Replies": [
+        "talk_else"
+      ]
+    },
+    "talk_else": {
+      "Text": "Sure, what do you want to know?",
+      "Replies": [
+        "shadowlands",
+        "conflict"
+      ]
+    },
+    "shadowlands": {
+      "Text": [
+        "You will be employed by us, the Jobe Research Scientists, in the Jobe Research Center inside the Shadowlands themselves.",
+        "{delay 5}\\n\\n",
+        "The employment will only last for a short period, during which you will be closely monitored. Your capabilities to adapt and function in the Shadowlands will be registered and the data used in the ongoing development of new technology.",
+        "{delay 10}{delay 2}\\n\\n",
+        "You will be glad you signed up, believe me. When your employment period runs out, you will receive a brand new apartment in Jobe itself and free to live out your life as you prefer."
+      ],
+      "Replies": [
+        "city",
+        "conflict"
+      ]
+    },
+    "conflict": {
+      "Text": "Yes?",
+      "Replies": [
+        "omni",
+        "clans",
+        "neutrals",
+        "enough"
+      ]
+    },
+    "omni": {
+      "Text": [
+        "Omni-Tek is the galaxy's most powerful and wealthy corporation. It leases Rubi-Ka and holds the mining rights to the planet.",
+        "{delay 7}\\n\\n",
+        "Omni-Tek has been forced to deal with us in Jobe for access to the Shadowlands since Jobe is not really on Rubi-Ka but practically an orbiting planet or meteor in its own right.",
+        "{delay 10}\\n\\nRather nifty, don't you think?"
+      ],
+      "Replies": [
+        "omni",
+        "clans",
+        "neutrals",
+        "enough"
+      ]
+    },
+    "clans": {
+      "Text": [
+        "It's not that I don't like them, but I find it funny how the clans can go on and on, chanting the same rebel warsongs instead of just picking up the bags and carry on to a brighter future.",
+        "{delay 10}\\n\\n",
+        "That pretty much sums up what I think of the clans. They are old and angry and need to get their heads out of the muck."
+      ],
+      "Replies": [
+        "omni",
+        "clans",
+        "neutrals",
+        "enough"
+      ]
+    },
+    "neutrals": {
+      "Text": [
+        "They have my sympathy. They are caught between the warring sides of the clans and Omni-Tek.",
+        "{delay 4}\\n\\nThere are a number of benefits that they miss out on by not choosing sides, and doing so by choice is noble in my opinion.",
+        "{delay 5}\\n\\n",
+        "They do not seem that different to the visionaries that built Jobe and reside there, but they lack one important factor: A Purpose of Being.",
+        "{delay 8}\\n\\n",
+        "And that is what we offer YOU in the Jobe Research Program."
+      ],
+      "Replies": [
+        "omni",
+        "clans",
+        "neutrals",
+        "enough"
+      ]
+    },
+    "enough": {
+      "Text": "Alright then.",
+      "Replies": [
+        "city",
+        "shadowlands"
+      ]
+    }
+  }
+}

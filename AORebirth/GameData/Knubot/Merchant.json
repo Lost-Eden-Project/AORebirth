@@ -1,0 +1,84 @@
+{
+  "Notes": "Merchant (AMME), Arrival hall (4604) at (192.5, 1.0, 224.3). Rebuilt from 2 QuestDialogCapture dumps (Merchant_AMME, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "AMME"
+  ],
+  "Openers": [
+    {
+      "Say": "help"
+    }
+  ],
+  "Replies": {
+    "lost": {
+      "Text": "I was wondering where I should go. I'm a bit lost.",
+      "Goto": "orange"
+    },
+    "stylish": {
+      "Text": "Stylish suit. Is business good?",
+      "Goto": "business"
+    },
+    "grid": {
+      "Text": "The Grid?",
+      "Goto": "grid"
+    },
+    "get_grid": {
+      "Text": "How can I get into the Grid?",
+      "Goto": "terminals"
+    },
+    "talked_him": {
+      "Text": "I already talked to him.",
+      "Goto": "nice_lady"
+    },
+    "got_it": {
+      "Text": "The fellow in the orange outfit, got it!",
+      "Goto": "great"
+    }
+  },
+  "Lines": {
+    "help": {
+      "Text": "Yeah, can I help you with anything?",
+      "Replies": [
+        "lost",
+        "stylish"
+      ]
+    },
+    "business": {
+      "Text": "Yes, I am doing alright. I run a shuttle service and despite the Grid and all the teleporting technology business is good. There will always be real, old-style travellers around that prefer scenery while traveling between places.",
+      "Replies": [
+        "grid"
+      ]
+    },
+    "grid": {
+      "Text": "The Grid is a computer network that people can enter into and travel between distant locations in digital form. It is an interesting little thing actually.",
+      "Replies": [
+        "get_grid"
+      ]
+    },
+    "terminals": {
+      "Text": "There are Grid terminals over all on Rubi-Ka. Anyone can use them, but the more literate you are with computers, the more useful the Grid will be to you.",
+      "Replies": [
+        "lost"
+      ]
+    },
+    "orange": {
+      "Text": "Have you tried talking to the colonist in the orange suit over by the entrance?",
+      "Replies": [
+        "stylish",
+        "talked_him",
+        "got_it"
+      ]
+    },
+    "nice_lady": {
+      "Text": "Alright. Then you should talk to the nice lady over by the exit.",
+      "Replies": [
+        "stylish"
+      ]
+    },
+    "great": {
+      "Text": "Great!",
+      "Replies": [
+        "stylish"
+      ]
+    }
+  }
+}

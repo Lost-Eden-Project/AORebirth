@@ -120,6 +120,12 @@ namespace ZoneEngine_New.Core.WorldSimulation
         /// <summary>OnTargetInVicinity spells for a <see cref="ZoneTriggerKind.TargetVicinity"/> pad.</summary>
         public Inventory.ItemTemplate? VicinityEvents;
 
+        /// <summary>
+        /// A portal dynel's walk-in functions with their criteria (<see cref="DynelEventSpells.ReadWalkIn"/>): the
+        /// teleport runs only when its criteria pass; otherwise the matching Text functions are said instead.
+        /// </summary>
+        public List<Inventory.ItemSpell>? WalkIn;
+
         /// <summary>Area of a <see cref="ZoneTriggerKind.Teleportal"/>.</summary>
         public AODB.Common.RDBObjects.SurfaceTeleportal? Teleportal;
 

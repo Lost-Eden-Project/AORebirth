@@ -58,6 +58,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>How often NPCs cast their uploaded nanos, and what they cast in a fight.</summary>
         public GameplayNpcNanos NpcNanos { get; init; } = new();
 
+        /// <summary>Where a shop's stock list comes from.</summary>
+        public GameplayShops Shops { get; init; } = new();
+
         /// <summary>Inventory rules: how many items the overflow window keeps.</summary>
         public GameplayInventory Inventory { get; init; } = new();
 
@@ -542,6 +545,17 @@ namespace ZoneEngine_New.Core.Configuration
     }
 
     /// <summary>A playfield and position in Gameplay.json.</summary>
+    /// <summary>The shops section of Gameplay.json.</summary>
+    public sealed class GameplayShops
+    {
+        /// <summary>
+        /// A static vending machine with a database vendor row (IShopDao) takes that row's stock instead of its own
+        /// record's list (items.dat ShopInventory). On while the database vendors are the vetted set; off makes every
+        /// shop's own list the source and the database rows are ignored.
+        /// </summary>
+        public bool PreferDatabaseStock { get; init; } = true;
+    }
+
     public sealed class GameplayLocation
     {
         public int Playfield { get; init; }

@@ -32,6 +32,9 @@ namespace ZoneEngine_New.Core.GameData
         /// <summary>0 rolls one random item; any other value stocks the whole bucket.</summary>
         public int Flags { get; set; }
 
+        /// <summary>Price of this line as a percentage of the item's normal shop price; 100 (the default) is normal.</summary>
+        public int PricePercent { get; set; } = 100;
+
         [JsonIgnore]
         public StockExpansion Expansion => Flags == 0 ? StockExpansion.RandomOne : StockExpansion.ExpandAll;
     }
@@ -50,7 +53,6 @@ namespace ZoneEngine_New.Core.GameData
         /// </summary>
         public const int MaxSlots = 64;
 
-        /// <summary>Entries with a usable hash and a sane repeat count.</summary>
         public IEnumerable<VendingMachineStockEntry> UsableEntries()
         {
             List<VendingMachineStockEntry> entries = Inventory;

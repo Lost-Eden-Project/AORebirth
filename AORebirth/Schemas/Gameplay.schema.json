@@ -35,6 +35,15 @@
       },
       "additionalProperties": false
     },
+    "shops": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preferDatabaseStock": {
+          "type": "boolean"
+        }
+      }
+    },
     "requireAmmo": {
       "type": "boolean"
     },

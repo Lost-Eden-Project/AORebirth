@@ -29,8 +29,38 @@ namespace ZoneEngine_New.Core.Inventory.Dat
                 Defend = ToCharacterStatMap(dat.Defend),
                 SpellList = spellList,
                 Actions = actions,
-                Relations = dat.Relations != null ? new List<int>(dat.Relations) : new List<int>()
+                Relations = dat.Relations != null ? new List<int>(dat.Relations) : new List<int>(),
+                ShopInventory = ToShopInventory(dat.Rdb?.ShopInventory)
             };
+        }
+
+        /// <summary>The record's packed four-character hash as the text form the hash catalog is keyed by ("MAAI").</summary>
+        private static string HashText(uint hash)
+            => new string(new[] { (char)(hash >> 24), (char)((hash >> 16) & 0xff), (char)((hash >> 8) & 0xff), (char)(hash & 0xff) });
+
+        private static IReadOnlyList<ShopInventoryEntry> ToShopInventory(List<DatShopItem>? lines)
+        {
+            if (lines == null || lines.Count == 0)
+                return System.Array.Empty<ShopInventoryEntry>();
+
+            var entries = new List<ShopInventoryEntry>(lines.Count);
+            foreach (DatShopItem line in lines)
+            {
+                if (line == null || line.Hash == 0)
+                    continue;
+                entries.Add(new ShopInventoryEntry
+                {
+                    Hash = HashText(line.Hash),
+                    MinQl = line.MinQl,
+                    MaxQl = line.MaxQl,
+                    Amount = line.Amount,
+                    Regen = line.Regen,
+                    Interval = line.Interval,
+                    Cost = line.Cost
+                });
+            }
+
+            return entries;
         }
 
         private static Dictionary<EventType, List<ItemSpell>> ToSpellList(List<DatEvent>? events)

@@ -669,6 +669,13 @@ namespace ZoneEngine_New.Core.Inventory
             if (!player.Playfield.GetRequiredService<HashItemMinter>().TryMintHighestUpTo(hash, quality, ItemSource.Other, out Item item))
                 return false;
 
+            // Other outcomes were possible (the use was not refused up front), but this roll is a Unique already held.
+            if (Trade.TradeRules.IsUnique(item) && Trade.TradeRules.WouldDuplicateUnique(player, item.LowId, item.HighId))
+            {
+                ClientFeedback.SendFormatted(player, ClientFeedback.AlreadyHaveUniqueItem, item.Name);
+                return true;
+            }
+
             // Arguments: hash, max QL, min QL, TimeExist (seconds), Flags, RelX/Y/Z. Flags bit 1 puts the item in the
             // inventory (nano 160979, Bronze Chest of the Collector 286438: 1 and 3); without it the item is placed in the
             // world for TimeExist (Bonfire Kit 223773 and Portable Market Interface 257958: 0, at the user plus Rel;
@@ -812,6 +819,9 @@ namespace ZoneEngine_New.Core.Inventory
             npc.StartFighting(opponent.Identity, 0);
             return true;
         }
+
+        /// <summary>Sends a Text or SystemText function's message to the player, as an item use does.</summary>
+        internal static bool SendText(Player player, ItemSpell spell) => SystemText(player, spell);
 
         static bool SystemText(Player player, ItemSpell spell)
         {

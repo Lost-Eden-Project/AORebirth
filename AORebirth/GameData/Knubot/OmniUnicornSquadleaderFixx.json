@@ -1,0 +1,188 @@
+{
+  "Notes": "Omni Unicorn Squadleader Fixx (OMUI), ICC Shuttleport (4582) at (912.9, 40.0, 824.9). Rebuilt from 7 QuestDialogCapture dumps (Omni_Unicorn_Squadleader_Fixx_OMUI, 2026-10-20, characters Soldmen, Complicado). Completes 76A9 (talk to) on approach; gives VXZ0 (VXZ0 > 0A9M > HKD7 > P8S1 debriefing); P8S1 completes on approach and he then gives 360X (status report).",
+  "Npcs": [
+    "OMUI"
+  ],
+  "Openers": [
+    {
+      "If": [
+        "HasQuest P8S1"
+      ],
+      "Say": "debrief"
+    },
+    {
+      "If": [
+        "HasQuest 76A9"
+      ],
+      "Say": "intro_76a9"
+    },
+    {
+      "Say": "intro"
+    }
+  ],
+  "Replies": {
+    "who": {
+      "Text": "Who are you?",
+      "Goto": "who"
+    },
+    "what": {
+      "Text": "What are you doing here?",
+      "Goto": "what"
+    },
+    "travis": {
+      "Text": "Uhmmm...Travis Molen sent me.",
+      "If": [
+        "!quest VXZ0 done"
+      ],
+      "Goto": "volunteer"
+    },
+    "travis_again": {
+      "Text": "Uhmmm...Travis Molen sent me.",
+      "If": [
+        "quest VXZ0 done"
+      ],
+      "Goto": "volunteer_again"
+    },
+    "completed": {
+      "Text": "I've completed the assignment.",
+      "Goto": "good_job"
+    },
+    "report": {
+      "Text": "Could I possibly see a progress report on the Unicorn operation here?",
+      "If": [
+        "!quest 360X done"
+      ],
+      "Goto": "progress"
+    },
+    "report_again": {
+      "Text": "Could I possibly see a progress report on the Unicorn operation here?",
+      "If": [
+        "quest 360X done"
+      ],
+      "Goto": "progress_again"
+    }
+  },
+  "Lines": {
+    "intro_76a9": {
+      "Text": [
+        "{completequest 76A9}",
+        "{delay 1}What?",
+        "{delay 1}\\nThis better be important!",
+        "{delay 2}{emote}Squadleader Fixx shouts into his wrist-attached intercom.{/emote}",
+        "I don't care if you died...Get your stuff out of reclaim and get back out there, soldier!!",
+        "{delay 3}{emote}Fixx turns back to you.{/emote}",
+        "{delay 2}Speak up, private!"
+      ],
+      "Replies": [
+        "who",
+        "what"
+      ]
+    },
+    "intro": {
+      "Text": [
+        "What?",
+        "{delay 1}\\nThis better be important!",
+        "{delay 2}{emote}Squadleader Fixx shouts into his wrist-attached intercom.{/emote}",
+        "I don't care if you died...Get your stuff out of reclaim and get back out there, soldier!!",
+        "{delay 3}{emote}Fixx turns back to you.{/emote}",
+        "{delay 2}Speak up, private!"
+      ],
+      "Replies": [
+        "who",
+        "what"
+      ]
+    },
+    "who": {
+      "Text": [
+        "I'm the one in charge of the defending forces here.",
+        "{delay 2}\\nSo unless you are willing to help, you should be on your way.",
+        "{delay 2}{emote}Fixx yells into his intercom again.{/emote}",
+        "{delay 2}It hurts? Get back out there, soldier, or I'll show you REAL pain!",
+        "{delay 4}\\nSo what'll it be, private?!"
+      ],
+      "Replies": [
+        "travis",
+        "travis_again",
+        "what"
+      ]
+    },
+    "what": {
+      "Text": [
+        "I'm here from the Unicorn Company trying to get these useless soldiers to finish the job we started.",
+        "{delay 4}{emote}Fixx yells into his intercom again.{/emote}",
+        "{delay 2}There is no such thing as a losing battle. Get back out there, soldier, or I'll rip you a new one!",
+        "{delay 5}\\nAre you just gonna stand there, {player}?"
+      ],
+      "Replies": [
+        "travis",
+        "travis_again",
+        "who"
+      ]
+    },
+    "volunteer": {
+      "Text": [
+        "{givequest VXZ0}",
+        "{delay 1}Aha! A volunteer! ",
+        "{delay 2}{emote}Fixx laughs to himself{/emote}",
+        "{delay 2}\\nOk then...",
+        "{delay 1}\\nI need you to exterminate some aliens.",
+        "{delay 2}\\nThe guys at the northwest perimeter are pathetic...",
+        "{delay 2}\\nEven YOU could do a better job than them!",
+        "{delay 3}{emote}Fixx turns and shouts into his intercom.{/emote}",
+        "{delay 2}Yes, I hope you heard that Private Rolko!",
+        "{delay 3}\\nHere, I'll even upload a short mission briefing for you.",
+        "{delay 1}\\nNow get out of here and don't come back until you have completed your assignment!"
+      ]
+    },
+    "volunteer_again": {
+      "Text": [
+        "{delay 1}Aha! A volunteer! ",
+        "{delay 2}{emote}Fixx laughs to himself{/emote}",
+        "{delay 2}\\nOk then...",
+        "{delay 1}\\nI need you to exterminate some aliens.",
+        "{delay 2}\\nThe guys at the northwest perimeter are pathetic...",
+        "{delay 2}\\nEven YOU could do a better job than them!",
+        "{delay 3}{emote}Fixx turns and shouts into his intercom.{/emote}",
+        "{delay 2}Yes, I hope you heard that Private Rolko!",
+        "{delay 3}\\nHere, I'll even upload a short mission briefing for you.",
+        "{delay 1}\\nNow get out of here and don't come back until you have completed your assignment!"
+      ]
+    },
+    "debrief": {
+      "Text": [
+        "{completequest P8S1}",
+        "{delay 1}What is it you want this time, private?!"
+      ],
+      "Replies": [
+        "completed"
+      ]
+    },
+    "good_job": {
+      "Text": [
+        "Well, who would've thought...",
+        "{delay 3}{emote}Fixx taps your back.{/emote}",
+        "{delay 2}Good job, private!!!",
+        "{delay 2}\\nLet me know if there's anything I can do for you."
+      ],
+      "Replies": [
+        "report",
+        "report_again"
+      ]
+    },
+    "progress": {
+      "Text": [
+        "Sure! We have nothing to hide.",
+        "{delay 2}\\nHere you go!",
+        "{delay 1}\\nAnd you can keep it too.",
+        "{delay 1}{givequest 360X}"
+      ]
+    },
+    "progress_again": {
+      "Text": [
+        "Sure! We have nothing to hide.",
+        "{delay 2}\\nHere you go!",
+        "{delay 1}\\nAnd you can keep it too."
+      ]
+    }
+  }
+}

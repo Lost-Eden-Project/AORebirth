@@ -61,6 +61,26 @@ namespace ZoneEngine_New.Core.WorldSimulation
             };
         }
 
+        /// <summary>
+        /// The functions a dynel runs when a character walks into it (OnEnter, else OnCollide), with their criteria, or
+        /// null when it has none. Door portals gate their teleport on these (Condemned Subway: TeleportProxy only below
+        /// level 26, Text "Only level 25 characters and below can enter this dungeon." above it).
+        /// </summary>
+        public static List<ItemSpell>? ReadWalkIn(PlayfieldDynel? dynel)
+        {
+            if (dynel?.Modifiers == null)
+                return null;
+
+            foreach (AodbEventType source in new[] { AodbEventType.OnEnter, AodbEventType.OnCollide })
+            {
+                var spells = new Dictionary<EventType, List<ItemSpell>>();
+                if (CopyEvent(dynel, spells, source, EventType.OnEnter) && spells.TryGetValue(EventType.OnEnter, out List<ItemSpell>? read))
+                    return read;
+            }
+
+            return null;
+        }
+
         static bool CopyEvent(
             PlayfieldDynel dynel,
             Dictionary<EventType, List<ItemSpell>> spellList,

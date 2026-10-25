@@ -1,0 +1,47 @@
+{
+  "Notes": "Old Geezer (OLGE), Arrival hall (4604) at (189.0, 1.0, 187.9). Rebuilt from 1 QuestDialogCapture dump (Old_Geezer_OLGE, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "OLGE"
+  ],
+  "Openers": [
+    {
+      "Say": "listen"
+    }
+  ],
+  "Replies": {
+    "doing_here": {
+      "Text": "What are you doing here?",
+      "Goto": "doing_here"
+    },
+    "work_omni": {
+      "Text": "So I should work for Omni-Tek?",
+      "Goto": "work_omni"
+    }
+  },
+  "Lines": {
+    "listen": {
+      "Text": "Listen to me young friend. Omni-Tek has provided for us and created something real and substantial on this world. Everybody here should be grateful for what the Corporation has done for us. Those clanners are a bunch of ungrateful whiners, and only our fierce loyalty and obedience to the Corporation will help destroy the rebel menace.",
+      "Replies": [
+        "doing_here",
+        "work_omni"
+      ]
+    },
+    "doing_here": {
+      "Text": "Just watching the new arrivals, making sure they know the truth about them filthy clanners.  I like to talk to fresh colonists like yourself.  Gives me something to do besides sitting at home.",
+      "Replies": [
+        "work_omni"
+      ]
+    },
+    "work_omni": {
+      "Text": [
+        "If you have the decency to be grateful for what Omni-Tek has done for us all here on Rubi-Ka, you absolutely should.",
+        "{delay 5}\\n\\nI know many has chosen to join the Jobe research program in the past, but right now Omni-Tek is fighting aliens to ensure your safety! ",
+        "{delay 1}\\nWith proper training, you can help them fight off these invaders that attack our cities and destroy our notum mines.\\n",
+        "{delay 1}Resourceful people are always appreciated and cared for in the corporation."
+      ],
+      "Replies": [
+        "doing_here"
+      ]
+    }
+  }
+}

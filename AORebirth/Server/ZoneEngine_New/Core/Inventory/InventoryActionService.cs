@@ -249,6 +249,7 @@ namespace ZoneEngine_New.Core.Inventory
             Func<bool> validate, Action publish, IReadOnlyList<StatRecord>? finalStats = null)
         {
             bool committed = false;
+            player.InvalidateOwnedItemCache();
             bool successful = false;
             try
             {

@@ -1,0 +1,31 @@
+{
+  "Notes": "Bored Traveller (BRTR), Arrival_hall (4604) at (209.8, 1.0, 217.9). Rebuilt from 1 QuestDialogCapture dump (Bored_Traveller_BRTR, 2026-10-20, character Soldaman).",
+  "Npcs": [
+    "BRTR"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "where_work": {
+      "Text": "Where do you work?",
+      "Goto": "work"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": [
+        "I tell you, the shuttles are never on time! ",
+        "{delay 2}Not that they were ever on time, but after the conflict heated up, it's been getting worse and worse. My job requires me to travel all the time, so I'm stuck. I could start using the Grid, I suppose, but that just never seemed the safe way to go. No, I'll stick with the shuttles, even if I have to spend half my life in terminals."
+      ],
+      "Replies": [
+        "where_work"
+      ]
+    },
+    "work": {
+      "Text": "We're an Omni-Tek contractor, and we do security checks on notum mining systems. Check security, weed out viruses, run emergency tests...that sort of thing. Pays well, but there's too much travelling. And I hate going down into those mines. Doesn't seem very safe to me."
+    }
+  }
+}

@@ -243,9 +243,115 @@ namespace ZoneEngine_New.Core.Entities
                 Operator.HasNotWieldedItem => !Inventory.IsEquipped(id, wieldedOnly: true),
                 Operator.MustNotAlliedCombat => !IsAlliedInCombat(),
                 Operator.MustAlliedCombat => IsAlliedInCombat(),
+                // The client passes ObtainedItem without looking (Gamecode.dll FUN_100065d8 case 0x6c), so an effect
+                // never depends on it here either: a perk trained with Bazzit's Alien Library keeps working when the
+                // library is gone. Training checks it (ResolveTrainRequirement).
+                Operator.ObtainedItem => true,
                 _ => base.ResolveRequirement(requirement)
             };
         }
+
+        /// <summary>
+        /// The ObtainedItem leaves (value = item id) of a perk's ToWear action, checked only after every other
+        /// requirement passed: the item must be owned now, carried, in a carried bag, equipped, in the bank or in a bag
+        /// kept in the bank (Alien Technology Expertise 3, 256082, needs Bazzit's Alien Library 256081). Only the
+        /// server decides it; the client always lets the train through. Ownership can cost database reads, so it is
+        /// the last check and its answer is cached (<see cref="OwnsItem"/>).
+        /// </summary>
+        bool MeetsObtainedItems(ItemTemplate perk)
+        {
+            foreach (ItemAction action in perk.Actions)
+            {
+                if (action.ActionType != (int)ActionType.ToWear)
+                    continue;
+                foreach (ItemRequirement requirement in action.Requirements)
+                {
+                    if ((Operator)requirement.Operator == Operator.ObtainedItem && !OwnsItem(requirement.Value))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>How long an <see cref="OwnsItem"/> answer stands when nothing in the inventory changed meanwhile.</summary>
+        static readonly TimeSpan OwnedItemCacheLifetime = TimeSpan.FromSeconds(30);
+
+        Dictionary<int, (bool Owned, DateTime AtUtc)>? _ownedItemCache;
+
+        /// <summary>Forgets cached <see cref="OwnsItem"/> answers; every inventory commit and move calls this.</summary>
+        public void InvalidateOwnedItemCache() => _ownedItemCache?.Clear();
+
+        /// <summary>
+        /// An item of template <paramref name="itemId"/> (low or high id) is carried, equipped, in a carried bag, in the
+        /// bank or in a bag kept in the bank. The bank is loaded here as OpenBank would load it when it has not been
+        /// opened this session; banked bags never opened are read from their stored rows in one query. The answer is
+        /// kept for <see cref="OwnedItemCacheLifetime"/> or until the inventory changes, so repeated train requests
+        /// cost nothing.
+        /// </summary>
+        bool OwnsItem(int itemId)
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            if (_ownedItemCache != null && _ownedItemCache.TryGetValue(itemId, out (bool Owned, DateTime AtUtc) cached)
+                && nowUtc - cached.AtUtc < OwnedItemCacheLifetime)
+                return cached.Owned;
+
+            bool owned = FindOwnedItem(itemId);
+            (_ownedItemCache ??= new Dictionary<int, (bool, DateTime)>())[itemId] = (owned, nowUtc);
+            return owned;
+        }
+
+        bool FindOwnedItem(int itemId)
+        {
+            foreach (Item item in Inventory.EnumerateHeldItems())
+            {
+                if (IsTemplate(item, itemId))
+                    return true;
+            }
+
+            if (Playfield?.GetService<IInventoryRepository>() is not IInventoryRepository repository)
+                return false;
+            if (!Inventory.Bank.IsHydrated)
+                Inventory.EnsureBankHydrated(Identity.Instance, repository, _items);
+            if (!Inventory.Bank.IsHydrated)
+                return false;
+
+            List<int>? unopenedBags = null;
+            foreach (Item item in Inventory.Bank.Content.Values)
+            {
+                if (IsTemplate(item, itemId))
+                    return true;
+                if (!InventoryMoveService.IsBagItem(item))
+                    continue;
+
+                if (Inventory.TryGetBackpackPage(item.Identity, out Container bag) && bag.IsHydrated)
+                {
+                    foreach (Item content in bag.Content.Values)
+                    {
+                        if (IsTemplate(content, itemId))
+                            return true;
+                    }
+
+                    continue;
+                }
+
+                int containerInstance = item.Identity.Instance > 0 ? item.Identity.Instance : item.InstanceId;
+                if (containerInstance > 0)
+                    (unopenedBags ??= new List<int>()).Add(containerInstance);
+            }
+
+            if (unopenedBags == null)
+                return false;
+            foreach (ItemInstanceRecord row in repository.GetContainerItems(unopenedBags))
+            {
+                if (row.LowId == itemId || row.HighId == itemId)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool IsTemplate(Item item, int itemId) => item.LowId == itemId || item.HighId == itemId;
 
         /// <summary>
         /// Moves this player to <paramref name="landing"/> on its current playfield, as a LineTeleport lift does: the motor
@@ -443,7 +549,10 @@ namespace ZoneEngine_New.Core.Entities
 
             try
             {
-                if (!_items.CreateTemplate(itemId, itemId, quality: 1).MeetsActionRequirements(stat => Stats.Get(stat), ActionType.ToWear, ResolvePerkRequirement))
+                // Stats and perks first (ObtainedItem passes here); the ownership check, which may read the bank, last.
+                ItemTemplate perk = _items.CreateTemplate(itemId, itemId, quality: 1);
+                if (!perk.MeetsActionRequirements(stat => Stats.Get(stat), ActionType.ToWear, ResolvePerkRequirement)
+                    || !MeetsObtainedItems(perk))
                     return false;
             }
             catch (Exception exception)

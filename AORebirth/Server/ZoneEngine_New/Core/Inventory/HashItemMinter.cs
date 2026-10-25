@@ -232,6 +232,23 @@ namespace ZoneEngine_New.Core.Inventory
         public void CollectLeafInstances(string hash, List<HashInstance> into)
             => _gameData.CollectHashLeafInstances(hash, into);
 
+        /// <summary>The hashes one level under a category hash; false for a leaf or an unknown hash.</summary>
+        public bool TryGetChildHashes(string hash, out IReadOnlyList<string> children)
+        {
+            if (!string.IsNullOrEmpty(hash) && _gameData.TryGetHashTemplate(hash, out children) && children.Count > 0)
+                return true;
+            children = Array.Empty<string>();
+            return false;
+        }
+
+        /// <summary>The leaf family can be made at <paramref name="quality"/>: its QL range covers it, or it is Special.</summary>
+        public bool LeafCoversQuality(HashInstance leaf, int quality)
+        {
+            ArgumentNullException.ThrowIfNull(leaf);
+            FamilySpan family = GetFamilySpan(leaf);
+            return family.Special || (family.Min <= quality && quality <= family.Max);
+        }
+
         public Item CreateWithNewInstance(int lowId, int highId, int quality, ItemSource source)
             => _items.CreateWithNewInstance(lowId, highId, quality, source);
 

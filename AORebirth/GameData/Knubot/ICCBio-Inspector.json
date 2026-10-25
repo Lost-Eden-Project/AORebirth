@@ -1,0 +1,239 @@
+{
+  "Notes": "ICC Bio-Inspector (ICBI), ICC Shuttleport (4582) at (838.4, 22.9, 757.7). Rebuilt from 7 QuestDialogCapture dumps (ICC_Bio-Inspector_ICBI, 2026-10-20, character Soldmen). Completes HYIY (talk to). The cull chain is 4UM8 > DQOD > SN7R > 5NCC (return); the island-boss chain is PRIF > 070Y > 87A3 > CRTP > ZKO6 > 9BBO (return). While the boss chain runs, and after it, retail showed no greeting text at all, only the reply.",
+  "Npcs": [
+    "ICBI"
+  ],
+  "Openers": [
+    {
+      "If": [
+        "HasQuest 5NCC"
+      ],
+      "Say": "cull_back"
+    },
+    {
+      "If": [
+        "HasQuest 9BBO"
+      ],
+      "Say": "boss_back"
+    },
+    {
+      "If": [
+        "HasAnyQuest PRIF,070Y,87A3,CRTP,ZKO6"
+      ],
+      "Say": "silent"
+    },
+    {
+      "If": [
+        "quest 9BBO done"
+      ],
+      "Say": "silent"
+    },
+    {
+      "If": [
+        "HasQuest HYIY"
+      ],
+      "Say": "greet_hyiy"
+    },
+    {
+      "Say": "greet"
+    }
+  ],
+  "Replies": {
+    "thorn": {
+      "Text": "Brandon Thorn said I should talk to you.",
+      "If": [
+        "!HasAnyQuest 4UM8,DQOD,SN7R,5NCC",
+        "!quest 5NCC done"
+      ],
+      "Goto": "thorn_good"
+    },
+    "what_now_first": {
+      "Text": "What should I do now?",
+      "If": [
+        "!HasAnyQuest 4UM8,DQOD,SN7R,5NCC",
+        "!quest 5NCC done"
+      ],
+      "Goto": "help_short"
+    },
+    "what_now": {
+      "Text": "What should I do now?",
+      "If": [
+        "HasAnyQuest 4UM8,DQOD,SN7R,5NCC"
+      ]
+    },
+    "what_now_done": {
+      "Text": "What should I do now?",
+      "If": [
+        "quest 5NCC done"
+      ]
+    },
+    "stacklund": {
+      "Text": "Do you know where to find Antonio Stacklund?",
+      "Goto": "stacklund"
+    },
+    "sure_help": {
+      "Text": "Sure, I'll help. What do you need?",
+      "Goto": "great_help"
+    },
+    "cull": {
+      "Text": "Cull?",
+      "Goto": "cull"
+    },
+    "do_it": {
+      "Text": "I'll do it.",
+      "Goto": "cull_given"
+    },
+    "killed_few": {
+      "Text": "I've killed a few of the creatures.",
+      "Goto": "cull_done"
+    },
+    "anything_else": {
+      "Text": "Anything else I can help with?",
+      "If": [
+        "!quest PRIF done"
+      ],
+      "Goto": "leader_given"
+    },
+    "anything_else_again": {
+      "Text": "Anything else I can help with?",
+      "If": [
+        "quest PRIF done"
+      ],
+      "Goto": "leader_again"
+    },
+    "found_all": {
+      "Text": "I found them all.",
+      "Goto": "boss_done"
+    }
+  },
+  "Lines": {
+    "greet_hyiy": {
+      "Text": [
+        "{completequest HYIY}",
+        "{emote}The male nanomage looks up from the papers he's reading when you approach and nods. He looks serious but friendly.{/emote}",
+        "\\nHello there. I saw you step off the crashed shuttle. I guess I should say 'Welcome to Rubi-Ka', huh?",
+        "{emote}He laughs, amused.{/emote}"
+      ],
+      "Replies": [
+        "thorn",
+        "what_now_first",
+        "what_now",
+        "what_now_done"
+      ]
+    },
+    "greet": {
+      "Text": [
+        "{emote}The male nanomage looks up from the papers he's reading when you approach and nods. He looks serious but friendly.{/emote}",
+        "\\nHello there. I saw you step off the crashed shuttle. I guess I should say 'Welcome to Rubi-Ka', huh?",
+        "{emote}He laughs, amused.{/emote}"
+      ],
+      "Replies": [
+        "thorn",
+        "what_now_first",
+        "what_now",
+        "what_now_done"
+      ]
+    },
+    "silent": {
+      "Text": "",
+      "Replies": [
+        "what_now",
+        "what_now_done"
+      ]
+    },
+    "thorn_good": {
+      "Text": "Good chap, that Thorn. I could use some help here to be honest. Could help clear up your head as well. Or, if you don't have time, maybe I could give some directions?",
+      "Replies": [
+        "stacklund",
+        "sure_help"
+      ]
+    },
+    "help_short": {
+      "Text": "I could use some help here to be honest. Could help clear up your head as well. Or, if you don't have time, maybe I could give some directions?",
+      "Replies": [
+        "sure_help"
+      ]
+    },
+    "stacklund": {
+      "Text": [
+        "Just run through the tunnel behind me. At the end, you'll come to a ramp leading up to the main compound.",
+        "{delay 1} Go past the soldiers and you'll soon find him.",
+        "{delay 2}\\nIf you decide to stay here, though, let me know. I can always use an extra pair of hands."
+      ],
+      "Replies": [
+        "sure_help"
+      ]
+    },
+    "great_help": {
+      "Text": [
+        "Great! I could use the help. Ever since the aliens started attacking Rubi-Ka, we've had regular shuttle crashes, and supplies run short all the time. ",
+        "{delay 2}I have cataloged the species here, both flora and fauna, and know which ones have beneficial properties.",
+        "{delay 2} I'm also in charge of the wildlife cull."
+      ],
+      "Replies": [
+        "cull"
+      ]
+    },
+    "cull": {
+      "Text": "Do you have any idea how fast the animals here on Rubi-Ka breed? If we don't keep the numbers down, they will overrun the island. I need someone to handle a few too many creatures further west on the beach.",
+      "Replies": [
+        "do_it"
+      ]
+    },
+    "cull_given": {
+      "Text": [
+        "{givequest 4UM8}",
+        " Great. I'll upload the details to your system. Just head further west and clear out the amount you're asked to. Return to me when you're done, I'll pay you for the job."
+      ]
+    },
+    "cull_back": {
+      "Text": [
+        "{emote}The male nanomage looks up from the papers he's reading when you approach and nods. He looks serious but friendly.{/emote}",
+        "\\nHello there. I saw you step off the crashed shuttle. I guess I should say 'Welcome to Rubi-Ka', huh?",
+        "{emote}He laughs, amused.{/emote}"
+      ],
+      "Replies": [
+        "killed_few"
+      ]
+    },
+    "cull_done": {
+      "Text": [
+        "{completequest 5NCC}",
+        "Good job! The eco system here is a fragile thing, and we have to make sure it doesn't go completely wild. Balance is imperative."
+      ],
+      "Replies": [
+        "anything_else",
+        "anything_else_again"
+      ]
+    },
+    "leader_given": {
+      "Text": [
+        "{givequest PRIF}",
+        "Hm...actually, yes, there is. Each of the animal species here on the beach has a leader. Alpha male or female. I need to note down their location, as the herds and packs move around with them. There's five different ones, but I haven't tracked their movement pattern today and the only one I know the approximate whereabouts of is the snake lead. Should be to the east. \\n",
+        "{delay 2}I'd like you to find out where they all are, starting with the snake. I'll upload the details to you. Come back when you're done, I'll make sure to compensate you."
+      ]
+    },
+    "leader_again": {
+      "Text": [
+        "Hm...actually, yes, there is. Each of the animal species here on the beach has a leader. Alpha male or female. I need to note down their location, as the herds and packs move around with them. There's five different ones, but I haven't tracked their movement pattern today and the only one I know the approximate whereabouts of is the snake lead. Should be to the east. \\n",
+        "{delay 2}I'd like you to find out where they all are, starting with the snake. I'll upload the details to you. Come back when you're done, I'll make sure to compensate you."
+      ]
+    },
+    "boss_back": {
+      "Text": "Welcome back, friend. How did it go?",
+      "Replies": [
+        "found_all"
+      ]
+    },
+    "boss_done": {
+      "Text": [
+        "{completequest 9BBO}",
+        "Thank you so much. I'm very grateful for all the help you've given me. Here, take these credits and this range meter I had lying around. I'm sure it'll help you handle the dangers of Rubi-Ka."
+      ],
+      "Replies": [
+        "what_now",
+        "what_now_done"
+      ]
+    }
+  }
+}

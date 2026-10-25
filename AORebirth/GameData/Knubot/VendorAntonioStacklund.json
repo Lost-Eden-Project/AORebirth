@@ -1,0 +1,410 @@
+{
+  "Notes": "Vendor Antonio Stacklund (EQVE), ICC Shuttleport (4582) at (934.5, 47.5, 873.5). Rebuilt from 8 QuestDialogCapture dumps (Vendor_Antonio_Stacklund_EQVE, 2026-10-20, characters Soldmen, Complicado). Target of MWTD (FindItem2, SpecItem BCBT): retail completes it in the chat ~1.5s after \"A belt? Let me have a look at it then!\", with no trade window (captures 033143154, 054239660); the belt, NCU chip and vehicle he mentions come from MWTD's reward. {shop} is placed where he points at the Shopping Cart button.",
+  "Npcs": [
+    "EQVE"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "see_selling": {
+      "Text": "May I see what you are selling?",
+      "Goto": "shop"
+    },
+    "weapons": {
+      "Text": "What was that you said about your weapons?",
+      "Goto": "weapons"
+    },
+    "armor": {
+      "Text": "What kind of armor do you have?",
+      "Goto": "armor"
+    },
+    "belt": {
+      "Text": "Brandon Thorn said I should see you regarding this belt.",
+      "If": [
+        "HasQuest MWTD"
+      ],
+      "Goto": "belt_look"
+    },
+    "ranged": {
+      "Text": "I would like to know about ranged weapons.",
+      "Goto": "guns"
+    },
+    "melee": {
+      "Text": "I would like to know about melee weapons.",
+      "Goto": "melee"
+    },
+    "special": {
+      "Text": "I would like to know about special weapons.",
+      "Goto": "special"
+    },
+    "get_armor": {
+      "Text": "How do I get that armor?",
+      "Goto": "armor_choice"
+    },
+    "help_manager": {
+      "Text": "I'll help the Shuttleport Manager.",
+      "Goto": "manager"
+    },
+    "buy_armor": {
+      "Text": "I'll buy the armor from you!",
+      "Goto": "buy_armor"
+    },
+    "how_use": {
+      "Text": "How do I use it?",
+      "Goto": "how_use"
+    },
+    "ncu": {
+      "Text": "What was NCU good for again?",
+      "Goto": "ncu"
+    },
+    "shotgun": {
+      "Text": "Tell me more about the shotgun.",
+      "Goto": "tip_shotgun"
+    },
+    "pistol": {
+      "Text": "Tell me more about the pistol.",
+      "Goto": "tip_pistol"
+    },
+    "smg": {
+      "Text": "Tell me more about the submachine gun.",
+      "Goto": "tip_smg"
+    },
+    "rifle": {
+      "Text": "Tell me more about the rifle.",
+      "Goto": "tip_rifle"
+    },
+    "assault_rifle": {
+      "Text": "Tell me more about the assault rifle.",
+      "Goto": "tip_assault_rifle"
+    },
+    "energy": {
+      "Text": "Tell me more about the energy weapon.",
+      "Goto": "tip_energy"
+    },
+    "sword": {
+      "Text": "Tell me more about the sword.",
+      "Goto": "tip_sword"
+    },
+    "broadsword": {
+      "Text": "Tell me more about the broadsword.",
+      "Goto": "tip_broadsword"
+    },
+    "bat": {
+      "Text": "Tell me more about the bat.",
+      "Goto": "tip_bat"
+    },
+    "hammer": {
+      "Text": "Tell me more about the hammer.",
+      "Goto": "tip_hammer"
+    },
+    "dirk": {
+      "Text": "Tell me more about the dirk.",
+      "Goto": "tip_dirk"
+    },
+    "launcher": {
+      "Text": "Tell me more about the grenade launcher.",
+      "Goto": "tip_launcher"
+    },
+    "bow": {
+      "Text": "Tell me more about the bow.",
+      "Goto": "tip_bow"
+    },
+    "shield": {
+      "Text": "Tell me more about the shield.",
+      "Goto": "tip_shield"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": "Hello there my friend.  Perhaps I can interest you in some of my weapons, armor, or other wares?",
+      "Replies": [
+        "see_selling",
+        "weapons",
+        "armor",
+        "belt"
+      ]
+    },
+    "shop": {
+      "Text": [
+        "{shop}",
+        "Yes, of course!\\n{emote}Press the button below marked with the symbol of a Shopping Cart.  It will give you an overview of the current stock.{/emote}"
+      ],
+      "Replies": [
+        "weapons",
+        "armor"
+      ]
+    },
+    "buy_armor": {
+      "Text": [
+        "{shop}",
+        "Yes, of course!\\n{emote}Press the button below marked with the symbol of a Shopping Cart.  It will give you an overview of the current stock.{/emote}"
+      ]
+    },
+    "weapons": {
+      "Text": [
+        "I've been tinkering with a new piece of equipment.  It will take some of the things from around the port and adapt them.  You can buy them from my sale stock.",
+        "{delay 1}\\n{emote}To shop - press the button below marked with the symbol of a Shopping Cart.  It will give you an overview of the current stock.{/emote}",
+        "{delay 4}\\nEach weapon requires you to provide different materials for the Adaptation Factory.  I can give you an idea of what materials it needs for a specific weapon.  What type of weapon were you looking for?"
+      ],
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "guns": {
+      "Text": "I'd be glad to tell you about guns. What type of gun would you like to know about?",
+      "Replies": [
+        "shotgun",
+        "pistol",
+        "smg",
+        "rifle",
+        "assault_rifle",
+        "energy"
+      ]
+    },
+    "melee": {
+      "Text": "I'd be glad to tell you about melee weapons.  What type of weapon would you like to know about?",
+      "Replies": [
+        "sword",
+        "broadsword",
+        "bat",
+        "hammer",
+        "dirk"
+      ]
+    },
+    "special": {
+      "Text": "I'd be glad to tell you about special weapons.  What type of weapon would you like to know about?",
+      "Replies": [
+        "launcher",
+        "bow",
+        "shield"
+      ]
+    },
+    "armor": {
+      "Text": [
+        "I have some armor for newcomers. It may be refurbished, but it will help to protect you.",
+        "{delay 2}\\nI've heard that the Omni-Tek and Clan vendors here are working on improvements for this armor, but you would need to talk to them about that. They might not be too keen on talking to anyone who has not joined their side though."
+      ],
+      "Replies": [
+        "see_selling",
+        "weapons",
+        "get_armor"
+      ]
+    },
+    "armor_choice": {
+      "Text": [
+        "Well, you have a choice of course. Either way it will cost you...",
+        "{delay 2} You may buy the armor directly from me, or if you will help out the Shuttleport Manager, he actually gives them out for free. "
+      ],
+      "Replies": [
+        "help_manager",
+        "buy_armor"
+      ]
+    },
+    "manager": {
+      "Text": [
+        "Very well. He's right over there",
+        "!",
+        "{delay 2} If you should change your mind though, don't hesitate to come back!"
+      ],
+      "Replies": [
+        "see_selling",
+        "weapons"
+      ]
+    },
+    "belt_look": {
+      "Text": [
+        "A belt? Let me have a look at it then!",
+        "{delay 2}{goto belt_identified}"
+      ]
+    },
+    "belt_identified": {
+      "Text": [
+        "{completequest MWTD}",
+        "{delay 1}Oh, you have one of those new belts.",
+        "{delay 1} We call them Belt Component Platforms. They fit around your waist, but they're actually more like computers. People usually categorize them with devices like weapons rather than as a piece of clothing.",
+        "{delay 3}\\nYou put them on and they allow you to equip NCU Memory Chips, which will increase the amount of beneficial nano formulae that you can have running on you at once.",
+        "{delay 2} Here is your belt back! Come to think of it, I'll throw in an NCU Memory Chip for you as well! Oh, and this nano-compressed vehicle to make getting around a bit easier. ",
+        "{delay 2}\\n\\nI upgraded your belt to hold up to two memory chips, but your Computer Literacy skill needs to be from 20 to equip it."
+      ],
+      "Replies": [
+        "how_use"
+      ]
+    },
+    "how_use": {
+      "Text": [
+        "First you equip the belt, then you equip the NCU Chip. As soon as you install the chip, you should see your nano capacity increase.",
+        "{emote}To equip the belt, right click on it in your inventory window (Press I to open). It will then show up in your 'Wear' window. (CTRL+1 to open). When the belt is equipped, equip the NCU Chip by right clicking it. This will also show up in your 'Wear' window.{/emote}",
+        "{emote}Your free and total numbers of NCU are listed in the bottom left corner of the screen.{/emote}",
+        "{emote}You start with eight total NCU. When you install the chip you will see the maximum available NCU rise.{/emote}"
+      ],
+      "Replies": [
+        "see_selling",
+        "weapons",
+        "armor",
+        "ncu"
+      ]
+    },
+    "ncu": {
+      "Text": [
+        "NCU limit what programs you can have running on yourself at any time. Beneficial programs that have continual effect take up a set amount of NCU.",
+        "{delay 1} You can buy your first nano programs from the machine in the corner there - the item you look for is a Nanoprogram Container, and there should be one specifically tailored for your profession available."
+      ],
+      "Replies": [
+        "see_selling",
+        "weapons",
+        "armor"
+      ]
+    },
+    "tip_shotgun": {
+      "Text": "To improve the shotgun, you need to polish the inside of the barrel.  You might try looking to see if you can find materials from the Tropical Stalkers to the south-west.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_pistol": {
+      "Text": "You might have noticed the power supply on the pistol is underpowered.  Maybe you can find a new power supply for the pistol on one of the Cargo Droids on the docks.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_smg": {
+      "Text": "That submachine gun really needs a stock to stabilize it during burst fire.  The Adaptation Factory could probably use bone plates from the Malle to the south-west to make a folding stock.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_rifle": {
+      "Text": "The scopes on those rifles just don't work right.  I'll bet a new scope could be made with some of the optical components from the Cargo Droids on the docks though.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_assault_rifle": {
+      "Text": "The barrel on that assault rifle heats up quickly during firing. Some of the byproducts carried by the Waste Collectors on the docks could be used to treat the barrel, which would help alleviate the problem.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_energy": {
+      "Text": "The plasma weapon just doesn't heat up the plasma enough.  An extra chamber for heating up plasma might do the trick.  Check the Waste Collectors on the docks, they might have a fuel chamber that could be adapted for that purpose.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_sword": {
+      "Text": "The cross guard of that weapon really doesn't protect you enough.  A really stylish replacement might be made from the bones of one of those Leets on the beach.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_broadsword": {
+      "Text": "I never liked the grip on that broadsword, too slippery for my taste.  The Adaptation Factory could probably make some good grip tape for it from the skin of one of the Reef Salamanders to the south-west.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_bat": {
+      "Text": [
+        "A really creepy way to improve that bat would be to add a reet beak whistle to it. You can find Island Reets on the beach, just feed one of their beaks into the Adaptation Factory.",
+        "{delay 3}\\n",
+        "{delay 1}You might also try adapting a power supply from the Cargo Droids on the docks, that would make it a 'shockingly' powerful weapon."
+      ],
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_hammer": {
+      "Text": "The head of that hammer is none too sturdy.  I'll bet the Adaptation Factory could make a replacement from some of the dense bone material in the skull of a Malle, which are found to the south-west.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_dirk": {
+      "Text": "Most people don't know that there is an injection system in those dirks.  If you find some poison from the Shore Snakes on the beach, you could make a cartridge of toxins to install in the dirk.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_launcher": {
+      "Text": "The launcher mechanism on the launcher isn't very high power.  I've adapted a design from a pnuematic launcher developed by a man named Nizno, but you'll need a compression chamber from the Waste Collectors on the docks to make the conversion.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_bow": {
+      "Text": "That bow is a classic.  I've always wanted to put a natural gut string on it though, you might try the viscera of the Rollerrats to the south-west for the materials.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    },
+    "tip_shield": {
+      "Text": "I've looked at the blueprints for that shield, and there is a slot for an additional chemical injector.  Some bile from the Reef Salamanders to the south-west would be perfect to make an extra injector.",
+      "Replies": [
+        "see_selling",
+        "ranged",
+        "melee",
+        "special",
+        "armor"
+      ]
+    }
+  }
+}

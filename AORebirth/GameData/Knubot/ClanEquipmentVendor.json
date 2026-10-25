@@ -1,0 +1,107 @@
+{
+  "Notes": "Clan Equipment Vendor (CNTD), ICC Shuttleport (4582) at (918.7, 47.4, 864.5). Rebuilt from 4 QuestDialogCapture dumps (Clan_Equipment_Vendor_CNTD, 2026-10-20, character Complicado, a Clan member). Only Clan-side dialog was captured. {shop} is placed where he points at the shopping basket for 'New equipment'.",
+  "Npcs": [
+    "CNTD"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "upgrades": {
+      "Text": "Armor upgrades?",
+      "Goto": "upgrades"
+    },
+    "new_equipment": {
+      "Text": "New equipment, you say? Let's see what you've got for sale.",
+      "Goto": "for_sale"
+    },
+    "no_thanks": {
+      "Text": "Umm... no, thanks anyways.",
+      "Goto": "fair_enough"
+    },
+    "got_armor": {
+      "Text": "I've got some Newcomer's Armor. How do I upgrade it?",
+      "Goto": "how_upgrade"
+    },
+    "no_armor": {
+      "Text": "I don't have any Newcomer's Armor yet.",
+      "Goto": "get_armor"
+    },
+    "appreciate": {
+      "Text": "Appreciate the help, thanks a lot.",
+      "Goto": "absolutely"
+    },
+    "sounds_great": {
+      "Text": "Sounds great! I'll be back a little bit later.",
+      "Goto": "wonderful"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": [
+        "Hello my friend!",
+        "{delay 1}\\nI see you're one of us now... ",
+        "{delay 2}the noble freedom fighters of Rubi-Ka...",
+        "{delay 2} the Clans!",
+        "{delay 1}\\nBeing a member of the Clans is something to be proud of--knowing you are fighting every day for justice and freedom on this beautiful dusty-red planet, Rubi-Ka.",
+        "{delay 3}\\nAnd I even have armor upgrades and new equipment which can help you in your cause!"
+      ],
+      "Replies": [
+        "upgrades",
+        "new_equipment",
+        "no_thanks"
+      ]
+    },
+    "upgrades": {
+      "Text": [
+        "It's great armor, only wearable by freedom fighting Clans!",
+        "{delay 3}\\nAll you need is some Newcomer's Armor to upgrade."
+      ],
+      "Replies": [
+        "got_armor",
+        "no_armor",
+        "no_thanks"
+      ]
+    },
+    "how_upgrade": {
+      "Text": [
+        "Check out my shop inventory.",
+        "{delay 2}\\n{emote}Click on the shopping basket to open the shop window.{/emote}",
+        "{delay 5}\\nLook for the Joint Clans Badge in the shop inventory.",
+        "{delay 4}\\nYou'll want to buy one Joint Clans Badge for each piece of Newcomer's Armor you want to upgrade.",
+        "{delay 3}\\nTo upgrade, first make sure you're not wearing your armor, then attach a Joint Clans Badge to an armor piece.",
+        "{delay 5}\\nThis will start a chemical reaction which will change the molecular structure of the armor - it will become Joint Clans Newcomer's Armor."
+      ],
+      "Replies": [
+        "appreciate"
+      ]
+    },
+    "absolutely": {
+      "Text": "Absolutely! I'm always happy to help a fellow Clansperson!"
+    },
+    "get_armor": {
+      "Text": [
+        "Go have a chat with the Equipment Vendor over by the control tower.",
+        "{delay 1} He sells Newcomer's Armor which I can help you upgrade.",
+        "{delay 3}\\nOr, you can go and talk to the Shuttleport Manager, Travis Molen, I believe he hands out Newcomer's Armor for free, given that you help him with some minor tasks first.\\n\\nCome back here when you've gotten some Newcomer's Armor and I'll help you get it upgraded, sound good to you?"
+      ],
+      "Replies": [
+        "sounds_great"
+      ]
+    },
+    "wonderful": {
+      "Text": " Wonderful! Looking forward to chatting with you again."
+    },
+    "for_sale": {
+      "Text": [
+        "Of course! I think you'll find some things you can use",
+        "{delay 3}{shop}\\n{emote}Click on the shopping basket to open the shop window.{/emote}"
+      ]
+    },
+    "fair_enough": {
+      "Text": "Alright, fair enough."
+    }
+  }
+}

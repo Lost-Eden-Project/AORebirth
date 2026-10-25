@@ -2,6 +2,7 @@ namespace ZoneEngine_New.Core.Quests;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -334,20 +335,27 @@ public sealed partial class QuestService
                     definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
                 }
                 var items = new List<Item>();
+                var skippedUnique = new List<string>();
                 foreach (var definition in definitions)
                 {
                     if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
                         throw new InvalidOperationException("Reward item definition is invalid; delivery remains pending.");
-                    var item = _items.CreateWithNewInstance(definition.Id, definition.HighId ?? definition.Id,
-                        definition.Quality, ItemSource.Quest);
-                    if (ZoneEngine_New.Core.Trade.TradeRules.IsUnique(item) && (ZoneEngine_New.Core.Trade.TradeRules.WouldDuplicateUnique(player, item.LowId, item.HighId)
-                        || items.Any(existing => existing.LowId == item.LowId || existing.HighId == item.HighId)))
+                    int highId = definition.HighId ?? definition.Id;
+                    // A Unique reward the character already holds is left out: the quest still completes on its dialog
+                    // and pays the rest, rather than staying open until the held copy is gone. Checked on the template,
+                    // so no item is minted for it.
+                    if (IsUniqueTemplate(definition.Id) && (ZoneEngine_New.Core.Trade.TradeRules.WouldDuplicateUnique(player, definition.Id, highId)
+                        || items.Any(existing => existing.LowId == definition.Id || existing.HighId == highId)))
                     {
-                        NotifyPending(player, quest, uniqueConflict: true);
-                        return;
+                        skippedUnique.Add(string.IsNullOrEmpty(definition.Name) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Name);
+                        continue;
                     }
+                    var item = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
                     items.Add(item);
                 }
+                if (skippedUnique.Count > 0)
+                    _logger.Info("Quest reward unique items already held, left out char=" + player.Identity.Instance
+                        + " quest=" + quest.QuestId + " items=" + string.Join(", ", skippedUnique));
                 if (!InventoryGrantPlan.TryCreate(player, items, out var grant, allowOverflow: true))
                 {
                     NotifyPending(player, quest);
@@ -429,6 +437,19 @@ public sealed partial class QuestService
                 if (quest.IsRewardPending && !player.IsPersistenceQuarantined)
                     NotifyPending(player, quest);
             }
+        }
+    }
+
+    /// <summary>The reward template carries the Unique flag (read from the template, nothing minted).</summary>
+    bool IsUniqueTemplate(int templateId)
+    {
+        try
+        {
+            return (_items.CreateTemplate(templateId, templateId, 1).Flags & (int)ItemFlags.Unique) != 0;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

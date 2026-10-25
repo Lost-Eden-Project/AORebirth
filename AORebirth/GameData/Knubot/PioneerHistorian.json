@@ -1,0 +1,105 @@
+{
+  "Notes": "Pioneer Historian (OMIM), Arrival hall (4604) at (183.4, 1.0, 175.4). Rebuilt from 4 QuestDialogCapture dumps (Pioneer_Historian_OMIM, 2026-10-20, characters Soldaman, Aweadae, no quest state). Picking a faction is followed in retail by a faction set and a teleport to a backyard; the script format has no teleport or faction effect, so only the dialog is scripted.",
+  "Npcs": [
+    "OMIM"
+  ],
+  "Openers": [
+    {
+      "Say": "welcome"
+    }
+  ],
+  "Replies": {
+    "guess_so": {
+      "Text": "I guess so?",
+      "Goto": "third_option"
+    },
+    "whats_that": {
+      "Text": "And what's that?",
+      "Goto": "backyards"
+    },
+    "sure": {
+      "Text": "Sure, sounds good.",
+      "Goto": "faction"
+    },
+    "tell_backyards": {
+      "Text": "Can you tell me more about Backyards?",
+      "Goto": "about_backyards"
+    },
+    "omni": {
+      "Text": "Omni-tek.",
+      "Goto": "teleport"
+    },
+    "clans": {
+      "Text": "The Clans.",
+      "Goto": "teleport"
+    },
+    "neutral": {
+      "Text": "I want to remain Neutral.",
+      "Goto": "teleport"
+    }
+  },
+  "Lines": {
+    "welcome": {
+      "Text": "Welcome to Rubi-ka, fellow colonist! Are you planning on boarding the shuttle like everyone else?",
+      "Replies": [
+        "guess_so"
+      ]
+    },
+    "third_option": {
+      "Text": [
+        "Well, let me tell you, it's not the only option!",
+        "{delay 2} Over there, is the walkway through to the transport bound for the Shuttleport, just off the mainland terraformed portion of Rubi-ka.",
+        "{delay 2} And there, you have the representatives sent by JOBE, scientists and researchers who are diving into the mysterious Shadowlands.",
+        "{delay 3} But, what if I told you, there was a third option?",
+        "{delay 1}\\n{emote}She grins at you.{/emote}"
+      ],
+      "Replies": [
+        "whats_that"
+      ]
+    },
+    "backyards": {
+      "Text": [
+        "Backyards!",
+        "{delay 1} The true pioneer colonist experience!",
+        "{delay 2} You get to experience the world as it was for the first Rubi-kan colonists decades ago before the more recent infrastructure was built to offload our newest citizens.",
+        "{delay 1} What do you say? Interested?\\n\\n",
+        "{delay 1}{emote}<font color=#FF0000>The backyard start will lock access to the ICC Shuttleport and it's various items and benefits. You will also not be granted any profession specific start-up items. Please be certain you wish to commit to this start before continuing.</font>{/emote}"
+      ],
+      "Replies": [
+        "sure",
+        "tell_backyards"
+      ]
+    },
+    "about_backyards": {
+      "Text": [
+        "Of course.",
+        "{delay 1} 'Backyards' was a term given to the training areas for new colonists upon their arrival to Rubi-ka, before ICC had built the Shuttleport.",
+        "{delay 1} They still exist today, but are much quieter following the streamlining of the colonist onboarding process.",
+        "{delay 2} It's quite sad really...",
+        "{delay 2}\\nAnyway, you will still find an ample amount of local fauna just waiting to be greeted with your weapon of choice!"
+      ],
+      "Replies": [
+        "sure",
+        "tell_backyards"
+      ]
+    },
+    "faction": {
+      "Text": [
+        "Fantastic! It just so happens that I'm quite the accomplished Nano-technician too, so, can send you directly to the backyard of your choosing,",
+        "{delay 1} but first,",
+        "{delay 1} what faction would you like to align with?"
+      ],
+      "Replies": [
+        "omni",
+        "clans",
+        "neutral"
+      ]
+    },
+    "teleport": {
+      "Text": [
+        "Wonderful, hold still now and I will begin the program to teleport you there.",
+        "{delay 1} Good luck, Pioneer! "
+      ]
+    }
+  }
+}

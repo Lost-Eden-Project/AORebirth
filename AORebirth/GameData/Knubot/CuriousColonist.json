@@ -1,0 +1,285 @@
+{
+  "Notes": "Curious Colonist (CUCO), Arrival hall (4604) at (198.8, 1.0, 176.7). Rebuilt from 8 QuestDialogCapture dumps (Curious_Colonist_CUCO, 2026-10-20, character Soldaman, no quest state). The nine-question personality quiz: every answer of a question leads to the same next question. After the last question (q_friend) retail showed nothing more in all four captures (picks 0-3), so its four replies are dead ends.",
+  "Npcs": [
+    "CUCO"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "made_up": {
+      "Text": "Not really, I've already made up my mind.",
+      "Goto": "nice_life"
+    },
+    "know_more": {
+      "Text": "Yes, I want to know more before I make up my mind.",
+      "Goto": "two_options"
+    },
+    "tell_more": {
+      "Text": "This seems like a difficult choice. Can you tell me more?",
+      "Goto": "ask_questions"
+    },
+    "no_thanks": {
+      "Text": "Thanks, but no thanks - I think I've heard enough.",
+      "Goto": "okay_then"
+    },
+    "ask_away": {
+      "Text": "Not at all, ask away!",
+      "Goto": "q_colonies"
+    },
+    "q_colonies_1": {
+      "Text": "Ambition. I want a career, I want money, and I want power.",
+      "Goto": "q_respect"
+    },
+    "q_colonies_2": {
+      "Text": "Why? I came here to live my life, plain and simple.",
+      "Goto": "q_respect"
+    },
+    "q_colonies_3": {
+      "Text": "Politics. I feel it's important to get involved in the conflict.",
+      "Goto": "q_respect"
+    },
+    "q_colonies_4": {
+      "Text": "I feel that Fate has guided me to this place.",
+      "Goto": "q_respect"
+    },
+    "q_respect_1": {
+      "Text": "Philip Ross. The man has class, and he knows how to run a corporation.",
+      "Goto": "q_appeals"
+    },
+    "q_respect_2": {
+      "Text": "Rossiman who?",
+      "Goto": "q_appeals"
+    },
+    "q_respect_3": {
+      "Text": "Henry Radiman. He's a born leader, and he eschews power and protocol.",
+      "Goto": "q_appeals"
+    },
+    "q_respect_4": {
+      "Text": "I'm sure their leadership serves those that follow them, but I want to be guided by someone less mundane and less... substantial.",
+      "Goto": "q_appeals"
+    },
+    "q_appeals_1": {
+      "Text": "The abundance of valuable, natural resources to be exploited.",
+      "Goto": "q_mutants"
+    },
+    "q_appeals_2": {
+      "Text": "I honestly don't know enough about Rubi-Ka to tell you yet.",
+      "Goto": "q_mutants"
+    },
+    "q_appeals_3": {
+      "Text": "The opportunity to make a difference in the struggle for freedom.",
+      "Goto": "q_mutants"
+    },
+    "q_appeals_4": {
+      "Text": "The pioneering atmosphere, the promise of exploring the unknown.",
+      "Goto": "q_mutants"
+    },
+    "q_mutants_1": {
+      "Text": "Kill 'em all, and let God sort 'em out.",
+      "Goto": "q_colour"
+    },
+    "q_mutants_2": {
+      "Text": "Mutants are people too, aren't they? Live and let live, that's my philosophy.",
+      "Goto": "q_colour"
+    },
+    "q_mutants_3": {
+      "Text": "Containment and re-education would be a good start.",
+      "Goto": "q_colour"
+    },
+    "q_mutants_4": {
+      "Text": "Mutants are just out of sync in the orchestra of creation. Some neural scientists should be able to tune their strings.",
+      "Goto": "q_colour"
+    },
+    "q_colour_1": {
+      "Text": "Red. It's bold, passionate, and radical.",
+      "Goto": "q_soldier"
+    },
+    "q_colour_2": {
+      "Text": "Blue. It's cool, professional, and conservative.",
+      "Goto": "q_soldier"
+    },
+    "q_colour_3": {
+      "Text": "Uh, is grey a color? Grey it is.",
+      "Goto": "q_soldier"
+    },
+    "q_colour_4": {
+      "Text": "I have many favorite colours and they are all  in my dreams.",
+      "Goto": "q_soldier"
+    },
+    "q_soldier_1": {
+      "Text": "Bring him back to headquarters at gunpoint for interrogation.",
+      "Goto": "q_pets"
+    },
+    "q_soldier_2": {
+      "Text": "Help him back to his camp, despite the risk.",
+      "Goto": "q_pets"
+    },
+    "q_soldier_3": {
+      "Text": "Turn around and take another route. The area is obviously unsafe.",
+      "Goto": "q_pets"
+    },
+    "q_soldier_4": {
+      "Text": "I have no enemies, so I would not find myself in this situation.",
+      "Goto": "q_pets"
+    },
+    "q_pets_1": {
+      "Text": "Dogs. They're loyal and obedient.",
+      "Goto": "q_million"
+    },
+    "q_pets_2": {
+      "Text": "Cats. They're self-reliant and free-thinking.",
+      "Goto": "q_million"
+    },
+    "q_pets_3": {
+      "Text": "Neither. Cats are too aggressive, dogs too subservient.",
+      "Goto": "q_million"
+    },
+    "q_pets_4": {
+      "Text": "Depends on whether I am catching mice or hunting game.",
+      "Goto": "q_million"
+    },
+    "q_million_1": {
+      "Text": "Bribes. It's the only way to get ahead in this galaxy.",
+      "Goto": "q_friend"
+    },
+    "q_million_2": {
+      "Text": "I'd donate half of it to a worthy cause, and use the other half on new equipment.",
+      "Goto": "q_friend"
+    },
+    "q_million_3": {
+      "Text": "Food and stuff, I guess. Maybe invest in some Sol Banking Corporation stocks.",
+      "Goto": "q_friend"
+    },
+    "q_million_4": {
+      "Text": "Travel to some exotic location.",
+      "Goto": "q_friend"
+    },
+    "q_friend_1": {
+      "Text": "Report him immediately. That might score me some points, and keep me out of trouble."
+    },
+    "q_friend_2": {
+      "Text": "Help him bury the body and establish an alibi. It's important to stay loyal to your friends, no matter what."
+    },
+    "q_friend_3": {
+      "Text": "I'd ignore him, never return his messages, and pray that I don't get dragged into anything."
+    },
+    "q_friend_4": {
+      "Text": "I'd go and check to see if anyone got hurt."
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": "Hello there! You are headed out the gates, right? Unsure about where to go?",
+      "Replies": [
+        "made_up",
+        "know_more"
+      ]
+    },
+    "nice_life": {
+      "Text": "All right, have a nice life on Rubi-Ka!"
+    },
+    "two_options": {
+      "Text": [
+        "Well, you have actually only two options at this point. ",
+        "{delay 2} The Jobe gate over there means you choose to be neutral in the conflict, but also that you enter service of the scientists at Jobe Research.  The normal gates to Rubi-Ka are temporarily closed because of the situation with the aliens, so the other gate will take you to the ICC Shuttleport where ICC will keep you until you're cleared for citizenship. "
+      ],
+      "Replies": [
+        "tell_more"
+      ]
+    },
+    "ask_questions": {
+      "Text": "Sure! If I can ask you a few questions first, I might be able to point you in the right direction. Would you mind?",
+      "Replies": [
+        "no_thanks",
+        "ask_away"
+      ]
+    },
+    "okay_then": {
+      "Text": "Okay, then! Have a nice life on Rubi-Ka!"
+    },
+    "q_colonies": {
+      "Text": "There are lots of colonies in the galaxy. Why come to Rubi-Ka?",
+      "Replies": [
+        "q_colonies_1",
+        "q_colonies_2",
+        "q_colonies_3",
+        "q_colonies_4"
+      ]
+    },
+    "q_respect": {
+      "Text": "Who do you respect the most, Philip Ross of Omni-Tek, or Henry Radiman of the clans?",
+      "Replies": [
+        "q_respect_1",
+        "q_respect_2",
+        "q_respect_3",
+        "q_respect_4"
+      ]
+    },
+    "q_appeals": {
+      "Text": "What is it about Rubi-Ka that appeals to you the most?",
+      "Replies": [
+        "q_appeals_1",
+        "q_appeals_2",
+        "q_appeals_3",
+        "q_appeals_4"
+      ]
+    },
+    "q_mutants": {
+      "Text": "What do you think should be done about the mutant problem?",
+      "Replies": [
+        "q_mutants_1",
+        "q_mutants_2",
+        "q_mutants_3",
+        "q_mutants_4"
+      ]
+    },
+    "q_colour": {
+      "Text": "What's your favourite colour?",
+      "Replies": [
+        "q_colour_1",
+        "q_colour_2",
+        "q_colour_3",
+        "q_colour_4"
+      ]
+    },
+    "q_soldier": {
+      "Text": "You come across a wounded enemy soldier. What do you do?",
+      "Replies": [
+        "q_soldier_1",
+        "q_soldier_2",
+        "q_soldier_3",
+        "q_soldier_4"
+      ]
+    },
+    "q_pets": {
+      "Text": "Cats or dogs?",
+      "Replies": [
+        "q_pets_1",
+        "q_pets_2",
+        "q_pets_3",
+        "q_pets_4"
+      ]
+    },
+    "q_million": {
+      "Text": "If you won a million credits, what would you do with it?",
+      "Replies": [
+        "q_million_1",
+        "q_million_2",
+        "q_million_3",
+        "q_million_4"
+      ]
+    },
+    "q_friend": {
+      "Text": "Your best friend gets involved in a hit-and-run accident, and comes to you for assistance. What do you do?",
+      "Replies": [
+        "q_friend_1",
+        "q_friend_2",
+        "q_friend_3",
+        "q_friend_4"
+      ]
+    }
+  }
+}

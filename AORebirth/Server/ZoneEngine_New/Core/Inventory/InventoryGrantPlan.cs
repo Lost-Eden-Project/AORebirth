@@ -44,6 +44,12 @@ namespace ZoneEngine_New.Core.Inventory
                 || !(allowOverflow ? player.Inventory.HasRoomFor(items.Count) : player.Inventory.HasFreeInventorySlots(items.Count))
                 || items.Any(item => item.InstanceId <= 0 || item.IsPersisted || item.StackCount <= 0)
                 || items.Select(item => item.InstanceId).Distinct().Count() != items.Count) return false;
+            // No grant may give a Unique the player holds, or the same Unique twice; callers leave those out first.
+            if (UniqueItems.HasRepeatedUnique(items, out _)) return false;
+            foreach (Item item in items)
+            {
+                if (UniqueItems.WouldDuplicate(player, item, out _)) return false;
+            }
             Container page = player.Inventory.Inventory;
             int[] inventorySlots = Enumerable.Range(page.Offset, page.Capacity).Where(slot => !page.Content.ContainsKey(slot)).Take(items.Count).ToArray();
             int[] overflowSlots = player.Inventory.FreeOverflowSlots(items.Count - inventorySlots.Length);

@@ -64,6 +64,76 @@ public sealed class KnubotCatalog
     /// <summary>The <see cref="OverrideVariable"/> folder, or null when it is not set.</summary>
     public string? OverrideRoot { get; }
 
+    /// <summary>GameData/Knubot, where shipped scripts are read from.</summary>
+    public string Root => _root;
+
+    /// <summary>Every loaded script once (a script talks for several NPCs), by id.</summary>
+    public IReadOnlyDictionary<string, KnubotScript> LoadedScripts()
+    {
+        var scripts = new SortedDictionary<string, KnubotScript>(StringComparer.Ordinal);
+        foreach (KnubotScript script in _byNpc.Values)
+            scripts[script.Id] = script;
+        return scripts;
+    }
+
+    /// <summary>
+    /// The file script <paramref name="id"/> is read from: the override folder's when it has one, else GameData's. Null
+    /// when <paramref name="id"/> is not a plain relative script id or names no file.
+    /// </summary>
+    public string? FileFor(string id)
+    {
+        if (OverrideRoot != null && TryResolve(OverrideRoot, id, out string overridePath) && File.Exists(overridePath))
+            return overridePath;
+        return TryResolve(_root, id, out string path) && File.Exists(path) ? path : null;
+    }
+
+    /// <summary>
+    /// Where a script <paramref name="id"/> is written: over the file it is read from, else a new file under GameData.
+    /// False for an id that is not a plain relative path of letters, digits, '_', '-' and '/' (no '..', no root).
+    /// </summary>
+    public bool TryWritePath(string id, out string path)
+    {
+        path = FileFor(id) ?? string.Empty;
+        return path.Length != 0 || TryResolve(_root, id, out path);
+    }
+
+    static bool TryResolve(string root, string id, out string path)
+    {
+        path = string.Empty;
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || id.StartsWith('/') || id.EndsWith('/') || id.Contains("//", StringComparison.Ordinal))
+            return false;
+        foreach (char c in id)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '/'))
+                return false;
+        }
+
+        string full = Path.GetFullPath(Path.Combine(root, id.Replace('/', Path.DirectorySeparatorChar) + ".json"));
+        string rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+            return false;
+        path = full;
+        return true;
+    }
+
+    /// <summary>Replies that lead nowhere yet, as "line 'x' reply 'y'".</summary>
+    public static string[] DeadEnds(KnubotScript script)
+        => script.Lines.Values.SelectMany(line => line.Replies.Where(script.IsDeadEnd)
+            .Select(reply => "line '" + line.Id + "' reply '" + reply.Id + "'")).ToArray();
+
+    /// <summary>
+    /// <see cref="Check"/> plus the dead-end replies the script would load with (empty when it would not load).
+    /// Nothing is installed.
+    /// </summary>
+    public IReadOnlyList<string> Check(string id, string json, out string[] deadEnds)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        var errors = new List<string>();
+        KnubotScript? script = Parse(id, json ?? string.Empty, errors);
+        deadEnds = script != null && errors.Count == 0 ? DeadEnds(script) : [];
+        return errors;
+    }
+
     public int NpcCount => _byNpc.Count;
 
     /// <summary>
@@ -227,8 +297,7 @@ public sealed class KnubotCatalog
                 claimedByOverride.Add(npc);
         }
 
-        var deadEnds = script.Lines.Values.SelectMany(line => line.Replies.Where(script.IsDeadEnd)
-            .Select(reply => "line '" + line.Id + "' reply '" + reply.Id + "'")).ToArray();
+        string[] deadEnds = DeadEnds(script);
         if (deadEnds.Length != 0)
             _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot script {0} has {1} dead-end replies: {2}",
                 script.Id, deadEnds.Length, string.Join(", ", deadEnds)));
@@ -397,7 +466,11 @@ public sealed class KnubotCatalog
                 errors.Add("line '" + line.Id + "': {goto} names unknown line '" + line.Goto + "'");
         }
 
-        return new KnubotScript(id, npcs, openers.ToArray(), lines, trades.ToArray());
+        string? tradeRefused = string.IsNullOrWhiteSpace(file.TradeRefused) ? null : file.TradeRefused.Trim();
+        if (tradeRefused != null && !lines.ContainsKey(tradeRefused))
+            errors.Add("TradeRefused names unknown line '" + tradeRefused + "'");
+
+        return new KnubotScript(id, npcs, openers.ToArray(), lines, trades.ToArray(), tradeRefused);
     }
 
     static KnubotCondition[] Conditions(string[]? texts, KnubotRequirementFile[]? requirements, KnubotLoadContext load, List<string> errors)

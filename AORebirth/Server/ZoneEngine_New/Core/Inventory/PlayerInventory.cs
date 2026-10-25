@@ -500,12 +500,26 @@ namespace ZoneEngine_New.Core.Inventory
             foreach (Container page in _backpackPages.Values)
             {
                 Item? bag = page.LinkedItem;
-                if (bag == null || !ContainsCarriedItem(bag))
+                if (bag == null || !(ContainsCarriedItem(bag) || ContainsItem(Overflow, bag)))
                     continue;
 
                 foreach (Item item in page.Content.Values)
                     yield return item;
             }
+        }
+
+        /// <summary>The bag's page is loaded (opened this session), so its contents are in <see cref="EnumerateHeldItems"/>.</summary>
+        public bool IsBagHydrated(Item bag)
+            => TryGetBackpackPage(bag.Identity, out Container page) && page.IsHydrated;
+
+        /// <summary>A page whose items the character carries: inventory, wear pages, overflow, or a carried bag.</summary>
+        public bool IsCarriedPage(Container page)
+        {
+            ArgumentNullException.ThrowIfNull(page);
+            if (ReferenceEquals(page, Inventory) || ReferenceEquals(page, Equipment) || ReferenceEquals(page, Armor)
+                || ReferenceEquals(page, Implant) || ReferenceEquals(page, Social) || ReferenceEquals(page, Overflow))
+                return true;
+            return page.LinkedItem is Item bag && (ContainsCarriedItem(bag) || ContainsItem(Overflow, bag));
         }
 
         public bool ContainsCarriedItem(Item item)

@@ -1,0 +1,325 @@
+{
+  "Notes": "Adri Afeli (ADAF), ICC Shuttleport. Rebuilt from 18 QuestDialogCapture dumps (Adri_Afeli_ADAF, 2026-10-20, characters Soldmen, Complicado). Weapon job 14VI (trade; Power Supply PRSY is the only known spec item); robot chain MFCN > NP3L > 7N06 > X56X > OLJO (Return to Adri, turn-in never captured); 9CLH sends you to Travis Molen. Retail re-gave MFCN from 'Anything else I can do for you?' even when MFCN was already done, so that line is not guarded. The 14VI trade only matches a lone PRSY; retail took the five items plus the old weapon and swapped the weapon, which the format cannot express.",
+  "Npcs": [
+    "ADAF"
+  ],
+  "Openers": [
+    {
+      "If": [
+        "HasQuest 14VI"
+      ],
+      "Say": "hey_items"
+    },
+    {
+      "If": [
+        "HasCompletedQuest 14VI"
+      ],
+      "Say": "psst"
+    },
+    {
+      "Say": "hey"
+    }
+  ],
+  "Replies": {
+    "who": {
+      "Text": "Who are you?",
+      "Goto": "name"
+    },
+    "stacklund": {
+      "Text": "Where can I find Mr. Stacklund?",
+      "Goto": "freelancer"
+    },
+    "stacklund_done": {
+      "Text": "Where can I find Mr. Stacklund?",
+      "Goto": "freelancer_done"
+    },
+    "help_else": {
+      "Text": "Can I help you with something else? ",
+      "If": [
+        "quest MFCN none"
+      ],
+      "Goto": "docks"
+    },
+    "talk_next_psst": {
+      "Text": "Who should I talk to next?",
+      "If": [
+        "quest MFCN done"
+      ],
+      "Goto": "talk_next"
+    },
+    "talk_next": {
+      "Text": "Who should I talk to next?",
+      "Goto": "talk_next"
+    },
+    "anything_else": {
+      "Text": "Anything else I can do for you?",
+      "Goto": "docks_given"
+    },
+    "items": {
+      "Text": "I have the items you wanted.",
+      "Goto": "awesome"
+    },
+    "sure_need": {
+      "Text": "Sure, what do you need?",
+      "Goto": "dabble"
+    },
+    "not_really": {
+      "Text": "Not really. I just want to get out of here.",
+      "Goto": "no_blame"
+    },
+    "get_some": {
+      "Text": "I could get you some, maybe?",
+      "Goto": "funny"
+    },
+    "thanks": {
+      "Text": "Thanks!",
+      "Goto": "good_luck"
+    },
+    "shaken": {
+      "Text": "Yes. We were lucky to survive. I'm still shaken up.",
+      "Goto": "crash"
+    },
+    "learn": {
+      "Text": "Yeah, I think I need to learn my way around if I'm to survive this planet.",
+      "Goto": "good_idea"
+    },
+    "who_else": {
+      "Text": "Who else on this island do I talk to?",
+      "Goto": "who_else"
+    },
+    "help_out": {
+      "Text": "Maybe I could help you out?",
+      "If": [
+        "quest MFCN none"
+      ],
+      "Goto": "docks"
+    },
+    "what_do": {
+      "Text": "Ok, what do you want me to do, then?",
+      "Goto": "clear_out"
+    },
+    "antonio": {
+      "Text": "Where can I find Antonio Stacklund?",
+      "Goto": "antonio_where"
+    },
+    "travis": {
+      "Text": "Where can I find Travis Molen?",
+      "If": [
+        "!HasCompletedQuest 9CLH"
+      ],
+      "Goto": "travis_where_more"
+    },
+    "travis_again": {
+      "Text": "Where can I find Travis Molen?",
+      "If": [
+        "HasCompletedQuest 9CLH"
+      ],
+      "Goto": "travis_where_more_again"
+    },
+    "travis_next": {
+      "Text": "Where can I find Travis Molen?",
+      "If": [
+        "!HasCompletedQuest 9CLH"
+      ],
+      "Goto": "travis_where"
+    },
+    "travis_next_again": {
+      "Text": "Where can I find Travis Molen?",
+      "If": [
+        "HasCompletedQuest 9CLH"
+      ],
+      "Goto": "travis_where_again"
+    }
+  },
+  "Lines": {
+    "hey": {
+      "Text": "Hey there.",
+      "Replies": [
+        "who",
+        "stacklund"
+      ]
+    },
+    "hey_items": {
+      "Text": "Hey there.",
+      "Replies": [
+        "items"
+      ]
+    },
+    "psst": {
+      "Text": "Psst! Over here!",
+      "Replies": [
+        "stacklund_done",
+        "help_else",
+        "talk_next_psst"
+      ]
+    },
+    "freelancer": {
+      "Text": [
+        "Freelancer you too, eh? Glad to hear it. Now, Stacklund is on top of the compound. Head back a little, then up the ramp. Go past the soldiers and the Unicorn Commander and you'll soon run into him.",
+        "{delay 2}\\nSay, you free to help me out a bit before you go running off to greener pastures?"
+      ],
+      "Replies": [
+        "sure_need",
+        "not_really"
+      ]
+    },
+    "freelancer_done": {
+      "Text": "Freelancer you too, eh? Glad to hear it. Now, Stacklund is on top of the compound. Head back a little, then up the ramp. Go past the soldiers and the Unicorn Commander and you'll soon run into him.",
+      "Replies": [
+        "not_really"
+      ]
+    },
+    "dabble": {
+      "Text": [
+        "I dabble a little in amateur weapon technology and I've found a way to overclock the weapon stocks here on the island. And no, I'm not gonna tell you how. That's for me to know and you to wonder about.",
+        "{delay 2}\\nBut you could help me. I use biological components to increase the output of the weapons slightly. It's a chemical and structural process. I already have some good weapons in stock, but I need some components to build more."
+      ],
+      "Replies": [
+        "get_some"
+      ]
+    },
+    "funny": {
+      "Text": [
+        "{givequest 14VI}",
+        "Funny you should say that. It's exactly what I have in mind. You scratch my back, I'll scratch yours. ",
+        "{delay 2}Here, I'll upload a list of things I need. Bring me the items, and I'll issue you with a better boomstick. Or just stick. Or bow or whatever you want to use. All the details you need to know are in the briefing. Return to me, and I'll pay you for the work and give you a new weapon.\\n\\n{emote}(To find out what Adri needs, open your mission window by pressing CTRL-4 or by clicking the appropriate button in your gui. Examine the mission he just gave you for details on the items he wants and where to find them.){/emote}"
+      ]
+    },
+    "no_blame": {
+      "Text": "Heh, I don't blame you. Well, you should see about getting someone to sponsor you. Head up to Travis Molen as well. He's the manager of the shuttle port. You usually find him close to where Stacklund is.",
+      "Replies": [
+        "thanks"
+      ]
+    },
+    "good_luck": {
+      "Text": [
+        "That's alright, kid. Good luck out there. Rubi-Ka is a harsh place, but profitable for those who know how to handle themselves.",
+        "{emote}He waves you goodbye.{/emote}"
+      ]
+    },
+    "name": {
+      "Text": "Name's Adri. You one of the people on the shuttle that just hammered down on the beach?",
+      "Replies": [
+        "shaken"
+      ]
+    },
+    "crash": {
+      "Text": "A shuttle crash will have that effect on you. So, I take it you've found your way around a little. Suppose you'd like something to do?",
+      "Replies": [
+        "learn"
+      ]
+    },
+    "good_idea": {
+      "Text": "Good idea. Well, there's a number of people on the island you could help out. Usually, they'll compensate you for your time. Why do you think I've stayed behind even after the aliens landed?",
+      "Replies": [
+        "who_else",
+        "help_out"
+      ]
+    },
+    "who_else": {
+      "Text": "There's always Travis Molen up in the main compound. He could always do with an extra pair of hands. Or, if you just want to get rid of some stuff you've found, talk to Antonio Stacklund.",
+      "Replies": [
+        "travis",
+        "travis_again",
+        "antonio"
+      ]
+    },
+    "talk_next": {
+      "Text": "There's always Travis Molen up in the main compound. He could always do with an extra pair of hands. Or, if you just want to get rid of some stuff you've found, talk to Antonio Stacklund.",
+      "Replies": [
+        "travis_next",
+        "travis_next_again"
+      ]
+    },
+    "antonio_where": {
+      "Text": "Go through the snippet of tunnel behind me and up the ramp. Continue past the soldiers and up on top. He's usually talking to some customers. Nice fellow.",
+      "Replies": [
+        "travis",
+        "travis_again"
+      ]
+    },
+    "travis_where_more": {
+      "Text": [
+        "{givequest 9CLH}",
+        "Go through the snippet of tunnel behind me and up the ramp. Continue past the soldiers and up on top. You'll see him. Bald fella, big moustache."
+      ],
+      "Replies": [
+        "antonio"
+      ]
+    },
+    "travis_where_more_again": {
+      "Text": "Go through the snippet of tunnel behind me and up the ramp. Continue past the soldiers and up on top. You'll see him. Bald fella, big moustache.",
+      "Replies": [
+        "antonio"
+      ]
+    },
+    "travis_where": {
+      "Text": [
+        "{givequest 9CLH}",
+        "Go through the snippet of tunnel behind me and up the ramp. Continue past the soldiers and up on top. You'll see him. Bald fella, big moustache."
+      ]
+    },
+    "travis_where_again": {
+      "Text": "Go through the snippet of tunnel behind me and up the ramp. Continue past the soldiers and up on top. You'll see him. Bald fella, big moustache."
+    },
+    "docks": {
+      "Text": [
+        "Sure. See the docks down there? A shipment of cargo droids and waste collectors went nuts after the fuses in their transport crates blew. Must've short circuited their chip brains or something.",
+        "{delay 2} Anyway, I have some..business..down there, but they go postal on me if I go near the crates I need to get to."
+      ],
+      "Replies": [
+        "what_do"
+      ]
+    },
+    "clear_out": {
+      "Text": [
+        "{givequest MFCN}",
+        "Just clear out a few of the droids, waste buckets and the two larger droids that guard the piers, will you? Here, I've uploaded the details to your NCU. Come back when you've decommissioned a few of them and I'll pay you for the trouble. I'll even throw in a backpack for you since I'm such a nice guy."
+      ]
+    },
+    "docks_given": {
+      "Text": [
+        "{givequest MFCN}",
+        "Sure. See the docks down there? A shipment of cargo droids and waste collectors went nuts after the fuses in their transport crates blew. Must've short circuited their chip brains or something.",
+        "{delay 2} Anyway, I have some..business..down there, but they go postal on me if I go near the crates I need to get to. Go clear out some of the robots, would you?"
+      ]
+    },
+    "awesome": {
+      "Text": "That's awesome! Hand them over to me along with your old weapon, and I'll give you an improved version in return.",
+      "Replies": [
+        "talk_next",
+        "anything_else"
+      ]
+    },
+    "weapon_given": {
+      "Text": [
+        "{completequest 14VI}",
+        "{delay 1}Good choice of weapon, friend.",
+        "{emote}He looks over the weapon you handed him then reaches into a crate nearby and pulls out a similar type which he hands to you.{/emote}",
+        "{delay 1}There you go. That should give you better results."
+      ],
+      "Replies": [
+        "talk_next",
+        "anything_else"
+      ]
+    },
+    "refused": {
+      "Text": "This isn't all I need. You sure you don't have anything else?"
+    }
+  },
+  "Trades": {
+    "weapon_parts": {
+      "If": [
+        "HasQuest 14VI"
+      ],
+      "Items": [
+        {
+          "Hash": "PRSY",
+          "Count": 1
+        }
+      ],
+      "Goto": "weapon_given"
+    }
+  },
+  "TradeRefused": "refused"
+}

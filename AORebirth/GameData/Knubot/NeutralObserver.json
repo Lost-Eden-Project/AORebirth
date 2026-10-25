@@ -1,0 +1,174 @@
+{
+  "Notes": "Neutral Observer (NERE), ICC Shuttleport (4582) at (937.5, 47.0, 870.7). Rebuilt from 6 QuestDialogCapture dumps (Neutral_Observer_NERE, 2026-10-20, character Soldmen, unsigned/neutral). Hands out the access card and maps to anyone; those items are not given yet (item hashes not in the captures). Signed Omni/Clan players were never captured here.",
+  "Npcs": [
+    "NERE"
+  ],
+  "Openers": [
+    {
+      "Say": "greeting"
+    }
+  ],
+  "Replies": {
+    "about_neutrals": {
+      "Text": "What can you tell me about the neutrals?",
+      "Goto": "neutrals"
+    },
+    "about_clans": {
+      "Text": "What can you tell me about The Clans?",
+      "Goto": "clans"
+    },
+    "about_omni": {
+      "Text": "What can you tell me about Omni-Tek?",
+      "Goto": "omni"
+    },
+    "mainland_from_here": {
+      "Text": "How do I get to the mainland from here?",
+      "Goto": "card"
+    },
+    "who_leads": {
+      "Text": "Who leads the neutrals?",
+      "Goto": "neutral_leader"
+    },
+    "when_neutrals": {
+      "Text": "When did the neutrals first appear?",
+      "Goto": "neutral_when"
+    },
+    "dogma": {
+      "Text": "What's the neutral dogma?",
+      "Goto": "neutral_dogma"
+    },
+    "icc_link": {
+      "Text": "What's the link between the neutrals and the ICC?",
+      "Goto": "neutral_icc"
+    },
+    "neutral_teleport": {
+      "Text": "If I remain as a neutral and teleport to the mainland, where will I end up?",
+      "Goto": "neutral_teleport"
+    },
+    "something_else": {
+      "Text": "I would like to talk about something else.",
+      "Goto": "what_is_it"
+    },
+    "thank_you": {
+      "Text": "Thank you for your help.",
+      "Goto": "best_of_luck"
+    },
+    "where_teleport": {
+      "Text": "Where will I teleport to on the mainland?",
+      "Goto": "card_borealis"
+    }
+  },
+  "Lines": {
+    "greeting": {
+      "Text": "Hello friend! And welcome to Rubi-Ka. Have you decided yet where you want to settle, and what you want to do with your life? If not, then I'll be happy to tell you about the neutrals and our philosophies. Ask away. ",
+      "Replies": [
+        "about_neutrals",
+        "about_clans",
+        "about_omni",
+        "mainland_from_here"
+      ]
+    },
+    "neutrals": {
+      "Text": "We are civilians who tired of the conflict and war between the rebels and the corporation, and decided to establish our own communities. Omni-Tek is too preoccupied with The Clans to bother us, and The Clans don't have anything to fear from us, so they leave us alone, too. Most of the time.",
+      "Replies": [
+        "who_leads",
+        "when_neutrals",
+        "dogma",
+        "icc_link",
+        "neutral_teleport",
+        "something_else"
+      ]
+    },
+    "neutral_leader": {
+      "Text": " We have no leader. Personally, I believe in a self-governed society, where everyone looks out for everyone else. But other neutrals support a democratically elected government, one without interference from Omni-Tek or The Clans. Others again may have different views, and that's fine. Being neutral is first and foremost about staying out of the conflict.",
+      "Replies": [
+        "when_neutrals",
+        "dogma",
+        "icc_link",
+        "neutral_teleport",
+        "something_else"
+      ]
+    },
+    "neutral_when": {
+      "Text": " It's hard to say, but we usually say that the first people to call themselves 'neutral' did so in 29250. Most of them were Omni-Tek employees, but there were also a few people from The Clans, and all of them were fed up with the conflict. From then on, we grew in numbers, and today there are many, many thousands of neutrals.",
+      "Replies": [
+        "who_leads",
+        "dogma",
+        "icc_link",
+        "neutral_teleport",
+        "something_else"
+      ]
+    },
+    "neutral_dogma": {
+      "Text": "Dogma? I don't think there is one, but all neutrals agree that the conflict between Omni-Tek and The Clans is the problem, and there won't be lasting peace or prosperity until that conflict is resolved. We don't want to choose sides, and the more people that join our cause, the fewer peole will be left to fight.",
+      "Replies": [
+        "who_leads",
+        "when_neutrals",
+        "icc_link",
+        "neutral_teleport",
+        "something_else"
+      ]
+    },
+    "neutral_icc": {
+      "Text": "There is no link! Anyone who tells you otherwise is a liar. The ICC is a regulatory body for all corporations, and the only reason they have posted Peacekeepers in neutral territories is to protect Rubi-Kan civilians against corporate - and clan - aggression. We have no army, and we don't want an army. The ICC is just doing it's job.",
+      "Replies": [
+        "who_leads",
+        "when_neutrals",
+        "dogma",
+        "neutral_teleport",
+        "something_else"
+      ]
+    },
+    "neutral_teleport": {
+      "Text": "You will be teleported to the beautiful city of Borealis, which has many things to offer a neutral, like shops, comfortable apartments, and the subway within the city.",
+      "Replies": [
+        "who_leads",
+        "when_neutrals",
+        "dogma",
+        "icc_link",
+        "something_else"
+      ]
+    },
+    "what_is_it": {
+      "Text": "Alright then. What is it?",
+      "Replies": [
+        "about_clans",
+        "about_omni"
+      ]
+    },
+    "clans": {
+      "Text": "Personally, I don't much care for the rebels and their rhetoric.  They claim to be fighting for freedom, and \"the Rubi-Kan way\".  Hah!  The Clans have only served to make life tougher on the average civilian, if you ask me.  They want power and control, just like Omni-Tek.  There really is no difference.  Except for that Radiman guy.  I like him. ",
+      "Replies": [
+        "about_neutrals",
+        "about_omni"
+      ]
+    },
+    "omni": {
+      "Text": "It's a corporation.  What else is there to know?  We have nothing against Omni-Tek, as long as we're left alone to do our own thing.  We understand and accept the Corporation's ownership of Rubi-Ka, and it's monopoly on notum mining, but we also believe in our ICC-given right to exist independently of the Corporation.",
+      "Replies": [
+        "about_neutrals",
+        "about_clans"
+      ]
+    },
+    "card": {
+      "Text": [
+        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.",
+        "{delay 4}But remember, once you leave here and go to the mainland, you will be unable to return to here, so do keep that in mind. ",
+        "{delay 2}Oh, and you might find it useful to have these maps! "
+      ],
+      "Replies": [
+        "thank_you",
+        "where_teleport"
+      ]
+    },
+    "card_borealis": {
+      "Text": "You will be teleported to the beautiful city of Borealis, which has many things to offer a neutral, like shops, comfortable apartments, and the subway within the city.",
+      "Replies": [
+        "thank_you"
+      ]
+    },
+    "best_of_luck": {
+      "Text": "The best of luck to you. There are many exciting, new adventures awaiting you on the mainland."
+    }
+  }
+}

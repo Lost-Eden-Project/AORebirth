@@ -91,7 +91,12 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             if (_sessions.TryGetValue(player.Identity.Instance, out Conversation? previous))
             {
                 if (Valid(previous))
+                {
+                    logger.Info(string.Format(CultureInfo.InvariantCulture,
+                        "Knubot: char={0} clicked an NPC while a chat with {1} ({2}) is still open; ignored",
+                        player.Identity.Instance, previous.Npc.Name, previous.Script.Id));
                     return true;
+                }
 
                 Remove(previous);
             }
@@ -101,14 +106,22 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
                 return false;
 
             if (!InReach(player, npc))
+            {
+                logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: char={1} is out of reach of {2}",
+                    script.Id, player.Identity.Instance, npc.Name));
                 return true;
+            }
 
             HashSet<string> met = _met.GetValue(player, _ => new HashSet<string>(StringComparer.Ordinal));
             var conversation = new Conversation(player, transport, npc, playfield, script, met.Contains(script.Id), _milliseconds());
             KnubotContext context = Context(conversation);
             KnubotOpener? opener = script.Openers.FirstOrDefault(x => x.Passes(context));
             if (opener == null)
+            {
+                logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: no opener applies for char={1}",
+                    script.Id, player.Identity.Instance));
                 return true;
+            }
 
             if (opener.Vicinity != null)
             {
@@ -216,7 +229,8 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
                 || !catalog.TryResolve(npc, out KnubotScript script))
                 return false;
 
-            if (script.Trades.Length == 0 || !InReach(player, npc))
+            // A script with only a TradeRefused line still opens the window: the NPC takes nothing and says it.
+            if ((script.Trades.Length == 0 && script.TradeRefused == null) || !InReach(player, npc))
                 return true;
 
             if (_sessions.TryGetValue(player.Identity.Instance, out Conversation? conversation))
@@ -320,6 +334,15 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             if (trade == null || !effects.Trades.TryCommitKnubot(player, npc, credits))
             {
                 effects.Trades.EndKnubot(player, npc, refund, trade == null ? "no matching trade" : "commit failed");
+                // The items are back with the player; a script may have the NPC say why.
+                if (trade == null && conversation.Script.TradeRefused is string refused)
+                {
+                    conversation.LastActivityAt = _milliseconds();
+                    conversation.Replies = [];
+                    Continue(conversation, refused);
+                    Pump(conversation);
+                }
+
                 return true;
             }
 
@@ -402,12 +425,32 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
 
         if (!KnubotEffect.CanApplyAll(line.Effects, Context(conversation), effects))
         {
+            logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Knubot {0}: line '{1}' cannot run for char={2}: {3}; {4}",
+                conversation.Script.Id, lineId, conversation.Player.Identity.Instance, BlockingEffect(conversation, line),
+                line.Fail != null ? "saying '" + line.Fail + "'" : "closing (no Fail line)"));
             Fail(conversation, line, chain);
             return;
         }
 
         int pendingDelay = QueueText(conversation, line, chain);
         conversation.Packets.Enqueue(Outgoing.Finish(line, chain, pendingDelay));
+    }
+
+    /// <summary>The first of the line's effects that cannot be applied, or the inventory space they need together.</summary>
+    string BlockingEffect(Conversation conversation, KnubotLine line)
+    {
+        KnubotContext context = Context(conversation);
+        if (!conversation.Player.Inventory.IsHydrated)
+            return "inventory not loaded";
+        var plan = new KnubotPlan();
+        foreach (KnubotEffect effect in line.Effects)
+        {
+            if (!effect.Check(context, plan, effects))
+                return effect.ToString();
+        }
+
+        return "needs " + plan.SlotsNeeded + " free inventory slots, has " + KnubotItems.FreeSlots(conversation.Player);
     }
 
     void Fail(Conversation conversation, KnubotLine line, int chain)

@@ -1,0 +1,31 @@
+{
+  "Notes": "Old Lady (OLLA), Arrival hall (4604) at (224.6, 1.0, 212.1). Rebuilt from 1 QuestDialogCapture dump (Old_Lady_OLLA, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "OLLA"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "how_long": {
+      "Text": "How long have you been on Rubi-Ka?",
+      "Goto": "how_long"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": [
+        "Hello my child! ",
+        "{delay 1}Oh, don't bother about me, I am just watching the colonists arrive. Reminds me of my first meeting with Rubi-Ka. It wasn't the same back then, of course. There's a lot more traffic now, and life's become so much harder. Just yesterday I saw this young couple from Taku. They looked so happy and hopeful. I hope they know what they're getting themselves into. Rubi-Ka can be a very dangerous place."
+      ],
+      "Replies": [
+        "how_long"
+      ]
+    },
+    "how_long": {
+      "Text": "Most of my life. I arrived from Earth when I was sixteen years old, and I hated it! On Earth, I had my friends, the malls and entertainment complexes - I lived in Bombay - and one or two handsome suitors. On Rubi-Ka, there was nothing, at first. But I grew to love it. And now I would never want to live anywhere else."
+    }
+  }
+}

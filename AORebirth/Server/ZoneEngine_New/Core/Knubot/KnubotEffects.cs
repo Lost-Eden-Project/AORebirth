@@ -107,16 +107,9 @@ public sealed record KnubotCompleteQuest(string Hash) : KnubotEffect
         if (plan.QuestState(context, Hash) != QuestState.Active)
             return false;
 
+        // No inventory space is reserved: the quest service delivers a reward that does not fit into overflow, so a
+        // full inventory never stops the dialog that completes it.
         plan.Quests[Hash] = QuestState.Completed;
-        if (services.Quests.Catalog.TryGet(Hash, out QuestTemplate template) && template.Reward?.Records is { Count: > 0 } records)
-        {
-            int most = 0;
-            foreach (List<QuestRewardItem> record in records)
-                most = Math.Max(most, record.Count);
-
-            plan.SlotsNeeded += most;
-        }
-
         return true;
     }
 
@@ -143,8 +136,15 @@ public sealed record KnubotSpawnItem(string Hash, int? Quality, int Count) : Knu
     {
         for (int i = 0; i < Count; i++)
         {
-            if (services.Minter.TryMint(Hash, QualityFor(context), ItemSource.Quest, out Item item))
-                KnubotItems.Give(context.Player, item, services.Flush);
+            if (!services.Minter.TryMint(Hash, QualityFor(context), ItemSource.Quest, out Item item))
+                continue;
+            if (UniqueItems.WouldDuplicate(context.Player, item, out string uniqueName))
+            {
+                Helpers.ClientFeedback.SendFormatted(context.Player, Helpers.ClientFeedback.AlreadyHaveUniqueItem, uniqueName);
+                continue;
+            }
+
+            KnubotItems.Give(context.Player, item, services.Flush);
         }
     }
 }

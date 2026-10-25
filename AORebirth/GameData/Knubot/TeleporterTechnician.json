@@ -1,0 +1,111 @@
+{
+  "Notes": "Teleporter Technician (TLTI), Teleport Tower (4833) at (181.3, 5.7, 173.7). Rebuilt from 3 QuestDialogCapture dumps (Teleporter_Technician_TLTI, 2026-10-20, character Soldmen with the whole Shuttleport chain done). 'Yes, I've got it right here!' is not checked against the access card in the inventory, and the Rome Blue portal named in use_card was captured on one character only.",
+  "Npcs": [
+    "TLTI"
+  ],
+  "Openers": [
+    {
+      "Say": "hello"
+    }
+  ],
+  "Replies": {
+    "hi": {
+      "Text": "Hi there!",
+      "Goto": "leaving"
+    },
+    "told_here": {
+      "Text": "I was told to go here if I wanted to leave for the mainland, and here I am.",
+      "Goto": "access_card"
+    },
+    "not_sure_how": {
+      "Text": "Yes, but I'm not sure exactly how to do it though.",
+      "Goto": "teleporters"
+    },
+    "have_card": {
+      "Text": "Yes, I've got it right here!",
+      "Goto": "use_card"
+    },
+    "need_card": {
+      "Text": "No, do I need an access card?",
+      "Goto": "need_card"
+    },
+    "sponsor": {
+      "Text": "A sponsor?",
+      "Goto": "sponsor"
+    },
+    "then_what": {
+      "Text": "Ok, and after I got their financial support, then what?",
+      "Goto": "then_what"
+    },
+    "thanks": {
+      "Text": "Ok, thank you for your help!",
+      "Goto": "no_problem"
+    }
+  },
+  "Lines": {
+    "hello": {
+      "Text": [
+        "{emote}The Teleporter Technician looks very busy in his work with the teleporters, but as you approach him, he looks up and smiles at you.{/emote}",
+        "{delay 3}Hello there traveler!"
+      ],
+      "Replies": [
+        "hi"
+      ]
+    },
+    "leaving": {
+      "Text": "So, getting ready to leave the ICC Shuttleport then?",
+      "Replies": [
+        "told_here",
+        "not_sure_how"
+      ]
+    },
+    "access_card": {
+      "Text": "Do you have your access card with you?",
+      "Replies": [
+        "have_card",
+        "need_card"
+      ]
+    },
+    "use_card": {
+      "Text": "Great, just use it on the portal to Rome Blue, and you'll be there before you can say \"Antidisestablishmentarianism\"!"
+    },
+    "need_card": {
+      "Text": [
+        "Yes, you need to find someone who is willing to pay for your journey to the mainland. Talk to the recruiters just outside here, they will probably support your travel expenses,",
+        "{delay 2} at least if you give them your support."
+      ],
+      "Replies": [
+        "then_what"
+      ]
+    },
+    "teleporters": {
+      "Text": [
+        "Well, as you can see over here, ",
+        "we have the different teleporters. One leads to Borealis, one to Rome, and one to West Athen.  However, the cost of travelling through one of these is rather high right now, with the aliens taking out our main power source, so you need to get hold of a sponsor if you want to go through here. "
+      ],
+      "Replies": [
+        "sponsor"
+      ]
+    },
+    "sponsor": {
+      "Text": "Well, someone who is willing to pay for your journey to the mainland. Talk to the recruiters just outside here, they will probably support your travel expenses, at least if you give them your support. ",
+      "Replies": [
+        "then_what"
+      ]
+    },
+    "then_what": {
+      "Text": [
+        "Well, then you use the access card on the portal you wish to enter. Simple as that! ",
+        "{delay 1} Keep in mind though, that once you leave, you will not be able to return here. ",
+        "{delay 1} We can't have visitors now with the battles going on. ",
+        "{delay 1} We're trying to get people out of this place, not getting more in! "
+      ],
+      "Replies": [
+        "thanks"
+      ]
+    },
+    "no_problem": {
+      "Text": "No problem! "
+    }
+  }
+}

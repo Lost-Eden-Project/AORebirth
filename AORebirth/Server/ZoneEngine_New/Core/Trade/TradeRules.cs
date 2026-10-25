@@ -39,15 +39,7 @@ namespace ZoneEngine_New.Core.Trade
         public static bool WouldDuplicateUnique(Player receiver, int lowId, int highId)
         {
             ArgumentNullException.ThrowIfNull(receiver);
-
-            foreach (Item held in receiver.Inventory.EnumerateHeldItems())
-            {
-                if (held.LowId == lowId || held.LowId == highId
-                    || held.HighId == lowId || held.HighId == highId)
-                    return true;
-            }
-
-            return false;
+            return UniqueItems.Holds(receiver, lowId, highId);
         }
 
         /// <summary>

@@ -1,0 +1,53 @@
+{
+  "Notes": "Young Woman (YOWO), Arrival hall (4604) at (207.5, 1.0, 230.0). Rebuilt from 1 QuestDialogCapture dump (Young_Woman_YOWO, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "YOWO"
+  ],
+  "Openers": [
+    {
+      "Say": "clans"
+    }
+  ],
+  "Replies": {
+    "end_means": {
+      "Text": "So you think the end justifies the means?",
+      "Goto": "always"
+    },
+    "join_clans": {
+      "Text": "I ought to be joining the clans then?",
+      "Goto": "jobe_scientists"
+    },
+    "go_jobe": {
+      "Text": "So I should go to Jobe?",
+      "Goto": "definitely"
+    }
+  },
+  "Lines": {
+    "clans": {
+      "Text": "The clans don't support war, they support peace! But sometimes conflict is required before justice can be done. The way some people talk about the clans, you'd think they were terrorists and murderers. Not true. The clans want peace and justice. But you can't make an omelette without breaking a few eggs. That's just a fact of life. And cooking.",
+      "Replies": [
+        "end_means",
+        "join_clans"
+      ]
+    },
+    "always": {
+      "Text": "Always. Every war has its victims, every struggle its sacrifices. Our job is to make sure that those victims and sacrifices are Omni-Tek employees and interests, and not clan-members.",
+      "Replies": [
+        "join_clans"
+      ]
+    },
+    "jobe_scientists": {
+      "Text": "To be absolutely honest, I'd sign up with the Jobe scientists if I were you. They'll let you into the Shadowlands, where Omni-Tek has no influence. Once you've lived free, you'll see why Omni-Tek must be stopped, and join our cause.",
+      "Replies": [
+        "end_means",
+        "go_jobe"
+      ]
+    },
+    "definitely": {
+      "Text": [
+        "Definitely! It's a brand new world, outside Omni-Tek's reach.",
+        "{delay 3} And the understanding you gain there will help us in the fight for freedom later."
+      ]
+    }
+  }
+}

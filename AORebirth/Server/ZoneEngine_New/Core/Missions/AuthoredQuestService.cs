@@ -63,9 +63,18 @@ public sealed partial class AuthoredQuestService
             }
             var actions = new[] { action }.Concat(action.OptionalActions.Select(x => Content.Actions[x]).Where(x => Conditions(player, x, tx))).ToArray();
             var grantPairs = actions.SelectMany(x => x.Grants).Select(x => (Definition: x, Item: CreateItem(x.ItemId, x.Quality))).ToArray();
-            var granted = grantPairs.Where(x => (!x.Definition.SkipIfCarried || !HasCarried(player, x.Item.LowId))
-                && (!x.Definition.HonorUnique || !ZoneEngine_New.Core.Trade.TradeRules.IsUnique(x.Item)
-                    || !ZoneEngine_New.Core.Trade.TradeRules.WouldDuplicateUnique(player, x.Item.LowId, x.Item.HighId))).ToArray();
+            // Unique is always honoured (HonorUnique no longer opts out): a held Unique, or a second copy in this grant, is left out.
+            var granted = new List<(ItemGrant Definition, Item Item)>();
+            foreach (var pair in grantPairs)
+            {
+                if (pair.Definition.SkipIfCarried && HasCarried(player, pair.Item.LowId))
+                    continue;
+                if (ZoneEngine_New.Core.Trade.TradeRules.IsUnique(pair.Item)
+                    && (ZoneEngine_New.Core.Trade.TradeRules.WouldDuplicateUnique(player, pair.Item.LowId, pair.Item.HighId)
+                        || granted.Any(x => x.Item.LowId == pair.Item.LowId || x.Item.HighId == pair.Item.HighId)))
+                    continue;
+                granted.Add(pair);
+            }
             var plan = Plan(player, granted.Select(x => x.Item).ToArray());
             var stats = new List<MissionStatValueData>();
             foreach (var entry in actions)

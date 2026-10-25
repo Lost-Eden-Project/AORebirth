@@ -41,6 +41,7 @@ namespace ZoneEngine_New.Core.Inventory
             SpellList = other.SpellList;
             Actions = other.Actions;
             Relations = other.Relations;
+            ShopInventory = other.ShopInventory;
             CanCancel = other.CanCancel;
         }
 
@@ -67,6 +68,12 @@ namespace ZoneEngine_New.Core.Inventory
         public Dictionary<EventType, List<ItemSpell>> SpellList { get; init; } = new();
 
         public List<ItemAction> Actions { get; init; } = new();
+
+        /// <summary>
+        /// A shop's stock list as the client's item record carries it (items.dat ShopInventory): one line per item hash
+        /// with its QL band and how many of it the shop stocks. Empty for anything that is not a shop.
+        /// </summary>
+        public IReadOnlyList<ShopInventoryEntry> ShopInventory { get; init; } = Array.Empty<ShopInventoryEntry>();
 
         public List<int> Relations { get; init; } = new();
 

@@ -15,6 +15,7 @@ namespace ZoneEngine_New.Core.Data
         public IReadOnlyList<ItemInstanceRecord> GetCarriedItems(int characterId) => Run(() => Persistence.LoadCarriedItems(characterId).Select(Map).ToArray(), _logger);
         public IReadOnlyList<ItemInstanceRecord> GetBankItems(int characterId) => Run(() => Persistence.LoadBankItems(characterId).Select(Map).ToArray(), _logger);
         public IReadOnlyList<ItemInstanceRecord> GetContainerItems(int containerInstanceId) => Run(() => Persistence.LoadContainerItems(containerInstanceId).Select(Map).ToArray(), _logger);
+        public IReadOnlyList<ItemInstanceRecord> GetContainerItems(IReadOnlyList<int> containerInstanceIds) => Run(() => Persistence.LoadContainerItems(containerInstanceIds.ToList()).Select(Map).ToArray(), _logger);
         public int LeaseInstanceIdBlock(int count) => Run(() => Persistence.LeaseItemInstanceIds(count), _logger);
         public ItemInstanceRecord Insert(ItemInstanceRecord item) { Run(() => Persistence.InsertItem(Map(item)), _logger); return item; }
         public void UpdateLocation(int instanceId, int containerType, int containerInstance, int containerPlacement)

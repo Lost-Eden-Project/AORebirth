@@ -170,10 +170,24 @@ namespace ZoneEngine_New.Core.Nanos
             if (refusal == NanoCastRefusal.None && (IsNoCombat(caster) || IsNoCombat(recipient)))
                 refusal = NanoCastRefusal.InvalidTarget;
 
+            // A nano whose SpawnItem can only make a Unique the caster already holds is refused before anything is spent.
+            string? heldUnique = null;
+            if (refusal == NanoCastRefusal.None && caster is Player uniqueHolder && caster.Playfield is { } castPlayfield
+                && Inventory.UniqueSpawnCheck.TryFindHeldUniqueOnly(spell, uniqueHolder,
+                    castPlayfield.GetRequiredService<GameData.IGameData>(),
+                    castPlayfield.GetRequiredService<Inventory.IItemTemplateCatalog>(), out string uniqueName))
+            {
+                refusal = NanoCastRefusal.UniqueItemHeld;
+                heldUnique = uniqueName;
+            }
+
             if (refusal != NanoCastRefusal.None)
             {
                 LogCastRefused(caster, nanoId, target, refusal, phase: "start", attempt: attempt, spell: spell);
-                Refuse(caster, refusal);
+                if (heldUnique != null)
+                    ClientFeedback.SendFormatted(caster, ClientFeedback.AlreadyHaveUniqueItem, heldUnique);
+                else
+                    Refuse(caster, refusal);
                 return refusal;
             }
 

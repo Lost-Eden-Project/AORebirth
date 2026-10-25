@@ -1,0 +1,588 @@
+{
+  "Notes": "Manager Travis Molen (SHMG), ICC Shuttleport (4582) at (928.5, 47.0, 887.6). Rebuilt from 24 QuestDialogCapture dumps (Manager_Travis_Molen_SHMG, 2026-10-20, characters Soldmen, Complicado). Unicorn line: 76A9 (talk to the Unicorn Commander) leads to 360X (status report, turned in here). Medic line: PPK6 (talk to the Medic) leads to M78S (injury report, turned in here). Retail re-gives 76A9/PPK6 even when already done, so they are not guarded. Newcomer's armor: Pants I07G>7ORV>G509>Q7UP, Sleeves 83X3>IF9E, Gloves AXSB>2SQ4>G8VA>EWOX, Body 5BVT>VE45>HHDQ>8SAT, Boots N8KF>ZLU2>TC8J>8N0N (rewards come from the end steps). 9CLH (talk to the Shuttleport Manager) completes on opening. The 'Let me see what I can do...' branch gives no quest in the captures.",
+  "Npcs": [
+    "SHMG"
+  ],
+  "Openers": [
+    {
+      "If": [
+        "HasQuest 9CLH"
+      ],
+      "Say": "greet_9clh"
+    },
+    {
+      "Say": "greet"
+    }
+  ],
+  "Replies": {
+    "busy": {
+      "Text": "You're obviously busy...",
+      "Goto": "not_from_here"
+    },
+    "need_help": {
+      "Text": "I really need some help here...",
+      "Goto": "we_all_need"
+    },
+    "unicorn_report": {
+      "Text": "I'm back with the Unicorn status report.",
+      "If": [
+        "HasQuest 360X"
+      ],
+      "Goto": "unicorn_report"
+    },
+    "injury_report": {
+      "Text": "I'm back with the Field Surgeon injury report.",
+      "If": [
+        "HasQuest M78S"
+      ],
+      "Goto": "injury_report"
+    },
+    "leave": {
+      "Text": "How do I leave this place?",
+      "Goto": "leave"
+    },
+    "junkbots_done": {
+      "Text": "I've taken care of the junkbots.",
+      "If": [
+        "HasQuest 8N0N"
+      ],
+      "Goto": "junkbots_done"
+    },
+    "salamanders_done": {
+      "Text": "The Climbing Salamanders should no longer trouble the cleaning personnel.",
+      "If": [
+        "HasQuest Q7UP"
+      ],
+      "Goto": "salamanders_done"
+    },
+    "saboteur_done": {
+      "Text": "I found the Shuttle saboteur - and took good care of him!",
+      "If": [
+        "HasQuest IF9E"
+      ],
+      "Goto": "saboteur_done"
+    },
+    "rollerrats_done": {
+      "Text": "No need to worry about the rollerrats, they are gone!",
+      "If": [
+        "HasQuest EWOX"
+      ],
+      "Goto": "rollerrats_done"
+    },
+    "snakes_done": {
+      "Text": "The giant snakes should no longer be a problem, Sir.",
+      "If": [
+        "HasQuest 8SAT"
+      ],
+      "Goto": "snakes_done"
+    },
+    "armor": {
+      "Text": "I heard you might help me get some armor?",
+      "If": [
+        "!HasAnyQuest N8KF,ZLU2,TC8J,8N0N,AXSB,2SQ4,G8VA,EWOX,5BVT,VE45,HHDQ,8SAT,I07G,7ORV,G509,Q7UP,83X3,IF9E"
+      ],
+      "Goto": "armor_intro"
+    },
+    "shuttle_down": {
+      "Text": "You got that right.  Our shuttle was blown out of the sky by the aliens!",
+      "Goto": "alive"
+    },
+    "in_charge": {
+      "Text": "Who's in charge here?",
+      "Goto": "i_am"
+    },
+    "soldiers": {
+      "Text": "Are those soldiers your guys?",
+      "Goto": "employed"
+    },
+    "factions": {
+      "Text": "Factions?",
+      "Goto": "factions"
+    },
+    "so_in_charge": {
+      "Text": "So you're in charge here?",
+      "Goto": "i_sure_am"
+    },
+    "who_support": {
+      "Text": "And who do you support?",
+      "Goto": "rant"
+    },
+    "need_help_here": {
+      "Text": "It looks like you need some help here.",
+      "Goto": "we_sure_do"
+    },
+    "omnitek": {
+      "Text": "Omni-Tek?",
+      "Goto": "factions"
+    },
+    "help_unicorns": {
+      "Text": "Maybe I can help you with the Unicorns?",
+      "Goto": "help_unicorns"
+    },
+    "help_medics": {
+      "Text": "Maybe I can help some of the medics here, sort of ease the suffering?",
+      "Goto": "help_medics"
+    },
+    "fix_whompahs": {
+      "Text": "Why can't I just help you fix the Whom-Pahs and get out of here?",
+      "Goto": "not_that_easy"
+    },
+    "yes_help": {
+      "Text": "Yes, I'll help you out.",
+      "Goto": "get_cracking"
+    },
+    "no_leave": {
+      "Text": "No, I just want to get out of here.",
+      "Goto": "leave"
+    },
+    "medics_see": {
+      "Text": "Let me see what I can do to help the Medics.",
+      "Goto": "medics_see"
+    },
+    "unicorns_see": {
+      "Text": "Let me see what I can do about the Unicorns.",
+      "Goto": "unicorns_see"
+    },
+    "medic_as_well": {
+      "Text": "I'd like to help you with the medic as well.",
+      "Goto": "help_medics"
+    },
+    "unicorns_now": {
+      "Text": "I'd like to help you with the Unicorns now.",
+      "Goto": "help_unicorns"
+    },
+    "ill_help": {
+      "Text": "I'll help you out.",
+      "Goto": "armor_pick"
+    },
+    "want_pants": {
+      "Text": "I want the Newcomer's Pants.",
+      "If": [
+        "!HasAnyQuest I07G,7ORV,G509,Q7UP",
+        "!HasCompletedQuest Q7UP"
+      ],
+      "Goto": "give_pants"
+    },
+    "want_sleeves": {
+      "Text": "I want the Newcomer's Sleeves.",
+      "If": [
+        "!HasAnyQuest 83X3,IF9E",
+        "!HasCompletedQuest IF9E"
+      ],
+      "Goto": "give_sleeves"
+    },
+    "want_gloves": {
+      "Text": "I want the Newcomer's Gloves.",
+      "If": [
+        "!HasAnyQuest AXSB,2SQ4,G8VA,EWOX",
+        "!HasCompletedQuest EWOX"
+      ],
+      "Goto": "give_gloves"
+    },
+    "want_body": {
+      "Text": "I want the Newcomer's Body Armor.",
+      "If": [
+        "!HasAnyQuest 5BVT,VE45,HHDQ,8SAT",
+        "!HasCompletedQuest 8SAT"
+      ],
+      "Goto": "give_body"
+    },
+    "want_boots": {
+      "Text": "I want the Newcomer's Boots.",
+      "If": [
+        "!HasAnyQuest N8KF,ZLU2,TC8J,8N0N",
+        "!HasCompletedQuest 8N0N"
+      ],
+      "Goto": "give_boots"
+    }
+  },
+  "Lines": {
+    "greet": {
+      "Text": [
+        "Yes, yes, yes?!",
+        "{delay 1}{emote}Travis Molen glances at you briefly, then turns his attention back to the raging battle.{/emote}"
+      ],
+      "Replies": [
+        "busy",
+        "need_help",
+        "unicorn_report",
+        "injury_report",
+        "leave",
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done",
+        "armor"
+      ]
+    },
+    "greet_9clh": {
+      "Text": [
+        "{completequest 9CLH}",
+        "{delay 1}Yes, yes, yes?!",
+        "{delay 1}{emote}Travis Molen glances at you briefly, then turns his attention back to the raging battle.{/emote}"
+      ],
+      "Replies": [
+        "busy",
+        "need_help",
+        "unicorn_report",
+        "injury_report",
+        "leave",
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done",
+        "armor"
+      ]
+    },
+    "not_from_here": {
+      "Text": [
+        "{delay 1}{emote}Travis suddenly stops and takes a good look at you. He slowly raises one of his eyebrows.{/emote}",
+        "{delay 4}You're not from around here, are you?"
+      ],
+      "Replies": [
+        "shuttle_down",
+        "in_charge"
+      ]
+    },
+    "we_all_need": {
+      "Text": [
+        "We all need...",
+        "{delay 2}{emote}Travis suddenly stops and takes a good look at you. He slowly raises one of his eyebrows.{/emote}",
+        "{delay 2}You're not from around here, are you?"
+      ],
+      "Replies": [
+        "shuttle_down"
+      ]
+    },
+    "alive": {
+      "Text": [
+        "At least you're alive...",
+        "{delay 2}\\nThat's more than I can say for the majority of those guys.",
+        "{delay 2}{emote}Travis points towards the intense battle that is taking place on the giant platform.{/emote}"
+      ],
+      "Replies": [
+        "soldiers"
+      ]
+    },
+    "employed": {
+      "Text": "Some were employed by me and some were sent here by different factions on Rubi-Ka.",
+      "Replies": [
+        "factions",
+        "so_in_charge"
+      ]
+    },
+    "factions": {
+      "Text": [
+        "Yes, there are two main factions fighting for control of the planet.",
+        "{delay 2}\\nOn one side you have Omni-Tek. A huge corporation that'll do anything for profit.",
+        "{delay 1}\\nAnd on the other side you have the rebel Clans fighting for freedom."
+      ],
+      "Replies": [
+        "who_support",
+        "need_help_here"
+      ]
+    },
+    "i_sure_am": {
+      "Text": [
+        "{emote}Travis Molen glances quickly in the direction where the Unicorn Commander is located.{/emote}",
+        "{delay 2}I sure am."
+      ],
+      "Replies": [
+        "factions",
+        "need_help_here"
+      ]
+    },
+    "i_am": {
+      "Text": [
+        "I am.",
+        "{delay 1}\\nOr at least I used to be.",
+        "{delay 2}{emote}Travis Molen glances for a second in the direction where the Unicorn Commander is located.{/emote}"
+      ],
+      "Replies": [
+        "soldiers",
+        "need_help_here"
+      ]
+    },
+    "rant": {
+      "Text": [
+        "{emote}Travis breaks out in laughter.{/emote}",
+        "{delay 4}I don't support anyone!",
+        "{delay 2}\\nI have enough to worry about trying to survive on this damned planet.",
+        "{delay 2}{emote}Travis raises one finger in front of you.{/emote}",
+        "{delay 2}First of all I'm not making any credits here. People are too scared to use this shuttle port  because it is, as you can see, constantly being attacked by the aliens!",
+        "{delay 2}\\nBut wait, there is more!",
+        "{delay 1}{emote}Travis raises a second finger in the air.{/emote}",
+        "{delay 1}Then the Unicorns show up here and try to boss me around, thinking they own the place!",
+        "{delay 3}{emote}Travis raises a third finger.{/emote}",
+        "{delay 2}And then, as if that wasn't enough....",
+        "{delay 2}\\nThe Whoom-Pah's were demolished by an alien plasmatorpedo and have to operate with emergency power.",
+        "{delay 4}\\nThis place is driving me crazy!",
+        "{delay 1}\\nNow you tell me... How the heck am I supposed to keep this shuttle port operational?!"
+      ],
+      "Replies": [
+        "fix_whompahs",
+        "help_unicorns",
+        "help_medics"
+      ]
+    },
+    "we_sure_do": {
+      "Text": [
+        "We sure do! Just look at the soldiers being sent to certain death!",
+        "{delay 3}\\nThe Unicorn Commander has no respect for human life.",
+        "{delay 2}\\nOmni-Tek will never change."
+      ],
+      "Replies": [
+        "help_unicorns",
+        "help_medics",
+        "omnitek"
+      ]
+    },
+    "not_that_easy": {
+      "Text": [
+        "If it only was that easy... But, if you stay and help me with my problems here...",
+        "{delay 2}I might have some equipment to compensate you for your efforts.",
+        "{delay 2}\\nStill not interested?"
+      ],
+      "Replies": [
+        "yes_help",
+        "no_leave"
+      ]
+    },
+    "get_cracking": {
+      "Text": " Alright then, let's get cracking.",
+      "Replies": [
+        "medics_see",
+        "unicorns_see"
+      ]
+    },
+    "medics_see": {
+      "Text": "They are working really hard. You just make sure they have enough medical supplies to help the wounded soldiers."
+    },
+    "unicorns_see": {
+      "Text": [
+        "Just make sure they have everything they need, and hopefully they'll find the situation here stable enough to leave.",
+        "{delay 2}\\nLet me know if you happen to come across any kind of status report regarding their progress here, it would be much appriciated."
+      ]
+    },
+    "leave": {
+      "Text": [
+        "So you want to leave already? Well, just talk to one of the recruiters and they will help you get an access card to use the teleporters in the teleport tower behind me. ",
+        "{delay 1} Obviously you have to sign up for either The Clans or Omni-Tek in order to get a card from those guys, but should you decide to stay neutral, then talk to the Neutral Observer down by Antonio Stacklund."
+      ],
+      "Replies": [
+        "need_help",
+        "in_charge"
+      ]
+    },
+    "help_unicorns": {
+      "Text": [
+        "{givequest 76A9}",
+        "Just make sure they have everything they need, and hopefully they'll find the situation here stable enough to leave.",
+        "{delay 2}\\nIf you happen to come across a status report regarding their progress here, it would be much appreciated."
+      ]
+    },
+    "help_medics": {
+      "Text": [
+        "That would be much appreciated.",
+        "{delay 2}{emote}Travis wrinkles his forehead.{/emote}",
+        "{delay 2}The medics are working really hard. But you could make sure they have enough medical supplies to help the wounded soldiers.",
+        "{delay 2}{givequest PPK6}",
+        "{delay 1}\\nAnd please tell Elsa to give you a status report, I really need to have some kind of overview here."
+      ]
+    },
+    "unicorn_report": {
+      "Text": [
+        "Excellent! Let me have a look.",
+        "{delay 4}{completequest 360X}",
+        "{delay 1}Well, well. It would seem that our Unicorn neighbors are in the final phases of their project.",
+        "{delay 2}\\nI'll have this shuttle port up and running in a couple of weeks!",
+        "{delay 1}\\nThanks a lot, {player}. And as promised here is a small token of appreciation."
+      ],
+      "Replies": [
+        "fix_whompahs",
+        "medic_as_well"
+      ]
+    },
+    "injury_report": {
+      "Text": [
+        "Excellent! Let me have a look.",
+        "{delay 4}{completequest M78S}",
+        "{delay 1}Well, well. It would seem that the clanners are managing the injured soldiers just fine.",
+        "{delay 3}\\nI'll have this shuttle port up and running in no time!",
+        "{delay 2}\\nThanks alot, {player}. And as promised here is a small token of my appreciation."
+      ],
+      "Replies": [
+        "fix_whompahs",
+        "unicorns_now"
+      ]
+    },
+    "armor_intro": {
+      "Text": "Well, I do have some Newcomer's armor left, but to qualify for the armor pieces, you would have to help me out here first.",
+      "Replies": [
+        "in_charge",
+        "leave",
+        "ill_help"
+      ]
+    },
+    "armor_pick": {
+      "Text": "Good. Now, there are various tasks I need you to look into. But, it might be easier if we start the other way around, what armor part would you be interested in?",
+      "Replies": [
+        "want_pants",
+        "want_sleeves",
+        "want_gloves",
+        "want_body",
+        "want_boots"
+      ]
+    },
+    "give_pants": {
+      "Text": [
+        "{givequest I07G}",
+        "{delay 1}I need some help removing some of the Climbing Salamanders. ",
+        "{delay 1}The environmentalists on Rubi-Ka managed to convince ICC to keep some of the wildlife here on this island when we built the Shuttleport, but we can't have them running wild up here. Better they stay on the beach where they aren't in the way I say. ",
+        "{delay 2}Up here, they keep getting landed on... I don't feel bad for them if that's what you think, but it gets all over passenger's boots and then all over the floor in the teleporter tower. ",
+        "{delay 2}The cleaning staff are not going to stop harassing me until I get this fixed. And if I hear about how hard it is to get salamander blood off carbonum tile floors one more time, I might have to shoot someone!"
+      ],
+      "Replies": [
+        "want_pants",
+        "want_sleeves",
+        "want_gloves",
+        "want_body",
+        "want_boots"
+      ]
+    },
+    "give_sleeves": {
+      "Text": [
+        "{givequest 83X3}",
+        "{delay 1}We have had a lot more crashes than normal lately. Unfortunately they haven't all been caused by the alien attackers. I have reports of people sabotaging our shuttles... ",
+        "{delay 1}please investigate this report. If you find anyone tampering with our shuttles please terminate them with the utmost prejudice. If you manage to take one of these guys out I'll give you the Newcomer's Sleeves."
+      ],
+      "Replies": [
+        "want_pants",
+        "want_sleeves",
+        "want_gloves",
+        "want_body",
+        "want_boots"
+      ]
+    },
+    "give_gloves": {
+      "Text": [
+        "{givequest AXSB}",
+        "{delay 1}Ok, I hope you can help us with an issue down at the secondary landing pads. We're looking for some stowaway rollerrats that we believe escaped from one of the shuttles. The rollerrats are constantly harassing the technicians making it impossible to work. They should be easy to kill... it's just that there are so MANY of them..."
+      ],
+      "Replies": [
+        "want_pants",
+        "want_sleeves",
+        "want_gloves",
+        "want_body",
+        "want_boots"
+      ]
+    },
+    "give_body": {
+      "Text": [
+        "{givequest 5BVT}",
+        "{delay 1}I have received reports that the Giant Snakes have symptoms that could be the start of some disease, and so it is important we take care of the Giant Snakes as a precaution.",
+        "{delay 1} If you go and eliminate a few of them, I'll give you the Newcomer's Body Armor."
+      ],
+      "Replies": [
+        "want_pants",
+        "want_sleeves",
+        "want_gloves",
+        "want_body",
+        "want_boots"
+      ]
+    },
+    "give_boots": {
+      "Text": [
+        "{givequest N8KF}",
+        "{delay 1}I need you to go and pull the plug on the Cross-Wired Junkbots down on the secondary landing pads.",
+        "{delay 1} One of our staff said he was fixing these... we are now sure he had no idea what he was doing. After the robots tried to kill our technicians twice... we had to admit there was a problem."
+      ],
+      "Replies": [
+        "want_pants",
+        "want_sleeves",
+        "want_gloves",
+        "want_body",
+        "want_boots"
+      ]
+    },
+    "junkbots_done": {
+      "Text": [
+        "{completequest 8N0N}",
+        "Thank you. I hope that was the end of it."
+      ],
+      "Replies": [
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done"
+      ]
+    },
+    "salamanders_done": {
+      "Text": [
+        "{completequest Q7UP}",
+        "{delay 2}That is good news on a day like this!",
+        "{delay 1} And for your heroic effort with the salamanders, you get the Newcomer's Pants, just as I said you would!"
+      ],
+      "Replies": [
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done"
+      ]
+    },
+    "saboteur_done": {
+      "Text": [
+        "{completequest IF9E}",
+        "{delay 2}Thank you for your co-operation.",
+        "{delay 1} Here are a couple of Newcomer's Sleeves for you."
+      ],
+      "Replies": [
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done"
+      ]
+    },
+    "rollerrats_done": {
+      "Text": [
+        "{completequest EWOX}",
+        "Wonderful! Absolutely wonderful!",
+        "{delay 1} And here you have your new gloves!"
+      ],
+      "Replies": [
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done"
+      ]
+    },
+    "snakes_done": {
+      "Text": [
+        "{completequest 8SAT}",
+        "{delay 2}I'm pleased to hear such good news.",
+        "{delay 1} The Newcomer's Body armor is yours. Hope it will fit!"
+      ],
+      "Replies": [
+        "junkbots_done",
+        "salamanders_done",
+        "saboteur_done",
+        "rollerrats_done",
+        "snakes_done"
+      ]
+    },
+    "trade_refused": {
+      "Text": "I didn't ask for that.",
+      "Replies": [
+        "busy",
+        "need_help"
+      ]
+    }
+  },
+  "TradeRefused": "trade_refused"
+}

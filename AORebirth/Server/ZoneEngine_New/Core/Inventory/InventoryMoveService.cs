@@ -207,11 +207,17 @@ namespace ZoneEngine_New.Core.Inventory
                 return;
 
             // TODO: Block temporary items on ClientContainerAddItem
-            if (IsBagItem(item))
-                return;
-
             if (!TryResolveAddTarget(player, message.Target, out Container destPage))
                 return;
+
+            // A bag goes into the bank but never into another bag. An open bag closes as it is put away.
+            if (IsBagItem(item))
+            {
+                if (!ReferenceEquals(destPage, player.Inventory.Bank))
+                    return;
+                if (player.Inventory.TryGetBackpackPage(item.Identity, out Container bagPage) && bagPage.IsOpen)
+                    Item.CloseBackpack(player, bagPage, item.Identity);
+            }
 
             if (ReferenceEquals(sourcePage, destPage))
                 return;
@@ -853,6 +859,7 @@ namespace ZoneEngine_New.Core.Inventory
             Item? existingDest = destPage.Content.GetValueOrDefault(destSlot);
             if (ReferenceEquals(sourcePage, destPage) && sourceSlot == destSlot)
                 return true;
+            player.InvalidateOwnedItemCache();
             if (sourceSlot < sourcePage.Offset || sourceSlot >= sourcePage.Offset + sourcePage.Capacity
                 || destSlot < destPage.Offset || destSlot >= destPage.Offset + destPage.Capacity
                 || destPage.Identity.Type == IdentityType.OverflowWindow)
@@ -861,9 +868,23 @@ namespace ZoneEngine_New.Core.Inventory
             if (sourcePage.Identity.Type == IdentityType.OverflowWindow
                 && (!ReferenceEquals(destPage, player.Inventory.Inventory) || existingDest != null))
                 return false;
-            if (lootSource != null && Trade.TradeRules.IsUnique(item)
-                && Trade.TradeRules.WouldDuplicateUnique(player, item.LowId, item.HighId))
+            // A Unique (or a bag holding one) that enters the carried pages from the bank or loot, or a bank item swapped
+            // out in exchange, may not duplicate one held. The item leaving the carried pages in the same move does not
+            // count against what comes in.
+            bool destCarried = player.Inventory.IsCarriedPage(destPage);
+            bool sourceCarried = lootSource == null && player.Inventory.IsCarriedPage(sourcePage);
+            if (destCarried && !sourceCarried
+                && UniqueItems.WouldDuplicate(player, item, out string incomingName, except: held => ReferenceEquals(held, existingDest)))
+            {
+                Helpers.ClientFeedback.SendFormatted(player, Helpers.ClientFeedback.AlreadyHaveUniqueItem, incomingName);
                 return false;
+            }
+            if (existingDest != null && sourceCarried && !destCarried
+                && UniqueItems.WouldDuplicate(player, existingDest, out string swappedName, except: held => ReferenceEquals(held, item)))
+            {
+                Helpers.ClientFeedback.SendFormatted(player, Helpers.ClientFeedback.AlreadyHaveUniqueItem, swappedName);
+                return false;
+            }
             var changes = new List<InventoryRowChange>
             {
                 new(item, destPage.Identity, destSlot, item.StackCount)

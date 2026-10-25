@@ -218,7 +218,8 @@ namespace ZoneEngine_New.Core.Inventory
                 Defend = LerpIntMap(low.Defend, high.Defend, factor),
                 SpellList = LerpSpellList(low.SpellList, high.SpellList, factor),
                 Actions = LerpActions(low.Actions, high.Actions, factor),
-                Relations = new List<int>(low.Relations)
+                Relations = new List<int>(low.Relations),
+                ShopInventory = low.ShopInventory
             };
         }
 
@@ -251,7 +252,8 @@ namespace ZoneEngine_New.Core.Inventory
                 Defend = new Dictionary<CharacterStat, int>(source.Defend),
                 SpellList = spellList,
                 Actions = actions,
-                Relations = new List<int>(source.Relations)
+                Relations = new List<int>(source.Relations),
+                ShopInventory = source.ShopInventory
             };
         }
 

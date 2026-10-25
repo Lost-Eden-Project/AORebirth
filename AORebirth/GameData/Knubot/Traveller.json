@@ -1,0 +1,38 @@
+{
+  "Notes": "Traveller (ATTV), Arrival hall (4604) at (229.0, 1.0, 203.8). Rebuilt from 1 QuestDialogCapture dump (Traveller_ATTV, 2026-10-20, character Soldaman, no quest state).",
+  "Npcs": [
+    "ATTV"
+  ],
+  "Openers": [
+    {
+      "Say": "busy"
+    }
+  ],
+  "Replies": {
+    "curious": {
+      "Text": "Not really, I am just curious.",
+      "Goto": "no_time"
+    },
+    "need_know": {
+      "Text": "I need to know a couple of things and...",
+      "Goto": "talk_to"
+    }
+  },
+  "Lines": {
+    "busy": {
+      "Text": "Woha! I am a bit busy right now. Is it anything urgent?",
+      "Replies": [
+        "curious"
+      ]
+    },
+    "no_time": {
+      "Text": "I've got no time for that my dear. I have to run.",
+      "Replies": [
+        "need_know"
+      ]
+    },
+    "talk_to": {
+      "Text": "Talk to the helpful bloke at the entrance, he is nice or the curious woman too by the exit. I gotta run!"
+    }
+  }
+}
