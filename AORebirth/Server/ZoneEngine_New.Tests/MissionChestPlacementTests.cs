@@ -225,6 +225,473 @@ public sealed class MissionChestPlacementTests
     }
 
     [TestMethod]
+    [TestCategory("MissionChestCaveTargetedCorrections")]
+    [DataRow(2, 34928853, 10, 7919)]
+    [DataRow(2, 34928853, 10, 104729)]
+    [DataRow(2, 34928853, 10, 32452843)]
+    [DataRow(2, 34928853, 10, 49979687)]
+    [DataRow(5, 82433732, 12, 7919)]
+    [DataRow(5, 82433732, 12, 104729)]
+    [DataRow(5, 82433732, 12, 32452843)]
+    [DataRow(5, 82433732, 12, 49979687)]
+    [Timeout(60000)]
+    public void ExactPitAndVariableHeightCavesProduceAccessibleValidatedChests(int floors, int seed, int size, int placementSeed)
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var (layout, dungeon) = Build(341, floors, seed, size);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        Assert.IsTrue(policy.RollChestCount(EligibleRooms(layout, dungeon, policy).Count, new Random(placementSeed)) > 0,
+            "These measured cave corrections require a positive population target.");
+        var positions = ValidateZeroInvestigationRoll("exact-cave-correction", layout, dungeon, world, policy,
+            placementSeed, [], floors, size, writeCorpusResult: true);
+        Assert.IsTrue(positions.Count > 0,
+            "The corrected cave must contain a chest with an independently verified physical pose, approach, entrance route, and preserved traversal routes.");
+    }
+
+    public static IEnumerable<object[]> CaveCampaignCases()
+    {
+        var required = new (int Floors, int Seed, int Size)[] { (2, 34928853, 10), (5, 82433732, 12),
+            (1, 1775745370, 12), (5, 42, 10) };
+        var seen = new HashSet<(int Floors, int Seed, int Size)>();
+        foreach (var example in required)
+        {
+            Assert.IsTrue(seen.Add(example));
+            yield return [example.Floors, example.Seed, example.Size, 7919];
+        }
+        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(Path.Combine(RuntimeRoot(), "DungeonGeneration.json")));
+        var profiles = json.RootElement.GetProperty("Profiles").EnumerateArray()
+            .Where(profile => profile.GetProperty("Styles").EnumerateArray().Any(style => style.GetInt32() == 341))
+            .Select(profile => (Floors: profile.GetProperty("Floors").GetInt32(),
+                Minimum: profile.GetProperty("MinFloorSize").GetInt32(), Maximum: profile.GetProperty("MaxFloorSize").GetInt32()))
+            .Distinct().OrderBy(profile => profile.Floors).ToArray();
+        CollectionAssert.AreEqual(new[] { 1, 2, 3, 4, 5 }, profiles.Select(profile => profile.Floors).ToArray(),
+            "The bounded cave campaign uses the current supported solo and team floor profiles.");
+        var random = new Random(20261025);
+        foreach (var profile in profiles)
+        {
+            for (int index = 0; index < 20; index++)
+            {
+                int seed = random.Next(1, int.MaxValue);
+                int size = (index % 4) switch
+                {
+                    0 => profile.Minimum,
+                    1 => profile.Maximum,
+                    _ => random.Next(profile.Minimum, profile.Maximum + 1)
+                };
+                Assert.IsTrue(seen.Add((profile.Floors, seed, size)), "Every campaign layout must be unique; no retry selects an easier cave.");
+                yield return [profile.Floors, seed, size, random.Next(1, int.MaxValue)];
+            }
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestCaveCampaign")]
+    [DynamicData(nameof(CaveCampaignCases), DynamicDataSourceType.Method)]
+    [Timeout(60000)]
+    public void BoundedCaveCampaignRequiresAccessibleSafeChestPopulations(int floors, int seed, int size, int placementSeed)
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var elapsed = Stopwatch.StartNew();
+        var (layout, dungeon) = Build(341, floors, seed, size);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
+        Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
+        var diagnostics = new MissionChestPlacementDiagnostics();
+        var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value,
+            [], policy, new Random(placementSeed), diagnostics);
+        WallMetric[] walls = positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray();
+        bool safetyValidated = false, populationValidated = false;
+        string? failure = null;
+        try
+        {
+            Assert.AreEqual(dungeon.Rooms.Count, diagnostics.TotalCells);
+            Assert.AreEqual(eligible.Count, diagnostics.EligibleRooms);
+            Assert.AreEqual(policy.RollChestCount(eligible.Count, new Random(placementSeed)), diagnostics.Requested);
+            Assert.IsTrue(positions.Count <= diagnostics.Requested);
+            Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
+            Assert.AreEqual(positions.Count, diagnostics.Routes.Count);
+            AssertSearchChoice(diagnostics, positions.Count);
+            AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement!);
+            foreach (MissionChestPosition position in positions)
+            {
+                AssertCorpusPose(dungeon, layout, world, position, sphere, policy, eligible, positions);
+                AssertEntranceRoute(layout, world, position, diagnostics.Routes[position.RoomIndex], positions, sphere, policy.Placement!);
+            }
+            safetyValidated = true;
+            if (diagnostics.Requested > 0)
+                Assert.IsTrue(positions.Count > 0, "An eligible cave with a positive target has no validated accessible chest population. See stage diagnostics; zero is not population acceptance.");
+            int safeRooms = diagnostics.ReachableCandidateCounts.Count(pair => pair.Value > 0);
+            if (safeRooms >= diagnostics.Requested
+                && diagnostics.Rejections.GetValueOrDefault("selected-route-preservation") == 0
+                && diagnostics.Rejections.GetValueOrDefault("selected-chest-clearance") == 0)
+                Assert.AreEqual(diagnostics.Requested, positions.Count, "Verified compatible rooms must satisfy the target.");
+            populationValidated = diagnostics.Requested > 0;
+        }
+        catch (Exception exception)
+        {
+            failure = exception.Message;
+            throw;
+        }
+        finally
+        {
+            WriteCorpusResult(new
+            {
+                Campaign = "CAVE_104_20261025", Style = 341, Floors = floors, LayoutSeed = seed, FloorSize = size,
+                PlacementSeed = placementSeed, TotalCells = dungeon.Rooms.Count, EligibleRooms = eligible.Count,
+                diagnostics.Requested, Placed = positions.Count, Shortfall = diagnostics.Requested - positions.Count,
+                ValidWallCandidates = diagnostics.CandidateCounts.Values.Sum(),
+                ReachableCandidates = diagnostics.ReachableCandidateCounts.Values.Sum(),
+                DistinctRooms = positions.Select(position => position.RoomIndex).Distinct().Count(),
+                EligibleFloors = eligible.Keys.GroupBy(room => layout.Generator.Rooms[room].Floor).ToDictionary(group => group.Key, group => group.Count()),
+                PlacedFloors = positions.GroupBy(position => layout.Generator.Rooms[position.RoomIndex].Floor).ToDictionary(group => group.Key, group => group.Count()),
+                ReachableFloors = diagnostics.ReachableCandidateCounts.Where(pair => pair.Value > 0)
+                    .GroupBy(pair => layout.Generator.Rooms[pair.Key].Floor).ToDictionary(group => group.Key, group => group.Sum(pair => pair.Value)),
+                WallMinimum = walls.Length == 0 ? (float?)null : walls.Min(wall => wall.Nearest),
+                WallMean = walls.Length == 0 ? (float?)null : walls.Average(wall => wall.Nearest),
+                WallMaximum = walls.Length == 0 ? (float?)null : walls.Max(wall => wall.Nearest),
+                WallEdgeGapMinimum = walls.Length == 0 ? (float?)null : walls.Min(wall => wall.Nearest) - sphere.Radius,
+                WallEdgeGapMaximum = walls.Length == 0 ? (float?)null : walls.Max(wall => wall.Nearest) - sphere.Radius,
+                InteractionApproachesValidated = safetyValidated ? positions.Count : 0,
+                EntranceRoutesValidated = safetyValidated ? diagnostics.Routes.Count : 0,
+                diagnostics.InitiallyReachableAnchorGroups, diagnostics.PreservedAnchorGroups, diagnostics.LostAnchorSamples,
+                RequiredRouteLengths = diagnostics.RequiredRoutes.Select(route => route.Count).ToArray(),
+                diagnostics.CandidateCounts, diagnostics.ReachableCandidateCounts, diagnostics.Rejections,
+                diagnostics.AnchorCounts, diagnostics.ReachableAnchorCounts, diagnostics.LandingHeightOffsets,
+                diagnostics.WallSectionCounts, diagnostics.WallSectionsTried,
+                diagnostics.WallSliceHeights, diagnostics.StructuralAnchorCounts,
+                StructuralRouteMatches = StructuralRoutePoints(diagnostics).ToDictionary(pair => pair.Key, pair => pair.Value.Length),
+                diagnostics.RawStructuralAnchorCounts,
+                RawStructuralRouteMatches = StructuralRoutePoints(diagnostics, raw: true).ToDictionary(pair => pair.Key, pair => pair.Value.Length),
+                diagnostics.SearchPasses, diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced,
+                diagnostics.RecoveryPrimaryPlaced, diagnostics.RecoveryFallbackPlaced,
+                SearchDetails = diagnostics.SearchDetails.Select(pass => new
+                {
+                    pass.Pass, pass.CoverSections, pass.Placed,
+                    ValidWallCandidates = pass.Details.CandidateCounts.Values.Sum(),
+                    ReachableCandidates = pass.Details.ReachableCandidateCounts.Values.Sum(),
+                    pass.Details.CandidateCounts, pass.Details.ReachableCandidateCounts, pass.Details.Rejections,
+                    pass.Details.WallSectionCounts, pass.Details.WallSectionsTried,
+                    pass.Details.WallSliceHeights, pass.Details.StructuralAnchorCounts,
+                    StructuralRouteMatches = StructuralRoutePoints(pass.Details).ToDictionary(pair => pair.Key, pair => pair.Value.Length),
+                    pass.Details.RawStructuralAnchorCounts,
+                    RawStructuralRouteMatches = StructuralRoutePoints(pass.Details, raw: true).ToDictionary(pair => pair.Key, pair => pair.Value.Length),
+                    pass.Details.InitiallyReachableAnchorGroups, pass.Details.PreservedAnchorGroups
+                }).ToArray(),
+                StatisticsScope = "SELECTED_COMPLETE_SEARCH", SafetyValidated = safetyValidated, PopulationValidated = populationValidated,
+                PopulationOutcome = eligible.Count == 0 ? "NO_ELIGIBLE_ROOMS"
+                    : positions.Count == 0 ? "ZERO_REQUIRED_POPULATION"
+                    : positions.Count < diagnostics.Requested ? "SHORTFALL" : "COMPLETE",
+                Failure = failure, ElapsedMilliseconds = elapsed.ElapsedMilliseconds,
+                Persistence = "NOT_EXERCISED", Publication = "ROUTE_WITNESSES_ONLY"
+            });
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestCaveDetailedDiagnostics")]
+    [DataRow(2, 34928853, 10, 7919)]
+    [DataRow(5, 82433732, 12, 7919)]
+    [DataRow(5, 82433732, 12, 49979687)]
+    [DataRow(2, 605065242, 8, 1750440212)]
+    [Timeout(60000)]
+    public void ExactFailedCavesExposePhysicalRejectionsAndRoomConnectionFacts(int floors, int seed, int size, int placementSeed)
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var (layout, dungeon) = Build(341, floors, seed, size);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
+        var diagnostics = new MissionChestPlacementDiagnostics { CaptureFailureDetails = true };
+        var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value,
+            [], policy, new Random(placementSeed), diagnostics);
+        Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
+        int[] graphDistances = DungeonObjectivePlacement.RoomDistances(dungeon, layout);
+        WriteCorpusResult(new
+        {
+            Campaign = "CAVE_EXACT_FAILURE_DETAIL", Style = 341, Floors = floors, LayoutSeed = seed, FloorSize = size,
+            PlacementSeed = placementSeed, diagnostics.TotalCells, diagnostics.EligibleRooms, diagnostics.Requested,
+            Placed = positions.Count, diagnostics.StartPoint, diagnostics.InitialReachableRooms,
+            UpperSupportProfiles = dungeon.Placements.Where(placed => placed.Index == 3
+                || (seed == 34928853 && placed.Index == 4) || (seed == 605065242 && placed.Index == 7))
+                .Select(placed => DescribeUpperSupport(placed.Index)).ToArray(),
+            Rooms = dungeon.Placements.Select(placed =>
+            {
+                float? reference = diagnostics.ReferenceHeights.TryGetValue(placed.Index, out float value) ? value : null;
+                return new
+                {
+                    Room = placed.Index, Floor = layout.Generator.Rooms[placed.Index].Floor, placed.Template.InstanceId,
+                    placed.Template.Name, Eligible = eligible.ContainsKey(placed.Index), GraphDistance = graphDistances[placed.Index],
+                    TemplatePosition = placed.Template.TemplatePos, placed.Template.TemplateFacing,
+                    PlacedOrigin = placed.Placed, placed.Facing,
+                    TransformedTemplateOrigin = placed.TransformTemplatePoint(placed.Template.TemplatePos),
+                    BoundsMinimum = dungeon.Rooms[placed.Index].Min, BoundsMaximum = dungeon.Rooms[placed.Index].Max,
+                    ReferenceHeight = reference,
+                    SurfaceProfiles = RoomSurfaceFacts(dungeon, placed.Index, reference ?? placed.Placed.Y,
+                        sphere, Data.Value.PlayerCollisionSphere!.CenterY),
+                    GroundHeightsAtOrigin = GroundHeights(dungeon, placed.Index, new Vector2(placed.Placed.X, placed.Placed.Z)).Distinct().ToArray(),
+                    Anchors = diagnostics.AnchorCounts.GetValueOrDefault(placed.Index),
+                    ReachableAnchors = diagnostics.ReachableAnchorCounts.GetValueOrDefault(placed.Index),
+                    Candidates = diagnostics.CandidateCounts.GetValueOrDefault(placed.Index),
+                    ReachableCandidates = diagnostics.ReachableCandidateCounts.GetValueOrDefault(placed.Index)
+                };
+            }).ToArray(),
+            Doors = dungeon.Doors.Where(door => !door.IsExit).Select(door => new
+            {
+                door.Room, door.LinkedRoom, door.Position, door.YawDegrees,
+                FirstRoomGround = GroundHeights(dungeon, door.Room, new Vector2(door.Position.X, door.Position.Z)).Distinct().ToArray(),
+                SecondRoomGround = GroundHeights(dungeon, door.LinkedRoom, new Vector2(door.Position.X, door.Position.Z)).Distinct().ToArray()
+            }).ToArray(),
+            Landings = layout.FloorTransitions.SelectMany(transition => new[] { transition.From, transition.To }).Select(endpoint =>
+            {
+                bool projected = world.TryRaycastDown(ToAo(endpoint.Position + Vector3.UnitY * policy.Placement!.FloorProbeLift),
+                    policy.Placement.FloorProbeLift + policy.Placement.MaxFloorDrop, out AoVector3 ground);
+                return new
+                {
+                    endpoint.RoomIndex, Floor = layout.Generator.Rooms[endpoint.RoomIndex].Floor, endpoint.Position,
+                    OwnGroundHeights = GroundHeights(dungeon, endpoint.RoomIndex, new Vector2(endpoint.Position.X, endpoint.Position.Z)).Distinct().ToArray(),
+                    ProjectedPoint = projected ? new[] { ground.xf, ground.yf, ground.zf } : null,
+                    HeightDelta = projected ? ground.yf - endpoint.Position.Y : (float?)null,
+                    OwnRoomGround = projected && HasOwnFloor(dungeon, endpoint.RoomIndex, new Vector3(ground.xf, ground.yf, ground.zf), 0.03f)
+                };
+            }).ToArray(),
+            diagnostics.CandidateStages, diagnostics.CandidateFailures, diagnostics.GraphCuts, diagnostics.DoorAnchors,
+            diagnostics.Rejections, diagnostics.CandidateCounts, diagnostics.ReachableCandidateCounts,
+            diagnostics.WallSectionCounts, diagnostics.WallSectionsTried,
+            diagnostics.WallSliceHeights, diagnostics.StructuralAnchorCounts, diagnostics.StructuralAnchorPoints,
+            StructuralRouteWitnesses = StructuralRoutePoints(diagnostics),
+            diagnostics.RawStructuralAnchorCounts,
+            RawStructuralRouteWitnesses = StructuralRoutePoints(diagnostics, raw: true),
+            SearchDetails = diagnostics.SearchDetails.Select(pass => new
+            {
+                pass.Pass, pass.CoverSections, pass.Placed, pass.Details.StartPoint, pass.Details.InitialReachableRooms,
+                pass.Details.CandidateStages, pass.Details.CandidateFailures, pass.Details.GraphCuts, pass.Details.DoorAnchors,
+                pass.Details.CandidateCounts, pass.Details.ReachableCandidateCounts, pass.Details.Rejections,
+                pass.Details.WallSectionCounts, pass.Details.WallSectionsTried,
+                pass.Details.ReferenceHeights, pass.Details.AnchorCounts, pass.Details.ReachableAnchorCounts,
+                pass.Details.LandingHeightOffsets,
+                pass.Details.WallSliceHeights, pass.Details.StructuralAnchorCounts, pass.Details.StructuralAnchorPoints,
+                StructuralRouteWitnesses = StructuralRoutePoints(pass.Details),
+                pass.Details.RawStructuralAnchorCounts,
+                RawStructuralRouteWitnesses = StructuralRoutePoints(pass.Details, raw: true),
+                ProbeFloorComparisons = pass.Details.GraphCuts.GroupBy(cut => (cut.FromRoom, cut.ToRoom))
+                    .Select(group => group.First()).Take(16).Select(cut => new
+                {
+                    cut.FromRoom, cut.ToRoom,
+                    Forward = DescribeProbeSupport(cut.ForwardFailure, cut.FromRoom),
+                    Reverse = DescribeProbeSupport(cut.ReverseFailure, cut.ToRoom)
+                }).ToArray(),
+                CandidateFloorComparisons = pass.Details.CandidateFailures.Where(failure => failure.Probe != null).Take(8)
+                    .Select(failure => new { failure.Room, failure.Stage, Support = DescribeProbeSupport(failure.Probe, failure.Room) }).ToArray()
+            }).ToArray(),
+            Positions = positions, Persistence = "NOT_EXERCISED", Publication = "ROUTE_WITNESSES_ONLY"
+        });
+        Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
+        Assert.AreEqual(positions.Count, diagnostics.Routes.Count);
+        AssertSearchChoice(diagnostics, positions.Count);
+        AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement!);
+        foreach (MissionChestPosition position in positions)
+        {
+            AssertCorpusPose(dungeon, layout, world, position, sphere, policy, eligible, positions);
+            AssertEntranceRoute(layout, world, position, diagnostics.Routes[position.RoomIndex], positions, sphere, policy.Placement!);
+        }
+
+        object? DescribeProbeSupport(MissionChestProbeFailure? probe, int room)
+            => probe == null ? null : new
+            {
+                probe.Constraint, From = DescribeSupport(probe.From, room), To = DescribeSupport(probe.To, room),
+                Hit = probe.Hit is { } hit ? DescribeSupport(hit, room) : null
+            };
+
+        object DescribeSupport(Vector3 point, int room)
+        {
+            bool planner = world.TryRaycastDown(ToAo(point + Vector3.UnitY * policy.Placement!.FloorProbeLift),
+                policy.Placement.FloorProbeLift + policy.Placement.MaxFloorDrop, out AoVector3 planned);
+            bool runtime = world.TrySnapToFloor(ToAo(point), out AoVector3 snapped);
+            return new
+            {
+                Point = point, Room = room, PlannerProbeLift = policy.Placement.FloorProbeLift,
+                PlannerProjection = planner ? new[] { planned.xf, planned.yf, planned.zf } : null,
+                RuntimeSnap = runtime ? new[] { snapped.xf, snapped.yf, snapped.zf } : null,
+                OwnGroundHeights = GroundHeights(dungeon, room, new Vector2(point.X, point.Z)).Distinct().ToArray(),
+                SupportingSurfaceTriangles = SupportingSurfaceFacts(dungeon, point, policy.Placement)
+            };
+        }
+
+        object DescribeUpperSupport(int room)
+        {
+            const int sampleLimit = 64;
+            MissionChestPlacementPolicy placement = policy.Placement!;
+            var triangles = dungeon.Collision.SurfaceMeshes.Where(mesh => mesh.CellId == room)
+                .SelectMany(mesh => mesh.Triangles.Select((triangle, index) =>
+                {
+                    Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
+                    Vector3 normal = Vector3.Cross(b - a, c - a);
+                    return (mesh.Source, mesh.CellId, Triangle: index, A: a, B: b, C: c,
+                        Point: (a + b + c) / 3, Normal: normal.LengthSquared() > 1e-8f ? Vector3.Normalize(normal) : Vector3.Zero,
+                        Ground: mesh.Source?.StartsWith("ground-room", StringComparison.Ordinal) == true);
+                })).ToArray();
+            var ground = triangles.Where(triangle => triangle.Ground).ToArray();
+            if (ground.Length == 0)
+                return new { Room = room, GroundTriangles = 0, SampleLimit = sampleLimit, Samples = Array.Empty<object>() };
+            float minimum = ground.Min(triangle => MathF.Min(triangle.A.Y, MathF.Min(triangle.B.Y, triangle.C.Y)));
+            float maximum = ground.Max(triangle => MathF.Max(triangle.A.Y, MathF.Max(triangle.B.Y, triangle.C.Y)));
+            var upperGround = ground.Where(triangle => InUpperBand(triangle.Point.Y)).ToArray();
+            var upperRaw = triangles.Where(triangle => !triangle.Ground && triangle.Normal.Y > 0.3f
+                && InUpperBand(triangle.Point.Y)).ToArray();
+            int groundTake = Math.Min(upperGround.Length, sampleLimit / 2);
+            int rawTake = Math.Min(upperRaw.Length, sampleLimit - groundTake);
+            groundTake = Math.Min(upperGround.Length, sampleLimit - rawTake);
+            var samples = Sample(upperGround, groundTake).Concat(Sample(upperRaw, rawTake))
+                .Select(triangle => new
+                {
+                    triangle.Source, triangle.CellId, triangle.Triangle, triangle.Ground,
+                    triangle.A, triangle.B, triangle.C, triangle.Point, triangle.Normal,
+                    Support = DescribeStandingSupport(triangle.Point, room)
+                }).ToArray();
+            return new
+            {
+                Room = room, GroundTriangles = ground.Length, GroundMinimum = minimum, GroundMaximum = maximum,
+                UpperBandMinimum = maximum - placement.MaxWalkStep, UpperBandMaximum = maximum + placement.MaxWalkStep,
+                GroundCentroidHeightHistogram = ground.GroupBy(triangle => MathF.Round(triangle.Point.Y, 1)).OrderBy(group => group.Key)
+                    .Select(group => new { Height = group.Key, Count = group.Count() }).ToArray(),
+                UpperGroundTriangles = upperGround.Length, UpperRawUpwardTriangles = upperRaw.Length,
+                SampleLimit = sampleLimit, SampledGround = groundTake, SampledRaw = rawTake,
+                SampleOrder = "EVENLY_SPACED_WITHIN_GROUND_AND_RAW_MESH_ORDER", Samples = samples
+            };
+
+            bool InUpperBand(float height) => height >= maximum - placement.MaxWalkStep && height <= maximum + placement.MaxWalkStep;
+
+            static IEnumerable<T> Sample<T>(IReadOnlyList<T> values, int count)
+            {
+                for (int index = 0; index < count; index++)
+                    yield return values[count == 1 ? 0 : index * (values.Count - 1) / (count - 1)];
+            }
+        }
+
+        object DescribeStandingSupport(Vector3 source, int room)
+        {
+            MissionChestPlacementPolicy placement = policy.Placement!;
+            CollisionSphereData player = Data.Value.PlayerCollisionSphere!;
+            bool projected = world.TryRaycastDown(ToAo(source + Vector3.UnitY * placement.FloorProbeLift),
+                placement.FloorProbeLift + placement.MaxFloorDrop, out AoVector3 planned);
+            bool runtime = world.TrySnapToFloor(ToAo(source), out AoVector3 snapped);
+            Vector3 feet = projected ? new Vector3(planned.xf, planned.yf, planned.zf) : source;
+            float[] own = GroundHeights(dungeon, room, new Vector2(source.X, source.Z)).Distinct().ToArray();
+            object? standing = null;
+            if (projected)
+            {
+                float radius = player.Radius + placement.CollisionPadding;
+                Vector3 centre = feet + Vector3.UnitY * (player.CenterY + 2 * placement.CollisionPadding);
+                bool sweeps = true, floorSupport = true;
+                foreach (Vector3 axis in new[] { Vector3.UnitX, Vector3.UnitZ })
+                {
+                    Vector3 from = centre - axis * placement.CollisionPadding;
+                    Vector3 to = centre + axis * MathF.Max(0.001f, placement.CollisionPadding);
+                    sweeps &= !world.TrySphereCast(ToAo(from), ToAo(to), radius, out _, out _)
+                        && !world.TrySphereCast(ToAo(to), ToAo(from), radius, out _, out _);
+                }
+                foreach (Vector3 offset in new[] { Vector3.UnitX, -Vector3.UnitX, Vector3.UnitZ, -Vector3.UnitZ })
+                {
+                    Vector3 probe = feet + offset * player.Radius;
+                    floorSupport &= world.TryRaycastDown(ToAo(probe + Vector3.UnitY * placement.FloorProbeLift),
+                        placement.FloorProbeLift + placement.MaxFloorDrop, out AoVector3 support)
+                        && MathF.Abs(support.yf - feet.Y) <= placement.MaxWalkStep;
+                }
+                bool clear = IndependentStaticSphereClear(centre, radius);
+                bool bounds = dungeon.Rooms[room].Contains(feet);
+                standing = new { Centre = centre, Radius = radius, BoundsContains = bounds, SweepClear = sweeps,
+                    FloorSupport = floorSupport, StaticSphereClear = clear, OccupancyClear = bounds && sweeps && floorSupport && clear };
+            }
+            return new
+            {
+                Projected = projected, ProjectedPoint = projected ? feet : (Vector3?)null,
+                RuntimeSnap = runtime ? new Vector3(snapped.xf, snapped.yf, snapped.zf) : (Vector3?)null,
+                OwnGroundHeights = own,
+                SourceOwnGroundDelta = own.Length == 0 ? (float?)null : own.Min(height => MathF.Abs(source.Y - height)),
+                ProjectedOwnGroundDelta = !projected || own.Length == 0 ? (float?)null : own.Min(height => MathF.Abs(feet.Y - height)),
+                Standing = standing
+            };
+        }
+
+        bool IndependentStaticSphereClear(Vector3 centre, float radius)
+        {
+            float limit = MathF.Max(0, radius - 0.001f);
+            foreach (CollisionTriangleMesh mesh in dungeon.Collision.SurfaceMeshes)
+                foreach (CollisionTriangle triangle in mesh.Triangles)
+                {
+                    Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
+                    Vector3 minimum = Vector3.Min(a, Vector3.Min(b, c)) - new Vector3(radius);
+                    Vector3 maximum = Vector3.Max(a, Vector3.Max(b, c)) + new Vector3(radius);
+                    if (centre.X < minimum.X || centre.X > maximum.X || centre.Y < minimum.Y || centre.Y > maximum.Y
+                        || centre.Z < minimum.Z || centre.Z > maximum.Z || Vector3.Cross(b - a, c - a).LengthSquared() < 1e-8f)
+                        continue;
+                    if (PointTriangleDistanceSquared(centre, a, b, c) < limit * limit)
+                        return false;
+                }
+            return true;
+        }
+    }
+
+    static object[] RoomSurfaceFacts(DungeonWorldLayout dungeon, int room, float reference,
+        CollisionSphereData chest, float playerCenterY)
+        => dungeon.Collision.SurfaceMeshes.Where(mesh => mesh.CellId == room).Select(mesh =>
+        {
+            var triangles = mesh.Triangles.Select(triangle =>
+            {
+                Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
+                Vector3 normal = Vector3.Cross(b - a, c - a);
+                return (Minimum: MathF.Min(a.Y, MathF.Min(b.Y, c.Y)), Maximum: MathF.Max(a.Y, MathF.Max(b.Y, c.Y)),
+                    NormalY: normal.LengthSquared() > 1e-8f ? normal.Y / normal.Length() : float.NaN);
+            }).ToArray();
+            var walls = triangles.Where(triangle => float.IsFinite(triangle.NormalY) && MathF.Abs(triangle.NormalY) <= 0.3f).ToArray();
+            float chestHeight = reference + chest.CenterY;
+            float standingHeight = reference + MathF.Max(2 * playerCenterY, chest.CenterY + chest.Radius);
+            return (object)new
+            {
+                mesh.Source, mesh.CellId, Vertices = mesh.Vertices.Length, Triangles = triangles.Length,
+                MinimumY = triangles.Length == 0 ? (float?)null : triangles.Min(triangle => triangle.Minimum),
+                MaximumY = triangles.Length == 0 ? (float?)null : triangles.Max(triangle => triangle.Maximum),
+                DegenerateTriangles = triangles.Count(triangle => !float.IsFinite(triangle.NormalY)),
+                WallTriangles = walls.Length,
+                UpFacingTriangles = triangles.Count(triangle => triangle.NormalY > 0.3f),
+                DownFacingTriangles = triangles.Count(triangle => triangle.NormalY < -0.3f),
+                ReferenceHeight = reference, ChestSliceHeight = chestHeight, StandingSliceHeight = standingHeight,
+                WallTrianglesAtChestHeight = walls.Count(triangle => triangle.Minimum <= chestHeight && triangle.Maximum >= chestHeight),
+                WallTrianglesAtStandingHeight = walls.Count(triangle => triangle.Minimum <= standingHeight && triangle.Maximum >= standingHeight)
+            };
+        }).ToArray();
+
+    static object[] SupportingSurfaceFacts(DungeonWorldLayout dungeon, Vector3 point, MissionChestPlacementPolicy policy)
+    {
+        var facts = new List<(float Height, object Fact)>();
+        foreach (CollisionTriangleMesh mesh in dungeon.Collision.SurfaceMeshes)
+        {
+            for (int index = 0; index < mesh.Triangles.Length; index++)
+            {
+                CollisionTriangle triangle = mesh.Triangles[index];
+                Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
+                Vector2 ab = new(b.X - a.X, b.Z - a.Z), ac = new(c.X - a.X, c.Z - a.Z);
+                Vector2 delta = new(point.X - a.X, point.Z - a.Z);
+                float determinant = ab.X * ac.Y - ab.Y * ac.X;
+                if (MathF.Abs(determinant) < 1e-8f)
+                    continue;
+                float u = (delta.X * ac.Y - delta.Y * ac.X) / determinant;
+                float v = (ab.X * delta.Y - ab.Y * delta.X) / determinant;
+                if (u < -0.001f || v < -0.001f || u + v > 1.001f)
+                    continue;
+                float height = a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y);
+                if (height > point.Y + policy.FloorProbeLift + 0.01f || height < point.Y - policy.MaxFloorDrop - 0.01f)
+                    continue;
+                Vector3 normal = Vector3.Normalize(Vector3.Cross(b - a, c - a));
+                facts.Add((height, new { mesh.Source, mesh.CellId, Triangle = index, Height = height, Normal = normal }));
+            }
+        }
+        return facts.OrderByDescending(fact => fact.Height).Take(8).Select(fact => fact.Fact).ToArray();
+    }
+
+    [TestMethod]
     [TestCategory("MissionChestZeroInvestigation")]
     public void ProvenSingleEligibleCaveRoomReceivesMinimumSafeTarget()
     {
@@ -295,7 +762,7 @@ public sealed class MissionChestPlacementTests
 
     IReadOnlyList<MissionChestPosition> ValidateZeroInvestigationRoll(string stage, DungeonLayout layout, DungeonWorldLayout dungeon,
         PlayfieldWorldSimulation world, MissionChestPolicy policy, int placementSeed, IReadOnlyList<Vector3> exclusions,
-        int layoutFloorCount, int floorSize)
+        int layoutFloorCount, int floorSize, bool writeCorpusResult = false)
     {
         Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
         var diagnostics = new MissionChestPlacementDiagnostics();
@@ -305,7 +772,7 @@ public sealed class MissionChestPlacementTests
         elapsed.Stop();
         Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
         WallMetric[] walls = positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray();
-        TestContext.WriteLine("MISSION_CHEST_ZERO_BASELINE " + JsonSerializer.Serialize(new
+        var result = new
         {
             Stage = stage, Style = layout.Generator.Style, layout.Seed, PlacementSeed = placementSeed,
             LayoutFloorCount = layoutFloorCount, FloorSize = floorSize,
@@ -316,12 +783,20 @@ public sealed class MissionChestPlacementTests
             WallMaximum = walls.Length == 0 ? (float?)null : walls.Max(wall => wall.Nearest),
             diagnostics.CandidateCounts, diagnostics.ReachableCandidateCounts, diagnostics.AnchorCounts,
             diagnostics.ReachableAnchorCounts, diagnostics.Rejections, diagnostics.SearchPasses,
+            diagnostics.WallSectionCounts, diagnostics.WallSectionsTried,
+            diagnostics.WallSliceHeights, diagnostics.StructuralAnchorCounts,
+            StructuralRouteMatches = StructuralRoutePoints(diagnostics).ToDictionary(pair => pair.Key, pair => pair.Value.Length),
+            diagnostics.RawStructuralAnchorCounts,
+            RawStructuralRouteMatches = StructuralRoutePoints(diagnostics, raw: true).ToDictionary(pair => pair.Key, pair => pair.Value.Length),
             diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced, diagnostics.InitiallyReachableAnchorGroups,
             diagnostics.RecoveryPrimaryPlaced, diagnostics.RecoveryFallbackPlaced,
             diagnostics.PreservedAnchorGroups, ElapsedMilliseconds = elapsed.ElapsedMilliseconds,
             Floors = positions.GroupBy(position => layout.Generator.Rooms[position.RoomIndex].Floor)
                 .ToDictionary(group => group.Key, group => group.Count()), Positions = positions
-        }));
+        };
+        TestContext.WriteLine("MISSION_CHEST_ZERO_BASELINE " + JsonSerializer.Serialize(result));
+        if (writeCorpusResult)
+            WriteCorpusResult(result);
         Assert.AreEqual(policy.RollChestCount(eligible.Count, new Random(placementSeed)), diagnostics.Requested);
         Assert.IsTrue(positions.Count <= diagnostics.Requested);
         Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
@@ -338,10 +813,18 @@ public sealed class MissionChestPlacementTests
         return positions;
     }
 
+    static Dictionary<int, Vector3[]> StructuralRoutePoints(MissionChestPlacementDiagnostics diagnostics, bool raw = false)
+    {
+        HashSet<Vector3> steps = diagnostics.Routes.Values.SelectMany(route => route).Select(step => step.Point).ToHashSet();
+        return (raw ? diagnostics.RawStructuralAnchorPoints : diagnostics.StructuralAnchorPoints).ToDictionary(pair => pair.Key,
+            pair => pair.Value.Distinct().Where(steps.Contains).ToArray());
+    }
+
     void WriteCorpusResult(object result)
     {
         string json = JsonSerializer.Serialize(result, new JsonSerializerOptions
         {
+            IncludeFields = true,
             NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
         });
         TestContext.WriteLine("MISSION_CHEST_CORPUS " + json);

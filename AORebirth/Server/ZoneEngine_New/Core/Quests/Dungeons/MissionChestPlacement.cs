@@ -22,13 +22,36 @@ public sealed record MissionChestPosition(int RoomIndex, float X, float Y, float
 
 internal readonly record struct MissionChestRouteStep(Vector3 Point, bool Transition);
 
+internal sealed record MissionChestProbeFailure(string Constraint, Vector3 From, Vector3 To,
+    Vector3? Hit = null, Vector3? Normal = null, string? MeshSource = null, int? MeshCell = null,
+    float? Distance = null, float? Limit = null);
+internal sealed record MissionChestCandidateFailure(int Room, string Stage, Vector3 Point, MissionChestProbeFailure? Probe);
+internal sealed record MissionChestGraphCut(int FromRoom, int ToRoom, Vector3 From, Vector3 To, bool ExplicitLink,
+    bool? CachedWalk, bool ForwardWalk, bool ReverseWalk, MissionChestProbeFailure? ForwardFailure,
+    MissionChestProbeFailure? ReverseFailure);
+internal sealed record MissionChestDoorAnchors(int Room, int LinkedRoom, Vector3 Position, Vector3[] First, Vector3[] Second);
+internal sealed record MissionChestSearchPass(int Pass, bool CoverSections, int Placed, MissionChestPlacementDiagnostics Details);
+
 internal sealed class MissionChestPlacementDiagnostics
 {
     public bool CaptureRouteWitnesses { get; init; } = true;
+    public bool CaptureFailureDetails { get; init; }
+    public Dictionary<int, Dictionary<string, int>> CandidateStages { get; } = new();
+    public List<MissionChestCandidateFailure> CandidateFailures { get; } = new();
+    public List<MissionChestGraphCut> GraphCuts { get; } = new();
+    public List<MissionChestDoorAnchors> DoorAnchors { get; } = new();
+    public int[] InitialReachableRooms { get; internal set; } = [];
+    public Vector3? StartPoint { get; internal set; }
+    public List<MissionChestSearchPass> SearchDetails { get; } = new();
     public int TotalCells { get; internal set; }
     public int EligibleRooms { get; internal set; }
     public int Requested { get; internal set; }
     public Dictionary<int, float> ReferenceHeights { get; } = new();
+    public Dictionary<int, float[]> WallSliceHeights { get; } = new();
+    public Dictionary<int, int> StructuralAnchorCounts { get; } = new();
+    public Dictionary<int, int> RawStructuralAnchorCounts { get; } = new();
+    public Dictionary<int, List<Vector3>> RawStructuralAnchorPoints { get; } = new();
+    public Dictionary<int, List<Vector3>> StructuralAnchorPoints { get; } = new();
     public int LocalHeightSeeds { get; internal set; }
     public int OffReferencePlacements { get; internal set; }
     public Dictionary<int, int> CandidateCounts { get; } = new();
@@ -55,9 +78,30 @@ internal sealed class MissionChestPlacementDiagnostics
     {
         TotalCells = source.TotalCells; EligibleRooms = source.EligibleRooms; Requested = source.Requested;
         LocalHeightSeeds = source.LocalHeightSeeds; OffReferencePlacements = source.OffReferencePlacements;
+        InitialReachableRooms = source.InitialReachableRooms; StartPoint = source.StartPoint;
+        CandidateStages.Clear();
+        foreach (var pair in source.CandidateStages)
+        {
+            CandidateStages.Add(pair.Key, new Dictionary<string, int>(pair.Value));
+        }
+        CandidateFailures.Clear(); CandidateFailures.AddRange(source.CandidateFailures);
+        GraphCuts.Clear(); GraphCuts.AddRange(source.GraphCuts);
+        DoorAnchors.Clear(); DoorAnchors.AddRange(source.DoorAnchors);
         InitiallyReachableAnchorGroups = source.InitiallyReachableAnchorGroups;
         PreservedAnchorGroups = source.PreservedAnchorGroups; LostAnchorSamples = source.LostAnchorSamples;
         Copy(source.ReferenceHeights, ReferenceHeights); Copy(source.CandidateCounts, CandidateCounts);
+        Copy(source.WallSliceHeights, WallSliceHeights); Copy(source.StructuralAnchorCounts, StructuralAnchorCounts);
+        Copy(source.RawStructuralAnchorCounts, RawStructuralAnchorCounts);
+        RawStructuralAnchorPoints.Clear();
+        foreach (var pair in source.RawStructuralAnchorPoints)
+        {
+            RawStructuralAnchorPoints.Add(pair.Key, new List<Vector3>(pair.Value));
+        }
+        StructuralAnchorPoints.Clear();
+        foreach (var pair in source.StructuralAnchorPoints)
+        {
+            StructuralAnchorPoints.Add(pair.Key, new List<Vector3>(pair.Value));
+        }
         Copy(source.WallSectionCounts, WallSectionCounts); Copy(source.WallSectionsTried, WallSectionsTried);
         Copy(source.ReachableCandidateCounts, ReachableCandidateCounts); Copy(source.AnchorCounts, AnchorCounts);
         Copy(source.ReachableAnchorCounts, ReachableAnchorCounts); Copy(source.LandingHeightOffsets, LandingHeightOffsets);
@@ -136,10 +180,15 @@ public static class MissionChestPlacement
         }
         if (wanted == 0)
             return [];
+        var searchDetails = diagnostics == null ? null : new List<MissionChestSearchPass>();
         MissionChestPlacementDiagnostics? primaryDiagnostics = diagnostics == null ? null
-            : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
+            : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses, CaptureFailureDetails = diagnostics.CaptureFailureDetails };
         var primary = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
             chest, player, random, eligible, primaryDiagnostics, coverSections: false).Select(wanted);
+        if (primaryDiagnostics != null)
+        {
+            searchDetails!.Add(new MissionChestSearchPass(1, false, primary.Count, primaryDiagnostics));
+        }
         var result = primary;
         MissionChestPlacementDiagnostics? selectedDiagnostics = primaryDiagnostics;
         int? fallbackCount = null;
@@ -150,10 +199,14 @@ public static class MissionChestPlacement
             // A second bounded search can recover missed wall sections or walking anchors.
             // Keep one complete validated population; never combine unchecked positions or reroll the count.
             MissionChestPlacementDiagnostics? fallbackDiagnostics = diagnostics == null ? null
-                : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
+                : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses, CaptureFailureDetails = diagnostics.CaptureFailureDetails };
             var fallback = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
                 chest, player, random, eligible, fallbackDiagnostics, coverSections: true).Select(wanted);
             fallbackCount = fallback.Count;
+            if (fallbackDiagnostics != null)
+            {
+                searchDetails!.Add(new MissionChestSearchPass(2, true, fallback.Count, fallbackDiagnostics));
+            }
             if (fallback.Count > primary.Count)
             {
                 result = fallback;
@@ -165,17 +218,25 @@ public static class MissionChestPlacement
             // A zero-only recovery repeats the existing bounded pair once. Keep one complete
             // validated result and stop as soon as this recovery finds a reachable chest.
             MissionChestPlacementDiagnostics? recoveryDiagnostics = diagnostics == null ? null
-                : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
+                : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses, CaptureFailureDetails = diagnostics.CaptureFailureDetails };
             var recovery = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
                 chest, player, random, eligible, recoveryDiagnostics, coverSections: false).Select(wanted);
             recoveryPrimaryCount = recovery.Count;
+            if (recoveryDiagnostics != null)
+            {
+                searchDetails!.Add(new MissionChestSearchPass(3, false, recovery.Count, recoveryDiagnostics));
+            }
             if (recovery.Count == 0)
             {
                 recoveryDiagnostics = diagnostics == null ? null
-                    : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
+                    : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses, CaptureFailureDetails = diagnostics.CaptureFailureDetails };
                 recovery = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
                     chest, player, random, eligible, recoveryDiagnostics, coverSections: true).Select(wanted);
                 recoveryFallbackCount = recovery.Count;
+                if (recoveryDiagnostics != null)
+                {
+                    searchDetails!.Add(new MissionChestSearchPass(4, true, recovery.Count, recoveryDiagnostics));
+                }
             }
             if (recovery.Count > 0)
             {
@@ -192,6 +253,7 @@ public static class MissionChestPlacement
             diagnostics.PrimaryPlaced = primary.Count; diagnostics.FallbackPlaced = fallbackCount;
             diagnostics.RecoveryPrimaryPlaced = recoveryPrimaryCount;
             diagnostics.RecoveryFallbackPlaced = recoveryFallbackCount;
+            diagnostics.SearchDetails.Clear(); diagnostics.SearchDetails.AddRange(searchDetails!);
         }
         return result;
     }
@@ -247,6 +309,9 @@ public static class MissionChestPlacement
         readonly Dictionary<CollisionTriangleMesh, (Vector3 Min, Vector3 Max)> _meshBounds = new();
         readonly List<(Vector3 Source, int Landing)> _floorTravel = [];
         int _start = -1;
+        MissionChestProbeFailure? _lastProbeFailure;
+        const int MaximumCandidateFailureDetails = 128;
+        const int MaximumGraphCuts = 64;
 
         internal PlacementRun(DungeonWorldLayout dungeon, DungeonLayout layout, PlayfieldWorldSimulation world,
             IGameData data, IReadOnlyList<Vector3> exclusions, MissionChestPlacementPolicy policy,
@@ -277,6 +342,16 @@ public static class MissionChestPlacement
             AddWalkAnchors();
             AddCandidates();
             bool[] initial = Flood();
+            if (_diagnostics != null)
+            {
+                _diagnostics.StartPoint = _nodes[_start].Point;
+                _diagnostics.InitialReachableRooms = _nodes.Select((node, index) => (node, index))
+                    .Where(pair => initial[pair.index]).Select(pair => pair.node.Room).Distinct().Order().ToArray();
+                if (_diagnostics.CaptureFailureDetails)
+                {
+                    CaptureGraphCuts(initial);
+                }
+            }
             int[] candidates = Enumerable.Range(0, _nodes.Count)
                 .Where(index => _nodes[index].Candidate && initial[_nodes[index].Approach]).ToArray();
             if (_diagnostics != null)
@@ -474,6 +549,11 @@ public static class MissionChestPlacement
                     * MathF.Max(1, _player.Radius + _policy.CollisionPadding * 2);
                 int[] first = DoorApproaches(door.Room, door.Position, offset);
                 int[] second = DoorApproaches(door.LinkedRoom, door.Position, offset);
+                if (_diagnostics?.CaptureFailureDetails == true)
+                {
+                    _diagnostics.DoorAnchors.Add(new MissionChestDoorAnchors(door.Room, door.LinkedRoom, door.Position,
+                        first.Select(index => _nodes[index].Point).ToArray(), second.Select(index => _nodes[index].Point).ToArray()));
+                }
                 foreach (int a in first)
                     foreach (int b in second)
                         Link(a, b, transition: false);
@@ -529,25 +609,109 @@ public static class MissionChestPlacement
 
         void AddWalkAnchors()
         {
-            // Keep the existing sampled connectivity check useful in bent rooms and halls. These
-            // supported interior points are walking anchors only; they can never become chest positions.
+            // GNDA ground can lie below an authored catwalk. Cover actual upward room surfaces
+            // as well as structural ground features and random interiors, without changing validation.
             foreach (var group in _dungeon.Collision.SurfaceMeshes.Where(mesh =>
                          mesh.Source?.StartsWith("ground-room", StringComparison.Ordinal) == true && mesh.CellId.HasValue)
                          .GroupBy(mesh => mesh.CellId!.Value))
             {
                 var triangles = group.SelectMany(mesh => mesh.Triangles.Select(triangle =>
                     (A: mesh.Vertices[triangle.A], B: mesh.Vertices[triangle.B], C: mesh.Vertices[triangle.C]))).ToArray();
-                int added = 0;
-                for (int attempt = 0; triangles.Length > 0 && attempt < _policy.CandidateAttemptsPerRoom
-                     && added < _policy.CandidatesPerRoom * 5; attempt++)
-                {
-                    var triangle = triangles[_random.Next(triangles.Length)];
-                    float u = (float)_random.NextDouble(), v = (float)_random.NextDouble();
-                    if (u + v > 1) { u = 1 - u; v = 1 - v; }
-                    Vector3 point = triangle.A + u * (triangle.B - triangle.A) + v * (triangle.C - triangle.A);
-                    if (Add(group.Key, point) >= 0)
+                if (triangles.Length == 0)
+                    continue;
+                float groundMinimum = triangles.Min(triangle => MathF.Min(triangle.A.Y, MathF.Min(triangle.B.Y, triangle.C.Y)));
+                float groundMaximum = triangles.Max(triangle => MathF.Max(triangle.A.Y, MathF.Max(triangle.B.Y, triangle.C.Y)));
+                var centres = triangles.Select(triangle => ((triangle.A + triangle.B + triangle.C) / 3,
+                    Raw: false, Raised: false)).ToList();
+                foreach (CollisionTriangleMesh mesh in _dungeon.Collision.SurfaceMeshes.Where(mesh => mesh.CellId == group.Key
+                             && mesh.Source?.StartsWith("ground-room", StringComparison.Ordinal) != true))
+                    foreach (CollisionTriangle triangle in mesh.Triangles)
                     {
-                        added++;
+                        Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
+                        Vector3 normal = Vector3.Cross(b - a, c - a);
+                        Vector3 centre = (a + b + c) / 3;
+                        if (normal.LengthSquared() > 1e-8f && Vector3.Normalize(normal).Y > 0.3f
+                            && centre.Y >= groundMinimum - _policy.MaxWalkStep && centre.Y <= groundMaximum + _policy.MaxWalkStep)
+                        {
+                            bool raised = TryOwnFloor(group.Key, centre, out Vector3 ground, checkHeight: false)
+                                && centre.Y - ground.Y > _policy.MaxWalkStep;
+                            centres.Add((centre, true, raised));
+                        }
+                    }
+                var attemptedCentres = new bool[centres.Count];
+                float[] uncovered = centres.Select(centre => _rooms.TryGetValue(group.Key, out var nodes) && nodes.Count > 0
+                    ? nodes.Min(index => Vector3.DistanceSquared(centre.Item1, _nodes[index].Point)) : float.PositiveInfinity).ToArray();
+                int added = 0;
+                for (int attempt = 0; attempt < _policy.CandidateAttemptsPerRoom && added < _policy.CandidatesPerRoom * 5; attempt++)
+                {
+                    bool structural = attempt % 2 == 0;
+                    int centreIndex = -1;
+                    if (structural)
+                    {
+                        bool raisedAvailable = centres.Where((centre, index) => centre.Raised && !attemptedCentres[index]).Any();
+                        bool preferRaw = (attempt / 2) % 2 == 1;
+                        int start = _random.Next(centres.Count);
+                        for (int preference = 0; preference < 2 && centreIndex < 0; preference++)
+                            for (int offset = 0; offset < centres.Count; offset++)
+                            {
+                                int index = (start + offset) % centres.Count;
+                                bool preferred = raisedAvailable ? centres[index].Raised
+                                    : centres[index].Raw == (preference == 0 ? preferRaw : !preferRaw);
+                                if (!attemptedCentres[index] && preferred
+                                    && (centreIndex < 0 || uncovered[index] > uncovered[centreIndex]))
+                                {
+                                    centreIndex = index;
+                                }
+                            }
+                        structural = centreIndex >= 0;
+                        if (structural)
+                        {
+                            attemptedCentres[centreIndex] = true;
+                        }
+                    }
+                    Vector3 point;
+                    if (structural)
+                    {
+                        point = centres[centreIndex].Item1;
+                    }
+                    else
+                    {
+                        var triangle = triangles[_random.Next(triangles.Length)];
+                        float u = (float)_random.NextDouble(), v = (float)_random.NextDouble();
+                        if (u + v > 1) { u = 1 - u; v = 1 - v; }
+                        point = triangle.A + u * (triangle.B - triangle.A) + v * (triangle.C - triangle.A);
+                    }
+                    int node = Add(group.Key, point);
+                    if (node < 0)
+                        continue;
+                    added++;
+                    for (int index = 0; index < centres.Count; index++)
+                    {
+                        uncovered[index] = MathF.Min(uncovered[index], Vector3.DistanceSquared(centres[index].Item1, _nodes[node].Point));
+                    }
+                    if (structural && _diagnostics != null)
+                    {
+                        _diagnostics.StructuralAnchorCounts[group.Key] = _diagnostics.StructuralAnchorCounts.GetValueOrDefault(group.Key) + 1;
+                        if (centres[centreIndex].Raw)
+                        {
+                            _diagnostics.RawStructuralAnchorCounts[group.Key] = _diagnostics.RawStructuralAnchorCounts.GetValueOrDefault(group.Key) + 1;
+                        }
+                        if (_diagnostics.CaptureRouteWitnesses)
+                        {
+                            if (!_diagnostics.StructuralAnchorPoints.TryGetValue(group.Key, out var points))
+                            {
+                                _diagnostics.StructuralAnchorPoints.Add(group.Key, points = []);
+                            }
+                            points.Add(_nodes[node].Point);
+                            if (centres[centreIndex].Raw)
+                            {
+                                if (!_diagnostics.RawStructuralAnchorPoints.TryGetValue(group.Key, out var rawPoints))
+                                {
+                                    _diagnostics.RawStructuralAnchorPoints.Add(group.Key, rawPoints = []);
+                                }
+                                rawPoints.Add(_nodes[node].Point);
+                            }
+                        }
                     }
                 }
             }
@@ -594,7 +758,24 @@ public static class MissionChestPlacement
                 }
                 // Length-weighted random ordering keeps long sections likely, but does not spend
                 // a bounded search repeatedly drawing the same unsuitable section with replacement.
-                Wall[] walls = Walls(room, referenceY + _chest.CenterY).ToArray();
+                float[] groundHeights = _dungeon.Collision.SurfaceMeshes.Where(mesh => mesh.CellId == room
+                        && mesh.Source?.StartsWith("ground-room", StringComparison.Ordinal) == true)
+                    .SelectMany(mesh => mesh.Vertices).Select(point => point.Y).ToArray();
+                var sliceHeights = new List<float> { referenceY };
+                if (groundHeights.Length > 0)
+                {
+                    foreach (float height in new[] { groundHeights.Min(), groundHeights.Max() })
+                        if (!sliceHeights.Any(existing => MathF.Abs(existing - height) <= 0.01f))
+                        {
+                            sliceHeights.Add(height);
+                        }
+                }
+                if (_diagnostics != null)
+                {
+                    _diagnostics.WallSliceHeights[room] = sliceHeights.ToArray();
+                }
+                Wall[] walls = sliceHeights.SelectMany(height => Walls(room, height + _chest.CenterY))
+                    .DistinctBy(wall => (wall.TriangleA, wall.TriangleB, wall.TriangleC)).ToArray();
                 if (_coverSections)
                 {
                     walls = walls.OrderBy(wall => -Math.Log(1 - _random.NextDouble()) / Vector3.Distance(wall.A, wall.B)).ToArray();
@@ -609,7 +790,10 @@ public static class MissionChestPlacement
                 }
                 if (walls.Length == 0)
                 {
-                    Reject("no-wall-at-reference-height");
+                    _lastProbeFailure = null;
+                    Vector3 reference = new(placed.Placed.X, referenceY, placed.Placed.Z);
+                    ProbeFailure("no-wall-at-reference-height", reference, reference + Vector3.UnitY * _chest.CenterY);
+                    CandidateReject(room, "no-wall-at-reference-height", reference);
                     continue;
                 }
                 float wallLength = walls.Sum(wall => Vector3.Distance(wall.A, wall.B));
@@ -638,60 +822,74 @@ public static class MissionChestPlacement
                     float fraction = (float)_random.NextDouble();
                     // Bias towards section ends (corners), with collision/side clearance deciding suitability.
                     fraction = attempt % 3 == 0 ? fraction : (attempt % 2 == 0 ? fraction * fraction : 1 - fraction * fraction);
-                    Vector3 contact = Vector3.Lerp(wall.A, wall.B, fraction);
                     foreach (Vector3 inward in new[] { wall.Inward, -wall.Inward })
                     {
                         float offset = _chest.Radius + _policy.CollisionPadding * (1 + (float)_random.NextDouble());
-                        Vector3 point = new(contact.X, referenceY, contact.Z);
-                        point += inward * offset;
-                        if (_diagnostics != null && TryOwnFloor(room, point, out Vector3 ownGround, checkHeight: false)
-                            && (ownGround.Y > referenceY + _policy.FloorProbeLift
-                            || ownGround.Y < referenceY - _policy.MaxFloorDrop))
+                        _lastProbeFailure = null;
+                        if (!TryLocalWallPoint(room, wall, fraction, inward, offset, out Vector3 point, out string failedStage))
+                        {
+                            CandidateReject(room, failedStage, point);
+                            continue;
+                        }
+                        if (_diagnostics != null && (point.Y > referenceY + _policy.FloorProbeLift
+                            || point.Y < referenceY - _policy.MaxFloorDrop))
                         {
                             _diagnostics.LocalHeightSeeds++;
                         }
+                        _lastProbeFailure = null;
                         if (!Project(point, out point) || !OwnFloor(room, point))
                         {
-                            Reject("wall-floor-support");
+                            CandidateReject(room, "wall-floor-support", point);
                             continue;
                         }
+                        _lastProbeFailure = null;
                         if (!Allowed(point))
                         {
-                            Reject("entry-door-objective-clearance");
+                            CandidateReject(room, "entry-door-objective-clearance", point);
                             continue;
                         }
+                        _lastProbeFailure = null;
                         if (!Occupies(point, _chest, exact: true))
                         {
-                            Reject("chest-collision-support");
+                            CandidateReject(room, "chest-collision-support", point);
                             continue;
                         }
+                        _lastProbeFailure = null;
                         if (!WallClear(room, point) || !BoundaryWall(room, point, inward))
                         {
-                            Reject("boundary-wall");
+                            CandidateReject(room, "boundary-wall", point);
                             continue;
                         }
                         float approachDistance = _chest.Radius + _player.Radius + 2 * _policy.CollisionPadding;
                         float heading = MathF.Round(MathF.Atan2(inward.X, inward.Z) * 180 / MathF.PI) * MathF.PI / 180;
                         Vector3 facing = new(MathF.Sin(heading), 0, MathF.Cos(heading));
                         Vector3 approach = point + facing * approachDistance;
+                        _lastProbeFailure = null;
                         if (!Project(approach, out approach) || MathF.Abs(approach.Y - point.Y) > _policy.MaxWalkStep)
                         {
-                            Reject("approach-floor");
+                            if (_lastProbeFailure == null)
+                            {
+                                ProbeFailure("approach-step-height", point, approach, approach,
+                                    distance: MathF.Abs(approach.Y - point.Y), limit: _policy.MaxWalkStep);
+                            }
+                            CandidateReject(room, "approach-floor", point);
                             continue;
                         }
                         Vector3 tangent = new(facing.Z, 0, -facing.X);
                         float width = MathF.Max(_policy.DoorClearance, _chest.Radius + _player.Radius + _policy.CollisionPadding);
                         // Require an open room-side pocket, rather than a narrow strip beside a passage wall.
+                        _lastProbeFailure = null;
                         if (!Pocket(approach, point.Y) || !Pocket(approach + facing * width, point.Y)
                             || !Pocket(approach + tangent * width, point.Y) || !Pocket(approach - tangent * width, point.Y))
                         {
-                            Reject("room-side-pocket");
+                            CandidateReject(room, "room-side-pocket", point);
                             continue;
                         }
+                        _lastProbeFailure = null;
                         int front = Add(room, approach);
                         if (front < 0)
                         {
-                            Reject("approach-occupancy");
+                            CandidateReject(room, "approach-occupancy", point);
                             continue;
                         }
                         bool corner = walls.Any(other => MathF.Abs(Vector3.Dot(other.Inward, inward)) < 0.7f
@@ -701,12 +899,22 @@ public static class MissionChestPlacement
                         if (Add(room, point, candidate: true, facing, front, corner) < 0)
                             continue;
                         added++;
+                        CandidateStage(room, "accepted");
                         break;
 
                         bool Pocket(Vector3 probe, float height)
-                            => Project(probe, out Vector3 supported) && MathF.Abs(supported.Y - height) <= _policy.MaxWalkStep
-                                && OwnFloor(room, supported) && Occupies(supported, _player)
+                        {
+                            if (!Project(probe, out Vector3 supported))
+                                return false;
+                            if (MathF.Abs(supported.Y - height) > _policy.MaxWalkStep)
+                            {
+                                ProbeFailure("pocket-step-height", approach, probe, supported,
+                                    distance: MathF.Abs(supported.Y - height), limit: _policy.MaxWalkStep);
+                                return false;
+                            }
+                            return OwnFloor(room, supported) && Occupies(supported, _player)
                                 && CanWalkPoints(approach, supported, room);
+                        }
                     }
                 }
                 if (_diagnostics != null)
@@ -716,12 +924,45 @@ public static class MissionChestPlacement
             }
         }
 
+        void CandidateStage(int room, string stage)
+        {
+            if (_diagnostics?.CaptureFailureDetails != true)
+                return;
+            if (!_diagnostics.CandidateStages.TryGetValue(room, out var stages))
+            {
+                _diagnostics.CandidateStages.Add(room, stages = new());
+            }
+            stages[stage] = stages.GetValueOrDefault(stage) + 1;
+        }
+
+        void CandidateReject(int room, string stage, Vector3 point)
+        {
+            Reject(stage);
+            CandidateStage(room, stage);
+            if (_diagnostics?.CaptureFailureDetails == true
+                && _diagnostics.CandidateFailures.Count < MaximumCandidateFailureDetails
+                && !_diagnostics.CandidateFailures.Any(value => value.Room == room && value.Stage == stage))
+            {
+                _diagnostics.CandidateFailures.Add(new MissionChestCandidateFailure(room, stage, point, _lastProbeFailure));
+            }
+        }
+
+        void ProbeFailure(string constraint, Vector3 from, Vector3 to, Vector3? hit = null, Vector3? normal = null,
+            string? meshSource = null, int? meshCell = null, float? distance = null, float? limit = null)
+        {
+            if (_diagnostics?.CaptureFailureDetails == true)
+            {
+                _lastProbeFailure = new MissionChestProbeFailure(constraint, from, to, hit, normal, meshSource, meshCell, distance, limit);
+            }
+        }
+
         bool OwnFloor(int room, Vector3 point, bool checkHeight = true)
             => TryOwnFloor(room, point, out _, checkHeight);
 
         bool TryOwnFloor(int room, Vector3 point, out Vector3 floor, bool checkHeight = true)
         {
             floor = default;
+            Vector3? matchingXZ = null;
             // The generated ground triangles follow DCGA's occupied tiles, including nonrectangular rooms.
             foreach (CollisionTriangleMesh mesh in _dungeon.Collision.SurfaceMeshes.Where(mesh =>
                          mesh.CellId == room && mesh.Source?.StartsWith("ground-room", StringComparison.Ordinal) == true))
@@ -735,6 +976,10 @@ public static class MissionChestPlacement
                         continue;
                     float u = (delta.X * ac.Y - delta.Y * ac.X) / determinant;
                     float v = (ab.X * delta.Y - ab.Y * delta.X) / determinant;
+                    if (u >= -0.001f && v >= -0.001f && u + v <= 1.001f)
+                    {
+                        matchingXZ = new Vector3(point.X, a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y), point.Z);
+                    }
                     if (u >= -0.001f && v >= -0.001f && u + v <= 1.001f
                         && (!checkHeight || MathF.Abs(point.Y - (a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y))) <= 0.01f))
                     {
@@ -742,6 +987,8 @@ public static class MissionChestPlacement
                         return true;
                     }
                 }
+            ProbeFailure(matchingXZ.HasValue ? "own-floor-height" : "own-floor-xz", point, point, matchingXZ,
+                meshCell: room, distance: matchingXZ.HasValue ? MathF.Abs(point.Y - matchingXZ.Value.Y) : null, limit: 0.01f);
             return false;
         }
 
@@ -749,38 +996,80 @@ public static class MissionChestPlacement
         {
             foreach (CollisionTriangleMesh mesh in _dungeon.Collision.SurfaceMeshes.Where(mesh => mesh.CellId == room))
                 foreach (CollisionTriangle triangle in mesh.Triangles)
-                {
-                    Vector3 a = mesh.Vertices[triangle.A], b = mesh.Vertices[triangle.B], c = mesh.Vertices[triangle.C];
-                    Vector3 normal = Vector3.Cross(b - a, c - a);
-                    if (normal.LengthSquared() < 1e-8f || MathF.Abs(Vector3.Normalize(normal).Y) > 0.3f)
-                        continue;
-                    var cuts = new List<Vector3>(3);
-                    Cut(a, b); Cut(b, c); Cut(c, a);
-                    if (cuts.Count < 2 || Vector3.DistanceSquared(cuts[0], cuts[1]) < 0.04f)
-                        continue;
-                    Vector3 inward = Vector3.Normalize(new Vector3(normal.X, 0, normal.Z));
-                    yield return new Wall(cuts[0], cuts[1], inward);
-
-                    void Cut(Vector3 first, Vector3 second)
+                    if (TrySliceWall(mesh.Vertices[triangle.A], mesh.Vertices[triangle.B], mesh.Vertices[triangle.C], height, out Wall wall))
                     {
-                        if ((first.Y < height && second.Y < height) || (first.Y > height && second.Y > height)
-                            || MathF.Abs(second.Y - first.Y) < 1e-6f)
-                            return;
-                        Vector3 cut = Vector3.Lerp(first, second, (height - first.Y) / (second.Y - first.Y));
-                        if (!cuts.Any(point => Vector3.DistanceSquared(point, cut) < 1e-8f))
-                        {
-                            cuts.Add(cut);
-                        }
+                        yield return wall;
                     }
+        }
+
+        static bool TrySliceWall(Vector3 a, Vector3 b, Vector3 c, float height, out Wall wall)
+        {
+            wall = null!;
+            Vector3 normal = Vector3.Cross(b - a, c - a);
+            if (normal.LengthSquared() < 1e-8f || MathF.Abs(Vector3.Normalize(normal).Y) > 0.3f)
+                return false;
+            var cuts = new List<Vector3>(3);
+            Cut(a, b); Cut(b, c); Cut(c, a);
+            if (cuts.Count < 2 || Vector3.DistanceSquared(cuts[0], cuts[1]) < 0.04f)
+                return false;
+            Vector3 inward = Vector3.Normalize(new Vector3(normal.X, 0, normal.Z));
+            wall = new Wall(cuts[0], cuts[1], inward, a, b, c);
+            return true;
+
+            void Cut(Vector3 first, Vector3 second)
+            {
+                if ((first.Y < height && second.Y < height) || (first.Y > height && second.Y > height)
+                    || MathF.Abs(second.Y - first.Y) < 1e-6f)
+                    return;
+                Vector3 cut = Vector3.Lerp(first, second, (height - first.Y) / (second.Y - first.Y));
+                if (!cuts.Any(point => Vector3.DistanceSquared(point, cut) < 1e-8f))
+                {
+                    cuts.Add(cut);
                 }
+            }
+        }
+
+        bool TryLocalWallPoint(int room, Wall wall, float fraction, Vector3 inward, float offset,
+            out Vector3 point, out string failedStage)
+        {
+            Wall local = wall;
+            point = default;
+            failedStage = "wall-floor-support";
+            // A section cut at a room median can move horizontally when the real floor has another height.
+            // Re-slice the same physical triangle, keeping the random fraction and clearance offset.
+            for (int refinement = 0; refinement < 2; refinement++)
+            {
+                Vector3 contact = Vector3.Lerp(local.A, local.B, fraction);
+                point = new Vector3(contact.X, contact.Y - _chest.CenterY, contact.Z) + inward * offset;
+                if (!TryOwnFloor(room, point, out Vector3 ground, checkHeight: false))
+                    return false;
+                if (!TrySliceWall(wall.TriangleA, wall.TriangleB, wall.TriangleC, ground.Y + _chest.CenterY, out local))
+                {
+                    failedStage = "local-wall-slice";
+                    ProbeFailure("wall-no-local-slice", point, ground + Vector3.UnitY * _chest.CenterY);
+                    return false;
+                }
+            }
+            Vector3 finalContact = Vector3.Lerp(local.A, local.B, fraction);
+            point = new Vector3(finalContact.X, finalContact.Y - _chest.CenterY, finalContact.Z) + inward * offset;
+            if (!TryOwnFloor(room, point, out Vector3 localGround, checkHeight: false))
+                return false;
+            point = localGround;
+            return true;
         }
 
         bool WallClear(int room, Vector3 point)
         {
             Wall[] walls = Walls(room, point.Y + _chest.CenterY).ToArray();
             float distance = walls.Length == 0 ? float.PositiveInfinity : walls.Min(wall => DistanceToSegment(point, wall.A, wall.B));
-            return distance >= _chest.Radius + _policy.CollisionPadding - 0.001f
+            bool clear = distance >= _chest.Radius + _policy.CollisionPadding - 0.001f
                 && distance <= _chest.Radius + 2 * _policy.CollisionPadding + 0.001f;
+            if (!clear)
+            {
+                ProbeFailure("wall-clearance", point, point, distance: distance,
+                    limit: _chest.Radius + 2 * _policy.CollisionPadding + 0.001f);
+            }
+            return clear;
         }
 
         bool BoundaryWall(int room, Vector3 point, Vector3 inward, float? maximumDistance = null)
@@ -790,13 +1079,19 @@ public static class MissionChestPlacement
             float height = point.Y + MathF.Max(2 * _player.CenterY, _chest.CenterY + _chest.Radius);
             if (!Walls(room, height).Any(wall => MathF.Abs(Vector3.Dot(wall.Inward, inward)) > 0.9f
                     && DistanceToSegment(point, wall.A, wall.B) <= (maximumDistance ?? _chest.Radius + 2 * _policy.CollisionPadding + 0.03f)))
+            {
+                ProbeFailure("standing-wall-continuation", point, point + Vector3.UnitY * (height - point.Y));
                 return false;
+            }
             float stride = _policy.WalkSampleSpacing;
             float wallDistance = Walls(room, point.Y + _chest.CenterY)
                 .Where(wall => MathF.Abs(Vector3.Dot(wall.Inward, inward)) > 0.9f)
                 .Select(wall => DistanceToSegment(point, wall.A, wall.B)).DefaultIfEmpty(float.PositiveInfinity).Min();
             if (!float.IsFinite(wallDistance))
+            {
+                ProbeFailure("boundary-wall-distance", point, point);
                 return false;
+            }
             DungeonRoomBounds bounds = _dungeon.Rooms[room];
             float span = new Vector2(bounds.Max.X - bounds.Min.X, bounds.Max.Z - bounds.Min.Z).Length();
             if (!TryGetWalkSampleCount(span, stride, out int steps))
@@ -809,7 +1104,10 @@ public static class MissionChestPlacement
                 if (!TryOwnFloor(room, back, out Vector3 supported, checkHeight: false))
                     return true;
                 if (Occupies(supported, _player))
+                {
+                    ProbeFailure("boundary-interior-walkable-floor", point, back, supported);
                     return false;
+                }
             }
             return false;
         }
@@ -902,6 +1200,43 @@ public static class MissionChestPlacement
             return visited;
         }
 
+        void CaptureGraphCuts(bool[] reachable)
+        {
+            var pairs = new HashSet<(int From, int To)>();
+            foreach (var link in _links)
+                foreach (var edge in link.Value)
+                    if (reachable[link.Key] && !reachable[edge.Node] && !edge.Transition)
+                    {
+                        pairs.Add((link.Key, edge.Node));
+                    }
+            foreach (var room in _rooms.Values)
+            {
+                var frontier = from first in room where reachable[first] && !_nodes[first].Candidate
+                               from second in room where !reachable[second] && !_nodes[second].Candidate
+                               orderby Vector3.DistanceSquared(_nodes[first].Point, _nodes[second].Point)
+                               select (From: first, To: second);
+                foreach (var pair in frontier.Take(8))
+                {
+                    pairs.Add(pair);
+                }
+            }
+            foreach (var pair in pairs.OrderBy(pair => _nodes[pair.From].Room == _nodes[pair.To].Room)
+                         .ThenBy(pair => Vector3.DistanceSquared(_nodes[pair.From].Point, _nodes[pair.To].Point)).Take(MaximumGraphCuts))
+            {
+                Node from = _nodes[pair.From], to = _nodes[pair.To];
+                long key = ((long)Math.Min(pair.From, pair.To) << 32) | (uint)Math.Max(pair.From, pair.To);
+                bool? cached = _walks.TryGetValue(key, out bool value) ? value : null;
+                _lastProbeFailure = null;
+                bool forward = CanWalkPoints(from.Point, to.Point);
+                MissionChestProbeFailure? forwardFailure = _lastProbeFailure;
+                _lastProbeFailure = null;
+                bool reverse = CanWalkPoints(to.Point, from.Point);
+                bool linked = _links.TryGetValue(pair.From, out var links) && links.Any(edge => edge.Node == pair.To);
+                _diagnostics!.GraphCuts.Add(new MissionChestGraphCut(from.Room, to.Room, from.Point, to.Point,
+                    linked, cached, forward, reverse, forwardFailure, _lastProbeFailure));
+            }
+        }
+
         bool CanWalk(int first, int second)
         {
             long key = ((long)Math.Min(first, second) << 32) | (uint)Math.Max(first, second);
@@ -923,13 +1258,25 @@ public static class MissionChestPlacement
                 Vector3 expected = Vector3.Lerp(from, to, step / (float)steps);
                 // Follow supported terrain step by step; a curved floor need not follow the endpoint chord's Y.
                 expected.Y = previous.Y;
-                if (!Project(expected, out Vector3 point) || MathF.Abs(point.Y - previous.Y) > _policy.MaxWalkStep
-                    || (requiredRoom.HasValue && !OwnFloor(requiredRoom.Value, point))
-                    || !ClearWalkSegment(previous, point))
+                if (!Project(expected, out Vector3 point))
+                    return false;
+                if (MathF.Abs(point.Y - previous.Y) > _policy.MaxWalkStep)
+                {
+                    ProbeFailure("walk-step-height", previous, expected, point,
+                        distance: MathF.Abs(point.Y - previous.Y), limit: _policy.MaxWalkStep);
+                    return false;
+                }
+                if ((requiredRoom.HasValue && !OwnFloor(requiredRoom.Value, point)) || !ClearWalkSegment(previous, point))
                     return false;
                 previous = point;
             }
-            return MathF.Abs(previous.Y - to.Y) <= _policy.MaxWalkStep;
+            bool arrived = MathF.Abs(previous.Y - to.Y) <= _policy.MaxWalkStep;
+            if (!arrived)
+            {
+                ProbeFailure("walk-target-height", previous, to, previous,
+                    distance: MathF.Abs(previous.Y - to.Y), limit: _policy.MaxWalkStep);
+            }
+            return arrived;
         }
 
 
@@ -949,7 +1296,11 @@ public static class MissionChestPlacement
             if (!float.IsFinite(source.X) || !float.IsFinite(source.Y) || !float.IsFinite(source.Z)
                 || !_world.TryRaycastDown(ToAo(source + Vector3.UnitY * _policy.FloorProbeLift),
                     _policy.FloorProbeLift + _policy.MaxFloorDrop, out AoVector3 hit))
+            {
+                ProbeFailure("floor-ray", source, source + Vector3.UnitY * _policy.FloorProbeLift,
+                    limit: _policy.FloorProbeLift + _policy.MaxFloorDrop);
                 return false;
+            }
             floor = ToNumerics(hit);
             return true;
         }
@@ -964,8 +1315,16 @@ public static class MissionChestPlacement
                         centre + axis * MathF.Max(0.001f, _policy.CollisionPadding), radius))
                     return false;
             foreach (Vector3 offset in new[] { Vector3.UnitX, -Vector3.UnitX, Vector3.UnitZ, -Vector3.UnitZ })
-                if (!Project(feet + offset * sphere.Radius, out Vector3 support) || MathF.Abs(support.Y - feet.Y) > _policy.MaxWalkStep)
+            {
+                if (!Project(feet + offset * sphere.Radius, out Vector3 support))
                     return false;
+                if (MathF.Abs(support.Y - feet.Y) > _policy.MaxWalkStep)
+                {
+                    ProbeFailure("sphere-support-step", feet, feet + offset * sphere.Radius, support,
+                        distance: MathF.Abs(support.Y - feet.Y), limit: _policy.MaxWalkStep);
+                    return false;
+                }
+            }
             return (!exact || StaticSphereClear(feet + Vector3.UnitY * sphere.CenterY, sphere.Radius))
                 && StaticSphereClear(centre, radius);
         }
@@ -988,8 +1347,16 @@ public static class MissionChestPlacement
                         || centre.Z < min.Z || centre.Z > max.Z)
                         continue;
                     float toleranceRadius = MathF.Max(0, radius - 0.001f); // Stable tangency at upper-floor float coordinates.
-                    if (Vector3.DistanceSquared(centre, ClosestTrianglePoint(centre, a, b, c)) < toleranceRadius * toleranceRadius)
+                    Vector3 closest = ClosestTrianglePoint(centre, a, b, c);
+                    float distanceSquared = Vector3.DistanceSquared(centre, closest);
+                    if (distanceSquared < toleranceRadius * toleranceRadius)
+                    {
+                        Vector3 normal = Vector3.Cross(b - a, c - a);
+                        ProbeFailure("static-sphere-triangle", centre, closest, closest,
+                            normal.LengthSquared() > 0 ? Vector3.Normalize(normal) : null,
+                            mesh.Source, mesh.CellId, MathF.Sqrt(distanceSquared), toleranceRadius);
                         return false;
+                    }
                 }
             }
             return true;
@@ -1027,8 +1394,19 @@ public static class MissionChestPlacement
                 to + Vector3.UnitY * (_player.CenterY + _policy.CollisionPadding), _player.Radius);
 
         bool CastClear(Vector3 from, Vector3 to, float radius)
-            => !_world.TrySphereCast(ToAo(from), ToAo(to), radius, out _, out _)
-                && !_world.TrySphereCast(ToAo(to), ToAo(from), radius, out _, out _);
+        {
+            if (_world.TrySphereCast(ToAo(from), ToAo(to), radius, out AoVector3 rest, out AoVector3 normal))
+            {
+                ProbeFailure("sphere-cast", from, to, ToNumerics(rest), ToNumerics(normal), limit: radius);
+                return false;
+            }
+            if (_world.TrySphereCast(ToAo(to), ToAo(from), radius, out rest, out normal))
+            {
+                ProbeFailure("sphere-cast-reverse", to, from, ToNumerics(rest), ToNumerics(normal), limit: radius);
+                return false;
+            }
+            return true;
+        }
 
         bool Blocked(Vector3 point)
             => _selected.Any(chest => Near(chest, point, _chest.Radius + _player.Radius + _policy.CollisionPadding));
@@ -1056,7 +1434,7 @@ public static class MissionChestPlacement
                 && Vector2.DistanceSquared(new Vector2(first.X, first.Z), new Vector2(second.X, second.Z)) < distance * distance;
 
         sealed record Node(int Room, Vector3 Point, bool Candidate, Vector3 Inward, int Approach, bool Corner);
-        sealed record Wall(Vector3 A, Vector3 B, Vector3 Inward);
+        sealed record Wall(Vector3 A, Vector3 B, Vector3 Inward, Vector3 TriangleA, Vector3 TriangleB, Vector3 TriangleC);
     }
 
     static AoVector3 ToAo(Vector3 point) => new(point.X, point.Y, point.Z);

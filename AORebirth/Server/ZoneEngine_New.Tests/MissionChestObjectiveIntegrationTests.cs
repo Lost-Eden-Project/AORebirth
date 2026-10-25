@@ -28,6 +28,33 @@ public sealed class MissionChestObjectiveIntegrationTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
+    [TestCategory("MissionChestObjectiveVisibilityDiagnostic")]
+    public void CapturedArbitraryTeleportsRetainRoomContextWhileFreshChestUsesItsContainingRoom()
+    {
+        var (_, dungeon) = MissionChestPlacementTests.Build(324, 1, 818302858, 12);
+        var grid = new ZoneEngine_New.Core.Playfield.Locality.CellGrid(null, 1);
+        grid.ApplyDungeonRooms(dungeon);
+        AoVector3[] positions = [new(94.21085f, 5, 140.8883f), new(43.091675f, 5, 80.905716f), new(53.915504f, 5, 142.87596f)];
+        int[] freshCells = positions.Select(position => grid.ResolveCell(position).Id).ToArray();
+        var contextualCells = new List<int>();
+        int current = ZoneEngine_New.Core.Playfield.Locality.CellGrid.NonLocalCellId;
+        foreach (AoVector3 position in positions)
+        {
+            current = grid.ResolveCell(position, current).Id;
+            contextualCells.Add(current);
+        }
+        TestContext.WriteLine("MISSION_CHEST_CAPTURED_TELEPORT_CELLS " + JsonSerializer.Serialize(new
+        {
+            Style = 324, Floors = 1, LayoutSeed = 818302858, FloorSize = 12,
+            Positions = positions.Select(position => new[] { position.xf, position.yf, position.zf }).ToArray(),
+            FreshCells = freshCells, ContextualCells = contextualCells
+        }));
+        CollectionAssert.AreEqual(new[] { 15, 3, 20 }, freshCells);
+        CollectionAssert.AreEqual(new[] { 15, 3, 1 }, contextualCells.ToArray());
+        Assert.AreNotEqual(freshCells[2], contextualCells[2]);
+    }
+
+    [TestMethod]
     [TestCategory("MissionChestObjectiveIntegration")]
     [DataRow(0)]
     [DataRow(1)]
@@ -61,17 +88,18 @@ public sealed class MissionChestObjectiveIntegrationTests
         string planned = f.Information.Single(message => message.StartsWith("Mission chest population planned ", StringComparison.Ordinal));
         int requested = PlannedMetric(planned, "requested");
         int generated = PlannedMetric(planned, "generated");
-        Assert.AreEqual(generated, persisted);
-        Assert.AreEqual(persisted, originalChests.Length);
-        Assert.AreEqual(originalChests.Length, published);
         TestContext.WriteLine("MISSION_CHEST_OBJECTIVE_POPULATION " + JsonSerializer.Serialize(new
         {
             MissionType = missionType, Seed = accepted.Seed, Style = accepted.LayoutPlan!.StyleId,
             Floors = accepted.LayoutPlan.FloorCount, FloorSize = accepted.LayoutPlan.FloorSize,
             Requested = requested, Generated = generated, Persisted = persisted,
             Instantiated = originalChests.Length, SessionPublished = published,
+            PlanDiagnostic = planned,
             Publication = "REAL_LOCALITY_TO_TEST_SESSION", Persistence = "EXISTING_IN_MEMORY_TRANSACTION"
         }));
+        Assert.AreEqual(generated, persisted);
+        Assert.AreEqual(persisted, originalChests.Length);
+        Assert.AreEqual(originalChests.Length, published);
         Assert.AreEqual(originalChests.Length.ToString(CultureInfo.InvariantCulture), run.Dao.GetFlag(key, sealKey).Value);
         byte[] originalLayout = run.World.Layout.GeneratorPayload;
         int itemCount = run.Dao.Items.Count;
@@ -226,10 +254,10 @@ public sealed class MissionChestObjectiveIntegrationTests
         return completion.Task.WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
     }
 
-    static int PublishEveryChest(ObjectiveRun run, QuestDungeonPlayfield world)
+    int PublishEveryChest(ObjectiveRun run, QuestDungeonPlayfield world)
         => OnWorld(world, () => PublishEveryChestOnTick(run, world));
 
-    static int PublishEveryChestOnTick(ObjectiveRun run, QuestDungeonPlayfield world)
+    int PublishEveryChestOnTick(ObjectiveRun run, QuestDungeonPlayfield world)
     {
         world.RequireTick();
         var player = run.Fixture.Player;
@@ -239,6 +267,10 @@ public sealed class MissionChestObjectiveIntegrationTests
         var identities = chests.Select(chest => chest.Identity.Instance).ToHashSet();
         Playfield originalWorld = player.Playfield!;
         AoVector3 originalPosition = player.Position;
+        int[] preClearSent = SentChestIds();
+        int[] preClearVisible = chests.Where(chest => locality.IsVisibleTo(chest, player))
+            .Select(chest => chest.Identity.Instance).ToArray();
+        var visits = new List<object>();
         run.Fixture.Session.Sent.Clear();
         registry.Register(player);
         try
@@ -246,20 +278,47 @@ public sealed class MissionChestObjectiveIntegrationTests
             player.Playfield = world;
             foreach (Chest chest in chests)
             {
+                int? beforeCell = player.Cell?.Id;
+                int sentBefore = run.Fixture.Session.Sent.Count;
+                int[] idsBefore = SentChestIds();
+                bool visibleBefore = locality.IsVisibleTo(chest, player);
+                locality.UnregisterDynel(player);
                 player.Position = chest.Position;
                 locality.RegisterDynel(player);
+                int? registeredCell = player.Cell?.Id;
+                Assert.IsNotNull(chest.Cell, "A registered chest must have a locality cell.");
+                Assert.AreEqual(chest.Cell?.Id, registeredCell,
+                    "An independent test teleport must use the same fresh containing room as its chest.");
+                int sentAfterRegister = run.Fixture.Session.Sent.Count;
                 locality.ActivatePlayerVisibility(player);
+                visits.Add(new
+                {
+                    Target = chest.Identity.Instance, Position = new[] { chest.Position.xf, chest.Position.yf, chest.Position.zf },
+                    ChestCell = chest.Cell?.Id, PlayerCellBefore = beforeCell, PlayerCellAfterRegister = registeredCell,
+                    SentBefore = sentBefore, SentAfterRegister = sentAfterRegister, SentAfterActivate = run.Fixture.Session.Sent.Count,
+                    ChestIdsBefore = idsBefore, ChestIdsAfterActivate = SentChestIds(),
+                    VisibleBefore = visibleBefore, VisibleAfterActivate = locality.IsVisibleTo(chest, player)
+                });
             }
             return run.Fixture.Session.Sent.OfType<SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChestItemFullUpdateMessage>()
                 .Where(message => identities.Contains(message.Identity.Instance)).Select(message => message.Identity.Instance).Distinct().Count();
         }
         finally
         {
+            TestContext.WriteLine("MISSION_CHEST_OBJECTIVE_VISIBILITY " + JsonSerializer.Serialize(new
+            {
+                PreClearSentChestIds = preClearSent, PreClearVisibleChestIds = preClearVisible, Visits = visits
+            }));
             locality.UnregisterDynel(player);
             registry.UnregisterExact(player);
             player.Playfield = originalWorld;
             player.Position = originalPosition;
         }
+
+        int[] SentChestIds() => run.Fixture.Session.Sent
+            .OfType<SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChestItemFullUpdateMessage>()
+            .Where(message => identities.Contains(message.Identity.Instance))
+            .Select(message => message.Identity.Instance).Distinct().ToArray();
     }
 
     static void ConfigureRepresentativeSoloProfile(DungeonLayoutGenerator generator)
