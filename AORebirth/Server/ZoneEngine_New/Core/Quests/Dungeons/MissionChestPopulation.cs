@@ -33,6 +33,9 @@ public sealed class MissionChestPopulation
     readonly IItemBuilder _items;
     readonly IZoneLogger _logger;
     volatile bool _retired;
+    bool _materialized;
+
+    internal string? DeferredReason { get; private set; }
 
     public MissionChestPopulation(IMissionDao dao, int ownerId, string questId, long assigned,
         string frozenJson, QuestDungeonParameters parameters, MissionChestPolicy? policy,
@@ -57,14 +60,20 @@ public sealed class MissionChestPopulation
 
     public void Retire() => _retired = true;
 
-    internal void Populate(QuestDungeonPlayfield world, DungeonWorldLayout dungeon, PlayfieldWorldSimulation simulation)
+    internal bool Populate(QuestDungeonPlayfield world, DungeonWorldLayout dungeon, PlayfieldWorldSimulation simulation)
     {
+        if (_materialized || _retired)
+            return true;
         List<MissionChestSnapshot>? stored = ReadStored();
+        bool reconstructed = stored != null;
         if (stored == null)
         {
-            if (_policy == null || _parameters.Quality is < 1 or > 250)
-                return;
-            var random = new Random(RandomNumberGenerator.GetInt32(int.MaxValue));
+            if (_policy == null)
+                return Defer("policy-unavailable");
+            if (_parameters.Quality is < 1 or > 250)
+                return Defer("accepted-quality-unavailable");
+            int placementSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
+            var random = new Random(placementSeed);
             var exclusions = new List<Vector3>();
             if (_parameters.ObjectiveItem is { } objective)
                 exclusions.Add(new Vector3(objective.X, objective.Y, objective.Z));
@@ -72,23 +81,26 @@ public sealed class MissionChestPopulation
                 exclusions.Add(new Vector3(npc.X, npc.Y, npc.Z));
             IGameData data = world.GetRequiredService<IGameData>();
             IItemTemplateCatalog templates = world.GetRequiredService<IItemTemplateCatalog>();
-            if (_policy.RoomDensity > 0 && (simulation.Surface == null || _policy.Placement?.IsValid != true
-                || data.PlayerCollisionSphere is not { Radius: > 0, CenterY: > 0 } playerSphere
-                || !float.IsFinite(playerSphere.Radius) || !float.IsFinite(playerSphere.CenterY)))
+            if (_policy.RoomDensity > 0)
             {
-                _logger.Warn("Mission chest placement inputs are unavailable; population not initialized quest=" + _questId);
-                return;
+                if (simulation.Surface == null)
+                    return Defer("collision-surface-unavailable");
+                if (_policy.Placement?.IsValid != true)
+                    return Defer("placement-policy-unavailable-or-invalid");
+                if (data.PlayerCollisionSphere is not { Radius: > 0, CenterY: > 0 } playerSphere
+                    || !float.IsFinite(playerSphere.Radius) || !float.IsFinite(playerSphere.CenterY))
+                    return Defer("player-collision-sphere-unavailable-or-invalid");
             }
             if (!MissionChestPlacement.TryGetChestSphere(data, templates, _policy, out var sphere))
-            {
-                _logger.Warn("Mission chest geometry is unavailable; population not initialized quest=" + _questId);
-                return;
-            }
+                return Defer("chest-collision-sphere-unavailable-or-invalid");
             var loot = new MissionChestLootService(templates, data, _items, _policy);
             IItemInstanceIdAllocator ids = world.GetRequiredService<IItemInstanceIdAllocator>();
             var initial = new List<MissionChestInitialData>();
-            foreach (MissionChestPosition point in MissionChestPlacement.Plan(dungeon, world.Layout, simulation,
-                         data, templates, exclusions, _policy, random))
+            var diagnostics = new MissionChestPlacementDiagnostics { CaptureRouteWitnesses = false };
+            IReadOnlyList<MissionChestPosition> positions = _policy.RoomDensity == 0 ? []
+                : MissionChestPlacement.Plan(dungeon, world.Layout, simulation, data, templates, exclusions,
+                    _policy, random, diagnostics);
+            foreach (MissionChestPosition point in positions)
             {
                 int container = ids.Allocate();
                 var snapshot = new MissionChestSnapshot
@@ -114,6 +126,12 @@ public sealed class MissionChestPopulation
                     }).ToArray()
                 });
             }
+            _logger.Info("Mission chest population planned " + Context + " totalCells=" + dungeon.Rooms.Count
+                + " placementSeed=" + placementSeed
+                + " eligibleRooms=" + diagnostics.EligibleRooms + " requested=" + diagnostics.Requested
+                + " generated=" + initial.Count + " candidates=" + diagnostics.CandidateCounts.Values.Sum()
+                + " rejections=" + string.Join(",", diagnostics.Rejections.OrderBy(pair => pair.Key)
+                    .Select(pair => pair.Key + "=" + pair.Value)));
 
             try
             {
@@ -129,17 +147,22 @@ public sealed class MissionChestPopulation
                     });
                 });
             }
-            catch
+            catch (Exception exception)
             {
                 // A commit acknowledgement can be lost. Only the durable seal permits recovery;
                 // never insert the same candidates again or expose an uncommitted population.
                 stored = ReadStored();
                 if (stored == null)
+                {
+                    _logger.Error(exception, "Mission chest persistence failed without a durable seal " + Context);
                     throw;
+                }
+                _logger.Warn("Mission chest persistence recovered from its durable seal " + Context);
             }
             stored ??= ReadStored()
                 ?? throw new InvalidDataException("The mission chest population did not commit its seal.");
         }
+        DeferredReason = null;
 
         IInventoryRepository inventory = world.GetRequiredService<IInventoryRepository>();
         IItemTemplateCatalog catalog = world.GetRequiredService<IItemTemplateCatalog>();
@@ -167,8 +190,26 @@ public sealed class MissionChestPopulation
                 throw new InvalidDataException("A persisted mission chest identity is already registered.");
             locality.RegisterDynel(chest);
         }
-        _logger.Info("Mission chests loaded quest=" + _questId + " count=" + stored.Count);
+        _materialized = true;
+        _logger.Info("Mission chests loaded quest=" + _questId + " count=" + stored.Count + " " + Context
+            + " persisted=" + stored.Count + " instantiated=" + stored.Count + " reconstructed=" + reconstructed
+            + " floors=" + string.Join(",", stored.GroupBy(snapshot => world.Layout.Generator?.Rooms is { } rooms
+                    && snapshot.RoomIndex < rooms.Length ? rooms[snapshot.RoomIndex].Floor.ToString(CultureInfo.InvariantCulture) : "unknown")
+                .OrderBy(group => group.Key).Select(group => group.Key + "=" + group.Count())));
+        return true;
     }
+
+    internal bool Defer(string reason)
+    {
+        if (!string.Equals(DeferredReason, reason, StringComparison.Ordinal))
+            _logger.Warn("Mission chest population deferred " + Context + " reason=" + reason);
+        DeferredReason = reason;
+        return false;
+    }
+
+    string Context => "quest=" + _questId + " owner=" + _ownerId + " assigned=" + _assigned
+        + " ql=" + _parameters.Quality + " style=" + (_parameters.LayoutPlan?.StyleId.ToString(CultureInfo.InvariantCulture) ?? "unknown")
+        + " seed=" + _parameters.Seed + " floors=" + (_parameters.LayoutPlan?.FloorCount.ToString(CultureInfo.InvariantCulture) ?? "unknown");
 
     List<MissionChestSnapshot>? ReadStored()
     {

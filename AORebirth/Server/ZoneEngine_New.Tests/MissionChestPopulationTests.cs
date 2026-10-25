@@ -20,6 +20,7 @@ using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
+using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Playfield.Locality;
 using ZoneEngine_New.Core.Quests.Dungeons;
@@ -30,6 +31,151 @@ public sealed class MissionChestPopulationTests
 {
     const string Quest = "chest.population.test";
     const long Assigned = 12345;
+
+    public TestContext TestContext { get; set; } = null!;
+
+    public static IEnumerable<object[]> RealPopulationCases()
+    {
+        foreach (var style in MissionChestPlacementTests.RealGeometryCorpusCases().GroupBy(row => (int)row[0]).OrderBy(group => group.Key))
+        {
+            // Derive supported floor/size configurations from the same editable profiles as the corpus.
+            object[] first = style.Where(row => (int)row[2] == 42).OrderBy(row => (int)row[1]).First();
+            object[] second = style.Where(row => (int)row[2] == 7).OrderByDescending(row => (int)row[1]).First();
+            if (style.Key == 341)
+            {
+                first = style.Where(row => (int)row[2] == 42).OrderByDescending(row => (int)row[1]).First();
+                second = style.Where(row => (int)row[2] == 7).OrderBy(row => (int)row[1]).First();
+            }
+            yield return first;
+            yield return second;
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestRuntimePopulation")]
+    [DoNotParallelize]
+    [DynamicData(nameof(RealPopulationCases), DynamicDataSourceType.Method)]
+    public void RealLayoutsPersistInstantiatePublishAndReconstructTheirExactPopulation(int style, int floors, int seed, int floorSize)
+    {
+        var (layout, dungeon) = MissionChestPlacementTests.Build(style, floors, seed, floorSize);
+        ValidateRealPopulation(layout, dungeon, new QuestDungeonParameters
+        {
+            Quality = 125, Seed = seed, LayoutPlan = new DungeonLayoutPlan { StyleId = style, FloorCount = floors, FloorSize = floorSize }
+        }, MissionChestPlacementTests.ReadPolicy());
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestRuntimePopulation")]
+    [DoNotParallelize]
+    public void ActualFrozenCaveReconstructsThroughThePopulationAndVisibilityOwners()
+    {
+        string? path = Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_FROZEN_LAYOUT_PATH");
+        if (string.IsNullOrWhiteSpace(path))
+            Assert.Inconclusive("Provide the private frozen mission through AO_REBIRTH_CHEST_FROZEN_LAYOUT_PATH.");
+        Assert.IsTrue(QuestDungeonParameters.TryParse(File.ReadAllText(path!), out QuestDungeonParameters parameters));
+        var generator = new DungeonLayoutGenerator(MissionChestPlacementTests.Data.Value, new StubLogger());
+        Assert.IsTrue(generator.TryGenerate(parameters, out DungeonLayout layout));
+        Assert.IsNotNull(generator.ChestPolicy);
+        DungeonWorldLayout dungeon = DungeonCollisionBuilder.BuildLayout(MissionChestPlacementTests.Data.Value.RootPath, layout.Generator);
+        ValidateRealPopulation(layout, dungeon, parameters, generator.ChestPolicy);
+    }
+
+    void ValidateRealPopulation(DungeonLayout layout, DungeonWorldLayout dungeon, QuestDungeonParameters parameters, MissionChestPolicy policy)
+    {
+        var dao = new AuthoredMissionTestDao();
+        var logger = new PopulationLogger();
+        using PlayfieldWorldSimulation simulation = MissionChestPlacementTests.World(dungeon);
+        using var world = new World(layout, dungeon, simulation);
+        world.Inventory.ReadRows = () => dao.Items.Values.Select(DurableRow);
+        var items = new ItemBuilder(MissionChestPlacementTests.Templates.Value, world.Ids, logger);
+        var population = new MissionChestPopulation(dao, 111, Quest, Assigned, parameters.ToJson(), parameters, policy, items, logger);
+        world.AttachPopulation(population);
+        Assert.IsTrue(world.Playfield.EnsureChestPopulation(), population.DeferredReason);
+
+        MissionFlagData[] flags = dao.ReadCharacter(111).Flags.ToArray();
+        int persisted = int.Parse(flags.Single(flag => flag.FlagKey == MissionChestPopulationFlags.Seal(Assigned)).Value, CultureInfo.InvariantCulture);
+        Chest[] chests = world.Registry.Dynels().OfType<Chest>().ToArray();
+        Assert.IsTrue(persisted > 0, "These real regression layouts must produce a safe nonempty runtime population.");
+        Assert.AreEqual(persisted + 1, flags.Length);
+        Assert.AreEqual(persisted, chests.Length);
+        Assert.AreEqual(1, dao.Calls);
+        Assert.IsTrue(chests.All(chest => chest.Loot.Content.Count is >= 1 and <= 3));
+        Assert.AreEqual(dao.Items.Count, chests.Sum(chest => chest.Loot.Content.Count));
+        MissionChestSnapshot[] snapshots = flags.Where(flag => flag.FlagKey.Contains(":chest:", StringComparison.Ordinal))
+            .Select(flag => JsonSerializer.Deserialize<MissionChestSnapshot>(flag.Value)!).ToArray();
+        int distinctRooms = snapshots.Select(snapshot => snapshot.RoomIndex).Distinct().Count();
+        Assert.AreEqual(persisted, distinctRooms, "A runtime population must retain the one-chest-per-room limit.");
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(MissionChestPlacementTests.Data.Value,
+            MissionChestPlacementTests.Templates.Value, policy, out var sphere));
+        var walls = snapshots.Select(snapshot => MissionChestPlacementTests.MeasureWalls(dungeon,
+            new MissionChestPosition(snapshot.RoomIndex, snapshot.X, snapshot.Y, snapshot.Z, snapshot.YawDegrees), sphere.CenterY)).ToArray();
+        Assert.IsTrue(walls.All(wall => wall.Nearest >= sphere.Radius + policy.Placement!.CollisionPadding - 0.03f
+            && wall.Nearest <= sphere.Radius + 2 * policy.Placement.CollisionPadding + 0.03f),
+            "Persisted runtime poses must remain beside their valid physical room walls.");
+        byte[][] wire = chests.OrderBy(chest => chest.Identity.Instance)
+            .Select(chest => MissionChestProtocolTests.Serialize(chest.BuildSpawnMessage())).ToArray();
+        Assert.IsTrue(wire.All(body => body.Length > 0));
+        int published = PublishEveryChest(world, chests);
+        Assert.AreEqual(persisted, published);
+        Assert.IsTrue(world.Playfield.EnsureChestPopulation());
+        Assert.AreEqual(persisted, world.Registry.Dynels().OfType<Chest>().Count());
+
+        using var reconstructed = new World(layout, dungeon, simulation);
+        reconstructed.Inventory.ReadRows = () => dao.Items.Values.Select(DurableRow);
+        reconstructed.AttachPopulation(new MissionChestPopulation(dao, 111, Quest, Assigned, parameters.ToJson(), parameters,
+            null, items, logger));
+        Assert.IsTrue(reconstructed.Playfield.EnsureChestPopulation());
+        Chest[] restored = reconstructed.Registry.Dynels().OfType<Chest>().ToArray();
+        Assert.AreEqual(persisted, restored.Length);
+        byte[][] reloadedWire = restored.OrderBy(chest => chest.Identity.Instance)
+            .Select(chest => MissionChestProtocolTests.Serialize(chest.BuildSpawnMessage())).ToArray();
+        for (int index = 0; index < wire.Length; index++)
+            CollectionAssert.AreEqual(wire[index], reloadedWire[index], "Frozen world identity, appearance and pose must survive reconstruction.");
+        Assert.AreEqual(persisted, PublishEveryChest(reconstructed, restored));
+        Assert.AreEqual(1, dao.Calls, "Reconstruction must never reroll the persisted population.");
+
+        string planned = logger.Information.Single(message => message.StartsWith("Mission chest population planned ", StringComparison.Ordinal));
+        TestContext.WriteLine("MISSION_CHEST_RUNTIME_POPULATION " + JsonSerializer.Serialize(new
+        {
+            Style = parameters.LayoutPlan?.StyleId, Floors = parameters.LayoutPlan?.FloorCount,
+            FloorSize = parameters.LayoutPlan?.FloorSize, LayoutSeed = parameters.Seed,
+            TotalCells = dungeon.Rooms.Count, EligibleRooms = Metric(planned, "eligibleRooms"), Requested = Metric(planned, "requested"),
+            Generated = Metric(planned, "generated"), Candidates = Metric(planned, "candidates"), Persisted = persisted,
+            Instantiated = chests.Length, Serialized = wire.Length, SessionPublished = published, DistinctRooms = distinctRooms,
+            WallMinimum = walls.Min(wall => wall.Nearest), WallMean = walls.Average(wall => wall.Nearest), WallMaximum = walls.Max(wall => wall.Nearest),
+            ChestFloors = snapshots
+                .GroupBy(snapshot => layout.Generator.Rooms[snapshot.RoomIndex].Floor)
+                .ToDictionary(group => group.Key, group => group.Count()),
+            Persistence = "EXISTING_IN_MEMORY_TRANSACTION", Publication = "REAL_LOCALITY_TO_TEST_SESSION", Tcp = "NOT_EXERCISED",
+            PlanDiagnostic = planned
+        }));
+    }
+
+    static int Metric(string message, string key)
+        => int.Parse(message.Split(' ').Single(part => part.StartsWith(key + "=", StringComparison.Ordinal))[(key.Length + 1)..],
+            CultureInfo.InvariantCulture);
+
+    static ItemInstanceRecord DurableRow(MissionItemInstanceData row) => new()
+    {
+        InstanceId = row.InstanceId, ContainerType = row.ContainerType, ContainerInstance = row.ContainerInstance,
+        ContainerPlacement = row.ContainerPlacement, ItemType = row.ItemType, LowId = row.LowId, HighId = row.HighId,
+        Quality = row.Quality, StackCount = row.StackCount, Source = (AORebirth.Enums.ItemSource)row.Source
+    };
+
+    static int PublishEveryChest(World world, IReadOnlyList<Chest> chests)
+    {
+        using var observer = new InventoryActionTests.World();
+        observer.Player.Playfield = world.Playfield;
+        world.Registry.Register(observer.Player);
+        PlayfieldLocality locality = world.Playfield.GetRequiredService<PlayfieldLocality>();
+        foreach (Chest chest in chests)
+        {
+            observer.Player.Position = chest.Position;
+            locality.RegisterDynel(observer.Player);
+            locality.ActivatePlayerVisibility(observer.Player);
+        }
+        return observer.Session.Messages.OfType<ChestItemFullUpdateMessage>().Select(message => message.Identity.Instance).Distinct().Count();
+    }
 
     [TestMethod]
     public void PartialLootReopenDisconnectAndFreshPlayerReconstructionPreserveDurableOwnership()
@@ -264,11 +410,85 @@ public sealed class MissionChestPopulationTests
         }
 
         using var repaired = new World(withSurface: true, withPlayerSphere: true, withStyle: true);
-        // This valid one-room layout rounds the configured 30% target to zero. It still proves that
-        // repairing the prerequisites permits initialization of the same previously unsealed run.
+        // This floor-only fixture has no safe wall pose. Repairing the prerequisites still permits
+        // initialization of the same previously unsealed run, without forcing an unsafe placement.
         Population(dao, PositivePolicy()).Populate(repaired.Playfield, repaired.Layout, repaired.Simulation);
         Assert.AreEqual(1, dao.Calls);
         Assert.AreEqual("0", dao.ReadCharacter(111).Flags.Single().Value);
+    }
+
+    [TestMethod]
+    public void DeferredBuiltDungeonRetriesOnAdmissionAndCompletesOnlyOnce()
+    {
+        var dao = new AuthoredMissionTestDao();
+        var logger = new PopulationLogger();
+        using var world = new World();
+        world.Data.DynelCollisionSphere = null;
+        MissionChestPopulation population = Population(dao, EmptyPolicy(), logger);
+        world.AttachPopulation(population);
+
+        Assert.IsFalse(world.Playfield.EnsureChestPopulation());
+        Assert.IsFalse(world.Playfield.EnsureChestPopulation());
+        Assert.AreEqual("chest-collision-sphere-unavailable-or-invalid", population.DeferredReason);
+        Assert.AreEqual(0, dao.Calls);
+        Assert.AreEqual(0, dao.Flags.Count, "A deferred built dungeon must retain its unsealed run.");
+        Assert.AreEqual(1, logger.Warnings.Count, "Repeated admissions must not repeat an unchanged defer warning.");
+
+        world.Data.DynelCollisionSphere = new CollisionSphereData { Radius = 0.75f, CenterY = 0.75f };
+        Assert.IsTrue(world.Playfield.EnsureChestPopulation());
+        Assert.IsTrue(world.Playfield.EnsureChestPopulation());
+        Assert.IsNull(population.DeferredReason);
+        Assert.AreEqual(1, dao.Calls, "The repaired cached dungeon initializes exactly once.");
+        Assert.AreEqual("0", dao.ReadCharacter(111).Flags.Single().Value,
+            "Explicit zero density remains a valid durable empty population.");
+        Assert.IsTrue(logger.Information.Any(message => message.Contains("generated=0", StringComparison.Ordinal)));
+        Assert.IsTrue(logger.Information.Any(message => message.Contains("persisted=0 instantiated=0", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void DeferredBuiltDungeonReloadsACommittedSealBeforeUnavailableGenerationInputs()
+    {
+        var dao = new AuthoredMissionTestDao();
+        using var world = new World();
+        MissionChestPopulation population = Population(dao, PositivePolicy());
+        world.AttachPopulation(population);
+        Assert.IsFalse(world.Playfield.EnsureChestPopulation());
+        Assert.AreEqual(0, dao.Flags.Count);
+
+        // Another successful attempt may commit while this cached world is still deferred.
+        Seed(dao);
+        world.Inventory.Rows.Add(ItemRow(7001, 0));
+        Assert.IsTrue(world.Playfield.EnsureChestPopulation());
+        Chest chest = world.Registry.Dynels().OfType<Chest>().Single();
+        Assert.AreEqual(7000, chest.Identity.Instance);
+        Assert.AreEqual(7001, chest.Loot.Content.Single().Value.InstanceId);
+        Assert.IsTrue(world.Playfield.EnsureChestPopulation());
+        Assert.AreSame(chest, world.Registry.Dynels().OfType<Chest>().Single());
+        Assert.AreEqual(0, dao.Calls, "A sealed run must not regenerate or register its chest twice.");
+        Assert.IsNull(world.Simulation.Surface, "Reconstruction must continue to bypass new-placement prerequisites.");
+    }
+
+    [TestMethod]
+    public void FailedBuiltDungeonRequiresReconstructionInsteadOfRepeatingPartialRegistration()
+    {
+        var dao = new AuthoredMissionTestDao();
+        Seed(dao);
+        MissionChestSnapshot second = Snapshot();
+        second.ContainerInstance = 7010;
+        AddFlag(dao, MissionChestPopulationFlags.Chest(Assigned, 1), JsonSerializer.Serialize(second));
+        AddFlag(dao, MissionChestPopulationFlags.Seal(Assigned), "2");
+        using var world = new World();
+        world.Inventory.Rows.Add(ItemRow(7001, 0));
+        world.Inventory.Rows.Add(ItemRow(7011, 0, quality: 200, container: second.ContainerInstance));
+        world.AttachPopulation(Population(dao));
+        Assert.ThrowsExactly<InvalidDataException>(() => world.Playfield.EnsureChestPopulation());
+        Chest registeredBeforeFailure = world.Registry.Dynels().OfType<Chest>().Single();
+        Assert.AreEqual(7000, registeredBeforeFailure.Identity.Instance);
+        world.Inventory.Rows.Clear();
+        Assert.ThrowsExactly<InvalidDataException>(() => world.Playfield.EnsureChestPopulation());
+        Assert.AreSame(registeredBeforeFailure, world.Registry.Dynels().OfType<Chest>().Single(),
+            "An admission must not retry registration over a partially materialized population.");
+        Assert.AreEqual(0, dao.Calls);
     }
 
     [TestMethod]
@@ -280,6 +500,16 @@ public sealed class MissionChestPopulationTests
         Population(dao, EmptyPolicy()).Populate(world.Playfield, world.Layout, world.Simulation);
         Assert.AreEqual(1, dao.Calls);
         Assert.AreEqual("0", dao.ReadCharacter(111).Flags.Single().Value);
+
+        using var reconstructed = new World();
+        MissionChestPolicy positive = PositivePolicy();
+        Assert.AreEqual(1, positive.RollChestCount(1, new Random(42)), "The current policy requests a minimum chest for one eligible room.");
+        Assert.IsNull(reconstructed.Simulation.Surface);
+        Assert.IsTrue(Population(dao, positive).Populate(reconstructed.Playfield, reconstructed.Layout, reconstructed.Simulation),
+            "A stored empty population must reconstruct before new-placement prerequisites are checked.");
+        Assert.AreEqual(1, dao.Calls, "A saved zero seal must never be rerolled by the new minimum policy.");
+        Assert.AreEqual("0", dao.ReadCharacter(111).Flags.Single().Value);
+        Assert.AreEqual(0, reconstructed.Registry.Dynels().OfType<Chest>().Count());
     }
 
     [TestMethod]
@@ -315,9 +545,9 @@ public sealed class MissionChestPopulationTests
         Assert.AreSame(existing, collision.Registry.Dynels().Single());
     }
 
-    static MissionChestPopulation Population(AuthoredMissionTestDao dao, MissionChestPolicy? policy = null)
+    static MissionChestPopulation Population(AuthoredMissionTestDao dao, MissionChestPolicy? policy = null, IZoneLogger? logger = null)
         => new(dao, 111, Quest, Assigned, "frozen-layout", new QuestDungeonParameters { Quality = 50 },
-            policy, new StubItemBuilder(), new StubLogger());
+            policy, new StubItemBuilder(), logger ?? new StubLogger());
 
     static MissionChestPolicy EmptyPolicy() => new()
     {
@@ -360,9 +590,9 @@ public sealed class MissionChestPopulationTests
             CharacterId = 111, QuestId = Quest, FlagKey = key, Value = value, Version = 1
         };
 
-    static ItemInstanceRecord ItemRow(int instance, int slot, int quality = 50) => new()
+    static ItemInstanceRecord ItemRow(int instance, int slot, int quality = 50, int container = 7000) => new()
     {
-        InstanceId = instance, ContainerType = (int)IdentityType.Container, ContainerInstance = 7000,
+        InstanceId = instance, ContainerType = (int)IdentityType.Container, ContainerInstance = container,
         ContainerPlacement = slot, ItemType = 51053, LowId = 1000, HighId = 1000,
         Quality = quality, StackCount = 1, Source = AORebirth.Enums.ItemSource.Loot
     };
@@ -374,6 +604,8 @@ public sealed class MissionChestPopulationTests
         internal readonly QuestDungeonPlayfield Playfield;
         internal readonly DynelRegistry Registry = new();
         internal readonly Inventory Inventory = new();
+        internal readonly StubGameData Data;
+        internal readonly StubInstanceIdAllocator Ids = new();
         internal readonly DungeonWorldLayout Layout;
         internal readonly PlayfieldWorldSimulation Simulation =
             (PlayfieldWorldSimulation)RuntimeHelpers.GetUninitializedObject(typeof(PlayfieldWorldSimulation));
@@ -399,8 +631,9 @@ public sealed class MissionChestPopulationTests
                     Rooms = [new BuildingRoomInfo { RoomId = checked((ushort)room.InstanceId) }]
                 };
             }
-            IGameData data = new StubGameData(HashItemCatalog.Parse("{}"), rootPath: root)
+            Data = new StubGameData(HashItemCatalog.Parse("{}"), rootPath: root)
                 { DynelCollisionSphere = new CollisionSphereData { Radius = 0.75f, CenterY = 0.75f } };
+            IGameData data = Data;
             if (withSurface || withPlayerSphere)
             {
                 IGameData overridden = DispatchProxy.Create<IGameData, PopulationGameData>();
@@ -410,7 +643,7 @@ public sealed class MissionChestPopulationTests
                 data = overridden;
             }
             _services = new ServiceCollection().AddSingleton(Registry).AddSingleton<IInventoryRepository>(Inventory)
-                .AddSingleton<IItemTemplateCatalog>(catalog).AddSingleton<IItemInstanceIdAllocator>(new StubInstanceIdAllocator())
+                .AddSingleton<IItemTemplateCatalog>(catalog).AddSingleton<IItemInstanceIdAllocator>(Ids)
                 .AddSingleton(data)
                 .AddSingleton(new PlayfieldLocality(4582, null)).BuildServiceProvider();
             typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -436,12 +669,55 @@ public sealed class MissionChestPopulationTests
             }
         }
 
+        internal World(DungeonLayout layout, DungeonWorldLayout dungeon, PlayfieldWorldSimulation simulation)
+        {
+            Playfield = (QuestDungeonPlayfield)RuntimeHelpers.GetUninitializedObject(typeof(QuestDungeonPlayfield));
+            Data = null!;
+            Layout = dungeon;
+            Simulation = simulation;
+            var locality = new PlayfieldLocality(1, null);
+            locality.ApplyDungeonRooms(dungeon);
+            _services = new ServiceCollection().AddSingleton(Registry).AddSingleton<IInventoryRepository>(Inventory)
+                .AddSingleton<IItemTemplateCatalog>(MissionChestPlacementTests.Templates.Value)
+                .AddSingleton<IItemInstanceIdAllocator>(Ids).AddSingleton<IGameData>(MissionChestPlacementTests.Data.Value)
+                .AddSingleton(locality).BuildServiceProvider();
+            typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Playfield, _services);
+            typeof(Playfield).GetField("_nextContainerInventoryHandle", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Playfield, 117);
+            typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Playfield, new Identity { Type = IdentityType.Playfield, Instance = 1 });
+            typeof(QuestDungeonPlayfield).GetField("<Layout>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Playfield, layout);
+        }
+
+        internal void AttachPopulation(MissionChestPopulation population)
+        {
+            typeof(QuestDungeonPlayfield).GetField("<ChestPopulation>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Playfield, population);
+            typeof(QuestDungeonPlayfield).GetField("_chestDungeon", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Playfield, Layout);
+            typeof(QuestDungeonPlayfield).GetField("_simulation", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Playfield, Simulation);
+            typeof(Playfield).GetField("_built", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Playfield, true);
+        }
+
         public void Dispose()
         {
             if (_ownsSimulation)
                 Simulation.Dispose();
             _services.Dispose();
         }
+    }
+
+    sealed class PopulationLogger : IZoneLogger
+    {
+        internal readonly List<string> Information = [];
+        internal readonly List<string> Warnings = [];
+        public void Debug(string message) { }
+        public void Info(string message) => Information.Add(message);
+        public void Warn(string message) => Warnings.Add(message);
+        public void Error(string message) { }
+        public void Error(Exception exception, string message) { }
+        public IZoneLogger CreateForPlayfield(int playfieldId) => this;
     }
 
     /// <summary>Test-only view over the existing stub, varying just the player sphere and empty exit configuration.</summary>

@@ -23,11 +23,29 @@ try
     using var fixture = new DisposableSchemaDatabase();
     fixture.Start();
     using var connection = fixture.Open();
-    FixtureSql.CreateBaseline(connection);
-    AuthoredMissionSmoke.CreateBaseline(connection);
+    string? chestSchema = connectedChests
+        ? Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_FIXTURE_SCHEMA_PATH") : null;
+    if (!string.IsNullOrWhiteSpace(chestSchema))
+    {
+        // Import only into the database just created and owned by this fixture. This
+        // allows a current schema-only snapshot to exercise chests without migrations.
+        Require(connection.Database == DisposableSchemaDatabase.DatabaseName, "chest-schema-target");
+        FixtureSql.Execute(connection, File.ReadAllText(Path.GetFullPath(chestSchema)), 180);
+        foreach (string table in new[] { "characters", "item_instances", "characterquests", "generatedquests", "missionflags", "login" })
+            Require(FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM " + table) == 0, "chest-schema-must-exclude-player-rows-" + table);
+        FixtureSql.Execute(connection, File.ReadAllText(Path.Combine(ConnectedAcceptanceSmoke.RepositoryRoot(),
+            "AORebirth/Libraries/Source/AORebirth.Database/SqlTables/teleports.sql")), 180);
+        Console.WriteLine("CONNECTED_CHEST_SCHEMA=IMPORTED_EMPTY_SNAPSHOT MIGRATIONS_EXECUTED=0");
+    }
+    else
+    {
+        FixtureSql.CreateBaseline(connection);
+        AuthoredMissionSmoke.CreateBaseline(connection);
+    }
     if (connected)
     {
-        Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "connected-explicit-migration");
+        if (string.IsNullOrWhiteSpace(chestSchema))
+            Require(MigrationSmoke.Run(fixture, MigrateArgs(), Console.Out) == 0, "connected-explicit-migration");
         EngineSmoke.Validate(args[2], fixture, SchemaState.SCHEMA_CURRENT);
         if (connectedChests)
         {

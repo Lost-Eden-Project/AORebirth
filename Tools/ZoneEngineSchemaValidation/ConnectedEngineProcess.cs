@@ -15,6 +15,62 @@ sealed class ConnectedEngineProcess : IDisposable
     public string BinarySha256 { get; }
     public int OutputMark { get { lock (output) return output.Length; } }
 
+    public void WaitForChestPopulation(string quest, int expected)
+    {
+        string pattern = "Mission chests loaded quest=" + System.Text.RegularExpressions.Regex.Escape(quest) + @" count=(\d+)(?:\s|$)";
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            string text;
+            lock (output) text = output.ToString();
+            var match = System.Text.RegularExpressions.Regex.Match(text, pattern);
+            if (match.Success)
+            {
+                if (int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) != expected)
+                    throw new FixtureFailure("chest-instantiated-log-count-disagrees-with-durable-seal");
+                return;
+            }
+            if (process.HasExited)
+                throw new FixtureFailure("chest-engine-exited-before-population-log");
+            Thread.Sleep(20);
+        }
+        throw new FixtureFailure("chest-instantiated-count-log-timeout");
+    }
+
+    public string ChestPlanMetrics(string quest, int expectedGenerated)
+    {
+        string text;
+        lock (output) text = output.ToString();
+        var match = System.Text.RegularExpressions.Regex.Match(text,
+            "Mission chest population planned quest=" + System.Text.RegularExpressions.Regex.Escape(quest)
+            + @" [^\r\n]* totalCells=(\d+) placementSeed=(-?\d+) eligibleRooms=(\d+) requested=(\d+) generated=(\d+) candidates=(\d+)");
+        if (!match.Success)
+            throw new FixtureFailure("chest-initial-population-plan-metrics-missing");
+        if (int.Parse(match.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture) != expectedGenerated)
+            throw new FixtureFailure("chest-generated-plan-count-disagrees-with-durable-seal");
+        return "TOTAL_CELLS=" + match.Groups[1].Value + " PLACEMENT_SEED=" + match.Groups[2].Value
+            + " ELIGIBLE_ROOMS=" + match.Groups[3].Value + " REQUESTED=" + match.Groups[4].Value
+            + " GENERATED=" + match.Groups[5].Value + " CANDIDATES=" + match.Groups[6].Value;
+    }
+
+    public void WaitForChestRetirement(int containerInstance)
+    {
+        string marker = "Despawned lootable Chest id=" + containerInstance + " playfield=";
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            lock (output)
+            {
+                if (output.ToString().Contains(marker, StringComparison.Ordinal))
+                    return;
+            }
+            if (process.HasExited)
+                throw new FixtureFailure("chest-engine-exited-before-empty-retirement");
+            Thread.Sleep(20);
+        }
+        throw new FixtureFailure("chest-empty-retirement-log-timeout");
+    }
+
     public FixturePosition WaitForSnapshot(int after)
     {
         var deadline = Stopwatch.StartNew();

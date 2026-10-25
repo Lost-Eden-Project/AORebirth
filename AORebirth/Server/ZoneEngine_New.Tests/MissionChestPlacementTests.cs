@@ -20,14 +20,15 @@ using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Quests.Dungeons;
 using ZoneEngine_New.Core.WorldSimulation;
 using AoVector3 = AORebirth.Core.Vector.Vector3;
+using CharacterStat = SmokeLounge.AOtomation.Messaging.GameData.CharacterStat;
 using Vector3 = System.Numerics.Vector3;
 
 [TestClass]
 [DoNotParallelize]
 public sealed class MissionChestPlacementTests
 {
-    static readonly Lazy<GameDataStore> Data = new(() => new GameDataStore(new StubLogger(), null, RuntimeRoot()));
-    static readonly Lazy<ItemTemplateCatalog> Templates = new(() => new ItemTemplateCatalog(Data.Value, new StubLogger()));
+    internal static readonly Lazy<GameDataStore> Data = new(() => new GameDataStore(new StubLogger(), null, RuntimeRoot()));
+    internal static readonly Lazy<ItemTemplateCatalog> Templates = new(() => new ItemTemplateCatalog(Data.Value, new StubLogger()));
     static readonly object CorpusOutputLock = new();
 
     public TestContext TestContext { get; set; } = null!;
@@ -154,6 +155,175 @@ public sealed class MissionChestPlacementTests
     [TestCategory("MissionChestGeometryRegression")]
     public void RealCavePocketSupportRegressionProducesACompleteValidatedResult()
         => RealGeometryCorpusVerifiesDensitySafetyAndEntranceRoutes(341, 4, 68937720, 14);
+
+    [TestMethod]
+    [TestCategory("MissionChestZeroInvestigation")]
+    public void FrozenCaveMissionReportsBoundedVerifiedPlacementRolls()
+    {
+        string? path = Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_FROZEN_LAYOUT_PATH");
+        if (string.IsNullOrWhiteSpace(path))
+            Assert.Inconclusive("Provide the private frozen mission through AO_REBIRTH_CHEST_FROZEN_LAYOUT_PATH.");
+        QuestDungeonParameters? parameters = JsonSerializer.Deserialize<QuestDungeonParameters>(File.ReadAllText(path!));
+        Assert.IsNotNull(parameters);
+        var generator = new DungeonLayoutGenerator(Data.Value, new StubLogger());
+        Assert.IsTrue(generator.TryGenerate(parameters, out DungeonLayout layout), "The exact frozen mission must reconstruct through its runtime generator.");
+        MissionChestPolicy? policy = generator.ChestPolicy;
+        Assert.IsNotNull(policy, "The selected runtime GameData must configure mission chests.");
+        DungeonWorldLayout dungeon = DungeonCollisionBuilder.BuildLayout(RuntimeRoot(), layout.Generator);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        var exclusions = new List<Vector3>();
+        if (parameters.ObjectiveItem is { } item)
+            exclusions.Add(new Vector3(item.X, item.Y, item.Z));
+        if (parameters.ObjectiveNpc is { } npc)
+            exclusions.Add(new Vector3(npc.X, npc.Y, npc.Z));
+        foreach (int placementSeed in new[] { 7919, 104729, 32452843, 17112432, 24234914, 36845172, 40651165, 80990131 })
+            ValidateZeroInvestigationRoll("frozen", layout, dungeon, world, policy, placementSeed, exclusions,
+                parameters.LayoutPlan!.FloorCount, parameters.LayoutPlan.FloorSize);
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestZeroInvestigation")]
+    [DataRow(1, 19024074, 9)]
+    [DataRow(1, 22480131, 10)]
+    [DataRow(2, 34928853, 10)]
+    [DataRow(2, 38384910, 8)]
+    [DataRow(5, 82433732, 12)]
+    [DataRow(1, 20071364, 11)]
+    [DataRow(2, 34719395, 8)]
+    public void RealCaveZeroCasesReportBoundedSafeOpportunities(int floors, int seed, int size)
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var (layout, dungeon) = Build(341, floors, seed, size);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        foreach (int placementSeed in new[] { 7919, 104729, 32452843, unchecked(seed ^ (341 * 7919) ^ (size * 104729)) })
+        {
+            var positions = ValidateZeroInvestigationRoll("configured", layout, dungeon, world, policy, placementSeed, [], floors, size);
+            if (seed is 19024074 or 38384910 or 22480131)
+                Assert.IsTrue(positions.Count > 0, "The bounded recovery must retain a verified chest in this measured safe cave layout.");
+            if (policy.RollChestCount(EligibleRooms(layout, dungeon, policy).Count, new Random(placementSeed)) != 0)
+                continue;
+            MissionChestPolicy probe = policy.Clone();
+            probe.RoomDensity = 1;
+            probe.CountVariationFraction = 0;
+            ValidateZeroInvestigationRoll("zero-target-capacity", layout, dungeon, world, probe, placementSeed, [], floors, size);
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("MissionChestZeroInvestigation")]
+    public void ProvenSingleEligibleCaveRoomReceivesMinimumSafeTarget()
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var (layout, dungeon) = Build(341, 2, 34719395, 8);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        Assert.AreEqual(1, EligibleRooms(layout, dungeon, policy).Count);
+        foreach (int placementSeed in new[] { 7919, 104729, 32452843, unchecked(34719395 ^ (341 * 7919) ^ (8 * 104729)) })
+        {
+            var positions = ValidateZeroInvestigationRoll("minimum-enabled", layout, dungeon, world, policy, placementSeed, [], 2, 8);
+            Assert.AreEqual(1, positions.Count, "The measured safe eligible room must not disappear through count rounding.");
+        }
+    }
+
+    [TestMethod]
+    public void CompactPlacementDiagnosticsPreserveResultsWithoutRouteWitnesses()
+    {
+        MissionChestPolicy policy = ReadPolicy();
+        var (layout, dungeon) = Build(324, 1);
+        using PlayfieldWorldSimulation world = World(dungeon);
+        AssertPlacementInputs(world, policy);
+        var full = new MissionChestPlacementDiagnostics();
+        var compact = new MissionChestPlacementDiagnostics { CaptureRouteWitnesses = false };
+        var first = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(7919), full);
+        var second = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value, [], policy, new Random(7919), compact);
+        Assert.IsTrue(first.Count > 0, "The compact comparison requires an actual verified population.");
+        CollectionAssert.AreEqual(first.ToArray(), second.ToArray());
+        CollectionAssert.AreEquivalent(full.CandidateCounts.ToArray(), compact.CandidateCounts.ToArray());
+        CollectionAssert.AreEquivalent(full.Rejections.ToArray(), compact.Rejections.ToArray());
+        Assert.AreEqual(full.InitiallyReachableAnchorGroups, compact.InitiallyReachableAnchorGroups);
+        Assert.AreEqual(full.PreservedAnchorGroups, compact.PreservedAnchorGroups);
+        Assert.AreEqual(full.LostAnchorSamples, compact.LostAnchorSamples);
+        Assert.AreEqual(0, compact.Routes.Count);
+        Assert.AreEqual(0, compact.RequiredRoutes.Count);
+        Assert.AreEqual(0, compact.RequiredRouteTargets.Count);
+    }
+
+    void AssertPlacementInputs(PlayfieldWorldSimulation world, MissionChestPolicy policy)
+    {
+        Assert.IsNotNull(policy.SpawnDefinition);
+        int templateId = checked((int)policy.SpawnDefinition.Stats.Single(stat => stat.StatId == (int)CharacterStat.StaticInstance).Value);
+        bool templateFound = Templates.Value.TryGet(templateId, out ItemTemplate template);
+        int Effective(CharacterStat stat, int fallback)
+        {
+            ChestSpawnStat? placed = policy.SpawnDefinition.Stats.FirstOrDefault(value => value.StatId == (int)stat);
+            return placed != null ? unchecked((int)placed.Value)
+                : templateFound && template.Stats.TryGetValue(stat, out int value) ? value : fallback;
+        }
+        int mesh = Effective(CharacterStat.Mesh, 0), scale = Effective(CharacterStat.Scale, 100);
+        bool dynelSphere = Data.Value.TryGetDynelCollisionSphere(templateId, mesh, scale, out float radius, out float centerY);
+        bool chestSphere = MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out _);
+        TestContext.WriteLine("MISSION_CHEST_INPUTS " + JsonSerializer.Serialize(new
+        {
+            Surface = world.Surface != null, Player = Data.Value.PlayerCollisionSphere, TemplateId = templateId,
+            TemplateFound = templateFound, TemplateStatCount = templateFound ? template.Stats.Count : 0,
+            TemplateMesh = templateFound && template.Stats.TryGetValue(CharacterStat.Mesh, out int rawMesh) ? (int?)rawMesh : null,
+            TemplateScale = templateFound && template.Stats.TryGetValue(CharacterStat.Scale, out int rawScale) ? (int?)rawScale : null,
+            EffectiveMesh = mesh, EffectiveScale = scale, DynelSphere = dynelSphere,
+            Radius = radius, CenterY = centerY, ChestSphere = chestSphere
+        }));
+        Assert.IsNotNull(world.Surface, "The exact layout needs a collision surface before placement.");
+        Assert.IsNotNull(Data.Value.PlayerCollisionSphere, "The selected GameData needs player collision geometry.");
+        Assert.IsTrue(templateFound, "The configured chest template must exist in the selected current item catalog.");
+        Assert.IsTrue(dynelSphere, "The configured chest template/mesh/scale must resolve current collision geometry.");
+        Assert.IsTrue(chestSphere, "Chest placement preflight must accept the verified inputs.");
+    }
+
+    IReadOnlyList<MissionChestPosition> ValidateZeroInvestigationRoll(string stage, DungeonLayout layout, DungeonWorldLayout dungeon,
+        PlayfieldWorldSimulation world, MissionChestPolicy policy, int placementSeed, IReadOnlyList<Vector3> exclusions,
+        int layoutFloorCount, int floorSize)
+    {
+        Assert.IsTrue(MissionChestPlacement.TryGetChestSphere(Data.Value, Templates.Value, policy, out var sphere));
+        var diagnostics = new MissionChestPlacementDiagnostics();
+        var elapsed = Stopwatch.StartNew();
+        var positions = MissionChestPlacement.Plan(dungeon, layout, world, Data.Value, Templates.Value,
+            exclusions, policy, new Random(placementSeed), diagnostics);
+        elapsed.Stop();
+        Dictionary<int, RoomShape> eligible = EligibleRooms(layout, dungeon, policy);
+        WallMetric[] walls = positions.Select(position => MeasureWalls(dungeon, position, sphere.CenterY)).ToArray();
+        TestContext.WriteLine("MISSION_CHEST_ZERO_BASELINE " + JsonSerializer.Serialize(new
+        {
+            Stage = stage, Style = layout.Generator.Style, layout.Seed, PlacementSeed = placementSeed,
+            LayoutFloorCount = layoutFloorCount, FloorSize = floorSize,
+            diagnostics.TotalCells, Eligible = eligible.Count, diagnostics.Requested, Placed = positions.Count,
+            DistinctRooms = positions.Select(position => position.RoomIndex).Distinct().Count(),
+            WallMinimum = walls.Length == 0 ? (float?)null : walls.Min(wall => wall.Nearest),
+            WallMean = walls.Length == 0 ? (float?)null : walls.Average(wall => wall.Nearest),
+            WallMaximum = walls.Length == 0 ? (float?)null : walls.Max(wall => wall.Nearest),
+            diagnostics.CandidateCounts, diagnostics.ReachableCandidateCounts, diagnostics.AnchorCounts,
+            diagnostics.ReachableAnchorCounts, diagnostics.Rejections, diagnostics.SearchPasses,
+            diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced, diagnostics.InitiallyReachableAnchorGroups,
+            diagnostics.RecoveryPrimaryPlaced, diagnostics.RecoveryFallbackPlaced,
+            diagnostics.PreservedAnchorGroups, ElapsedMilliseconds = elapsed.ElapsedMilliseconds,
+            Floors = positions.GroupBy(position => layout.Generator.Rooms[position.RoomIndex].Floor)
+                .ToDictionary(group => group.Key, group => group.Count()), Positions = positions
+        }));
+        Assert.AreEqual(policy.RollChestCount(eligible.Count, new Random(placementSeed)), diagnostics.Requested);
+        Assert.IsTrue(positions.Count <= diagnostics.Requested);
+        Assert.AreEqual(positions.Count, positions.Select(position => position.RoomIndex).Distinct().Count());
+        AssertSearchChoice(diagnostics, positions.Count);
+        AssertRequiredRoutes(layout, world, diagnostics, positions, sphere, policy.Placement!);
+        foreach (MissionChestPosition position in positions)
+        {
+            AssertCorpusPose(dungeon, layout, world, position, sphere, policy, eligible, positions);
+            AssertEntranceRoute(layout, world, position, diagnostics.Routes[position.RoomIndex], positions, sphere, policy.Placement!);
+            foreach (Vector3 exclusion in exclusions)
+                AssertClear(new Vector3(position.X, position.Y, position.Z), exclusion,
+                    policy.Placement!.ObjectiveClearance, sphere.Radius, policy.Placement.MaxWalkStep);
+        }
+        return positions;
+    }
 
     void WriteCorpusResult(object result)
     {
@@ -705,8 +875,20 @@ public sealed class MissionChestPlacementTests
         if (diagnostics.Requested == 0)
             return;
         Assert.IsTrue(placed >= diagnostics.PrimaryPlaced, "A fallback cannot reduce the primary valid population.");
-        Assert.AreEqual(Math.Max(diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced ?? diagnostics.PrimaryPlaced), placed,
+        Assert.AreEqual(new[] { diagnostics.PrimaryPlaced, diagnostics.FallbackPlaced ?? 0,
+                diagnostics.RecoveryPrimaryPlaced ?? 0, diagnostics.RecoveryFallbackPlaced ?? 0 }.Max(), placed,
             "Choose one complete verified population, rather than merging unchecked positions from separate searches.");
+        Assert.AreEqual(1 + (diagnostics.FallbackPlaced.HasValue ? 1 : 0)
+            + (diagnostics.RecoveryPrimaryPlaced.HasValue ? 1 : 0) + (diagnostics.RecoveryFallbackPlaced.HasValue ? 1 : 0),
+            diagnostics.SearchPasses);
+        Assert.IsTrue(diagnostics.SearchPasses is >= 1 and <= 4);
+        if (diagnostics.RecoveryPrimaryPlaced.HasValue)
+        {
+            Assert.AreEqual(0, diagnostics.PrimaryPlaced);
+            Assert.AreEqual(0, diagnostics.FallbackPlaced);
+            Assert.AreEqual(diagnostics.RecoveryPrimaryPlaced == 0, diagnostics.RecoveryFallbackPlaced.HasValue,
+                "Zero recovery stops at its first positive complete population.");
+        }
     }
 
     static void AssertEntranceRoute(DungeonLayout layout, PlayfieldWorldSimulation world,
@@ -833,9 +1015,9 @@ public sealed class MissionChestPlacementTests
         }
     }
 
-    readonly record struct WallMetric(float Nearest, float Second);
+    internal readonly record struct WallMetric(float Nearest, float Second);
 
-    static WallMetric MeasureWalls(DungeonWorldLayout dungeon, MissionChestPosition position, float centerY)
+    internal static WallMetric MeasureWalls(DungeonWorldLayout dungeon, MissionChestPosition position, float centerY)
     {
         Vector2 chest = new(position.X, position.Z);
         float height = position.Y + centerY;
@@ -1063,7 +1245,7 @@ public sealed class MissionChestPlacementTests
             Assert.IsTrue(Vector2.Distance(new Vector2(position.X, position.Z), new Vector2(excluded.X, excluded.Z)) >= minimum);
     }
 
-    static (DungeonLayout, DungeonWorldLayout) Build(int style, int floors, int seed = 42, int floorSize = 10)
+    internal static (DungeonLayout, DungeonWorldLayout) Build(int style, int floors, int seed = 42, int floorSize = 10)
     {
         var generator = new DungeonGenerator(RuntimeRoot());
         var loaded = generator.LoadStyle(style);
@@ -1081,11 +1263,11 @@ public sealed class MissionChestPlacementTests
         return (layout, DungeonCollisionBuilder.BuildLayout(RuntimeRoot(), generated.Generator));
     }
 
-    static PlayfieldWorldSimulation World(DungeonWorldLayout dungeon)
+    internal static PlayfieldWorldSimulation World(DungeonWorldLayout dungeon)
         => PlayfieldWorldSimulation.Create(1, new PlayfieldGeometryData { Collision = dungeon.Collision }, null,
             new DestinationsCatalog(), Data.Value, new StubLogger(), Templates.Value);
 
-    static MissionChestPolicy ReadPolicy()
+    internal static MissionChestPolicy ReadPolicy()
     {
         string? directory = AppContext.BaseDirectory;
         while (directory != null && !File.Exists(Path.Combine(directory, "AI_START_HERE.md")))

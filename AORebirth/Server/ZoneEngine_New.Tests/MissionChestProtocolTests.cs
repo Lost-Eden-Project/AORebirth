@@ -369,7 +369,7 @@ public sealed class MissionChestProtocolTests
         return playfield;
     }
 
-    static byte[] Serialize(MessageBody body)
+    internal static byte[] Serialize(MessageBody body)
     {
         var resolver = new SerializerResolverBuilder<MessageBody>().Build();
         using var stream = new MemoryStream();

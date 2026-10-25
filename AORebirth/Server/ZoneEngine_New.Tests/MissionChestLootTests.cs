@@ -23,8 +23,17 @@ public sealed class MissionChestLootTests
     {
         MissionChestPolicy policy = Policy();
         policy.CountVariationFraction = 0;
-        foreach ((int rooms, int expected) in new[] { (0, 0), (10, 3), (20, 6), (30, 9), (40, 12), (50, 15) })
+        foreach ((int rooms, int expected) in new[] { (0, 0), (1, 1), (2, 1), (10, 3), (20, 6), (30, 9), (40, 12), (50, 15) })
             Assert.AreEqual(expected, policy.RollChestCount(rooms, new Random(1)));
+    }
+
+    [TestMethod]
+    public void ZeroDensityStillDisablesTheMinimumChestTarget()
+    {
+        MissionChestPolicy policy = Policy();
+        policy.RoomDensity = 0;
+        foreach (int rooms in new[] { 1, 2, 10 })
+            Assert.AreEqual(0, policy.RollChestCount(rooms, new Random(1)));
     }
 
     [TestMethod]

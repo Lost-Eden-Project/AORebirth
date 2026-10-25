@@ -54,6 +54,8 @@ public sealed class MissionChestPolicy
             throw new InvalidOperationException("Invalid mission chest policy.");
         double factor = 1 + ((2 * random.NextDouble() - 1) * CountVariationFraction);
         double count = Math.Round(roomCount * RoomDensity * factor, MidpointRounding.AwayFromZero);
+        if (roomCount > 0 && RoomDensity > 0)
+            count = Math.Max(1, count);
         return checked((int)count);
     }
 

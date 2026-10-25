@@ -79,6 +79,13 @@ its own labelled database. Indoor positioning uses direct-control packets;
 this does not establish original-client visuals or player walking. Preserve
 running outputs by using separate standard MSBuild `OutDir` paths when needed.
 
+When migrations are prohibited, set `AO_REBIRTH_CHEST_FIXTURE_SCHEMA_PATH` to a
+current schema-only SQL snapshot containing the existing schema migration ledger
+and allocator metadata, with no player, inventory or mission rows. The chest
+cohort imports it only into its newly created disposable database, seeds the
+canonical teleport definitions there, and checks schema readiness without
+executing migrations. Keep this snapshot private under ignored `build-verify`.
+
 Run:
 
 ```cmd

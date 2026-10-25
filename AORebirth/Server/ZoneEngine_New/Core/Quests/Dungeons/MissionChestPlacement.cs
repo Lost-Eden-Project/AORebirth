@@ -24,6 +24,7 @@ internal readonly record struct MissionChestRouteStep(Vector3 Point, bool Transi
 
 internal sealed class MissionChestPlacementDiagnostics
 {
+    public bool CaptureRouteWitnesses { get; init; } = true;
     public int TotalCells { get; internal set; }
     public int EligibleRooms { get; internal set; }
     public int Requested { get; internal set; }
@@ -47,6 +48,8 @@ internal sealed class MissionChestPlacementDiagnostics
     public int SearchPasses { get; internal set; }
     public int PrimaryPlaced { get; internal set; }
     public int? FallbackPlaced { get; internal set; }
+    public int? RecoveryPrimaryPlaced { get; internal set; }
+    public int? RecoveryFallbackPlaced { get; internal set; }
 
     internal void CopyFrom(MissionChestPlacementDiagnostics source)
     {
@@ -133,17 +136,21 @@ public static class MissionChestPlacement
         }
         if (wanted == 0)
             return [];
-        MissionChestPlacementDiagnostics? primaryDiagnostics = diagnostics == null ? null : new();
+        MissionChestPlacementDiagnostics? primaryDiagnostics = diagnostics == null ? null
+            : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
         var primary = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
             chest, player, random, eligible, primaryDiagnostics, coverSections: false).Select(wanted);
         var result = primary;
         MissionChestPlacementDiagnostics? selectedDiagnostics = primaryDiagnostics;
         int? fallbackCount = null;
+        int? recoveryPrimaryCount = null;
+        int? recoveryFallbackCount = null;
         if (primary.Count < wanted)
         {
             // A second bounded search can recover missed wall sections or walking anchors.
             // Keep one complete validated population; never combine unchecked positions or reroll the count.
-            MissionChestPlacementDiagnostics? fallbackDiagnostics = diagnostics == null ? null : new();
+            MissionChestPlacementDiagnostics? fallbackDiagnostics = diagnostics == null ? null
+                : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
             var fallback = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
                 chest, player, random, eligible, fallbackDiagnostics, coverSections: true).Select(wanted);
             fallbackCount = fallback.Count;
@@ -153,12 +160,38 @@ public static class MissionChestPlacement
                 selectedDiagnostics = fallbackDiagnostics;
             }
         }
+        if (primary.Count == 0 && fallbackCount == 0)
+        {
+            // A zero-only recovery repeats the existing bounded pair once. Keep one complete
+            // validated result and stop as soon as this recovery finds a reachable chest.
+            MissionChestPlacementDiagnostics? recoveryDiagnostics = diagnostics == null ? null
+                : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
+            var recovery = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
+                chest, player, random, eligible, recoveryDiagnostics, coverSections: false).Select(wanted);
+            recoveryPrimaryCount = recovery.Count;
+            if (recovery.Count == 0)
+            {
+                recoveryDiagnostics = diagnostics == null ? null
+                    : new() { CaptureRouteWitnesses = diagnostics.CaptureRouteWitnesses };
+                recovery = new PlacementRun(dungeon, layout, simulation, gameData, exclusions, policy.Placement,
+                    chest, player, random, eligible, recoveryDiagnostics, coverSections: true).Select(wanted);
+                recoveryFallbackCount = recovery.Count;
+            }
+            if (recovery.Count > 0)
+            {
+                result = recovery;
+                selectedDiagnostics = recoveryDiagnostics;
+            }
+        }
         if (diagnostics != null)
         {
             diagnostics.CopyFrom(selectedDiagnostics!);
             diagnostics.TotalCells = dungeon.Rooms.Count; diagnostics.EligibleRooms = eligible.Count; diagnostics.Requested = wanted;
-            diagnostics.SearchPasses = fallbackCount.HasValue ? 2 : 1;
+            diagnostics.SearchPasses = 1 + (fallbackCount.HasValue ? 1 : 0)
+                + (recoveryPrimaryCount.HasValue ? 1 : 0) + (recoveryFallbackCount.HasValue ? 1 : 0);
             diagnostics.PrimaryPlaced = primary.Count; diagnostics.FallbackPlaced = fallbackCount;
+            diagnostics.RecoveryPrimaryPlaced = recoveryPrimaryCount;
+            diagnostics.RecoveryFallbackPlaced = recoveryFallbackCount;
         }
         return result;
     }
@@ -335,9 +368,9 @@ public static class MissionChestPlacement
         {
             if (_diagnostics == null)
                 return;
-            var parents = new Dictionary<int, (int From, bool Transition)>();
+            Dictionary<int, (int From, bool Transition)>? parents = _diagnostics.CaptureRouteWitnesses ? new() : null;
             bool[] reachable = Flood(parents);
-            foreach (int chosen in _chosen)
+            foreach (int chosen in _diagnostics.CaptureRouteWitnesses ? _chosen : Enumerable.Empty<int>())
             {
                 Node chest = _nodes[chosen];
                 if (!reachable[chest.Approach])
@@ -351,8 +384,11 @@ public static class MissionChestPlacement
                 if (target >= 0)
                 {
                     _diagnostics.PreservedAnchorGroups++;
-                    _diagnostics.RequiredRoutes.Add(Path(group[target]));
-                    _diagnostics.RequiredRouteTargets.Add(group.Select(anchor => _nodes[anchor].Point).ToArray());
+                    if (_diagnostics.CaptureRouteWitnesses)
+                    {
+                        _diagnostics.RequiredRoutes.Add(Path(group[target]));
+                        _diagnostics.RequiredRouteTargets.Add(group.Select(anchor => _nodes[anchor].Point).ToArray());
+                    }
                 }
             }
             _diagnostics.LostAnchorSamples = _requiredAnchorGroups.SelectMany(group => group).Distinct()
@@ -363,7 +399,7 @@ public static class MissionChestPlacement
                 var path = new List<MissionChestRouteStep>();
                 while (current != _start)
                 {
-                    var parent = parents[current];
+                    var parent = parents![current];
                     path.Add(new MissionChestRouteStep(_nodes[current].Point, parent.Transition));
                     current = parent.From;
                 }
