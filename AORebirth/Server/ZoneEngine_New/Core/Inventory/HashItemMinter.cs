@@ -52,6 +52,19 @@ namespace ZoneEngine_New.Core.Inventory
         public bool TryMintHighestUpTo(string hash, int desiredQuality, ItemSource source, out Item item)
         {
             item = null!;
+            if (!TryRollHighestUpTo(hash, desiredQuality, out int lowId, out int highId, out int quality))
+                return false;
+
+            item = _items.CreateWithNewInstance(lowId, highId, quality, source);
+            return true;
+        }
+
+        /// <summary>The ids and QL <see cref="TryMintHighestUpTo"/> would mint, without creating an <see cref="Item"/>.</summary>
+        public bool TryRollHighestUpTo(string hash, int desiredQuality, out int lowId, out int highId, out int quality)
+        {
+            lowId = 0;
+            highId = 0;
+            quality = 0;
             if (string.IsNullOrEmpty(hash))
                 return false;
 
@@ -79,13 +92,10 @@ namespace ZoneEngine_New.Core.Inventory
                 }
             }
 
-            if (picked == null
-                || !HashItemCatalog.TrySelectIds(picked, best, CatalogQuality, out int lowId, out int highId))
-            {
+            if (picked == null || !HashItemCatalog.TrySelectIds(picked, best, CatalogQuality, out lowId, out highId))
                 return false;
-            }
 
-            item = _items.CreateWithNewInstance(lowId, highId, best, source);
+            quality = best;
             return true;
         }
 

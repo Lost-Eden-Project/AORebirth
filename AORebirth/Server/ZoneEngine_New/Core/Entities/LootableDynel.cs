@@ -70,10 +70,13 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Items the owner already carried (SpawnItem on an NPC); placed ahead of the item table roll.</summary>
         protected IReadOnlyList<Item>? CarriedItems { get; set; }
 
+        /// <summary>The owner's equipment, whose OnWear SpawnItem functions drop (<see cref="EquipmentLoot"/>).</summary>
+        protected IReadOnlyList<Item>? LootEquipment { get; set; }
+
         /// <summary>
-        /// Places <see cref="CarriedItems"/>, then rolls <see cref="ItemTable"/> against the loot catalog into the
-        /// remaining <see cref="Loot"/> slots. Each rolled item gets a unique in-memory <see cref="Item.InstanceId"/>
-        /// (no DB write). Persistence happens on loot via MarkDirty / flush.
+        /// Places <see cref="CarriedItems"/>, then rolls what <see cref="LootEquipment"/> spawns and <see cref="ItemTable"/>
+        /// against the loot catalog into the remaining <see cref="Loot"/> slots. Each rolled item gets a unique in-memory
+        /// <see cref="Item.InstanceId"/> (no DB write). Persistence happens on loot via MarkDirty / flush.
         /// </summary>
         public void ResolveLoot(HashItemMinter minter)
         {
@@ -91,7 +94,9 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             var rolled = new List<(int LowId, int HighId, int Quality)>();
-            RollItemTable(ItemTable, LootLevel, minter, Loot.Capacity - slot, rolled);
+            if (LootEquipment != null)
+                EquipmentLoot.Roll(LootEquipment, minter, Loot.Capacity - slot, rolled);
+            RollItemTable(ItemTable, LootLevel, minter, Loot.Capacity - slot - rolled.Count, rolled);
             for (int i = 0; i < rolled.Count; i++, slot++)
             {
                 (int lowId, int highId, int quality) = rolled[i];

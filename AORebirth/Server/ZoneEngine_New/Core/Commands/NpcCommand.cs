@@ -569,14 +569,44 @@ namespace ZoneEngine_New.Core.Commands
                 return ["No mob template on target."];
 
             string title = string.IsNullOrWhiteSpace(template.Name) ? "Loot" : template.Name + " Loot";
-            List<MobItemTableEntry> itemTable = template.ItemTable;
-            if (itemTable == null || itemTable.Count == 0)
-                return [GetStatsAomlBuilder.BuildLink("(no item table)", title)];
-
             var rows = new List<string>();
             var instances = new List<HashInstance>();
             int itemCount = 0;
-            foreach (MobItemTableEntry entry in itemTable)
+
+            // What the equipment spawns onto the corpse (EquipmentLoot), ahead of the item table.
+            foreach (Item worn in npc.Equipment.Content.Values)
+            {
+                foreach (ItemSpell spell in EquipmentLoot.SpawnFunctions(worn))
+                {
+                    if (!EquipmentLoot.TryReadSpawn(spell, out string hash, out int quality))
+                        continue;
+
+                    if (rows.Count > 0)
+                        rows.Add(string.Empty);
+                    rows.Add(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0} spawns {1} up to QL {2}",
+                            (worn.Name ?? ItemName(worn.LowId)).Replace('"', '\''),
+                            hash.Replace('"', '\''),
+                            quality));
+
+                    instances.Clear();
+                    _gameData.CollectHashLeafInstances(hash, instances);
+                    var spawnNames = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < instances.Count; i++)
+                        spawnNames.Add(LootItemName(instances[i]));
+                    foreach (string name in spawnNames)
+                        rows.Add("  " + name);
+                    itemCount += spawnNames.Count;
+                }
+            }
+
+            List<MobItemTableEntry> itemTable = template.ItemTable;
+            if ((itemTable == null || itemTable.Count == 0) && rows.Count == 0)
+                return [GetStatsAomlBuilder.BuildLink("(no item table)", title)];
+
+            foreach (MobItemTableEntry entry in itemTable ?? [])
             {
                 if (entry == null || string.IsNullOrEmpty(entry.Hash))
                     continue;
@@ -647,7 +677,9 @@ namespace ZoneEngine_New.Core.Commands
             for (int roll = 0; roll < rolls; roll++)
             {
                 rolled.Clear();
-                LootableDynel.RollItemTable(template.ItemTable, level, _minter, Corpse.LootCapacity, rolled);
+                // The corpse's own order: what the equipment spawns first, then the item table into what is left.
+                EquipmentLoot.Roll(npc.Equipment.Content.Values, _minter, Corpse.LootCapacity, rolled);
+                LootableDynel.RollItemTable(template.ItemTable, level, _minter, Corpse.LootCapacity - rolled.Count, rolled);
                 if (rolled.Count == 0)
                     emptyCorpses++;
                 totalItems += rolled.Count;

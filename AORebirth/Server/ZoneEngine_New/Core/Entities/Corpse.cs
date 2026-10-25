@@ -70,6 +70,7 @@ namespace ZoneEngine_New.Core.Entities
             {
                 ItemTable = npc.MobTemplate?.ItemTable;
                 CarriedItems = npc.TakeCarriedLoot();
+                LootEquipment = new List<Inventory.Item>(npc.Equipment.Content.Values);
                 CorpseFullUpdateTemplate = CopyCorpseFullUpdateTemplate(npc.MobTemplate?.CorpseFullUpdateTemplate);
             }
 
@@ -89,12 +90,13 @@ namespace ZoneEngine_New.Core.Entities
         public Identity LootWinner { get; set; } = Identity.None;
 
         /// <summary>
-        /// NPCs did the killing: no item table roll and no credits. Items the NPC was explicitly given to carry
-        /// (SpawnItem) still drop. Call before <see cref="LootableDynel.ResolveLoot"/>.
+        /// NPCs did the killing: no item table or equipment roll and no credits. Items the NPC was explicitly given to
+        /// carry (SpawnItem) still drop. Call before <see cref="LootableDynel.ResolveLoot"/>.
         /// </summary>
         public void ForfeitSpoils()
         {
             ItemTable = null;
+            LootEquipment = null;
             SourceStats[CharacterStat.Cash] = 0;
         }
 
