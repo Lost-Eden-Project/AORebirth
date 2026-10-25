@@ -1,5 +1,8 @@
 # AORebirth Project State
 
+PROVEN, PUBLIC-MASTER INTEGRATED (2026-10-25, generated mission chests): validated chest integration and final cave corrections are in public master at `b63f02bc25761b59744d586d88403695117a8d82`. Reconstruction preserves sealed identities, positions, appearance and remaining contents, including empty populations. Four Windows engines, focused regressions, 104 real cave layouts, isolated MySQL and owned TCP validation are recorded in [the final merge report](../reports/MISSION_CHEST_MASTER_MERGE_FINAL.md), including baseline exceptions and bounded density limits. Linux preparation remains unvalidated; original-client acceptance and deployment were not performed.
+
+
 PROVEN EXPANSION POLICY (2026-10-21): all eleven supported flags share
 Expansions.All (2047). Registration and console account creation use it; new
 characters retain account-derived initialization. The scoped operator migration
