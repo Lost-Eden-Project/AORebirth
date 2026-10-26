@@ -148,6 +148,7 @@ namespace ZoneEngine_New.Core.Playfield
             Geometry = _gameData.GetPlayfieldGeometry(ResourceId);
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.navmesh", id);
             Pathfinder = TryLoadPathfinder(_gameData.RootPath, ResourceId, _logger);
+            FightModes = DistrictFightModes.Load(_gameData.RootPath, ResourceId, _logger);
 
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.services", id);
             _serviceProvider = BuildServices().BuildServiceProvider();
@@ -243,6 +244,21 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Null when the playfield is a style template or GameData has no usable Navmesh.dat.</summary>
         public NavMeshPathfinder? Pathfinder { get; private set; }
+
+        /// <summary>Suppression gas per zone, from the resource playfield's Districts.json.</summary>
+        public DistrictFightModes FightModes { get; }
+
+        /// <summary>
+        /// The fight mode where <paramref name="dynel"/> stands: its locality cell is the client's zone (an outdoor
+        /// 40 m cell or an indoor room).
+        /// </summary>
+        public FightMode FightModeOf(Dynel dynel)
+        {
+            ArgumentNullException.ThrowIfNull(dynel);
+            int zone = dynel.Cell?.Id
+                ?? (GetService<PlayfieldLocality>()?.Grid.TryGetCellId(dynel.Position, out int cellId) == true ? cellId : -1);
+            return FightModes.At(zone);
+        }
 
         /// <summary>
         /// Same XZ; Y is the heightfield / surface-mesh floor. No Recast.

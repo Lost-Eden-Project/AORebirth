@@ -12,6 +12,7 @@ namespace ZoneEngine_New.Core.Inventory
     using ZoneEngine_New.Core.Playfield;
 
     using AoVector3 = AORebirth.Core.Vector.Vector3;
+    using Quaternion = AORebirth.Core.Vector.Quaternion;
 
     /// <summary>
     /// Dropping inventory items into the world and picking world items up. A drop retires the item's inventory row and
@@ -68,7 +69,7 @@ namespace ZoneEngine_New.Core.Inventory
                 || IsNoDrop(item))
                 return Refuse(player, logger, "item not droppable from " + slot);
 
-            if (!TryPlace(player, playfield, requested, out AoVector3 rest))
+            if (!TryPlace(player, playfield, requested, out AoVector3 rest, out AoVector3 normal))
                 return Refuse(player, logger, "drop ray hit nothing");
 
             if (!inventoryActions.TryDelete(player, slot, item.InstanceId))
@@ -78,7 +79,7 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = slot
             });
-            playfield.GetRequiredService<SpawnService>().SpawnDroppedItem(item, rest, player.Rotation, player.Identity,
+            playfield.GetRequiredService<SpawnService>().SpawnDroppedItem(item, rest, AlignToSurface(player.Rotation, normal), player.Identity,
                 DroppedItemLifetime);
             return true;
         }
@@ -148,9 +149,11 @@ namespace ZoneEngine_New.Core.Inventory
         /// Sweeps a small sphere from the dropper's eyes through the requested point (a little past it, so a point on the
         /// surface still hits) and rests it on what it hits. Too far a point or a miss refuses the drop.
         /// </summary>
-        static bool TryPlace(Player player, Playfield playfield, Vector3 requested, out AoVector3 rest)
+        static bool TryPlace(Player player, Playfield playfield, Vector3 requested, out AoVector3 rest,
+            out AoVector3 normal)
         {
             rest = player.Position;
+            normal = new AoVector3(0, 1, 0);
             if (!float.IsFinite(requested.X) || !float.IsFinite(requested.Y) || !float.IsFinite(requested.Z))
                 return false;
             if (playfield.WorldAccess.Instance is not { } world)
@@ -166,7 +169,35 @@ namespace ZoneEngine_New.Core.Inventory
 
             double scale = (length + DropOvershoot) / length;
             var end = new AoVector3(eye.x + (dx * scale), eye.y + (dy * scale), eye.z + (dz * scale));
-            return world.TrySphereCast(eye, end, DropSphereRadius, out rest, out _);
+            if (!world.TrySphereCast(eye, end, DropSphereRadius, out AoVector3 centre, out normal))
+                return false;
+
+            // The sphere's centre sits off the surface; the item stands on it, so probe back along the normal.
+            double probe = DropSphereRadius * 3;
+            var below = new AoVector3(centre.x - (normal.x * probe), centre.y - (normal.y * probe), centre.z - (normal.z * probe));
+            if (world.TryLineCast(centre, below, out AoVector3 surface, out AoVector3 surfaceNormal))
+            {
+                rest = surface;
+                normal = surfaceNormal;
+            }
+            else
+            {
+                rest = new AoVector3(centre.x - (normal.x * DropSphereRadius), centre.y - (normal.y * DropSphereRadius),
+                    centre.z - (normal.z * DropSphereRadius));
+            }
+
+            return true;
+        }
+
+        /// <summary>The dropper's heading, tilted so the item's up axis lies along the surface <paramref name="normal"/>.</summary>
+        static Quaternion AlignToSurface(Quaternion heading, AoVector3 normal)
+        {
+            // Shortest arc from +Y to the normal: axis up x n = (nz, 0, -nx), w = 1 + ny.
+            Quaternion tilt = normal.y < -0.9999
+                ? new Quaternion(1, 0, 0, 0)
+                : new Quaternion(normal.z, 0, -normal.x, 1 + normal.y);
+            tilt = (Quaternion)tilt.Normalize();
+            return (Quaternion)Quaternion.Hamilton(tilt, heading).Normalize();
         }
 
         static bool IsNoDrop(Item item)

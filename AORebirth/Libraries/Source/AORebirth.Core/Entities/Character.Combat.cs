@@ -344,11 +344,6 @@ namespace AORebirth.Core.Entities
                 return false;
             }
 
-            if (this.IsPlayerCombatant() && CharacterEngageRules.IsPlayerCombatant(target))
-            {
-                return CharacterEngageRules.CanEngagePlayerVersusPlayer(this, target);
-            }
-
             return true;
         }
 

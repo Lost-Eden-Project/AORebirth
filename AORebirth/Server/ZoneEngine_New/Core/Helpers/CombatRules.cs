@@ -5,9 +5,12 @@ namespace ZoneEngine_New.Core.Helpers
 
     using AORebirth.Enums;
 
+    using SmokeLounge.AOtomation.Messaging.GameData;
+
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Nanos;
+    using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
     /// Bits from <see cref="FunctionType.ChangeActionRestriction"/>.
@@ -37,7 +40,7 @@ namespace ZoneEngine_New.Core.Helpers
             if (attacker.IsDead || target.IsDead || ReferenceEquals(attacker, target))
                 return false;
 
-            if (IsInRestrictedGas(target))
+            if (IsInRestrictedGas(target) || IsInRestrictedGas(attacker))
                 return false;
 
             // A NoCombat NPC does not attack, and neither does anyone whose fighting a buff restricts.
@@ -60,11 +63,11 @@ namespace ZoneEngine_New.Core.Helpers
 
             if (target is Player player)
             {
-                // Mobs can still hit players. Only another player needs the PvP flags.
+                // Mobs can still hit players. Only another player needs the gas or the PvP flags.
                 if (!attacker.IsPlayer)
                     return true;
 
-                return (player.ActionRestrictionFlags & PlayerAttackable) != 0;
+                return IsPlayerVulnerable(attacker, player);
             }
 
             return target is not NpcCharacter npc || npc.Attackable;
@@ -97,7 +100,7 @@ namespace ZoneEngine_New.Core.Helpers
 
             if (!attacker.IsPlayer || attacker.IsDead || target.IsDead || ReferenceEquals(attacker, target))
                 return false;
-            if (IsInRestrictedGas(target))
+            if (IsInRestrictedGas(target) || IsInRestrictedGas(attacker))
                 return false;
 
             // A player's pet is blocked exactly when its owner is.
@@ -108,16 +111,45 @@ namespace ZoneEngine_New.Core.Helpers
                 target = petOwner;
             }
 
-            return target is Player player && (player.ActionRestrictionFlags & PlayerAttackable) == 0;
+            return target is Player player && !IsPlayerVulnerable(attacker, player);
+        }
+
+        /// <summary>100% suppression gas (<see cref="FightMode.NoFight"/>) where the character stands: no fighting.</summary>
+        public static bool IsInRestrictedGas(Character character)
+        {
+            ArgumentNullException.ThrowIfNull(character);
+            return FightModeOf(character) == FightMode.NoFight;
+        }
+
+        /// <summary>The suppression gas where <paramref name="character"/> stands; 75% off a playfield.</summary>
+        public static FightMode FightModeOf(Character character)
+        {
+            ArgumentNullException.ThrowIfNull(character);
+            return character.Playfield?.FightModeOf(character) ?? FightMode.Normal;
         }
 
         /// <summary>
-        /// Restricted gas refuses fighting. Volumes are not wired yet, so no target is in gas.
+        /// Whether a player may attack <paramref name="target"/>, as the client decides it from the target's gas
+        /// (Gamecode.dll N3Msg_HasVulnerableFightMode, 0x10017052): 25% another side, 5% anyone outside the target's
+        /// organization, 0% anyone. A PvP-flagged target can be attacked in any gas that allows fighting.
         /// </summary>
-        public static bool IsInRestrictedGas(Character target)
+        static bool IsPlayerVulnerable(Character attacker, Player target)
         {
-            ArgumentNullException.ThrowIfNull(target);
-            return false;
+            if ((target.ActionRestrictionFlags & PlayerAttackable) != 0)
+                return true;
+
+            switch (FightModeOf(target))
+            {
+                case FightMode.Side:
+                    return attacker.Stats.GetOrZero(CharacterStat.Side) != target.Stats.GetOrZero(CharacterStat.Side);
+                case FightMode.Organization:
+                    int clan = target.Stats.GetOrZero(CharacterStat.Clan);
+                    return clan == 0 || attacker.Stats.GetOrZero(CharacterStat.Clan) != clan;
+                case FightMode.All:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         /// <summary>

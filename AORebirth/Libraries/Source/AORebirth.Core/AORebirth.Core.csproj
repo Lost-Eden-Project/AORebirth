@@ -85,7 +85,6 @@
     <Compile Include="Combat\CharacterCombatStrikeBuilder.cs" />
     <Compile Include="Combat\CharacterDamagedEventArgs.cs" />
     <Compile Include="Combat\CharacterDeathEventArgs.cs" />
-    <Compile Include="Combat\CharacterEngageRules.cs" />
     <Compile Include="Combat\CharacterSpecialAttackResult.cs" />
     <Compile Include="Combat\CharacterSpecialAttackRules.cs" />
     <Compile Include="Combat\CombatDamageSource.cs" />

@@ -249,6 +249,26 @@
         }
 
         /// <summary>
+        /// The first terrain or static-mesh surface on the segment <paramref name="from"/> to <paramref name="to"/>, with its
+        /// unit normal.
+        /// </summary>
+        public bool TryLineCast(AoVector3 from, AoVector3 to, out AoVector3 hitPosition, out AoVector3 normal)
+        {
+            hitPosition = to;
+            normal = new AoVector3(0, 1, 0);
+            if (Surface == null)
+                return false;
+            if (!Surface.GetLineIntersection(ToVec3(from), ToVec3(to), out Vec3 hit, out Vec3 n, false, null))
+                return false;
+
+            float nl = MathF.Sqrt((n.X * n.X) + (n.Y * n.Y) + (n.Z * n.Z));
+            if (nl > 1e-6f)
+                normal = new AoVector3(n.X / nl, n.Y / nl, n.Z / nl);
+            hitPosition = new AoVector3(hit.X, hit.Y, hit.Z);
+            return true;
+        }
+
+        /// <summary>
         /// A small sphere swept from <paramref name="from"/> to <paramref name="to"/> against the terrain and static meshes.
         /// N3Lite has line queries only, so it is the nearest hit of five parallel rays (the centre line and four offset
         /// by <paramref name="radius"/> around it). On a hit, <paramref name="rest"/> is where the sphere comes to rest:

@@ -49,10 +49,6 @@ namespace AORebirth.Core.Playfields
         /// </summary>
         public string Name { get; set; }
 
-        /// <summary>
-        /// </summary>
-        public int SuppressionGas { get; set; }
-
         #endregion
     }
 }
