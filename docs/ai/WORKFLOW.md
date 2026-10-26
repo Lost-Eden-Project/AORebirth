@@ -226,6 +226,35 @@ decisions. The normal product build wrapper enforces the same pre-build intake;
 direct product builds must not bypass it. Private role bindings and canonical
 data remain in the configured private intake settings.
 
+When a release explicitly requires renewed item data, build the current
+Tools/RDBDataExtractor/RDBDataExtractor.csproj from that exact public SHA and
+run its existing items-only extraction into a new Git-ignored staging directory.
+Record the actual successful build/extraction commands and UTC times, complete
+source and tool-output identities, stable RDB index/shard inputs, staged
+items.dat identity and current compiled ItemsDatReader results in the ignored
+version-1 generated-items receipt. Do not substitute an older catalog or build.
+Set REQUIRE_GENERATED_ITEMS in the ignored release profile for this requirement.
+
+Pass that receipt through the existing content-plan approval flow:
+
+```cmd
+cmd /d /c tools\windows_release_contract.cmd prepare-build --generated-items-receipt "<ignored-receipt>"
+cmd /d /c tools\windows_release_contract.cmd reconcile-content --generated-items-receipt "<ignored-receipt>" --approved-plan-sha256 "<measured-plan-sha256>"
+```
+
+Only the protected items.dat may be adopted this way, together with the ordinary
+approved additions/modifications/removals. A fresh export may be byte-identical;
+its new provenance is still required. An explicitly approved
+REQUIRED_CURRENT_CATALOGS profile mapping may restore an absent required catalog
+from its exact current public or private source; it never replaces present
+private content. The next normal build carries these measured bindings without
+another exporter run. Raw catalogs, client inputs and exporter binaries stay
+local; portable acceptance contains bounded identities and measurements only.
+Current ItemTemplateCatalog loading is validated after the real Windows build
+by its fresh startup log, including decoded and distinct template counts and
+the exact canonical items.dat path. It is not a prerequisite for adopting the
+new file before compilation.
+
 For release startup, pass the completed build-attempt receipt to the existing
 CMD launcher:
 

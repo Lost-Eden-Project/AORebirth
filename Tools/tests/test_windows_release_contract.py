@@ -19,7 +19,57 @@ SPEC.loader.exec_module(gate)
 PUBLIC, DUMP = "a" * 40, "b" * 40
 
 
-def make_portable_fixture(root):
+def make_generated_fixture(root, data=b"new generated fixture"):
+    """Synthetic receipt exercises metadata guards; no real RDB/exporter is used."""
+    root = Path(root)
+    stage = root / "ignored-stage"
+    stage.mkdir(exist_ok=True)
+    (stage / "items.dat").write_bytes(data)
+    database = root / "client/cd_image/data/db"
+    database.mkdir(parents=True, exist_ok=True)
+    inputs = []
+    for name in ("ResourceDatabase.idx", "ResourceDatabase.dat", "ResourceDatabase.dat.001"):
+        path = database / name
+        path.write_bytes(("synthetic " + name).encode())
+        state = gate.file_state(path)
+        inputs.append({"path": name, "size": state[2], "BEFORE_STATE": state, "AFTER_STATE": state})
+    inputs[0]["sha256"] = gate.digest((database / inputs[0]["path"]).read_bytes())
+    output = root / gate.EXPORTER_OUTPUT
+    output.mkdir(parents=True, exist_ok=True)
+    for name in ("RDBDataExtractor.exe", "RDBDataExtractor.dll", "AODB.dll", "MsgPack.dll", "RDBDataExtractor.deps.json", "RDBDataExtractor.runtimeconfig.json", "FunctionSets.cfg"):
+        (output / name).write_bytes(("synthetic output " + name).encode())
+    binaries, _ = gate.inventory(output)
+    binaries = [{**row, "path": gate.EXPORTER_OUTPUT + "/" + row["path"]} for row in binaries]
+    assembly = next(row["sha256"] for row in binaries if row["path"].endswith("/RDBDataExtractor.dll"))
+    validation = {"CURRENT_ITEMS_DAT_READER": "PASS", "ITEM_TEMPLATE_CATALOG": "DEFERRED_TO_REAL_WINDOWS_STARTUP",
+        "EXPORTER_ASSEMBLY_SHA256": assembly, "ITEMS_DAT_SHA256": gate.digest(data), "ITEMS_DAT_SIZE": len(data),
+        "HEADER": {"version": "RDBDataExtractor", "packCount": 10000, "templateCount": 3, "slices": 1,
+                   "sliceStates": [{"index": 0, "compressedBytes": 10, "uncompressedBytes": 20}]},
+        "SOURCE_POPULATION": {"itemRecords": 2, "nanoRecords": 1, "expected": 3}, "DECODED_POPULATION": 3,
+        "DISTINCT_IDS": 3, "NAMED_TEMPLATES": 2, "UNNAMED_IDS": [3], "BOSS_MODIFIER_COUNT": 1,
+        "BOSS_MODIFIERS": [{"id": 1, "name": "Boss Modifier Item Fixture"}],
+        "CURRENT_FIELDS": {key: 3 if key == "fullRdb" else 1 for key in ("fullRdb", "stats", "attack", "defend",
+            "eventsOrActions", "shops", "shopLines", "rawFallback", "nanoFields", "positiveAmmoType", "positiveMaxEnergy",
+            "positiveMultipleCount", "negativeOneTickFunctions", "periodicFunctions")},
+        "AURA_OF_REVIVAL_212161": [{"eventType": 1, "functionType": 1, "tickCount": -1, "tickInterval": 100}]}
+    receipt = {"FORMAT_VERSION": 1, "PUBLIC_MASTER_SHA": PUBLIC, "CREATED_UTC": "2025-12-31T23:59:59Z",
+        "EXPORTER_SOURCE_CLOSURE": [gate.content_identity(b"synthetic project", gate.EXPORTER_PROJECT)],
+        "TOOL_BUILD": {"COMMAND": ["dotnet", *gate.EXPORTER_BUILD_ARGS], "STARTED_UTC": "2025-12-31T23:59:50Z",
+            "FINISHED_UTC": "2025-12-31T23:59:52Z", "EXIT_CODE": 0, "BINARIES": binaries},
+        "RDB_INPUTS": {"ROOT": str(database), "INDEX": inputs[0], "SHARDS": inputs[1:]},
+        "EXPORT": {"COMMAND": [str(output / "RDBDataExtractor.exe"), "extract", "--ao-path", str(root / "client"),
+            "--gamedata-dir", str(stage), *gate.EXPORTER_SKIP_ARGS], "STARTED_UTC": "2025-12-31T23:59:53Z",
+            "FINISHED_UTC": "2025-12-31T23:59:58Z", "EXIT_CODE": 0, "OUTPUT_ABSENT_BEFORE": True},
+        "OUTPUT": {"STAGED_PATH": str(stage / "items.dat"), **gate.content_identity(data)}, "VALIDATION": validation}
+    path = root / "generated-receipt.json"
+    gate.write_json(path, receipt)
+    profile = {"CANONICAL_GAMEDATA_ROOT": str(root / "canonical")}
+    with mock.patch.object(gate, "git", return_value=b"ignored"), mock.patch.object(gate, "exporter_source_closure", return_value=receipt["EXPORTER_SOURCE_CLOSURE"]):
+        proof, _, _ = gate.generated_items_receipt(root, profile, path, PUBLIC)
+    return path, receipt, proof
+
+
+def make_portable_fixture(root, generated=False):
     """Synthetic two-file dataset and measured-looking fixture; never a real release."""
     root = Path(root)
     canonical = root / "canonical"
@@ -41,6 +91,9 @@ def make_portable_fixture(root):
                       "CANONICAL_MANIFEST": gate.descriptor(bundle, bundle / "manifest.json")}
     gate.write_json(bundle / "reconciliation.json", reconciliation)
     summary = gate.summarize_reconciliation(bundle, reconciliation)
+    if generated:
+        _, _, proof = make_generated_fixture(root, (canonical / "items.dat").read_bytes())
+        summary["GENERATED_ITEMS_PROVENANCE"] = proof
     gate.write_json(bundle / "reconciliation-summary.json", summary)
     binaries = []
     for path in gate.OUTPUTS:
@@ -91,7 +144,8 @@ def make_portable_fixture(root):
                     "sha256": gate.digest((capture / "world-status.json").read_bytes())})
     (capture / "status.log").write_text("\n".join(f"engine={row['engine']} processPid={row['pid']} port=1 ownership=PASS" for row in held))
     (capture / "LoginEngine.out.full.log").write_text("[Info] LoginEngine GameData root: " + selected_root + " \n")
-    (capture / "ZoneEngine_New.out.delta.log").write_text("[Info] GameData ready root=" + selected_root + " mobs=1 hashTemplates=1\n")
+    (capture / "ZoneEngine_New.out.delta.log").write_text("[Info] GameData ready root=" + selected_root + " mobs=1 hashTemplates=1\n" +
+        ("[Info] Loaded 3 item templates from " + selected_root + "/items.dat\n[Info] ItemTemplateCatalog ready with 3 templates\n" if generated else ""))
     evidence = {path.relative_to(bundle).as_posix(): gate.digest(path.read_bytes()) for path in capture.iterdir()}
     raw = {"FORMAT_VERSION": 1, "CREATED_UTC": "2026-01-01T00:00:09Z", "PUBLIC_MASTER_SHA": PUBLIC,
            "WINDOWS_PRODUCT_SOURCE_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP,
@@ -354,6 +408,140 @@ class ReleaseContractTests(unittest.TestCase):
             return original_open(path, *args, **kwargs)
         with mock.patch.object(Path, "open", changing_open), self.assertRaises(ValueError):
             gate.inventory(data)
+
+    def test_generated_receipt_rejects_stale_source_output_tool_and_rdb_states(self):
+        path, receipt, proof = make_generated_fixture(self.root)
+        profile = {"CANONICAL_GAMEDATA_ROOT": str(self.root / "canonical")}
+        closure = receipt["EXPORTER_SOURCE_CLOSURE"]
+        with mock.patch.object(gate, "git", return_value=b"ignored"), mock.patch.object(gate, "exporter_source_closure", return_value=closure):
+            gate.generated_items_receipt(self.root, profile, path, PUBLIC)
+            for mutate in (lambda value: value.update(PUBLIC_MASTER_SHA="f" * 40),
+                           lambda value: value["EXPORT"].update(OUTPUT_ABSENT_BEFORE=False),
+                           lambda value: value["TOOL_BUILD"].update(EXIT_CODE=1),
+                           lambda value: value["VALIDATION"].update(CURRENT_ITEMS_DAT_READER="FAIL"),
+                           lambda value: value["VALIDATION"]["CURRENT_FIELDS"].update(fullRdb=0),
+                           lambda value: value["EXPORTER_SOURCE_CLOSURE"][0].update(sha256="f" * 64),
+                           lambda value: value["RDB_INPUTS"]["SHARDS"][0]["BEFORE_STATE"].__setitem__(3, 0)):
+                bad = copy.deepcopy(receipt)
+                mutate(bad)
+                gate.write_json(path, bad)
+                with self.assertRaises(ValueError):
+                    gate.generated_items_receipt(self.root, profile, path, PUBLIC)
+            gate.write_json(path, receipt)
+            for target in (Path(receipt["OUTPUT"]["STAGED_PATH"]), self.root / gate.EXPORTER_OUTPUT / "RDBDataExtractor.dll",
+                           Path(receipt["RDB_INPUTS"]["ROOT"]) / "ResourceDatabase.dat.001"):
+                original = target.read_bytes()
+                target.write_bytes(original + b"changed")
+                with self.assertRaises(ValueError):
+                    gate.generated_items_receipt(self.root, profile, path, PUBLIC)
+                target.write_bytes(original)
+            extra = Path(receipt["RDB_INPUTS"]["ROOT"]) / "ResourceDatabase.dat.002"
+            extra.write_bytes(b"unexpected shard")
+            with self.assertRaises(ValueError):
+                gate.generated_items_receipt(self.root, profile, path, PUBLIC)
+        bad_proof = copy.deepcopy(proof)
+        bad_proof["VALIDATION"]["RAW_CATALOG"] = "raw bytes are forbidden"
+        with self.assertRaises(ValueError):
+            gate.validate_generated_items_provenance(bad_proof, PUBLIC)
+
+    def test_generated_adoption_and_exact_current_missing_catalogs_share_existing_plan(self):
+        canonical = self.root / "canonical"
+        canonical.mkdir()
+        (canonical / "items.dat").write_bytes(b"previous generated fixture")
+        (canonical / "private.json").write_bytes(b'{"repair":true}')
+        (canonical / "present.json").write_bytes(b'{"private":true}')
+        receipt_path, receipt, proof = make_generated_fixture(self.root)
+        rows, states = gate.inventory(canonical)
+        bundle = self.root / "plan"
+        bundle.mkdir()
+        gate.write_json(bundle / "before-manifest.json", rows)
+        data = {"Research.json": b'{"research":true}', "DefaultNpc.json": b'{"npc":true}', "present.json": b'{"upstream":true}'}
+        source = {gate.blob(raw): raw for raw in data.values()}
+        def tree(root, profile, authority, sha):
+            return {path: {"blob": gate.blob(raw), "size": len(raw)} for path, raw in data.items()
+                    if (path == "Research.json") == (authority == "PUBLIC_PRODUCT_DATA")}
+        mappings = [{"AUTHORITY": "PUBLIC_PRODUCT_DATA" if path == "Research.json" else "PRIVATE_CONTENT_UPSTREAM",
+                     "PATH": path, "APPROVAL": "Explicit synthetic required-catalog approval"} for path in data]
+        profile = {"CANONICAL_GAMEDATA_ROOT": str(canonical), "STATE_ROOT": str(self.root),
+                   "PROTECTED_GENERATED_FILES": ["items.dat"], "REQUIRE_GENERATED_ITEMS": True, "REQUIRED_CURRENT_CATALOGS": mappings}
+        baseline = {"PUBLIC_MASTER_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP}
+        with mock.patch.object(gate, "tree_files", tree), mock.patch.object(gate, "source_blob", side_effect=lambda r,p,a,b: source[b]), \
+                mock.patch.object(gate, "git", return_value=b"ignored"), mock.patch.object(gate, "exporter_source_closure", return_value=receipt["EXPORTER_SOURCE_CLOSURE"]):
+            plan, projected = gate.reconcile_plan(self.root, profile, bundle, PUBLIC, DUMP, baseline, rows, generated_receipt=receipt_path)
+            gate.validate_reconciliation(bundle, plan)
+            summary = gate.summarize_reconciliation(bundle, plan)
+            self.assertEqual(gate.validate_reconciliation_summary(bundle, summary), gate.read_json(bundle / "manifest.json"))
+            self.assertEqual({row["PATH"] for row in plan["CATALOG_RESTORATIONS"]}, {"Research.json", "DefaultNpc.json"})
+            self.assertEqual(set(projected), {"Research.json", "DefaultNpc.json", "items.dat"})
+            self.assertNotIn("STAGED_PATH", gate.encoded(summary).decode())
+            self.assertNotIn(str(self.root / "client"), gate.encoded(summary).decode())
+            attempt = {"PUBLIC_MASTER_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP, "WINDOWS_GAMEDATA_MANIFEST": plan["WINDOWS_GAMEDATA_MANIFEST"]}
+            with mock.patch.object(gate, "intake", return_value=(bundle, attempt, plan, projected, states)):
+                gate.apply_content(self.root, profile, gate.digest(gate.encoded(plan)))
+            self.assertEqual((canonical / "items.dat").read_bytes(), b"new generated fixture")
+            self.assertEqual((canonical / "present.json").read_bytes(), b'{"private":true}')
+            self.assertEqual((canonical / "private.json").read_bytes(), b'{"repair":true}')
+            next_bundle = self.root / "next-plan"
+            next_bundle.mkdir()
+            current, _ = gate.inventory(canonical)
+            gate.write_json(next_bundle / "before-manifest.json", current)
+            carried, projected = gate.reconcile_plan(self.root, profile, next_bundle, PUBLIC, DUMP,
+                gate.read_json(self.root / "canonical-state.json"), current)
+            self.assertEqual(carried["GENERATED_ITEMS_PROVENANCE"], proof)
+            self.assertEqual(projected, {})
+            gate.summarize_reconciliation(next_bundle, carried)
+        for mutate in (lambda value: value["CATALOG_RESTORATIONS"].pop(),
+                       lambda value: value["REQUIRED_CURRENT_CATALOGS"][0].update(PATH="unapproved.json"),
+                       lambda value: value["GENERATED_ITEMS_ADOPTION"]["CANONICAL_AFTER"].update(size=1),
+                       lambda value: value["GENERATED_ITEMS_PROVENANCE"].update(PUBLIC_MASTER_SHA="f" * 40)):
+            bad = copy.deepcopy(summary)
+            mutate(bad)
+            with self.assertRaises(ValueError):
+                gate.validate_reconciliation_summary(bundle, bad)
+
+    def test_fresh_byte_identical_generation_is_valid_and_missing_current_receipt_blocks(self):
+        canonical = self.root / "canonical"
+        canonical.mkdir()
+        (canonical / "items.dat").write_bytes(b"new generated fixture")
+        receipt_path, receipt, _ = make_generated_fixture(self.root)
+        rows, _ = gate.inventory(canonical)
+        profile = {"CANONICAL_GAMEDATA_ROOT": str(canonical), "STATE_ROOT": str(self.root),
+                   "PROTECTED_GENERATED_FILES": ["items.dat"], "REQUIRE_GENERATED_ITEMS": True}
+        bundle = self.root / "plan"
+        bundle.mkdir()
+        gate.write_json(bundle / "before-manifest.json", rows)
+        with mock.patch.object(gate, "tree_files", return_value={}), mock.patch.object(gate, "git", return_value=b"ignored"), \
+                mock.patch.object(gate, "exporter_source_closure", return_value=receipt["EXPORTER_SOURCE_CLOSURE"]):
+            with self.assertRaises(ValueError):
+                gate.reconcile_plan(self.root, profile, bundle, PUBLIC, DUMP, {"PUBLIC_MASTER_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP}, rows)
+            plan, projected = gate.reconcile_plan(self.root, profile, bundle, PUBLIC, DUMP,
+                {"PUBLIC_MASTER_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP}, rows, generated_receipt=receipt_path)
+        self.assertNotIn("GENERATED_ITEMS_ADOPTION", plan)
+        self.assertEqual(projected, {})
+        self.assertEqual(plan["CANONICAL_BEFORE_MANIFEST"], plan["WINDOWS_GAMEDATA_MANIFEST"])
+        gate.summarize_reconciliation(bundle, plan)
+
+    def test_generated_items_require_real_current_catalog_startup_and_remain_portable(self):
+        bundle, _ = make_portable_fixture(self.root, generated=True)
+        loaded = gate.load_accepted_release(self.root, "bundle/acceptance.json")
+        self.assertEqual(loaded["reconciliation"]["GENERATED_ITEMS_PROVENANCE"]["VALIDATION"]["DECODED_POPULATION"], 3)
+        exported = gate.export_accepted_bundle(self.root, bundle, bundle / "acceptance.json")
+        self.assertFalse((exported.parent / "ignored-stage").exists())
+        self.assertFalse(any(path.suffix in (".dat", ".dll", ".exe") for path in exported.parent.rglob("*")))
+        windows, attempt = gate.read_json(bundle / "windows-receipt.json"), gate.read_json(bundle / "build-attempt.json")
+        zone = bundle / "capture/ZoneEngine_New.out.delta.log"
+        original = zone.read_text()
+        for text in (original.replace("Loaded 3", "Loaded 2"), original.replace("ready with 3", "ready with 0"),
+                     original.replace("/items.dat", "/stale-items.dat"), original + "Failed to load GameData items.dat\n"):
+            zone.write_text(text)
+            bad_windows = copy.deepcopy(windows)
+            bad_windows["EVIDENCE"][zone.relative_to(bundle).as_posix()] = gate.digest(zone.read_bytes())
+            raw = gate.read_json(bundle / "raw-windows-receipt.json")
+            raw["EVIDENCE"] = bad_windows["EVIDENCE"]
+            gate.write_json(bundle / "raw-windows-receipt.json", raw)
+            bad_windows["RAW_WINDOWS_RECEIPT"] = gate.descriptor(bundle, bundle / "raw-windows-receipt.json")
+            with self.assertRaises(ValueError):
+                gate.validate_startup(bundle, bad_windows, attempt)
 
     def test_direct_product_build_cannot_use_prepared_receipt_or_arbitrary_child(self):
         profile = {"STATE_ROOT": str(self.root)}

@@ -20,6 +20,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 import uuid
+import xml.etree.ElementTree as ET
 
 PUBLIC_REPOSITORY = "subarumike/AORebirth"
 TUPLE = ("PUBLIC_MASTER_SHA", "CONTENT_DUMP_SHA", "WINDOWS_GAMEDATA_MANIFEST")
@@ -34,6 +35,10 @@ PRODUCT_PATHS = ("AORebirth/Server", "AORebirth/Libraries", "AORebirth/Config", 
                  "tools/windows_release_contract.cmd", "tools/build_aorebirth_debug.cmd", "start-engines.cmd", "start-engines.ps1")
 CONFIG_OVERRIDES = {"AORebirth/Config/Config.xml", "AORebirth/Config/ChatEngine.Config.xml"}
 MISSING = object()
+EXPORTER_PROJECT = "Tools/RDBDataExtractor/RDBDataExtractor.csproj"
+EXPORTER_OUTPUT = "Tools/RDBDataExtractor/bin/Release/net10.0"
+EXPORTER_BUILD_ARGS = ["build", EXPORTER_PROJECT, "-c", "Release", "--no-incremental", "--nologo", "/m:1", "/nr:false"]
+EXPORTER_SKIP_ARGS = ["--overwrite", "--skip-playfields", "--skip-monster-data", "--skip-dynel-collision", "--skip-text"]
 
 
 class ContentConflict(ValueError):
@@ -374,7 +379,255 @@ def load_optional(bundle, item):
     return None if item is None else load_descriptor(bundle, item).read_bytes()
 
 
-def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before_rows, resolutions=None):
+def exporter_source_closure(root, public_sha):
+    """The existing exporter project, its static links and tracked MSBuild inputs."""
+    project = ET.fromstring(git(root, "show", public_sha + ":" + EXPORTER_PROJECT))
+    if project.findall(".//ProjectReference") or project.findall(".//Import"):
+        raise ValueError("Exporter source closure needs review after project/import changes")
+    paths = set(git(root, "ls-tree", "-r", "--name-only", public_sha, "--", "Tools/RDBDataExtractor").decode().splitlines())
+    for node in project.findall(".//Compile"):
+        value = node.attrib.get("Include", "").replace("\\", "/")
+        if not value or any(char in value for char in "*$?"):
+            raise ValueError("Exporter source closure requires static compile links")
+        path = (Path(root) / PurePosixPath(EXPORTER_PROJECT).parent / value).resolve(strict=True)
+        if not path.is_relative_to(Path(root).resolve()):
+            raise ValueError("Exporter source link escaped public product checkout")
+        paths.add(path.relative_to(Path(root).resolve()).as_posix())
+    for directory in ("", "Tools", "Tools/RDBDataExtractor"):
+        for name in ("Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "NuGet.Config", "nuget.config", "global.json"):
+            candidate = (directory + "/" if directory else "") + name
+            if git(root, "ls-tree", "--name-only", public_sha, "--", candidate).strip():
+                paths.add(candidate)
+    rows = []
+    for path in sorted(paths):
+        data = git(root, "show", public_sha + ":" + path)
+        checked(root, path)
+        if git(root, "hash-object", "--path=" + path, path).decode().strip() != blob(data):
+            raise ValueError("Current exporter source differs from exact public master")
+        rows.append(content_identity(data, path))
+    untracked = git(root, "ls-files", "--others", "--exclude-standard", "--", "Tools/RDBDataExtractor").strip()
+    if untracked:
+        raise ValueError("Untracked exporter source is not authoritative")
+    return rows
+
+
+def validate_generated_items_provenance(proof, public_sha):
+    required = {"FORMAT_VERSION", "PUBLIC_MASTER_SHA", "CREATED_UTC", "EXPORTER_SOURCE_CLOSURE", "TOOL_BUILD",
+                "RDB_INPUTS", "EXPORT", "OUTPUT", "VALIDATION", "LOCAL_RECEIPT_SHA256"}
+    if (not isinstance(proof, dict) or set(proof) != required or len(encoded(proof)) > 262144 or proof["FORMAT_VERSION"] != 1
+            or proof["PUBLIC_MASTER_SHA"] != public_sha or not re.fullmatch("[0-9a-f]{64}", proof["LOCAL_RECEIPT_SHA256"])):
+        raise ValueError("Current exact-source generated items provenance required")
+    source, build, inputs, export, output, validation = (proof[key] for key in
+        ("EXPORTER_SOURCE_CLOSURE", "TOOL_BUILD", "RDB_INPUTS", "EXPORT", "OUTPUT", "VALIDATION"))
+    validate_manifest(source)
+    if EXPORTER_PROJECT not in {row["path"] for row in source}:
+        raise ValueError("Exporter project/source closure is missing")
+    if (set(build) != {"COMMAND", "STARTED_UTC", "FINISHED_UTC", "EXIT_CODE", "BINARIES"}
+            or build["COMMAND"] != ["dotnet", *EXPORTER_BUILD_ARGS] or type(build["EXIT_CODE"]) is not int or build["EXIT_CODE"] != 0
+            or set(export) != {"COMMAND", "STARTED_UTC", "FINISHED_UTC", "EXIT_CODE", "OUTPUT_ABSENT_BEFORE"}
+            or export["COMMAND"] != [EXPORTER_OUTPUT + "/RDBDataExtractor.exe", "extract", "--ao-path", "<AO_CLIENT_ROOT>",
+                "--gamedata-dir", "<STAGED_GAMEDATA_ROOT>", *EXPORTER_SKIP_ARGS]
+            or type(export["EXIT_CODE"]) is not int or export["EXIT_CODE"] != 0 or export["OUTPUT_ABSENT_BEFORE"] is not True
+            or not timestamp(build["STARTED_UTC"]) <= timestamp(build["FINISHED_UTC"]) <= timestamp(export["STARTED_UTC"])
+                <= timestamp(export["FINISHED_UTC"]) <= timestamp(proof["CREATED_UTC"])):
+        raise ValueError("Fresh successful current exporter build/extraction is required")
+    validate_manifest(build["BINARIES"])
+    binaries = {row["path"]: row for row in build["BINARIES"]}
+    required_outputs = {EXPORTER_OUTPUT + "/" + name for name in ("RDBDataExtractor.exe", "RDBDataExtractor.dll", "AODB.dll",
+                        "MsgPack.dll", "RDBDataExtractor.deps.json", "RDBDataExtractor.runtimeconfig.json", "FunctionSets.cfg")}
+    if not required_outputs <= set(binaries) or any(not path.startswith(EXPORTER_OUTPUT + "/") for path in binaries):
+        raise ValueError("Complete measured exporter outputs/dependencies required")
+    if set(inputs) != {"INDEX", "SHARDS"} or not isinstance(inputs["SHARDS"], list):
+        raise ValueError("Complete measured RDB index/shards required")
+    names = []
+    for index, row in enumerate([inputs["INDEX"], *inputs["SHARDS"]]):
+        fields = {"path", "size", "BEFORE_STATE", "AFTER_STATE"} | ({"sha256"} if index == 0 else set())
+        if (set(row) != fields or type(row["size"]) is not int or row["size"] <= 0
+                or not isinstance(row["BEFORE_STATE"], list) or len(row["BEFORE_STATE"]) != 5
+                or any(type(value) is not int for value in row["BEFORE_STATE"])
+                or row["BEFORE_STATE"] != row["AFTER_STATE"] or row["BEFORE_STATE"][2] != row["size"]
+                or (index == 0 and (row["path"] != "ResourceDatabase.idx" or not re.fullmatch("[0-9a-f]{64}", row["sha256"])))):
+            raise ValueError("RDB input changed or lacks its measured identity")
+        names.append(row["path"])
+    expected_shards = ["ResourceDatabase.dat", *("ResourceDatabase.dat." + str(number).zfill(3) for number in range(1, len(names) - 1))]
+    if len(names) < 2 or names[1:] != expected_shards:
+        raise ValueError("Complete contiguous RDB shard set required")
+    if set(output) != {"path", "size", "sha256", "blob"} or output["path"] != "items.dat" or output["size"] <= 0:
+        raise ValueError("Generated output must be the one protected items.dat")
+    validate_manifest([output])
+    count, distinct = validation.get("DECODED_POPULATION"), validation.get("DISTINCT_IDS")
+    validation_fields = {"CURRENT_ITEMS_DAT_READER", "ITEM_TEMPLATE_CATALOG", "EXPORTER_ASSEMBLY_SHA256", "ITEMS_DAT_SHA256", "ITEMS_DAT_SIZE",
+        "HEADER", "SOURCE_POPULATION", "DECODED_POPULATION", "DISTINCT_IDS", "NAMED_TEMPLATES", "UNNAMED_IDS", "BOSS_MODIFIER_COUNT",
+        "BOSS_MODIFIERS", "CURRENT_FIELDS", "AURA_OF_REVIVAL_212161"}
+    if (set(validation) != validation_fields or validation.get("CURRENT_ITEMS_DAT_READER") != "PASS" or validation.get("ITEM_TEMPLATE_CATALOG") != "DEFERRED_TO_REAL_WINDOWS_STARTUP"
+            or validation.get("ITEMS_DAT_SHA256") != output["sha256"] or validation.get("ITEMS_DAT_SIZE") != output["size"]
+            or validation.get("EXPORTER_ASSEMBLY_SHA256") != binaries[EXPORTER_OUTPUT + "/RDBDataExtractor.dll"]["sha256"]
+            or type(count) is not int or count <= 0 or type(distinct) is not int or not 0 < distinct <= count
+            or validation.get("SOURCE_POPULATION", {}).get("expected") != count
+            or set(validation["SOURCE_POPULATION"]) != {"itemRecords", "nanoRecords", "expected"}
+            or validation["SOURCE_POPULATION"]["itemRecords"] + validation["SOURCE_POPULATION"]["nanoRecords"] != count
+            or validation.get("HEADER", {}).get("templateCount") != count
+            or validation.get("HEADER", {}).get("version") != "RDBDataExtractor"
+            or type(validation.get("NAMED_TEMPLATES")) is not int or validation["NAMED_TEMPLATES"] <= 0
+            or not isinstance(validation.get("UNNAMED_IDS"), list) or validation["NAMED_TEMPLATES"] + len(validation["UNNAMED_IDS"]) != count
+            or type(validation.get("BOSS_MODIFIER_COUNT")) is not int or validation["BOSS_MODIFIER_COUNT"] <= 0
+            or len(validation.get("BOSS_MODIFIERS", [])) != validation["BOSS_MODIFIER_COUNT"]
+            or any(set(row) != {"id", "name"} or type(row["id"]) is not int or not row.get("name", "").lower().startswith("boss modifier item")
+                   for row in validation["BOSS_MODIFIERS"])):
+        raise ValueError("Current reader population/names/boss/generated output proof differs")
+    fields = validation.get("CURRENT_FIELDS", {})
+    if (set(fields) != {"fullRdb", "stats", "attack", "defend", "eventsOrActions", "shops", "shopLines", "rawFallback", "nanoFields",
+            "positiveAmmoType", "positiveMaxEnergy", "positiveMultipleCount", "negativeOneTickFunctions", "periodicFunctions"}
+            or fields.get("fullRdb") != count or any(type(fields.get(key)) is not int or fields[key] <= 0 for key in
+            ("stats", "attack", "defend", "eventsOrActions", "shops", "shopLines", "nanoFields", "positiveAmmoType",
+             "positiveMaxEnergy", "positiveMultipleCount", "negativeOneTickFunctions", "periodicFunctions"))
+            or any(set(row) != {"eventType", "functionType", "tickCount", "tickInterval"} for row in validation.get("AURA_OF_REVIVAL_212161", []))
+            or not any(row.get("tickCount") == -1 and row.get("tickInterval", 0) > 0 for row in validation.get("AURA_OF_REVIVAL_212161", []))):
+        raise ValueError("Current exporter/recent runtime fields were not validated")
+    header = validation["HEADER"]
+    if (set(header) != {"version", "packCount", "templateCount", "slices", "sliceStates"}
+            or type(header["packCount"]) is not int or header["packCount"] <= 0
+            or type(header["slices"]) is not int or header["slices"] <= 0 or len(header["sliceStates"]) != header["slices"]
+            or any(set(row) != {"index", "compressedBytes", "uncompressedBytes"} or row["index"] != index
+                   or row["compressedBytes"] <= 0 or row["uncompressedBytes"] <= 0 for index, row in enumerate(header["sliceStates"]))):
+        raise ValueError("Current reader/header slice metadata differs")
+    return output
+
+
+def generated_items_receipt(root, profile, receipt_path, public_sha):
+    root = Path(root).resolve(strict=True)
+    path = Path(receipt_path)
+    path = checked(root, path.relative_to(root).as_posix() if path.is_absolute() else path.as_posix())
+    if git(root, "check-ignore", "--", str(path)).strip() == b"":
+        raise ValueError("Generated items receipt must remain ignored/local")
+    raw = path.read_bytes()
+    receipt = read_json(path)
+    fields = {"FORMAT_VERSION", "PUBLIC_MASTER_SHA", "CREATED_UTC", "EXPORTER_SOURCE_CLOSURE", "TOOL_BUILD", "RDB_INPUTS", "EXPORT", "OUTPUT", "VALIDATION"}
+    if set(receipt) != fields:
+        raise ValueError("Generated items receipt schema differs")
+    staged_value = receipt["OUTPUT"]["STAGED_PATH"]
+    staged_path = Path(staged_value)
+    staged = checked(root, staged_path.relative_to(root).as_posix() if staged_path.is_absolute() else staged_path.as_posix())
+    if (staged.name != "items.dat" or staged.is_relative_to(Path(profile["CANONICAL_GAMEDATA_ROOT"]).resolve())
+            or git(root, "check-ignore", "--", str(staged)).strip() == b""):
+        raise ValueError("Generated output must be a new ignored stage outside canonical GameData")
+    before = file_state(staged)
+    data = staged.read_bytes()
+    if before != file_state(staged) or receipt["OUTPUT"] != {"STAGED_PATH": staged_value, **content_identity(data)}:
+        raise ValueError("Staged generated items changed or has a different identity")
+    proof = json.loads(encoded(receipt))
+    proof["LOCAL_RECEIPT_SHA256"] = digest(raw)
+    proof["OUTPUT"] = content_identity(data, "items.dat")
+    inputs = proof["RDB_INPUTS"]
+    database_root = Path(inputs.pop("ROOT")).resolve(strict=True)
+    if [part.lower() for part in database_root.parts[-3:]] != ["cd_image", "data", "db"]:
+        raise ValueError("Current exporter RDB root must be the installed client's cd_image/data/db")
+    client_root = database_root.parents[2]
+    input_names = {path.name for path in database_root.iterdir() if path.name == "ResourceDatabase.dat" or re.fullmatch(r"ResourceDatabase\.dat\.[0-9]{3}", path.name)}
+    if input_names != {row["path"] for row in inputs["SHARDS"]}:
+        raise ValueError("Current RDB shard path set differs from generation")
+    for index, row in enumerate([inputs["INDEX"], *inputs["SHARDS"]]):
+        source = checked(database_root, row["path"])
+        if file_state(source) != row["AFTER_STATE"] or (index == 0 and digest(source.read_bytes()) != row["sha256"]):
+            raise ValueError("Current RDB input changed since extraction")
+    build_command = proof["TOOL_BUILD"]["COMMAND"]
+    if not build_command or ntpath.basename(build_command[0]).lower() not in ("dotnet", "dotnet.exe"):
+        raise ValueError("Current exporter build command differs")
+    proof["TOOL_BUILD"]["COMMAND"] = ["dotnet", *build_command[1:]]
+    export_command = proof["EXPORT"]["COMMAND"]
+    actual_command = [str(root / EXPORTER_OUTPUT / "RDBDataExtractor.exe"), "extract", "--ao-path", str(client_root),
+                      "--gamedata-dir", str(staged.parent), *EXPORTER_SKIP_ARGS]
+    if len(export_command) != len(actual_command) or any(ntpath.normcase(ntpath.normpath(actual)) != ntpath.normcase(ntpath.normpath(expected))
+            for actual, expected in zip(export_command, actual_command)):
+        raise ValueError("Generated items extraction must use the existing items-only exporter command")
+    proof["EXPORT"]["COMMAND"] = [EXPORTER_OUTPUT + "/RDBDataExtractor.exe", "extract", "--ao-path", "<AO_CLIENT_ROOT>",
+                                 "--gamedata-dir", "<STAGED_GAMEDATA_ROOT>", *EXPORTER_SKIP_ARGS]
+    validate_generated_items_provenance(proof, public_sha)
+    if proof["EXPORTER_SOURCE_CLOSURE"] != exporter_source_closure(root, public_sha):
+        raise ValueError("Exporter source closure differs from exact public master")
+    output_rows, _ = inventory(checked(root, EXPORTER_OUTPUT))
+    output_rows = [{**row, "path": EXPORTER_OUTPUT + "/" + row["path"]} for row in output_rows]
+    if output_rows != proof["TOOL_BUILD"]["BINARIES"]:
+        raise ValueError("Current exporter binaries/dependencies differ from measured generation")
+    return proof, data, raw
+
+
+def required_catalogs(value):
+    if not isinstance(value, list):
+        raise ValueError("Explicit required-current catalog mapping required")
+    seen = set()
+    for row in value:
+        if (set(row) != {"AUTHORITY", "PATH", "APPROVAL"} or row["AUTHORITY"] not in ("PUBLIC_PRODUCT_DATA", "PRIVATE_CONTENT_UPSTREAM")
+                or not isinstance(row["APPROVAL"], str) or not row["APPROVAL"].strip() or row["PATH"] in seen):
+            raise ValueError("Required-current catalog mapping is invalid/duplicate")
+        relative(row["PATH"])
+        seen.add(row["PATH"])
+    return value
+
+
+def validate_supplemental_content(bundle, value, actual, portable=False):
+    """Account for explicit missing-catalog restoration and the one generated file."""
+    catalogs = required_catalogs(value.get("REQUIRED_CURRENT_CATALOGS", []))
+    expected, seen = {}, set()
+    for mapping in catalogs:
+        path = mapping["PATH"]
+        source = value["SOURCE_SNAPSHOTS"][mapping["AUTHORITY"]]["AFTER"].get(path)
+        if source is None or path in value["PROTECTED_GENERATED_FILES"]:
+            raise ValueError("Required catalog has no current source identity or is protected")
+        if path not in actual:
+            expected[path] = mapping
+    for restoration in value.get("CATALOG_RESTORATIONS", []):
+        if set(restoration) != {"AUTHORITY", "PATH", "APPROVAL", "CANONICAL_BEFORE", "CANONICAL_AFTER"}:
+            raise ValueError("Required-current catalog restoration schema differs")
+        path = restoration["PATH"]
+        if (path not in expected or path in seen or restoration["CANONICAL_BEFORE"] is not None
+                or {key: restoration[key] for key in ("AUTHORITY", "PATH", "APPROVAL")} != expected[path]):
+            raise ValueError("Catalog restoration is unapproved or would overwrite existing content")
+        seen.add(path)
+        result = restoration["CANONICAL_AFTER"] if portable else content_identity(load_optional(bundle, restoration["CANONICAL_AFTER"]), path)
+        if result is None:
+            raise ValueError("Required-current catalog restoration is empty")
+        validate_manifest([result])
+        source = value["SOURCE_SNAPSHOTS"][restoration["AUTHORITY"]]["AFTER"][path]
+        if result["path"] != path or {key: result[key] for key in ("size", "blob")} != source:
+            raise ValueError("Catalog restoration differs from exact current source bytes")
+        actual[path] = result
+    if seen != set(expected):
+        raise ValueError("Required-current catalog restorations are incomplete")
+    proof, adoption = value.get("GENERATED_ITEMS_PROVENANCE"), value.get("GENERATED_ITEMS_ADOPTION")
+    if not proof:
+        if adoption or value.get("GENERATED_ITEMS_LOCAL_RECEIPT"):
+            raise ValueError("Generated adoption lacks measured provenance")
+        return
+    output = validate_generated_items_provenance(proof, value["PUBLIC_MASTER_SHA"])
+    if "items.dat" not in value["PROTECTED_GENERATED_FILES"]:
+        raise ValueError("Generated adoption must retain protected items.dat ownership")
+    if not portable:
+        local_receipt = value.get("GENERATED_ITEMS_LOCAL_RECEIPT")
+        if local_receipt:
+            path = load_descriptor(bundle, local_receipt)
+            raw = read_json(path)
+            if (digest(path.read_bytes()) != proof["LOCAL_RECEIPT_SHA256"]
+                    or any(raw.get(key) != proof[key] for key in ("FORMAT_VERSION", "PUBLIC_MASTER_SHA", "CREATED_UTC", "EXPORTER_SOURCE_CLOSURE", "VALIDATION"))
+                    or {key: raw["OUTPUT"][key] for key in ("size", "sha256", "blob")} != {key: output[key] for key in ("size", "sha256", "blob")}):
+                raise ValueError("Local generated receipt/projection identity differs")
+        else:
+            prior = value.get("PRIOR_LOCAL_RECONCILIATION")
+            if not prior or read_json(load_descriptor(Path(prior["STATE_ROOT"]), prior["RECONCILIATION"])).get("GENERATED_ITEMS_PROVENANCE") != proof:
+                raise ValueError("Generated provenance lacks the validated applied local receipt")
+    if adoption:
+        if set(adoption) != {"CANONICAL_BEFORE", "CANONICAL_AFTER"}:
+            raise ValueError("Generated items adoption schema differs")
+        before = adoption["CANONICAL_BEFORE"] if portable else content_identity(load_optional(bundle, adoption["CANONICAL_BEFORE"]), "items.dat")
+        after = adoption["CANONICAL_AFTER"] if portable else content_identity(load_optional(bundle, adoption["CANONICAL_AFTER"]), "items.dat")
+        if before != actual.get("items.dat") or after != output:
+            raise ValueError("Generated items adoption does not bind complete before/after identities")
+        actual["items.dat"] = after
+    if actual.get("items.dat") != output:
+        raise ValueError("Canonical items.dat differs from current generated provenance")
+
+
+def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before_rows, resolutions=None, generated_receipt=None):
     resolutions = resolutions or {}
     canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"]).resolve(strict=True)
     snapshots, records, projected = {}, [], {}
@@ -409,6 +662,45 @@ def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before
                             "CANONICAL_AFTER": stash(bundle, prefix + "canonical-after", result),
                             "RESOLUTIONS": resolved})
             projected[path] = result
+    catalogs, restorations = required_catalogs(profile.get("REQUIRED_CURRENT_CATALOGS", [])), []
+    for mapping in catalogs:
+        authority, path = mapping["AUTHORITY"], mapping["PATH"]
+        current_source = snapshots[authority]["AFTER"].get(path)
+        if current_source is None or path in profile.get("PROTECTED_GENERATED_FILES", ()):
+            raise ValueError("Required catalog is not present in its current authority or is generated")
+        target = checked(canonical, path, exists=False)
+        private = projected[path] if path in projected else target.read_bytes() if target.is_file() else None
+        if private is not None:
+            continue
+        incoming = source_blob(root, profile, authority, current_source["blob"])
+        restorations.append({**mapping, "CANONICAL_BEFORE": None,
+            "CANONICAL_AFTER": stash(bundle, "catalog-restorations/" + str(len(restorations)), incoming)})
+        projected[path] = incoming
+    generated, adoption, local_receipt = None, None, None
+    if generated_receipt:
+        if "items.dat" not in profile.get("PROTECTED_GENERATED_FILES", ()):
+            raise ValueError("Generated items adoption requires the existing protected items.dat binding")
+        generated, data, raw = generated_items_receipt(root, profile, generated_receipt, public_sha)
+        local_receipt = stash(bundle, "generated-items-local-receipt.json", raw)
+        target = checked(canonical, "items.dat", exists=False)
+        private = projected["items.dat"] if "items.dat" in projected else target.read_bytes() if target.is_file() else None
+        if data != private:
+            adoption = {"CANONICAL_BEFORE": stash(bundle, "generated-items-adoption/before", private),
+                        "CANONICAL_AFTER": stash(bundle, "generated-items-adoption/after", data)}
+            projected["items.dat"] = data
+    elif baseline.get("APPLIED_RECONCILIATION_BUNDLE"):
+        previous = Path(baseline["APPLIED_RECONCILIATION_BUNDLE"])
+        prior_file = previous / "reconciliation.json"
+        if (not previous.resolve().is_relative_to(Path(profile["STATE_ROOT"]).resolve())
+                or digest(prior_file.read_bytes()) != baseline["APPLIED_RECONCILIATION_SHA256"]):
+            raise ValueError("Prior generated items provenance was changed")
+        prior = read_json(prior_file)
+        validate_reconciliation(previous, prior)
+        candidate = prior.get("GENERATED_ITEMS_PROVENANCE")
+        if candidate and candidate["PUBLIC_MASTER_SHA"] == public_sha:
+            generated = candidate
+    if profile.get("REQUIRE_GENERATED_ITEMS") is True and not generated:
+        raise ValueError("This release requires newly generated items.dat from exact public master")
     expected = {row["path"]: row for row in before_rows}
     for path, data in projected.items():
         if data is None:
@@ -421,6 +713,14 @@ def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before
             "WINDOWS_GAMEDATA_MANIFEST": digest(encoded(after_rows)), "SOURCE_SNAPSHOTS": snapshots,
             "CHANGES": records, "PROTECTED_GENERATED_FILES": profile.get("PROTECTED_GENERATED_FILES", []),
             "BEFORE_MANIFEST": descriptor(bundle, bundle / "before-manifest.json")}
+    if catalogs:
+        plan.update(REQUIRED_CURRENT_CATALOGS=catalogs, CATALOG_RESTORATIONS=restorations)
+    if generated:
+        plan["GENERATED_ITEMS_PROVENANCE"] = generated
+        if local_receipt:
+            plan["GENERATED_ITEMS_LOCAL_RECEIPT"] = local_receipt
+        if adoption:
+            plan["GENERATED_ITEMS_ADOPTION"] = adoption
     if baseline.get("APPLIED_RECONCILIATION_BUNDLE"):
         previous = Path(baseline["APPLIED_RECONCILIATION_BUNDLE"])
         if not previous.resolve().is_relative_to(Path(profile["STATE_ROOT"]).resolve()):
@@ -503,6 +803,7 @@ def validate_reconciliation(bundle, reconciliation):
         previous_results[path] = result
     if actual_changes != expected_changes:
         raise ValueError("Approved upstream additions/modifications/removals are incomplete")
+    validate_supplemental_content(bundle, reconciliation, actual)
     if sorted(actual.values(), key=lambda row: row["path"]) != after:
         raise ValueError("Canonical manifest loses or changes unrelated private content")
     if validate_manifest(after) != reconciliation["WINDOWS_GAMEDATA_MANIFEST"]:
@@ -510,7 +811,7 @@ def validate_reconciliation(bundle, reconciliation):
     return after
 
 
-def intake(root, profile, resolutions=None):
+def intake(root, profile, resolutions=None, generated_receipt=None):
     attempt_id, started = uuid.uuid4().hex, now()
     public_sha, dump_sha, public_fetch, dump_fetch = fresh_sources(root, profile)
     public_fetch["ATTEMPT_ID"] = dump_fetch["ATTEMPT_ID"] = attempt_id
@@ -529,7 +830,7 @@ def intake(root, profile, resolutions=None):
     bundle = state_root / ("attempt-" + uuid.uuid4().hex)
     bundle.mkdir()
     write_json(bundle / "before-manifest.json", rows)
-    plan, projected = reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, rows, resolutions)
+    plan, projected = reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, rows, resolutions, generated_receipt)
     validate_reconciliation(bundle, plan)
     attempt = {"FORMAT_VERSION": 1, "PUBLIC_MASTER_SHA": public_sha, "LOCAL_WINDOWS_SOURCE_SHA": public_sha,
                "ATTEMPT_ID": attempt_id, "ATTEMPT_STARTED_UTC": started,
@@ -544,8 +845,8 @@ def intake(root, profile, resolutions=None):
     return bundle, attempt, plan, projected, states
 
 
-def apply_content(root, profile, approved_plan_sha256, resolutions=None):
-    bundle, attempt, plan, projected, states = intake(root, profile, resolutions)
+def apply_content(root, profile, approved_plan_sha256, resolutions=None, generated_receipt=None):
+    bundle, attempt, plan, projected, states = intake(root, profile, resolutions, generated_receipt)
     if digest(encoded(plan)) != approved_plan_sha256:
         raise ValueError("Fresh content plan differs from the approved plan")
     canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"])
@@ -775,6 +1076,16 @@ def summarize_reconciliation(bundle, reconciliation):
                 "SOURCE_SNAPSHOTS", "PROTECTED_GENERATED_FILES", "BEFORE_MANIFEST", "CANONICAL_MANIFEST")}
     summary.update(PROOF_KIND="PORTABLE_MEASURED_RECONCILIATION_V1", CHANGES=records,
                    LOCAL_REPLAY_SHA256=digest(encoded(reconciliation)))
+    for key in ("REQUIRED_CURRENT_CATALOGS", "GENERATED_ITEMS_PROVENANCE"):
+        if key in reconciliation:
+            summary[key] = reconciliation[key]
+    if "CATALOG_RESTORATIONS" in reconciliation:
+        summary["CATALOG_RESTORATIONS"] = [{**{key: row[key] for key in ("AUTHORITY", "PATH", "APPROVAL")},
+            "CANONICAL_BEFORE": None, "CANONICAL_AFTER": content_identity(load_optional(bundle, row["CANONICAL_AFTER"]), row["PATH"])}
+            for row in reconciliation["CATALOG_RESTORATIONS"]]
+    if "GENERATED_ITEMS_ADOPTION" in reconciliation:
+        summary["GENERATED_ITEMS_ADOPTION"] = {key: content_identity(load_optional(bundle, item), "items.dat")
+            for key, item in reconciliation["GENERATED_ITEMS_ADOPTION"].items()}
     prior = reconciliation.get("PRIOR_LOCAL_RECONCILIATION")
     if prior:
         prior_path = load_descriptor(Path(prior["STATE_ROOT"]), prior["RECONCILIATION"])
@@ -789,7 +1100,8 @@ def validate_reconciliation_summary(bundle, summary):
     required = {"FORMAT_VERSION", *TUPLE, "CANONICAL_BEFORE_MANIFEST", "SOURCE_SNAPSHOTS",
                 "PROTECTED_GENERATED_FILES", "BEFORE_MANIFEST", "CANONICAL_MANIFEST", "PROOF_KIND",
                 "CHANGES", "LOCAL_REPLAY_SHA256"}
-    if (set(summary) not in (required, required | {"PRIOR_CHECKPOINT"}) or summary["FORMAT_VERSION"] != 1
+    optional = {"PRIOR_CHECKPOINT", "REQUIRED_CURRENT_CATALOGS", "CATALOG_RESTORATIONS", "GENERATED_ITEMS_PROVENANCE", "GENERATED_ITEMS_ADOPTION"}
+    if (not required <= set(summary) or set(summary) - required - optional or summary["FORMAT_VERSION"] != 1
             or summary["PROOF_KIND"] != "PORTABLE_MEASURED_RECONCILIATION_V1"
             or not re.fullmatch("[0-9a-f]{64}", summary["LOCAL_REPLAY_SHA256"])):
         raise ValueError("One bounded measured reconciliation summary is required")
@@ -871,6 +1183,7 @@ def validate_reconciliation_summary(bundle, summary):
             actual.pop(path, None)
         else:
             actual[path] = change["CANONICAL_AFTER"]
+    validate_supplemental_content(bundle, summary, actual, portable=True)
     if seen != expected or sorted(actual.values(), key=lambda row: row["path"]) != after:
         raise ValueError("Complete A/M/D or unrelated canonical path preservation differs")
     return after
@@ -948,6 +1261,9 @@ def require_successful_attempt(bundle, attempt):
     if (any(attempt[key] != reconciliation[key] for key in TUPLE)
             or read_json(load_descriptor(bundle, attempt["CANONICAL_MANIFEST"])) != rows):
         raise ValueError("Build tuple/content reconciliation mismatch")
+    generated = reconciliation.get("GENERATED_ITEMS_PROVENANCE")
+    if generated and timestamp(generated["CREATED_UTC"]) > timestamp(attempt["BUILD_STARTED_UTC"]):
+        raise ValueError("Generated items must be adopted before the actual Windows build")
     return rows, reconciliation
 
 
@@ -1037,6 +1353,18 @@ def validate_startup(bundle, windows, attempt):
             matches = [value.rsplit(" mobs=", 1)[0] for value in matches]
         if not matches or any(ntpath.normcase(ntpath.normpath(value)) != ntpath.normcase(ntpath.normpath(selected_root)) for value in matches):
             raise ValueError("Loader selected GameData differs from the measured canonical root")
+    generated = read_json(load_descriptor(bundle, attempt["RECONCILIATION"])).get("GENERATED_ITEMS_PROVENANCE")
+    if generated:
+        zone_path = next(path for path in evidence if PurePosixPath(path).name == "ZoneEngine_New.out.delta.log")
+        zone_text = checked(bundle, zone_path).read_text(encoding="utf-8-sig")
+        loaded = re.findall(r"Loaded ([0-9]+) item templates from ([^\r\n]+)", zone_text)
+        ready_counts = re.findall(r"ItemTemplateCatalog ready with ([0-9]+) templates", zone_text)
+        validation = generated["VALIDATION"]
+        expected_path = ntpath.normcase(ntpath.join(selected_root, "items.dat"))
+        if (not loaded or not ready_counts or "Failed to load GameData items.dat" in zone_text or "GameData items.dat not found" in zone_text
+                or any(int(count) != validation["DECODED_POPULATION"] or ntpath.normcase(ntpath.normpath(path.strip())) != expected_path for count, path in loaded)
+                or any(int(count) != validation["DISTINCT_IDS"] for count in ready_counts)):
+            raise ValueError("Current ItemTemplateCatalog did not load the regenerated canonical items.dat population")
     current = world.get("world", {})
     roles = {row.get("role") for row in current.get("instances", []) if row.get("connected") is True
              and 0 <= row.get("heartbeatAgeMs", -1) <= windows.get("WORLD_LEASE_TTL_MS", 15000)}
@@ -1174,6 +1502,7 @@ def main(argv=None):
     parser.add_argument("--profile", type=Path)
     parser.add_argument("--approved-plan-sha256")
     parser.add_argument("--resolutions", type=Path)
+    parser.add_argument("--generated-items-receipt", type=Path)
     parser.add_argument("--build-attempt")
     parser.add_argument("--windows-receipt")
     parser.add_argument("--acceptance-evidence")
@@ -1183,6 +1512,8 @@ def main(argv=None):
     try:
         root = args.repository_root.resolve(strict=True)
         profile = profile_for(root, args.profile)
+        if args.generated_items_receipt and args.mode not in ("prepare-build", "reconcile-content"):
+            raise ValueError("Generated items may be adopted only through existing content preparation/reconciliation")
         if args.mode == "verify-build-token":
             verify_build_token(root, profile, args.entrypoint, args.product)
         elif args.mode == "verify-startup-attempt":
@@ -1200,9 +1531,9 @@ def main(argv=None):
         elif args.mode == "reconcile-content":
             if not args.approved_plan_sha256:
                 raise ValueError("Explicit hash-bound safe content-plan approval required")
-            apply_content(root, profile, args.approved_plan_sha256, read_json(args.resolutions) if args.resolutions else None)
+            apply_content(root, profile, args.approved_plan_sha256, read_json(args.resolutions) if args.resolutions else None, args.generated_items_receipt)
         elif args.mode == "prepare-build":
-            bundle, attempt, plan, _, _ = intake(root, profile, read_json(args.resolutions) if args.resolutions else None)
+            bundle, attempt, plan, _, _ = intake(root, profile, read_json(args.resolutions) if args.resolutions else None, args.generated_items_receipt)
             print("CONTENT_PLAN_SHA256=" + digest(encoded(plan)))
             print("BUILD_ATTEMPT_RECEIPT=" + (bundle / "prepared.json").relative_to(root).as_posix())
             if plan["CANONICAL_BEFORE_MANIFEST"] != plan["WINDOWS_GAMEDATA_MANIFEST"]:
