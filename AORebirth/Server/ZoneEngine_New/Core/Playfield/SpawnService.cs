@@ -597,7 +597,8 @@ namespace ZoneEngine_New.Core.Playfield
             if (forfeited)
                 corpse.ForfeitSpoils();
 
-            corpse.ResolveLoot(_hashItems);
+            corpse.ResolveLoot(_hashItems,
+                _playfield.GetService<Configuration.GameplaySettings>()?.Loot.QualityVariancePercent ?? new Configuration.GameplayLoot().QualityVariancePercent);
 
             _registry.Register(corpse);
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(corpse);

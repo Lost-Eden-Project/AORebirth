@@ -9,8 +9,9 @@ namespace ZoneEngine_New.Core.Entities
 
     /// <summary>
     /// What an NPC's equipment drops: every OnWear SpawnItem on an equipped item (a boss's "Lootgiver" and Boss
-    /// Modifier items) spawns its hash at the highest QL up to the function's QL, which the item's own QL (the NPC's
-    /// level) scales. Rolled when the corpse is made, not when the NPC spawns, so the GM loot simulation rolls the same way.
+    /// Modifier items) spawns its hash. The function's QL, which the item's own QL (the NPC's level) scales, is the
+    /// centre: the drop rolls a QL within Gameplay.json loot.qualityVariancePercent of it and takes the hash's highest QL
+    /// up to that. Rolled when the corpse is made, not when the NPC spawns, so the GM loot simulation rolls the same way.
     /// </summary>
     public static class EquipmentLoot
     {
@@ -22,6 +23,7 @@ namespace ZoneEngine_New.Core.Entities
             IEnumerable<Item> equipment,
             HashItemMinter minter,
             int capacity,
+            int qualityVariancePercent,
             List<(int LowId, int HighId, int Quality)> into)
         {
             ArgumentNullException.ThrowIfNull(equipment);
@@ -36,8 +38,11 @@ namespace ZoneEngine_New.Core.Entities
                     if (into.Count - start >= capacity)
                         return;
 
-                    if (!TryReadSpawn(spell, out string hash, out int quality)
-                        || !minter.TryRollHighestUpTo(hash, quality, out int lowId, out int highId, out int rolledQuality))
+                    if (!TryReadSpawn(spell, out string hash, out int quality))
+                        continue;
+
+                    (int min, int max) = LootableDynel.QualityWindow(quality, qualityVariancePercent);
+                    if (!minter.TryRollHighestUpTo(hash, Random.Shared.Next(min, max + 1), out int lowId, out int highId, out int rolledQuality))
                         continue;
 
                     into.Add((lowId, highId, rolledQuality));

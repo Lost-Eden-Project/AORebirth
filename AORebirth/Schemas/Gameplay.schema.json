@@ -35,6 +35,18 @@
       },
       "additionalProperties": false
     },
+    "loot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "qualityVariancePercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Corpse drops (item table and equipment spawns) roll their QL within this percent either side of the NPC's level or the spawn's QL. The item table's own levelMod is not used."
+        }
+      }
+    },
     "shops": {
       "type": "object",
       "additionalProperties": false,

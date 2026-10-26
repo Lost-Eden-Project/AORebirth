@@ -78,7 +78,7 @@ namespace ZoneEngine_New.Core.Entities
         /// against the loot catalog into the remaining <see cref="Loot"/> slots. Each rolled item gets a unique in-memory
         /// <see cref="Item.InstanceId"/> (no DB write). Persistence happens on loot via MarkDirty / flush.
         /// </summary>
-        public void ResolveLoot(HashItemMinter minter)
+        public void ResolveLoot(HashItemMinter minter, int qualityVariancePercent)
         {
             ArgumentNullException.ThrowIfNull(minter);
 
@@ -95,8 +95,8 @@ namespace ZoneEngine_New.Core.Entities
 
             var rolled = new List<(int LowId, int HighId, int Quality)>();
             if (LootEquipment != null)
-                EquipmentLoot.Roll(LootEquipment, minter, Loot.Capacity - slot, rolled);
-            RollItemTable(ItemTable, LootLevel, minter, Loot.Capacity - slot - rolled.Count, rolled);
+                EquipmentLoot.Roll(LootEquipment, minter, Loot.Capacity - slot, qualityVariancePercent, rolled);
+            RollItemTable(ItemTable, LootLevel, minter, Loot.Capacity - slot - rolled.Count, qualityVariancePercent, rolled);
             for (int i = 0; i < rolled.Count; i++, slot++)
             {
                 (int lowId, int highId, int quality) = rolled[i];
@@ -107,7 +107,8 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// One corpse's loot roll: every item table row is tried Repeats times at its Chance, each hit rolls a quality
-        /// around <paramref name="level"/> and spawns its hash's items, until <paramref name="capacity"/> items.
+        /// within <paramref name="qualityVariancePercent"/> of <paramref name="level"/> (Gameplay.json loot; the row's own
+        /// LevelMod is not used) and spawns its hash's items, until <paramref name="capacity"/> items.
         /// Appends template ids and quality to <paramref name="into"/>; builds no items (GM loot simulation uses it too).
         /// </summary>
         public static void RollItemTable(
@@ -115,6 +116,7 @@ namespace ZoneEngine_New.Core.Entities
             int level,
             HashItemMinter minter,
             int capacity,
+            int qualityVariancePercent,
             List<(int LowId, int HighId, int Quality)> into)
         {
             ArgumentNullException.ThrowIfNull(minter);
@@ -138,7 +140,7 @@ namespace ZoneEngine_New.Core.Entities
                         continue;
 
                     spawned.Clear();
-                    (int minQuality, int maxQuality) = QualityWindow(level, entry.LevelMod);
+                    (int minQuality, int maxQuality) = QualityWindow(level, qualityVariancePercent);
                     minter.RollSpawnIds(
                         entry.Hash, minQuality, maxQuality, LootRandom.Next(minQuality, maxQuality + 1), spawned);
                     for (int i = 0; i < spawned.Count; i++)
@@ -264,10 +266,10 @@ namespace ZoneEngine_New.Core.Entities
             return LootRandom.Next(1, 101) <= chance;
         }
 
-        /// <summary>The QL window a loot row drops in: the mob's level ± LevelMod percent.</summary>
-        static (int Min, int Max) QualityWindow(int level, int levelMod)
+        /// <summary>The QL window a drop centred on <paramref name="level"/> rolls in: ± <paramref name="percent"/>.</summary>
+        internal static (int Min, int Max) QualityWindow(int level, int percent)
         {
-            int mod = Math.Max(0, levelMod);
+            int mod = Math.Max(0, percent);
             int min = Math.Max(1, level * (100 - mod) / 100);
             int max = Math.Max(min, level * (100 + mod) / 100);
             return (min, max);

@@ -64,6 +64,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Where a shop's stock list comes from.</summary>
         public GameplayShops Shops { get; init; } = new();
 
+        /// <summary>Corpse loot rolls.</summary>
+        public GameplayLoot Loot { get; init; } = new();
+
         /// <summary>Inventory rules: how many items the overflow window keeps.</summary>
         public GameplayInventory Inventory { get; init; } = new();
 
@@ -152,6 +155,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
             if (ProximityAggro == null || !float.IsFinite(ProximityAggro.MaxWalkFactor) || ProximityAggro.MaxWalkFactor < 0)
                 throw new InvalidDataException(path + ": proximityAggro.maxWalkFactor must be a finite number, 0 or more.");
+            if (Loot == null || Loot.QualityVariancePercent is < 0 or > 100)
+                throw new InvalidDataException(path + ": loot.qualityVariancePercent must be 0 to 100.");
             if (SocialAggro == null
                 || !float.IsFinite(SocialAggro.DefaultRadius) || SocialAggro.DefaultRadius < 0
                 || !float.IsFinite(SocialAggro.NpcVsNpcDefaultRadius) || SocialAggro.NpcVsNpcDefaultRadius < 0
@@ -562,6 +567,17 @@ namespace ZoneEngine_New.Core.Configuration
 
     /// <summary>A playfield and position in Gameplay.json.</summary>
     /// <summary>The shops section of Gameplay.json.</summary>
+    /// <summary>Corpse loot rolls.</summary>
+    public sealed class GameplayLoot
+    {
+        /// <summary>
+        /// Every corpse drop rolls its QL within this percent either side of where it is centred: an item table row on
+        /// the NPC's level, an equipment spawn (Lootgiver, Boss Modifier) on its own QL. The item table's levelMod is not
+        /// used. 0 drops at exactly that QL.
+        /// </summary>
+        public int QualityVariancePercent { get; init; } = 25;
+    }
+
     public sealed class GameplayShops
     {
         /// <summary>
