@@ -48,7 +48,7 @@ def make_generated_fixture(root, data=b"new generated fixture"):
         "SOURCE_POPULATION": {"itemRecords": 2, "nanoRecords": 1, "expected": 3}, "DECODED_POPULATION": 3,
         "DISTINCT_IDS": 3, "NAMED_TEMPLATES": 2, "UNNAMED_IDS": [3], "BOSS_MODIFIER_COUNT": 1,
         "BOSS_MODIFIERS": [{"id": 1, "name": "Boss Modifier Item Fixture"}],
-        "CURRENT_FIELDS": {key: 3 if key == "fullRdb" else 1 for key in ("fullRdb", "stats", "attack", "defend",
+        "CURRENT_FIELDS": {key: 3 if key == "fullRdb" else 0 if key == "positiveMultipleCount" else 1 for key in ("fullRdb", "stats", "attack", "defend",
             "eventsOrActions", "shops", "shopLines", "rawFallback", "nanoFields", "positiveAmmoType", "positiveMaxEnergy",
             "positiveMultipleCount", "negativeOneTickFunctions", "periodicFunctions")},
         "AURA_OF_REVIVAL_212161": [{"eventType": 1, "functionType": 1, "tickCount": -1, "tickInterval": 100}]}
@@ -420,6 +420,11 @@ class ReleaseContractTests(unittest.TestCase):
                            lambda value: value["TOOL_BUILD"].update(EXIT_CODE=1),
                            lambda value: value["VALIDATION"].update(CURRENT_ITEMS_DAT_READER="FAIL"),
                            lambda value: value["VALIDATION"]["CURRENT_FIELDS"].update(fullRdb=0),
+                           lambda value: value["VALIDATION"]["CURRENT_FIELDS"].update(positiveMultipleCount=-1),
+                           lambda value: value["VALIDATION"]["CURRENT_FIELDS"].update(positiveMultipleCount=True),
+                           lambda value: value["VALIDATION"]["CURRENT_FIELDS"].pop("positiveMultipleCount"),
+                           lambda value: value["VALIDATION"]["CURRENT_FIELDS"].update(rawFallback=-1),
+                           lambda value: value["VALIDATION"]["CURRENT_FIELDS"].update(rawFallback=True),
                            lambda value: value["EXPORTER_SOURCE_CLOSURE"][0].update(sha256="f" * 64),
                            lambda value: value["RDB_INPUTS"]["SHARDS"][0]["BEFORE_STATE"].__setitem__(3, 0)):
                 bad = copy.deepcopy(receipt)

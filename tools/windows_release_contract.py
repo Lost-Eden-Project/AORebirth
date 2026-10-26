@@ -478,9 +478,7 @@ def validate_generated_items_provenance(proof, public_sha):
     fields = validation.get("CURRENT_FIELDS", {})
     if (set(fields) != {"fullRdb", "stats", "attack", "defend", "eventsOrActions", "shops", "shopLines", "rawFallback", "nanoFields",
             "positiveAmmoType", "positiveMaxEnergy", "positiveMultipleCount", "negativeOneTickFunctions", "periodicFunctions"}
-            or fields.get("fullRdb") != count or any(type(fields.get(key)) is not int or fields[key] <= 0 for key in
-            ("stats", "attack", "defend", "eventsOrActions", "shops", "shopLines", "nanoFields", "positiveAmmoType",
-             "positiveMaxEnergy", "positiveMultipleCount", "negativeOneTickFunctions", "periodicFunctions"))
+            or fields.get("fullRdb") != count or any(type(value) is not int or value < 0 for value in fields.values())
             or any(set(row) != {"eventType", "functionType", "tickCount", "tickInterval"} for row in validation.get("AURA_OF_REVIVAL_212161", []))
             or not any(row.get("tickCount") == -1 and row.get("tickInterval", 0) > 0 for row in validation.get("AURA_OF_REVIVAL_212161", []))):
         raise ValueError("Current exporter/recent runtime fields were not validated")
