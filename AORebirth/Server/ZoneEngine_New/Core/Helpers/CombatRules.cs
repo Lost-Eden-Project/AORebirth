@@ -40,7 +40,7 @@ namespace ZoneEngine_New.Core.Helpers
             if (attacker.IsDead || target.IsDead || ReferenceEquals(attacker, target))
                 return false;
 
-            if (IsInRestrictedGas(target) || IsInRestrictedGas(attacker))
+            if (IsShieldedByGas(target) || IsInRestrictedGas(attacker))
                 return false;
 
             // A NoCombat NPC does not attack, and neither does anyone whose fighting a buff restricts.
@@ -100,7 +100,7 @@ namespace ZoneEngine_New.Core.Helpers
 
             if (!attacker.IsPlayer || attacker.IsDead || target.IsDead || ReferenceEquals(attacker, target))
                 return false;
-            if (IsInRestrictedGas(target) || IsInRestrictedGas(attacker))
+            if (IsShieldedByGas(target) || IsInRestrictedGas(attacker))
                 return false;
 
             // A player's pet is blocked exactly when its owner is.
@@ -121,6 +121,13 @@ namespace ZoneEngine_New.Core.Helpers
             return FightModeOf(character) == FightMode.NoFight;
         }
 
+        /// <summary>
+        /// 100% gas protects the target, except a player still in its disgrace: it keeps the PvP gas it left until the
+        /// disgrace ends.
+        /// </summary>
+        static bool IsShieldedByGas(Character target)
+            => IsInRestrictedGas(target) && target is not Player { SuppressionGas.InDisgrace: true };
+
         /// <summary>The suppression gas where <paramref name="character"/> stands; 75% off a playfield.</summary>
         public static FightMode FightModeOf(Character character)
         {
@@ -131,14 +138,15 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>
         /// Whether a player may attack <paramref name="target"/>, as the client decides it from the target's gas
         /// (Gamecode.dll N3Msg_HasVulnerableFightMode, 0x10017052): 25% another side, 5% anyone outside the target's
-        /// organization, 0% anyone. A PvP-flagged target can be attacked in any gas that allows fighting.
+        /// organization, 0% anyone. During a grace or disgrace the target is judged by the gas it came from
+        /// (<see cref="SuppressionGasPeriod"/>). A PvP-flagged target can be attacked in any gas that allows fighting.
         /// </summary>
         static bool IsPlayerVulnerable(Character attacker, Player target)
         {
             if ((target.ActionRestrictionFlags & PlayerAttackable) != 0)
                 return true;
 
-            switch (FightModeOf(target))
+            switch (target.SuppressionGas.Effective(FightModeOf(target)))
             {
                 case FightMode.Side:
                     return attacker.Stats.GetOrZero(CharacterStat.Side) != target.Stats.GetOrZero(CharacterStat.Side);

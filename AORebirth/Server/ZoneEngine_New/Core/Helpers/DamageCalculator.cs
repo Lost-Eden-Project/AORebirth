@@ -161,6 +161,8 @@ namespace ZoneEngine_New.Core.Helpers
             // PvP rules (Gameplay.json pvp.critChancePercent) scale the chance against a player.
             critChance = attacker.Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp
                 .ScaleCritChance(attacker, target, critChance) ?? critChance;
+            // The target's Critical Decrease (stat 391, CritialResistance here) takes points off the chance.
+            critChance -= NormalizeStat(target.Stats.GetOrZero(CharacterStat.CritialResistance));
             if (canCrit && !isBurst && NextInt(0, 100) < critChance)
             {
                 hitType = HitType.Critical;

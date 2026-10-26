@@ -23,6 +23,10 @@ namespace ZoneEngine_New.Core.Helpers
             ArgumentNullException.ThrowIfNull(attacker);
             ArgumentNullException.ThrowIfNull(target);
 
+            // Attacking anyone, or aiming a hostile nano at them, ends a PvP grace (Gamecode.dll 0x10069f8e, 0x10051a78).
+            if (!ReferenceEquals(attacker, target))
+                attacker.SuppressionGas.EndGrace();
+
             if (OtherPlayerSide(attacker, target) is not null)
                 Flag(attacker);
         }

@@ -1619,6 +1619,7 @@ namespace ZoneEngine_New.Core.Entities
             TickPerkLocks();
             TickPerkPulses();
             TickSelfTermination();
+            SuppressionGas.Update(this, DateTime.UtcNow);
             if (QuestLog?.Quests.Values.Any(quest => quest.IsRewardPending
                 || quest.IsActive && quest.NpcObjectiveCommitPending) == true)
                 Playfield?.GetService<Quests.QuestService>()?.RetryPendingRewards(this);
@@ -1632,6 +1633,9 @@ namespace ZoneEngine_New.Core.Entities
             _respawnPending = false;
             TryRespawn();
         }
+
+        /// <summary>PvP grace on entering suppression gas that allows PvP, disgrace on leaving it.</summary>
+        public ZoneEngine_New.Core.Playfield.SuppressionGasPeriod SuppressionGas { get; } = new();
 
         /// <summary>How long /terminate waits before the character dies.</summary>
         public static readonly TimeSpan SelfTerminationDelay = TimeSpan.FromMinutes(1);

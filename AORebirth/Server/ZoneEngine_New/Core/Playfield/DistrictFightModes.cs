@@ -43,17 +43,26 @@ namespace ZoneEngine_New.Core.Playfield
 
         static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+        /// <summary>PvP grace on entering a land-control district (Gamecode.dll 0x1003ecff).</summary>
+        public const int LandControlGraceSeconds = 60;
+
+        /// <summary>PvP grace on entering any other district, or a zone with no district.</summary>
+        public const int GraceSeconds = 15;
+
         readonly byte[]? _zoneToDistrict;
         readonly Dictionary<int, FightMode> _byDistrict;
+        readonly HashSet<int> _landControl;
         readonly FightMode? _uniform;
 
         /// <summary>No district data: everywhere is <see cref="FightMode.Normal"/>.</summary>
-        public static readonly DistrictFightModes None = new(null, new Dictionary<int, FightMode>(), FightMode.Normal);
+        public static readonly DistrictFightModes None = new(null, new Dictionary<int, FightMode>(), [], FightMode.Normal);
 
-        DistrictFightModes(byte[]? zoneToDistrict, Dictionary<int, FightMode> byDistrict, FightMode? uniform)
+        DistrictFightModes(byte[]? zoneToDistrict, Dictionary<int, FightMode> byDistrict, HashSet<int> landControl,
+            FightMode? uniform)
         {
             _zoneToDistrict = zoneToDistrict;
             _byDistrict = byDistrict;
+            _landControl = landControl;
             _uniform = uniform;
         }
 
@@ -66,9 +75,18 @@ namespace ZoneEngine_New.Core.Playfield
             if (_uniform is FightMode uniform)
                 return uniform;
 
-            int district = _zoneToDistrict is { } map ? (zone >= 0 && zone < map.Length ? map[zone] : -1) : zone;
-            return _byDistrict.TryGetValue(district, out FightMode mode) ? mode : UnknownDistrict;
+            return _byDistrict.TryGetValue(DistrictOf(zone), out FightMode mode) ? mode : UnknownDistrict;
         }
+
+        /// <summary>
+        /// How long the PvP grace lasts on entering <paramref name="zone"/>: <see cref="LandControlGraceSeconds"/> in a
+        /// district with a land-control level (DistrictData +0x44 above 0), else <see cref="GraceSeconds"/>.
+        /// </summary>
+        public int GraceSecondsAt(int zone)
+            => _landControl.Contains(DistrictOf(zone)) ? LandControlGraceSeconds : GraceSeconds;
+
+        int DistrictOf(int zone)
+            => _zoneToDistrict is { } map ? (zone >= 0 && zone < map.Length ? map[zone] : -1) : zone;
 
         public static DistrictFightModes Load(string root, int playfieldId, IZoneLogger logger)
         {
@@ -92,6 +110,7 @@ namespace ZoneEngine_New.Core.Playfield
                 return None;
 
             var byDistrict = new Dictionary<int, FightMode>(data.Districts.Length);
+            var landControl = new HashSet<int>();
             FightMode? uniform = null;
             bool mixed = false;
             foreach (PlayfieldDistrictEntry district in data.Districts)
@@ -102,13 +121,15 @@ namespace ZoneEngine_New.Core.Playfield
                 // The client clamps the mode into 0..4.
                 var mode = (FightMode)Math.Clamp(district.FightMode, (int)FightMode.NoFight, (int)FightMode.All);
                 byDistrict[district.DistrictIndex] = mode;
+                if (district.LandControlMinLevel > 0)
+                    landControl.Add(district.DistrictIndex);
                 if (uniform == null)
                     uniform = mode;
                 else if (uniform != mode)
                     mixed = true;
             }
 
-            return new DistrictFightModes(data.ZoneToDistrictMap, byDistrict, mixed ? null : uniform);
+            return new DistrictFightModes(data.ZoneToDistrictMap, byDistrict, landControl, mixed ? null : uniform);
         }
     }
 }

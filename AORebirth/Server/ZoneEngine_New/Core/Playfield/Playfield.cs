@@ -252,12 +252,14 @@ namespace ZoneEngine_New.Core.Playfield
         /// The fight mode where <paramref name="dynel"/> stands: its locality cell is the client's zone (an outdoor
         /// 40 m cell or an indoor room).
         /// </summary>
-        public FightMode FightModeOf(Dynel dynel)
+        public FightMode FightModeOf(Dynel dynel) => FightModes.At(ZoneOf(dynel));
+
+        /// <summary>The client's zone <paramref name="dynel"/> stands in: its locality cell, or -1 off the grid.</summary>
+        public int ZoneOf(Dynel dynel)
         {
             ArgumentNullException.ThrowIfNull(dynel);
-            int zone = dynel.Cell?.Id
+            return dynel.Cell?.Id
                 ?? (GetService<PlayfieldLocality>()?.Grid.TryGetCellId(dynel.Position, out int cellId) == true ? cellId : -1);
-            return FightModes.At(zone);
         }
 
         /// <summary>
