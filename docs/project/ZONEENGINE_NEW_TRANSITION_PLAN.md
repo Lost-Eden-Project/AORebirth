@@ -55,14 +55,24 @@ Use a separately supplied `AO_REBIRTH_MIGRATION_CONNECTION` secret. Runtime uses
 `AO_REBIRTH_MYSQL_CONNECTION`; do not grant runtime accounts DDL authority.
 Do not put either connection value in commands, reports, logs, or Git.
 
+The normal governed Windows core build also builds the current operator in
+Release configuration. Run that approved build first; operator commands use
+the resulting artifact without compiling its guarded schema dependency again.
+
 ```cmd
-dotnet run --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- status
-dotnet run --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- validate
-dotnet run --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- plan
+dotnet run --no-build --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- status
+dotnet run --no-build --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- validate
+dotnet run --no-build --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- plan
 ```
 
 The modifying command requires the exact, separately reviewed database name:
 `migrate --expected-database NAME --acknowledge-backup --acknowledge-engines-stopped`.
+Use the same built operator form:
+
+```cmd
+dotnet run --no-build --project Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj --configuration Release -- migrate --expected-database NAME --acknowledge-backup --acknowledge-engines-stopped
+```
+
 `NAME` is intentionally not populated: live schema/database identity was not
 inspected or approved by this task. The tool refuses a mismatch and holds a
 database-scoped migration lock. Run from the exact accepted tool artifact, never

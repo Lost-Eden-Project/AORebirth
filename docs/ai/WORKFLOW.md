@@ -421,6 +421,11 @@ backend. Build the three core engines without starting them with:
 cmd /d /c NewZoneEngineBuild\build.cmd
 ```
 
+This governed build also produces the current DatabaseMigrationTool in Release
+configuration without executing it. Separate operator commands use that exact
+artifact with `dotnet run --no-build --configuration Release`; schema writes
+still require their own approval and the documented backup/stop acknowledgements.
+
 To stop, rebuild, and start ChatEngine, LoginEngine, and `ZoneEngine_New` in the
 governed order, use:
 

@@ -14,6 +14,8 @@ set "ZONE_PROJ=AORebirth\Server\ZoneEngine_New\ZoneEngine_New.csproj"
 set "WORLD_PROJ=AORebirth\Server\WorldEngine\WorldEngine.csproj"
 set "PREFLIGHT_PROJ=Tools\DatabasePreflight\DatabasePreflight.csproj"
 set "PREFLIGHT_DIR=%REPO%\AORebirth\Built\Debug\DatabasePreflight"
+set "MIGRATION_PROJ=Tools\DatabaseMigrationTool\DatabaseMigrationTool.csproj"
+set "MIGRATION_DLL=Tools\DatabaseMigrationTool\bin\Release\net10.0\DatabaseMigrationTool.dll"
 set "SLN=AORebirth\AORebirth.sln"
 set "CHAT_EXE=AORebirth\Built\Debug\ChatEngine.exe"
 set "LOGIN_EXE=AORebirth\Built\Debug\LoginEngine.exe"
@@ -85,6 +87,11 @@ if errorlevel 1 (
     echo [NewZoneEngineBuild] ZoneEngine_New restore failed.
     exit /b 1
 )
+"%MSBUILD%" "%MIGRATION_PROJ%" /t:Restore /p:Configuration=Release /m:1 /nr:false /v:minimal
+if errorlevel 1 (
+    echo [NewZoneEngineBuild] DatabaseMigrationTool restore failed.
+    exit /b 1
+)
 
 echo [ACTIVE_CHECKOUT_WINS] Stopping positively identified AORebirth core engines before build...
 call "%REPO%\stop-engines.cmd" -CoreOnly
@@ -103,6 +110,17 @@ if errorlevel 1 (
 )
 if not exist "%PREFLIGHT_DIR%\DatabasePreflight.exe" (
     echo [NewZoneEngineBuild] Missing isolated DatabasePreflight.exe.
+    exit /b 1
+)
+rem Build the separate operator under this governed attempt; never execute migrations here.
+echo [NewZoneEngineBuild] Building DatabaseMigrationTool ^(Release^)...
+"%MSBUILD%" "%MIGRATION_PROJ%" /t:Build /p:Configuration=Release /m:1 /nr:false /v:minimal
+if errorlevel 1 (
+    echo [NewZoneEngineBuild] DatabaseMigrationTool build failed.
+    exit /b 1
+)
+if not exist "%MIGRATION_DLL%" (
+    echo [NewZoneEngineBuild] Missing: %CD%\%MIGRATION_DLL%
     exit /b 1
 )
 if exist "%CHAT_EXE%" (

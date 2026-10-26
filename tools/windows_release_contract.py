@@ -31,7 +31,7 @@ OUTPUTS = (
     "AORebirth/Built/Debug/ZoneEngine_New/ZoneEngine_New.exe", "AORebirth/Built/Debug/ZoneEngine_New/ZoneEngine_New.dll",
 )
 PRODUCT_PATHS = ("AORebirth/Server", "AORebirth/Libraries", "AORebirth/Config", "WindowsBuildNet10",
-                 "NewZoneEngineBuild", "Directory.Build.targets", "tools/windows_release_contract.py",
+                 "NewZoneEngineBuild", "Tools/DatabaseMigrationTool", "Directory.Build.targets", "tools/windows_release_contract.py",
                  "tools/windows_release_contract.cmd", "tools/build_aorebirth_debug.cmd", "start-engines.cmd", "start-engines.ps1")
 CONFIG_OVERRIDES = {"AORebirth/Config/Config.xml", "AORebirth/Config/ChatEngine.Config.xml"}
 MISSING = object()
