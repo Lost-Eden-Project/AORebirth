@@ -29,6 +29,17 @@ GameData manifest chain. Apply it before any build or release; older description
 must not bypass its acceptance stop or replace accepted inputs with moving tips.
 Exact private content/repository/tooling bindings remain in private governance.
 
+PATCH MODE is the default under that contract. Scope compilation, publication,
+validation and transfer to the changed inputs and their impacted dependency
+closure; retain verified unchanged artifacts with their original provenance and
+the required current derived receipt. FULL RELEASE MODE is limited to the
+contract's explicit conditions, not a routine response to a small patch or an
+unrelated inherited failure. The complete GameData manifest is a logical result
+of the verified checkpoint and accepted delta, including removals; completeness
+does not require copying or transferring the whole tree again. These scope and
+reuse rules preserve fresh source/content intake, explicit Windows acceptance,
+frozen inputs, online-only Linux publication and separate deployment authority.
+
 ## Checkout ownership and deployment-tooling access
 
 <!-- deployment-tooling-access:start -->
@@ -153,19 +164,19 @@ Fetch public master and private content upstream
         |
 Synchronize Windows and reconcile all approved content changes
         |
-Windows build/startup readiness and deterministic GameData manifest
+Impacted Windows build/startup readiness and complete logical GameData manifest
         |
 STOP for Mike's testing and explicit Windows acceptance
         |
 Freeze accepted public SHA, dump SHA and Windows GameData manifest
         |
-Existing private GitHub Actions Linux/live-server package build
+Existing private GitHub Actions impacted Linux build/package with verified reuse
         |
 Linux/package validation and identical Windows/Linux GameData manifests
         |
 Separately authorized normal deployment of the complete accepted result
         |
-Compute live manifest and require Windows == Linux == live
+Verify logical live manifest and require Windows == Linux == live
 ```
 
 Every production deployment must originate from Mike's explicitly accepted
@@ -223,7 +234,10 @@ For a release, record the authoritative public source SHA separately from the
 derived private Linux source and package SHAs. Runtime source must match that
 accepted public source, with only documented Linux build/platform adaptations.
 Build/package and running-engine receipts must identify the exact accepted
-inputs. Keep server secrets and active host configuration private; product/runtime
+inputs and distinguish newly executed builds from verified unchanged-artifact
+reuse. A derived receipt binds retained output to the current accepted input
+closure; it must not relabel an old build or validation as newly executed.
+Keep server secrets and active host configuration private; product/runtime
 repairs go through public master first. The tooling checkout supplies operational
 files only and never changes the accepted product source authority.
 

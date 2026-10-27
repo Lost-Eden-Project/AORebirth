@@ -219,6 +219,16 @@ upstream every attempt, reconcile every approved addition/modification/removal,
 and preserve legitimate canonical repairs and private/generated content before
 the Windows build.
 
+PATCH MODE is the default; FULL RELEASE MODE is permitted only under the
+conditions in the build/release contract. Record the code/content impact and
+dependency closure before selecting build, publish, validation and transfer
+work. Build impacted engines and dependencies through the existing supported
+workflow; reuse verified unchanged outputs with their original provenance and
+the required current derived receipt. The full-engine commands documented below
+describe their existing scope, not an instruction to rebuild every engine for
+every patch. This policy does not introduce undocumented command switches or
+waive a current source/content, acceptance or publication check.
+
 The public Windows contract entrypoint is:
 
 ```cmd
@@ -231,13 +241,13 @@ decisions. The normal product build wrapper enforces the same pre-build intake;
 direct product builds must not bypass it. Private role bindings and canonical
 data remain in the configured private intake settings.
 
-When a release explicitly requires renewed item data, build the current
+When changed inputs or an explicit fresh-data instruction require renewed item data, build the current
 Tools/RDBDataExtractor/RDBDataExtractor.csproj from that exact public SHA and
 run its existing items-only extraction into a new Git-ignored staging directory.
 Record the actual successful build/extraction commands and UTC times, complete
 source and tool-output identities, stable RDB index/shard inputs, staged
 items.dat identity and current compiled ItemsDatReader results in the ignored
-version-1 generated-items receipt. Do not substitute an older catalog or build.
+version-1 generated-items receipt. Do not substitute an unproven older catalog or build.
 Set REQUIRE_GENERATED_ITEMS in the ignored release profile for this requirement.
 
 Pass that receipt through the existing content-plan approval flow:
@@ -248,8 +258,12 @@ cmd /d /c tools\windows_release_contract.cmd reconcile-content --generated-items
 ```
 
 Only the protected items.dat may be adopted this way, together with the ordinary
-approved additions/modifications/removals. A fresh export may be byte-identical;
-its new provenance is still required. An explicitly approved
+approved additions/modifications/removals. When fresh regeneration is required,
+a byte-identical export still needs its measured new provenance. An unrelated
+product SHA change alone does not require regeneration: qualified cache or
+derived-receipt reuse must prove the relevant source/tool/input closure and
+output hashes unchanged under the contract, preserving the original execution
+identity rather than claiming another export. An explicitly approved
 REQUIRED_CURRENT_CATALOGS profile mapping may restore an absent required catalog
 from its exact current public or private source; it never replaces present
 private content. The next normal build carries these measured bindings without
@@ -282,9 +296,13 @@ Freeze the accepted tuple for Linux and any separately authorized deployment.
 New upstream tips are next-release inputs, not automatic replacements or reasons
 to invalidate accepted inputs. Linux and live-server binaries/packages must be
 built by the existing private GitHub Actions online builder. Supply the exact
-Windows-accepted canonical dataset and require identical complete Windows,
-Linux and live GameData manifests. Incremental packaging must include every
-accepted addition/modification/removal and produce that complete result.
+Windows-accepted canonical dataset and require identical complete logical
+Windows, Linux and live GameData manifests. Use the verified checkpoint plus
+every accepted addition/modification/removal to prove the result; a full logical
+manifest does not mandate whole-tree copying, hashing, transfer or republishing
+unchanged engine payloads. Preserve the contract's integrity/cache requirements
+and exclude research, raw evidence, caches and temporary build material from
+runtime payloads. Only required runtime content belongs in the accepted result.
 
 ### Editable NewEngine content
 
@@ -300,11 +318,11 @@ Historical capture and binding ledgers remain offline evidence. The retired
 Legacy executable and compiled NPC catalogs are not required to edit or validate
 NewEngine content.
 
-After code changes that affect server binaries:
+After code changes that affect server binaries, apply the recorded impact scope:
 
 1. Stop engines if running processes are locking build outputs.
-2. Build.
-3. Restart Chat, Login, and Zone with the root restart wrapper.
+2. Build the impacted dependency closure using the supported governed path.
+3. Restart affected engines and required runtime dependencies through the existing supported lifecycle workflow; use the full restart wrapper only when its complete scope is required.
 4. Check engine status and expected ports only through the existing quick wrapper output.
 5. Do not start WebEngine unless explicitly needed.
 
@@ -419,8 +437,9 @@ only processes launched by that invocation. Managed shutdown trusts either
 validated active-checkout PID metadata or exact canonical AORebirth engine
 identity; it never kills by process name or port alone.
 
-Normal build/acceptance also builds and tests `ZoneEngine_New`, the only zone
-backend. Build the three core engines without starting them with:
+The existing full core-engine build includes `ZoneEngine_New`, the only zone
+backend. It does not authorize automated suites. Build the full core-engine set
+without starting it, when that scope is required, with:
 
 ```cmd
 cmd /d /c NewZoneEngineBuild\build.cmd

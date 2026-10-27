@@ -5,6 +5,104 @@ attempt. It supersedes older workflow descriptions that allow unaccepted Linux
 release work, separate Linux content reconstruction or moving accepted inputs.
 Repository `AGENTS.md` remains the agent-behavior authority.
 
+## PATCH MODE default and FULL RELEASE MODE escalation
+
+<!-- patch-release-policy:start -->
+PATCH MODE is the default for routine AORebirth patches. This policy governs
+release scope and supersedes older unconditional full-build, full-copy, broad-test
+and repeated-baseline-review instructions. It does not change product authority,
+input identity, Windows acceptance, privacy or deployment authorization.
+
+FULL RELEASE MODE is permitted only when Mike explicitly requests it or a
+material architecture, schema, build-system, engine-topology or other release-wide
+compatibility change actually requires it. Record the changed paths, material
+effect and necessary broader work before escalation. Unrelated inherited failures,
+a new source SHA, a receipt-format issue or a missing incremental-tooling feature
+never silently escalates PATCH MODE.
+
+PATCH MODE follows this sequence:
+
+1. Fetch and synchronize current public Windows master; require
+   LOCAL_WINDOWS_SOURCE_SHA == PUBLIC_MASTER_SHA.
+2. Check the configured PRIVATE_CONTENT_UPSTREAM on every build. Reconcile only
+   actual approved GameData additions, modifications and removals; preserve
+   legitimate private runtime repairs and generated runtime content.
+3. Build/test Windows first within the changed dependency/subsystem scope.
+   Existing explicit authorization requirements for automated suites and client
+   control still apply. Stop for Mike's exact-input Windows acceptance.
+4. Freeze the accepted source SHA, content-dump SHA, GameData manifest and
+   build/startup receipt. Never reuse acceptance for a changed tuple.
+5. Use dependency analysis and incremental detection in the existing private
+   GitHub Actions online builder to build only impacted Linux engines/projects
+   and transitive dependencies. Reuse verified unchanged engine outputs.
+6. Produce a delta package containing changed binaries/dependencies, changed or
+   added GameData, and an explicit GameData removal list (empty when no removals).
+   Do not download/reconstruct an entire previous release merely to create a patch.
+7. With explicit deployment authorization, deploy that immutable delta; validate
+   the actual-database backup, required migration state, affected service readiness
+   and dependent health, provenance, package integrity and final manifest match.
+   No local Docker/WSL or production Linux build is an alternative.
+
+Whole-tree manifest consistency describes the complete logical target, not a
+requirement to copy or reconstruct every file. Derive the target deterministically
+from a verified base plus the accepted delta and removal list; reuse validated
+unchanged entries/assets. Require Windows == Linux == live complete GameData
+manifests. Never preserve an unexplained Linux-only overlay, omit a removal,
+prune unrelated private content or substitute an unchecked cache for authority.
+
+Record a known baseline failure once with its subsystem/input fingerprint,
+failure signature and evidence. Reuse that record when the subsystem and relevant
+inputs are unchanged. Do not rerun unrelated inherited failures, investigate them
+as new regressions, or use them to justify broad gameplay/cave/client suites.
+PATCH MODE fails only for:
+
+| Failure condition | PATCH MODE result |
+| --- | --- |
+| NEW_FAILURE | FAIL |
+| CHANGED_BASELINE_FAILURE | FAIL |
+| FAILURE_IN_PATCH_TOUCHED_CODE_OR_DATA | FAIL |
+| REQUIRED_RELEASE_CONTRACT_FAILURE | FAIL |
+| UNCHANGED_UNRELATED_BASELINE_FAILURE | RECORD_AND_CONTINUE |
+
+Declare an explicit test/check timeout before execution, using the check's
+expected workload. Silence is not a hang. Do not interrupt a quiet test before
+its declared timeout expires. On expiry retain diagnostics and stop only the
+owned process. Broad suites require patch relevance and existing authorization;
+FULL RELEASE MODE does not erase baseline classifications or timeout discipline.
+
+Canonical GameData admits only explicitly identified runtime-consumed content:
+loader/configuration/schema-backed paths and reviewed generated runtime outputs.
+An extension such as JSON alone is not proof of runtime use. Cache, research
+output, reports, documentation/README files, screenshots, temporary exports,
+build artifacts, logs, backups and other non-runtime material must fail admission
+or be deterministically excluded BEFORE manifest/package generation. Unknown or
+unclassified paths fail closed; reject path/symlink escapes. Excluded material
+stays outside canonical GameData. Do not silently delete unique evidence or
+rewrite an accepted package; any cleanup delta uses normal governed ownership,
+review and an explicit removal list.
+
+Use available GitHub Actions caching for package restore, build intermediates,
+unchanged private assets and unchanged GameData. Cache keys/provenance must bind
+relevant source/dependency/content identities and reject stale or corrupt reuse.
+Automatically derive impact, manifests, source audits and receipt metadata from
+verified inputs and actual execution. Do not stage policy/receipt files manually
+outside the governed pipeline or fabricate approvals, hashes, measurements or
+acceptance. Fresh upstream checks, source parity and trust-boundary validation
+remain mandatory even on a cache hit.
+
+Optimize the shortest safe path: Windows accepted -> GitHub Actions incremental
+build -> delta package -> deployment. Record phase timings and cache decisions
+automatically; reuse unchanged verified evidence instead of hour-long manual
+release investigations. Broader FULL RELEASE work must remain tied to its
+recorded material trigger or Mike's explicit request.
+
+These are governance requirements, not a claim that every existing wrapper
+already implements selective execution, caching or runtime-content filtering.
+If an entrypoint cannot satisfy PATCH MODE, identify its exact limitation and
+the smallest required tooling correction; do not bypass a release gate, invent
+unsupported switches, silently perform heavyweight work or relabel it FULL.
+<!-- patch-release-policy:end -->
+
 ## Authorities and roles
 
 | Role | Authority and permitted responsibility |
@@ -93,19 +191,20 @@ user-acceptance cycle. Changed inputs invalidate the prior acceptance.
    `PUBLIC_RUNTIME_DIFFS=0`. Private derived commits do not make Linux an
    independent product authority; runtime equality is not waived by tooling or
    content allowances.
-3. Supply the exact Windows-accepted canonical GameData. Do not reconstruct a
-   separate Linux dataset or substitute a dump/cache/package for the accepted
-   canonical tree.
+3. Supply the exact Windows-accepted logical GameData result through only its
+   actual delta and explicit removal list. Reuse verified unchanged content;
+   do not recopy/reconstruct the entire tree or create a separate Linux dataset.
 4. Use the existing private GitHub Actions online builder only. Do not build
    Linux or live-server files locally through Docker/WSL, on production, or
    through an alternate builder. GitHub Actions produces the validated Linux
    binaries and deployable live-server package from the frozen inputs.
 5. Produce `LINUX_GAMEDATA_MANIFEST` with the same complete deterministic
    algorithm and require equality with `WINDOWS_GAMEDATA_MANIFEST`.
-6. Validate all required engine publishes, WorldEngine when present,
-   Login/Zone/Chat, package integrity, startup/readiness, service integration,
-   provenance and GameData completeness. Preserve the existing distinction
-   between proven public baseline findings and new Linux failures.
+6. Build/publish only the impacted engine/project dependency closure. Reuse
+   verified unchanged engine outputs and evidence; validate the complete target
+   inventory, package integrity, affected/dependent startup/readiness, provenance
+   and GameData completeness. WorldEngine remains included when required by the
+   current topology. Apply the PATCH MODE baseline and touched-failure rules.
 7. Push validated Linux results only to the verified private Linux destination.
    Stop there unless deployment is explicitly authorized.
 
