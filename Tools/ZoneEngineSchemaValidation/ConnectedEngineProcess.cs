@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 /// <summary>Owns only an explicitly supplied binary, fixture environment, loopback listener and shutdown file.</summary>
 sealed class ConnectedEngineProcess : IDisposable
@@ -170,6 +171,29 @@ sealed class ConnectedEngineProcess : IDisposable
         }
         catch { Dispose(); throw; }
     }
+    public static (string SourceSha, string ProofSha) ValidateProvenChestShutdownBaseline()
+    {
+        string path = Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_SHUTDOWN_BASELINE_PATH") ?? "";
+        string expected = Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_SHUTDOWN_BASELINE_SHA256") ?? "";
+        if (!Path.IsPathFullyQualified(path) || !File.Exists(path)
+            || !System.Text.RegularExpressions.Regex.IsMatch(expected, "^[0-9a-f]{64}$"))
+            throw new FixtureFailure("chest-shutdown-baseline-proof-required");
+        byte[] bytes = File.ReadAllBytes(path);
+        string actual = Convert.ToHexStringLower(SHA256.HashData(bytes));
+        if (actual != expected)
+            throw new FixtureFailure("chest-shutdown-baseline-proof-hash-mismatch");
+        using var document = JsonDocument.Parse(bytes);
+        JsonElement proof = document.RootElement;
+        string source = proof.GetProperty("PUBLIC_MASTER_SHA").GetString() ?? "";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(source, "^[0-9a-f]{40}$")
+            || proof.GetProperty("FORMAT_VERSION").GetInt32() != 1
+            || proof.GetProperty("CLASSIFICATION").GetString() != "PROVEN_CURRENT_PUBLIC_BASELINE_SHUTDOWN_FAILURE"
+            || proof.GetProperty("RUNTIME_SOURCE_DIFFS").GetInt32() != 0
+            || !proof.GetProperty("NO_FORCE").GetBoolean() || !proof.GetProperty("NO_TIMEOUT").GetBoolean())
+            throw new FixtureFailure("chest-shutdown-baseline-proof-metadata-invalid");
+        return (source, actual);
+    }
+
     public void Stop(bool allowProvenChestShutdownBaseline = false)
     {
         File.WriteAllText(shutdown, "stop");
@@ -188,9 +212,10 @@ sealed class ConnectedEngineProcess : IDisposable
         if (allowProvenChestShutdownBaseline && role == "zone" && process.ExitCode == 3
             && failures.SequenceEqual(new[] { "NotSupportedException", "ObjectDisposedException" }))
         {
+            var baseline = ValidateProvenChestShutdownBaseline();
             UsedProvenShutdownBaseline = true;
             Console.WriteLine("CONNECTED_ENGINE_STOP_ACCEPTANCE=PASS_WITH_PROVEN_BASELINE_EXCEPTIONS"
-                + " BASELINE_SOURCE_SHA=4f66c4c20d0e6f5f6e300082d81482944b028680");
+                + " BASELINE_SOURCE_SHA=" + baseline.SourceSha + " BASELINE_PROOF_SHA256=" + baseline.ProofSha);
             return;
         }
         throw new FixtureFailure("connected-clean-shutdown-exit-" + process.ExitCode);

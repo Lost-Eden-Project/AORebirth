@@ -1,5 +1,20 @@
 # AORebirth Project State
 
+PROVEN DEVELOPMENT VALIDATION (2026-10-26, ordinary RK mission chests): the
+reviewed positive policy and independent seasonal/special vetoes constrain new
+loot and withhold restricted persisted rows without deleting their audit records
+or changing player-owned inventory. The production selector completed 10,000
+populations across mission QLs 1–250 with zero unauthorized selections; existing
+rarity weights, implant eligibility and dedicated event loot remain unchanged.
+The core cohort has 293 passes and seven independently reproduced public-source
+baseline failures; disposable MySQL has 50 passing checks. The broader cave
+corpus is not green: a public native geometry crash is reproduced, while the
+long-run null-reference signatures remain unresolved despite isolated passes.
+No claim of complete cave acceptance follows from those isolated controls.
+Feature validation receipts cannot authorize production publishing or release
+acceptance. Windows installation, exact-input user acceptance and any subsequent
+Linux/live results are recorded separately in private release evidence.
+
 PROVEN, PUBLIC-MASTER INTEGRATED (2026-10-25, generated mission chests): validated chest integration and final cave corrections are in public master at `b63f02bc25761b59744d586d88403695117a8d82`. Reconstruction preserves sealed identities, positions, appearance and remaining contents, including empty populations. Four Windows engines, focused regressions, 104 real cave layouts, isolated MySQL and owned TCP validation are recorded in [the final merge report](../reports/MISSION_CHEST_MASTER_MERGE_FINAL.md), including baseline exceptions and bounded density limits. Linux preparation remains unvalidated; original-client acceptance and deployment were not performed.
 
 

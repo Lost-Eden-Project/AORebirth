@@ -21,11 +21,12 @@ public sealed class MissionChestLootService
     readonly IItemTemplateCatalog _catalog;
     readonly IItemBuilder _items;
     readonly MissionChestPolicy _policy;
+    readonly MissionChestRKAllowlist _allowlist;
     readonly HashInstance[] _families;
     readonly ConcurrentDictionary<int, EligiblePool> _eligible = new();
 
     public MissionChestLootService(IItemTemplateCatalog catalog, IGameData gameData,
-        IItemBuilder items, MissionChestPolicy policy)
+        IItemBuilder items, MissionChestPolicy policy, MissionChestRKAllowlist? allowlist = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(gameData);
@@ -36,6 +37,7 @@ public sealed class MissionChestLootService
         _catalog = catalog;
         _items = items;
         _policy = policy.Clone();
+        _allowlist = allowlist ?? MissionChestRKAllowlist.Load(gameData.RootPath, gameData.ItemFamilies);
         _families = BuildFamilies(gameData.ItemFamilies);
     }
 
@@ -51,11 +53,49 @@ public sealed class MissionChestLootService
     public Item RollItem(int missionQuality, Random random)
     {
         ArgumentNullException.ThrowIfNull(random);
-        if (missionQuality is < 1 or > 250)
-            throw new ArgumentOutOfRangeException(nameof(missionQuality));
-        EligiblePool pool = _eligible.GetOrAdd(missionQuality, BuildEligible);
+        (QualityChoice choice, string rarity) = Select(missionQuality, random);
+        Item minted = _items.CreateWithNewInstance(choice.LowId, choice.HighId, choice.Quality, ItemSource.Loot);
+        if (minted.LowId != choice.LowId || minted.HighId != choice.HighId || minted.Quality != choice.Quality
+            || !IsApproved(minted, missionQuality, _allowlist) || RarityKey(minted.Definition) != rarity)
+            throw new InvalidDataException("Item builder changed an approved chest selection.");
+        return minted;
+    }
+
+    /// <summary>Same count and selection as Roll, without allocating instance IDs or touching inventory.</summary>
+    public IReadOnlyList<MissionChestLootPreview> RollPreview(int missionQuality, Random random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        var result = new MissionChestLootPreview[random.Next(_policy.MinItems, _policy.MaxItems + 1)];
+        for (int index = 0; index < result.Length; index++)
+        {
+            (QualityChoice choice, string rarity) = Select(missionQuality, random);
+            ItemTemplate definition = _items.CreateTemplate(choice.LowId, choice.HighId, choice.Quality);
+            if (!ApprovedDefinition(definition, choice.LowId, choice.HighId, choice.Quality)
+                || RarityKey(definition) != rarity)
+                throw new InvalidDataException("Item builder changed an approved chest preview.");
+            result[index] = new MissionChestLootPreview(choice.LowId, choice.HighId, choice.Quality,
+                definition.Name, rarity, _allowlist.EvidenceFor(choice.LowId, choice.HighId, choice.Quality),
+                _allowlist.ClassificationFor(choice.LowId, choice.HighId, choice.Quality));
+        }
+        return result;
+    }
+
+    public MissionChestLootDiagnostics GetDiagnostics(int missionQuality)
+    {
+        EligiblePool pool = GetPool(missionQuality);
+        return new MissionChestLootDiagnostics(pool.ApprovedCandidates,
+            _families.Length - pool.ApprovedCandidates,
+            pool.Groups.Sum(group => group.Items.Sum(item => item.Qualities.Length)));
+    }
+
+    (QualityChoice Choice, string Rarity) Select(int missionQuality, Random random)
+    {
+        EligiblePool pool = GetPool(missionQuality);
         if (pool.Groups.Length == 0)
-            throw new InvalidOperationException("No eligible mission chest items for mission QL " + missionQuality);
+            throw new InvalidOperationException("RK chest loot coverage gap: missionQL=" + missionQuality
+                + " itemQL=" + Math.Max(1, missionQuality - 5) + ".." + Math.Min(250, missionQuality + 5)
+                + " approvedEntries=" + _allowlist.Count + " reason="
+                + (_allowlist.UnavailableReason ?? "no-approved-identity-and-quality"));
 
         // Eligibility comes first. Empty groups have no weight, so this sum renormalizes the configured groups.
         double roll = random.NextDouble() * pool.TotalWeight;
@@ -68,14 +108,15 @@ public sealed class MissionChestLootService
             selected = group;
             break;
         }
-
         EligibleItem item = selected.Items[random.Next(selected.Items.Length)];
-        QualityChoice choice = item.Qualities[random.Next(item.Qualities.Length)];
-        Item minted = _items.CreateWithNewInstance(choice.LowId, choice.HighId, choice.Quality, ItemSource.Loot);
-        if (minted.Quality != choice.Quality || !CanCarry(minted.Definition)
-            || RarityKey(minted.Definition) != selected.Rarity)
-            throw new InvalidDataException("Item builder changed an eligible chest selection.");
-        return minted;
+        return (item.Qualities[random.Next(item.Qualities.Length)], selected.Rarity);
+    }
+
+    EligiblePool GetPool(int missionQuality)
+    {
+        if (missionQuality is < 1 or > 250)
+            throw new ArgumentOutOfRangeException(nameof(missionQuality));
+        return _eligible.GetOrAdd(missionQuality, BuildEligible);
     }
 
     HashInstance[] BuildFamilies(IReadOnlyCollection<HashInstance> source)
@@ -83,6 +124,7 @@ public sealed class MissionChestLootService
         var result = new List<HashInstance>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var covered = new HashSet<int>();
+        var knownPairs = new HashSet<(int LowId, int HighId)>();
         foreach (HashInstance family in source)
         {
             int[] ids = family.TemplateIds.Distinct().Order().ToArray();
@@ -97,11 +139,31 @@ public sealed class MissionChestLootService
                 continue;
             result.Add(new HashInstance(family.Hash, ids));
             covered.UnionWith(ids);
+            int[] ordered = ids.OrderBy(id => _catalog.Require(id).Quality).ToArray();
+            for (int index = 0; index < ordered.Length - 1; index++)
+                knownPairs.Add((ordered[index], ordered[index + 1]));
+        }
+
+        // Reviewed existing endpoint pairs can come from other exact GameData metadata (for example mission
+        // reward pairs). Missing loot-hash leaves must not force a guessed family or an unrestricted fallback.
+        foreach ((int lowId, int highId) in _allowlist.ApprovedPairs.OrderBy(pair => pair.LowId).ThenBy(pair => pair.HighId))
+        {
+            if (lowId == highId || knownPairs.Contains((lowId, highId))
+                || !_catalog.TryGet(lowId, out ItemTemplate low) || !_catalog.TryGet(highId, out ItemTemplate high)
+                || low.Quality < 1 || high.Quality <= low.Quality)
+                continue;
+            int[] ids = new[] { lowId, highId }.Order().ToArray();
+            if (!seen.Add(string.Join(",", ids)))
+                continue;
+            result.Add(new HashInstance("rk-approved:" + lowId + ":" + highId, ids));
+            covered.UnionWith(ids);
+            knownPairs.Add((lowId, highId));
         }
 
         foreach (ItemTemplate template in _catalog.Templates.OrderBy(template => template.Id))
         {
-            if (template.Id <= 0 || template.Quality < 1 || covered.Contains(template.Id))
+            if (template.Id <= 0 || template.Quality < 1 || covered.Contains(template.Id)
+                    && !_allowlist.IsAllowed(template.Id, template.Id, template.Quality))
                 continue;
             // No name-based pairing or fabricated quality range for records absent from family metadata.
             result.Add(new HashInstance(template.Id.ToString(CultureInfo.InvariantCulture), [template.Id]));
@@ -115,6 +177,7 @@ public sealed class MissionChestLootService
         int maximum = Math.Min(250, missionQuality + 5);
         var groups = new Dictionary<string, List<EligibleItem>>(StringComparer.Ordinal);
         var uniqueChoices = new Dictionary<string, HashSet<QualityChoice[]>>(StringComparer.Ordinal);
+        int approvedCandidates = 0;
         foreach (HashInstance family in _families)
         {
             int lowQuality = family.TemplateIds.Min(id => _catalog.Require(id).Quality);
@@ -129,9 +192,13 @@ public sealed class MissionChestLootService
                 if (!HashItemCatalog.TrySelectIds(family, quality, id => _catalog.Require(id).Quality,
                         out int lowId, out int highId))
                     continue;
+                // A family link, Carry flag or absent expansion requirement is never acquisition evidence.
+                // Authorize the exact pair and QL before invoking interpolation, including both endpoints.
+                if (!_allowlist.IsAllowed(lowId, highId, quality))
+                    continue;
                 // Existing builder owns endpoint choice, all interpolation (including Rarity), and QL clamping.
                 ItemTemplate definition = _items.CreateTemplate(lowId, highId, quality);
-                if (definition.Quality != quality || !CanCarry(definition))
+                if (!ApprovedDefinition(definition, lowId, highId, quality))
                     continue;
                 string rarity = RarityKey(definition);
                 if (!_policy.RarityWeights.ContainsKey(rarity))
@@ -145,6 +212,9 @@ public sealed class MissionChestLootService
                 }
                 choices.Add(new QualityChoice(lowId, highId, quality));
             }
+
+            if (qualities.Count != 0)
+                approvedCandidates++;
 
             foreach ((string rarity, List<QualityChoice> choices) in qualities)
             {
@@ -164,8 +234,19 @@ public sealed class MissionChestLootService
 
         EligibleGroup[] eligible = groups.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => new EligibleGroup(pair.Key, _policy.RarityWeights[pair.Key], pair.Value.ToArray())).ToArray();
-        return new EligiblePool(eligible, eligible.Sum(group => group.Weight));
+        return new EligiblePool(eligible, eligible.Sum(group => group.Weight), approvedCandidates);
     }
+
+    bool ApprovedDefinition(ItemTemplate definition, int lowId, int highId, int quality)
+        => definition.Quality == quality && (definition.Id == lowId || definition.Id == highId)
+            && CanCarry(definition) && _allowlist.IsAllowed(lowId, highId, quality);
+
+    public static bool IsApproved(Item item, int missionQuality, MissionChestRKAllowlist allowlist)
+        => missionQuality is >= 1 and <= 250
+            && item.Quality >= Math.Max(1, missionQuality - 5) && item.Quality <= Math.Min(250, missionQuality + 5)
+            && item.Definition.Quality == item.Quality
+            && (item.Definition.Id == item.LowId || item.Definition.Id == item.HighId)
+            && CanCarry(item.Definition) && allowlist.IsAllowed(item.LowId, item.HighId, item.Quality);
 
     static bool CanCarry(ItemTemplate template)
         => template.Stats.TryGetValue(CharacterStat.Can, out int can) && ((uint)can & (uint)CanFlags.Carry) != 0;
@@ -193,5 +274,9 @@ public sealed class MissionChestLootService
 
     sealed record EligibleItem(QualityChoice[] Qualities);
     sealed record EligibleGroup(string Rarity, double Weight, EligibleItem[] Items);
-    sealed record EligiblePool(EligibleGroup[] Groups, double TotalWeight);
+    sealed record EligiblePool(EligibleGroup[] Groups, double TotalWeight, int ApprovedCandidates);
 }
+
+public sealed record MissionChestLootPreview(int LowId, int HighId, int Quality, string Name, string Rarity,
+    string[] Evidence, string Classification = MissionChestRKAllowlist.OrdinaryClassification);
+public sealed record MissionChestLootDiagnostics(int ApprovedCandidates, int RejectedCandidates, int EligibleChoices);

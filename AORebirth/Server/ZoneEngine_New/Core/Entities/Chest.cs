@@ -7,6 +7,7 @@ namespace ZoneEngine_New.Core.Entities
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Network;
+    using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Playfield.Locality;
 
@@ -50,6 +51,11 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Reloads authoritative durable contents before each new open, never on a close toggle.</summary>
         public Func<Chest, bool>? RefreshLoot { get; set; }
+
+        /// <summary>Generated mission chests bind the current RK policy; generic containers retain their own rules.</summary>
+        public Func<Item, bool>? LootItemValidator { get; set; }
+
+        public bool CanDistribute(Item item) => LootItemValidator?.Invoke(item) != false;
 
         /// <summary>Stat 299 a lockable chest must carry for the client to allow a lock pick on it.</summary>
         public int LockDifficulty { get; }

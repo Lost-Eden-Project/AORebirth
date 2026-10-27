@@ -64,6 +64,10 @@ public sealed class MissionChestPopulation
     {
         if (_materialized || _retired)
             return true;
+        IGameData policyData = world.GetRequiredService<IGameData>();
+        MissionChestRKAllowlist allowlist = MissionChestRKAllowlist.Load(policyData.RootPath, policyData.ItemFamilies);
+        if (allowlist.UnavailableReason != null)
+            _logger.Warn("Mission chest RK policy unavailable " + Context + " reason=" + allowlist.UnavailableReason);
         List<MissionChestSnapshot>? stored = ReadStored();
         bool reconstructed = stored != null;
         if (stored == null)
@@ -93,7 +97,11 @@ public sealed class MissionChestPopulation
             }
             if (!MissionChestPlacement.TryGetChestSphere(data, templates, _policy, out var sphere))
                 return Defer("chest-collision-sphere-unavailable-or-invalid");
-            var loot = new MissionChestLootService(templates, data, _items, _policy);
+            var loot = new MissionChestLootService(templates, data, _items, _policy, allowlist);
+            if (_policy.RoomDensity > 0 && loot.GetDiagnostics(_parameters.Quality).EligibleChoices == 0)
+                return Defer("rk-loot-coverage-gap missionQL=" + _parameters.Quality
+                    + " itemQL=" + Math.Max(1, _parameters.Quality - 5) + ".." + Math.Min(250, _parameters.Quality + 5)
+                    + " approvedEntries=" + allowlist.Count);
             IItemInstanceIdAllocator ids = world.GetRequiredService<IItemInstanceIdAllocator>();
             var initial = new List<MissionChestInitialData>();
             var diagnostics = new MissionChestPlacementDiagnostics { CaptureRouteWitnesses = false };
@@ -181,9 +189,10 @@ public sealed class MissionChestPopulation
                 SpawnDefinition = snapshot.SpawnDefinition,
                 CollisionRadius = snapshot.CollisionRadius,
                 AccessValidator = player => !_retired,
-                RefreshLoot = target => Refresh(target, inventory, catalog)
+                RefreshLoot = target => Refresh(target, inventory, catalog, allowlist),
+                LootItemValidator = item => MissionChestLootService.IsApproved(item, _parameters.Quality, allowlist)
             };
-            if (!Refresh(chest, inventory, catalog))
+            if (!Refresh(chest, inventory, catalog, allowlist))
                 throw new InvalidDataException("The persisted chest contents cannot be reconstructed.");
             // An empty chest is deliberately materialized too; its durable empty rows never reroll.
             if (!registry.TryRegister(chest))
@@ -244,7 +253,7 @@ public sealed class MissionChestPopulation
         return snapshots;
     }
 
-    bool Refresh(Chest chest, IInventoryRepository inventory, IItemTemplateCatalog catalog)
+    bool Refresh(Chest chest, IInventoryRepository inventory, IItemTemplateCatalog catalog, MissionChestRKAllowlist allowlist)
     {
         if (_retired)
             return false;
@@ -258,10 +267,17 @@ public sealed class MissionChestPopulation
                 || !catalog.TryGet(row.LowId, out _) || !catalog.TryGet(row.HighId, out _))
             || rows.Select(row => row.ContainerPlacement).Distinct().Count() != rows.Count)
             return false;
-        var items = rows.Select(row => (row.ContainerPlacement, Item: _items.Create(row.LowId, row.HighId,
+        // The durable rows are audit/recovery records. Withhold restricted items from the live projection;
+        // never delete them, compact their slots, replace them, or inspect items already owned by players.
+        ItemInstanceRecord[] approved = rows.Where(row => allowlist.IsAllowed(row.LowId, row.HighId, row.Quality)).ToArray();
+        if (approved.Length != rows.Count)
+            _logger.Warn("Mission chest restricted rows withheld " + Context + " chest=" + chest.Identity.Instance
+                + " withheld=" + (rows.Count - approved.Length));
+        var items = approved.Select(row => (row.ContainerPlacement, Item: _items.Create(row.LowId, row.HighId,
             row.Quality, row.Source, row.StackCount, row.InstanceId,
             new Identity { Type = (IdentityType)row.ItemType, Instance = row.InstanceId }))).ToArray();
-        if (items.Where((entry, index) => entry.Item.Quality != rows[index].Quality).Any())
+        if (items.Where((entry, index) => entry.Item.Quality != approved[index].Quality
+                || !MissionChestLootService.IsApproved(entry.Item, _parameters.Quality, allowlist)).Any())
             return false;
         chest.Loot.Content.Clear();
         foreach (var entry in items)

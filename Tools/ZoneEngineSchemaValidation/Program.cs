@@ -340,9 +340,24 @@ static class MigrationSmoke
     {
         // Exercise the separately packaged operator entrypoint, not an in-process
         // substitute. Its connection is supplied only through its own environment key.
+        // A referenced executable is also copied into this host's output, whose
+        // ASP.NET shared-framework graph differs from the operator's Core-only graph.
+        // Run the existing project-built operator beside its own dependency closure.
+        string configuration = typeof(MigrationCommand).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyConfigurationAttribute), false)
+            .Cast<System.Reflection.AssemblyConfigurationAttribute>().Single().Configuration;
+        string tool = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..",
+            "DatabaseMigrationTool", "bin", configuration, "net10.0", "DatabaseMigrationTool.dll"));
+        string ownDirectory = Path.GetDirectoryName(tool)!;
+        if (!File.Exists(tool) || !File.Exists(Path.Combine(ownDirectory, "DatabaseMigrationTool.deps.json"))
+            || !File.Exists(Path.Combine(ownDirectory, "DatabaseMigrationTool.runtimeconfig.json"))
+            || !File.Exists(Path.Combine(ownDirectory, "Microsoft.Extensions.Logging.Abstractions.dll"))
+            || !SHA256.HashData(File.ReadAllBytes(tool)).SequenceEqual(
+                SHA256.HashData(File.ReadAllBytes(typeof(MigrationCommand).Assembly.Location))))
+            throw new FixtureFailure("migration-operator-own-built-runtime-closure-missing-or-binary-mismatch");
         var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         FixtureEnvironment.ClearInheritedRuntimeSettings(start);
-        start.ArgumentList.Add(typeof(MigrationCommand).Assembly.Location);
+        start.ArgumentList.Add(tool);
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
         start.Environment["AO_REBIRTH_MIGRATION_CONNECTION"] = fixture.ConnectionString;
         using var process = Process.Start(start) ?? throw new FixtureFailure("migration-tool-start-failed");

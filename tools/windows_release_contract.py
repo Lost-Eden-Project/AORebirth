@@ -918,7 +918,135 @@ def process_parent(pid):
     return 0
 
 
-def verify_build_token(root, profile, entrypoint=None, product=None):
+def feature_source(root):
+    """Identify a development checkout without promoting it to public master."""
+    head = git(root, "rev-parse", "HEAD").decode().strip()
+    branch = git(root, "symbolic-ref", "--short", "HEAD").decode().strip()
+    if not branch.startswith("codex/") or not re.fullmatch("[0-9a-f]{40}", head):
+        raise ValueError("Feature validation requires an isolated codex/ branch")
+    paths = (*PRODUCT_PATHS, "Tools", "SharedBuild", "Directory.Build.props", "global.json", "NuGet.Config")
+    patch = git(root, "diff", "--binary", "--no-ext-diff", "--no-renames", "HEAD", "--", *paths)
+    untracked = []
+    for name in sorted(set(git(root, "ls-files", "--others", "--exclude-standard", "-z", "--", *paths).split(b"\0")) - {b""}):
+        path = checked(root, name.decode())
+        before = file_state(path)
+        hashed = digest(path.read_bytes())
+        if file_state(path) != before:
+            raise ValueError("Feature source changed during measurement")
+        untracked.append({"path": path.relative_to(root).as_posix(), "size": before[2], "sha256": hashed})
+    return {"HEAD": head, "BRANCH": branch, "TRACKED_DIFF_SHA256": digest(patch), "UNTRACKED_SOURCE": untracked}
+
+
+def feature_command(root, child):
+    """Use the existing build wrapper or a rooted, explicit development project."""
+    approved = [os.environ.get("ComSpec", r"C:\Windows\System32\cmd.exe"), "/d", "/c",
+                str(Path(root) / "NewZoneEngineBuild/build.cmd")]
+    if len(child) == len(approved) and all(os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+                                          for a, b in zip(child, approved)):
+        return None
+    if len(child) >= 4 and all(os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+                              for a, b in zip(child[:3], approved[:3])):
+        wrapper = os.path.normcase(os.path.normpath(child[3]))
+        dao_wrapper = checked(root, "Tools/run_mission_dao_validation.cmd")
+        connected_wrapper = checked(root, "Tools/run_newengine_connected_acceptance.cmd")
+        if wrapper == os.path.normcase(str(dao_wrapper)) and child[4:] == ["--chests-only"]:
+            return checked(root, "Tools/MissionDaoValidation/MissionDaoValidation.csproj")
+        if wrapper == os.path.normcase(str(connected_wrapper)) and len(child) == 11 and (
+                child[4], child[6], child[8], child[9]) == ("--engine", "--login-engine", "--chests-only", "--world-engine"):
+            expected = ((child[5], ("AORebirth/Built/Debug/ZoneEngine_New/ZoneEngine_New.dll",)),
+                        (child[7], ("AORebirth/Built/Debug/LoginEngine.exe", "AORebirth/Built/Debug/LoginEngine.dll")),
+                        (child[10], ("AORebirth/Built/Debug/WorldEngine/WorldEngine.dll",)))
+            for actual, candidates in expected:
+                if not Path(actual).is_absolute() or Path(actual).resolve(strict=True) not in {checked(root, name) for name in candidates if (Path(root) / name).is_file()}:
+                    raise ValueError("Connected feature validation requires this checkout's measured engine outputs")
+            return checked(root, "Tools/ZoneEngineSchemaValidation/ZoneEngineSchemaValidation.csproj")
+        raise ValueError("Unknown feature validation wrapper or arguments")
+    if len(child) < 3 or Path(child[0]).name.lower() not in ("dotnet", "dotnet.exe") or child[1] not in ("build", "test", "run"):
+        raise ValueError("Feature validation accepts only the approved build wrapper or dotnet build/test/run")
+    if any(value.lower() == "--no-build" for value in child):
+        raise ValueError("Feature validation must compile the measured source")
+    if child[1] == "run":
+        if len(child) < 4 or child[2] != "--project":
+            raise ValueError("Feature tool execution requires an explicit --project")
+        name = child[3]
+    else:
+        name = child[2]
+    project = checked(root, name.replace("\\", "/"))
+    relative_project = project.relative_to(root)
+    if project.suffix.lower() != ".csproj" or relative_project.parts[0] not in ("AORebirth", "Tools", "WindowsBuildNet10"):
+        raise ValueError("Feature project must belong to this product checkout")
+    if child[1] == "run" and not (relative_project.parts[0] == "Tools" and
+            (project.parent.name.endswith("Validation") or project.parent.name == "MissionChestRKCatalog")):
+        raise ValueError("Feature execution is limited to existing validation tools")
+    return project
+
+
+def run_feature_validation(root, profile, child):
+    project = feature_command(root, child)
+    source_only_dao = (project == Path(root) / "Tools/MissionDaoValidation/MissionDaoValidation.csproj"
+                       and len(child) == 5 and Path(child[3]).name.lower() == "run_mission_dao_validation.cmd")
+    source = feature_source(root)
+    rows, states = inventory(profile["CANONICAL_GAMEDATA_ROOT"])
+    current, directories = content_states(profile["CANONICAL_GAMEDATA_ROOT"])
+    if current != states:
+        raise ValueError("Selected content changed during feature intake")
+    bundle = Path(profile["STATE_ROOT"]) / ("feature-validation-" + uuid.uuid4().hex)
+    bundle.mkdir(parents=True)
+    write_json(bundle / "manifest.json", rows, exclusive=True)
+    attempt = {"FORMAT_VERSION": 1, "BUILD_PURPOSE": "FEATURE_VALIDATION", "DEPLOYABLE": False,
+               "WINDOWS_USER_ACCEPTED": "NO", "FEATURE_SOURCE": source,
+               "SELECTED_GAMEDATA_MANIFEST": validate_manifest(rows),
+               "COMMAND": child, "STARTED_UTC": now(), "VALIDATION_RESULT": "NOT_RUN"}
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    active = bundle / "active.json"
+    write_json(active, {"BUILD_PURPOSE": "FEATURE_VALIDATION", "REPOSITORY_ROOT": str(Path(root).resolve()), "TOKEN_SHA256": digest(token.encode()),
+                       "OWNER_PID": os.getpid(), "FEATURE_SOURCE": source, "FILE_STATES": states,
+                       "DIRECTORY_STATES": directories, "CREATED_UTC": now()}, exclusive=True)
+    env = dict(os.environ, AO_REBIRTH_BUILD_STATE=str(active), AO_REBIRTH_BUILD_TOKEN=token, AO_REBIRTH_BUILD_CHILD="1",
+               MSBUILDDISABLENODEREUSE="1", DOTNET_CLI_USE_MSBUILD_SERVER="0")
+    try:
+        result = subprocess.run(child, cwd=root, env=env, check=False)
+        attempt.update(EXIT_CODE=result.returncode, FINISHED_UTC=now(), VALIDATION_RESULT="FAIL")
+        if result.returncode == 0:
+            if feature_source(root) != source or content_states(profile["CANONICAL_GAMEDATA_ROOT"]) != (states, directories):
+                raise ValueError("Feature source or selected content changed during validation")
+            if source_only_dao and not (active.parent / "build-observations").exists():
+                observations = {"WRAPPER_ENTERED": False, "PRODUCT_HOOKS": []}
+            else:
+                observations = collect_build_observations(active)
+            if not observations["PRODUCT_HOOKS"] and not source_only_dao:
+                raise ValueError("Feature validation did not observe the product compiler guard")
+            if project is None and (not observations["WRAPPER_ENTERED"] or not
+                    {"ChatEngine.WinNet10", "LoginEngine.WinNet10", "WorldEngine", "ZoneEngine_New"} <= set(observations["PRODUCT_HOOKS"])):
+                raise ValueError("Approved feature build wrapper did not compile all four engines")
+            outputs = {checked(root, name) for name in OUTPUTS if (Path(root) / name).is_file()}
+            if project is not None and (project.parent / "bin").is_dir():
+                outputs.update(path for path in (project.parent / "bin").rglob(project.stem + ".dll") if path.is_file())
+            if source_only_dao:
+                tool = checked(root, "Tools/MissionDaoValidation/bin/Release/net10.0/MissionDaoValidation.dll")
+                state = file_state(tool)
+                tool_hash = digest(tool.read_bytes())
+                if not state[2] or file_state(tool) != state:
+                    raise ValueError("Source-only validation assembly changed during measurement")
+                attempt["SOURCE_ONLY_VALIDATION_TOOL"] = {"path": tool.relative_to(root).as_posix(),
+                    "bytes": state[2], "sha256": tool_hash,
+                    "METHOD": "EXISTING_CHESTS_ONLY_WRAPPER_COMPILES_LINKED_PERSISTENCE_SOURCES"}
+            attempt["AVAILABLE_OUTPUTS_POST_COMMAND"] = [{"path": path.relative_to(root).as_posix(),
+                    "bytes": path.stat().st_size, "sha256": digest(path.read_bytes())} for path in sorted(outputs)]
+            attempt.update(VALIDATION_RESULT="PASS", PRODUCT_COMPILER_HOOKS=observations["PRODUCT_HOOKS"])
+        return result.returncode
+    except Exception as error:
+        attempt.update(VALIDATION_RESULT="FAIL", VALIDATION_FAILURE_TYPE=type(error).__name__)
+        raise
+    finally:
+        attempt.setdefault("FINISHED_UTC", now())
+        write_json(bundle / "feature-validation.json", attempt, exclusive=True)
+        active.unlink(missing_ok=True)
+        print("FEATURE_VALIDATION_RECEIPT=" + (bundle / "feature-validation.json").relative_to(root).as_posix())
+        print("DEPLOYABLE=NO; WINDOWS_USER_ACCEPTED=NO")
+
+
+def verify_build_token(root, profile, entrypoint=None, product=None, publishing=False):
     state_path = Path(os.environ.get("AO_REBIRTH_BUILD_STATE", ""))
     state_root = Path(profile["STATE_ROOT"]).resolve()
     if not state_path.is_file() or not state_path.resolve().is_relative_to(state_root):
@@ -933,7 +1061,18 @@ def verify_build_token(root, profile, entrypoint=None, product=None):
         pid = process_parent(pid)
     if not pid or pid != state["OWNER_PID"]:
         raise ValueError("Build attempt is stale or not an ancestor of this compiler")
-    source_exact(root, state["PUBLIC_MASTER_SHA"], profile.get("LOCAL_CONFIG_OVERRIDES", ()))
+    purpose = state.get("BUILD_PURPOSE", "PRODUCTION_RELEASE")
+    if purpose == "FEATURE_VALIDATION":
+        if publishing:
+            raise ValueError("Feature validation cannot publish production output")
+        if state.get("REPOSITORY_ROOT") != str(Path(root).resolve()):
+            raise ValueError("Feature capability belongs to another checkout")
+        if feature_source(root) != state["FEATURE_SOURCE"]:
+            raise ValueError("Feature source changed during validation")
+    elif purpose == "PRODUCTION_RELEASE":
+        source_exact(root, state["PUBLIC_MASTER_SHA"], profile.get("LOCAL_CONFIG_OVERRIDES", ()))
+    else:
+        raise ValueError("Unknown build capability purpose")
     canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"])
     actual, directories = content_states(canonical)
     if actual != state["FILE_STATES"] or directories != state["DIRECTORY_STATES"]:
@@ -1219,6 +1358,8 @@ def export_accepted_bundle(repository_root, bundle, acceptance_path):
 
 
 def require_successful_attempt(bundle, attempt):
+    if attempt.get("BUILD_PURPOSE", "PRODUCTION_RELEASE") != "PRODUCTION_RELEASE":
+        raise ValueError("Feature validation is not a production build or Windows acceptance")
     if (attempt.get("FORMAT_VERSION") != 1 or attempt.get("WINDOWS_BUILD") != "PASS"
             or attempt.get("WINDOWS_BUILD_EXIT_CODE") != 0 or not attempt.get("BUILD_FINISHED_UTC")
             or not attempt.get("BUILD_STARTED_UTC") or timestamp(attempt["BUILD_STARTED_UTC"]) > timestamp(attempt["BUILD_FINISHED_UTC"])
@@ -1495,7 +1636,7 @@ def load_accepted_release(repository_root, acceptance_path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("prepare-build", "reconcile-content", "run-build", "verify-build-token", "verify-startup-attempt", "record-startup", "accept-windows"))
+    parser.add_argument("mode", choices=("prepare-build", "reconcile-content", "run-build", "run-feature-validation", "verify-build-token", "verify-startup-attempt", "record-startup", "accept-windows"))
     parser.add_argument("--repository-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--profile", type=Path)
     parser.add_argument("--approved-plan-sha256")
@@ -1506,6 +1647,7 @@ def main(argv=None):
     parser.add_argument("--acceptance-evidence")
     parser.add_argument("--entrypoint")
     parser.add_argument("--product")
+    parser.add_argument("--publishing", action="store_true")
     args, child = parser.parse_known_args(argv)
     try:
         root = args.repository_root.resolve(strict=True)
@@ -1513,17 +1655,17 @@ def main(argv=None):
         if args.generated_items_receipt and args.mode not in ("prepare-build", "reconcile-content"):
             raise ValueError("Generated items may be adopted only through existing content preparation/reconciliation")
         if args.mode == "verify-build-token":
-            verify_build_token(root, profile, args.entrypoint, args.product)
+            verify_build_token(root, profile, args.entrypoint, args.product, args.publishing)
         elif args.mode == "verify-startup-attempt":
             if not args.build_attempt:
                 raise ValueError("A successful current build attempt is required")
             attempt_path = checked(root, args.build_attempt)
             current_matches(root, profile, attempt_path.parent, read_json(attempt_path))
-        elif args.mode == "run-build":
+        elif args.mode in ("run-build", "run-feature-validation"):
             child = child[1:] if child[:1] == ["--"] else child
             if not child:
                 raise ValueError("Existing build child command is required")
-            return run_build(root, profile, child)
+            return (run_feature_validation if args.mode == "run-feature-validation" else run_build)(root, profile, child)
         elif child:
             raise ValueError("Unknown contract command arguments")
         elif args.mode == "reconcile-content":

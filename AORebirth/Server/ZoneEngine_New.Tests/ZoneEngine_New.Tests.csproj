@@ -108,6 +108,8 @@
     <Compile Include="TestDoubles.cs" />
     <Compile Include="InventoryActionTests.cs" />
     <Compile Include="MissionChestLootTests.cs" />
+    <Compile Include="MissionChestRKPolicyTests.cs" />
+    <Compile Include="ChestCommandTests.cs" />
     <Compile Include="MissionChestPlacementTests.cs" />
     <Compile Include="MissionChestPersistenceTests.cs" />
     <Compile Include="MissionChestProtocolTests.cs" />

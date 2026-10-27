@@ -21,6 +21,36 @@ using ZoneEngine_New.Core.Playfield.Locality;
 public sealed class MissionChestPersistenceTests
 {
     [TestMethod]
+    public void RestrictedStaleChestProjectionCannotTransferOrDeleteItsDurableRow()
+    {
+        using var world = new InventoryActionTests.World();
+        var registry = new DynelRegistry();
+        using var services = MissionChestProtocolTests.AttachChestServices(world, registry);
+        Chest chest = MissionChestProtocolTests.CreateCapturedChest();
+        chest.Playfield = world.Player.Playfield;
+        chest.Position = world.Player.Position;
+        registry.Register(chest);
+        registry.Register(world.Player);
+        Item item = TestWorld.CreateItem(instanceId: 901);
+        item.IsPersisted = true;
+        chest.Loot.Add(0, item);
+        ItemInstanceRecord original = item.ToRecord(chest.Loot.Identity, 0, item.StackCount);
+        world.Persistence.Rows[item.InstanceId] = original;
+        Assert.IsTrue(chest.TryUse(world.Player));
+        // Deliberately leave an obsolete in-memory slot to exercise packet/commit enforcement independently
+        // of the normal Population.Refresh projection filter.
+        chest.LootItemValidator = _ => false;
+        Identity source = new() { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 };
+        var moves = new InventoryMoveService(new StubLogger(), world.Flush, world.Actions);
+        moves.Handle(world.Player, new ClientMoveItemToInventoryMessage { SourceContainer = source, TargetPlacement = 64 });
+        Assert.IsFalse(world.Actions.TryDelete(world.Player, source, item.InstanceId));
+        Assert.AreEqual(0, world.Persistence.Calls);
+        Assert.AreSame(original, world.Persistence.Rows[item.InstanceId]);
+        Assert.AreSame(item, chest.Loot.Content[0]);
+        Assert.AreEqual(0, world.Player.Inventory.Inventory.Content.Count);
+    }
+
+    [TestMethod]
     public void TwoPlayersRespectTheSingleOpenerAndKeepDistinctOriginalLootInstances()
     {
         using var world = new InventoryActionTests.World();

@@ -25,6 +25,38 @@ the single startup index.
 
 ## Permanent build and release contract
 
+Isolated feature compilation and explicitly requested automated tests use the
+existing contract helper's development-only operation:
+
+```cmd
+cmd /d /c tools\windows_release_contract.cmd run-feature-validation -- "C:\Program Files\dotnet\dotnet.exe" test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests.csproj --filter "FullyQualifiedName~MissionChest"
+```
+
+For the existing four-engine compilation workflow, use that same operation with
+`-- "%ComSpec%" /d /c "<absolute-owning-checkout>\NewZoneEngineBuild\build.cmd"`.
+Development tool execution is limited to an explicit owning-checkout
+`dotnet run --project Tools/<existing-validation-tool>/<project>.csproj`.
+The same development operation also accepts the existing
+`Tools\run_mission_dao_validation.cmd --chests-only` and
+`Tools\run_newengine_connected_acceptance.cmd --engine <own-Zone-dll> --login-engine <own-Login-exe-or-dll> --chests-only --world-engine <own-World-dll>`
+through the absolute owning-checkout CMD wrapper paths. Connected engine paths
+must belong to that checkout. The isolated DAO wrapper compiles linked actual
+persistence sources; its receipt records the measured tool assembly and no
+product hooks when none ran. It never invents compiler observations.
+Use the correctly owned ignored private profile; never copy credentials, live
+build capabilities, release state or acceptance from another checkout.
+
+This operation requires an isolated `codex/` branch, pins its HEAD plus tracked
+and untracked source changes and the selected complete GameData manifest, and
+issues its own live process-bound development capability. It records command,
+compiler observations, outputs and outcome under the existing ignored state
+root. Source/content changes invalidate that validation. Its receipt is marked
+`FEATURE_VALIDATION`, `DEPLOYABLE=NO` and `WINDOWS_USER_ACCEPTED=NO`; it cannot
+authorize product publishing, release startup, acceptance or Linux release work.
+Normal production builds still use the existing approved build wrapper and
+require freshly fetched public-master source and reconciled private content.
+Feature validation never replaces the Windows acceptance and release sequence.
+
 The [build/release contract](docs/project/BUILD_RELEASE_CONTRACT.md) governs
 every build and release. Its mandatory sequence is:
 
@@ -117,6 +149,47 @@ The following access contract governs only this deployment exception:
 Validate this governance contract with
 Tools/tests/test_deployment_tooling_governance.py; it reads policy only and never
 executes deployment tooling or contacts production.
+
+## Established build and deployment references
+
+Use [WORKFLOW.md](docs/ai/WORKFLOW.md) for the current Windows commands:
+`tools\windows_release_contract.cmd`, `tools\build_aorebirth_debug.cmd`,
+`preflight-database.cmd`, `start-engines.cmd`, `status-engines.cmd` and
+`stop-engines.cmd`, invoked through `cmd /d /c`. Release startup uses
+`start-engines.cmd -ReleaseBuildAttempt` with the measured build receipt.
+
+Before requesting SSH information, inspect the existing private governance,
+its deployment-connection instructions and the recorded successful invocation.
+Those private instructions bind `PRIVATE_LINUX_CHECKOUT`,
+`APPROVED_DEPLOYMENT_TOOLING_ROOT`, the saved connection and current launchers.
+Keep their exact locations and connection details out of public commits.
+
+After Mike's exact-input Windows acceptance, use the existing private online
+builder and normal deployment operator documented there. Preserve private
+GameData and settings, take the required actual-database backup, apply only
+required approved migrations, and retain the established rollback material.
+Verify all four engines, World registration, source provenance and the complete
+Windows/Linux/live GameData manifest chain. The release contract above governs
+acceptance, authorization, verification and rollback; these references add no
+alternate build or deployment path.
+
+Generated mission chest content is private, editable GameData:
+`Loot/MissionChestRKAllowlist.json`, `Loot/MissionChestSeasonalExclusions.json`
+and `Loot/MissionChestSpecialExclusions.json`. Approvals describe positively
+reviewed ordinary Rubi-Ka identities, families and QL ranges; exact historical
+chest-drop evidence is not required. Missing expansion requirements alone are
+not approval. Seasonal and special-purpose exclusions always override approval,
+independent of event enablement. Apply these policies only to generated mission
+chests; preserve designated seasonal/NPC loot sources and player-owned items.
+Never publish private policy records or replace them with public placeholders
+when building or deploying. The complete accepted policies belong in the same
+Windows/Linux/live content manifest chain.
+
+If CMD cannot resolve installed build tools, inspect the existing SDK/tool
+locations and inherited PATH before declaring an installation missing. Correct
+only the execution process's PATH when necessary, then invoke the established
+wrapper unchanged. Do not change global PATH, create substitute build tokens,
+copy acceptance state between checkouts or bypass the public-source checks.
 
 ## Existing architecture and scope
 

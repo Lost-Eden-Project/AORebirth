@@ -96,8 +96,13 @@ process's binary hash, numeric exit and ordered shutdown failure types; every
 nonzero exit remains a failure.
 
 Only chest acceptance may opt in with
-`AO_REBIRTH_CHEST_ALLOW_PROVEN_SHUTDOWN_BASELINE=1` after the exact `4f66c4c20d0e6f5f6e300082d81482944b028680`
-baseline reproduction: Zone exit `3` with exactly the ordered failure types
+`AO_REBIRTH_CHEST_ALLOW_PROVEN_SHUTDOWN_BASELINE=1` after an exact current public-source
+baseline reproduction. Supply its actual immutable proof using
+`AO_REBIRTH_CHEST_SHUTDOWN_BASELINE_PATH` and the measured
+`AO_REBIRTH_CHEST_SHUTDOWN_BASELINE_SHA256`; the fixture verifies the proof hash,
+source identity and natural-stop metadata before acceptance. The logged baseline
+source/proof identity comes from that record, never a historical hardcoded label.
+This permits only Zone exit `3` with exactly the ordered failure types
 `NotSupportedException,ObjectDisposedException`. The actual exit/signature remain
 logged and the final result becomes `PASS_WITH_PROVEN_BASELINE_EXCEPTIONS` if used.
 The flag is cleared from child environments; lifecycle/default modes, Login/World,

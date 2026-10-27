@@ -1,11 +1,33 @@
 # Current Task
 
-Completed mission chest master integration.
+Complete the existing ordinary RK mission chest restriction and its governed
+Windows-first release. Starting freshly fetched public master:
+`7213f2ab63aca7333b7d7be19a0d360c7af5c558`.
 
-- Tested public-master merge: `b63f02bc25761b59744d586d88403695117a8d82`; contains complete `2b339363d3aab9eea34fa2bb9b6941357ec558a0`.
-- Four Windows engines: PASS. Caves: 104/104, 413/442 chests, zero empty populations.
-- Targeted:16/16; safety/objectives:23/23; routing/NPC/doors:79/79 after one-line fixture correction.
-- Core:115/117 with two proven inventory baseline failures. Isolated MySQL:50 checks passed. TCP:PASS_WITH_PROVEN_BASELINE_EXCEPTIONS; cleanup PASS.
-- Linux native acceptance not run: no reconciled Linux candidate; documented local development command blocked before compilation by pinned SDK10.0.302 unavailable (10.0.401 installed). No private push/source edits.
-- Preserve original dirty working files, stashes, worktrees, private data and running services. No client, migration or deployment.
-- Report: `docs/reports/MISSION_CHEST_MASTER_MERGE_FINAL.md`.
+- Preserve the draft on `codex/mission-chest-rk-restriction`, initially based on
+  `47dae275238c83972779d62d351c718554d7b7b3`; preserve newer master changes at integration.
+- Retain the reviewed private 24,925-definition / 13,131-band policy and its
+  independent seasonal/special vetoes. Do not rebalance implant eligibility,
+  rarity, counts, quality limits or dedicated event loot.
+- Use the supported validation-only feature mode for compilation and requested
+  selector, persistence, inventory, MySQL and connected TCP checks. Feature
+  observations never authorize production publishing or Windows acceptance.
+- After successful feature validation, integrate and push public master, then
+  build and validate the exact freshly synchronized Windows candidate with the
+  verified private policies and complete canonical content manifest.
+- Mike's explicit acceptance of the new exact Windows tuple is still required.
+  Historical acceptance does not authorize changed source or data.
+- Linux online build and normal production deployment are authorized only after
+  that mandatory gate. Do not claim either before actual execution.
+- Keep full execution evidence and release details private; maintain the required
+  `docs/reports/MISSION_CHEST_RK_LIVE_DEPLOYMENT_FINAL.md` report without publishing
+  protected catalogs, connections or private infrastructure.
+
+Development observations: four engines compile; 10,000 production-selector
+populations cover every mission QL with no unauthorized selections. Core results
+are 293 passes and seven exact public-source baseline failures, not an all-green
+suite. Disposable MySQL has 50 passing checks. The broad geometry run retains
+unresolved long-run null references and a host abort; isolated controls do not
+erase those outcomes. Unmodified public source separately reproduces the native
+geometry crash and the exact Zone shutdown exception sequence. Connected TCP
+results and any later Windows readiness remain measured private evidence.
