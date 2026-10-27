@@ -8,7 +8,9 @@
     <AORebirthProductEntry Condition="'$(MSBuildProjectName)' == 'ChatEngine.WinNet10' Or '$(MSBuildProjectName)' == 'LoginEngine.WinNet10' Or '$(MSBuildProjectName)' == 'ChatEngine' Or '$(MSBuildProjectName)' == 'LoginEngine' Or '$(MSBuildProjectName)' == 'WorldEngine' Or '$(MSBuildProjectName)' == 'ZoneEngine_New' Or '$(MSBuildProjectName)' == 'WebEngine'">true</AORebirthProductEntry>
   </PropertyGroup>
   <Target Name="RequireGovernedWindowsProductBuild" BeforeTargets="PrepareForBuild;CoreCompile"
-          Condition="'$(OS)' == 'Windows_NT' And '$(AORebirthProductEntry)' == 'true' And !$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux')) And !('$(DesignTimeBuild)' == 'true' And '$(SkipCompilerExecution)' == 'true')">
+          Condition="'$(OS)' == 'Windows_NT' And '$(AORebirthProductEntry)' == 'true' And !$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux'))
+                     And ('$(AORebirthGovernedRelease)' == 'true' Or '$(AO_REBIRTH_BUILD_CHILD)' != '' Or '$(AO_REBIRTH_BUILD_TOKEN)' != '' Or '$(AO_REBIRTH_BUILD_STATE)' != '')
+                     And !('$(DesignTimeBuild)' == 'true' And '$(SkipCompilerExecution)' == 'true')">
     <Exec Command="call &quot;$(MSBuildThisFileDirectory)tools\windows_release_contract.cmd&quot; verify-build-token --repository-root &quot;$(MSBuildThisFileDirectory).&quot; --product &quot;$(MSBuildProjectName)&quot;" />
   </Target>
   <Target Name="RequireGovernedOnlineLinuxProductBuild" BeforeTargets="PrepareForBuild;CoreCompile"

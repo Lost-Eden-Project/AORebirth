@@ -1,9 +1,17 @@
 # AORebirth Build and Release Contract
 
-Status: Permanent project policy. Apply this contract to every build and release
-attempt. It supersedes older workflow descriptions that allow unaccepted Linux
-release work, separate Linux content reconstruction or moving accepted inputs.
+Status: Permanent project policy. Apply this contract to every governed release
+build, publishing and release attempt. It supersedes older workflow descriptions
+that allow unaccepted Linux release work, separate Linux content reconstruction
+or moving accepted inputs.
 Repository `AGENTS.md` remains the agent-behavior authority.
+
+Ordinary Windows `dotnet build` and Visual Studio Build compile public source
+without private release configuration, content access, provenance or acceptance
+state. They cannot create release acceptance or authorize publishing/deployment.
+Explicit `AORebirthGovernedRelease=true`, active governed build capabilities and
+the existing release entrypoints retain private profile validation. Publishing
+always remains guarded; Linux release/package generation remains online-only.
 
 ## PATCH MODE default and FULL RELEASE MODE escalation
 

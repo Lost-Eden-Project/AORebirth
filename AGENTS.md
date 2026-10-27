@@ -123,6 +123,15 @@ unsupported switches, silently perform heavyweight work or relabel it FULL.
 
 ## Permanent build and release contract
 
+Ordinary Windows developer compilation (`dotnet build` or Visual Studio Build)
+does not require a private release profile, content access, GameData provenance
+or acceptance state. Such compilation does not authorize publishing or release
+promotion. `AORebirthGovernedRelease=true` explicitly selects guarded compilation;
+active governed-wrapper capabilities also keep compiler validation mandatory.
+Publishing and the existing governed release entrypoints retain all private
+profile, source/content, acceptance and provenance checks. This distinction
+supersedes references below to applying release intake to every ordinary build.
+
 Isolated feature compilation and explicitly requested automated tests use the
 existing contract helper's development-only operation:
 

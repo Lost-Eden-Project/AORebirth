@@ -1870,9 +1870,22 @@ def main(argv=None):
     parser.add_argument("--entrypoint")
     parser.add_argument("--product")
     parser.add_argument("--publishing", action="store_true")
+    parser.add_argument("--developer-build", action="store_true",
+                        help="check ordinary compilation scope only; cannot validate or authorize release output")
     args, child = parser.parse_known_args(argv)
     try:
         root = args.repository_root.resolve(strict=True)
+        if args.developer_build:
+            release_arguments = (args.profile, args.approved_plan_sha256, args.resolutions,
+                                 args.generated_items_receipt, args.build_attempt, args.windows_receipt,
+                                 args.acceptance_evidence, args.entrypoint, args.publishing, child)
+            active_build = any(os.environ.get(name) for name in
+                               ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE"))
+            if args.mode != "verify-build-token" or any(release_arguments) or active_build:
+                raise ValueError("Developer compilation cannot replace a governed build, publishing or release validation")
+            print("WINDOWS_BUILD_SCOPE=DEVELOPER; PRIVATE_RELEASE_PROFILE=NOT_REQUIRED")
+            print("DEPLOYABLE=NO; WINDOWS_USER_ACCEPTED=NO")
+            return 0
         profile = profile_for(root, args.profile)
         if args.generated_items_receipt and args.mode not in ("prepare-build", "reconcile-content"):
             raise ValueError("Generated items may be adopted only through existing content preparation/reconciliation")

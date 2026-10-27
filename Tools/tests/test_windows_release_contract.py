@@ -1,12 +1,15 @@
 """Focused offline contract regressions; no engines, clients or remote services."""
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -189,6 +192,54 @@ class ReleaseContractTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_explicit_developer_compile_needs_no_private_profile_or_receipt(self):
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE")}
+        output = io.StringIO()
+        with mock.patch.dict(os.environ, environment, clear=True), redirect_stdout(output), \
+                mock.patch.object(gate, "profile_for") as profile, \
+                mock.patch.object(gate, "verify_build_token") as verify:
+            result = gate.main(["verify-build-token", "--repository-root", str(self.root), "--developer-build"])
+        self.assertEqual(result, 0)
+        profile.assert_not_called()
+        verify.assert_not_called()
+        self.assertIn("WINDOWS_BUILD_SCOPE=DEVELOPER", output.getvalue())
+        self.assertIn("PRIVATE_RELEASE_PROFILE=NOT_REQUIRED", output.getvalue())
+        self.assertIn("DEPLOYABLE=NO", output.getvalue())
+        self.assertIn("WINDOWS_USER_ACCEPTED=NO", output.getvalue())
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_developer_compile_cannot_claim_release_actions_or_active_capability(self):
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE")}
+        invalid = [
+            ["verify-build-token", "--publishing"],
+            ["verify-build-token", "--entrypoint", "NewZoneEngineBuild/build.cmd"],
+            ["verify-build-token", "--profile", str(self.root / "private.json")],
+            ["prepare-build"], ["run-build"], ["record-startup"], ["accept-windows"],
+        ]
+        for arguments in invalid:
+            with self.subTest(arguments=arguments), mock.patch.dict(os.environ, environment, clear=True), \
+                    redirect_stderr(io.StringIO()), mock.patch.object(gate, "profile_for") as profile:
+                self.assertEqual(gate.main([*arguments, "--repository-root", str(self.root), "--developer-build"]), 1)
+                profile.assert_not_called()
+        for marker in ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE"):
+            for value in ("1", "0"):
+                with self.subTest(marker=marker, value=value), \
+                        mock.patch.dict(os.environ, {**environment, marker: value}, clear=True), \
+                        redirect_stderr(io.StringIO()), mock.patch.object(gate, "profile_for") as profile:
+                    self.assertEqual(gate.main(["verify-build-token", "--repository-root", str(self.root), "--developer-build"]), 1)
+                    profile.assert_not_called()
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_default_token_check_still_requires_private_profile(self):
+        with redirect_stderr(io.StringIO()), \
+                mock.patch.object(gate, "profile_for", side_effect=FileNotFoundError("missing private fixture")) as profile, \
+                mock.patch.object(gate, "verify_build_token") as verify:
+            self.assertEqual(gate.main(["verify-build-token", "--repository-root", str(self.root)]), 1)
+        profile.assert_called_once_with(self.root, None)
+        verify.assert_not_called()
 
     def private_catalog_fixture(self):
         canonical = self.root / "canonical"
@@ -840,6 +891,127 @@ class ReleaseContractTests(unittest.TestCase):
         script = (ROOT / "NewZoneEngineBuild/build.cmd").read_text()
         self.assertLess(script.index("run-build"), script.index("call :RestorePackagesConfig"))
         self.assertLess(script.index("verify-build-token"), script.index("stop-engines.cmd"))
+
+
+@unittest.skipUnless(os.name == "nt", "Real Windows MSBuild regression requires Windows")
+class DeveloperMSBuildTests(unittest.TestCase):
+    """Compile one harmless temporary class; never build or start an AORebirth engine."""
+
+    @classmethod
+    def setUpClass(cls):
+        locator = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft Visual Studio/Installer/vswhere.exe"
+        if not locator.is_file():
+            raise RuntimeError("Windows build-contract regression requires Visual Studio MSBuild and vswhere.exe")
+        result = subprocess.run([str(locator), "-latest", "-products", "*", "-requires", "Microsoft.Component.MSBuild",
+                                 "-find", r"MSBuild\**\Bin\MSBuild.exe"],
+                                capture_output=True, text=True, check=True, timeout=30)
+        candidates = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+        cls.msbuild = next((path for path in candidates if path.is_file()), None)
+        if cls.msbuild is None:
+            raise RuntimeError("Windows build-contract regression could not locate installed Visual Studio MSBuild")
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="aorebirth-build-contract-")
+        self.root = Path(self.temp.name)
+        self.addCleanup(self.temp.cleanup)
+        for name in ("Directory.Build.targets", "tools/windows_release_contract.py", "tools/windows_release_contract.cmd",
+                     "tools/select_python_runtime.cmd"):
+            destination = self.root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, destination)
+        self.project = self.root / "AORebirth/Server/DeveloperProbe/DeveloperProbe.csproj"
+        self.project.parent.mkdir(parents=True)
+        self.project.write_text('<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
+                                '<TargetFramework>net10.0</TargetFramework><OutputType>Library</OutputType>'
+                                '<ImplicitUsings>disable</ImplicitUsings><Nullable>disable</Nullable>'
+                                '<UseSharedCompilation>false</UseSharedCompilation><NuGetAudit>false</NuGetAudit>'
+                                '</PropertyGroup></Project>')
+        (self.project.parent / "Probe.cs").write_text("internal static class DeveloperProbe { internal static int Value => 42; }\n")
+        (self.root / "NuGet.Config").write_text('<configuration><packageSources><clear /></packageSources></configuration>')
+        (self.root / ".gitignore").write_text(".local/\ncanonical/\n**/bin/\n**/obj/\n")
+        self.environment = dict(os.environ)
+        for name in ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE", "AO_REBIRTH_RELEASE_CONFIG"):
+            self.environment.pop(name, None)
+        self.environment.update(AO_REBIRTH_PYTHON_EXE=sys.executable, MSBUILDDISABLENODEREUSE="1",
+                                DOTNET_CLI_USE_MSBUILD_SERVER="0", DOTNET_CLI_TELEMETRY_OPTOUT="1",
+                                DOTNET_SKIP_FIRST_TIME_EXPERIENCE="1", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+
+    def msbuild_probe(self, target="Restore;Build", configuration="Debug", properties=(), environment=None):
+        command = [str(self.msbuild), str(self.project), "/t:" + target, "/p:Configuration=" + configuration,
+                   "/m:1", "/nr:false", "/nologo", "/v:minimal", *properties]
+        return subprocess.run(command, cwd=self.root, env={**self.environment, **(environment or {})},
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                              errors="replace", check=False, timeout=120)
+
+    def assert_compiled(self, result, configuration):
+        self.assertEqual(result.returncode, 0, result.stdout[-9000:])
+        assembly = self.project.parent / "bin" / configuration / "net10.0/DeveloperProbe.dll"
+        self.assertTrue(assembly.is_file(), result.stdout[-9000:])
+        self.assertEqual(assembly.read_bytes()[:2], b"MZ")
+
+    def test_public_clone_compiles_debug_without_private_profile(self):
+        self.assert_compiled(self.msbuild_probe(), "Debug")
+        self.assertFalse((self.root / ".local").exists())
+
+    def test_visual_studio_and_ordinary_release_compilation_need_no_profile(self):
+        for configuration, properties in (("Debug", ("/p:BuildingInsideVisualStudio=true",)), ("Release", ())):
+            with self.subTest(configuration=configuration):
+                self.assert_compiled(self.msbuild_probe(configuration=configuration,
+                                                       properties=properties), configuration)
+        self.assertFalse((self.root / ".local").exists())
+
+    def test_explicit_governed_build_and_windows_publish_still_require_profile(self):
+        for target, properties in (("Restore;Build", ("/p:AORebirthGovernedRelease=true",)),
+                                   ("Restore;Publish", ("/p:AORebirthGovernedRelease=false",))):
+            with self.subTest(target=target):
+                result = self.msbuild_probe(target=target, properties=properties)
+                self.assertNotEqual(result.returncode, 0, result.stdout[-9000:])
+                self.assertIn("WINDOWS_RELEASE_CONTRACT=FAIL", result.stdout)
+                self.assertIn("release-contract.json", result.stdout)
+        self.assertFalse((self.root / ".local").exists())
+
+    def test_each_active_build_marker_cannot_opt_out_with_false_release_property(self):
+        for name in ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE"):
+            with self.subTest(marker=name):
+                result = self.msbuild_probe(properties=("/p:AORebirthGovernedRelease=false",), environment={name: "fixture-invalid"})
+                self.assertNotEqual(result.returncode, 0, result.stdout[-9000:])
+                self.assertIn("WINDOWS_RELEASE_CONTRACT=FAIL", result.stdout)
+        self.assertFalse((self.root / ".local").exists())
+
+    def test_live_synthetic_governed_capability_still_validates_and_observes_compiler(self):
+        def local_git(*arguments):
+            return subprocess.run(["git", *arguments], cwd=self.root, env=self.environment,
+                                  capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+        local_git("init", "--initial-branch=main")
+        local_git("add", ".")
+        local_git("-c", "user.name=AORebirth Contract Fixture", "-c", "user.email=fixture@example.invalid",
+                  "commit", "-m", "Synthetic offline compiler guard fixture")
+        public = local_git("rev-parse", "HEAD")
+        canonical = self.root / "canonical"
+        canonical.mkdir()
+        (canonical / "fixture.json").write_bytes(b'{"FIXTURE_ONLY":true}\n')
+        state_root = self.root / ".local/state"
+        state_root.mkdir(parents=True)
+        provenance = self.root / ".local/initial.json"
+        provenance.write_bytes(b'{"FIXTURE_ONLY":true}\n')
+        gate.write_json(self.root / ".local/release-contract.json", {
+            "FORMAT_VERSION": 1, "PRIVATE_CONTENT_REPOSITORY": "fixture/not-a-real-release",
+            "PRIVATE_CONTENT_BRANCH": "main", "PRIVATE_CONTENT_PREFIX": "Output",
+            "CANONICAL_GAMEDATA_ROOT": str(canonical), "STATE_ROOT": str(state_root),
+            "INITIAL_PROVENANCE": str(provenance), "INITIAL_PROVENANCE_SHA256": gate.digest(provenance.read_bytes())})
+        files, directories = gate.content_states(canonical)
+        token = "synthetic-test-capability-" + os.urandom(16).hex()
+        active = state_root / "active.json"
+        gate.write_json(active, {"TOKEN_SHA256": gate.digest(token.encode()), "OWNER_PID": os.getpid(),
+                        "PUBLIC_MASTER_SHA": public, "FILE_STATES": files, "DIRECTORY_STATES": directories,
+                        "CREATED_UTC": gate.now(), "FIXTURE_ONLY": True})
+        before = active.read_bytes()
+        result = self.msbuild_probe(properties=("/p:AORebirthGovernedRelease=false",), environment={
+            "AO_REBIRTH_BUILD_CHILD": "1", "AO_REBIRTH_BUILD_TOKEN": token, "AO_REBIRTH_BUILD_STATE": str(active)})
+        self.assert_compiled(result, "Debug")
+        self.assertEqual(active.read_bytes(), before)
+        self.assertEqual(gate.collect_build_observations(active)["PRODUCT_HOOKS"], ["DeveloperProbe"])
+        self.assertFalse((state_root / "acceptance.json").exists())
 
 
 if __name__ == "__main__":

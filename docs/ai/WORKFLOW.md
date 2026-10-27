@@ -212,8 +212,24 @@ Stop-after-success rule:
 
 ### Permanent build/release contract
 
+Ordinary Windows development can use Visual Studio Build or, with the .NET 10 SDK:
+
+```cmd
+dotnet build AORebirth\Server\ZoneEngine_New\ZoneEngine_New.csproj
+```
+
+This source compilation needs no private release profile/content/provenance or
+acceptance state, including when using the Release configuration. Publishing is
+still guarded. `AORebirthGovernedRelease=true` explicitly requires the existing
+release guard; an active wrapper capability cannot opt out of that validation.
+The existing `tools\build_aorebirth_debug.cmd` and
+`tools\windows_release_contract.cmd` release commands remain governed and fail
+closed without their required private configuration. The helper's
+`verify-build-token --developer-build` checks only ordinary compilation scope;
+it rejects release arguments/active capabilities and creates no release state.
+
 Follow [BUILD_RELEASE_CONTRACT.md](../project/BUILD_RELEASE_CONTRACT.md) before
-every product build/release attempt. The local Windows integration checkout
+every governed release build/release attempt. The local Windows integration checkout
 must match freshly fetched public master. Check the configured private content
 upstream every attempt, reconcile every approved addition/modification/removal,
 and preserve legitimate canonical repairs and private/generated content before
