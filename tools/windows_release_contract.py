@@ -35,6 +35,23 @@ PRODUCT_PATHS = ("AORebirth/Server", "AORebirth/Libraries", "AORebirth/Config", 
                  "tools/windows_release_contract.cmd", "tools/build_aorebirth_debug.cmd", "start-engines.cmd", "start-engines.ps1")
 CONFIG_OVERRIDES = {"AORebirth/Config/Config.xml", "AORebirth/Config/ChatEngine.Config.xml"}
 PRIVATE_CHEST_CATALOGS = {"Loot/MissionChestRKAllowlist.json", "Loot/MissionChestSeasonalExclusions.json", "Loot/MissionChestSpecialExclusions.json"}
+# Named catalog loaders and GameDataPaths; no extension-only root admission.
+RUNTIME_ROOT_CATALOGS = frozenset("""AbilityCosts.json AlienXp.json ComboNames.json
+DungeonDoorStyles.json DungeonEntrances.json DungeonGeneration.json DynelCollision.json
+ItemBehavior.json items.dat ItemTemplates.json MonsterCombatRules.json MonsterData.json
+MonsterWeapons.json nanos.dat NewCharacter.json NpcTemplates.json PerkActions.json
+Perks.json PetReplies.json PetTypes.json Quests.json Research.json Respawn.json
+SkillCosts.json SkillTrickle.json StartPackages.json Tradeskills.json VendingMachines.json
+WaterExits.json Xp.json""".split())
+RUNTIME_MISSION_FILES = frozenset("""Locations.json Text.json RollPolicy.json RollMixes.json
+RollTemplate.json RollBodies.json RewardObservations.json RareLoot.json RareLootChancePercent.json
+Source/MissionLevels.csv Source/MissionLevelRules.json Destinations/MissionDestinations.json
+Destinations/MissionEntrancePlacements.json""".split())
+RUNTIME_PLAYFIELD_FILES = frozenset("""metadata.json Districts.json Rooms.json Spawns.json
+Collision.dat Surfaces.dat Dynels.dat Walls.dat Doors.dat Destinations.dat Water.dat Navmesh.dat
+GNDA.png DCGA.png""".split())
+NON_RUNTIME_DIRECTORIES = frozenset(""".git .local cache caches tmp temp temporary bin obj build
+build-verify logs reports screenshots backups research exports""".split())
 MISSING = object()
 EXPORTER_PROJECT = "Tools/RDBDataExtractor/RDBDataExtractor.csproj"
 EXPORTER_OUTPUT = "Tools/RDBDataExtractor/bin/Release/net10.0"
@@ -100,6 +117,26 @@ def relative(value):
     if not value or path.is_absolute() or any(x in ("", ".", "..") for x in value.split("/")):
         raise ValueError("Evidence path traversal rejected")
     return path
+
+
+def runtime_content_path(value):
+    """Positive current loader paths; an unknown path is denied, not proven unused."""
+    parts = relative(value).parts
+    if (any(part.casefold() in NON_RUNTIME_DIRECTORIES for part in parts[:-1])
+            or parts[-1].casefold().endswith((".tmp", ".bak", ".log", ".md"))):
+        return False
+    if value in RUNTIME_ROOT_CATALOGS or value in PRIVATE_CHEST_CATALOGS or value == "Teams/LevelEligibility.json":
+        return True
+    if parts[0] == "Missions":
+        return "/".join(parts[1:]) in RUNTIME_MISSION_FILES
+    if parts[0] in ("Knubot", "NpcScripts"):
+        return len(parts) >= 2 and parts[-1].endswith(".json")
+    if len(parts) == 3 and re.fullmatch(r"[1-9][0-9]*", parts[1]):
+        if parts[0] == "Playfields":
+            return parts[2] in RUNTIME_PLAYFIELD_FILES
+        if parts[0] == "PlayfieldContent":
+            return parts[2] in {"Npcs.json", "CharacterAppearance.json", "ExitProxyDoors.json"}
+    return False
 
 
 def checked(root, value, exists=True):
@@ -415,9 +452,21 @@ def exporter_source_closure(root, public_sha):
 def validate_generated_items_provenance(proof, public_sha):
     required = {"FORMAT_VERSION", "PUBLIC_MASTER_SHA", "CREATED_UTC", "EXPORTER_SOURCE_CLOSURE", "TOOL_BUILD",
                 "RDB_INPUTS", "EXPORT", "OUTPUT", "VALIDATION", "LOCAL_RECEIPT_SHA256"}
-    if (not isinstance(proof, dict) or set(proof) != required or len(encoded(proof)) > 262144 or proof["FORMAT_VERSION"] != 1
-            or proof["PUBLIC_MASTER_SHA"] != public_sha or not re.fullmatch("[0-9a-f]{64}", proof["LOCAL_RECEIPT_SHA256"])):
+    if (not isinstance(proof, dict) or not required <= set(proof) or set(proof) - required - {"QUALIFIED_REUSE"}
+            or len(encoded(proof)) > 262144 or proof["FORMAT_VERSION"] != 1
+            or not isinstance(proof["PUBLIC_MASTER_SHA"], str) or not re.fullmatch("[0-9a-f]{40}", proof["PUBLIC_MASTER_SHA"])
+            or not re.fullmatch("[0-9a-f]{64}", proof["LOCAL_RECEIPT_SHA256"])):
         raise ValueError("Current exact-source generated items provenance required")
+    reuse = proof.get("QUALIFIED_REUSE")
+    original = {key: value for key, value in proof.items() if key != "QUALIFIED_REUSE"}
+    if proof["PUBLIC_MASTER_SHA"] != public_sha:
+        if (not isinstance(reuse, dict) or set(reuse) != {"REQUESTING_PUBLIC_MASTER_SHA", "EXPORTER_SOURCE_CLOSURE_SHA256", "ORIGINAL_PROVENANCE_SHA256"}
+                or reuse["REQUESTING_PUBLIC_MASTER_SHA"] != public_sha
+                or reuse["EXPORTER_SOURCE_CLOSURE_SHA256"] != digest(encoded(proof["EXPORTER_SOURCE_CLOSURE"]))
+                or reuse["ORIGINAL_PROVENANCE_SHA256"] != digest(encoded(original))):
+            raise ValueError("Generated items reuse lacks its requesting source and unchanged original provenance")
+    elif reuse is not None:
+        raise ValueError("Generated items reuse must identify a different requesting source")
     source, build, inputs, export, output, validation = (proof[key] for key in
         ("EXPORTER_SOURCE_CLOSURE", "TOOL_BUILD", "RDB_INPUTS", "EXPORT", "OUTPUT", "VALIDATION"))
     validate_manifest(source)
@@ -541,13 +590,19 @@ def generated_items_receipt(root, profile, receipt_path, public_sha):
         raise ValueError("Generated items extraction must use the existing items-only exporter command")
     proof["EXPORT"]["COMMAND"] = [EXPORTER_OUTPUT + "/RDBDataExtractor.exe", "extract", "--ao-path", "<AO_CLIENT_ROOT>",
                                  "--gamedata-dir", "<STAGED_GAMEDATA_ROOT>", *EXPORTER_SKIP_ARGS]
-    validate_generated_items_provenance(proof, public_sha)
-    if proof["EXPORTER_SOURCE_CLOSURE"] != exporter_source_closure(root, public_sha):
-        raise ValueError("Exporter source closure differs from exact public master")
+    validate_generated_items_provenance(proof, proof["PUBLIC_MASTER_SHA"])
+    for source_sha in dict.fromkeys((proof["PUBLIC_MASTER_SHA"], public_sha)):
+        if proof["EXPORTER_SOURCE_CLOSURE"] != exporter_source_closure(root, source_sha):
+            raise ValueError("Exporter source closure differs from original generation or requesting public master")
     output_rows, _ = inventory(checked(root, EXPORTER_OUTPUT))
     output_rows = [{**row, "path": EXPORTER_OUTPUT + "/" + row["path"]} for row in output_rows]
     if output_rows != proof["TOOL_BUILD"]["BINARIES"]:
         raise ValueError("Current exporter binaries/dependencies differ from measured generation")
+    if proof["PUBLIC_MASTER_SHA"] != public_sha:
+        proof["QUALIFIED_REUSE"] = {"REQUESTING_PUBLIC_MASTER_SHA": public_sha,
+            "EXPORTER_SOURCE_CLOSURE_SHA256": digest(encoded(proof["EXPORTER_SOURCE_CLOSURE"])),
+            "ORIGINAL_PROVENANCE_SHA256": digest(encoded(proof))}
+    validate_generated_items_provenance(proof, public_sha)
     return proof, data, raw
 
 
@@ -610,8 +665,42 @@ def validate_private_catalog_adoptions(bundle, value, actual, portable=False):
         actual[path] = after
 
 
+def validate_runtime_exclusions(bundle, value, actual, portable=False):
+    # Absence preserves validation of historical receipts; every new plan supplies the list.
+    if "RUNTIME_EXCLUSIONS" not in value:
+        return
+    rows = value["RUNTIME_EXCLUSIONS"]
+    if not isinstance(rows, list):
+        raise ValueError("Runtime exclusions must be a complete ordered list")
+    before = {row["path"]: row for row in read_json(load_descriptor(bundle, value["BEFORE_MANIFEST"]))}
+    seen = []
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"PATH", "CANONICAL_BEFORE", "EXCLUDED_CONTENT", "REASON"}:
+            raise ValueError("Runtime exclusion schema differs")
+        path = row["PATH"]
+        relative(path)
+        if runtime_content_path(path) or path in seen or row["REASON"] != "DENIED_ADMISSION":
+            raise ValueError("Runtime exclusion does not identify a denied path")
+        seen.append(path)
+        identities = {}
+        for field in ("CANONICAL_BEFORE", "EXCLUDED_CONTENT"):
+            identity = row[field] if portable else content_identity(load_optional(bundle, row[field]), path)
+            if identity is not None:
+                validate_manifest([identity])
+                if identity["path"] != path:
+                    raise ValueError("Runtime exclusion identity names another path")
+            identities[field] = identity
+        if (identities["CANONICAL_BEFORE"] != before.get(path)
+                or identities["EXCLUDED_CONTENT"] is None
+                or identities["EXCLUDED_CONTENT"] != actual.get(path)):
+            raise ValueError("Runtime exclusion does not preserve complete before/projected identities")
+        actual.pop(path)
+    if seen != sorted(seen) or any(not runtime_content_path(path) for path in actual):
+        raise ValueError("Canonical runtime admission is incomplete")
+
+
 def validate_supplemental_content(bundle, value, actual, portable=False):
-    """Replay required restorations, approved private policies and generated items."""
+    """Replay restorations, private policies, generated items and runtime exclusions."""
     catalogs = required_catalogs(value.get("REQUIRED_CURRENT_CATALOGS", []))
     expected, seen = {}, set()
     for mapping in catalogs:
@@ -644,6 +733,7 @@ def validate_supplemental_content(bundle, value, actual, portable=False):
     if not proof:
         if adoption or value.get("GENERATED_ITEMS_LOCAL_RECEIPT"):
             raise ValueError("Generated adoption lacks measured provenance")
+        validate_runtime_exclusions(bundle, value, actual, portable)
         return
     output = validate_generated_items_provenance(proof, value["PUBLIC_MASTER_SHA"])
     if "items.dat" not in value["PROTECTED_GENERATED_FILES"]:
@@ -671,6 +761,7 @@ def validate_supplemental_content(bundle, value, actual, portable=False):
         actual["items.dat"] = after
     if actual.get("items.dat") != output:
         raise ValueError("Canonical items.dat differs from current generated provenance")
+    validate_runtime_exclusions(bundle, value, actual, portable)
 
 
 def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before_rows, resolutions=None, generated_receipt=None):
@@ -773,21 +864,53 @@ def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before
         prior = read_json(prior_file)
         validate_reconciliation(previous, prior)
         candidate = prior.get("GENERATED_ITEMS_PROVENANCE")
-        if candidate and candidate["PUBLIC_MASTER_SHA"] == public_sha:
-            generated = candidate
+        if candidate:
+            receipt_bundle, receipt_value = previous, prior
+            while not receipt_value.get("GENERATED_ITEMS_LOCAL_RECEIPT"):
+                checkpoint = receipt_value.get("PRIOR_LOCAL_RECONCILIATION")
+                if not checkpoint:
+                    raise ValueError("Generated items reuse lacks its original measured local receipt")
+                checkpoint_path = load_descriptor(Path(checkpoint["STATE_ROOT"]), checkpoint["RECONCILIATION"])
+                receipt_bundle, receipt_value = checkpoint_path.parent, read_json(checkpoint_path)
+            path = load_descriptor(receipt_bundle, receipt_value["GENERATED_ITEMS_LOCAL_RECEIPT"])
+            generated, _, raw = generated_items_receipt(root, profile, path, public_sha)
+            if ({key: item for key, item in generated.items() if key != "QUALIFIED_REUSE"}
+                    != {key: item for key, item in candidate.items() if key != "QUALIFIED_REUSE"}):
+                raise ValueError("Generated items reuse differs from the validated original provenance")
+            local_receipt = stash(bundle, "generated-items-local-receipt.json", raw)
     if profile.get("REQUIRE_GENERATED_ITEMS") is True and not generated:
-        raise ValueError("This release requires newly generated items.dat from exact public master")
+        raise ValueError("This release requires current generated items.dat or verified unchanged exporter/input/output reuse")
     expected = {row["path"]: row for row in before_rows}
     for path, data in projected.items():
         if data is None:
             expected.pop(path, None)
         else:
             expected[path] = {"path": path, "size": len(data), "sha256": digest(data), "blob": blob(data)}
+    exclusions = []
+    for path in sorted(expected):
+        if runtime_content_path(path):
+            continue
+        target = checked(canonical, path, exists=False)
+        private = target.read_bytes() if target.is_file() else None
+        excluded = projected[path] if path in projected else private
+        if excluded is None:
+            raise ValueError("Denied runtime path lacks its projected preserved content")
+        prefix = "runtime-exclusions/" + str(len(exclusions)) + "/"
+        original = stash(bundle, prefix + "canonical-before", private)
+        archive = original if excluded == private else stash(bundle, prefix + "excluded-content", excluded)
+        exclusions.append({"PATH": path, "CANONICAL_BEFORE": original,
+                           "EXCLUDED_CONTENT": archive, "REASON": "DENIED_ADMISSION"})
+        projected[path] = None
+    for exclusion in exclusions:
+        expected.pop(exclusion["PATH"])
+    if any(not runtime_content_path(path) for path in expected):
+        raise ValueError("Target manifest contains a path without positive runtime admission")
     after_rows = sorted(expected.values(), key=lambda row: row["path"])
     plan = {"FORMAT_VERSION": 1, "PUBLIC_MASTER_SHA": public_sha, "CONTENT_DUMP_SHA": dump_sha,
             "CANONICAL_BEFORE_MANIFEST": digest(encoded(before_rows)),
             "WINDOWS_GAMEDATA_MANIFEST": digest(encoded(after_rows)), "SOURCE_SNAPSHOTS": snapshots,
             "CHANGES": records, "PROTECTED_GENERATED_FILES": profile.get("PROTECTED_GENERATED_FILES", []),
+            "RUNTIME_EXCLUSIONS": exclusions,
             "BEFORE_MANIFEST": descriptor(bundle, bundle / "before-manifest.json")}
     if catalogs:
         plan.update(REQUIRED_CURRENT_CATALOGS=catalogs, CATALOG_RESTORATIONS=restorations)
@@ -928,13 +1051,14 @@ def apply_content(root, profile, approved_plan_sha256, resolutions=None, generat
     if digest(encoded(plan)) != approved_plan_sha256:
         raise ValueError("Fresh content plan differs from the approved plan")
     canonical = Path(profile["CANONICAL_GAMEDATA_ROOT"])
+    excluded = {row["PATH"]: row["CANONICAL_BEFORE"] for row in plan.get("RUNTIME_EXCLUSIONS", [])}
     old = {}
     try:
         if {row["path"]: file_state(checked(canonical, row["path"])) for row in read_json(bundle / "before-manifest.json")} != states:
             raise ValueError("Canonical data changed before reconciliation")
         for path, data in projected.items():
             target = checked(canonical, path, exists=False)
-            old[path] = target.read_bytes() if target.is_file() else None
+            old[path] = ("RUNTIME_EXCLUSION", excluded[path]) if path in excluded else target.read_bytes() if target.is_file() else None
             if data is None:
                 target.unlink(missing_ok=True)
             else:
@@ -950,7 +1074,14 @@ def apply_content(root, profile, approved_plan_sha256, resolutions=None, generat
     except Exception:
         for path, data in old.items():
             target = checked(canonical, path, exists=False)
-            if data is None:
+            if isinstance(data, tuple):
+                archive = data[1]
+                if archive is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(load_descriptor(bundle, archive), target)
+            elif data is None:
                 target.unlink(missing_ok=True)
             else:
                 target.write_bytes(data)
@@ -1309,6 +1440,11 @@ def summarize_reconciliation(bundle, reconciliation):
             **{key: content_identity(load_optional(bundle, row[key]), row["PATH"])
                for key in ("CANONICAL_BEFORE", "CANONICAL_AFTER")}}
             for row in reconciliation["PRIVATE_CATALOG_ADOPTIONS"]]
+    if "RUNTIME_EXCLUSIONS" in reconciliation:
+        summary["RUNTIME_EXCLUSIONS"] = [{"PATH": row["PATH"], "REASON": row["REASON"],
+            **{key: content_identity(load_optional(bundle, row[key]), row["PATH"])
+               for key in ("CANONICAL_BEFORE", "EXCLUDED_CONTENT")}}
+            for row in reconciliation["RUNTIME_EXCLUSIONS"]]
     prior = reconciliation.get("PRIOR_LOCAL_RECONCILIATION")
     if prior:
         prior_path = load_descriptor(Path(prior["STATE_ROOT"]), prior["RECONCILIATION"])
@@ -1323,7 +1459,7 @@ def validate_reconciliation_summary(bundle, summary):
     required = {"FORMAT_VERSION", *TUPLE, "CANONICAL_BEFORE_MANIFEST", "SOURCE_SNAPSHOTS",
                 "PROTECTED_GENERATED_FILES", "BEFORE_MANIFEST", "CANONICAL_MANIFEST", "PROOF_KIND",
                 "CHANGES", "LOCAL_REPLAY_SHA256"}
-    optional = {"PRIOR_CHECKPOINT", "REQUIRED_CURRENT_CATALOGS", "CATALOG_RESTORATIONS", "GENERATED_ITEMS_PROVENANCE", "GENERATED_ITEMS_ADOPTION", "PRIVATE_CATALOG_ADOPTIONS"}
+    optional = {"PRIOR_CHECKPOINT", "REQUIRED_CURRENT_CATALOGS", "CATALOG_RESTORATIONS", "GENERATED_ITEMS_PROVENANCE", "GENERATED_ITEMS_ADOPTION", "PRIVATE_CATALOG_ADOPTIONS", "RUNTIME_EXCLUSIONS"}
     if (not required <= set(summary) or set(summary) - required - optional or summary["FORMAT_VERSION"] != 1
             or summary["PROOF_KIND"] != "PORTABLE_MEASURED_RECONCILIATION_V1"
             or not re.fullmatch("[0-9a-f]{64}", summary["LOCAL_REPLAY_SHA256"])):

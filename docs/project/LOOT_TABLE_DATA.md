@@ -1,8 +1,8 @@
 # Generated mission chest policies
 
-The three JSON files in this public folder are empty schema placeholders. The
-reviewed content belongs in private canonical GameData. Empty placeholders are
-not a release loot pool.
+The three JSON files in `AORebirth/GameData/Loot` are empty schema placeholders.
+The reviewed content belongs in private canonical GameData. Empty placeholders
+are not a release loot pool. This documentation stays outside runtime GameData.
 
 - `MissionChestRKAllowlist.json`: Version 1 with Entries containing LowId,
   HighId, MinQuality, MaxQuality, Classification (`OrdinaryRubiKa`) and nonempty
