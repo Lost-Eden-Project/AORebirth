@@ -190,6 +190,108 @@ class ReleaseContractTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def private_catalog_fixture(self):
+        canonical = self.root / "canonical"
+        canonical.mkdir()
+        (canonical / "private.json").write_bytes(b'{"repair":true}')
+        (canonical / "items.dat").write_bytes(b"old generated fixture")
+        stage = self.root / "ignored-policy-inputs"
+        stage.mkdir()
+        text = "Stage the reviewed private policies: " + ", ".join(Path(name).name for name in sorted(gate.PRIVATE_CHEST_CATALOGS))
+        instruction = stage / "authorization.txt"
+        instruction.write_bytes(text.encode())
+        mappings = []
+        for name in sorted(gate.PRIVATE_CHEST_CATALOGS):
+            path = stage / Path(name).name
+            path.write_bytes(gate.encoded({"Version": 1, "Entries": [{"fixture": name}]}))
+            mappings.append({"PATH": name, "STAGED_PATH": str(path), "SHA256": gate.digest(path.read_bytes()),
+                "APPROVAL": {"BY": "Mike", "INSTRUCTION_PATH": str(instruction),
+                             "INSTRUCTION_SHA256": gate.digest(instruction.read_bytes()), "TEXT": text}})
+        profile = {"CANONICAL_GAMEDATA_ROOT": str(canonical), "STATE_ROOT": str(self.root),
+                   "PROTECTED_GENERATED_FILES": ["items.dat"], "PRIVATE_CATALOG_ADOPTIONS": mappings}
+        placeholder = gate.encoded({"Version": 1, "Entries": []})
+        source = {name: {"size": len(placeholder), "blob": gate.blob(placeholder)} for name in gate.PRIVATE_CHEST_CATALOGS}
+        def trees(root, selected, authority, sha):
+            return source if authority == "PUBLIC_PRODUCT_DATA" and sha == PUBLIC else {}
+        return canonical, profile, placeholder, trees
+
+    def test_private_catalog_adoption_replays_public_placeholders_and_preserves_applied_chain(self):
+        canonical, profile, placeholder, trees = self.private_catalog_fixture()
+        receipt_path, receipt, _ = make_generated_fixture(self.root)
+        profile["REQUIRE_GENERATED_ITEMS"] = True
+        rows, states = gate.inventory(canonical)
+        bundle = self.root / "catalog-plan"
+        bundle.mkdir()
+        gate.write_json(bundle / "before-manifest.json", rows)
+        baseline = {"PUBLIC_MASTER_SHA": "c" * 40, "CONTENT_DUMP_SHA": DUMP}
+        with mock.patch.object(gate, "tree_files", side_effect=trees), mock.patch.object(gate, "source_blob", return_value=placeholder), \
+                mock.patch.object(gate, "git", return_value=b"ignored"), \
+                mock.patch.object(gate, "exporter_source_closure", return_value=receipt["EXPORTER_SOURCE_CLOSURE"]):
+            plan, projected = gate.reconcile_plan(self.root, profile, bundle, PUBLIC, DUMP, baseline, rows, generated_receipt=receipt_path)
+            gate.validate_reconciliation(bundle, plan)
+            summary = gate.summarize_reconciliation(bundle, plan)
+            self.assertEqual(len(summary["PRIVATE_CATALOG_ADOPTIONS"]), 3)
+            self.assertNotIn("STAGED_PATH", gate.encoded(summary).decode())
+            self.assertNotIn(str(self.root), gate.encoded(summary).decode())
+            attempt = {"PUBLIC_MASTER_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP, "WINDOWS_GAMEDATA_MANIFEST": plan["WINDOWS_GAMEDATA_MANIFEST"]}
+            with mock.patch.object(gate, "intake", return_value=(bundle, attempt, plan, projected, states)):
+                gate.apply_content(self.root, profile, gate.digest(gate.encoded(plan)))
+            self.assertEqual((canonical / "private.json").read_bytes(), b'{"repair":true}')
+            for mapping in profile["PRIVATE_CATALOG_ADOPTIONS"]:
+                self.assertEqual(gate.digest((canonical / mapping["PATH"]).read_bytes()), mapping["SHA256"])
+            next_bundle = self.root / "next-catalog-plan"
+            next_bundle.mkdir()
+            current, _ = gate.inventory(canonical)
+            gate.write_json(next_bundle / "before-manifest.json", current)
+            carried, projected = gate.reconcile_plan(self.root, profile, next_bundle, PUBLIC, DUMP,
+                gate.read_json(self.root / "canonical-state.json"), current)
+            self.assertEqual(projected, {})
+            self.assertIn("PRIOR_LOCAL_RECONCILIATION", carried)
+            gate.summarize_reconciliation(next_bundle, carried)
+        for mutate in (lambda value: value["PRIVATE_CATALOG_ADOPTIONS"].pop(),
+                       lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0].update(PATH="items.dat"),
+                       lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0]["APPROVAL"].update(BY="Agent"),
+                       lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0]["APPROVAL"].update(INSTRUCTION_SHA256="f" * 64),
+                       lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0]["CANONICAL_AFTER"].update(sha256="f" * 64),
+                       lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0].update(CANONICAL_BEFORE=None)):
+            bad = copy.deepcopy(summary)
+            mutate(bad)
+            with self.assertRaises(ValueError):
+                gate.validate_reconciliation_summary(bundle, bad)
+
+    def test_private_catalog_adoption_rejects_tampered_source_and_instruction(self):
+        canonical, profile, placeholder, trees = self.private_catalog_fixture()
+        rows, _ = gate.inventory(canonical)
+        for number, mutation in enumerate((lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0].update(SHA256="f" * 64),
+                lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0]["APPROVAL"].update(TEXT="Not the actual instruction for MissionChestRKAllowlist.json"),
+                lambda value: value["PRIVATE_CATALOG_ADOPTIONS"][0].update(PATH="items.dat"))):
+            selected = copy.deepcopy(profile)
+            mutation(selected)
+            bundle = self.root / ("invalid-policy-" + str(number))
+            bundle.mkdir()
+            gate.write_json(bundle / "before-manifest.json", rows)
+            with mock.patch.object(gate, "tree_files", side_effect=trees), mock.patch.object(gate, "source_blob", return_value=placeholder), \
+                    mock.patch.object(gate, "git", return_value=b"ignored"), self.assertRaises(ValueError):
+                plan, _ = gate.reconcile_plan(self.root, selected, bundle, PUBLIC, DUMP,
+                    {"PUBLIC_MASTER_SHA": "c" * 40, "CONTENT_DUMP_SHA": DUMP}, rows)
+                gate.validate_reconciliation(bundle, plan)
+        self.assertEqual(gate.inventory(canonical)[0], rows)
+
+    def test_private_catalog_adoption_cannot_overwrite_different_private_entries(self):
+        canonical, profile, placeholder, trees = self.private_catalog_fixture()
+        existing = canonical / sorted(gate.PRIVATE_CHEST_CATALOGS)[0]
+        existing.parent.mkdir()
+        existing.write_bytes(gate.encoded({"Version": 1, "Entries": [{"private": "preserve"}]}))
+        rows, _ = gate.inventory(canonical)
+        bundle = self.root / "conflicting-private-policy"
+        bundle.mkdir()
+        gate.write_json(bundle / "before-manifest.json", rows)
+        with mock.patch.object(gate, "tree_files", return_value={}), mock.patch.object(gate, "git", return_value=b"ignored"), self.assertRaises(ValueError):
+            plan, _ = gate.reconcile_plan(self.root, profile, bundle, PUBLIC, DUMP,
+                {"PUBLIC_MASTER_SHA": PUBLIC, "CONTENT_DUMP_SHA": DUMP}, rows)
+            gate.validate_reconciliation(bundle, plan)
+        self.assertEqual(gate.inventory(canonical)[0], rows)
+
     def test_portable_acceptance_survives_location_change_without_windows_binaries(self):
         bundle, _ = make_portable_fixture(self.root)
         relocated = self.root / "private-source" / "evidence"

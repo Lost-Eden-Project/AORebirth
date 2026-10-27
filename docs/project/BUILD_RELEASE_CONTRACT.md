@@ -40,6 +40,22 @@ deployment-tooling access and publication rules remain in force.
    shared inventory/hash algorithm. Cover the complete selected dataset, not
    only the files changed in this release. Record content reconciliation and
    source provenance without publishing protected content.
+
+Approved authored RK chest policies use the existing reconciliation helper's
+private `PRIVATE_CATALOG_ADOPTIONS` profile mapping. Only the three runtime paths
+`Loot/MissionChestRKAllowlist.json`, `Loot/MissionChestSeasonalExclusions.json` and
+`Loot/MissionChestSpecialExclusions.json` are eligible, together. Each row binds
+`PATH`, an owning-checkout ignored `STAGED_PATH`, its approved `SHA256`, and
+`APPROVAL` containing `BY=Mike`, ignored `INSTRUCTION_PATH`, the actual user
+instruction's `INSTRUCTION_SHA256`, and a literal `TEXT` excerpt naming the
+policy. Use private paths only in the ignored profile. Normal preparation and
+hash-approved reconciliation adopt these bytes after upstream merging, replace
+only absent/empty public placeholders or retain identical approved bytes, and
+reject unexplained private changes or empty replacement policies. Local replay
+retains exact instruction/before/after payloads; portable evidence carries bounded
+identities only. Never reset canonical state or copy policies directly into the
+selected data tree to bypass reconciliation. Generated-items, source verification
+and exact-input Windows acceptance requirements remain unchanged.
 6. Build Windows locally from the exact public source and refreshed canonical
    GameData. Use the established build and startup/readiness workflows.
 7. Stop after Windows build/startup readiness and hand the build to Mike for

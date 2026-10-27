@@ -34,6 +34,7 @@ PRODUCT_PATHS = ("AORebirth/Server", "AORebirth/Libraries", "AORebirth/Config", 
                  "NewZoneEngineBuild", "Tools/DatabaseMigrationTool", "Directory.Build.targets", "tools/windows_release_contract.py",
                  "tools/windows_release_contract.cmd", "tools/build_aorebirth_debug.cmd", "start-engines.cmd", "start-engines.ps1")
 CONFIG_OVERRIDES = {"AORebirth/Config/Config.xml", "AORebirth/Config/ChatEngine.Config.xml"}
+PRIVATE_CHEST_CATALOGS = {"Loot/MissionChestRKAllowlist.json", "Loot/MissionChestSeasonalExclusions.json", "Loot/MissionChestSpecialExclusions.json"}
 MISSING = object()
 EXPORTER_PROJECT = "Tools/RDBDataExtractor/RDBDataExtractor.csproj"
 EXPORTER_OUTPUT = "Tools/RDBDataExtractor/bin/Release/net10.0"
@@ -563,8 +564,54 @@ def required_catalogs(value):
     return value
 
 
+def validate_private_catalog_adoptions(bundle, value, actual, portable=False):
+    rows = value.get("PRIVATE_CATALOG_ADOPTIONS", [])
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows) or (rows and {row.get("PATH") for row in rows} != PRIVATE_CHEST_CATALOGS):
+        raise ValueError("Private chest catalog adoption must bind exactly the three approved policies")
+    seen = set()
+    for row in rows:
+        if set(row) != {"PATH", "SHA256", "APPROVAL", "APPROVAL_INSTRUCTION", "CANONICAL_BEFORE", "CANONICAL_AFTER"}:
+            raise ValueError("Private catalog adoption schema differs")
+        path, approval = row["PATH"], row["APPROVAL"]
+        if (path in seen or path in value["PROTECTED_GENERATED_FILES"] or not re.fullmatch("[0-9a-f]{64}", row["SHA256"])
+                or not isinstance(approval, dict) or set(approval) != {"BY", "INSTRUCTION_SHA256", "TEXT"}
+                or approval["BY"] != "Mike" or not re.fullmatch("[0-9a-f]{64}", approval["INSTRUCTION_SHA256"])
+                or not isinstance(approval["TEXT"], str) or not 0 < len(approval["TEXT"]) <= 4096
+                or PurePosixPath(path).name not in approval["TEXT"]):
+            raise ValueError("Private catalog adoption lacks exact hash-bound user approval")
+        seen.add(path)
+        instruction = row["APPROVAL_INSTRUCTION"] if portable else content_identity(load_optional(bundle, row["APPROVAL_INSTRUCTION"]))
+        if instruction is None or set(instruction) != {"size", "sha256", "blob"}:
+            raise ValueError("Private catalog approval instruction identity is missing")
+        validate_manifest([{"path": "approval.txt", **instruction}])
+        if instruction["sha256"] != approval["INSTRUCTION_SHA256"] or instruction["size"] <= 0:
+            raise ValueError("Private catalog approval instruction hash differs")
+        if not portable and approval["TEXT"].replace("\r\n", "\n") not in load_optional(bundle, row["APPROVAL_INSTRUCTION"]).decode("utf-8-sig").replace("\r\n", "\n"):
+            raise ValueError("Private catalog approval is not the actual user instruction")
+        before = row["CANONICAL_BEFORE"] if portable else content_identity(load_optional(bundle, row["CANONICAL_BEFORE"]), path)
+        after = row["CANONICAL_AFTER"] if portable else content_identity(load_optional(bundle, row["CANONICAL_AFTER"]), path)
+        if before != actual.get(path) or after is None:
+            raise ValueError("Private catalog adoption does not bind its complete before/after state")
+        validate_manifest([after])
+        if after["path"] != path or after["sha256"] != row["SHA256"] or after["size"] <= 0:
+            raise ValueError("Private catalog result differs from approved staged bytes")
+        if before is not None and before != after:
+            source = value["SOURCE_SNAPSHOTS"]["PUBLIC_PRODUCT_DATA"]["AFTER"].get(path)
+            if source != {key: before[key] for key in ("size", "blob")}:
+                raise ValueError("Private catalog adoption would overwrite unexplained private content")
+            if not portable:
+                placeholder = read_json(load_descriptor(bundle, row["CANONICAL_BEFORE"]))
+                if not isinstance(placeholder, dict) or placeholder.get("Entries") != []:
+                    raise ValueError("Only an empty public placeholder may be replaced by private adoption")
+        if not portable:
+            content = read_json(load_descriptor(bundle, row["CANONICAL_AFTER"]))
+            if not isinstance(content, dict) or not isinstance(content.get("Entries"), list) or not content["Entries"]:
+                raise ValueError("Private policy adoption cannot install an empty public placeholder")
+        actual[path] = after
+
+
 def validate_supplemental_content(bundle, value, actual, portable=False):
-    """Account for explicit missing-catalog restoration and the one generated file."""
+    """Replay required restorations, approved private policies and generated items."""
     catalogs = required_catalogs(value.get("REQUIRED_CURRENT_CATALOGS", []))
     expected, seen = {}, set()
     for mapping in catalogs:
@@ -592,6 +639,7 @@ def validate_supplemental_content(bundle, value, actual, portable=False):
         actual[path] = result
     if seen != set(expected):
         raise ValueError("Required-current catalog restorations are incomplete")
+    validate_private_catalog_adoptions(bundle, value, actual, portable)
     proof, adoption = value.get("GENERATED_ITEMS_PROVENANCE"), value.get("GENERATED_ITEMS_ADOPTION")
     if not proof:
         if adoption or value.get("GENERATED_ITEMS_LOCAL_RECEIPT"):
@@ -674,6 +722,36 @@ def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before
         restorations.append({**mapping, "CANONICAL_BEFORE": None,
             "CANONICAL_AFTER": stash(bundle, "catalog-restorations/" + str(len(restorations)), incoming)})
         projected[path] = incoming
+    private_adoptions = []
+    mappings = profile.get("PRIVATE_CATALOG_ADOPTIONS", [])
+    if not isinstance(mappings, list) or any(not isinstance(row, dict) for row in mappings) or (mappings and {row.get("PATH") for row in mappings} != PRIVATE_CHEST_CATALOGS):
+        raise ValueError("Private chest catalog adoption requires exactly the three policy mappings")
+    for mapping in sorted(mappings, key=lambda row: row["PATH"]):
+        if set(mapping) != {"PATH", "STAGED_PATH", "SHA256", "APPROVAL"}:
+            raise ValueError("Private policy profile mapping schema differs")
+        path, approval = mapping["PATH"], mapping["APPROVAL"]
+        if not isinstance(approval, dict) or set(approval) != {"BY", "INSTRUCTION_PATH", "INSTRUCTION_SHA256", "TEXT"}:
+            raise ValueError("Private policy mapping requires the actual hash-bound user instruction")
+        inputs = []
+        for selected in (mapping["STAGED_PATH"], approval["INSTRUCTION_PATH"]):
+            selected = Path(selected)
+            source = checked(root, selected.relative_to(root).as_posix() if selected.is_absolute() else selected.as_posix())
+            if git(root, "check-ignore", "--", str(source)).strip() == b"":
+                raise ValueError("Private policy inputs and approval must stay ignored in the owning checkout")
+            inputs.append(source.read_bytes())
+        data, instruction = inputs
+        if digest(data) != mapping["SHA256"] or digest(instruction) != approval["INSTRUCTION_SHA256"]:
+            raise ValueError("Staged private policy or actual instruction hash changed")
+        target = checked(canonical, path, exists=False)
+        private = projected[path] if path in projected else target.read_bytes() if target.is_file() else None
+        prefix = "private-catalog-adoptions/" + str(len(private_adoptions)) + "/"
+        private_adoptions.append({"PATH": path, "SHA256": mapping["SHA256"],
+            "APPROVAL": {key: approval[key] for key in ("BY", "INSTRUCTION_SHA256", "TEXT")},
+            "APPROVAL_INSTRUCTION": stash(bundle, prefix + "instruction", instruction),
+            "CANONICAL_BEFORE": stash(bundle, prefix + "before", private),
+            "CANONICAL_AFTER": stash(bundle, prefix + "after", data)})
+        if data != private:
+            projected[path] = data
     generated, adoption, local_receipt = None, None, None
     if generated_receipt:
         if "items.dat" not in profile.get("PROTECTED_GENERATED_FILES", ()):
@@ -713,6 +791,8 @@ def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before
             "BEFORE_MANIFEST": descriptor(bundle, bundle / "before-manifest.json")}
     if catalogs:
         plan.update(REQUIRED_CURRENT_CATALOGS=catalogs, CATALOG_RESTORATIONS=restorations)
+    if private_adoptions:
+        plan["PRIVATE_CATALOG_ADOPTIONS"] = private_adoptions
     if generated:
         plan["GENERATED_ITEMS_PROVENANCE"] = generated
         if local_receipt:
@@ -1223,6 +1303,12 @@ def summarize_reconciliation(bundle, reconciliation):
     if "GENERATED_ITEMS_ADOPTION" in reconciliation:
         summary["GENERATED_ITEMS_ADOPTION"] = {key: content_identity(load_optional(bundle, item), "items.dat")
             for key, item in reconciliation["GENERATED_ITEMS_ADOPTION"].items()}
+    if "PRIVATE_CATALOG_ADOPTIONS" in reconciliation:
+        summary["PRIVATE_CATALOG_ADOPTIONS"] = [{**{key: row[key] for key in ("PATH", "SHA256", "APPROVAL")},
+            "APPROVAL_INSTRUCTION": content_identity(load_optional(bundle, row["APPROVAL_INSTRUCTION"])),
+            **{key: content_identity(load_optional(bundle, row[key]), row["PATH"])
+               for key in ("CANONICAL_BEFORE", "CANONICAL_AFTER")}}
+            for row in reconciliation["PRIVATE_CATALOG_ADOPTIONS"]]
     prior = reconciliation.get("PRIOR_LOCAL_RECONCILIATION")
     if prior:
         prior_path = load_descriptor(Path(prior["STATE_ROOT"]), prior["RECONCILIATION"])
@@ -1237,7 +1323,7 @@ def validate_reconciliation_summary(bundle, summary):
     required = {"FORMAT_VERSION", *TUPLE, "CANONICAL_BEFORE_MANIFEST", "SOURCE_SNAPSHOTS",
                 "PROTECTED_GENERATED_FILES", "BEFORE_MANIFEST", "CANONICAL_MANIFEST", "PROOF_KIND",
                 "CHANGES", "LOCAL_REPLAY_SHA256"}
-    optional = {"PRIOR_CHECKPOINT", "REQUIRED_CURRENT_CATALOGS", "CATALOG_RESTORATIONS", "GENERATED_ITEMS_PROVENANCE", "GENERATED_ITEMS_ADOPTION"}
+    optional = {"PRIOR_CHECKPOINT", "REQUIRED_CURRENT_CATALOGS", "CATALOG_RESTORATIONS", "GENERATED_ITEMS_PROVENANCE", "GENERATED_ITEMS_ADOPTION", "PRIVATE_CATALOG_ADOPTIONS"}
     if (not required <= set(summary) or set(summary) - required - optional or summary["FORMAT_VERSION"] != 1
             or summary["PROOF_KIND"] != "PORTABLE_MEASURED_RECONCILIATION_V1"
             or not re.fullmatch("[0-9a-f]{64}", summary["LOCAL_REPLAY_SHA256"])):
