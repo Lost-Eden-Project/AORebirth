@@ -99,7 +99,8 @@ namespace LoginEngine.MessageHandlers
                 int storedPlayfield = AORebirth.Database.DatabaseDaoFactory.CreateCharacterDao()
                     .LoadById(selectCharacterMessage.CharacterId)?.Playfield ?? 0;
                 var ticket = Client.World.SelectCharacter(
-                    authenticatedAccount, client.ZoneHandoffGeneration, selectCharacterMessage.CharacterId, storedPlayfield);
+                    authenticatedAccount, client.ZoneHandoffGeneration, selectCharacterMessage.CharacterId, storedPlayfield,
+                    client.ClientVersion);
                 if (!ticket.Accepted)
                 {
                     throw new InvalidOperationException("World refused the zone handoff: " + ticket.Reason);
@@ -118,7 +119,8 @@ namespace LoginEngine.MessageHandlers
                                                  CharacterId = selectCharacterMessage.CharacterId,
                                                  Cookie1 = ticket.Cookie1,
                                                  Cookie2 = ticket.Cookie2,
-                                                 EventServerType = 1,
+                                                 // The target zone's handoff hook may choose it; retail is 1.
+                                                 EventServerType = ticket.EventServerType != 0 ? ticket.EventServerType : 1,
                                                  // The retail client stores this field but has no proven runtime consumer.
                                                  PlayerId = 0,
                                                  ServerIpAddress = zoneIpAdress,

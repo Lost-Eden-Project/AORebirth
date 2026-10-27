@@ -39,6 +39,8 @@ namespace ZoneEngine_New.Core.Modules
         private string? _initializing;
         private IConnectionFilterProvider? _connectionFilter;
         private string? _connectionFilterOwner;
+        private IHandoffHook? _handoffHook;
+        private string? _handoffHookOwner;
 
         private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, IZoneGameData gameData,
             Func<Playfield.PlayfieldManager> playfields)
@@ -113,6 +115,32 @@ namespace ZoneEngine_New.Core.Modules
             return provider?.Create(new ConnectionInfo(sessionId, remoteEndPoint));
         }
 
+        /// <summary>Whether a module registered a handoff hook.</summary>
+        public bool HasHandoffHook => _handoffHook != null;
+
+        /// <summary>The module that registered the handoff hook, or null.</summary>
+        public string? HandoffHookOwner => _handoffHookOwner;
+
+        /// <summary>The module's decision, or admit when there is no hook. A hook that throws refuses the handoff.</summary>
+        public HandoffDecision DecideHandoff(HandoffRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            IHandoffHook? hook = _handoffHook;
+            if (hook == null)
+                return HandoffDecision.Admit();
+
+            try
+            {
+                return hook.Decide(request);
+            }
+            catch (Exception exception)
+            {
+                // A broken hook must not let clients past whatever it was guarding.
+                _logger.Error(exception, "Module " + _handoffHookOwner + " handoff hook failed; refusing the handoff.");
+                return HandoffDecision.Refuse("hook failed");
+            }
+        }
+
         /// <summary>
         /// The module GM commands, checked against the built-in names when the GM command dispatcher is built (before the
         /// zone accepts connections). A module whose command clashes is shut down and unloaded, as if it had failed to
@@ -156,6 +184,12 @@ namespace ZoneEngine_New.Core.Modules
             {
                 _connectionFilter = null;
                 _connectionFilterOwner = null;
+            }
+
+            if (string.Equals(_handoffHookOwner, moduleId, StringComparison.OrdinalIgnoreCase))
+            {
+                _handoffHook = null;
+                _handoffHookOwner = null;
             }
         }
 
@@ -234,13 +268,14 @@ namespace ZoneEngine_New.Core.Modules
 
             _modules.Add(new LoadedModule(manifest.Id, entries));
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                "Module loaded id={0} version={1} assembly={2} sha256={3} entries={4} connectionFilter={5}",
+                "Module loaded id={0} version={1} assembly={2} sha256={3} entries={4} connectionFilter={5} handoffHook={6}",
                 manifest.Id,
                 string.IsNullOrWhiteSpace(manifest.Version) ? "?" : manifest.Version,
                 Path.GetFileName(assemblyPath),
                 Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assemblyPath))),
                 entries.Count,
-                string.Equals(_connectionFilterOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no"));
+                string.Equals(_connectionFilterOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no",
+                string.Equals(_handoffHookOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no"));
         }
 
         private static void CheckApiVersion(Assembly assembly)
@@ -308,6 +343,18 @@ namespace ZoneEngine_New.Core.Modules
             _connectionFilterOwner = moduleId;
         }
 
+        private void RegisterHandoffHook(string moduleId, IHandoffHook hook)
+        {
+            ArgumentNullException.ThrowIfNull(hook);
+            if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("A handoff hook can only be registered during Initialize.");
+            if (_handoffHook != null)
+                throw new InvalidOperationException(
+                    "Module " + _handoffHookOwner + " already registered the handoff hook; only one is allowed.");
+            _handoffHook = hook;
+            _handoffHookOwner = moduleId;
+        }
+
         private sealed record LoadedModule(string Id, List<IZoneModule> Entries);
 
         private sealed class ZoneModuleContext : IZoneModuleContext
@@ -356,6 +403,8 @@ namespace ZoneEngine_New.Core.Modules
                 => _host.RegisterConnectionFilter(ModuleId, provider);
 
             public void RegisterGmCommand(ModuleGmCommand command) => _host.RegisterGmCommand(ModuleId, command);
+
+            public void RegisterHandoffHook(IHandoffHook hook) => _host.RegisterHandoffHook(ModuleId, hook);
         }
 
         private sealed class ModuleEventsView : IZoneEvents

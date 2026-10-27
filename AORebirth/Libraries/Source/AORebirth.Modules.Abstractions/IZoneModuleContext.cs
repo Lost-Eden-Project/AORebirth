@@ -47,5 +47,12 @@ namespace AORebirth.Modules
         /// command or another module already uses fails this module's startup (the zone's, when the module is Required).
         /// </summary>
         void RegisterGmCommand(Commands.ModuleGmCommand command);
+
+        /// <summary>
+        /// Installs the hook that decides on login handoffs to this zone (module API 1.4). Only during
+        /// <see cref="IZoneModule.Initialize"/>, and only one module may register one; a second registration fails that
+        /// module's startup.
+        /// </summary>
+        void RegisterHandoffHook(IHandoffHook hook);
     }
 }

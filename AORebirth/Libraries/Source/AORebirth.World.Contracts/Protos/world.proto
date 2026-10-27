@@ -83,6 +83,8 @@ message Register {
   repeated TeamState teams = 9;
   // The session this process held before its stream dropped; lets it take its name back at once.
   string previous_session = 10;
+  // True when a module on this zone decides on handoffs; World then asks it (AdmitClient) at character select.
+  bool handoff_hook = 11;
 }
 
 message LeaseAssertion {
@@ -146,6 +148,7 @@ message ServiceRequest {
   oneof body {
     ReleaseCharacter release_character = 2;
     LocateCharacter locate_character = 3;
+    AdmitClient admit_client = 4;
   }
 }
 
@@ -154,7 +157,23 @@ message ServiceReply {
   oneof body {
     ReleaseCharacterReply release_character = 2;
     LocateCharacterReply locate_character = 3;
+    AdmitClientReply admit_client = 4;
   }
+}
+
+// A client is about to be handed to this zone at login.
+message AdmitClient {
+  string account = 1;
+  int32 character_id = 2;
+  string client_version = 3;
+}
+
+message AdmitClientReply {
+  bool admitted = 1;
+  // ZoneInfo's EventServerType for this handoff; 0 leaves the retail value.
+  uint32 event_server_type = 2;
+  // Why it was refused, for the logs.
+  string reason = 3;
 }
 
 enum ReleaseReason {
@@ -236,6 +255,8 @@ message SelectCharacterRequest {
   string generation = 2;
   int32 character_id = 3;
   int32 stored_playfield = 4;
+  // The version string the client sent at login, passed to the target zone's handoff hook.
+  string client_version = 5;
 }
 
 message SelectCharacterReply {
@@ -244,6 +265,8 @@ message SelectCharacterReply {
   fixed32 cookie1 = 3;
   fixed32 cookie2 = 4;
   Endpoint zone = 5;
+  // From the target zone's handoff hook; 0 leaves the retail value.
+  uint32 event_server_type = 6;
 }
 
 message DeleteRequest {

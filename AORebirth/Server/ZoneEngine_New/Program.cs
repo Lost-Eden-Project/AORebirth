@@ -104,11 +104,12 @@ namespace ZoneEngine_New
                         gameData.MonsterDataCount));
                 // NPC scripts compile now, so a bad program is reported at startup rather than at the first spawn.
                 rootServices.GetRequiredService<ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog>();
+                // External modules load before any playfield or connection can raise into them, and before World
+                // registration, which says whether a module's handoff hook decides on logins to this zone.
+                modules = rootServices.GetRequiredService<ZoneEngine_New.Core.Modules.ZoneModuleHost>();
                 // World first: no playfield builds and no client connects before this instance is registered.
                 if (!ConnectWorld(rootServices, logger, instance))
                     return 1;
-                // External modules load before any playfield or connection can raise into them.
-                modules = rootServices.GetRequiredService<ZoneEngine_New.Core.Modules.ZoneModuleHost>();
                 chatEngineLink = rootServices.GetRequiredService<IChatEngineLink>();
                 chatEngineLink.Start();
                 playfieldManager = rootServices.GetRequiredService<PlayfieldManager>();
@@ -178,6 +179,11 @@ namespace ZoneEngine_New
         {
             worldLink = services.GetRequiredService<WorldLink>();
             worldLink.Attach(services.GetRequiredService<WorldZoneBridge>());
+            if (modules != null)
+                worldLink.AttachModules(modules);
+            logger.Info(modules?.HasHandoffHook == true
+                ? "Handoff hook registered by module " + modules.HandoffHookOwner + "; World asks it at character select."
+                : "No handoff hook registered.");
             worldLink.Start();
             logger.Info("Connecting to World at " + worldLink.Url + " as " + instance.Name + " (" + instance.AdvertisedAddress + ":" + instance.Port + ")");
             DateTime nextNotice = DateTime.UtcNow.AddSeconds(5);

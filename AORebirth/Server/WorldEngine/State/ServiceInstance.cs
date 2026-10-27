@@ -43,6 +43,9 @@ namespace WorldEngine.State
 
         public string Build { get; set; } = string.Empty;
 
+        /// <summary>A module on this zone decides on login handoffs to it; World asks it (AdmitClient) at character select.</summary>
+        public bool HasHandoffHook { get; set; }
+
         public long LastHeartbeatMs { get; set; }
 
         public long ConnectedSinceMs { get; }

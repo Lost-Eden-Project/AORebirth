@@ -40,6 +40,7 @@ namespace ZoneEngine_New.Core.World
         readonly TaskCompletionSource _firstRegistration = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly object _registrationSync = new();
         IWorldZoneHandlers? _handlers;
+        Modules.ZoneModuleHost? _modules;
         Task? _connectLoop;
         Task? _releaseLoop;
         Task? _fenceLoop;
@@ -87,6 +88,13 @@ namespace ZoneEngine_New.Core.World
 
         public void Attach(IWorldZoneHandlers handlers)
             => _handlers = handlers ?? throw new ArgumentNullException(nameof(handlers));
+
+        /// <summary>
+        /// The loaded modules, for the handoff hook (module API 1.4). Attach before <see cref="Start"/> so the first
+        /// registration already tells World whether this zone decides on handoffs.
+        /// </summary>
+        public void AttachModules(Modules.ZoneModuleHost modules)
+            => _modules = modules ?? throw new ArgumentNullException(nameof(modules));
 
         public void Start()
         {
@@ -381,7 +389,8 @@ namespace ZoneEngine_New.Core.World
                 LastEpoch = Epoch,
                 Build = typeof(WorldLink).Assembly.GetName().Version?.ToString() ?? string.Empty,
                 PreferredSlot = _slot,
-                PreviousSession = _session
+                PreviousSession = _session,
+                HandoffHook = _modules?.HasHandoffHook ?? false
             };
             Dictionary<int, PlayerPresence> presence = SafePresence().ToDictionary(p => p.CharacterId);
             foreach (KeyValuePair<int, LocalLease> lease in _leases)
@@ -567,6 +576,9 @@ namespace ZoneEngine_New.Core.World
                     case ServiceRequest.BodyOneofCase.LocateCharacter:
                         reply.LocateCharacter = handlers?.Locate(request.LocateCharacter.CharacterId) ?? new LocateCharacterReply { Found = false };
                         break;
+                    case ServiceRequest.BodyOneofCase.AdmitClient:
+                        reply.AdmitClient = AdmitClient(request.AdmitClient);
+                        break;
                     default:
                         return;
                 }
@@ -576,11 +588,27 @@ namespace ZoneEngine_New.Core.World
                 _logger.Error(exception, "World request " + request.BodyCase + " failed");
                 if (request.BodyCase == ServiceRequest.BodyOneofCase.ReleaseCharacter)
                     reply.ReleaseCharacter = new ReleaseCharacterReply { Outcome = ReleaseOutcome.ReleaseFailed };
+                else if (request.BodyCase == ServiceRequest.BodyOneofCase.AdmitClient)
+                    reply.AdmitClient = new AdmitClientReply { Admitted = false, Reason = "hook failed" };
                 else
                     reply.LocateCharacter = new LocateCharacterReply { Found = false };
             }
 
             outbound.TryWrite(new ServiceToWorld { Reply = reply });
+        }
+
+        /// <summary>The module handoff hook's answer for a login handoff to this zone; admit when there is no hook.</summary>
+        AdmitClientReply AdmitClient(AdmitClient request)
+        {
+            AORebirth.Modules.Network.HandoffDecision decision = _modules?.DecideHandoff(
+                    new AORebirth.Modules.Network.HandoffRequest(request.Account, request.CharacterId, request.ClientVersion))
+                ?? AORebirth.Modules.Network.HandoffDecision.Admit();
+            return new AdmitClientReply
+            {
+                Admitted = decision.Admitted,
+                EventServerType = decision.EventServerType,
+                Reason = decision.Reason ?? string.Empty
+            };
         }
 
         int _presenceQueued;

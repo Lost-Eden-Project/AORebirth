@@ -11,6 +11,11 @@ namespace AORebirth.World.Contracts
     /// </summary>
     public sealed class WorldSessionClient : IDisposable
     {
+        /// <summary>
+        /// Deadline for each call. SelectCharacter may wait on the target zone's handoff hook, which World gives up on
+        /// after SessionService.HandoffHookTimeout (3 s); keep this well above that so a slow zone comes back as World's
+        /// clean refusal, not a deadline error here.
+        /// </summary>
         static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
 
         /// <summary>The delete waits for the zone to save and despawn a link-dead character.</summary>
@@ -41,14 +46,17 @@ namespace AORebirth.World.Contracts
         public string BeginLogin(string account)
             => _channel.Session.BeginLogin(new BeginLoginRequest { Account = account }, _channel.Call(CallTimeout)).Generation;
 
-        public SelectCharacterReply SelectCharacter(string account, string generation, int characterId, int storedPlayfield)
+        /// <param name="clientVersion">The version string the client sent at login, for the target zone's handoff hook.</param>
+        public SelectCharacterReply SelectCharacter(
+            string account, string generation, int characterId, int storedPlayfield, string clientVersion)
             => _channel.Session.SelectCharacter(
                 new SelectCharacterRequest
                 {
                     Account = account,
                     Generation = generation ?? string.Empty,
                     CharacterId = characterId,
-                    StoredPlayfield = storedPlayfield
+                    StoredPlayfield = storedPlayfield,
+                    ClientVersion = clientVersion ?? string.Empty
                 },
                 _channel.Call(CallTimeout));
 

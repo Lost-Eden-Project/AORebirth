@@ -16,16 +16,63 @@ namespace WorldEngine.Services
     {
         static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(8);
 
+        /// <summary>
+        /// How long a select waits on the target zone's handoff hook. Must stay well under login's deadline for the whole
+        /// call (WorldSessionClient.CallTimeout, 5 s), so a slow zone gets World's clean refusal rather than a deadline
+        /// error on the login server.
+        /// </summary>
+        static readonly TimeSpan HandoffHookTimeout = TimeSpan.FromSeconds(3);
+
         public override Task<BeginLoginReply> BeginLogin(BeginLoginRequest request, ServerCallContext context)
             => Task.FromResult(new BeginLoginReply { Generation = state.BeginLogin(RequireAccount(request.Account)) });
 
-        public override Task<SelectCharacterReply> SelectCharacter(SelectCharacterRequest request, ServerCallContext context)
+        public override async Task<SelectCharacterReply> SelectCharacter(SelectCharacterRequest request, ServerCallContext context)
         {
             RequireAccount(request.Account);
-            SelectCharacterReply reply = state.SelectCharacter(request);
+            SelectCharacterReply reply = state.SelectCharacter(request, out ServiceInstance? target);
+            if (reply.Accepted && target is { HasHandoffHook: true })
+                reply = await AskHandoffHookAsync(request, reply, target, context).ConfigureAwait(false);
             if (!reply.Accepted)
                 log.LogWarning("Select refused character={Character} reason={Reason}", request.CharacterId, reply.Reason);
-            return Task.FromResult(reply);
+            return reply;
+        }
+
+        /// <summary>
+        /// The target zone decides on the handoff. No answer refuses it (a zone that installed a hook is guarding
+        /// something, so it fails closed); a refusal withdraws the ticket just issued.
+        /// </summary>
+        async Task<SelectCharacterReply> AskHandoffHookAsync(
+            SelectCharacterRequest request, SelectCharacterReply issued, ServiceInstance target, ServerCallContext context)
+        {
+            ServiceReply? answer = await target.RequestAsync(state.NextRequestId(),
+                new ServiceRequest
+                {
+                    AdmitClient = new AdmitClient
+                    {
+                        Account = request.Account,
+                        CharacterId = request.CharacterId,
+                        ClientVersion = request.ClientVersion
+                    }
+                },
+                HandoffHookTimeout, context.CancellationToken).ConfigureAwait(false);
+
+            if (answer?.BodyCase != ServiceReply.BodyOneofCase.AdmitClient)
+            {
+                state.WithdrawHandoff(request.CharacterId, issued.Cookie1, issued.Cookie2);
+                log.LogWarning("Handoff hook on {Zone} did not answer for character {Character}", target.Name, request.CharacterId);
+                return new SelectCharacterReply { Accepted = false, Reason = "zone_unavailable" };
+            }
+
+            if (!answer.AdmitClient.Admitted)
+            {
+                state.WithdrawHandoff(request.CharacterId, issued.Cookie1, issued.Cookie2);
+                log.LogInformation("Handoff hook on {Zone} refused character {Character}: {Reason}",
+                    target.Name, request.CharacterId, answer.AdmitClient.Reason);
+                return new SelectCharacterReply { Accepted = false, Reason = "refused_by_zone" };
+            }
+
+            issued.EventServerType = answer.AdmitClient.EventServerType;
+            return issued;
         }
 
         public override async Task<DeleteReply> ReleaseForDelete(DeleteRequest request, ServerCallContext context)

@@ -91,6 +91,7 @@ namespace WorldEngine.State
 
                 candidate.Game = message.Game;
                 candidate.Build = message.Build;
+                candidate.HasHandoffHook = message.HandoffHook;
                 candidate.Slot = AssignSlot(candidate.Name, message.PreferredSlot, candidate.Role);
                 _instances[candidate.Name] = candidate;
                 _sessions[candidate.Session] = candidate;
@@ -113,9 +114,10 @@ namespace WorldEngine.State
                 ReconcilePlayfields(candidate, message, now, accepted);
 
                 _log.LogInformation(
-                    "Registered {Role} {Instance} slot={Slot} endpoint={Endpoint} leases={Leases} playfields={Playfields} lost={Lost} recovering={Recovering}",
+                    "Registered {Role} {Instance} slot={Slot} endpoint={Endpoint} leases={Leases} playfields={Playfields} lost={Lost} recovering={Recovering} handoffHook={HandoffHook}",
                     candidate.Role, candidate.Name, candidate.Slot, Describe(candidate.Game), accepted.Leases.Count,
-                    accepted.Playfields.Count, accepted.LostLeases.Count + accepted.LostPlayfields.Count, recovering);
+                    accepted.Playfields.Count, accepted.LostLeases.Count + accepted.LostPlayfields.Count, recovering,
+                    candidate.HasHandoffHook);
                 return accepted;
             }
         }
@@ -404,8 +406,15 @@ namespace WorldEngine.State
             }
         }
 
-        public SelectCharacterReply SelectCharacter(SelectCharacterRequest request)
+        public SelectCharacterReply SelectCharacter(SelectCharacterRequest request) => SelectCharacter(request, out _);
+
+        /// <summary>
+        /// Issues the login ticket and names the instance it routes to (<paramref name="target"/>, null when refused),
+        /// so the caller can ask that zone's handoff hook and <see cref="WithdrawHandoff"/> on refusal.
+        /// </summary>
+        public SelectCharacterReply SelectCharacter(SelectCharacterRequest request, out ServiceInstance? target)
         {
+            target = null;
             ValidateAccount(request.Account);
             if (request.CharacterId <= 0) return SelectRefused("invalid_character");
             long now = Now;
@@ -417,20 +426,20 @@ namespace WorldEngine.State
                     return SelectRefused("stale_login");
                 if (_deleting.ContainsKey(request.CharacterId)) return SelectRefused("character_busy");
 
-                ServiceInstance? target;
+                ServiceInstance? routed;
                 if (_leases.TryGetValue(request.CharacterId, out CharacterLease? lease))
                 {
                     // Already owned (in play elsewhere or link-dead): the client goes back to that instance, which
                     // hands it the live character.
                     if (lease.State != LeaseState.InPlay) return SelectRefused("character_busy");
-                    target = Instance(lease.Owner);
-                    if (target == null || target.Role != ServiceRole.RoleZone) return SelectRefused("character_busy");
-                    if (!IsRoutable(target, now)) return SelectRefused("zone_unavailable");
+                    routed = Instance(lease.Owner);
+                    if (routed == null || routed.Role != ServiceRole.RoleZone) return SelectRefused("character_busy");
+                    if (!IsRoutable(routed, now)) return SelectRefused("zone_unavailable");
                 }
                 else
                 {
-                    target = ResolveCore(request.StoredPlayfield, null, now);
-                    if (target == null) return SelectRefused("no_zone_available");
+                    routed = ResolveCore(request.StoredPlayfield, null, now);
+                    if (routed == null) return SelectRefused("no_zone_available");
                 }
 
                 (uint cookie1, uint cookie2) = NewCookies();
@@ -440,18 +449,34 @@ namespace WorldEngine.State
                     CookieHash = Hash(cookie1, cookie2),
                     Account = request.Account,
                     Generation = request.Generation,
-                    Target = target.Name,
+                    Target = routed.Name,
                     Kind = TicketKind.Login,
                     ExpiresMs = now + (long)_options.HandoffLifetime.TotalMilliseconds
                 };
+                target = routed;
                 return new SelectCharacterReply
                 {
                     Accepted = true,
                     Reason = "issued",
                     Cookie1 = cookie1,
                     Cookie2 = cookie2,
-                    Zone = target.Game!.Clone()
+                    Zone = routed.Game!.Clone()
                 };
+            }
+        }
+
+        /// <summary>
+        /// Takes back a login ticket the target zone's handoff hook refused, only while it is still the one just issued
+        /// (same cookies), so the refused client's cookies are dead at once rather than left to expire.
+        /// </summary>
+        public void WithdrawHandoff(int characterId, uint cookie1, uint cookie2)
+        {
+            lock (_sync)
+            {
+                if (_tickets.TryGetValue(characterId, out HandoffTicket? ticket)
+                    && ticket.Kind == TicketKind.Login
+                    && CryptographicOperations.FixedTimeEquals(ticket.CookieHash, Hash(cookie1, cookie2)))
+                    _tickets.Remove(characterId);
             }
         }
 
