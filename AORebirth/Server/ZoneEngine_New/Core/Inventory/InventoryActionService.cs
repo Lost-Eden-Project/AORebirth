@@ -279,6 +279,7 @@ namespace ZoneEngine_New.Core.Inventory
                         var inserts = (pending?.Inserts ?? []).ToDictionary(r => r.InstanceId);
                         var locations = (pending?.Updates ?? []).ToDictionary(r => r.InstanceId);
                         var stacks = new List<ItemStackUpdate>();
+                        var qualities = new List<ItemQualityUpdate>();
                         if (changes.Select(c => c.Item.InstanceId).Distinct().Count() != changes.Count)
                             throw new InvalidOperationException("One mutation may write an instance only once.");
                         foreach (InventoryRowChange change in changes)
@@ -295,6 +296,8 @@ namespace ZoneEngine_New.Core.Inventory
                                     (int)change.Container.Type, change.Container.Instance, change.Placement);
                                 if (change.FinalCount != item.StackCount)
                                     stacks.Add(new ItemStackUpdate(item.InstanceId, item.StackCount, change.FinalCount));
+                                if (change.PreviousQuality > 0 && change.PreviousQuality != item.Quality)
+                                    qualities.Add(new ItemQualityUpdate(item.InstanceId, change.PreviousQuality, item.Quality));
                             }
                             else inserts[item.InstanceId] = item.ToRecord(change.Container, change.Placement, change.FinalCount);
                         }
@@ -304,6 +307,7 @@ namespace ZoneEngine_New.Core.Inventory
                         {
                             ExpectedSources = expectedSources ?? [],
                             FinalStats = finalStats ?? [],
+                            Qualities = qualities,
                             EmptyContainersBeforeRetire = changes.Where(change => change.Retired
                                 && InventoryMoveService.IsBagItem(change.Item)).Select(change => change.Item.InstanceId).ToArray()
                         });
@@ -344,5 +348,7 @@ namespace ZoneEngine_New.Core.Inventory
         }
     }
 
-    internal sealed record InventoryRowChange(Item Item, Identity Container, int Placement, int FinalCount, bool Retired = false);
+    /// <param name="PreviousQuality">The stored QL of a persisted <paramref name="Item"/> that replaces it in place at a new QL; 0 otherwise.</param>
+    internal sealed record InventoryRowChange(Item Item, Identity Container, int Placement, int FinalCount, bool Retired = false,
+        int PreviousQuality = 0);
 }

@@ -231,7 +231,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
                 && gameData.TryGetHashInstance(correlatedHash, out HashInstance assigned)
                 && ExactPair(assigned, row.LowId, row.HighId))
                 assignedHash = correlatedHash;
-            if (!catalog.TryGet(row.LowId, out _) || !catalog.TryGet(row.HighId, out _))
+            if (!catalog.TryGet(row.LowId, out ItemTemplate low) || !catalog.TryGet(row.HighId, out ItemTemplate high))
             {
                 ranges = [];
                 failure = "Stock row " + row.StockRowId + " references unavailable item templates "
@@ -245,12 +245,21 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
                 return false;
             }
 
+            // A row's QL range can run past its template pair (Newcomer's Boots 248269/248270, a QL 1-15 pair, is stocked
+            // at QL 1-109). Live only offers QLs the pair covers (capture 2026-10-27T14:40:22Z: that pair at QL 8 and 10,
+            // 248270/297651 at 29-107); outside it the client extrapolates the price and the bought item is clamped to
+            // another QL. A row whose range misses the pair altogether is left out.
+            int minimumQuality = Math.Max(row.EffectiveMinimumQuality, Math.Min(low.Quality, high.Quality));
+            int maximumQuality = Math.Min(row.EffectiveMaximumQuality, Math.Max(low.Quality, high.Quality));
+            if (minimumQuality > maximumQuality)
+                continue;
+
             built.Add(new ShopStockRange(
                 assignedHash,
                 row.LowId,
                 row.HighId,
-                row.EffectiveMinimumQuality,
-                row.EffectiveMaximumQuality));
+                minimumQuality,
+                maximumQuality));
         }
 
         if (built.Count == 0)

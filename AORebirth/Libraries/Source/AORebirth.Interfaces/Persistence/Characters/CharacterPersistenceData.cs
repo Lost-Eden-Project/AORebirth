@@ -60,6 +60,14 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public int FinalCount { get; set; }
     }
 
+    /// <summary>A stored item instance whose QL changes in place (a leveling item following its wearer's level).</summary>
+    public sealed class ItemQualityData
+    {
+        public int InstanceId { get; set; }
+        public int ExpectedQuality { get; set; }
+        public int FinalQuality { get; set; }
+    }
+
     public sealed class CharacterInventoryMutationData
     {
         public int CharacterId { get; set; }
@@ -68,6 +76,7 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public IList<PersistedItemData> Inserts { get; set; } = new List<PersistedItemData>();
         public IList<ItemLocationData> Locations { get; set; } = new List<ItemLocationData>();
         public IList<ItemStackData> Stacks { get; set; } = new List<ItemStackData>();
+        public IList<ItemQualityData> Qualities { get; set; } = new List<ItemQualityData>();
         public IList<int> UploadedNanoIds { get; set; } = new List<int>();
         public IList<CharacterStatData> FinalStats { get; set; } = new List<CharacterStatData>();
         public IList<int> EmptyContainersBeforeRetire { get; set; } = new List<int>();

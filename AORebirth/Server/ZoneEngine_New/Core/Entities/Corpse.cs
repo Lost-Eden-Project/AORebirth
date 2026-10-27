@@ -116,7 +116,7 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// First opener receives any cash on the corpse; later openers get none.
+        /// First opener receives any cash on the corpse, up to the credit cap (the rest is lost); later openers get none.
         /// </summary>
         protected override void OnOpened(Player player)
         {
@@ -131,13 +131,17 @@ namespace ZoneEngine_New.Core.Entities
                 return;
             }
 
+            // The first opener always takes all of it. Everyone else's client clears the corpse's cash when the opener's
+            // Use is announced, so anything left behind would reach a later opener without their client showing it.
+            _cashClaimed = true;
+            SourceStats[CharacterStat.Cash] = 0;
+
             int current = Math.Max(0, player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base));
             int taken = Math.Min(cash, Characters.CashLimit.Room(current));
             if (taken < cash)
             {
-                // At the credit cap: only what fits is taken and the rest stays on the corpse. The client adds the
-                // whole amount itself, so it is told the real total.
-                SourceStats[CharacterStat.Cash] = cash - taken;
+                // At the credit cap: only what fits is kept and the rest is lost. The client adds the whole amount
+                // itself, so it is told the real total.
                 player.Stats.Set(CharacterStat.Cash, current + taken, StatDetail.Base, dirty: true);
                 player.FlushDirtyStats();
                 player.Session?.Send(new SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChatTextMessage
@@ -152,8 +156,6 @@ namespace ZoneEngine_New.Core.Entities
                 return;
             }
 
-            _cashClaimed = true;
-            SourceStats[CharacterStat.Cash] = 0;
             player.Stats.Set(CharacterStat.Cash, current + cash, StatDetail.Base, dirty: false); // The client adds it itself.
         }
 

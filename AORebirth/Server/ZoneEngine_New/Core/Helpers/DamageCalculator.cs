@@ -14,10 +14,8 @@ namespace ZoneEngine_New.Core.Helpers
     /// </summary>
     public static class DamageCalculator
     {
-        const float HitCoefficientA = 0.6944f;
-        const float HitCoefficientB = 0.11317f;
-        const float HitCoefficientK = 45.85f;
-        const float HitCoefficientL = 38.98f;
+        /// <summary>Steepness of the hit curve (see <see cref="HitPercentage"/>).</summary>
+        const double HitCurveSlope = 4.75;
         const float Post1000DamageReduction = 0.3f;
 
         static readonly Random SharedRandom = new();
@@ -124,7 +122,7 @@ namespace ZoneEngine_New.Core.Helpers
             int defenseRating = ResolveDefenseRating(target, attackDefendSource);
             int cappedAttackRating = amsCap > 0 ? Math.Min(attackRating, amsCap) : attackRating;
 
-            if (!alwaysHits && !ResolveHit(attackRating, defenseRating))
+            if (!alwaysHits && !ResolveHit(attackRating, defenseRating, NormalizeStat(target.Stats.GetOrZero(CharacterStat.AggDef))))
                 return new DamageResult(false, 0, HitType.Normal);
 
             int overrideType = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.DamageOverrideType));
@@ -166,7 +164,9 @@ namespace ZoneEngine_New.Core.Helpers
             if (canCrit && !isBurst && NextInt(0, 100) < critChance)
             {
                 hitType = HitType.Critical;
-                minDamage = maxDamage + weaponCritBonus;
+                // The weapon's crit bonus scales with the same attack rating multiplier as its damage, on top of the
+                // max hit after armour.
+                minDamage = maxDamage + (int)(weaponCritBonus * multiplier);
                 maxDamage = minDamage;
             }
 
@@ -217,7 +217,7 @@ namespace ZoneEngine_New.Core.Helpers
                 ? ResolveDefenseRating(target, nano)
                 : NormalizeStat(target.Stats.GetOrZero(CharacterStat.NanoAC))
                     + NormalizeStat(target.Stats.GetOrZero(CharacterStat.DMSModifier));
-            double hitPercentage = HitPercentage(attackRating, defenseRating);
+            double hitPercentage = HitPercentage(attackRating, defenseRating, aggDef: 0);
             landChancePercent = (int)Math.Round(Math.Clamp(hitPercentage, 0, 1) * 100);
             return NextDouble() <= hitPercentage;
         }
@@ -266,12 +266,21 @@ namespace ZoneEngine_New.Core.Helpers
             return defenseRating + NormalizeStat(target.Stats.GetOrZero(CharacterStat.DMSModifier));
         }
 
-        static bool ResolveHit(int attackRating, int defenseRating)
-            => NextDouble() <= HitPercentage(attackRating, defenseRating);
+        static bool ResolveHit(int attackRating, int defenseRating, int aggDef)
+            => NextDouble() <= HitPercentage(attackRating, defenseRating, aggDef);
 
-        static double HitPercentage(int attackRating, int defenseRating)
-            => (HitCoefficientA * (attackRating + HitCoefficientK) / (defenseRating + HitCoefficientL))
-                + HitCoefficientB;
+        /// <summary>
+        /// Hit chance = 1 / (1 + e^(-4.75 x (AR / (sqrt(2) x DR) + AggDef / 500 - 0.5))). AR is the attack rating (attack
+        /// skills + Add All Off.), DR the defense rating (defense skills + Add All Def.), AggDef the defender's
+        /// aggressive/defensive bar, -100 (fully defensive, harder to hit) to 100. Equal ratings at AggDef 0 hit about 73%
+        /// of the time. A DR under 1 counts as 1.
+        /// </summary>
+        static double HitPercentage(int attackRating, int defenseRating, int aggDef)
+        {
+            double ratio = Math.Max(0, attackRating) / (Math.Sqrt(2) * Math.Max(1, defenseRating));
+            double aggression = Math.Clamp(aggDef, NanoDelayCalculator.AggDefMin, NanoDelayCalculator.AggDefMax) / 500.0;
+            return 1 / (1 + Math.Exp(-HitCurveSlope * (ratio + aggression - 0.5)));
+        }
 
         static bool TryGetArmorStat(int rawDamageType, out CharacterStat armorStat)
         {

@@ -665,6 +665,20 @@ namespace ZoneEngine_New.Core.Inventory
         /// belong to the playfield that allocated them. Server-side contents stay; the next use of
         /// each bag introduces it again on the new playfield.
         /// </summary>
+        /// <summary>
+        /// Drops the page of a bag that changed hands (a traded bag), and its handles. Its contents stay on their rows
+        /// under the bag, and the next holder loads them on first use instead of keeping a page that may be stale.
+        /// </summary>
+        public void ForgetBackpackPage(Identity containerIdentity)
+        {
+            if (containerIdentity.Type != IdentityType.Container || containerIdentity.Instance == 0)
+                return;
+
+            _backpackPages.Remove(containerIdentity.Instance);
+            foreach (int handle in _handleToContainer.Where(pair => pair.Value == containerIdentity).Select(pair => pair.Key).ToList())
+                _handleToContainer.Remove(handle);
+        }
+
         public void ResetBackpackClientState()
         {
             foreach (Container page in _backpackPages.Values)

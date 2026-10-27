@@ -393,9 +393,23 @@ namespace ZoneEngine_New.Core.Trade
 
             if (InventoryMoveService.IsBagItem(item))
             {
-                // Bag interiors would need handle invalidation and recursive ownership transfer.
-                ClientFeedback.Send(player, "Feedback_ItemCantBeTraded");
-                return;
+                // A bag changes hands whole, and only between players: its contents' rows hang off the bag's own row, so
+                // they follow it. Like the client, a bag holding a NoDrop item stays.
+                Container? contents = session.Kind == TradeKind.Player ? LoadBagContents(player, item, source) : null;
+                if (contents == null)
+                {
+                    ClientFeedback.Send(player, "Feedback_ItemCantBeTraded");
+                    return;
+                }
+
+                if (contents.Content.Values.Any(TradeRules.IsNoDrop))
+                {
+                    ClientFeedback.Send(player, "Feedback_ChestContainsNoDrop");
+                    return;
+                }
+
+                if (contents.IsOpen)
+                    Item.CloseBackpack(player, contents, item.Identity);
             }
 
             if (TradeRules.IsNoDrop(item))
@@ -593,6 +607,20 @@ namespace ZoneEngine_New.Core.Trade
                 if (TradeRules.IsNoDrop(item))
                     return item.Name + " cannot be traded.";
 
+                // A traded bag's contents come from the giver's page, loaded when it was offered.
+                if (InventoryMoveService.IsBagItem(item))
+                {
+                    if (!giver.Inventory.TryGetBackpackPage(item.Identity, out Container bag) || !bag.IsHydrated)
+                        return item.Name + " cannot be traded.";
+                    foreach (Item content in bag.Content.Values)
+                    {
+                        if (TradeRules.IsNoDrop(content))
+                            return item.Name + " cannot be traded.";
+                        if (TradeRules.IsUnique(content) && TradeRules.WouldDuplicateUnique(receiver, content.LowId, content.HighId))
+                            return receiver.Name + " already has " + content.Name + ".";
+                    }
+                }
+
                 if (UniqueItems.WouldDuplicate(receiver, item, out string bagUnique, except: held => given.Items.Values.Contains(held)))
                     return receiver.Name + " already has " + bagUnique + ".";
 
@@ -652,6 +680,14 @@ namespace ZoneEngine_New.Core.Trade
                     session.InitiatorOffer.DrainAll();
                     session.PartnerOffer.DrainAll();
                     ApplyDeliveries(deliveries);
+                    // Neither side keeps a page for a bag that changed hands; its holder loads the contents on first use.
+                    foreach (Delivery delivery in deliveries)
+                    {
+                        if (!InventoryMoveService.IsBagItem(delivery.Item))
+                            continue;
+                        initiator.Inventory.ForgetBackpackPage(delivery.Item.Identity);
+                        partner.Inventory.ForgetBackpackPage(delivery.Item.Identity);
+                    }
                     SetCash(initiator, initiatorCash);
                     SetCash(partner, partnerCash);
                 });
@@ -686,6 +722,19 @@ namespace ZoneEngine_New.Core.Trade
                     session.PartnerOffer.Count,
                     initiatorCredits,
                     partnerCredits));
+        }
+
+        /// <summary>The bag's page with its contents, loaded from its rows if it was not opened this session.</summary>
+        static Container? LoadBagContents(Player player, Item bag, Identity slot)
+        {
+            if (player.Inventory.TryGetBackpackPage(bag.Identity, out Container page) && page.IsHydrated)
+                return page;
+            if (player.Playfield?.GetService<IInventoryRepository>() is not IInventoryRepository repository
+                || player.Playfield.GetService<IItemBuilder>() is not IItemBuilder items)
+                return null;
+            page = player.Inventory.GetOrCreateBackpackPage(bag, bag.Identity, slot);
+            player.Inventory.HydrateBackpack(page, repository, items);
+            return page.IsHydrated ? page : null;
         }
 
         // Reserve only durable main-inventory locations. Offers remain untouched until COMMIT.

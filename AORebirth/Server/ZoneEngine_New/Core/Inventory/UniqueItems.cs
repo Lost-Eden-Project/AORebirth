@@ -47,8 +47,25 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 foreach (Item offered in session.OfferFor(player).Items.Values)
                 {
-                    if ((except == null || !except(offered)) && SameFamily(offered.LowId, offered.HighId, lowId, highId))
+                    if (except != null && except(offered))
+                        continue;
+                    if (SameFamily(offered.LowId, offered.HighId, lowId, highId))
                         return true;
+                    if (!InventoryMoveService.IsBagItem(offered))
+                        continue;
+
+                    // A bag on the table still holds its contents, and they come back with it if the trade is cancelled;
+                    // without this, a unique inside it could be taken again while it sat there.
+                    if (!inventory.TryGetBackpackPage(offered.Identity, out Container bag) || !bag.IsHydrated)
+                    {
+                        (unopened ??= new List<int>()).Add(BagContainerId(offered));
+                        continue;
+                    }
+                    foreach (Item content in bag.Content.Values)
+                    {
+                        if ((except == null || !except(content)) && SameFamily(content.LowId, content.HighId, lowId, highId))
+                            return true;
+                    }
                 }
             }
 

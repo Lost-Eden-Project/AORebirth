@@ -391,6 +391,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
             }
 
             Acknowledge(session, message, dynel.Identity);
+
+            // Live shows a corpse opener's Use to everyone nearby (capture 2026-10-27T14:09:34Z: another player's two
+            // Use acks, Temp1 1 and Temp4 1, on corpse C76A:01045812, and nothing else about it until it despawned). Each
+            // client adds a corpse's Cash itself when it opens it, so that ack is what tells the others the credits are gone.
+            if (dynel is Corpse)
+                playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>()
+                    .Announce(player, Reply(message, dynel.Identity, temp1: 1, corpseUse: true), includeSelf: false);
         }
 
         /// <summary>

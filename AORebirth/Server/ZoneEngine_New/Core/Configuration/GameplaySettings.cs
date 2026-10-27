@@ -501,9 +501,10 @@ namespace ZoneEngine_New.Core.Configuration
         public int DeathXpLossGraceLevel { get; init; } = 20;
 
         /// <summary>
-        /// Percent of the death pool (XP lost on deaths since the last insurance save) each kill gives back, at least 1 XP.
+        /// Percent of a kill's XP (before the side bonus) that also comes back from the death pool (XP lost on deaths since
+        /// the last insurance save), at least 1 XP and at most what the pool holds. Live: 50.
         /// </summary>
-        public int DefaultXpPoolRecoveryPercent { get; init; } = 5;
+        public int DefaultXpPoolRecoveryPercent { get; init; } = 50;
 
         /// <summary>A successful tradeskill combine gives XP (<see cref="TradeskillXpPerQl"/> per result QL). Off by default.</summary>
         public bool TradeskillGrantsXp { get; init; }

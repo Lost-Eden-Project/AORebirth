@@ -163,6 +163,17 @@ namespace AORebirth.Database.Domain.Characters
             }
         }
 
+        private static void WriteQualities(IDbConnection c, IDbTransaction t, IList<ItemQualityData> qualities)
+        {
+            foreach (var quality in qualities)
+            {
+                if (quality.InstanceId <= 0 || quality.ExpectedQuality <= 0 || quality.FinalQuality <= 0) throw new ArgumentOutOfRangeException(nameof(qualities));
+                if (Execute(c, t, "UPDATE item_instances SET Quality=@Final WHERE InstanceId=@Id AND Quality=@Expected",
+                    "@Final", quality.FinalQuality, "@Id", quality.InstanceId, "@Expected", quality.ExpectedQuality) != 1)
+                    throw new InvalidOperationException("Item quality changed before the operation could commit.");
+            }
+        }
+
         private static void AssertContainersEmpty(IDbConnection c, IDbTransaction t, IList<int> containers)
         {
             foreach (int id in containers)

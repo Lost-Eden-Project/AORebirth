@@ -665,6 +665,10 @@ namespace ZoneEngine_New.Core.Inventory
             SendEquipActions(player, pending);
             NotifyEquipmentChanged(player, pending);
             player.AnnounceDeferredAppearance();
+
+            if (pending.DestPage.Identity.Type == IdentityType.ArmorPage && IsLevelingItem(pending.Item)
+                && RescaleLevelingArmor(player))
+                player.Rebase();
         }
 
         /// <summary>
@@ -892,6 +896,68 @@ namespace ZoneEngine_New.Core.Inventory
                 && (pending.SourcePage.Identity.Type != pending.DestPage.Identity.Type
                     || pending.SourceSlot != pending.DestSlot))
                 player.OnEquipmentChanged(new EquipSlot(pending.DestPage.Identity.Type, pending.DestSlot));
+        }
+
+        /// <summary>
+        /// MoreFlags bit 11: a leveling item. Every item carrying it is a QL1/QL200 armor pair (Living Cyber Armor, Zenith
+        /// Commando, Captain Anarchy Turbo, ...); Living Cyber Armor's description says it levels up with its wearer.
+        /// </summary>
+        const int LevelingItemMoreFlag = 0x800;
+
+        internal static bool IsLevelingItem(Item item) => (item.GetStat(CharacterStat.MoreFlags) & LevelingItemMoreFlag) != 0;
+
+        /// <summary>
+        /// Brings worn leveling armor to the wearer's level, within its template's QL range (after an equip and on
+        /// level-up). The instance keeps its id and slot; only its QL changes, and the client sees an unequip at the old
+        /// QL followed by an equip at the new one. True when any piece changed; the caller rebases.
+        /// </summary>
+        public bool RescaleLevelingArmor(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            IItemBuilder? items = player.Playfield?.GetService<IItemBuilder>();
+            if (items == null || player.Session == null || !player.Inventory.IsHydrated)
+                return false;
+
+            int level = player.Stats.GetOrOne(CharacterStat.Level);
+            Container page = player.Inventory.Armor;
+            bool changed = false;
+            foreach (KeyValuePair<int, Item> worn in new List<KeyValuePair<int, Item>>(page.Content))
+            {
+                int slot = worn.Key;
+                Item current = worn.Value;
+                if (!IsLevelingItem(current) || current.Locked || current.InstanceId <= 0 || current.Quality == level)
+                    continue;
+
+                Item rescaled = items.Create(current.LowId, current.HighId, level, current.Source, current.StackCount,
+                    current.InstanceId, current.Identity);
+                if (rescaled.Quality == current.Quality)
+                    continue;
+                rescaled.IsPersisted = current.IsPersisted;
+                rescaled.PlayshiftSuppressed = current.PlayshiftSuppressed;
+
+                bool committed = _actions.TryCommit(player,
+                    [new InventoryRowChange(rescaled, page.Identity, slot, rescaled.StackCount, PreviousQuality: current.Quality)],
+                    () => !current.Locked && ReferenceEquals(page.Content.GetValueOrDefault(slot), current),
+                    () =>
+                    {
+                        page.Content.Remove(slot);
+                        if (!page.Add(slot, rescaled))
+                            throw new InvalidOperationException("Leveling armor slot changed.");
+                    });
+                if (!committed)
+                    continue;
+
+                SendUnequipCharacterAction(player, slot);
+                AnnounceWearTemplateAction(player, current, page.Identity.Type, slot, TemplateActionType.Remove);
+                SendEquipCharacterAction(player, rescaled, slot);
+                AnnounceWearTemplateAction(player, rescaled, page.Identity.Type, slot, TemplateActionType.Wear);
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Leveling armor char={0} instance={1} {2} ql{3} -> ql{4}",
+                    player.Identity.Instance, current.InstanceId, current.Name, current.Quality, rescaled.Quality));
+                changed = true;
+            }
+
+            return changed;
         }
 
         bool ApplyMove(

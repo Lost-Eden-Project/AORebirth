@@ -168,6 +168,21 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"It is not possible to assemble those two items. Maybe the order was wrong?" (category 110).</summary>
         public const int CombineNotPossible = 46513671;
 
+        /// <summary>"%d xp was gained as a side bonus!" (category 110): the bonus (retail 2026-10-27).</summary>
+        public const int SideXpBonus = 226754835;
+
+        /// <summary>
+        /// "You recouped %d of your previously lost experience - remaining to be recouped: %d." (category 110): what a kill
+        /// gave back from the death pool and what is left in it (retail 2026-10-27).
+        /// </summary>
+        public const int DeathXpRecouped = 629344;
+
+        /// <summary>
+        /// "This XP was added to the pool of unsaved experience points that you get back through gaining new experience
+        /// points. Your current pool of unsaved experience is %d." (category 110): the pool after it grew.
+        /// </summary>
+        public const int DeathXpAddedToPool = 7144452;
+
         /// <summary>A text argument the client looks up itself: 'R' + base-85 category + base-85 message id.</summary>
         public readonly record struct TextReference(int Category, int MessageId);
 

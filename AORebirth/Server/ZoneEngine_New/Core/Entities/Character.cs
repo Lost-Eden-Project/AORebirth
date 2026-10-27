@@ -519,7 +519,9 @@ namespace ZoneEngine_New.Core.Entities
                     return;
             }
 
+            int earned = amount;
             amount = ApplySideXpBonus(amount);
+            int sideBonus = amount - earned;
 
             // Personal research takes its PersonalResearchLevel share of the whole grant, before the per-grant cap; what
             // the research goal does not use (none selected, or the excess past a finished tier) stays XP when enabled. Only the XP
@@ -539,9 +541,14 @@ namespace ZoneEngine_New.Core.Entities
                 amount = (int)Math.Min(amount, GameplayXpCaps.Of(capPercent, current.NextLevelXp));
             }
 
-            // A kill also gives back part of the XP lost on deaths since the last save (the death pool).
+            // A kill also gives back part of the XP lost on deaths since the last save (the death pool), in proportion to
+            // the kill's own XP before the side bonus.
+            int recouped = 0;
             if (source == XpSource.Kill && this is Player recovering)
-                amount += recovering.TakeDeathPoolRecovery();
+            {
+                recouped = recovering.TakeDeathPoolRecovery(earned);
+                amount += recouped;
+            }
 
             int levelBefore = level;
             int xp = Stats.GetOrZero(CharacterStat.XP) + amount;
@@ -570,6 +577,14 @@ namespace ZoneEngine_New.Core.Entities
                 // Preserve each award's XP delta when several rewards arrive before the next tick.
                 FlushDirtyStats();
             }
+
+            // Live, after the UnsavedXP and XP stats (capture 2026-10-27T16:10:51Z): the side bonus, then what came back
+            // from the death pool and what is left in it. The client says "You received N xp." itself from the XP stat.
+            if (sideBonus > 0)
+                ClientFeedback.SendFormatted(this, ClientFeedback.SideXpBonus, sideBonus);
+            if (recouped > 0)
+                ClientFeedback.SendFormatted(this, ClientFeedback.DeathXpRecouped, recouped,
+                    Math.Max(0, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base)));
         }
 
         /// <summary>
@@ -673,6 +688,10 @@ namespace ZoneEngine_New.Core.Entities
 
             ShiftLevelIpBonus(levelBefore, levelAfter);
             GrantResetPoints(TitleLevelFor(levelBefore), TitleLevelFor(levelAfter), alien: false);
+
+            // Worn leveling armor takes the new level before the rebase, so the refilled health counts its bonus.
+            if (this is Player wearer)
+                Playfield?.GetService<InventoryMoveService>()?.RescaleLevelingArmor(wearer);
 
             ApplyLevelVitals();
 
@@ -2956,7 +2975,12 @@ namespace ZoneEngine_New.Core.Entities
         void OnBuffsChanged()
         {
             SyncUsedNcu();
+            bool wasStunned = IsStunned;
             IsStunned = HasBuffFunction(FunctionType.Stun);
+            // A stun landing ends a cast in flight there and then. Left to run out, the bar's InterruptNanoCasting came
+            // during the stun, and the client could stay in the cast animation after it.
+            if (IsStunned && !wasStunned)
+                NanoRuntime.InterruptCast(this);
             // A root or stun holds the character the moment it lands, not when the queued rebase gets to it: the body
             // would otherwise keep running on the last held input while its client already stands still.
             if (IsRooted)

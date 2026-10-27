@@ -67,6 +67,7 @@ namespace AORebirth.Database.Domain.Characters
                 WriteItems(c, t, mutation.Inserts, mutation.Locations);
                 AssertContainersEmpty(c, t, mutation.EmptyContainersBeforeRetire);
                 WriteStacks(c, t, mutation.Stacks);
+                WriteQualities(c, t, mutation.Qualities);
                 WriteUploadedNanos(c, t, mutation.CharacterId, mutation.UploadedNanoIds);
                 WriteStats(c, t, mutation.CharacterId, mutation.FinalStats);
                 return 0;

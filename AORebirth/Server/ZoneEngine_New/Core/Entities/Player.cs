@@ -1877,30 +1877,44 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             int pool = Math.Max(0, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base));
+            int grown = (int)Math.Min(int.MaxValue, (long)pool + lost);
+            SetDeathXpPool(grown);
             Stats.Set(CharacterStat.XP, keep, StatDetail.Base, dirty: true);
-            // Server-only, never sent: no wire flag; the base change marks the character for saving.
-            Stats.Set(CharacterStat.DeathXpPool, (int)Math.Min(int.MaxValue, (long)pool + lost), StatDetail.Base);
             FlushDirtyStats();
             SaveState.MarkDirty();
+            ClientFeedback.SendFormatted(this, ClientFeedback.DeathXpAddedToPool, grown);
             Logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Death XP loss character={0} level={1} xp={2}->{3} lost={4} pool={5}",
                 Identity.Instance, level, xp, keep, lost, pool + lost));
         }
 
         /// <summary>
-        /// The XP one kill gives back from the death pool (Gameplay.json xp.defaultXpPoolRecoveryPercent of what is left, at
-        /// least 1), taken out of it. 0 when the percent is 0.
+        /// The XP one kill gives back from the death pool, taken out of it: Gameplay.json xp.defaultXpPoolRecoveryPercent
+        /// plus Regain XP Percentage (stat 593) of the kill's own XP <paramref name="killXp"/>, at least 1, at most what
+        /// is left. Live gives back half with no bonus (capture 2026-10-27T16:10:51Z: a 662 XP kill recouped 331, the pool
+        /// going 691 to 360). Regain XP Percentage comes from Insurance Claim (+50 to +150), Insurance Agent (+280 to +650),
+        /// Explorer (+10 to +40) and similar; it adds percentage points to the default. 0 when the sum is 0.
         /// </summary>
-        internal int TakeDeathPoolRecovery()
+        internal int TakeDeathPoolRecovery(int killXp)
         {
             int pool = Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base);
-            int percent = XpRules.DefaultXpPoolRecoveryPercent;
-            if (pool <= 0 || percent <= 0)
+            long percent = (long)XpRules.DefaultXpPoolRecoveryPercent + Math.Max(0, Stats.GetOrZero(CharacterStat.RegainXPPercentage));
+            if (pool <= 0 || percent <= 0 || killXp <= 0)
                 return 0;
 
-            int recovered = (int)Math.Min(pool, Math.Max(1L, (long)pool * percent / 100));
-            Stats.Set(CharacterStat.DeathXpPool, pool - recovered, StatDetail.Base);
+            int recovered = (int)Math.Min(pool, Math.Max(1L, (long)killXp * percent / 100));
+            SetDeathXpPool(pool - recovered);
             return recovered;
+        }
+
+        /// <summary>
+        /// The death pool. The client is shown it as UnsavedXP (live sends the stat before the XP stat on every change),
+        /// the server keeps its own copy in DeathXpPool.
+        /// </summary>
+        void SetDeathXpPool(int pool)
+        {
+            Stats.Set(CharacterStat.DeathXpPool, pool, StatDetail.Base);
+            Stats.Set(CharacterStat.UnsavedXP, pool, StatDetail.Base, dirty: true);
         }
 
         /// <summary>Gameplay.json xp, or its defaults off a playfield.</summary>
@@ -2944,16 +2958,13 @@ namespace ZoneEngine_New.Core.Entities
             message.Stats4 = BuildFullCharacterShortStats(stats, FullCharacterStats4);
 
             message.Unknown9 = 0;
-            message.Unknown10 = 0;
+            // The client rebuilds its team and raid windows from this on every playfield it enters.
+            int teamFlags = 0;
+            message.TeamData = Playfield?.GetService<Teams.TeamService>()?.BuildFullCharacterTeam(this, out teamFlags) ?? [];
+            message.Unknown10 = teamFlags;
             message.Unknown11 = [];
             message.Unknown12 = [];
             message.Unknown13 = BuildPerkMap();
-
-            // Team / raid conditional blocks not wired yet.
-            // message.Unknown10 = ...
-            // message.Unknown11 = ...
-            // message.Unknown12 = ...
-            // message.Unknown13 = ...
 
             LogFullCharacterInventory(message);
             return message;

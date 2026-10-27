@@ -4,11 +4,11 @@ namespace ZoneEngine_New.Core.Inventory
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
+    using System.Text.RegularExpressions;
 
     using AORebirth.Enums;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -16,12 +16,45 @@ namespace ZoneEngine_New.Core.Inventory
     /// <summary>Tells a player which item requirements stopped an action.</summary>
     internal static class RequirementFeedback
     {
+        // The client's own requirement lines (category 110, FormatFeedback).
+        /// <summary>"%s %s is required to be at least %d!": whose, the stat's client name, the lowest passing value.</summary>
+        const int StatAtLeast = 147700404;
+
+        /// <summary>"%s %s is not less than %d!": whose, the stat's client name, the limit.</summary>
+        const int StatNotLessThan = 127970254;
+
+        /// <summary>"%s must recently have %s running!": who, the nano's name.</summary>
+        const int MustHaveNanoRunning = 6774439;
+
+        /// <summary>"%s must not have %s running!": who, the nano's name.</summary>
+        const int MustNotHaveNanoRunning = 116350327;
+
+        /// <summary>"This effect can only be utilitized by %s.": the profession.</summary>
+        const int OnlyUsableBy = 7658105;
+
+        /// <summary>"This effect can't be utilitized by %s!": the profession.</summary>
+        const int NotUsableBy = 171954057;
+
+        /// <summary>"Target side must be %s!" / "Target side must not be %s!".</summary>
+        const int TargetSideMustBe = 55195541;
+        const int TargetSideMustNotBe = 59137061;
+
+        /// <summary>"Target sex must be %s!".</summary>
+        const int TargetSexMustBe = 150782277;
+
+        /// <summary>"Target breed must be %s!".</summary>
+        const int TargetBreedMustBe = 154478725;
+
+        /// <summary>"You must be behind the target!".</summary>
+        const int MustBeBehindTarget = 164102084;
+
         /// <summary>
         /// Sends the failing checks of <paramref name="actionType"/> as feedback. Does nothing when the
         /// requirements pass (the action was refused for another reason). Falls back to the client's
         /// generic "check the requirements" line when no single check can be named. <paramref name="getStat"/>,
         /// <paramref name="resolve"/> and <paramref name="getTargetStat"/> are the readers the action was checked with
-        /// (default: the player's stats); <paramref name="nameOf"/> names the perk or nano a state check refers to.
+        /// (default: the player's stats); <paramref name="nameOf"/> names the perk or nano a state check refers to
+        /// (default: the item template's name).
         /// </summary>
         public static void SendIfUnmet(Player player, ItemTemplate template, ActionType actionType,
             Func<CharacterStat, int>? getStat = null, Func<ItemRequirement, bool?>? resolve = null,
@@ -42,8 +75,25 @@ namespace ZoneEngine_New.Core.Inventory
                 return;
             }
 
-            SendText(player, "Requirements not met: "
-                + string.Join(", ", unmet.Select(entry => Describe(entry, nameOf))));
+            nameOf ??= TemplateName(player);
+            // Each check once: an action can list the same one under several selectors.
+            var sent = new HashSet<string>(StringComparer.Ordinal);
+            var plain = new List<string>();
+            foreach (UnmetRequirement entry in unmet)
+            {
+                if (TryClientLine(entry, nameOf, out int messageId, out object[] args))
+                {
+                    if (sent.Add(messageId + "|" + string.Join("|", args)))
+                        ClientFeedback.SendFormatted(player, messageId, args);
+                }
+                else if (Describe(entry, nameOf) is var line && sent.Add(line))
+                {
+                    plain.Add(line);
+                }
+            }
+
+            if (plain.Count > 0)
+                SendText(player, "Requirements not met: " + string.Join(", ", plain));
         }
 
         /// <summary>
@@ -56,10 +106,76 @@ namespace ZoneEngine_New.Core.Inventory
             ClientFeedback.SendFormatted(player, ClientFeedback.PlainText, text);
         }
 
-        static string Describe(UnmetRequirement entry, Func<int, string?>? nameOf)
+        /// <summary>A nano or item named by its template, when the playfield's catalog has it.</summary>
+        static Func<int, string?> TemplateName(Player player)
+            => id => player.Playfield?.GetService<IItemTemplateCatalog>() is { } catalog
+                && catalog.TryGet(id, out ItemTemplate named) && !string.IsNullOrEmpty(named.Name)
+                    ? named.Name
+                    : null;
+
+        /// <summary>The client's own line for a check it has one for: stat minimums and limits, running nanos, profession,
+        /// and the target's side, sex and breed.</summary>
+        static bool TryClientLine(UnmetRequirement entry, Func<int, string?> nameOf, out int messageId, out object[] args)
         {
             ItemRequirement requirement = entry.Requirement;
-            string Named(int id) => nameOf?.Invoke(id) is { Length: > 0 } name ? name : id.ToString(CultureInfo.InvariantCulture);
+            string who = entry.OnTarget ? "Your target" : "You";
+            string whose = entry.OnTarget ? "Your target's" : "Your";
+            var op = (Operator)requirement.Operator;
+            messageId = 0;
+            args = [];
+
+            switch (op)
+            {
+                case Operator.HasRunningNano when nameOf(requirement.Value) is { } running:
+                    (messageId, args) = (MustHaveNanoRunning, [who, running]);
+                    return true;
+                case Operator.HasNotRunningNano when nameOf(requirement.Value) is { } stopped:
+                    (messageId, args) = (MustNotHaveNanoRunning, [who, stopped]);
+                    return true;
+            }
+
+            var stat = (CharacterStat)requirement.StatNumber;
+            switch (op)
+            {
+                // Stab and the like: [TargetFacing EqualTo 1], 1 while standing behind the target.
+                case Operator.EqualTo when stat == CharacterStat.TargetFacing && requirement.Value == 1:
+                    messageId = MustBeBehindTarget;
+                    return true;
+                case Operator.GreaterThan:
+                    (messageId, args) = (StatAtLeast,
+                        [whose, new ClientFeedback.TextReference(ClientFeedback.StatNameCategory, (int)stat), requirement.Value + 1]);
+                    return true;
+                case Operator.LessThan:
+                    (messageId, args) = (StatNotLessThan,
+                        [whose, new ClientFeedback.TextReference(ClientFeedback.StatNameCategory, (int)stat), requirement.Value]);
+                    return true;
+                case Operator.EqualTo or Operator.Unequal when !entry.OnTarget
+                    && stat is CharacterStat.Profession or CharacterStat.VisualProfession:
+                    (messageId, args) = (op == Operator.EqualTo ? OnlyUsableBy : NotUsableBy, [Spaced((Profession)requirement.Value)]);
+                    return true;
+                case Operator.EqualTo or Operator.Unequal when entry.OnTarget && stat == CharacterStat.Side:
+                    (messageId, args) = (op == Operator.EqualTo ? TargetSideMustBe : TargetSideMustNotBe, [Spaced((Side)requirement.Value)]);
+                    return true;
+                case Operator.EqualTo when entry.OnTarget && stat == CharacterStat.Sex:
+                    (messageId, args) = (TargetSexMustBe, [Spaced((Gender)requirement.Value)]);
+                    return true;
+                case Operator.EqualTo when entry.OnTarget && stat == CharacterStat.Breed:
+                    (messageId, args) = (TargetBreedMustBe, [Spaced((Breed)requirement.Value)]);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>An enum value as words: MartialArtist becomes "Martial Artist".</summary>
+        static string Spaced<T>(T value) where T : struct, Enum
+            => Regex.Replace(value.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
+
+        /// <summary>A check the client has no line for, in plain words.</summary>
+        static string Describe(UnmetRequirement entry, Func<int, string?> nameOf)
+        {
+            ItemRequirement requirement = entry.Requirement;
+            string Named(int id) => nameOf(id) is { Length: > 0 } name ? name : id.ToString(CultureInfo.InvariantCulture);
             string line = requirement.Value.ToString(CultureInfo.InvariantCulture);
             string? state = (Operator)requirement.Operator switch
             {

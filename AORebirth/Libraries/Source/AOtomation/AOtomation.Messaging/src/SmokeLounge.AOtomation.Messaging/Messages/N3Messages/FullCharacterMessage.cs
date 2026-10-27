@@ -81,22 +81,26 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
         [AoMember(15)]
         public int Unknown9 { get; set; }
 
-        // Flags HERE!!
+        /// <summary>Team flags (Gamecode.dll FUN_10073ba7): bit 0 in a team, bit 1 the team is a raid.</summary>
         [AoMember(16)]
         public int Unknown10 { get; set; }
 
-        // Some conditional stuff here
-        // Team/Raid Identity, 3f1 Team Data/Raid Data?
-
-
-        [AoMember(17, SerializeSize = ArraySizeType.X3F1)]
-        public object[] Unknown11 { get; set; }
+        /// <summary>
+        /// The team block <see cref="Unknown10"/> announces, written as is (empty when not in a team): the team identity,
+        /// then one member list, or for a raid an int and six member lists (one per raid team). Each list is a 3F1 count
+        /// of Identity, short-length name, int organization, byte side, short level, short profession.
+        /// </summary>
+        [AoMember(17, SerializeSize = ArraySizeType.NoSerialization)]
+        public byte[] TeamData { get; set; }
 
         [AoMember(18, SerializeSize = ArraySizeType.X3F1)]
+        public object[] Unknown11 { get; set; }
+
+        [AoMember(19, SerializeSize = ArraySizeType.X3F1)]
         public object[] Unknown12 { get; set; }
 
         /// <summary>Trained perk map; the client's last FullCharacter read (Gamecode.dll 0x10053ac9).</summary>
-        [AoMember(19, SerializeSize = ArraySizeType.X3F1)]
+        [AoMember(20, SerializeSize = ArraySizeType.X3F1)]
         public PerkMapEntry[] Unknown13 { get; set; }
 
 
