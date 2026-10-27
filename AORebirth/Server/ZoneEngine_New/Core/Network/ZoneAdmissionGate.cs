@@ -25,8 +25,9 @@ public enum ZoneAdmissionKind
     Transfer
 }
 
+/// <summary><paramref name="Account"/> owns the character; empty when nobody said (an older World).</summary>
 public sealed record ZoneAdmission(bool Accepted, string Reason, ZoneAdmissionKind Kind = ZoneAdmissionKind.Login,
-    TransferEnvelope? Envelope = null)
+    TransferEnvelope? Envelope = null, string Account = "")
 {
     public static ZoneAdmission Refused(string reason) => new(false, reason);
 }
@@ -46,8 +47,8 @@ public sealed class ZoneAdmissionGate(ICharacterDao characters, WorldLink world,
     {
         if (message.CharacterId <= 0 || (message.Cookie1 == 0 && message.Cookie2 == 0))
             return ZoneAdmission.Refused("missing_handoff");
-        if (redirects.TryConsume(message.CharacterId, message.Cookie1, message.Cookie2))
-            return new ZoneAdmission(true, "claimed_redirect", ZoneAdmissionKind.Redirect);
+        if (redirects.TryConsume(message.CharacterId, message.Cookie1, message.Cookie2, out string redirectAccount))
+            return new ZoneAdmission(true, "claimed_redirect", ZoneAdmissionKind.Redirect, Account: redirectAccount);
 
         ClaimReply reply = await world.ClaimAsync(message.CharacterId, message.Cookie1, message.Cookie2).ConfigureAwait(false);
         if (!reply.Accepted) return ZoneAdmission.Refused(reply.Reason);
@@ -67,6 +68,6 @@ public sealed class ZoneAdmissionGate(ICharacterDao characters, WorldLink world,
             ClaimKind.ClaimTransfer => ZoneAdmissionKind.Transfer,
             _ => ZoneAdmissionKind.Login
         };
-        return new ZoneAdmission(true, reply.Reason, kind, reply.Envelope);
+        return new ZoneAdmission(true, reply.Reason, kind, reply.Envelope, reply.Account);
     }
 }

@@ -21,16 +21,22 @@ namespace ZoneEngine_New.Core.World
 
         public static TimeSpan Lifetime { get; } = TimeSpan.FromSeconds(ResolveLifetimeSeconds());
 
-        public void Authorize(int characterId, uint cookie1, uint cookie2)
+        /// <summary><paramref name="account"/> is the owning account the session knew, handed to the next session.</summary>
+        public void Authorize(int characterId, uint cookie1, uint cookie2, string account = "")
         {
             if (characterId <= 0 || (cookie1 == 0 && cookie2 == 0))
                 throw new InvalidOperationException("A claimed handoff is required for a redirect.");
-            _entries[characterId] = new Entry(Hash(cookie1, cookie2), _clock() + (long)Lifetime.TotalMilliseconds);
+            _entries[characterId] = new Entry(Hash(cookie1, cookie2), _clock() + (long)Lifetime.TotalMilliseconds,
+                account ?? string.Empty);
         }
 
         /// <summary>True once for cookies that match a live authorization.</summary>
-        public bool TryConsume(int characterId, uint cookie1, uint cookie2)
+        public bool TryConsume(int characterId, uint cookie1, uint cookie2) => TryConsume(characterId, cookie1, cookie2, out _);
+
+        /// <summary>As <see cref="TryConsume(int, uint, uint)"/>, with the account the authorizing session knew.</summary>
+        public bool TryConsume(int characterId, uint cookie1, uint cookie2, out string account)
         {
+            account = string.Empty;
             if (!_entries.TryGetValue(characterId, out Entry? entry)) return false;
             if (_clock() >= entry.ExpiresMs)
             {
@@ -38,8 +44,11 @@ namespace ZoneEngine_New.Core.World
                 return false;
             }
 
-            return CryptographicOperations.FixedTimeEquals(entry.Hash, Hash(cookie1, cookie2))
-                && _entries.TryRemove(new(characterId, entry));
+            if (!CryptographicOperations.FixedTimeEquals(entry.Hash, Hash(cookie1, cookie2))
+                || !_entries.TryRemove(new(characterId, entry)))
+                return false;
+            account = entry.Account;
+            return true;
         }
 
         public void Revoke(int characterId) => _entries.TryRemove(characterId, out _);
@@ -56,6 +65,6 @@ namespace ZoneEngine_New.Core.World
             => int.TryParse(Environment.GetEnvironmentVariable("AO_REBIRTH_LOGIN_HANDOFF_TIMEOUT_SECONDS"), out int seconds)
                 && seconds >= 5 && seconds <= 120 ? seconds : 30;
 
-        sealed record Entry(byte[] Hash, long ExpiresMs);
+        sealed record Entry(byte[] Hash, long ExpiresMs, string Account);
     }
 }

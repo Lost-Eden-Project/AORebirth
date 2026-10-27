@@ -78,5 +78,11 @@ namespace ZoneEngine_New.Core.Modules
         public string Assembly { get; init; } = string.Empty;
 
         public string Version { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Operations the module invokes (module API 1.5). Each must exist on this engine and be granted by Modules.json
+        /// Capabilities, or the module does not load.
+        /// </summary>
+        public List<string>? Operations { get; init; }
     }
 }

@@ -135,7 +135,8 @@ namespace ZoneEngine_New.Core.Network
                         _codec,
                         _dispatcher,
                         _logger,
-                        filter);
+                        filter,
+                        _modules?.MessageObservers);
 
                     _sessions[sessionId] = session;
 

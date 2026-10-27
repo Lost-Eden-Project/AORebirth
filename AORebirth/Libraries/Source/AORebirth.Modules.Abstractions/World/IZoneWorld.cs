@@ -37,6 +37,31 @@ namespace AORebirth.Modules.World
         /// tick snapshot for a while, so a read from a module thread may wait up to a few ticks.
         /// </summary>
         int? Stat(EntityRef entity, int statId);
+
+        /// <summary>
+        /// The connection of the character with this id on this instance (module API 1.5), or null when it is not in play
+        /// here or is link-dead. Read directly, never from a snapshot, so it never waits. Needs <c>read-sessions</c>,
+        /// not <c>read-world</c>: it carries the account and address.
+        /// </summary>
+        SessionInfo? Session(int characterId);
+    }
+
+    /// <summary>A character's connection (module API 1.5).</summary>
+    public sealed record SessionInfo
+    {
+        /// <summary>The connection, the same id as <see cref="Network.MessageSample.SessionId"/>.</summary>
+        public Guid SessionId { get; init; }
+
+        public int CharacterId { get; init; }
+
+        /// <summary>The account that owns the character, or empty when the zone does not know it.</summary>
+        public string AccountName { get; init; } = string.Empty;
+
+        /// <summary>The client's IP address, or empty once the socket is gone.</summary>
+        public string RemoteAddress { get; init; } = string.Empty;
+
+        /// <summary>When this connection was accepted (a zone change opens a new one).</summary>
+        public DateTime ConnectedAtUtc { get; init; }
     }
 
     /// <summary>An entity identity: the AO identity type (50000 for characters) and instance.</summary>

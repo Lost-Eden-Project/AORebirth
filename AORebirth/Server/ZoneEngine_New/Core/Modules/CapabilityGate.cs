@@ -3,6 +3,8 @@ namespace ZoneEngine_New.Core.Modules
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;
+    using System.Globalization;
+    using System.Linq;
     using System.Threading.Tasks;
 
     using AORebirth.Modules.World;
@@ -12,10 +14,21 @@ namespace ZoneEngine_New.Core.Modules
     /// <summary>
     /// One module's grants from the Modules.json "Capabilities" map. Without an entry everything is allowed (module API
     /// 1.1 behaviour); with one, a member it does not list throws <see cref="UnauthorizedAccessException"/>, logged the
-    /// first time per capability.
+    /// first time per capability. An operation's capability is its name (module API 1.5); the operations that replace
+    /// 1.2/1.3 actions are also granted by the old capability name.
     /// </summary>
     internal sealed class CapabilityGate
     {
+        /// <summary>The pre-1.5 capability that also grants each operation.</summary>
+        internal static readonly IReadOnlyDictionary<string, string> LegacyOperationCapabilities =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [OperationNames.NpcRefresh] = ModuleCapabilities.RefreshNpc,
+                [OperationNames.NpcRespawn] = ModuleCapabilities.RespawnNpc,
+                [OperationNames.PlayerMessage] = ModuleCapabilities.SendMessages,
+                [OperationNames.PlayerFeedback] = ModuleCapabilities.SendMessages
+            };
+
         private readonly string _moduleId;
         private readonly HashSet<string>? _granted;
         private readonly IZoneLogger _logger;
@@ -27,6 +40,23 @@ namespace ZoneEngine_New.Core.Modules
             _granted = granted == null ? null : new HashSet<string>(granted, StringComparer.OrdinalIgnoreCase);
             _logger = logger;
         }
+
+        public string ModuleId => _moduleId;
+
+        public bool Allows(string capability) => _granted == null || _granted.Contains(capability);
+
+        /// <summary>Whether the module may invoke <paramref name="operation"/>: its name, or the old capability for it.</summary>
+        public bool AllowsOperation(string operation)
+            => Allows(operation)
+                || (LegacyOperationCapabilities.TryGetValue(operation, out string? legacy) && Allows(legacy));
+
+        public void RequireOperation(string operation)
+        {
+            if (!AllowsOperation(operation))
+                Require(operation);
+        }
+
+        internal void Log(string message) => _logger.Info(message);
 
         public void Require(string capability)
         {
@@ -77,6 +107,12 @@ namespace ZoneEngine_New.Core.Modules
             gate.Require(ModuleCapabilities.ReadWorld);
             return world.Stat(entity, statId);
         }
+
+        public SessionInfo? Session(int characterId)
+        {
+            gate.Require(ModuleCapabilities.ReadSessions);
+            return world.Session(characterId);
+        }
     }
 
     internal sealed class GatedActions(IZoneActions actions, CapabilityGate gate) : IZoneActions
@@ -103,6 +139,23 @@ namespace ZoneEngine_New.Core.Modules
         {
             gate.Require(ModuleCapabilities.RespawnNpc);
             return actions.RespawnNpc(playfieldId, instance);
+        }
+
+        public IReadOnlyList<OperationDescriptor> Operations
+            => actions.Operations.Select(x => x with { Granted = gate.AllowsOperation(x.Name) }).ToArray();
+
+        public async Task<OperationResult> Invoke(string operation, OperationTarget target, OperationArgs args)
+        {
+            if (!string.IsNullOrEmpty(operation) && actions.Operations.Any(x => string.Equals(x.Name, operation, StringComparison.OrdinalIgnoreCase)))
+                gate.RequireOperation(operation);
+
+            OperationResult result = await actions.Invoke(operation, target, args).ConfigureAwait(false);
+            gate.Log(string.Format(CultureInfo.InvariantCulture,
+                "Module {0} operation {1} target={2}:{3}{4} args=[{5}] result={6}{7}",
+                gate.ModuleId, operation, target.Kind, target.Kind == TargetKind.Account ? target.Account : target.Id.ToString(CultureInfo.InvariantCulture),
+                target.Kind == TargetKind.Npc ? "@" + target.PlayfieldId.ToString(CultureInfo.InvariantCulture) : string.Empty,
+                args?.ToString() ?? string.Empty, result.Code, result.Ok || result.Message.Length == 0 ? string.Empty : " (" + result.Message + ")"));
+            return result;
         }
     }
 }

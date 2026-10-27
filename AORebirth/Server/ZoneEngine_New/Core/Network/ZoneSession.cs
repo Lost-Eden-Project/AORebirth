@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.Network
     using System.Buffers;
     using System.Buffers.Binary;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Globalization;
     using System.IO;
     using System.IO.Compression;
@@ -66,6 +67,10 @@ namespace ZoneEngine_New.Core.Network
         private readonly IConnectionFilter? _filter;
         private readonly ArrayBufferWriter<byte>? _filteredInbound;
         private readonly ArrayBufferWriter<byte>? _filteredOutbound;
+        // Module message observers; null when no module observes messages. Each loop reuses its own field reader.
+        private readonly Modules.ModuleMessageObservers? _observers;
+        private readonly Modules.MessageFieldReader? _inboundFields;
+        private readonly Modules.MessageFieldReader? _outboundFields;
         private readonly Channel<byte[]> _sendQueue = Channel.CreateUnbounded<byte[]>(
             new UnboundedChannelOptions
             {
@@ -85,6 +90,7 @@ namespace ZoneEngine_New.Core.Network
         private int _handoffCharacter;
         private uint _handoffCookie1;
         private uint _handoffCookie2;
+        private string _account = string.Empty;
         private int _state;
 
         public ZoneSession(
@@ -93,7 +99,8 @@ namespace ZoneEngine_New.Core.Network
             ZoneMessageCodec codec,
             ZoneMessageDispatcher dispatcher,
             IZoneLogger logger,
-            IConnectionFilter? filter = null)
+            IConnectionFilter? filter = null,
+            Modules.ModuleMessageObservers? observers = null)
         {
             ArgumentNullException.ThrowIfNull(socket);
             ArgumentNullException.ThrowIfNull(codec);
@@ -111,9 +118,24 @@ namespace ZoneEngine_New.Core.Network
                 _filteredInbound = new ArrayBufferWriter<byte>(ReceiveChunkSize);
                 _filteredOutbound = new ArrayBufferWriter<byte>(MaxPacketSize);
             }
+
+            if (observers != null)
+            {
+                _observers = observers;
+                _inboundFields = new Modules.MessageFieldReader();
+                _outboundFields = new Modules.MessageFieldReader();
+            }
+
+            ConnectedAtUtc = DateTime.UtcNow;
         }
 
         public Guid Id { get; }
+
+        /// <summary>When the connection was accepted.</summary>
+        public DateTime ConnectedAtUtc { get; }
+
+        /// <summary>The account that owns the handed-off character, or empty before the handoff (or when World did not say).</summary>
+        public string AccountName => Volatile.Read(ref _account);
 
         public SessionState State
         {
@@ -131,7 +153,8 @@ namespace ZoneEngine_New.Core.Network
 
         public Player? Player { get; private set; }
 
-        internal void BindZoneHandoff(int character, uint cookie1, uint cookie2, ZoneEngine_New.Core.World.ZoneRedirects authority)
+        internal void BindZoneHandoff(int character, uint cookie1, uint cookie2, ZoneEngine_New.Core.World.ZoneRedirects authority,
+            string account = "")
         {
             ArgumentNullException.ThrowIfNull(authority);
             if (character <= 0 || (cookie1 == 0 && cookie2 == 0))
@@ -143,6 +166,7 @@ namespace ZoneEngine_New.Core.Network
                 _handoffCookie1 = cookie1;
                 _handoffCookie2 = cookie2;
                 _handoffAuthority = authority;
+                Volatile.Write(ref _account, account ?? string.Empty);
             }
         }
         public bool IsClosed => _closed;
@@ -503,7 +527,7 @@ namespace ZoneEngine_New.Core.Network
             if (_handoffAuthority == null || _handoffCharacter != character)
                 throw new InvalidOperationException("Session has no claimed redirect authority.");
             _ = target;
-            _handoffAuthority.Authorize(character, _handoffCookie1, _handoffCookie2);
+            _handoffAuthority.Authorize(character, _handoffCookie1, _handoffCookie2, _account);
         }
 
         /// <summary>The cookies this client logged in with; it presents them again to whichever instance it moves to.</summary>
@@ -657,6 +681,8 @@ namespace ZoneEngine_New.Core.Network
                         break;
                     }
 
+                    // Arrival time for every message in this read: what observers see, not when the tick runs it.
+                    long received = Stopwatch.GetTimestamp();
                     if (_filter == null)
                     {
                         for (int i = 0; i < read; i++)
@@ -699,6 +725,8 @@ namespace ZoneEngine_New.Core.Network
                             }
 
                             LogNetworkMessage("Received", message.Body);
+                            if (_observers != null)
+                                ObserveInbound(message.Body, packet, received);
                             _dispatcher.Dispatch(message, this);
                         }
                         catch (Exception exception)
@@ -812,6 +840,9 @@ namespace ZoneEngine_New.Core.Network
                 await foreach (byte[] packet in _sendQueue.Reader.ReadAllAsync(cancellationToken)
                                    .ConfigureAwait(false))
                 {
+                    if (_observers != null)
+                        ObserveOutbound(packet);
+
                     if (_outboundCompressed)
                     {
                         WriteCompressed(packet);
@@ -1041,6 +1072,57 @@ namespace ZoneEngine_New.Core.Network
             catch
             {
                 return "unknown";
+            }
+        }
+
+        /// <summary>
+        /// Shows an inbound N3 message to the module observers subscribed to its type, once the session is in play. Runs
+        /// on the receive loop, before the message is dispatched; observers only watch.
+        /// </summary>
+        private void ObserveInbound(MessageBody body, byte[] packet, long received)
+        {
+            if (body is not N3Message n3 || State != SessionState.InPlay)
+                return;
+
+            int type = (int)n3.N3MessageType;
+            if (!_observers!.Wants(MessageDirection.Inbound, type))
+                return;
+
+            _inboundFields!.Reset(body);
+            try
+            {
+                _observers.Publish(new AORebirth.Modules.Network.MessageSample(Id, Player?.Identity.Instance ?? 0,
+                    MessageDirection.Inbound, type, received, packet, _inboundFields));
+            }
+            finally
+            {
+                _inboundFields.Reset(null);
+            }
+        }
+
+        /// <summary>
+        /// Shows an outbound N3 message to the module observers subscribed to its type, on the send loop just before it is
+        /// written. Its fields are parsed back from the bytes only if an observer reads one.
+        /// </summary>
+        private void ObserveOutbound(byte[] packet)
+        {
+            if (!_observers!.HasOutbound || packet.Length < HeaderLength + 4
+                || BinaryPrimitives.ReadInt16BigEndian(packet.AsSpan(2)) != (short)PacketType.N3Message)
+                return;
+
+            int type = (int)TryReadN3MessageId(packet);
+            if (!_observers.Wants(MessageDirection.Outbound, type))
+                return;
+
+            _outboundFields!.ResetDeferred(packet, _codec);
+            try
+            {
+                _observers.Publish(new AORebirth.Modules.Network.MessageSample(Id, Player?.Identity.Instance ?? 0,
+                    MessageDirection.Outbound, type, Stopwatch.GetTimestamp(), packet, _outboundFields));
+            }
+            finally
+            {
+                _outboundFields.Reset(null);
             }
         }
 

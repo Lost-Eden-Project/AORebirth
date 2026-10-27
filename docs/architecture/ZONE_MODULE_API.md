@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.3**.
+The current version is **1.5**.
 
 ## Loading
 
@@ -39,6 +39,8 @@ The current version is **1.3**.
 | 1.1 | `Knubot` (check, reload and override folder for Knubot scripts) |
 | 1.2 | `World`, `Actions`, lifecycle events, capabilities, `RegisterGmCommand` |
 | 1.3 | `GameData` (reloadable GameData and the override folder), `Actions.RespawnNpc`, the `gamedata-reload` and `respawn-npc` capabilities |
+| 1.4 | `RegisterHandoffHook` (admit or refuse login handoffs to this zone) |
+| 1.5 | `RegisterMessageObserver`, `World.Session`, `Actions.Operations` and `Actions.Invoke` (named operations), module.json `Operations`, the `observe-messages` and `read-sessions` capabilities |
 
 ## Context members
 
@@ -48,10 +50,11 @@ The current version is **1.3**.
 | `GetConfig<T>()` | Reads `Modules/<Id>/config.json`, or returns null when it is absent. |
 | `RegisterConnectionFilter` | The byte filter for new zone connections. Only one module may register one. |
 | `RegisterGmCommand` | Adds a `.name` GM command. Only during `Initialize` (see below). |
+| `RegisterMessageObserver` | Watches N3 messages of the types it names, inbound, outbound or both. Only during `Initialize` (see below). |
 | `Events` | Gameplay events (see below). |
 | `Knubot` | `Check(id, json)`, `Reload()`, `OverrideDirectory` (the `AO_REBIRTH_KNUBOT_PATH` folder). |
-| `World` | Read-only snapshots: `Players()`, `Player(id)`, `Playfields()`, `Npcs(pf)`, `Npc(pf, instance)`, `Stat(entity, statId)`. |
-| `Actions` | `RefreshNpc(pf, instance)`, `SendSystemMessage(characterId, text)`, `SendFeedback(characterId, feedbackId)`, `RespawnNpc(pf, instance)`. |
+| `World` | Read-only snapshots: `Players()`, `Player(id)`, `Playfields()`, `Npcs(pf)`, `Npc(pf, instance)`, `Stat(entity, statId)`. `Session(characterId)` (1.5) reads the character's connection. |
+| `Actions` | `RefreshNpc(pf, instance)`, `SendSystemMessage(characterId, text)`, `SendFeedback(characterId, feedbackId)`, `RespawnNpc(pf, instance)`. From 1.5 also `Operations` and `Invoke(name, target, args)` (see below). |
 | `GameData` | `OverrideDirectory` (the `AO_REBIRTH_GAMEDATA_OVERRIDE_PATH` folder), `Reloadable` (the names), `Reload(name)` (see below). |
 
 `World` and `Actions` cover **this zone instance only**. A player or NPC on another instance is not found, and
@@ -126,6 +129,12 @@ The `Capabilities` entry in Modules.json is optional.
 | `send-messages` | `Actions.SendSystemMessage`, `Actions.SendFeedback` |
 | `gamedata-reload` | `GameData.Reload` (reading `OverrideDirectory` and `Reloadable` needs nothing) |
 | `respawn-npc` | `Actions.RespawnNpc` |
+| `observe-messages` | `RegisterMessageObserver` (1.5) |
+| `read-sessions` | `World.Session` (1.5) |
+| an operation's name | `Actions.Invoke` of that operation (1.5), for example `player.teleport` |
+
+The operations that replace older actions are also granted by the older name: `refresh-npc` grants `npc.refresh`,
+`respawn-npc` grants `npc.respawn`, and `send-messages` grants `player.message` and `player.feedback`.
 
 ## Knubot reloads
 
@@ -175,3 +184,81 @@ generation, Gameplay.json and Config.
 
 **Instances.** Each zone instance holds its own catalogs. A module running on every instance reloads on every
 instance; nothing coordinates reloads across instances.
+
+## Message observers
+
+`RegisterMessageObserver(observer, new MessageSubscription { MessageTypes = [...], Directions = ... })` watches N3
+messages on this instance's connections (1.5). `MessageTypes` holds N3 message type ids; `AORebirth.Modules.Network.MessageTypes`
+names the common ones. Observers only watch: every message is handled exactly as it would be without one.
+
+- **Where they run.**
+  - Inbound: on the connection's receive thread, in wire order, once the session is in play, before the message is
+    queued for the playfield.
+  - Outbound: on the connection's send thread, in wire order, just before the message is written.
+  - Never on a playfield tick, never under an engine lock.
+- **What an observer gets.** `OnMessage(in MessageSample sample)`, valid only during the call:
+  - `SessionId` (the same id as `World.Session`), `CharacterId` (0 before one is bound), `Direction`, `MessageType`;
+  - `Timestamp`: `Stopwatch.GetTimestamp()` when the bytes were read from the socket (inbound) or written (outbound);
+  - `Body`: the plaintext message, header included (outbound: before compression);
+  - `Fields`: the message's fields by name (below).
+- **Cost.** A message type nobody subscribed to costs one dictionary lookup. An outbound message's fields are parsed
+  back from its bytes only when an observer reads one.
+- **Failures.** `OnMessage` must not block or allocate. One that throws is logged; after 10 failures in a row it is
+  removed. One slower than 2 ms is reported, at most once a minute.
+- **Logging.** Each subscription is logged at startup with its directions and types.
+
+### Fields
+
+`Fields.TryGetInt / TryGetFloat / TryGetIdentity / TryGetString(name, out value)` read a property path of the engine's
+parsed message: `MoveType`, `Coordinates.X`, `Target[0].Instance`. An enum reads as its integer, an identity as an
+`EntityRef`. A name the message lacks, an index past the end, or a value of another kind gives false; a module treats
+that as "not available". A path through a base type is read on the runtime type (`FollowTarget`'s `Info`).
+
+These names are guaranteed (ZoneEngine_New.Tests `ModuleMessageApiTests` locks them):
+
+| Message | Names |
+|---|---|
+| `CharDCMove` | `Identity`, `MoveType`, `Coordinates.X`, `Coordinates.Y`, `Coordinates.Z`, `Heading.X`, `Heading.Y`, `Heading.Z`, `Heading.W`, `AuxA`, `AuxB`, `Unknown1` |
+| `Attack` | `Identity`, `Target`, `Action` |
+| `StopFight` | `Identity`, `Unknown1` |
+| `CastNanoSpell` | `Identity`, `NanoId`, `Target`, `Caster` |
+| `CharacterAction` | `Identity`, `Action`, `Target`, `Parameter1`, `Parameter2` |
+| `GenericCmd` | `Identity`, `Action`, `Count`, `User`, `Target[0]` |
+| `LookAt` | `Identity`, `Target` |
+| `FollowTarget` | `Identity`, `Info.MoveType`, `Info.Target` (a follow of a target) |
+
+Other names usually work too, but may change with the engine's message types.
+
+## Sessions
+
+`World.Session(characterId)` (1.5, `read-sessions`) returns the character's connection on this instance, or null when it
+is not in play here or is link-dead: `SessionId`, `CharacterId`, `AccountName`, `RemoteAddress` and `ConnectedAtUtc`.
+A zone change opens a new connection, so `SessionId` and `ConnectedAtUtc` change with it. It reads the live session,
+never a snapshot, so it never waits. It needs its own capability because it carries the account and IP address.
+
+## Operations
+
+`Actions.Invoke(name, target, args)` (1.5) runs a named operation the engine registers; `Actions.Operations` lists them,
+with their target kind, parameters, the capability they need and whether this module is granted it. New operations are
+engine additions and don't change the module API.
+
+- **Where they run.** Player and NPC operations on the target's playfield tick, account operations on a worker thread.
+  The task completes after the operation ran.
+- **Results.** `Invoke` never throws for an unknown name, a wrong target or bad arguments; the result's `Code` says why:
+  `unknown_operation`, `bad_target`, `bad_args`, `not_here` (not on this instance or not in play) or `failed`. It throws
+  `UnauthorizedAccessException` when the module is not granted the operation.
+- **Arguments.** `OperationArgs.Of(("x", 1.0f), ...)` holds int, float, bool and string values. A float parameter also
+  takes an int.
+- **Declaring them.** module.json may list `"Operations": ["player.kick", ...]`. A listed operation this engine does not
+  offer, or that Modules.json does not grant, fails that module's load (the zone's, when it is `Required`).
+- **Logging.** Every invoke is logged with the module, operation, target, arguments and result.
+
+| Operation | Target | Arguments | What it does |
+|---|---|---|---|
+| `npc.refresh` | NPC | | As `RefreshNpc`. |
+| `npc.respawn` | NPC | | As `RespawnNpc`. |
+| `player.message` | character | `text` | As `SendSystemMessage`. |
+| `player.feedback` | character | `id` | As `SendFeedback`. |
+| `player.teleport` | character | `playfield`, `x`, `y`, `z` | Within the character's playfield, a soft teleport as `.tp` does. To another playfield, the normal playfield transfer (to another instance too), with no exit-proxy return. An unknown playfield is `bad_args`. |
+| `player.kick` | character | `reason` (optional) | Logs the character out as a client logout does, with the normal logout save. |
+| `account.ban` | account | `reason` (optional) | Sets the account's `login.Flags` to 1. LoginEngine and the account broker admit an account only while it is 0. Characters in play stay until they log out or are kicked. Lifting it is a normal account edit (Flags back to 0). |

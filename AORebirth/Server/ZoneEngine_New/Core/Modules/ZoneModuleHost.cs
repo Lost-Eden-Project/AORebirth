@@ -32,7 +32,8 @@ namespace ZoneEngine_New.Core.Modules
         private readonly IKnubotScripts _knubot;
         private readonly IZoneGameData _gameData;
         private readonly List<LoadedModule> _modules = new();
-        private readonly IZoneActions _actions;
+        private readonly ZoneModuleActions _actions;
+        private readonly ModuleMessageObservers _messages;
         private Dictionary<string, List<string>> _capabilities = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(string ModuleId, ModuleGmCommand Command)> _gmCommands = new();
         private readonly HashSet<string> _required = new(StringComparer.OrdinalIgnoreCase);
@@ -43,14 +44,16 @@ namespace ZoneEngine_New.Core.Modules
         private string? _handoffHookOwner;
 
         private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, IZoneGameData gameData,
-            Func<Playfield.PlayfieldManager> playfields)
+            Func<Playfield.PlayfieldManager> playfields, Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? accounts,
+            string? gameDataRoot)
         {
             _logger = logger;
             _knubot = knubot;
             _gameData = gameData;
             Events = new ZoneModuleEvents(logger);
             World = new ZoneModuleWorld(playfields);
-            _actions = new ZoneModuleActions(playfields);
+            _actions = new ZoneModuleActions(playfields, accounts, gameDataRoot, logger);
+            _messages = new ModuleMessageObservers(logger);
         }
 
         public ZoneModuleEvents Events { get; }
@@ -60,18 +63,23 @@ namespace ZoneEngine_New.Core.Modules
 
         public int Count => _modules.Count;
 
+        /// <summary>The message observers for new connections, or null when no module observes messages.</summary>
+        public ModuleMessageObservers? MessageObservers => _messages.HasInbound || _messages.HasOutbound ? _messages : null;
+
         public static ZoneModuleHost Load(
             string gameDataRoot,
             IZoneLogger logger,
             Func<Knubot.KnubotCatalog> knubot,
             Func<Playfield.PlayfieldManager> playfields,
-            Func<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>? gameData = null)
+            Func<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>? gameData = null,
+            Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? accounts = null)
         {
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(knubot);
             ArgumentNullException.ThrowIfNull(playfields);
             var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot),
-                new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([]))), playfields);
+                new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([]))), playfields,
+                accounts, gameDataRoot);
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {
@@ -84,7 +92,7 @@ namespace ZoneEngine_New.Core.Modules
             HashSet<string> required = host._required;
             required.UnionWith(settings.Required);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            host._capabilities = LoadCapabilities(settings, logger);
+            host._capabilities = LoadCapabilities(settings, logger, host._actions.Operations.Select(x => x.Name));
             logger.Info($"Modules: config={settingsPath} directory={modulesDirectory} enabled={settings.Enabled.Count}");
 
             foreach (string id in settings.Enabled)
@@ -179,6 +187,7 @@ namespace ZoneEngine_New.Core.Modules
         private void Forget(string moduleId)
         {
             Events.RemoveModule(moduleId);
+            _messages.RemoveModule(moduleId);
             _gmCommands.RemoveAll(x => string.Equals(x.ModuleId, moduleId, StringComparison.OrdinalIgnoreCase));
             if (string.Equals(_connectionFilterOwner, moduleId, StringComparison.OrdinalIgnoreCase))
             {
@@ -248,6 +257,7 @@ namespace ZoneEngine_New.Core.Modules
 
             _capabilities.TryGetValue(manifest.Id, out List<string>? granted);
             var gate = new CapabilityGate(manifest.Id, granted, _logger);
+            CheckOperations(manifest, gate);
             var moduleContext = new ZoneModuleContext(this, manifest.Id, moduleDirectory, gate);
             var entries = new List<IZoneModule>(entryTypes.Length);
             _initializing = manifest.Id;
@@ -289,13 +299,33 @@ namespace ZoneEngine_New.Core.Modules
                     "Module was built against module API {0}; this engine provides {1}.", api.Version, ApiMajorVersion));
         }
 
-        private static Dictionary<string, List<string>> LoadCapabilities(ModulesSettings settings, IZoneLogger logger)
+        /// <summary>
+        /// The operations module.json says the module needs (module API 1.5) must exist on this engine and be granted, or
+        /// the module does not load.
+        /// </summary>
+        private void CheckOperations(ModuleManifest manifest, CapabilityGate gate)
+        {
+            var offered = new HashSet<string>(_actions.Operations.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (string operation in manifest.Operations ?? new List<string>())
+            {
+                if (!offered.Contains(operation))
+                    throw new InvalidDataException("Module needs operation '" + operation + "', which this engine does not offer.");
+                if (!gate.AllowsOperation(operation))
+                    throw new InvalidDataException("Module needs operation '" + operation
+                        + "', which Config/Modules.json Capabilities does not grant it.");
+            }
+        }
+
+        private static Dictionary<string, List<string>> LoadCapabilities(ModulesSettings settings, IZoneLogger logger,
+            IEnumerable<string> operations)
         {
             var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 ModuleCapabilities.ReadWorld, ModuleCapabilities.RefreshNpc, ModuleCapabilities.SendMessages,
-                ModuleCapabilities.GameDataReload, ModuleCapabilities.RespawnNpc
+                ModuleCapabilities.GameDataReload, ModuleCapabilities.RespawnNpc, ModuleCapabilities.ObserveMessages,
+                ModuleCapabilities.ReadSessions
             };
+            known.UnionWith(operations);
             var capabilities = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach ((string id, List<string>? names) in settings.Capabilities ?? new Dictionary<string, List<string>>())
             {
@@ -343,6 +373,13 @@ namespace ZoneEngine_New.Core.Modules
             _connectionFilterOwner = moduleId;
         }
 
+        private void RegisterMessageObserver(string moduleId, IMessageObserver observer, MessageSubscription subscription)
+        {
+            if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Message observers can only be registered during Initialize.");
+            _messages.Add(moduleId, observer, subscription);
+        }
+
         private void RegisterHandoffHook(string moduleId, IHandoffHook hook)
         {
             ArgumentNullException.ThrowIfNull(hook);
@@ -360,10 +397,12 @@ namespace ZoneEngine_New.Core.Modules
         private sealed class ZoneModuleContext : IZoneModuleContext
         {
             private readonly ZoneModuleHost _host;
+            private readonly CapabilityGate _gate;
 
             public ZoneModuleContext(ZoneModuleHost host, string moduleId, string moduleDirectory, CapabilityGate gate)
             {
                 _host = host;
+                _gate = gate;
                 ModuleId = moduleId;
                 ModuleDirectory = moduleDirectory;
                 Log = new ModuleLogger(host._logger, moduleId);
@@ -405,6 +444,12 @@ namespace ZoneEngine_New.Core.Modules
             public void RegisterGmCommand(ModuleGmCommand command) => _host.RegisterGmCommand(ModuleId, command);
 
             public void RegisterHandoffHook(IHandoffHook hook) => _host.RegisterHandoffHook(ModuleId, hook);
+
+            public void RegisterMessageObserver(IMessageObserver observer, MessageSubscription subscription)
+            {
+                _gate.Require(ModuleCapabilities.ObserveMessages);
+                _host.RegisterMessageObserver(ModuleId, observer, subscription);
+            }
         }
 
         private sealed class ModuleEventsView : IZoneEvents

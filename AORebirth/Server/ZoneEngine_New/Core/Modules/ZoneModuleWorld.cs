@@ -74,6 +74,23 @@ namespace ZoneEngine_New.Core.Modules
             => Find(playfieldId) is Playfield playfield && Read(playfield) is Snapshot snapshot
                 && snapshot.NpcsById.TryGetValue(instance, out NpcInfo? info) ? info : null;
 
+        /// <summary>Read from the player's live connection, not a snapshot: the fields it reads never change after login.</summary>
+        public SessionInfo? Session(int characterId)
+        {
+            if (!_manager.Value.FindPlayer(characterId, out Player player)
+                || player.Session is not ZoneEngine_New.Core.Network.ZoneSession session || session.IsClosed)
+                return null;
+
+            return new SessionInfo
+            {
+                SessionId = session.Id,
+                CharacterId = characterId,
+                AccountName = session.AccountName,
+                RemoteAddress = session.RemoteAddress()?.ToString() ?? string.Empty,
+                ConnectedAtUtc = session.ConnectedAtUtc
+            };
+        }
+
         public int? Stat(EntityRef entity, int statId)
         {
             if (entity.Type != EntityRef.CharacterType)

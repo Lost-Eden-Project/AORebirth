@@ -54,5 +54,11 @@ namespace AORebirth.Modules
         /// module's startup.
         /// </summary>
         void RegisterHandoffHook(IHandoffHook hook);
+
+        /// <summary>
+        /// Adds an observer for the N3 messages <paramref name="subscription"/> names (module API 1.5). Only during
+        /// <see cref="IZoneModule.Initialize"/>; several modules may each register several. Needs <c>observe-messages</c>.
+        /// </summary>
+        void RegisterMessageObserver(IMessageObserver observer, MessageSubscription subscription);
     }
 }

@@ -132,7 +132,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
             _throttle.RecordSuccess(remote);
 
-            zoneSession.BindZoneHandoff(message.CharacterId, message.Cookie1, message.Cookie2, _redirects);
+            zoneSession.BindZoneHandoff(message.CharacterId, message.Cookie1, message.Cookie2, _redirects, claim.Account);
 
             int characterId = message.CharacterId;
             if (characterId <= 0)

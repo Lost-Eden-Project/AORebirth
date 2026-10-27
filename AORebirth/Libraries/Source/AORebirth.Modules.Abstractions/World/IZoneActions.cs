@@ -1,5 +1,6 @@
 namespace AORebirth.Modules.World
 {
+    using System.Collections.Generic;
     using System.Threading.Tasks;
 
     /// <summary>
@@ -32,6 +33,20 @@ namespace AORebirth.Modules.World
         /// then left in place. Needs <c>respawn-npc</c>.
         /// </summary>
         Task<bool> RespawnNpc(int playfieldId, int instance);
+
+        /// <summary>
+        /// Every operation this engine offers (module API 1.5), with its parameters and the capability it needs.
+        /// <see cref="OperationDescriptor.Granted"/> says whether this module may invoke it.
+        /// </summary>
+        IReadOnlyList<OperationDescriptor> Operations { get; }
+
+        /// <summary>
+        /// Runs the named operation (module API 1.5; names in <see cref="OperationNames"/>). Player and NPC operations run on
+        /// the target's playfield tick, account operations on a worker thread; the task completes after it ran. Never throws
+        /// for an unknown name, a wrong target or bad arguments: the result says why. Throws
+        /// <see cref="System.UnauthorizedAccessException"/> when the module is not granted the operation's capability.
+        /// </summary>
+        Task<OperationResult> Invoke(string operation, OperationTarget target, OperationArgs args);
     }
 
     /// <summary>Capability names for the "Capabilities" map in Config/Modules.json.</summary>
@@ -51,5 +66,11 @@ namespace AORebirth.Modules.World
 
         /// <summary><see cref="IZoneActions.RespawnNpc"/> (module API 1.3).</summary>
         public const string RespawnNpc = "respawn-npc";
+
+        /// <summary><see cref="Network.IMessageObserver"/> (module API 1.5).</summary>
+        public const string ObserveMessages = "observe-messages";
+
+        /// <summary><see cref="IZoneWorld.Session"/> (module API 1.5).</summary>
+        public const string ReadSessions = "read-sessions";
     }
 }

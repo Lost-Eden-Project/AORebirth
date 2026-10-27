@@ -17,19 +17,32 @@ namespace ZoneEngine_New.Core.Modules
 
     /// <summary>
     /// The module API's actions. Each is queued onto the playfield tick that owns its target
-    /// (<see cref="Playfield.Dispatch"/>), never run under a lock taken from the module's thread.
+    /// (<see cref="Playfield.Dispatch"/>), never run under a lock taken from the module's thread. The named operations
+    /// (module API 1.5) are in ZoneModuleActions.Operations.cs.
     /// </summary>
-    internal sealed class ZoneModuleActions : IZoneActions
+    internal sealed partial class ZoneModuleActions : IZoneActions
     {
         /// <summary>A task whose playfield went away before running it completes false after this.</summary>
         internal static TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(10);
 
         readonly Lazy<PlayfieldManager> _manager;
+        readonly Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? _accounts;
+        readonly string? _gameDataRoot;
+        readonly ZoneEngine_New.Core.Logging.IZoneLogger? _logger;
+        readonly Dictionary<string, Operation> _operations;
 
-        public ZoneModuleActions(Func<PlayfieldManager> manager)
+        /// <param name="accounts">The login accounts, for account operations; null leaves them unregistered.</param>
+        /// <param name="gameDataRoot">The GameData tree, to check a teleport's playfield exists; null skips the check.</param>
+        public ZoneModuleActions(Func<PlayfieldManager> manager,
+            Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? accounts = null, string? gameDataRoot = null,
+            ZoneEngine_New.Core.Logging.IZoneLogger? logger = null)
         {
             ArgumentNullException.ThrowIfNull(manager);
             _manager = new Lazy<PlayfieldManager>(manager);
+            _accounts = accounts;
+            _gameDataRoot = gameDataRoot;
+            _logger = logger;
+            _operations = BuildOperations();
         }
 
         public Task<bool> RefreshNpc(int playfieldId, int instance)
@@ -123,26 +136,29 @@ namespace ZoneEngine_New.Core.Modules
             return true;
         }
 
-        Task<bool> OnPlayer(int characterId, Func<Player, bool> action)
+        Task<bool> OnPlayer(int characterId, Func<Player, bool> action) => OnPlayer(characterId, action, false);
+
+        /// <summary>Runs <paramref name="action"/> on the player's tick; <paramref name="notHere"/> when it is not in play here.</summary>
+        Task<T> OnPlayer<T>(int characterId, Func<Player, T> action, T notHere)
         {
             if (!_manager.Value.FindPlayer(characterId, out Player player) || player.Playfield is not Playfield playfield)
-                return Task.FromResult(false);
+                return Task.FromResult(notHere);
 
             // The player can change playfield before the queued work runs: it then runs on (or is passed to) the new one.
-            var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
             playfield.DispatchPlayerProjection(player, () =>
             {
                 try
                 {
                     done.TrySetResult(_manager.Value.FindPlayer(characterId, out Player current)
-                        && ReferenceEquals(current, player) && action(player));
+                        && ReferenceEquals(current, player) ? action(player) : notHere);
                 }
                 catch (Exception exception)
                 {
                     done.TrySetException(exception);
                 }
             });
-            return Bounded(done.Task);
+            return Bounded(done.Task, notHere);
         }
 
         static Task<bool> Run(Playfield playfield, Func<bool> action)
@@ -159,11 +175,11 @@ namespace ZoneEngine_New.Core.Modules
                     done.TrySetException(exception);
                 }
             });
-            return queued ? Bounded(done.Task) : Task.FromResult(false);
+            return queued ? Bounded(done.Task, false) : Task.FromResult(false);
         }
 
-        /// <summary>Work queued on a playfield that is retired before its next tick never runs: report false.</summary>
-        static async Task<bool> Bounded(Task<bool> task)
+        /// <summary>Work queued on a playfield that is retired before its next tick never runs: report <paramref name="timedOut"/>.</summary>
+        static async Task<T> Bounded<T>(Task<T> task, T timedOut)
         {
             try
             {
@@ -171,7 +187,7 @@ namespace ZoneEngine_New.Core.Modules
             }
             catch (TimeoutException)
             {
-                return false;
+                return timedOut;
             }
         }
     }
