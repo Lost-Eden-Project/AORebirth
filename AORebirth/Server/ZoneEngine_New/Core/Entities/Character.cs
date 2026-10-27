@@ -526,19 +526,29 @@ namespace ZoneEngine_New.Core.Entities
             // Personal research takes its PersonalResearchLevel share of the whole grant, before the per-grant cap; what
             // the research goal does not use (none selected, or the excess past a finished tier) stays XP when enabled. Only the XP
             // that remains is capped.
+            Player? suppressed = null;
             if (this is Player researcher)
             {
                 long research = researcher.ResearchShareOf(amount);
                 if (research > 0)
                     amount = (int)Math.Clamp(amount - research + researcher.ApplyResearchXp(research), 0, amount);
-                if (amount <= 0 || researcher.IsNormalXpSuppressed)
+                if (amount <= 0)
                     return;
+                if (researcher.IsNormalXpSuppressed)
+                    suppressed = researcher;
             }
 
             if (current.NextLevelXp > 0)
             {
                 double capPercent = source == XpSource.Kill ? XpCaps.KillXp : XpCaps.Quest;
                 amount = (int)Math.Min(amount, GameplayXpCaps.Of(capPercent, current.NextLevelXp));
+            }
+
+            // XP gain turned off: what research did not take goes into the death pool instead, to come back later.
+            if (suppressed != null)
+            {
+                suppressed.AddToDeathXpPool(amount);
+                return;
             }
 
             // A kill also gives back part of the XP lost on deaths since the last save (the death pool), in proportion to

@@ -1850,12 +1850,17 @@ namespace ZoneEngine_New.Core.Entities
             return true;
         }
 
-        /// <summary>The XP a death cannot take: the last insurance save, or the start of the current level if later.</summary>
+        /// <summary>
+        /// The XP a death cannot take: the last insurance save, or the start of the current level if later. A save above
+        /// the current XP cannot be real (a save stores the XP of the moment, and a death never goes below it), so it counts
+        /// as no save: one such stale value (2076225398 on a level 21 character) made every death free.
+        /// </summary>
         int SavedXpWatermark(IGameData gameData)
         {
             int floor = gameData.TryGetXpLevel(Stats.GetOrOne(CharacterStat.Level), out XpLevelEntry entry) ? entry.FloorXp : 0;
             int saved = Stats.GetOrZero(CharacterStat.SavedXP, StatDetail.Base);
-            return StatCollection.IsUnset(saved) ? floor : Math.Max(floor, saved);
+            int xp = Stats.GetOrZero(CharacterStat.XP, StatDetail.Base);
+            return StatCollection.IsUnset(saved) || saved > xp ? floor : Math.Max(floor, saved);
         }
 
         /// <summary>
@@ -1876,16 +1881,30 @@ namespace ZoneEngine_New.Core.Entities
             if (lost <= 0)
                 return;
 
-            int pool = Math.Max(0, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base));
-            int grown = (int)Math.Min(int.MaxValue, (long)pool + lost);
-            SetDeathXpPool(grown);
             Stats.Set(CharacterStat.XP, keep, StatDetail.Base, dirty: true);
+            int pool = AddToDeathXpPool(lost);
+            Logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Death XP loss character={0} level={1} xp={2}->{3} lost={4} pool={5}",
+                Identity.Instance, level, xp, keep, lost, pool));
+        }
+
+        /// <summary>
+        /// Adds <paramref name="xp"/> to the death pool (XP lost on a death, or earned with XP gain turned off) and tells
+        /// the client: "This XP was added to the pool of unsaved experience points … Your current pool … is N." (live
+        /// capture 2026-10-27T16:10:11Z, after the UnsavedXP stat). Returns the new pool.
+        /// </summary>
+        internal int AddToDeathXpPool(int xp)
+        {
+            int pool = Math.Max(0, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base));
+            if (xp <= 0)
+                return pool;
+
+            int grown = (int)Math.Min(int.MaxValue, (long)pool + xp);
+            SetDeathXpPool(grown);
             FlushDirtyStats();
             SaveState.MarkDirty();
             ClientFeedback.SendFormatted(this, ClientFeedback.DeathXpAddedToPool, grown);
-            Logger.Info(string.Format(CultureInfo.InvariantCulture,
-                "Death XP loss character={0} level={1} xp={2}->{3} lost={4} pool={5}",
-                Identity.Instance, level, xp, keep, lost, pool + lost));
+            return grown;
         }
 
         /// <summary>

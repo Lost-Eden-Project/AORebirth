@@ -38,6 +38,15 @@ public sealed class DirectXpRewardPlan
     /// </summary>
     public long ResearchXp { get; private init; }
 
+    /// <summary>
+    /// With XP gain turned off, the XP the reward would have given (after research), added to the death pool once the
+    /// reward is committed, by <see cref="PublishAfterCommit"/>. The pool is saved with the character, not in the reward's
+    /// transaction.
+    /// </summary>
+    public int PooledXp { get; private init; }
+
+    bool _pooledPublished;
+
     bool _researchPublished;
 
     DirectXpRewardPlan(Player player, int reward, int before, int after, bool shadow, Dictionary<CharacterStat, int> stats)
@@ -67,10 +76,16 @@ public sealed class DirectXpRewardPlan
         // that remains is capped.
         long research = player.PlanResearchXp(amount);
         if (player.IsNormalXpSuppressed)
+        {
+            // XP gain turned off: what research does not take goes into the death pool (capped as the XP would be).
+            long pooled = amount - research;
+            if (current.NextLevelXp > 0)
+                pooled = Math.Min(pooled, GameplayXpCaps.Of(player.XpCaps.Quest, current.NextLevelXp));
             return new(player, 0, before, before, false, values)
             {
-                _questStyle = true, ResearchXp = research, NormalXpSuppressed = true
+                _questStyle = true, ResearchXp = research, NormalXpSuppressed = true, PooledXp = (int)Math.Max(0, pooled)
             };
+        }
         amount = checked(amount - (int)research);
         if (current.NextLevelXp > 0)
             amount = (int)Math.Min(amount, GameplayXpCaps.Of(player.XpCaps.Quest, current.NextLevelXp));
@@ -133,7 +148,7 @@ public sealed class DirectXpRewardPlan
         if (!shadow && player.IsNormalXpSuppressed)
             return new(player, 0, before, before, false, values)
             {
-                ResearchXp = research, NormalXpSuppressed = true
+                ResearchXp = research, NormalXpSuppressed = true, PooledXp = (int)Math.Max(0, reward - research)
             };
         reward = checked(reward - (int)research);
         if (shadow)
@@ -219,6 +234,11 @@ public sealed class DirectXpRewardPlan
         {
             _researchPublished = true;
             player.ApplyResearchXp(ResearchXp);
+        }
+        if (PooledXp > 0 && !_pooledPublished)
+        {
+            _pooledPublished = true;
+            player.AddToDeathXpPool(PooledXp);
         }
         if (_stats.Count == 0) return;
         foreach (var pair in _stats) player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: _questStyle);
