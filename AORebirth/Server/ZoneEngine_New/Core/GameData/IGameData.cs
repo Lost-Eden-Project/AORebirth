@@ -101,9 +101,9 @@ namespace ZoneEngine_New.Core.GameData
 
         /// <summary>
         /// Same as <see cref="CollectHashSpawns(string, List{HashInstance})"/>, but random category picks only
-        /// consider child hashes accepted by <paramref name="canPick"/>.
+        /// consider child hashes accepted by <paramref name="canPick"/> (parent category, child hash).
         /// </summary>
-        void CollectHashSpawns(string hash, List<HashInstance> into, Func<string, bool> canPick)
+        void CollectHashSpawns(string hash, List<HashInstance> into, Func<string, string, bool> canPick)
             => CollectHashSpawns(hash, into);
 
         /// <summary>

@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.Playfield
     using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Text.Json;
 
     using AORebirth.Core.GameData;
@@ -174,6 +175,19 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>A one-shot point whose NPC was killed.</summary>
         internal bool Retired { get; set; }
 
+        /// <summary>The level the current spawn rolled, and the statics it picked.</summary>
+        internal int? RolledLevel { get; set; }
+
+        internal HashInstance[]? RolledStatics { get; set; }
+
+        /// <summary>
+        /// A sleep-despawned roll: the point wakes with these NPCs (or statics) at this level instead of rolling again, so
+        /// leaving and returning cannot re-roll a category point for its rare. Only a kill frees the point to roll anew.
+        /// </summary>
+        internal bool HoldsRoll { get; set; }
+
+        internal MobTemplate[]? HeldTemplates { get; set; }
+
         internal int MemberCount => _members.Count;
 
         internal void AddMember(Dynel member)
@@ -252,6 +266,7 @@ namespace ZoneEngine_New.Core.Playfield
             AssignSpawnPointKeys();
             locality.AttachHashSpawns(
                 _pointsByCell.Keys,
+                ScriptedSpawnCells(),
                 OnCellSleep,
                 OnCellTick,
                 OnIndoorSpawnTick);
@@ -379,6 +394,25 @@ namespace ZoneEngine_New.Core.Playfield
         /// Every point gets its NpcScripts key, derived from the fields Spawns.json already has; points stacked at one
         /// position are numbered in load order. Bindings that match no point are reported once per playfield.
         /// </summary>
+        /// <summary>
+        /// Cells holding a spawn point whose NPC runs a script. They stay Cold from load (CellHeatScheduler), so the NPC
+        /// spawns at once, runs its script with no player near, and respawns on its own timer after a death.
+        /// </summary>
+        private List<int> ScriptedSpawnCells()
+        {
+            var cells = new List<int>();
+            if (_playfield.GetService<NpcScripts.NpcScriptCatalog>() is not { } scripts)
+                return cells;
+
+            foreach (KeyValuePair<int, List<HashSpawnPoint>> pair in _pointsByCell)
+            {
+                if (pair.Value.Exists(point => scripts.BindsProgram(point.HashText, _playfield.ResourceId, point.Key)))
+                    cells.Add(pair.Key);
+            }
+
+            return cells;
+        }
+
         private void AssignSpawnPointKeys()
         {
             var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -761,13 +795,16 @@ namespace ZoneEngine_New.Core.Playfield
 
             try
             {
-                int? level = RollLevel(point);
+                int? level = point.HoldsRoll ? point.RolledLevel : RollLevel(point);
                 int spawned = point.IsStatic
                     ? SpawnStaticBranches(point, level)
                     : SpawnMobBranches(point, level);
+                point.HoldsRoll = false;
+                point.HeldTemplates = null;
                 if (spawned == 0)
                     return false;
 
+                point.RolledLevel = level;
                 point.State = HashSpawnState.Alive;
                 point.HasSpawned = true;
                 return true;
@@ -894,6 +931,10 @@ namespace ZoneEngine_New.Core.Playfield
             {
                 templates = point.FrozenTemplates;
             }
+            else if (point.HoldsRoll && point.HeldTemplates != null)
+            {
+                templates = point.HeldTemplates;
+            }
             else
             {
                 var resolved = new List<MobTemplate>();
@@ -949,10 +990,13 @@ namespace ZoneEngine_New.Core.Playfield
         private int SpawnStaticBranches(HashSpawnPoint point, int? level)
         {
             var instances = new List<HashInstance>();
-            if (point.Source.StaticTemplateId is int templateId)
+            if (point.HoldsRoll && point.RolledStatics != null)
+                instances.AddRange(point.RolledStatics);
+            else if (point.Source.StaticTemplateId is int templateId)
                 instances.Add(new HashInstance(point.HashText, new[] { templateId }));
             else
                 _gameData.CollectHashSpawns(point.HashText, instances);
+            point.RolledStatics = instances.ToArray();
             int spawned = 0;
             for (int i = 0; i < instances.Count; i++)
             {
@@ -1000,14 +1044,24 @@ namespace ZoneEngine_New.Core.Playfield
 
             // The point sleeps with its own cell, wherever its members are. A member serving a player as a charmed pet
             // is out with its owner, not idle here: the point stays awake until the charm ends and it comes home.
+            // Nor is a living scripted NPC: its script keeps running with no player near (its own cell stays Cold, see
+            // CellHeatScheduler), so it stays even when it has wandered out of the point's cell.
             for (int i = 0; i < members.Length; i++)
             {
-                if (members[i] is NpcCharacter { Pet: not null })
+                if (members[i] is NpcCharacter { Pet: not null } or NpcCharacter { Scripts: not null, IsDead: false })
                     return;
             }
 
-            // Stay Alive — sleep-despawned; respawn on next awake tick.
+            // Stay Alive — sleep-despawned; respawn on next awake tick with the same roll (its survivors only), not a new one.
             point.State = HashSpawnState.Alive;
+            if (point.FrozenTemplates == null)
+            {
+                MobTemplate[] survivors = members.OfType<NpcCharacter>().Select(npc => npc.MobTemplate)
+                    .OfType<MobTemplate>().ToArray();
+                point.HeldTemplates = survivors.Length > 0 ? survivors : null;
+                point.HoldsRoll = point.IsStatic ? point.RolledStatics != null : point.HeldTemplates != null;
+            }
+
             for (int i = 0; i < members.Length; i++)
             {
                 Dynel spawned = members[i];

@@ -171,10 +171,10 @@ namespace ZoneEngine_New.Core.GameData
 
         /// <summary>
         /// Same as <see cref="CollectSpawns(string, List{HashInstance})"/>, but a random category pick only
-        /// considers children accepted by <paramref name="canPick"/>. A category with no accepted child
-        /// contributes nothing. SpawnAll branches are not filtered; random picks beneath them still are.
+        /// considers children accepted by <paramref name="canPick"/> (parent category, child hash). A category with no
+        /// accepted child contributes nothing. SpawnAll branches are not filtered; random picks beneath them still are.
         /// </summary>
-        public void CollectSpawns(string hash, List<HashInstance> into, Func<string, bool>? canPick)
+        public void CollectSpawns(string hash, List<HashInstance> into, Func<string, string, bool>? canPick)
         {
             ArgumentNullException.ThrowIfNull(into);
             CollectSpawns(hash, into, new HashSet<string>(StringComparer.Ordinal), canPick);
@@ -233,7 +233,7 @@ namespace ZoneEngine_New.Core.GameData
             return false;
         }
 
-        void CollectSpawns(string hash, List<HashInstance> into, HashSet<string> trail, Func<string, bool>? canPick)
+        void CollectSpawns(string hash, List<HashInstance> into, HashSet<string> trail, Func<string, string, bool>? canPick)
         {
             if (string.IsNullOrEmpty(hash) || !trail.Add(hash))
                 return;
@@ -249,7 +249,7 @@ namespace ZoneEngine_New.Core.GameData
                         return;
                     }
 
-                    string? child = PickChild(children, canPick);
+                    string? child = PickChild(hash, children, canPick);
                     if (!string.IsNullOrEmpty(child))
                         CollectSpawns(child, into, trail, canPick);
                     return;
@@ -264,7 +264,7 @@ namespace ZoneEngine_New.Core.GameData
             }
         }
 
-        string? PickChild(string[] children, Func<string, bool>? canPick)
+        string? PickChild(string parent, string[] children, Func<string, string, bool>? canPick)
         {
             if (canPick == null)
                 return children[_random.Next(children.Length)];
@@ -272,7 +272,7 @@ namespace ZoneEngine_New.Core.GameData
             int eligible = 0;
             for (int i = 0; i < children.Length; i++)
             {
-                if (!string.IsNullOrEmpty(children[i]) && canPick(children[i]))
+                if (!string.IsNullOrEmpty(children[i]) && canPick(parent, children[i]))
                     eligible++;
             }
 
@@ -282,7 +282,7 @@ namespace ZoneEngine_New.Core.GameData
             int pick = _random.Next(eligible);
             for (int i = 0; i < children.Length; i++)
             {
-                if (string.IsNullOrEmpty(children[i]) || !canPick(children[i]))
+                if (string.IsNullOrEmpty(children[i]) || !canPick(parent, children[i]))
                     continue;
                 if (pick == 0)
                     return children[i];

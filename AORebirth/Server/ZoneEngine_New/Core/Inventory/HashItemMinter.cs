@@ -19,6 +19,7 @@ namespace ZoneEngine_New.Core.Inventory
         readonly ConcurrentDictionary<string, QualitySpan[]> _qualitySpans = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<string, LeafRange[]> _leafRanges = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<HashInstance, FamilySpan> _familySpans = new(ReferenceEqualityComparer.Instance);
+        readonly ConcurrentDictionary<string, int[]> _ladderTiers = new(StringComparer.Ordinal);
 
         public HashItemMinter(IGameData gameData, IItemTemplateCatalog catalog, IItemBuilder items)
         {
@@ -181,7 +182,8 @@ namespace ZoneEngine_New.Core.Inventory
         /// (the mob's level ± the table row's LevelMod), rolled at <paramref name="rolledQuality"/>. An ordinary family drops
         /// only when its QL range overlaps the window, at the roll clamped into its range. A Special family
         /// (<see cref="ItemFlags.Special"/>) ignores the window: below its range it drops at its lowest QL, above at its
-        /// highest. Appends to <paramref name="into"/>.
+        /// highest. A QL ladder (spirits, symbiants: see <see cref="GetLadderTiers"/>) does not: it picks only its tiers
+        /// in the window, or the tier just below it. Appends to <paramref name="into"/>.
         /// </summary>
         public void RollSpawnIds(
             string hash,
@@ -200,7 +202,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             // A random category pick only lands on families the window can drop.
             var instances = new List<HashInstance>();
-            _gameData.CollectHashSpawns(hash, instances, child => CoversWindow(child, min, max));
+            _gameData.CollectHashSpawns(hash, instances, (parent, child) => CanPick(parent, child, min, max));
             for (int i = 0; i < instances.Count; i++)
             {
                 // A leaf listed directly is not filtered by the pick above.
@@ -211,6 +213,55 @@ namespace ZoneEngine_New.Core.Inventory
                 if (TryRollIdsFor(instances[i], Math.Clamp(roll, span.Min, span.Max), out int lowId, out int highId, out int quality))
                     into.Add((lowId, highId, quality));
             }
+        }
+
+        /// <summary>
+        /// A random pick under <paramref name="parent"/> may land on <paramref name="child"/> for the QL window. In a QL ladder
+        /// only the tiers from the one just below the window up to its top count (the lowest tier when the whole ladder is
+        /// above it); mob windows skip tiers, so without the tier below some would never drop.
+        /// </summary>
+        bool CanPick(string parent, string child, int min, int max)
+        {
+            int[] tiers = _ladderTiers.GetOrAdd(parent, GetLadderTiers);
+            if (tiers.Length == 0)
+                return CoversWindow(child, min, max);
+            if (!_gameData.TryGetHashInstance(child, out HashInstance leaf))
+                return false;
+
+            int low = tiers[0] > max ? tiers[0] : min;
+            for (int i = 0; i < tiers.Length && tiers[i] < min; i++)
+                low = tiers[i];
+            int high = Math.Max(low, max);
+            int quality = GetFamilySpan(leaf).Min;
+            return low <= quality && quality <= high;
+        }
+
+        /// <summary>
+        /// The distinct tier QLs (ascending) of a QL ladder category, or none. A ladder is a category whose every child is
+        /// a fixed-QL Special item, at three or more QLs: the spirit and symbiant tables, where one item comes in a tier per
+        /// QL. Named Special drops sit beside scaling families or at one QL, so they keep dropping at any level.
+        /// </summary>
+        int[] GetLadderTiers(string parent)
+        {
+            if (!_gameData.TryGetHashTemplate(parent, out IReadOnlyList<string> children) || children.Count < 3)
+                return Array.Empty<int>();
+
+            var tiers = new SortedSet<int>();
+            for (int i = 0; i < children.Count; i++)
+            {
+                string child = children[i];
+                if (string.IsNullOrEmpty(child)
+                    || (_gameData.TryGetHashTemplate(child, out IReadOnlyList<string> grandchildren) && grandchildren.Count > 0)
+                    || !_gameData.TryGetHashInstance(child, out HashInstance leaf))
+                    return Array.Empty<int>();
+
+                FamilySpan span = GetFamilySpan(leaf);
+                if (!span.Special || span.Min != span.Max)
+                    return Array.Empty<int>();
+                tiers.Add(span.Min);
+            }
+
+            return tiers.Count >= 3 ? [.. tiers] : Array.Empty<int>();
         }
 
         /// <summary>A leaf family's QL range, and whether any of its templates is Special.</summary>

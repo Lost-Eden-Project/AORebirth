@@ -336,6 +336,13 @@ public sealed class NpcScriptCatalog
     }
 
     /// <summary>
+    /// True when a spawn point of <paramref name="hash"/> binds a script program (not plain patrol or wander). Resolves
+    /// exactly as <see cref="TryAttach"/> does for a hash spawn, which passes the point's hash as the NPC's SpawnHash.
+    /// </summary>
+    public bool BindsProgram(string? hash, int playfieldId, string? spawnPointKey)
+        => BindingCount > 0 && Resolve(hash, playfieldId, spawnPointKey, npcKey: null)?.Program != null;
+
+    /// <summary>
     /// Resolves and applies the binding for a freshly built NPC: plain movement onto its brain, the program as a
     /// runner, then <see cref="NpcScriptTrigger.Spawned"/>. Returns false when nothing is bound.
     /// </summary>
