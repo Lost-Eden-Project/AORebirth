@@ -582,7 +582,7 @@ public sealed class MissionChestPopulationTests
 
     static MissionChestPopulation Population(AuthoredMissionTestDao dao, MissionChestPolicy? policy = null, IZoneLogger? logger = null)
         => new(dao, 111, Quest, Assigned, "frozen-layout", new QuestDungeonParameters { Quality = 50 },
-            policy, new StubItemBuilder(), logger ?? new StubLogger());
+            policy, new StubItemBuilder().Add(new Catalog().Require(1000)), logger ?? new StubLogger());
 
     static MissionChestPolicy EmptyPolicy() => new()
     {
@@ -636,6 +636,7 @@ public sealed class MissionChestPopulationTests
     {
         readonly ServiceProvider _services;
         readonly bool _ownsSimulation;
+        readonly string? _syntheticPolicyRoot;
         internal readonly QuestDungeonPlayfield Playfield;
         internal readonly DynelRegistry Registry = new();
         internal readonly Inventory Inventory = new();
@@ -666,7 +667,8 @@ public sealed class MissionChestPopulationTests
                     Rooms = [new BuildingRoomInfo { RoomId = checked((ushort)room.InstanceId) }]
                 };
             }
-            Data = new StubGameData(HashItemCatalog.Parse("{}"), rootPath: root)
+            _syntheticPolicyRoot = CreateSyntheticPolicyRoot(root);
+            Data = new StubGameData(HashItemCatalog.Parse("{}"), rootPath: _syntheticPolicyRoot)
                 { DynelCollisionSphere = new CollisionSphereData { Radius = 0.75f, CenterY = 0.75f } };
             IGameData data = Data;
             if (withSurface || withPlayerSphere)
@@ -740,6 +742,37 @@ public sealed class MissionChestPopulationTests
             if (_ownsSimulation)
                 Simulation.Dispose();
             _services.Dispose();
+            if (_syntheticPolicyRoot != null)
+            {
+                string owned = Path.GetFullPath(_syntheticPolicyRoot);
+                Assert.AreEqual(Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar), Path.GetDirectoryName(owned));
+                Assert.IsTrue(Path.GetFileName(owned).StartsWith("aorebirth-rk-population-fixture-", StringComparison.Ordinal));
+                Assert.IsNull(new DirectoryInfo(owned).LinkTarget);
+                Directory.Delete(owned, recursive: true);
+            }
+        }
+
+        static string CreateSyntheticPolicyRoot(string? styleSource)
+        {
+            string root = Path.Combine(Path.GetTempPath(), "aorebirth-rk-population-fixture-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(root, "Loot"));
+            File.WriteAllText(Path.Combine(root, MissionChestRKAllowlist.RelativePath), """
+                {"Version":1,"Entries":[{"LowId":1000,"HighId":1000,"MinQuality":50,"MaxQuality":50,
+                  "Classification":"OrdinaryRubiKa","Evidence":["fixture:reviewed-positive-synthetic-template"]}]}
+                """);
+            foreach (string path in new[] { MissionChestLootExclusions.SeasonalPath, MissionChestLootExclusions.SpecialPath })
+                File.WriteAllText(Path.Combine(root, path), """{"Version":1,"Entries":[]}""");
+            if (styleSource != null)
+            {
+                // These prerequisite fixtures use the existing style324 metadata, not a different layout or loot catalog.
+                string relative = GameDataPaths.PlayfieldRelativeDirectory(324);
+                string destination = Path.Combine(root, relative);
+                Directory.CreateDirectory(destination);
+                foreach (string path in Directory.EnumerateFiles(Path.Combine(styleSource, relative)))
+                    File.Copy(path, Path.Combine(destination, Path.GetFileName(path)));
+                File.Copy(Path.Combine(styleSource, DungeonEntranceMap.FileName), Path.Combine(root, DungeonEntranceMap.FileName));
+            }
+            return root;
         }
     }
 
@@ -773,7 +806,8 @@ public sealed class MissionChestPopulationTests
 
     sealed class Catalog : IItemTemplateCatalog
     {
-        readonly ItemTemplate _item = new() { Id = 1000, Quality = 50 };
+        readonly ItemTemplate _item = new() { Id = 1000, Quality = 50,
+            Stats = new() { [CharacterStat.Can] = (int)AORebirth.Enums.CanFlags.Carry } };
         readonly ItemTemplate _chest = new() { Id = 162447, Quality = 1 };
         public IReadOnlyCollection<ItemTemplate> Templates => new[] { _item, _chest };
         public bool TryGet(int id, out ItemTemplate template)

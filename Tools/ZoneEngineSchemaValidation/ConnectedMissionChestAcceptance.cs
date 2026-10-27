@@ -16,6 +16,7 @@ using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
+using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Movement;
 using ZoneEngine_New.Core.Quests.Dungeons;
 
@@ -25,6 +26,8 @@ static partial class ConnectedAcceptanceSmoke
     const int ChestOriginPlayfield = 710;
     const int ChestPeerOwner = 9902;
     const string ChestPeerAccount = "connectedchestpeer";
+    const int ChestNonGmOwner = 9903;
+    const string ChestNonGmAccount = "connectedchestnongm";
     const int MaximumCaveAcceptances = 12;
 
     public static void ValidateChests(string zoneBinary, string loginBinary, string worldBinary, DisposableSchemaDatabase fixture, MySqlConnection connection, bool lifecycleOnly = false)
@@ -37,6 +40,8 @@ static partial class ConnectedAcceptanceSmoke
         string password = Convert.ToHexString(RandomNumberGenerator.GetBytes(20));
         bool allowProvenShutdownBaseline = !lifecycleOnly && string.Equals(
             Environment.GetEnvironmentVariable("AO_REBIRTH_CHEST_ALLOW_PROVEN_SHUTDOWN_BASELINE"), "1", StringComparison.Ordinal);
+        if (allowProvenShutdownBaseline)
+            ConnectedEngineProcess.ValidateProvenChestShutdownBaseline();
         bool usedProvenShutdownBaseline = false;
         string? previousConnection = Environment.GetEnvironmentVariable("AO_REBIRTH_MYSQL_CONNECTION");
         string? previousGameData = Environment.GetEnvironmentVariable("AO_REBIRTH_GAMEDATA_PATH");
@@ -61,6 +66,8 @@ static partial class ConnectedAcceptanceSmoke
                 return;
             }
             var data = new GameDataStore(new SilentLogger());
+            MissionChestRKAllowlist rkPolicy = MissionChestRKAllowlist.Load(gameDataRoot, data.ItemFamilies);
+            Require(rkPolicy.Count > 0, "connected-chest-approved-rk-policy-required");
             var terminal = data.GetPlayfieldGeometry(ChestOriginPlayfield).Dynels?.Dynels
                 .FirstOrDefault(dynel => dynel.IdentityType == MissionTerminal.LiveIdentityType)
                 ?? throw new FixtureFailure("connected-chest-real-terminal-missing");
@@ -72,13 +79,14 @@ static partial class ConnectedAcceptanceSmoke
             {
                 EnsureChestFixtureTable(connection, table);
             }
-            foreach ((int owner, string account) in new[] { (Owner, Account), (ChestPeerOwner, ChestPeerAccount) })
+            foreach ((int owner, string account, int gm) in new[] { (Owner, Account, 1), (ChestPeerOwner, ChestPeerAccount, 1), (ChestNonGmOwner, ChestNonGmAccount, 0) })
             {
-                using (var command = new MySqlCommand("INSERT INTO login (Id,CreationDate,Email,FirstName,LastName,Username,Password,AllowedCharacters,Flags,AccountFlags,Expansions,GM) VALUES (@owner,'2026-10-24','fixture@invalid','','',@account,@hash,6,0,0,2047,1)", connection))
+                using (var command = new MySqlCommand("INSERT INTO login (Id,CreationDate,Email,FirstName,LastName,Username,Password,AllowedCharacters,Flags,AccountFlags,Expansions,GM) VALUES (@owner,'2026-10-24','fixture@invalid','','',@account,@hash,6,0,0,2047,@gm)", connection))
                 {
                     command.Parameters.AddWithValue("@owner", owner);
                     command.Parameters.AddWithValue("@account", account);
                     command.Parameters.AddWithValue("@hash", PasswordHash.CreateHash(password));
+                    command.Parameters.AddWithValue("@gm", gm);
                     command.ExecuteNonQuery();
                 }
                 using (var command = new MySqlCommand("INSERT INTO characters (Id,Username,Name,FirstName,LastName,Playfield,X,Y,Z,HeadingW,HeadingX,HeadingY,HeadingZ,Online) VALUES (@owner,@account,@name,'','',@pf,@x,@y,@z,1,0,0,0,0)", connection))
@@ -101,8 +109,8 @@ static partial class ConnectedAcceptanceSmoke
             stats[CharacterStat.Health] = stats[CharacterStat.MaxHealth] = 1000000;
             stats[CharacterStat.ExternalPlayfieldInstance] = stats[CharacterStat.ExternalDoorInstance] = 0;
             foreach (var stat in stats)
-                foreach (int owner in new[] { Owner, ChestPeerOwner })
-                    FixtureSql.Execute(connection, $"INSERT INTO stats (Type,Instance,StatId,StatValue) VALUES (50000,{owner},{(int)stat.Key},{stat.Value})");
+                foreach (int owner in new[] { Owner, ChestPeerOwner, ChestNonGmOwner })
+                    FixtureSql.Execute(connection, $"INSERT INTO stats (Type,Instance,StatId,StatValue) VALUES (50000,{owner},{(int)stat.Key},{(owner == ChestNonGmOwner && stat.Key == CharacterStat.GmLevel ? 0 : stat.Value)})");
             var repository = new MySqlInventoryRepository(new SilentLogger());
             int retainedItem = repository.LeaseInstanceIdBlock(1);
             repository.Insert(new ItemInstanceRecord { InstanceId = retainedItem, ContainerType = 104, ContainerInstance = Owner,
@@ -117,7 +125,7 @@ static partial class ConnectedAcceptanceSmoke
             var inventory = new MySqlCharacterPersistenceDao(() => fixture.Open());
             string retainedBefore = JsonSerializer.Serialize(inventory.LoadCarriedItems(Owner).Single(row => row.InstanceId == retainedItem));
             Console.WriteLine("SOURCE_SHA=" + Git("rev-parse", "HEAD"));
-            Console.WriteLine("CONNECTED_CHEST_FIXTURE=LABELLED_DISPOSABLE_ONLY POST_START_WRITES=NETWORK_ONLY");
+            Console.WriteLine("CONNECTED_CHEST_FIXTURE=LABELLED_DISPOSABLE_ONLY ONLINE_WRITES=NETWORK_ONLY STOPPED_ZONE_FIXTURE_NEGATIVE_SEED=1");
             using var world = new ConnectedEngineProcess(worldBinary, false, fixture, gameDataRoot, world: true);
             Console.WriteLine("CONNECTED_CHEST_WORLD=OWNED_LOOPBACK_ONLY BINARY_SHA256=" + world.BinarySha256);
             using var login = new ConnectedEngineProcess(loginBinary, true, fixture, gameDataRoot);
@@ -134,10 +142,20 @@ static partial class ConnectedAcceptanceSmoke
             {
                 firstProcess = zone.Id;
                 Console.WriteLine("CONNECTED_CHEST_ENGINE_PID_BEFORE=" + firstProcess + " BINARY_SHA256=" + zone.BinarySha256);
+                using (var nonGm = EnterChest(fixture, password, out _, ChestNonGmAccount, ChestNonGmOwner))
+                {
+                    string before = ChestDiagnosticInventory(inventory, []);
+                    nonGm.Send(new TextMessage { Message = new ChatMessage { Text = ".chest roll 1" } }, ChestNonGmOwner);
+                    nonGm.Wait<ChatTextMessage>(message => message.Text.Contains("Insufficient GM level", StringComparison.Ordinal));
+                    Require(before == ChestDiagnosticInventory(inventory, []), "chest-nongm-diagnostic-no-item-writes");
+                    ChestLogout(nonGm, connection, ChestNonGmOwner);
+                    Console.WriteLine("CONNECTED_CHEST_GM_PERMISSION=PASS NON_GM_REJECTED=YES VIA=TCP");
+                }
                 ZoneLoginMessage ticket;
                 ZoneLoginMessage peerTicket;
                 using (var terminalClient = EnterChest(fixture, password, out ticket))
                 {
+                    VerifyChestRollCommand(terminalClient, inventory, rkPolicy, 60, "player-level fallback", 20, []);
                     (questId, parameters) = AcceptCaveChestMission(terminalClient, missions, quests,
                         new Identity { Type = (IdentityType)terminal.IdentityType, Instance = terminal.IdentityInstance });
                     Require(quests.LoadKeyQuests(inventory.LoadCarriedItems(Owner).Where(row => row.LowId == QuestDungeonService.KeyLowId)
@@ -166,6 +184,8 @@ static partial class ConnectedAcceptanceSmoke
                     frozenFlags = ChestFlagSnapshot(missions, questId);
                     Require(frozenFlags.Length > 1, "chest-entry-materializes-nonempty-population");
                     allChests = ReadChestPopulation(missions, questId);
+                    VerifyChestRollCommand(dungeonClient, inventory, rkPolicy, parameters.Quality, "accepted generated mission QL", 10000, allChests);
+                    Require(ChestFlagSnapshot(missions, questId).SequenceEqual(frozenFlags), "chest-gm-diagnostic-preserves-mission-flags");
                     planMetrics = VisitChestPopulation(dungeonClient, zone, questId, allChests, "entry");
                     var nonempty = allChests
                         .Select(snapshot => (Snapshot: snapshot, Contents: inventory.LoadContainerItems(snapshot.ContainerInstance)
@@ -224,6 +244,10 @@ static partial class ConnectedAcceptanceSmoke
                 zone.Stop(allowProvenShutdownBaseline);
                 usedProvenShutdownBaseline |= zone.UsedProvenShutdownBaseline;
             }
+            // A labelled disposable fixture setup phase, with its owned Zone writer fully stopped.
+            // Never inject rows into an online server or alter a previously generated/player-owned row.
+            (PersistedItemData Row, string ExactJson) restricted = SeedRestrictedChestAuditRow(fixture, connection,
+                firstProcess, repository, inventory, chest, allChests, data, rkPolicy, parameters.Quality);
             using (var zone = new ConnectedEngineProcess(zoneBinary, false, fixture, gameDataRoot))
             {
                 Require(zone.Id != firstProcess, "chest-distinct-process-restart");
@@ -238,7 +262,8 @@ static partial class ConnectedAcceptanceSmoke
                     using (var peer = EnterChest(fixture, password, out _, ChestPeerAccount, ChestPeerOwner))
                     {
                         var available = allChests.Select(snapshot => (Snapshot: snapshot,
-                                Contents: inventory.LoadContainerItems(snapshot.ContainerInstance).OrderBy(row => row.ContainerPlacement).ToArray()))
+                                Contents: inventory.LoadContainerItems(snapshot.ContainerInstance).Where(row => row.InstanceId != restricted.Row.InstanceId)
+                                    .OrderBy(row => row.ContainerPlacement).ToArray()))
                             .Where(value => value.Contents.Length > 0)
                             .OrderBy(value => value.Snapshot.ContainerInstance == chest.ContainerInstance ? 0 : 1)
                             .ThenByDescending(value => value.Contents.Length).ToArray();
@@ -247,8 +272,19 @@ static partial class ConnectedAcceptanceSmoke
                         CheckChestSpawn(restarted, chest);
                         MoveNearChest(peer, chest, ChestPeerOwner);
                         CheckChestSpawn(peer, chest);
-                        OpenChest(restarted, chest, remainder);
+                        InventoryUpdateMessage restrictedOpened = OpenChest(restarted, chest, remainder);
+                        int restrictedMark = restarted.Received.Count;
+                        Identity restrictedSource = SendChestTake(restarted, restrictedOpened, restricted.Row, 87);
+                        restarted.Send(new CharacterActionMessage { Identity = Character, Action = CharacterActionType.DeleteItem,
+                            Target = restrictedSource, Parameter1 = restricted.Row.LowId, Parameter2 = restricted.Row.HighId }, Owner);
                         CloseChest(restarted, chest);
+                        Require(!restarted.Received.Skip(restrictedMark).OfType<ContainerAddItemMessage>()
+                                .Any(message => message.SourceContainer == restrictedSource)
+                            && !restarted.Received.Skip(restrictedMark).OfType<CharacterActionMessage>()
+                                .Any(message => message.Action == CharacterActionType.DeleteItem && message.Target == restrictedSource),
+                            "chest-restricted-stale-move-and-delete-have-no-ack");
+                        VerifyRestrictedChestAuditRow(inventory, restricted, chest);
+                        Console.WriteLine("CONNECTED_CHEST_RESTRICTED_PERSISTED=PASS HIDDEN_ON_RESTART=YES STALE_MOVE=REJECTED STALE_DELETE=REJECTED ORIGINAL_MYSQL_ROW=RETAINED");
                         if (available.Length > 0)
                         {
                             MissionChestSnapshot peerChest = available[0].Snapshot;
@@ -276,7 +312,8 @@ static partial class ConnectedAcceptanceSmoke
                             InventoryUpdateMessage opened = OpenChest(restarted, peerChest, peerContents.Skip(1).ToArray());
                             for (int index = 1; index < peerContents.Length; index++)
                                 TakeChestItem(restarted, opened, peerContents[index], 80 + index);
-                            Require(inventory.LoadContainerItems(peerChest.ContainerInstance).Count == 0, "chest-peer-target-empty-after-restart-loot");
+                            Require(inventory.LoadContainerItems(peerChest.ContainerInstance).Count(row => row.InstanceId != restricted.Row.InstanceId) == 0,
+                                "chest-peer-target-approved-loot-empty-after-restart");
                             CloseChest(restarted, peerChest);
                             OpenChest(restarted, peerChest, []);
                             peerLootCoverage = "PASS CHEST=" + peerChest.ContainerInstance + " ORIGINAL_SELECTED_CHEST=" + chest.ContainerInstance;
@@ -293,7 +330,9 @@ static partial class ConnectedAcceptanceSmoke
                                 "chest-peer-empty-reconstructed-stale-take-refused");
                             peerLootCoverage = "UNAVAILABLE_EXHAUSTED_POPULATION EMPTY_OPEN_AND_STALE_TAKE=PASS";
                         }
-                        Require(inventory.LoadContainerItems(chest.ContainerInstance).Count == 0, "chest-empty-after-restart-loot");
+                        Require(inventory.LoadContainerItems(chest.ContainerInstance).Count(row => row.InstanceId != restricted.Row.InstanceId) == 0,
+                            "chest-approved-loot-empty-after-restart");
+                        VerifyRestrictedChestAuditRow(inventory, restricted, chest);
                         ChestLogout(peer, connection, ChestPeerOwner);
                     }
                     Require(JsonSerializer.Serialize(inventory.LoadCarriedItems(Owner).Single(row => row.InstanceId == retainedItem)) == retainedBefore,
@@ -495,6 +534,117 @@ static partial class ConnectedAcceptanceSmoke
             && inventory.LoadContainerItems(chest.ContainerInstance).Any(row => row.InstanceId == item.InstanceId)
             && !inventory.LoadCarriedItems(ChestPeerOwner).Any(row => row.InstanceId == item.InstanceId),
             "chest-nonopener-cannot-open-or-take-another-players-chest");
+    }
+
+    static (PersistedItemData Row, string ExactJson) SeedRestrictedChestAuditRow(DisposableSchemaDatabase fixture,
+        MySqlConnection connection, int stoppedZonePid, MySqlInventoryRepository repository,
+        MySqlCharacterPersistenceDao inventory, MissionChestSnapshot chest, MissionChestSnapshot[] allChests,
+        GameDataStore data, MissionChestRKAllowlist policy, int quality)
+    {
+        bool writerAlive;
+        try { using var writer = System.Diagnostics.Process.GetProcessById(stoppedZonePid); writerAlive = !writer.HasExited; }
+        catch (ArgumentException) { writerAlive = false; }
+        var bound = new MySqlConnectionStringBuilder(fixture.ConnectionString);
+        var actual = new MySqlConnectionStringBuilder(connection.ConnectionString);
+        Require(!writerAlive && connection.Database == DisposableSchemaDatabase.DatabaseName
+            && bound.Server == "127.0.0.1" && actual.Server == bound.Server && actual.Port == bound.Port
+            && actual.UserID == bound.UserID
+            && Environment.GetEnvironmentVariable("AO_REBIRTH_MYSQL_CONNECTION") == fixture.ConnectionString,
+            "restricted-fixture-seed-requires-owned-disposable-database-and-stopped-zone");
+        Require(FixtureSql.Scalar(connection, $"SELECT COUNT(*) FROM characters WHERE Id IN ({Owner},{ChestPeerOwner},{ChestNonGmOwner}) AND Online<>0") == 0,
+            "restricted-fixture-seed-requires-all-fixture-players-logged-out");
+        var catalog = new ItemTemplateCatalog(data, new SilentLogger());
+        ItemTemplate excluded = catalog.Templates.OrderBy(item => item.Id).FirstOrDefault(item =>
+            item.Quality >= Math.Max(1, quality - 5) && item.Quality <= Math.Min(250, quality + 5)
+            && item.Stats.TryGetValue(CharacterStat.Can, out int can) && (can & (int)AORebirth.Enums.CanFlags.Carry) != 0
+            && policy.ExclusionReasons(item.Id, item.Id).Length > 0)
+            ?? throw new FixtureFailure("restricted-fixture-no-reviewed-negative-template-at-accepted-quality");
+        PersistedItemData[] original = inventory.LoadContainerItems(chest.ContainerInstance).OrderBy(row => row.ContainerPlacement).ToArray();
+        Require(original.Length <= 2, "restricted-fixture-seed-must-use-newly-freed-original-slot");
+        int slot = Enumerable.Range(0, 3).Except(original.Select(row => row.ContainerPlacement)).First();
+        string before = ChestDiagnosticInventory(inventory, allChests);
+        int id = repository.LeaseInstanceIdBlock(1);
+        repository.Insert(new ItemInstanceRecord { InstanceId = id, ContainerType = (int)IdentityType.Container,
+            ContainerInstance = chest.ContainerInstance, ContainerPlacement = slot, ItemType = 0xC76D,
+            LowId = excluded.Id, HighId = excluded.Id, Quality = excluded.Quality, StackCount = 1,
+            Source = AORebirth.Enums.ItemSource.Loot });
+        Require(before == ChestDiagnosticInventory(inventory, allChests, id), "restricted-fixture-seed-preserves-every-original-player-and-chest-row");
+        PersistedItemData row = inventory.LoadContainerItems(chest.ContainerInstance).Single(item => item.InstanceId == id);
+        Require(!policy.IsAllowed(row.LowId, row.HighId, row.Quality), "restricted-fixture-uses-actual-reviewed-negative");
+        Console.WriteLine("CONNECTED_CHEST_STOPPED_FIXTURE_NEGATIVE_SEED=PASS REASONS="
+            + string.Join(",", policy.ExclusionReasons(row.LowId, row.HighId)) + " ORIGINAL_ROWS_CHANGED=0");
+        return (row, JsonSerializer.Serialize(row));
+    }
+
+    static void VerifyRestrictedChestAuditRow(MySqlCharacterPersistenceDao inventory,
+        (PersistedItemData Row, string ExactJson) restricted, MissionChestSnapshot chest)
+    {
+        Require(inventory.LoadContainerItems(chest.ContainerInstance).Where(row => row.InstanceId == restricted.Row.InstanceId)
+                .Select(row => JsonSerializer.Serialize(row)).Single() == restricted.ExactJson,
+            "chest-restricted-audit-row-retains-exact-original-definition-slot-and-owner");
+        Require(new[] { Owner, ChestPeerOwner, ChestNonGmOwner }.All(owner =>
+                inventory.LoadCarriedItems(owner).All(row => row.InstanceId != restricted.Row.InstanceId)),
+            "chest-restricted-audit-item-never-enters-player-inventory");
+    }
+
+    static string ChestDiagnosticInventory(MySqlCharacterPersistenceDao inventory, MissionChestSnapshot[] chests, int excludedInstance = 0)
+        => JsonSerializer.Serialize(new
+        {
+            Players = new[] { Owner, ChestPeerOwner, ChestNonGmOwner }.Select(owner => new
+            {
+                Owner = owner, Items = inventory.LoadCarriedItems(owner).Where(row => row.InstanceId != excludedInstance).OrderBy(row => row.InstanceId).ToArray()
+            }).ToArray(),
+            Chests = chests.OrderBy(chest => chest.ContainerInstance).Select(chest => new
+            {
+                chest.ContainerInstance,
+                Items = inventory.LoadContainerItems(chest.ContainerInstance).Where(row => row.InstanceId != excludedInstance).OrderBy(row => row.ContainerPlacement).ToArray()
+            }).ToArray()
+        });
+
+    static void VerifyChestRollCommand(ConnectedWireClient client, MySqlCharacterPersistenceDao inventory,
+        MissionChestRKAllowlist policy, int quality, string qualitySource, int populations, MissionChestSnapshot[] chests)
+    {
+        string before = ChestDiagnosticInventory(inventory, chests);
+        foreach (string invalid in new[] { ".chest roll 0", ".chest roll 10001" })
+        {
+            client.Send(new TextMessage { Message = new ChatMessage { Text = invalid } }, Owner);
+            client.Wait<ChatTextMessage>(message => message.Text.Contains("Usage:", StringComparison.Ordinal)
+                && !message.Text.Contains("text://", StringComparison.Ordinal));
+            // SendUsage sends the error and then its help popup. Drain this call's
+            // second response so it cannot satisfy the next call or pollute roll-page accounting.
+            client.Wait<ChatTextMessage>(message => message.Text.Contains(">.chest help</a>", StringComparison.Ordinal));
+        }
+        int mark = client.Received.Count;
+        client.Send(new TextMessage { Message = new ChatMessage { Text = ".chest roll " + populations } }, Owner);
+        ChatTextMessage first = client.Wait<ChatTextMessage>(message => message.Text.Contains("Chest loot roll results", StringComparison.Ordinal));
+        var page = System.Text.RegularExpressions.Regex.Match(first.Text, @"Chest loot roll results \(1/(\d+)\)");
+        int pages = page.Success ? int.Parse(page.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : 1;
+        Require(pages is >= 1 and <= 32, "chest-gm-bounded-output-pages");
+        for (int index = 2; index <= pages; index++)
+        {
+            string label = $"Chest loot roll results ({index}/{pages})";
+            client.Wait<ChatTextMessage>(message => message.Text.Contains(label, StringComparison.Ordinal));
+        }
+        ChatTextMessage[] messages = client.Received.Skip(mark).OfType<ChatTextMessage>().ToArray();
+        Console.WriteLine($"CONNECTED_CHEST_GM_OUTPUT_FRAMING PAGES={pages} RECEIVED_CHAT={messages.Length} MAX_LENGTH={messages.Max(message => message.Text.Length)}");
+        Require(messages.Length == pages && messages.All(message => message.Text.Length <= 4224), "chest-gm-bounded-output");
+        string text = string.Join("\n", messages.Select(message => message.Text));
+        Require(text.Contains($"Chest populations: {populations}; total generated items:", StringComparison.Ordinal)
+            && text.Contains($"QL {quality}: {qualitySource}", StringComparison.Ordinal)
+            && text.Contains("classification OrdinaryRubiKa", StringComparison.Ordinal)
+            && text.Contains("rarity", StringComparison.Ordinal), "chest-gm-production-result-details");
+        var items = System.Text.RegularExpressions.Regex.Matches(text, @"ID (\d+)/(\d+); QL (\d+); rarity ");
+        Require(items.Count is >= 1 and <= 100, "chest-gm-bounded-item-details");
+        foreach (System.Text.RegularExpressions.Match item in items)
+        {
+            int low = int.Parse(item.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            int high = int.Parse(item.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+            int itemQuality = int.Parse(item.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
+            Require(policy.IsAllowed(low, high, itemQuality) && itemQuality >= Math.Max(1, quality - 5)
+                && itemQuality <= Math.Min(250, quality + 5), "chest-gm-only-approved-rk-details");
+        }
+        Require(before == ChestDiagnosticInventory(inventory, chests), "chest-gm-readonly-player-and-chest-inventory");
+        Console.WriteLine($"CONNECTED_CHEST_GM_ROLL=PASS POPULATIONS={populations} MISSION_QL={quality} PAGES={pages} DISPLAYED={items.Count} INVENTORY_WRITES=0 VIA=TCP");
     }
 
     static Identity ChestCharacter(int owner) => new() { Type = IdentityType.CanbeAffected, Instance = owner };

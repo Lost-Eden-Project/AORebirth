@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MsgPack.Cli" Version="1.0.1" />
+    <PackageReference Include="AODB" Version="1.0.13" />
+    <Compile Include="../../AORebirth/Server/ZoneEngine_New/Core/Inventory/Dat/DatItemTemplate.cs" Link="Inventory/DatItemTemplate.cs" />
+    <Compile Include="../../AORebirth/Server/ZoneEngine_New/Core/Inventory/Dat/ItemsDatReader.cs" Link="Inventory/ItemsDatReader.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/EventType.cs" Link="Enums/EventType.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/ActionType.cs" Link="Enums/ActionType.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/Operator.cs" Link="Enums/Operator.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/ItemTarget.cs" Link="Enums/ItemTarget.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/FunctionType.cs" Link="Enums/FunctionType.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/ItemFlags.cs" Link="Enums/ItemFlags.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/ItemClass.cs" Link="Enums/ItemClass.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AORebirth.Enums/CanFlags.cs" Link="Enums/CanFlags.cs" />
+    <Compile Include="../../AORebirth/Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging/GameData/CharacterStat.cs" Link="Enums/CharacterStat.cs" />
+  </ItemGroup>
+</Project>

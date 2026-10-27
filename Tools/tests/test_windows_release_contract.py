@@ -582,6 +582,111 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertEqual(set(observed["PRODUCT_HOOKS"]), set(names))
         self.assertEqual(len(list((self.root / "build-observations").glob("*.json"))), len(names) + 1)
 
+    def test_feature_command_cannot_publish_escape_or_execute_an_engine_or_migration(self):
+        project = self.root / "AORebirth/Server/Fixture.Tests/Fixture.Tests.csproj"
+        project.parent.mkdir(parents=True)
+        project.write_text("<Project />")
+        accepted = ["dotnet", "test", "AORebirth/Server/Fixture.Tests/Fixture.Tests.csproj"]
+        self.assertEqual(gate.feature_command(self.root, accepted), project)
+        for child in (["cmd", "/c", "exit", "0"], ["dotnet", "publish", accepted[2]],
+                      [*accepted, "--no-build"], ["dotnet", "build", "../outside.csproj"],
+                      ["dotnet", "run", "--project", accepted[2]]):
+            with self.assertRaises(ValueError):
+                gate.feature_command(self.root, child)
+
+    def test_feature_source_records_dirty_changes_and_requires_feature_branch(self):
+        (self.root / "NewSource.cs").write_bytes(b"feature source")
+        answers = [PUBLIC.encode(), b"codex/feature", b"tracked feature diff", b"NewSource.cs\0"]
+        with mock.patch.object(gate, "git", side_effect=answers):
+            source = gate.feature_source(self.root)
+        self.assertEqual(source["HEAD"], PUBLIC)
+        self.assertEqual(source["TRACKED_DIFF_SHA256"], gate.digest(b"tracked feature diff"))
+        self.assertEqual(source["UNTRACKED_SOURCE"][0]["sha256"], gate.digest(b"feature source"))
+        with mock.patch.object(gate, "git", side_effect=[PUBLIC.encode(), b"master"]), self.assertRaises(ValueError):
+            gate.feature_source(self.root)
+
+    def test_feature_existing_chest_wrappers_are_exact_and_own_the_engine_paths(self):
+        paths = ("Tools/run_mission_dao_validation.cmd", "Tools/run_newengine_connected_acceptance.cmd",
+                 "Tools/MissionDaoValidation/MissionDaoValidation.csproj", "Tools/ZoneEngineSchemaValidation/ZoneEngineSchemaValidation.csproj",
+                 "AORebirth/Built/Debug/ZoneEngine_New/ZoneEngine_New.dll", "AORebirth/Built/Debug/LoginEngine.exe",
+                 "AORebirth/Built/Debug/WorldEngine/WorldEngine.dll")
+        for name in paths:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"synthetic wrapper/project/output fixture")
+        prefix = [os.environ.get("ComSpec", r"C:\Windows\System32\cmd.exe"), "/d", "/c"]
+        dao = [*prefix, str(self.root / paths[0]), "--chests-only"]
+        self.assertEqual(gate.feature_command(self.root, dao), self.root / paths[2])
+        connected = [*prefix, str(self.root / paths[1]), "--engine", str(self.root / paths[4]),
+                     "--login-engine", str(self.root / paths[5]), "--chests-only", "--world-engine", str(self.root / paths[6])]
+        self.assertEqual(gate.feature_command(self.root, connected), self.root / paths[3])
+        for child in ([*dao, "extra"], [*prefix, str(self.root / paths[0]), "--isolated-sources"],
+                      [*connected[:5], str(self.root / paths[5]), *connected[6:]], [*connected, "extra"]):
+            with self.assertRaises(ValueError):
+                gate.feature_command(self.root, child)
+
+    def test_source_only_dao_wrapper_records_real_output_without_fabricating_product_hooks(self):
+        canonical = self.root / "canonical"
+        canonical.mkdir()
+        (canonical / "one.json").write_bytes(b"{}")
+        for name in ("Tools/run_mission_dao_validation.cmd", "Tools/run_newengine_connected_acceptance.cmd",
+                     "Tools/MissionDaoValidation/MissionDaoValidation.csproj"):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"synthetic source-only validation fixture")
+        profile = {"STATE_ROOT": str(self.root / "ignored"), "CANONICAL_GAMEDATA_ROOT": str(canonical)}
+        source = {"HEAD": PUBLIC, "BRANCH": "codex/fixture", "TRACKED_DIFF_SHA256": gate.digest(b"draft"), "UNTRACKED_SOURCE": []}
+        output = self.root / "Tools/MissionDaoValidation/bin/Release/net10.0/MissionDaoValidation.dll"
+        def run_child(child, cwd, env, check):
+            self.assertEqual(env["MSBUILDDISABLENODEREUSE"], "1")
+            self.assertEqual(env["DOTNET_CLI_USE_MSBUILD_SERVER"], "0")
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"synthetic compiled assembly for offline receipt test")
+            return subprocess.CompletedProcess(child, 0)
+        child = [os.environ.get("ComSpec", r"C:\Windows\System32\cmd.exe"), "/d", "/c",
+                 str(self.root / "Tools/run_mission_dao_validation.cmd"), "--chests-only"]
+        with mock.patch.object(gate, "feature_source", return_value=source), mock.patch.object(gate.subprocess, "run", side_effect=run_child):
+            self.assertEqual(gate.run_feature_validation(self.root, profile, child), 0)
+        attempt = gate.read_json(next((self.root / "ignored").glob("feature-validation-*/feature-validation.json")))
+        self.assertEqual(attempt["PRODUCT_COMPILER_HOOKS"], [])
+        self.assertEqual(attempt["SOURCE_ONLY_VALIDATION_TOOL"]["sha256"], gate.digest(output.read_bytes()))
+        self.assertFalse(attempt["DEPLOYABLE"])
+
+    def test_feature_validation_owns_real_capability_and_cannot_be_release_acceptance(self):
+        canonical = self.root / "canonical"
+        canonical.mkdir()
+        (canonical / "one.json").write_bytes(b"{}")
+        project = self.root / "AORebirth/Server/Fixture.Tests/Fixture.Tests.csproj"
+        project.parent.mkdir(parents=True)
+        project.write_text("<Project />")
+        profile = {"STATE_ROOT": str(self.root / "ignored"), "CANONICAL_GAMEDATA_ROOT": str(canonical)}
+        source = {"HEAD": PUBLIC, "BRANCH": "codex/fixture", "TRACKED_DIFF_SHA256": gate.digest(b"draft"), "UNTRACKED_SOURCE": []}
+        def run_child(child, cwd, env, check):
+            self.assertEqual(env["MSBUILDDISABLENODEREUSE"], "1")
+            self.assertEqual(env["DOTNET_CLI_USE_MSBUILD_SERVER"], "0")
+            with mock.patch.dict(os.environ, env):
+                gate.verify_build_token(self.root, profile, product="Fixture.Tests")
+                with self.assertRaisesRegex(ValueError, "cannot publish"):
+                    gate.verify_build_token(self.root, profile, product="Fixture.Tests", publishing=True)
+                with self.assertRaisesRegex(ValueError, "another checkout"):
+                    gate.verify_build_token(self.root / "another-checkout", profile)
+                with mock.patch.object(gate, "feature_source", return_value={**source, "HEAD": "f" * 40}):
+                    with self.assertRaisesRegex(ValueError, "source changed"):
+                        gate.verify_build_token(self.root, profile)
+            return subprocess.CompletedProcess(child, 0)
+        with mock.patch.object(gate, "feature_source", return_value=source), mock.patch.object(gate.subprocess, "run", side_effect=run_child):
+            self.assertEqual(gate.run_feature_validation(self.root, profile,
+                ["dotnet", "test", "AORebirth/Server/Fixture.Tests/Fixture.Tests.csproj"]), 0)
+        receipt_path = next((self.root / "ignored").glob("feature-validation-*/feature-validation.json"))
+        attempt = gate.read_json(receipt_path)
+        self.assertEqual(attempt["VALIDATION_RESULT"], "PASS")
+        self.assertEqual(attempt["WINDOWS_USER_ACCEPTED"], "NO")
+        self.assertFalse(attempt["DEPLOYABLE"])
+        self.assertFalse((receipt_path.parent / "active.json").exists())
+        self.assertFalse((receipt_path.parent / "build-attempt.json").exists())
+        with self.assertRaisesRegex(ValueError, "not a production build"):
+            gate.require_successful_attempt(receipt_path.parent, attempt)
+
     def test_fresh_authority_fetch_failures_do_not_fall_back_to_cached_state(self):
         profile = {"PUBLIC_PRODUCT_REMOTE": "origin", "PRIVATE_CONTENT_BRANCH": "main"}
         def public_git(root, *args):

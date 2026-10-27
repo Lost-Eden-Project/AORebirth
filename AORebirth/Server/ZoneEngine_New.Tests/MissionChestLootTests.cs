@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 using AORebirth.Enums;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -354,8 +355,41 @@ public sealed class MissionChestLootTests
     };
 
     static MissionChestLootService Service(ChestCatalog catalog, string json = "{}", MissionChestPolicy? policy = null)
-        => new(catalog, new StubGameData(HashItemCatalog.Parse(json)),
-            new ItemBuilder(catalog, new ChestIds(), new StubLogger()), policy ?? Policy());
+    {
+        // These are synthetic item mechanics fixtures, not a review of production loot eligibility.
+        // Explicitly approve their existing identities so the prior rarity/interpolation checks stay meaningful.
+        var data = new StubGameData(HashItemCatalog.Parse(json));
+        var entries = new List<MissionChestRKAllowlist.Entry>();
+        var covered = new HashSet<int>();
+        foreach (HashInstance family in data.ItemFamilies)
+        {
+            int[] ids = family.TemplateIds.Distinct().ToArray();
+            if (ids.Length < 2 || ids.Any(id => !catalog.TryGet(id, out _))
+                || ids.Select(id => catalog.Require(id).Quality).Distinct().Count() != ids.Length)
+                continue;
+            foreach (int quality in Enumerable.Range(1, 250))
+            {
+                if (quality < ids.Min(id => catalog.Require(id).Quality) || quality > ids.Max(id => catalog.Require(id).Quality))
+                    continue;
+                HashItemCatalog.TrySelectIds(family, quality, id => catalog.Require(id).Quality, out int low, out int high);
+                entries.Add(Entry(low, high, quality));
+            }
+            covered.UnionWith(ids);
+        }
+        entries.AddRange(catalog.Templates.Where(template => !covered.Contains(template.Id) && template.Quality is >= 1 and <= 250)
+            .Select(template => Entry(template.Id, template.Id, template.Quality)));
+        MissionChestRKAllowlist allowlist = MissionChestRKAllowlist.Parse(JsonSerializer.Serialize(
+            new MissionChestRKAllowlist.Document { Version = 1, Entries = entries.ToArray() }));
+        return new MissionChestLootService(catalog, data, new ItemBuilder(catalog, new ChestIds(), new StubLogger()),
+            policy ?? Policy(), allowlist);
+
+        static MissionChestRKAllowlist.Entry Entry(int low, int high, int quality) => new()
+        {
+            LowId = low, HighId = high, MinQuality = quality, MaxQuality = quality,
+            Evidence = ["https://example.test/synthetic-chest-fixture"],
+            Classification = MissionChestRKAllowlist.OrdinaryClassification
+        };
+    }
 
     sealed class ChestIds : IItemInstanceIdAllocator
     {

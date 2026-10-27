@@ -17,7 +17,7 @@
   </Target>
   <Target Name="RequireGovernedWindowsProductPublish" BeforeTargets="PrepareForPublish;ComputeFilesToPublish;Publish"
           Condition="'$(OS)' == 'Windows_NT' And '$(AORebirthProductEntry)' == 'true' And !$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux'))">
-    <Exec Command="call &quot;$(MSBuildThisFileDirectory)tools\windows_release_contract.cmd&quot; verify-build-token --repository-root &quot;$(MSBuildThisFileDirectory).&quot; --product &quot;$(MSBuildProjectName)&quot;" />
+    <Exec Command="call &quot;$(MSBuildThisFileDirectory)tools\windows_release_contract.cmd&quot; verify-build-token --repository-root &quot;$(MSBuildThisFileDirectory).&quot; --product &quot;$(MSBuildProjectName)&quot; --publishing" />
   </Target>
   <Target Name="RequireGovernedOnlineLinuxProductPublish" BeforeTargets="PrepareForPublish;ComputeFilesToPublish;Publish"
           Condition="'$(AORebirthProductEntry)' == 'true' And ('$(OS)' != 'Windows_NT' Or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux')))">

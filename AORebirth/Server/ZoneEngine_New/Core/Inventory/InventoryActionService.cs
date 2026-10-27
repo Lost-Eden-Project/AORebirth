@@ -95,7 +95,8 @@ namespace ZoneEngine_New.Core.Inventory
                 ? [item.ToRecord(page.Identity, placement, item.StackCount)] : [];
             bool result = TryCommit(player,
                 [new InventoryRowChange(item, graveyard, item.InstanceId, item.StackCount, Retired: true)],
-                () => IsCurrent(page, placement, item, expectedInstanceId),
+                () => IsCurrent(page, placement, item, expectedInstanceId)
+                    && (loot is not Chest sourceChest || sourceChest.CanDistribute(item)),
                 () => page.Content.Remove(placement), expectedSources: expectedSources);
             if (result)
                 loot?.NotifyLootChanged();

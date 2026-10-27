@@ -542,7 +542,8 @@ namespace ZoneEngine_New.Core.Inventory
 
                     page = lootable.Loot;
                     lootSource = lootable;
-                    return page.Content.TryGetValue(slot, out item!) && !item.Locked;
+                    return page.Content.TryGetValue(slot, out item!) && !item.Locked
+                        && (lootable is not Chest chest || chest.CanDistribute(item));
                 }
 
                 return false;
@@ -906,7 +907,7 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 lock (player.PersistenceGate)
                     lock (chest.LootGate)
-                        return chest.CanTransferLoot(player)
+                        return chest.CanTransferLoot(player) && chest.CanDistribute(item)
                             && ApplyMoveCore(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource);
             }
             return ApplyMoveCore(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource);
@@ -956,6 +957,7 @@ namespace ZoneEngine_New.Core.Inventory
                 ? [item.ToRecord(sourcePage.Identity, sourceSlot, item.StackCount)] : [];
             bool committed = _actions.TryCommit(player, changes,
                 () => !item.Locked && existingDest?.Locked != true
+                    && (lootSource is not Chest sourceChest || sourceChest.CanDistribute(item))
                     && sourcePage.Content.TryGetValue(sourceSlot, out Item? current) && ReferenceEquals(current, item)
                     && ReferenceEquals(destPage.Content.GetValueOrDefault(destSlot), existingDest),
                 () =>
