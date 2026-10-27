@@ -43,7 +43,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 100,
-          "description": "Corpse drops (item table and equipment spawns) roll their QL within this percent either side of the NPC's level or the spawn's QL. The item table's own levelMod is not used."
+          "description": "Corpse drops (item table and equipment spawns) roll their QL within this percent either side of the NPC's level or the spawn's QL. An item table row with its own levelMod (above 0) uses that instead."
         }
       }
     },

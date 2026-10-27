@@ -572,8 +572,8 @@ namespace ZoneEngine_New.Core.Configuration
     {
         /// <summary>
         /// Every corpse drop rolls its QL within this percent either side of where it is centred: an item table row on
-        /// the NPC's level, an equipment spawn (Lootgiver, Boss Modifier) on its own QL. The item table's levelMod is not
-        /// used. 0 drops at exactly that QL.
+        /// the NPC's level, an equipment spawn (Lootgiver, Boss Modifier) on its own QL. An item table row with its own
+        /// levelMod uses that instead. 0 drops at exactly that QL.
         /// </summary>
         public int QualityVariancePercent { get; init; } = 25;
     }
