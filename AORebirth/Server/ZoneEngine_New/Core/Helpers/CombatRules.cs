@@ -63,11 +63,11 @@ namespace ZoneEngine_New.Core.Helpers
 
             if (target is Player player)
             {
-                // Mobs can still hit players. Only another player needs the gas or the PvP flags.
+                // Mobs can still hit players. Only another player needs the gas or the PvP flags, and the level range.
                 if (!attacker.IsPlayer)
                     return true;
 
-                return IsPlayerVulnerable(attacker, player);
+                return IsPlayerVulnerable(attacker, player) && PvpLevelRange.Allows(attacker, player);
             }
 
             return target is not NpcCharacter npc || npc.Attackable;
