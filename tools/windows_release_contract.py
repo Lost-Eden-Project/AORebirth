@@ -41,7 +41,7 @@ DungeonDoorStyles.json DungeonEntrances.json DungeonGeneration.json DynelCollisi
 ItemBehavior.json items.dat ItemTemplates.json MonsterCombatRules.json MonsterData.json
 MonsterWeapons.json nanos.dat NewCharacter.json NpcTemplates.json PerkActions.json
 Perks.json PetReplies.json PetTypes.json Quests.json Research.json Respawn.json
-SkillCosts.json SkillTrickle.json StartPackages.json Tradeskills.json VendingMachines.json
+SkillCosts.json SkillTrickle.json SpawnExclusions.json StartPackages.json Tradeskills.json VendingMachines.json
 WaterExits.json Xp.json""".split())
 RUNTIME_MISSION_FILES = frozenset("""Locations.json Text.json RollPolicy.json RollMixes.json
 RollTemplate.json RollBodies.json RewardObservations.json RareLoot.json RareLootChancePercent.json

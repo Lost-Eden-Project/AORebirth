@@ -285,7 +285,9 @@ namespace ZoneEngine_New.Core.Playfield
         {
             PlayfieldSpawnsData data = _gameData.GetPlayfieldSpawns(_playfield.ResourceId);
             PlayfieldSpawnEntry[] entries = data.Spawns ?? [];
+            SpawnExclusionCatalog exclusions = _gameData.SpawnExclusions;
             int skipped = 0;
+            int excluded = 0;
 
             foreach (PlayfieldSpawnEntry entry in entries)
             {
@@ -305,6 +307,13 @@ namespace ZoneEngine_New.Core.Playfield
                 if (string.IsNullOrEmpty(hashText))
                 {
                     skipped++;
+                    continue;
+                }
+
+                // SpawnExclusions.json: points left out on purpose, before any template lookup or warning.
+                if (exclusions.Excludes(hashText, _playfield.ResourceId))
+                {
+                    excluded++;
                     continue;
                 }
 
@@ -386,6 +395,16 @@ namespace ZoneEngine_New.Core.Playfield
                         CultureInfo.InvariantCulture,
                         "HashSpawnSystem skipped {0} spawn entries playfield={1}",
                         skipped,
+                        _playfield.Identity.Instance));
+            }
+
+            if (excluded > 0)
+            {
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "HashSpawnSystem excluded {0} spawn entries playfield={1} (SpawnExclusions.json)",
+                        excluded,
                         _playfield.Identity.Instance));
             }
         }

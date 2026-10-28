@@ -261,6 +261,14 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _pendingRespawns[source] = _tickSerial;
         }
 
+        /// <summary>Re-checks now who sees <paramref name="dynel"/>, after a change to who it is hidden from.</summary>
+        public void ReconcileVisibility(Dynel dynel)
+        {
+            ArgumentNullException.ThrowIfNull(dynel);
+            if (_tracked.Contains(dynel))
+                _visibility.Reconcile(dynel);
+        }
+
         public void UnregisterDynel(Dynel dynel, Player? transferredTo = null)
         {
             if (dynel == null)

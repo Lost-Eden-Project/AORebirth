@@ -1648,6 +1648,28 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>GmLevel above 0, as <see cref="Characters.CharacterHydrationValidator"/> judges it.</summary>
         public bool IsGm => Stats.GetOrZero(CharacterStat.GmLevel) > 0;
 
+        /// <summary>Characters (by id) hidden with <c>.visibility off</c>; kept per character until the engine restarts.</summary>
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<int, byte> HiddenCharacters = new();
+
+        /// <summary>
+        /// <c>.visibility off</c>: this character is not spawned on players' clients at all (GMs still see it), like a
+        /// sneaker they cannot perceive. It survives zoning and relogging, not an engine restart.
+        /// </summary>
+        /// <summary>Whether character <paramref name="characterId"/> is hidden with <c>.visibility off</c>.</summary>
+        public static bool IsHiddenCharacter(int characterId) => HiddenCharacters.ContainsKey(characterId);
+
+        public bool HiddenFromPlayers
+        {
+            get => HiddenCharacters.ContainsKey(Identity.Instance);
+            set
+            {
+                if (value)
+                    HiddenCharacters[Identity.Instance] = 0;
+                else
+                    HiddenCharacters.TryRemove(Identity.Instance, out _);
+            }
+        }
+
         /// <summary>
         /// /terminate: the character dies <see cref="SelfTerminationDelay"/> from now unless it zones, logs off or dies
         /// first. False when it is dead or already counting down.

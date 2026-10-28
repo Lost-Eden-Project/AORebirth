@@ -64,6 +64,9 @@ namespace ZoneEngine_New.Core.Commands
             _lastUseUtc[callerId] = nowUtc;
             bool canTeleport = context.Player.Stats.GetOrZero(CharacterStat.GmLevel) >= TeleportCommand.GmLevel;
 
+            // Characters hidden with .visibility off are left off the list for players; GMs still see them.
+            bool showHidden = context.Player.IsGm;
+
             if (_world != null)
             {
                 // Every zone instance: World's directory. The reply is sent from the caller's own tick.
@@ -74,7 +77,9 @@ namespace ZoneEngine_New.Core.Commands
                     try
                     {
                         AORebirth.World.Contracts.V1.ListOnlineReply reply = await _world.ListOnlineAsync().ConfigureAwait(false);
-                        online = reply.Characters.Select(character => new Entry(
+                        online = reply.Characters
+                            .Where(character => showHidden || !Player.IsHiddenCharacter(character.CharacterId))
+                            .Select(character => new Entry(
                             string.IsNullOrEmpty(character.Name) ? character.CharacterId.ToString(CultureInfo.InvariantCulture) : character.Name,
                             canTeleport && !string.IsNullOrEmpty(character.Name) && character.CharacterId != callerId,
                             character.Level,
@@ -82,7 +87,7 @@ namespace ZoneEngine_New.Core.Commands
                     }
                     catch (Exception)
                     {
-                        online = LocalEntries(canTeleport, callerId);
+                        online = LocalEntries(canTeleport, callerId, showHidden);
                     }
 
                     caller.Playfield?.DispatchPlayerProjection(caller, () => Send(context, online));
@@ -90,11 +95,12 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
-            Send(context, LocalEntries(canTeleport, callerId));
+            Send(context, LocalEntries(canTeleport, callerId, showHidden));
         }
 
-        List<Entry> LocalEntries(bool canTeleport, int callerId)
+        List<Entry> LocalEntries(bool canTeleport, int callerId, bool showHidden)
             => _playfields.Value.SnapshotPlayers()
+                .Where(player => showHidden || !player.HiddenFromPlayers)
                 .Select(player => new Entry(
                     string.IsNullOrEmpty(player.Name)
                         ? player.Identity.Instance.ToString(CultureInfo.InvariantCulture)

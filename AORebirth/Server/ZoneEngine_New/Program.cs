@@ -380,6 +380,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, GameTimeCommand>();
             services.AddSingleton<IGmCommand, WeatherCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
+            services.AddSingleton<IGmCommand, VisibilityCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();
             services.AddSingleton<IGmCommand, ShutdownCommand>();

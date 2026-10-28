@@ -706,7 +706,7 @@ namespace ZoneEngine_New.Core.Ai
         /// </summary>
         public void TryProximityAggro(Character player)
         {
-            if (player == null || !player.IsPlayer || player.IsDead)
+            if (player == null || !player.IsPlayer || player.IsDead || player is Player { HiddenFromPlayers: true })
                 return;
             if (!Npc.Attackable || _evading || Npc.IsPacified)
                 return;
@@ -1732,10 +1732,11 @@ namespace ZoneEngine_New.Core.Ai
             DynelRegistry registry = Npc.Playfield.GetRequiredService<DynelRegistry>();
             if (registry.TryGet(identity, out Dynel? dynel) && dynel is Character target && !target.IsDead)
             {
-                if (target is not NpcCharacter { IsEvading: true })
+                if (target is not NpcCharacter { IsEvading: true } && target is not Player { HiddenFromPlayers: true })
                     return target;
 
                 // An NPC that is resetting (leashing home) is out of the fight: let it go rather than chase it home.
+                // A GM hidden with .visibility off is let go the same way.
                 // With nobody else to fight, this NPC gives up too and resets on its next think.
                 Hate.Remove(identity);
                 if (_currentTarget == identity)

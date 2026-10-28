@@ -63,6 +63,10 @@ namespace ZoneEngine_New.Core.Helpers
 
             if (target is Player player)
             {
+                // A GM hidden with .visibility off is ignored by NPCs.
+                if (!attacker.IsPlayer && player.HiddenFromPlayers)
+                    return false;
+
                 // Mobs can still hit players. Only another player needs the gas or the PvP flags, and the level range.
                 if (!attacker.IsPlayer)
                     return true;

@@ -123,6 +123,16 @@ public sealed class ModuleMessageApiTests
         AssertIdentity(follow, "Identity", Self);
         AssertInt(follow, "Info.MoveType", 2);
         AssertIdentity(follow, "Info.Target", Other);
+        Assert.IsFalse(follow.TryGetInt("Info.Flag", out _), "Only a follow stop has Info.Flag.");
+
+        var stop = Reader(new FollowTargetMessage
+        {
+            Identity = Self,
+            Info = new FollowStopInfo { MoveType = 3, Flag = 1, Coordinates = new MsgVector3(), ConfirmCoordinates = new MsgVector3() }
+        });
+        AssertInt(stop, "Info.MoveType", 3);
+        AssertInt(stop, "Info.Flag", 1);
+        Assert.IsFalse(stop.TryGetIdentity("Info.Target", out _), "A follow stop has no Info.Target.");
     }
 
     [TestMethod]

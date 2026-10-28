@@ -578,10 +578,14 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         /// <summary>
         /// A sneaking player whose Concealment beats <paramref name="recipient"/>'s Perception is not on that client at
-        /// all: it is despawned there and gets none of its packets. A GM always sees sneakers.
+        /// all: it is despawned there and gets none of its packets. A GM always sees sneakers. A player hidden with
+        /// <c>.visibility off</c> is hidden the same way from everyone but GMs.
         /// </summary>
         internal static bool IsHiddenFrom(Player recipient, Dynel source)
         {
+            if (source is Player hidden && hidden.HiddenFromPlayers && !recipient.IsGm)
+                return true;
+
             if (source is not Player sneaker || sneaker.Motor.State != Movement.MovementState.Sneak || recipient.IsGm)
                 return false;
 

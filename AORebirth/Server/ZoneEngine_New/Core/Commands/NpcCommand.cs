@@ -215,130 +215,110 @@ namespace ZoneEngine_New.Core.Commands
             };
         }
 
-        List<string> DumpSource(NpcCharacter npc)
+        /// <summary>
+        /// <c>.npc source</c>: where the NPC came from, as a popup. Labels are cyan, values white, section headings gold;
+        /// what needs a look (a fallback hash, a dead or retired point, a held roll) is orange.
+        /// </summary>
+        IReadOnlyList<string> DumpSource(NpcCharacter npc)
         {
-            List<string> lines = new();
+            static string F(string label, object? value)
+                => DiagAoml.Field(label, DiagAoml.Name(DiagAoml.Safe(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty)));
+            static string Coords(double x, double y, double z)
+                => string.Format(CultureInfo.InvariantCulture, "{0:F1}, {1:F1}, {2:F1}", x, y, z);
+
             MobTemplate? template = npc.MobTemplate;
             Vector3 pos = npc.Position;
-            lines.Add(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "Source: {0} id={1} spawnSource={2} hash={3} level={4} pos=({5:F2},{6:F2},{7:F2}) cell={8}",
-                    npc.Name ?? string.Empty,
-                    npc.Identity.Instance,
-                    npc.SpawnSource,
-                    template?.Hash ?? string.Empty,
-                    npc.Stats.GetOrZero(CharacterStat.Level),
-                    pos.xf,
-                    pos.yf,
-                    pos.zf,
-                    npc.Cell != null ? npc.Cell.Id.ToString(CultureInfo.InvariantCulture) : "-"));
+            string title = "Source: " + DiagAoml.Safe(npc.Name ?? string.Empty);
+            var blocks = new List<string>
+            {
+                DiagAoml.Color(DiagAoml.Gold, "NPC") + "<br>"
+                    + F("id", npc.Identity.Instance) + F("spawn", npc.SpawnSource) + F("level", npc.Stats.GetOrZero(CharacterStat.Level))
+                    + "<br>" + F("template", string.IsNullOrEmpty(template?.Hash) ? "-" : template!.Hash)
+                    + F("pos", Coords(pos.xf, pos.yf, pos.zf))
+                    + F("cell", npc.Cell != null ? npc.Cell.Id.ToString(CultureInfo.InvariantCulture) : "-")
+            };
 
             Playfield? playfield = npc.Playfield;
+            HashSpawnPoint? point = null;
             if (playfield == null)
-            {
-                lines.Add("no playfield");
-                return lines;
-            }
+                blocks.Add(DiagAoml.Color(DiagAoml.Orange, "Not on a playfield."));
+            else if (!playfield.GetRequiredService<HashSpawnSystem>().TryGetSpawnPoint(npc, out HashSpawnPoint found))
+                blocks.Add(DiagAoml.Muted("No hash-spawn point (GM-spawned, pet, content placement or quest objective)."));
+            else
+                point = found;
 
-            HashSpawnSystem hashSpawns = playfield.GetRequiredService<HashSpawnSystem>();
-            if (!hashSpawns.TryGetSpawnPoint(npc, out HashSpawnPoint point))
+            if (point != null)
             {
-                lines.Add("no hash-spawn point");
-                return lines;
-            }
+                PlayfieldSpawnEntry entry = point.Source;
+                string hash = DiagAoml.Field("hash", DiagAoml.Name(DiagAoml.Safe(entry.HashText ?? string.Empty)))
+                    + DiagAoml.Muted("(" + entry.Hash.ToString(CultureInfo.InvariantCulture) + ")") + "&#160;&#160;";
+                if (!string.Equals(point.HashText, entry.HashText, StringComparison.Ordinal))
+                    hash += DiagAoml.Field("runtime", DiagAoml.Color(DiagAoml.Orange, DiagAoml.Safe(point.HashText) + " (fallback)"));
 
-            PlayfieldSpawnEntry entry = point.Source;
-            lines.Add(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "  entry hash={0} hashText={1} manifest={2} district={3} cell={4}",
-                    entry.Hash,
-                    entry.HashText ?? string.Empty,
-                    entry.ManifestHash,
-                    entry.DistrictIndex,
-                    point.CellId));
-            if (!string.Equals(point.HashText, entry.HashText, StringComparison.Ordinal))
-            {
-                lines.Add(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "  runtimeHash={0} (fallback)",
-                        point.HashText));
-            }
+                string state = point.Retired ? DiagAoml.Color(DiagAoml.Orange, "retired")
+                    : point.State == HashSpawnState.Alive ? DiagAoml.Color(DiagAoml.Green, "alive")
+                    : DiagAoml.Color(DiagAoml.Orange, "dead");
+                double untilSpawn = (point.NextSpawnTime - DateTime.UtcNow).TotalSeconds;
+                string next = point.State == HashSpawnState.Alive || point.NextSpawnTime == default ? "-"
+                    : untilSpawn <= 0 ? "due"
+                    : string.Format(CultureInfo.InvariantCulture, "in {0:F0}s", untilSpawn);
 
-            lines.Add(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "  levels={0}-{1} respawnTime={2}s respawnChance={3}% state={4} nextSpawn={5:o}",
-                    point.MinLevel,
-                    point.MaxLevel,
-                    point.RespawnTimeSeconds,
-                    point.RespawnChance,
-                    point.State,
-                    point.NextSpawnTime));
-            lines.Add(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "  flags={0} nativeFlags={1} moreFlags={2} assistRadius={3} angle={4} angleW={5}",
-                    entry.Flags,
-                    entry.NativeFlags,
-                    entry.MoreFlags,
-                    entry.AssistanceRadius,
-                    entry.Angle,
-                    entry.AngleW));
+                string spawnPoint = DiagAoml.Color(DiagAoml.Gold, "Spawn point") + "<br>"
+                    + hash + F("district", entry.DistrictIndex) + F("cell", point.CellId)
+                    + "<br>" + F("levels", point.MinLevel + "-" + point.MaxLevel)
+                    + F("respawn", point.RespawnTimeSeconds + "s") + F("chance", point.RespawnChance + "%")
+                    + "<br>" + DiagAoml.Field("state", state) + F("next", next)
+                    + (point.IsStatic ? DiagAoml.Field("static", DiagAoml.Name("yes")) : string.Empty)
+                    + (point.RespawnsAfterDeath ? string.Empty : DiagAoml.Field("respawns", DiagAoml.Color(DiagAoml.Orange, "no")));
+                if (point.HoldsRoll)
+                    spawnPoint += "<br>" + DiagAoml.Field("held roll", DiagAoml.Color(DiagAoml.Orange,
+                        "level " + (point.RolledLevel?.ToString(CultureInfo.InvariantCulture) ?? "-")));
+                blocks.Add(spawnPoint);
 
-            for (int i = 0; i < point.Sites.Length; i++)
-            {
-                SpawnSite site = point.Sites[i];
-                Quaternion heading = site.Heading;
-                lines.Add(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "  site[{0}] pos=({1:F2},{2:F2},{3:F2}) radius={4:F2} heading=({5:F3},{6:F3},{7:F3},{8:F3})",
-                        i,
-                        site.Centre.xf,
-                        site.Centre.yf,
-                        site.Centre.zf,
-                        site.Radius,
-                        heading.xf,
-                        heading.yf,
-                        heading.zf,
-                        heading.wf));
-            }
+                blocks.Add(DiagAoml.Color(DiagAoml.Gold, "Entry") + "<br>"
+                    + DiagAoml.Muted(string.Format(CultureInfo.InvariantCulture,
+                        "manifest {0}  flags {1}  native {2}  more {3}  assist {4}  angle {5}/{6}",
+                        entry.ManifestHash, entry.Flags, entry.NativeFlags, entry.MoreFlags, entry.AssistanceRadius,
+                        entry.Angle, entry.AngleW)));
 
-            PlayfieldHashSpawnExtensionBlock? extensions = entry.Extensions;
-            if (extensions != null)
-            {
-                lines.Add(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "  ext field0={0} field1={1} field2={2} trailing={3}",
-                        extensions.Field0,
-                        extensions.Field1,
-                        extensions.Field2,
-                        extensions.TrailingUnknown));
-                PlayfieldHashSpawnExtensionEvent[]? events = extensions.Events;
-                if (events != null)
+                var sites = new System.Text.StringBuilder(DiagAoml.Color(DiagAoml.Gold, "Sites"));
+                for (int i = 0; i < point.Sites.Length; i++)
                 {
-                    for (int i = 0; i < events.Length; i++)
+                    SpawnSite site = point.Sites[i];
+                    Quaternion heading = site.Heading;
+                    sites.Append("<br>").Append(DiagAoml.Indent)
+                        .Append(DiagAoml.Label("[" + i.ToString(CultureInfo.InvariantCulture) + "]")).Append(' ')
+                        .Append(DiagAoml.Name(Coords(site.Centre.xf, site.Centre.yf, site.Centre.zf))).Append("&#160;&#160;")
+                        .Append(F("radius", site.Radius.ToString("F2", CultureInfo.InvariantCulture)))
+                        .Append(DiagAoml.Muted(string.Format(CultureInfo.InvariantCulture, "heading {0:F3} {1:F3} {2:F3} {3:F3}",
+                            heading.xf, heading.yf, heading.zf, heading.wf)));
+                }
+
+                blocks.Add(sites.ToString());
+
+                PlayfieldHashSpawnExtensionBlock? extensions = entry.Extensions;
+                if (extensions != null)
+                {
+                    var ext = new System.Text.StringBuilder(DiagAoml.Color(DiagAoml.Gold, "Extensions") + "<br>"
+                        + DiagAoml.Muted(string.Format(CultureInfo.InvariantCulture, "field0 {0}  field1 {1}  field2 {2}  trailing {3}",
+                            extensions.Field0, extensions.Field1, extensions.Field2, extensions.TrailingUnknown)));
+                    PlayfieldHashSpawnExtensionEvent[]? events = extensions.Events;
+                    for (int i = 0; events != null && i < events.Length; i++)
                     {
                         PlayfieldHashSpawnExtensionEvent ev = events[i];
                         if (ev == null)
                             continue;
-                        lines.Add(
-                            string.Format(
-                                CultureInfo.InvariantCulture,
-                                "  ext.event[{0}] {1} u1={2} u2={3}",
-                                i,
-                                ev.Name ?? string.Empty,
-                                ev.Unknown1,
-                                ev.Unknown2));
+                        ext.Append("<br>").Append(DiagAoml.Indent)
+                            .Append(DiagAoml.Label("event[" + i.ToString(CultureInfo.InvariantCulture) + "]")).Append(' ')
+                            .Append(DiagAoml.Name(DiagAoml.Safe(ev.Name ?? string.Empty))).Append("&#160;&#160;")
+                            .Append(DiagAoml.Muted(string.Format(CultureInfo.InvariantCulture, "u1 {0}  u2 {1}", ev.Unknown1, ev.Unknown2)));
                     }
+
+                    blocks.Add(ext.ToString());
                 }
             }
 
-            return lines;
+            return DiagAoml.Pages(title, null, blocks, "<br><br>");
         }
 
         List<string> DumpTemplate(NpcCharacter npc)

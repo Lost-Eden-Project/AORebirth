@@ -32,6 +32,9 @@ namespace ZoneEngine_New.Core.GameData
         /// <summary>ComboNames.json: what a ComboNameGen item names its NPC.</summary>
         ComboNameCatalog ComboNames => ComboNameCatalog.Empty;
 
+        /// <summary>SpawnExclusions.json: hash spawn points that are not loaded.</summary>
+        SpawnExclusionCatalog SpawnExclusions => SpawnExclusionCatalog.Empty;
+
         int MobTemplateCount { get; }
 
         int HashTemplateCount { get; }

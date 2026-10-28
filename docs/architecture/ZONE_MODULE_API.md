@@ -225,7 +225,7 @@ These names are guaranteed (ZoneEngine_New.Tests `ModuleMessageApiTests` locks t
 | `CharacterAction` | `Identity`, `Action`, `Target`, `Parameter1`, `Parameter2` |
 | `GenericCmd` | `Identity`, `Action`, `Count`, `User`, `Target[0]` |
 | `LookAt` | `Identity`, `Target` |
-| `FollowTarget` | `Identity`, `Info.MoveType`, `Info.Target` (a follow of a target) |
+| `FollowTarget` | `Identity`, `Info.MoveType`, `Info.Target` (only a follow of a target), `Info.Flag` (only a follow stop) |
 
 Other names usually work too, but may change with the engine's message types.
 

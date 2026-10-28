@@ -58,6 +58,9 @@ namespace AORebirth.Core.GameData
 
         public const string RespawnFileName = "Respawn.json";
 
+        /// <summary>Hash spawn points that are not loaded (ZoneEngine_New SpawnExclusionCatalog).</summary>
+        public const string SpawnExclusionsFileName = "SpawnExclusions.json";
+
         public const string XpFileName = "Xp.json";
 
         public const string NewCharacterFileName = "NewCharacter.json";
