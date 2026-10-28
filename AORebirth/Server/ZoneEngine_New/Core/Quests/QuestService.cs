@@ -307,7 +307,7 @@ namespace ZoneEngine_New.Core.Quests
                         TryEarnNpcObjective(player, quest, npc, inspected: false);
                         continue;
                     }
-                    if (quest.IsActive && quest.Template.IsKill && Matches(npc, quest.Template.Objective))
+                    if (quest.IsActive && quest.Template.IsKill && Matches(npc, quest.Template.Objective.Npc))
                         (advanced ??= new List<PlayerQuest>()).Add(quest);
                 }
 
@@ -405,17 +405,6 @@ namespace ZoneEngine_New.Core.Quests
         {
             for (int i = 0; i < quests.Count; i++)
                 Complete(player, quests[i]);
-        }
-
-        /// <summary>A kill objective's NPC: its hash or one of its extra hashes, inside its area when it has one.</summary>
-        static bool Matches(NpcCharacter npc, QuestObjective objective)
-        {
-            if (!Matches(npc, objective.Npc) && !Array.Exists(objective.Npcs ?? [], hash => Matches(npc, hash)))
-                return false;
-            if (objective.Area is not { Length: 3 } area)
-                return true;
-            double dx = npc.Position.x - area[0], dz = npc.Position.z - area[1];
-            return dx * dx + dz * dz <= (double)area[2] * area[2];
         }
 
         static bool Matches(NpcCharacter npc, string? objectiveNpc)

@@ -116,15 +116,6 @@ namespace ZoneEngine_New.Core.Quests
         public string? Npc { get; set; }
 
         /// <summary>
-        /// More spawn hashes that count, for a kill objective over an area rather than one hash ("Kill 7 Robots in the
-        /// junkyard": Cleaning Robots and the other junkyard robots).
-        /// </summary>
-        public string[]? Npcs { get; set; }
-
-        /// <summary>[x, z, radius]: only kills of NPCs standing in this circle count.</summary>
-        public float[]? Area { get; set; }
-
-        /// <summary>
         /// Percent chance that each counted kill finishes the step early (Find a Bio Analyzing Computer: live it was
         /// found on the 2nd of up to 7 robots); <see cref="Count"/> kills always finish it.
         /// </summary>
