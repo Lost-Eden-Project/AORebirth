@@ -1,24 +1,37 @@
 # Current Task
 
-Active request (2026-10-28): recover actual mission chest contents from all
-supplied October 27–28 recording sessions. Work is isolated on
-`codex/mission-chest-loot-recovery` from public master
+Active request (2026-10-28): integrate eligible recovered retail mission chest
+items into the actual private development RK chest policy. Work is isolated on
+`codex/mission-chest-retail-integration`, following recovery commit
+`90b4de0ea5dfc490caf69008a42761b23cc4f4ff` and public master
 `c679d683aeff50c3f3c2d737974fe1880feddb7a`.
 
-- Reuse completed original-client protocol research and the original known-answer
-  fixture. Correct offline decoding and exact identity/handle/slot joins only.
-- Include incomplete finalizations; preserve all original captures.
-- Resolve current item definitions and append acquisition evidence through the
-  existing offline catalog infrastructure. Keep private output/catalog records
-  ignored, outside canonical GameData and public Git.
-- Preserve runtime loot policy, rarity, QL, approvals and exclusions. Do not
-  include unmerged trap or typed-content development in this feature.
-- Validate complete packet accounting, known-answer recovery, deterministic
-  reports and source integrity. No master merge, deployment, live DB/server
-  changes, new captures or client control is authorized.
+- Reuse completed recovery outputs; do not repeat decoding or collect captures.
+- Account for all 186 exact pairs and current supported QL spans. Retail chest
+  contents are positive acquisition evidence; preserve expansion, seasonal,
+  progression and special-purpose vetoes and retain unresolved eligibility.
+- Use the existing approval generator and runtime policy loader. Preserve every
+  existing valid approval and the intentional implant majority. Do not change
+  rarity, mission QL windows, counts, placement, inventory or persistence.
+- Install reviewed private policy bytes in development GameData. Keep catalogs,
+  reports, credentials and capture records outside public Git.
+- Run the requested bounded production-selector campaign and focused chest,
+  inventory, disposable MySQL and connected TCP checks through feature validation.
+  Verify the real ZoneEngine policy load and the existing chest-roll command.
+- Commit and push public-safe tooling/test changes only. No master merge,
+  deployment, live database/server changes or AO client control is authorized.
 
 Offline workflow and output semantics:
 `tools-temp/AOSharpMissionCaptureAnalyzer/CHEST_LOOT_RECOVERY.md`.
+
+Completed development integration: 185 of 186 recovered pairs are eligible;
+129 are new pair identities and eight receive supported QL extensions. One
+quest component is excluded. The installed private policy has 25,117 approved
+definitions and 13,268 bands, retaining every previous approval and all 23,052
+implant definitions. Requested selector, focused, disposable MySQL and connected
+TCP validation completed; TCP retains a proven pre-existing shutdown exception.
+See `docs/reports/MISSION_CHEST_RETAIL_LOOT_INTEGRATION.md`. No release acceptance,
+master merge or deployment is implied.
 
 ## Previous task context (not current release authorization)
 

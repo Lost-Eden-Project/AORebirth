@@ -9,6 +9,7 @@ using System.Text.Json;
 using AORebirth.Enums;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SmokeLounge.AOtomation.Messaging.GameData;
+using ZoneEngine_New.Core.Commands;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
@@ -245,8 +246,20 @@ public sealed class MissionChestRKPolicyTests
             "Every reviewed definition must remain eligible; do not reduce implants or rebalance categories.");
         Dictionary<string, int> approvedCategories = categories.Values.GroupBy(value => value, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
-        Assert.AreEqual(24925, categories.Count);
-        Assert.AreEqual(23052, approvedCategories["Implants"], "The reviewed implant majority is intentional.");
+        Assert.AreEqual(review.RootElement.GetProperty("ExpectedApprovedDefinitionCount").GetInt32(), categories.Count);
+        Dictionary<string, int> expectedCategories = review.RootElement.GetProperty("ExpectedApprovedCategoryCounts")
+            .EnumerateObject().ToDictionary(row => row.Name, row => row.Value.GetInt32(), StringComparer.Ordinal);
+        CollectionAssert.AreEquivalent(expectedCategories.ToArray(), approvedCategories.ToArray(),
+            "Reviewed category eligibility must remain complete; do not reduce implants or rebalance categories.");
+        int[] previousIds = review.RootElement.GetProperty("PreviousApprovedDefinitionIds").EnumerateArray()
+            .Select(row => row.GetInt32()).ToArray();
+        Assert.IsTrue(previousIds.Length > 0);
+        Assert.IsTrue(previousIds.All(categories.ContainsKey), "Previously approved definitions must remain reviewed and eligible.");
+        MissionChestRKAllowlist.Entry[] previousBands = ReadReviewedBands(review.RootElement, "PreviousApprovedBands");
+        foreach (MissionChestRKAllowlist.Entry band in previousBands)
+            for (int quality = band.MinQuality; quality <= band.MaxQuality; quality++)
+                Assert.IsTrue(allowlist.IsAllowed(band.LowId, band.HighId, quality),
+                    $"Previously approved band was reduced: {band.LowId}/{band.HighId} QL {quality}.");
         MissionChestPolicy policy = MissionChestPlacementTests.ReadPolicy();
         Assert.AreEqual(1, policy.MinItems);
         Assert.AreEqual(3, policy.MaxItems);
@@ -256,6 +269,10 @@ public sealed class MissionChestRKPolicyTests
             policy, allowlist);
         int[] gaps = Enumerable.Range(1, 250).Where(quality => service.GetDiagnostics(quality).EligibleChoices == 0).ToArray();
         Assert.AreEqual(0, gaps.Length, "Uncovered mission QLs: " + string.Join(",", gaps));
+        MissionChestRKAllowlist.Entry[] newBands = ReadReviewedBands(review.RootElement, "NewlyApprovedBands");
+        Assert.IsTrue(newBands.Length > 0, "This integration must prove its reviewed additions reach the production selector.");
+        var newBandItemCounts = newBands.ToDictionary(
+            band => (band.LowId, band.HighId, band.MinQuality, band.MaxQuality), _ => 0);
         var random = new Random(15485863);
         int populations = 0;
         int totalItems = 0;
@@ -283,6 +300,12 @@ public sealed class MissionChestRKPolicyTests
                     categoryCounts[category!]++;
                     rarityCounts[item.Rarity]++;
                     qualityCounts[quality]++;
+                    foreach (MissionChestRKAllowlist.Entry band in newBands)
+                        if (item.LowId == band.LowId && item.HighId == band.HighId
+                            && item.Quality >= band.MinQuality && item.Quality <= band.MaxQuality)
+                        {
+                            newBandItemCounts[(band.LowId, band.HighId, band.MinQuality, band.MaxQuality)]++;
+                        }
                     totalItems++;
                 }
                 populations++;
@@ -291,6 +314,45 @@ public sealed class MissionChestRKPolicyTests
         Assert.AreEqual(10000, populations);
         Assert.AreEqual(0, ids.Calls, "Read-only diagnostics must never allocate durable item instances.");
         Assert.IsTrue(qualityCounts.Values.All(count => count is >= 40 and <= 120));
+        MissionChestLootExclusions exclusions = MissionChestLootExclusions.Load(policyRoot, data.ItemFamilies);
+        var newBandProbes = new List<object>();
+        foreach (MissionChestRKAllowlist.Entry band in newBands)
+        {
+            int minimum = Math.Max(1, band.MinQuality);
+            int maximum = Math.Min(250, band.MaxQuality);
+            Assert.IsTrue(minimum <= maximum, $"New band has no supported mission quality: {band.LowId}/{band.HighId}.");
+            int[] checkpoints = new[] { minimum, minimum + (maximum - minimum) / 2, maximum }.Distinct().ToArray();
+            foreach (int quality in Enumerable.Range(band.MinQuality, band.MaxQuality - band.MinQuality + 1))
+                Assert.IsTrue(allowlist.IsAllowed(band.LowId, band.HighId, quality), "New reviewed band is absent from the installed policy.");
+            band.Evidence = allowlist.EvidenceFor(band.LowId, band.HighId, minimum);
+            band.Classification = MissionChestRKAllowlist.OrdinaryClassification;
+            MissionChestRKAllowlist isolatedApproval = MissionChestRKAllowlist.Parse(JsonSerializer.Serialize(
+                new MissionChestRKAllowlist.Document { Version = 1, Entries = [band] }), exclusions);
+            var probe = new MissionChestLootService(catalog, data, new ItemBuilder(catalog, ids, new StubLogger()),
+                policy, isolatedApproval);
+            foreach (int quality in checkpoints)
+            {
+                IReadOnlyList<MissionChestLootPreview> selected = probe.RollPreview(quality, new Random(7919));
+                Assert.IsTrue(selected.Count is >= 1 and <= 3);
+                foreach (MissionChestLootPreview item in selected)
+                {
+                    Assert.AreEqual(band.LowId, item.LowId);
+                    Assert.AreEqual(band.HighId, item.HighId);
+                    Assert.IsTrue(item.Quality >= minimum && item.Quality <= maximum);
+                    Assert.IsTrue(item.Quality >= Math.Max(1, quality - 5) && item.Quality <= Math.Min(250, quality + 5));
+                    Assert.IsTrue(allowlist.IsAllowed(item.LowId, item.HighId, item.Quality));
+                    Assert.AreEqual(0, allowlist.ExclusionReasons(item.LowId, item.HighId).Length);
+                }
+                string command = string.Join("\n", ChestCommand.Simulate(probe, quality,
+                    "reviewed new-band probe", 1, new Random(7919)));
+                Assert.IsTrue(command.Contains($"ID {band.LowId}/{band.HighId}; QL ", StringComparison.Ordinal));
+                Assert.IsTrue(command.Contains("Chest populations: 1", StringComparison.Ordinal));
+                Assert.IsTrue(command.Contains("classification OrdinaryRubiKa", StringComparison.Ordinal));
+                newBandProbes.Add(new { band.LowId, band.HighId, band.MinQuality, band.MaxQuality,
+                    MissionQuality = quality, Selected = selected, ChestCommandReportsPair = true });
+            }
+        }
+        Assert.AreEqual(0, ids.Calls, "New-band selector and command probes must never allocate item instances.");
         string result = JsonSerializer.Serialize(new
         {
             Campaign = "ProductionSelectorRKChestPopulations", Populations = populations, TotalItems = totalItems,
@@ -301,6 +363,14 @@ public sealed class MissionChestRKPolicyTests
             RarityItemCounts = rarityCounts, RarityWeights = policy.RarityWeights,
             ItemsPerMissionQuality = qualityCounts, DurableInstancesAllocated = ids.Calls,
             UnauthorizedItems = 0, ExcludedItems = 0, ReviewSha256 = reviewedHash,
+            PreviousDefinitionsRetained = previousIds.Length, PreviousBandsRetained = previousBands.Length,
+            NewlyApprovedBands = newBands.Length, NewBandProbes = newBandProbes,
+            NewBandNormalCampaignItemCounts = newBands.Select(band => new
+            {
+                band.LowId, band.HighId, band.MinQuality, band.MaxQuality,
+                ItemCount = newBandItemCounts[(band.LowId, band.HighId, band.MinQuality, band.MaxQuality)]
+            }).ToArray(),
+            NewBandProbeMethod = "Unchanged production selector with each reviewed new band isolated; minimum/midpoint/maximum supported mission QLs; unchanged vetoes; shared chest command preview",
             Selection = "Production RollPreview; the shared production selector; no inventory or database writes",
             CategoryDistributionPolicy = "Diagnostic only; no balancing or eligibility reduction"
         });
@@ -312,6 +382,19 @@ public sealed class MissionChestRKPolicyTests
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, result + Environment.NewLine);
         }
+    }
+
+    static MissionChestRKAllowlist.Entry[] ReadReviewedBands(JsonElement review, string property)
+    {
+        MissionChestRKAllowlist.Entry[] bands = review.GetProperty(property).EnumerateArray().Select(row =>
+            new MissionChestRKAllowlist.Entry
+            {
+                LowId = row.GetProperty("LowId").GetInt32(), HighId = row.GetProperty("HighId").GetInt32(),
+                MinQuality = row.GetProperty("MinQuality").GetInt32(), MaxQuality = row.GetProperty("MaxQuality").GetInt32()
+            }).ToArray();
+        Assert.IsTrue(bands.All(band => band.LowId > 0 && band.HighId > 0 && band.MinQuality > 0
+            && band.MaxQuality >= band.MinQuality), "Reviewed bands must retain valid identities and QL bounds.");
+        return bands;
     }
 
     internal static MissionChestRKAllowlist Approval(int low, int high, int minimum, int maximum,

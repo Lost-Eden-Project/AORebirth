@@ -44,6 +44,32 @@ is preserved in offline coverage; source-supported family maxima are retained.
 Use the actual production selector for runtime simulations and retain every
 normal build, Windows acceptance and release requirement.
 
+For an additive private review, `--reviews` selects an explicitly authored review
+file while reusing the existing metadata cache under `--input-root`. An exact
+captured LowID/HighID relationship can use the existing hash-bound `PairSources`
+format in an ignored checkout-relative private file. Its `Key` supplies `LowId`,
+`HighId`, `LowQl` and `HighQl`; the endpoint qualities must agree with current
+metadata. Names never establish a pair or quality interval.
+
+Use `--existing-policy` together with `--existing-review-results` to retain a
+source-bound approval catalog. Existing entries and approved definition records
+remain unchanged and in their original order. The tool appends only uncovered
+pair/QL intervals and new definitions, rejects category conflicts, and records
+retained/added counts in `ordinary-rk-merge-manifest.json`. It does not rebuild
+historical reviews or reinterpret their older typed pair sources.
+
+A review may explicitly explain a current-metadata false positive through
+`MetadataExceptions`. `AllowedFlags` accepts only `Special` and `NoDrop`.
+`TargetCriteria` accepts exact `NPCFamily` terms with `TermIndex` and
+`Target: "OnTarget"`; ordered requirement selectors must prove that subject in
+the current metadata. `Evidence` must contain exact source locators and `Reason`
+must explain the authored exception. Raw numeric target fields alone do not
+prove an OnTarget requirement. These exceptions never waive Unique, Disabled,
+Stationary, exclusion catalogs, expansion, quest or GM restrictions, or direct
+NPCFamily stats. Positive RK and ordinary evidence remain mandatory. Without
+explicit exceptions and additive options, existing validation behavior remains
+unchanged.
+
 `reconcile_captured_loot.py` joins captured low/high template descriptors and
 their recorded quality to the existing metadata, requirement classification,
 historical reconstruction, authored approvals and negative policy catalogs.
