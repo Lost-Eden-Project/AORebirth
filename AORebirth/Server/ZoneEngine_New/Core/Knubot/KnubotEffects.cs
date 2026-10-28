@@ -167,6 +167,28 @@ public sealed record KnubotOpenTrade : KnubotEffect
         => services.Trades.TryOpenKnubot(context.Player, context.Npc, KnubotService.TradeText(context.Npc));
 }
 
+/// <summary>
+/// <c>{givebuff NANOID}</c>: the NPC lands the nano on the player at once, as a service (no cast bar, nano cost or
+/// recharge; the Portal Technician's Shadowlands charge 239825).
+/// </summary>
+public sealed record KnubotGiveBuff(int NanoId) : KnubotEffect
+{
+    public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
+        => !context.Player.IsDead && context.Player.Playfield != null;
+
+    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    {
+        Playfield.Playfield playfield = context.Player.Playfield!;
+        Nanos.NanoRuntime.TryApplyImmediate(
+            context.Npc,
+            context.Player,
+            NanoId,
+            playfield.GetRequiredService<IItemBuilder>(),
+            playfield.GetRequiredService<Data.IInventoryRepository>(),
+            DateTime.UtcNow);
+    }
+}
+
 /// <summary>Main-inventory item helpers shared by conditions and effects.</summary>
 public static class KnubotItems
 {

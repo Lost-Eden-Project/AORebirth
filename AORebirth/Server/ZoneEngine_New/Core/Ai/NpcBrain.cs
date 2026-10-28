@@ -622,7 +622,7 @@ namespace ZoneEngine_New.Core.Ai
             // range is how far it notices players, defends them as a guard, and spots NPCs it hates.
             var locality = Npc.Playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>();
             float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats, locality.Grid.IsOutdoor);
-            if (hostile)
+            if (hostile || guard)
             {
                 locality.CollectNearby(Npc, range, _nearbyPlayers);
                 for (int i = 0; i < _nearbyPlayers.Count; i++)
@@ -669,8 +669,8 @@ namespace ZoneEngine_New.Core.Ai
         readonly List<NpcCharacter> _scanNpcs = new();
 
         /// <summary>
-        /// Unprovoked aggro on another NPC: a guard on one fighting a player or a player's pet, and any NPC on one of a
-        /// family it hates. Same terms as a player: in range, in sight, reachable. Players' pets are never targets.
+        /// Unprovoked aggro on another NPC: a guard on one fighting a player or a player's pet (never on another guard),
+        /// and any NPC on one of a family it hates. Same terms as a player: in range, in sight, reachable. Players' pets are never targets.
         /// </summary>
         void TryNpcAggro(NpcCharacter other, float range, bool guard, IReadOnlySet<int>? hated)
         {
@@ -678,7 +678,8 @@ namespace ZoneEngine_New.Core.Ai
                 || Hate.Contains(other.Identity))
                 return;
 
-            bool defend = guard && IsFightingAPlayer(other);
+            // A guard never defends a player against another guard (one of the other faction on sight of them).
+            bool defend = guard && other.MobTemplate?.Has(Mobs.NpcFeature.Guard) != true && IsFightingAPlayer(other);
             bool hates = hated != null && hated.Contains(other.Stats.GetOrZero(CharacterStat.NPCFamily));
             if (!defend && !hates)
                 return;
@@ -702,21 +703,32 @@ namespace ZoneEngine_New.Core.Ai
         }
 
         /// <summary>
-        /// Adds 1 hate when BreedHostility &gt; 0 and the player is nearby, in line of sight and not already listed.
+        /// Adds 1 hate when the player is nearby, in line of sight and not already listed, and either BreedHostility &gt; 0
+        /// or this NPC is a guard and the player is of the opposing faction (a Clan guard on an Omni, an Omni guard on a
+        /// Clan). A guard leaves a player who is pvping alone.
         /// </summary>
         public void TryProximityAggro(Character player)
         {
             if (player == null || !player.IsPlayer || player.IsDead || player is Player { HiddenFromPlayers: true })
                 return;
+            if (player is Player zoning && zoning.InZoneInGrace(DateTime.UtcNow))
+                return;
             if (!Npc.Attackable || _evading || Npc.IsPacified)
                 return;
-            if (!NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility)))
+            bool hostile = NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility));
+            bool guard = Npc.MobTemplate?.Has(Mobs.NpcFeature.Guard) == true;
+            if (!hostile && !guard)
                 return;
             if (Hate.Contains(player.Identity))
                 return;
-            if (!NpcAiRules.SideAllowsProximityAggro(
-                    Npc.Stats.GetOrZero(CharacterStat.Side),
-                    player.Stats.GetOrZero(CharacterStat.Side)))
+            int npcSide = Npc.Stats.GetOrZero(CharacterStat.Side);
+            int playerSide = player.Stats.GetOrZero(CharacterStat.Side);
+            if (!NpcAiRules.SideAllowsProximityAggro(npcSide, playerSide))
+                return;
+            // A guard that is not hostile on its own only goes for the opposing faction.
+            if (!hostile && !NpcAiRules.IsOpposingFaction(npcSide, playerSide))
+                return;
+            if (guard && IsPvping(player))
                 return;
             // A "gray" NPC (below the player's LevelEligibility.json range, the same rule that makes its kill worth
             // 1 XP) never starts a fight. It still fights back when attacked.
@@ -739,6 +751,31 @@ namespace ZoneEngine_New.Core.Ai
             Hate.Add(player.Identity, NpcAiRules.ProximityHate);
             CallForHelp(player.Identity);
         }
+
+        /// <summary>
+        /// The player is pvping: PvP flagged (the attacker flag or a tower flag), or fighting or being fought by another
+        /// player or a player's pet.
+        /// </summary>
+        bool IsPvping(Character player)
+        {
+            if (player is Player flagged && ZoneEngine_New.Core.Helpers.CombatRules.IsPvpEnabled(flagged))
+                return true;
+            Identity target = player.FightingTarget;
+            if (target.Instance != 0 && Npc.Playfield != null
+                && Npc.Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel)
+                && dynel is Character { IsDead: false } opponent && IsPlayerSide(opponent))
+                return true;
+            foreach (Character attacker in player.Attackers)
+            {
+                if (!attacker.IsDead && IsPlayerSide(attacker))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool IsPlayerSide(Character character)
+            => character is Player || character is NpcCharacter { PetOwner: Player };
 
         /// <summary>
         /// The walk to <paramref name="player"/> is short enough for unprovoked aggro: at most proximityAggro.maxWalkFactor

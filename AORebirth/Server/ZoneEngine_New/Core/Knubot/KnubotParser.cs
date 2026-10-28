@@ -188,6 +188,16 @@ public static class KnubotParser
                     Effect(new KnubotOpenTrade());
                     break;
 
+                case "givebuff":
+                    if (words.Length != 2 || !KnubotCondition.TryPositive(words[1], out int nanoId) || !load.Items.TryGet(nanoId, out _))
+                    {
+                        errors.Add("expected {givebuff NANOID} with a known nano id: {" + body + "}");
+                        break;
+                    }
+
+                    Effect(new KnubotGiveBuff(nanoId));
+                    break;
+
                 case "goto":
                     if (words.Length != 2 || parsed.Goto != null)
                     {

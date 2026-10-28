@@ -684,6 +684,7 @@ namespace ZoneEngine_New.Core.Playfield
         public void Tick()
         {
             DespawnExpiredLinkDeadPlayers();
+            _playfield.GetRequiredService<Pets.PetService>().DismissUnclaimed(DateTime.UtcNow);
             _registry.CopyDynels(_tickSnapshot);
             DespawnExpiredCorpses(_tickSnapshot);
             DespawnEmptyLootables(_tickSnapshot);
@@ -1046,7 +1047,9 @@ namespace ZoneEngine_New.Core.Playfield
         /// </summary>
         void TryRestorePostSpawnContent(Player player)
         {
-            // The client lists its pets once it has zoned in (or reconnected).
+            // Pets still waiting here since the character logged out serve it again; the client lists its pets once it
+            // has zoned in (or reconnected).
+            _playfield.GetRequiredService<Pets.PetService>().ReclaimAwaitingPets(player);
             if (player.OwnedPets.Count > 0)
                 _playfield.GetRequiredService<Pets.PetService>().AnnounceOwnedPets(player);
 
@@ -1518,9 +1521,9 @@ namespace ZoneEngine_New.Core.Playfield
         {
             int characterId = player.Identity.Instance;
             player.CancelSelfTermination();
-            // Logging out sends the player's pets away.
+            // Logging out leaves the player's pets waiting here for it to come back (retail: 30 seconds).
             // Charmed NPCs stay here, their own again, and do not turn on a player who is gone.
-            _playfield.GetRequiredService<Pets.PetService>().DismissAll(player, "owner logged out", charmTurnsOnOwner: false);
+            _playfield.GetRequiredService<Pets.PetService>().AwaitOwnerReturn(player);
             player.SetFightingTarget(Identity.None);
             _playfieldManager.Teams.DetachPlayer(player);
 

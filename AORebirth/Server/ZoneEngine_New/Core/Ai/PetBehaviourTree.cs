@@ -18,7 +18,8 @@ namespace ZoneEngine_New.Core.Ai
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     /// <summary>
-    /// A summoned pet's behaviour, most urgent first: leave when its owner is gone or its time is up; rejoin a
+    /// A summoned pet's behaviour, most urgent first: leave when its owner is gone or its time is up; hold still while
+    /// waiting for a logged-out owner; rejoin a
     /// player owner it is too far from (or cannot walk to); fight the enemy it has picked; hold still while
     /// told to wait; otherwise follow its owner in formation.
     /// </summary>
@@ -36,6 +37,7 @@ namespace ZoneEngine_New.Core.Ai
         {
             IParent root = Root.Selector("pet-root");
             root.Conditional(() => PetAi.ShouldLeave(_brain), "pet-should-leave").Attach(new PetLeaveNode(_brain));
+            root.Conditional(() => _brain.Pet!.IsAwaitingOwner, "pet-awaiting-owner").Attach(new PetAwaitOwnerNode(_brain));
             root.Conditional(() => PetAi.ShouldRejoinOwner(_brain), "pet-should-rejoin").Attach(new PetRejoinOwnerNode(_brain));
             root.Attach(new PetTendNode(_brain));
             root.Conditional(() => PetAi.PickEnemy(_brain), "pet-has-enemy").Attach(new PetFightNode(_brain));
@@ -80,6 +82,9 @@ namespace ZoneEngine_New.Core.Ai
             Character owner = pet.Owner;
             if (pet.HasExpired(DateTime.UtcNow))
                 return true;
+            // A logged-out owner's pet waits for it (PetService.AwaitOwnerReturn decides when it gives up).
+            if (pet.IsAwaitingOwner)
+                return false;
             // An NPC's pet goes with its dead owner; a player's waits for the player to come back.
             if (owner.IsDead && !pet.IsPlayerPet)
                 return true;
@@ -379,6 +384,26 @@ namespace ZoneEngine_New.Core.Ai
             PetAi.Forget(pet);
             string reason = _brain.Pet!.HasExpired(DateTime.UtcNow) ? "expired" : "owner gone";
             pet.Playfield?.GetService<PetService>()?.Dismiss(pet, reason);
+            return _nodeState = NodeState.Success;
+        }
+    }
+
+    /// <summary>The owner logged out: the pet stands where it is, out of any fight, until the owner is back or it gives up.</summary>
+    sealed class PetAwaitOwnerNode : BehaviourNode
+    {
+        readonly NpcBrain _brain;
+
+        public PetAwaitOwnerNode(NpcBrain brain)
+            : base("pet-await-owner")
+        {
+            _brain = brain;
+        }
+
+        public override NodeState Evaluate(float deltaTime)
+        {
+            TickStallWatch.Stage("node.pet-await-owner", _brain.Npc.Identity.Instance);
+            _brain.StopFighting();
+            _brain.StopPathing();
             return _nodeState = NodeState.Success;
         }
     }

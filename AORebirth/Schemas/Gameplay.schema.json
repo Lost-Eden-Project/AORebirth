@@ -59,6 +59,10 @@
     "requireAmmo": {
       "type": "boolean"
     },
+    "zoneInGraceSeconds": {
+      "type": "number",
+      "minimum": 0
+    },
     "xp": {
       "type": "object",
       "properties": {

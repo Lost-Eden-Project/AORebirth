@@ -386,16 +386,25 @@ namespace ZoneEngine_New.Core.GameData
 
         /// <summary>
         /// The hash's features from MonsterCombatRules.json. The unresolved placeholder and blue-named NPCs (friendly,
-        /// non-combat) are always NoCombat.
+        /// non-combat) are always NoCombat, and a template with the <see cref="BossTemplateFlag"/> Flags bit is a Boss.
         /// </summary>
         static HashSet<NpcFeature> ResolveFeatures(IReadOnlyCollection<NpcFeature>? ruleFeatures, Dictionary<int, int> stats, bool isFallback)
         {
             var features = new HashSet<NpcFeature>(ruleFeatures ?? Array.Empty<NpcFeature>());
-            if (isFallback
-                || (stats.TryGetValue((int)CharacterStat.Flags, out int flags) && Helpers.CombatRules.IsBlueNameNpc(flags)))
+            bool hasFlags = stats.TryGetValue((int)CharacterStat.Flags, out int flags) && !Entities.StatCollection.IsUnset(flags);
+            if (isFallback || (hasFlags && Helpers.CombatRules.IsBlueNameNpc(flags)))
                 features.Add(NpcFeature.NoCombat);
+            if (!isFallback && hasFlags && (flags & BossTemplateFlag) != 0)
+                features.Add(NpcFeature.Boss);
             return features;
         }
+
+        /// <summary>
+        /// Flags (stat 0) bit set on the named and boss mobs' templates: Abmouth Supremus, The Beast, Aztur and Hezak the
+        /// Immortal, Anansi, Tarasque, the Kyr'Ozch Fleet Admirals; never on ordinary mobs (ICC Peacekeeper, Cultist,
+        /// Barking Chimera). 1025 of the NpcTemplates.json hashes have it.
+        /// </summary>
+        const int BossTemplateFlag = 0x2;
 
         static void SelectBands(
             NpcLevelBand[] bands,

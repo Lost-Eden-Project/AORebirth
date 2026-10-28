@@ -121,7 +121,7 @@ namespace ZoneEngine_New.Core.Mobs
 
         public MonsterPetRule? Pets { get; set; }
 
-        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard (<see cref="NpcFeature"/>).</summary>
+        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard, Boss (<see cref="NpcFeature"/>).</summary>
         public List<NpcFeature>? Features { get; set; }
 
         /// <summary>

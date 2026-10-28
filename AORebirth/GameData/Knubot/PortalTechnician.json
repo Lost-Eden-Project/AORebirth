@@ -1,0 +1,66 @@
+{
+  "Notes": "Portal Technician (POTN), Shadowlands portal ramp (playfield 4532). He charges the player for the portal (nano 239825) for credits in the Give Item window: 5000 for neutrals (retail text), 15000 for Clan and Omni (their lines are authored, not retail). Any other offer is refused.",
+  "Npcs": ["POTN"],
+  "Openers": [
+    { "Say": "welcome" }
+  ],
+  "Replies": {
+    "how_to_use": { "Text": "I'm geared to go! How do I use this portal?", "Goto": "how_to_use" },
+    "lets_do_this_neutral": {
+      "Text": "Let's do this. What do you want for running the nano on me?",
+      "Requirements": [{ "Stat": "Side", "Operator": "EqualTo", "Value": 0 }],
+      "Goto": "price_neutral"
+    },
+    "lets_do_this_clan": {
+      "Text": "Let's do this. What do you want for running the nano on me?",
+      "Requirements": [{ "Stat": "Side", "Operator": "EqualTo", "Value": 1 }],
+      "Goto": "price_clan"
+    },
+    "lets_do_this_omni": {
+      "Text": "Let's do this. What do you want for running the nano on me?",
+      "Requirements": [{ "Stat": "Side", "Operator": "EqualTo", "Value": 2 }],
+      "Goto": "price_omni"
+    }
+  },
+  "Lines": {
+    "welcome": {
+      "Text": "Hello and welcome! Step right this way and you will be on your way to the Shadowlands in no time.",
+      "Replies": ["how_to_use"]
+    },
+    "how_to_use": {
+      "Text": [
+        "It is very simple, first you pay a modest fee and I run a nano on you that will charge your body so the Shadowlands portal will function on you. Then you just walk into the swirling vortex out here on the ramp.",
+        "You will then materialize in Elysium in the Shadowlands."
+      ],
+      "Replies": ["lets_do_this_neutral", "lets_do_this_clan", "lets_do_this_omni"]
+    },
+    "price_neutral": {
+      "Text": "You neutrals are kindred spirits to us Jobeans, and I will let you pass for 5000 credits.{opentrade}"
+    },
+    "price_clan": {
+      "Text": "A Clanner, hm? Jobe stays out of your little war with Omni-Tek, but the portal still has to be paid for. For you it is 15000 credits.{opentrade}"
+    },
+    "price_omni": {
+      "Text": "Omni-Tek, I see. Your company can certainly afford it, and Jobe does not do favours for corporations. 15000 credits and you are on your way.{opentrade}"
+    },
+    "charged": {
+      "Text": "{givebuff 239825}"
+    },
+    "refused": {
+      "Text": "This will get you nowhere."
+    }
+  },
+  "Trades": {
+    "portal_fee_neutral": {
+      "Requirements": [{ "Stat": "Side", "Operator": "EqualTo", "Value": 0 }],
+      "Credits": 5000,
+      "Goto": "charged"
+    },
+    "portal_fee_clan_omni": {
+      "Requirements": [{ "Stat": "Side", "Operator": "Unequal", "Value": 0 }],
+      "Credits": 15000,
+      "Goto": "charged"
+    }
+  },
+  "TradeRefused": "refused"
+}

@@ -688,8 +688,9 @@ namespace ZoneEngine_New.Core.Trade
                         initiator.Inventory.ForgetBackpackPage(delivery.Item.Identity);
                         partner.Inventory.ForgetBackpackPage(delivery.Item.Identity);
                     }
-                    SetCash(initiator, initiatorCash);
-                    SetCash(partner, partnerCash);
+                    // Held back until after the Complete frames: see SendTradeCash.
+                    SetCashQuietly(initiator, initiatorCash);
+                    SetCashQuietly(partner, partnerCash);
                 });
             }
             catch (Exception exception)
@@ -706,6 +707,8 @@ namespace ZoneEngine_New.Core.Trade
 
             SendCompleteClose(initiator, partner);
             SendCompleteClose(partner, initiator);
+            SendTradeCash(initiator);
+            SendTradeCash(partner);
             // After the Complete frames: the client moves the other side's items in on them (see SendTradeDelivery).
             foreach (Delivery delivery in deliveries)
                 SendTradeDelivery(delivery);
@@ -2016,6 +2019,30 @@ namespace ZoneEngine_New.Core.Trade
                 dirty: true);
             player.FlushDirtyStats();
         }
+
+        /// <summary>Sets Cash without queuing it for the next stat flush; <see cref="SendTradeCash"/> sends it.</summary>
+        static void SetCashQuietly(Player player, long cash)
+            => player.Stats.Set(CharacterStat.Cash, TradeRules.ClampCash(cash), StatDetail.Base, dirty: false);
+
+        /// <summary>
+        /// A player trade's final Cash, sent after the Complete frames. The client moves the traded credits itself on
+        /// Complete, so a Cash stat sent before it was counted twice (500k traded showed as 1m); sent after, it sets the
+        /// value the server holds.
+        /// </summary>
+        static void SendTradeCash(Player player)
+            => player.Session?.Send(
+                new StatMessage
+                {
+                    Identity = player.Identity,
+                    Stats =
+                    [
+                        new GameTuple<CharacterStat, uint>
+                        {
+                            Value1 = CharacterStat.Cash,
+                            Value2 = (uint)player.Stats.GetOrZero(CharacterStat.Cash)
+                        }
+                    ]
+                });
 
         static void TellTradeFailure(Player player, string failure)
         {

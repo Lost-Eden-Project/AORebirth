@@ -46,7 +46,15 @@ namespace ZoneEngine_New.Core.Pets
         /// </summary>
         public bool IsOverEquipped { get; internal set; }
 
-        public Character Owner { get; }
+        public Character Owner { get; private set; }
+
+        /// <summary>
+        /// Set while the pet waits for its logged-out owner to come back (<see cref="PetService.AwaitOwnerReturn"/>):
+        /// when it gives up. The pet holds still and stays out of fights until then.
+        /// </summary>
+        public DateTime? AwaitingOwnerUntilUtc { get; private set; }
+
+        public bool IsAwaitingOwner => AwaitingOwnerUntilUtc != null;
 
         /// <summary>Pet type (see <see cref="PetTypes"/>).</summary>
         public int Type { get; }
@@ -141,6 +149,28 @@ namespace ZoneEngine_New.Core.Pets
             if (Mode == PetMode.Wait)
                 Order(PetMode.Follow);
             EndHeal();
+            ForgetOwnerPosition();
+        }
+
+        /// <summary>The owner logged out: the pet drops its orders' targets and waits for it until <paramref name="untilUtc"/>.</summary>
+        internal void AwaitOwner(DateTime untilUtc)
+        {
+            EndAttack();
+            EndHeal();
+            ForgetOwnerPosition();
+            AwaitingOwnerUntilUtc = untilUtc;
+        }
+
+        /// <summary>The owner is back (as a new character object): the pet serves it again, in the mode it had.</summary>
+        internal void ReturnTo(Character owner)
+        {
+            Owner = owner ?? throw new ArgumentNullException(nameof(owner));
+            AwaitingOwnerUntilUtc = null;
+            ForgetOwnerPosition();
+        }
+
+        void ForgetOwnerPosition()
+        {
             WarpRequested = false;
             CachedOwnerDistance = double.NaN;
             OwnerDistanceUtc = default;

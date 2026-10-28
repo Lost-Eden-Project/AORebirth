@@ -159,6 +159,11 @@ namespace ZoneEngine_New.Core.Ai
             return true;
         }
 
+        /// <summary>Clan against Omni, either way round.</summary>
+        public static bool IsOpposingFaction(int npcSide, int targetSide)
+            => (npcSide == (int)Side.Clan && targetSide == (int)Side.Omni)
+               || (npcSide == (int)Side.Omni && targetSide == (int)Side.Clan);
+
         /// <summary>
         /// A new target must be within <see cref="NearbyRange"/>, or the longest weapon reach
         /// (<see cref="Entities.CharacterWeapon.MaxAttackRange"/>) if that is further: a ranged attacker hitting from

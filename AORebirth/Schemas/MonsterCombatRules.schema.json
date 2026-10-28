@@ -35,7 +35,8 @@
             "NoCombat",
             "NoMove",
             "Wander",
-            "Guard"
+            "Guard",
+            "Boss"
           ]
         }
       },

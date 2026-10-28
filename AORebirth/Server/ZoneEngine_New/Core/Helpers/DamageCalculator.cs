@@ -129,8 +129,9 @@ namespace ZoneEngine_New.Core.Helpers
             if (overrideType > 0)
                 rawDamageType = overrideType;
 
+            // Add Damage can be negative (retail): it then takes off the hit, which still does at least 1.
             int damageBonus = TryGetAddDamageStat(rawDamageType, out CharacterStat addDamageStat)
-                ? NormalizeStat(attacker.Stats.GetOrZero(addDamageStat))
+                ? StatCollection.Normalize(attacker.Stats.GetOrZero(addDamageStat))
                 : 0;
 
             // Armour only ever reduces damage: a negative AC adds none (live: a level 13 Workman Striker hits a

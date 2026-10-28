@@ -382,9 +382,10 @@ namespace ZoneEngine_New.Core.Inventory
                     if (direct)
                         delta = -ScaleByPercent(-delta, caster, CharacterStat.NanoDamageMultiplier);
 
-                    // Direct hits (nukes, DrainHit, AreaHit) gain the caster's Add Damage for their damage type.
+                    // Direct hits (nukes, DrainHit, AreaHit) gain the caster's Add Damage for their damage type. It can be
+                    // negative (retail); the hit still does at least 1, as a weapon hit does.
                     if (addDamage && Helpers.DamageCalculator.TryGetAddDamageStat(acStat, out CharacterStat addDamageStat))
-                        delta -= Math.Max(0, StatCollection.Normalize(caster.Stats.GetOrZero(addDamageStat)));
+                        delta = Math.Min(-1, delta - StatCollection.Normalize(caster.Stats.GetOrZero(addDamageStat)));
                 }
 
                 // The target's reflect for the hit's damage type (its AC stat id) applies to nano damage too; a damage

@@ -3557,6 +3557,12 @@ namespace ZoneEngine_New.Core.Entities
             return false;
         }
 
+        /// <summary>
+        /// The wear slot whose mesh placement an item in <paramref name="slot"/> of its page takes; a player's pages
+        /// are keyed by wear slot already.
+        /// </summary>
+        protected virtual int AppearanceWearSlot(int slot, Item item) => slot;
+
         void ApplyWearAppearance(
             int page,
             int slot,
@@ -3564,6 +3570,7 @@ namespace ZoneEngine_New.Core.Entities
             Dictionary<int, int> textures,
             WornMeshSet worn)
         {
+            slot = AppearanceWearSlot(slot, item);
             int attractor = 0;
             foreach (ItemSpell spell in item.WearSpells)
             {
@@ -4337,7 +4344,14 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             if (FightingTarget.Instance != 0)
+            {
                 scfu.FightingTarget = FightingTarget;
+                // A fighting NPC also lists its SAW attack weapons, so a client that arrives mid-fight (and missed the
+                // SAW sent when the fight started) shows it attacking (retail ICC Peacekeeper on Doley, capture
+                // 2026-10-28T13:37:48Z: RMVI, THCQ).
+                if (isNpc)
+                    scfu.AttackWeapons = BuildSpecialAttacks();
+            }
 
             if (isNpc)
             {

@@ -18,5 +18,11 @@ namespace ZoneEngine_New.Core.Mobs
         /// NPC attacks on its own is MonsterCombatRules.json "Hates".
         /// </summary>
         Guard,
+
+        /// <summary>
+        /// Its corpse lasts 30 minutes instead of the usual 3 (<see cref="Entities.Corpse"/>). Set on its own for a
+        /// template whose Flags has the boss bit (NpcTemplateCatalog), and can be listed for any other hash.
+        /// </summary>
+        Boss,
     }
 }

@@ -67,6 +67,10 @@ namespace ZoneEngine_New.Core.Helpers
                 if (!attacker.IsPlayer && player.HiddenFromPlayers)
                     return false;
 
+                // Nor do they attack a player still zoning in.
+                if (!attacker.IsPlayer && player.InZoneInGrace(DateTime.UtcNow))
+                    return false;
+
                 // Mobs can still hit players. Only another player needs the gas or the PvP flags, and the level range.
                 if (!attacker.IsPlayer)
                     return true;

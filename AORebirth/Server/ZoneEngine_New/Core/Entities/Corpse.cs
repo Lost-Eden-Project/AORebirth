@@ -27,6 +27,9 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Lifetime in centiseconds (1/100 s). 18000 = 3 minutes.</summary>
         private const int DefaultTimeExist = 18000;
+
+        /// <summary>A <see cref="Mobs.NpcFeature.Boss"/> NPC's corpse lifetime in centiseconds: 30 minutes.</summary>
+        private const int BossTimeExist = 180000;
         private const int DefaultDeadTimer = 60;
 
         /// <summary>Retail corpse Flags on CorpseFullUpdate.</summary>
@@ -74,7 +77,9 @@ namespace ZoneEngine_New.Core.Entities
                 CorpseFullUpdateTemplate = CopyCorpseFullUpdateTemplate(npc.MobTemplate?.CorpseFullUpdateTemplate);
             }
 
-            TimeExist = DefaultTimeExist;
+            TimeExist = dead is NpcCharacter { MobTemplate: { } template } && template.Has(Mobs.NpcFeature.Boss)
+                ? BossTimeExist
+                : DefaultTimeExist;
             ExpiresAtUtc = DateTime.UtcNow.AddMilliseconds(TimeExist * 10);
             CopySourceStats(dead);
             OwnerTextures = dead.BuildWireTextures();

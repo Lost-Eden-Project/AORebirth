@@ -211,6 +211,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 message.Waypoints = tail.Waypoints;
                 message.Textures = tail.Textures;
                 message.Meshes = tail.Meshes;
+                message.AttackWeapons = tail.AttackWeapons;
                 message.Flags2 = tail.Flags2;
                 message.Unknown2 = tail.Unknown2;
                 message.Unknown4 = tail.Unknown4;
@@ -523,6 +524,20 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 streamWriter.WriteByte(mesh.Layer);
             }
 
+            var attackWeapons = scfu.AttackWeapons ?? new SpecialAttack[0];
+            if (attackWeapons.Length > 0)
+            {
+                flags |= SimpleCharFullUpdateFlags.HasAttackWeapons;
+                streamWriter.WriteInt32((attackWeapons.Length + 1) * 0x3F1);
+                foreach (var weapon in attackWeapons)
+                {
+                    streamWriter.WriteInt32(weapon.Unknown1);
+                    streamWriter.WriteInt32(weapon.Unknown2);
+                    streamWriter.WriteInt32(weapon.Unknown3);
+                    streamWriter.WriteString(weapon.Unknown4 ?? string.Empty, 4);
+                }
+            }
+
             streamWriter.WriteInt32(scfu.Flags2);
 
             // ScfuFlags2.HasOwner = 0x4
@@ -601,6 +616,15 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             else
             {
                 flags &= ~SimpleCharFullUpdateFlags.HasWaypoints;
+            }
+
+            if (attackWeapons.Length > 0)
+            {
+                flags |= SimpleCharFullUpdateFlags.HasAttackWeapons;
+            }
+            else
+            {
+                flags &= ~SimpleCharFullUpdateFlags.HasAttackWeapons;
             }
 
             if (snpc != null)
@@ -813,6 +837,27 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                             });
                     }
 
+                    var attackWeapons = new List<SpecialAttack>();
+                    if (flags.HasFlag(SimpleCharFullUpdateFlags.HasAttackWeapons))
+                    {
+                        if (!TryReadX3F1Count(reader, out count) || reader.Length - reader.Position < (long)count * 16)
+                        {
+                            return false;
+                        }
+
+                        for (int index = 0; index < count; index++)
+                        {
+                            attackWeapons.Add(
+                                new SpecialAttack
+                                {
+                                    Unknown1 = reader.ReadInt32(),
+                                    Unknown2 = reader.ReadInt32(),
+                                    Unknown3 = reader.ReadInt32(),
+                                    Unknown4 = reader.ReadString(4)
+                                });
+                        }
+                    }
+
                     if (reader.Length - reader.Position < 5)
                     {
                         return false;
@@ -834,6 +879,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                         Waypoints = waypoints.ToArray(),
                         Textures = textures.ToArray(),
                         Meshes = meshes.ToArray(),
+                        AttackWeapons = attackWeapons.ToArray(),
                         Flags2 = flags2,
                         Unknown2 = unknown2,
                         Unknown4 = unknown4
@@ -876,6 +922,8 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             public Texture[] Textures { get; set; }
 
             public Mesh[] Meshes { get; set; }
+
+            public SpecialAttack[] AttackWeapons { get; set; }
 
             public int Flags2 { get; set; }
 

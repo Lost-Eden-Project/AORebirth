@@ -127,6 +127,12 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
         [AoMember(24, SerializeSize = ArraySizeType.X3F1)]
         public Mesh[] Meshes { get; set; }
 
+        /// <summary>
+        /// The fighting character's attack weapons, as its SpecialAttackWeapon lists them (flag HasAttackWeapons),
+        /// written after the meshes.
+        /// </summary>
+        public SpecialAttack[] AttackWeapons { get; set; }
+
         [AoMember(25)]
         public int Flags2 { get; set; }
 

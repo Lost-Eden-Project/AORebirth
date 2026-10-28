@@ -106,6 +106,32 @@ namespace ZoneEngine_New.Core.Entities
         internal bool AcceptsClientMoves(DateTime nowUtc)
             => ClientInPlay || (nowUtc - InPlaySinceUtc).TotalSeconds >= ClientInPlayFallbackSeconds;
 
+        /// <summary>When the client last said it is in play (CharInPlay).</summary>
+        DateTime _clientInPlaySinceUtc;
+
+        /// <summary>CharInPlay: the client has finished loading the zone.</summary>
+        internal void MarkClientInPlay(DateTime nowUtc)
+        {
+            if (ClientInPlay)
+                return;
+            ClientInPlay = true;
+            _clientInPlaySinceUtc = nowUtc;
+        }
+
+        /// <summary>
+        /// Still zoning in: awaiting the zone reconnect, the client's CharInPlay (up to the fallback), or within
+        /// Gameplay.json zoneInGraceSeconds of it. NPCs neither aggro on nor attack the player meanwhile.
+        /// </summary>
+        public bool InZoneInGrace(DateTime nowUtc)
+        {
+            if (ZoneReconnectPending)
+                return true;
+            double grace = Playfield?.GetService<GameplaySettings>()?.ZoneInGraceSeconds ?? 0;
+            return ClientInPlay
+                ? (nowUtc - _clientInPlaySinceUtc).TotalSeconds < grace
+                : (nowUtc - InPlaySinceUtc).TotalSeconds < ClientInPlayFallbackSeconds + grace;
+        }
+
         /// <summary>An in-zone respawn has despawned this player for observers; the respawn itself runs next tick.</summary>
         bool _respawnObserversCleared;
         double _respawnRemainingSeconds;

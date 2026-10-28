@@ -43,7 +43,9 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
         HasHeadMesh = 0x00000080,
 
         // 0000 0000 0000 0000 0000 0001 0000 0000
-        HasNoWeaponPairs = 0x00000100,
+        // Attack weapon list (SAW entries) after the meshes; retail sets it on a fighting NPC
+        // (ICC Peacekeeper, capture 2026-10-28T13:37:48Z).
+        HasAttackWeapons = 0x00000100,
 
         // 0000 0000 0000 0000 0000 0010 0000 0000
         HasHeading = 0x00000200, 

@@ -37,6 +37,12 @@ namespace ZoneEngine_New.Core.Configuration
         /// </summary>
         public bool RequireAmmo { get; init; } = true;
 
+        /// <summary>
+        /// Seconds NPCs leave a player alone after the client has finished loading a zone (or logging in); they never
+        /// aggro on or attack one still loading. 0 ends the grace as soon as the client is in play.
+        /// </summary>
+        public double ZoneInGraceSeconds { get; init; } = 1;
+
         /// <summary>XP rules.</summary>
         public GameplayXp Xp { get; init; } = new();
 
@@ -121,6 +127,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": stuckCooldownSeconds must not be negative.");
             if (StuckLocation is not GameplayLocation stuck || !stuck.IsValid)
                 throw new InvalidDataException(path + ": stuckLocation needs a positive playfield and finite x, y, z.");
+            if (!double.IsFinite(ZoneInGraceSeconds) || ZoneInGraceSeconds < 0)
+                throw new InvalidDataException(path + ": zoneInGraceSeconds must be a finite number, 0 or more.");
             if (Xp == null || !double.IsFinite(Xp.KillPercentPerLevelDifference) || Xp.KillPercentPerLevelDifference < 0)
                 throw new InvalidDataException(path + ": xp.killPercentPerLevelDifference must be a finite, non-negative number.");
             if (!double.IsFinite(Xp.SideBonusPercent) || Xp.SideBonusPercent < 0 || Xp.SideBonusPercent > short.MaxValue / 100d)

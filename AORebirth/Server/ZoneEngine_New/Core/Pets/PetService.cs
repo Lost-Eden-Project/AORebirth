@@ -172,6 +172,102 @@ namespace ZoneEngine_New.Core.Pets
                 Dismiss(pet, reason, charmTurnsOnOwner);
         }
 
+        /// <summary>How long a logged-out player's pets wait for them before they go (retail: 30 seconds).</summary>
+        public const int OwnerReturnSeconds = 30;
+
+        /// <summary>Pets waiting for their logged-out owner, by the owner's character id.</summary>
+        readonly Dictionary<int, List<NpcCharacter>> _awaitingOwner = new();
+
+        /// <summary>
+        /// <paramref name="owner"/> logs out: its pets stay where they are for <see cref="OwnerReturnSeconds"/>, out
+        /// of fights, waiting for it to come back (<see cref="ReclaimAwaitingPets"/>); then they go
+        /// (<see cref="DismissUnclaimed"/>). A charmed NPC is released at once, its own again, and does not turn on the
+        /// owner. A pet in transit or dead goes at once.
+        /// </summary>
+        public void AwaitOwnerReturn(Player owner)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            DateTime until = DateTime.UtcNow.AddSeconds(OwnerReturnSeconds);
+            NpcCharacter[] pets = [.. owner.OwnedPets.All];
+            foreach (NpcCharacter pet in pets)
+            {
+                if (pet.Pet is not PetController controller || controller.IsCharmed || pet.IsDead
+                    || !ReferenceEquals(pet.Playfield, _playfield))
+                {
+                    Dismiss(pet, "owner logged out", charmTurnsOnOwner: false);
+                    continue;
+                }
+
+                owner.OwnedPets.Remove(pet);
+                controller.AwaitOwner(until);
+                pet.Brain?.StopFighting();
+                pet.Brain?.DropEngagement();
+                pet.Brain?.StopPathing();
+                if (!_awaitingOwner.TryGetValue(owner.Identity.Instance, out List<NpcCharacter>? held))
+                    _awaitingOwner[owner.Identity.Instance] = held = new List<NpcCharacter>();
+                held.Add(pet);
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Pet id={0} hash={1} waits for owner={2} until={3:o}",
+                    pet.Identity.Instance, controller.Hash, owner.Identity.Instance, until));
+            }
+        }
+
+        /// <summary>
+        /// <paramref name="owner"/> is back on this playfield (logged in or reconnected) while its pets still wait: they
+        /// serve it again. Call before <see cref="AnnounceOwnedPets"/> so its client lists them.
+        /// </summary>
+        public void ReclaimAwaitingPets(Player owner)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            if (!_awaitingOwner.Remove(owner.Identity.Instance, out List<NpcCharacter>? pets))
+                return;
+
+            DateTime now = DateTime.UtcNow;
+            foreach (NpcCharacter pet in pets)
+            {
+                if (pet.Pet is not PetController controller || pet.IsDead || !ReferenceEquals(pet.Playfield, _playfield))
+                    continue;
+                if (controller.HasExpired(now))
+                {
+                    Dismiss(pet, "expired while owner away");
+                    continue;
+                }
+
+                controller.ReturnTo(owner);
+                owner.OwnedPets.Add(pet);
+                MatchOwnerRunSpeed(pet, owner);
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Pet id={0} hash={1} back with owner={2} mode={3}",
+                    pet.Identity.Instance, controller.Hash, owner.Identity.Instance, controller.Mode));
+            }
+        }
+
+        /// <summary>Sends away the pets whose owner did not come back in time.</summary>
+        public void DismissUnclaimed(DateTime nowUtc)
+        {
+            if (_awaitingOwner.Count == 0)
+                return;
+
+            List<int>? done = null;
+            foreach (KeyValuePair<int, List<NpcCharacter>> entry in _awaitingOwner)
+            {
+                // A pet that died or was removed some other way while waiting is no longer here to send away.
+                entry.Value.RemoveAll(pet => pet.IsDead || pet.Pet is not { IsAwaitingOwner: true } || pet.Playfield == null);
+                if (entry.Value.Count == 0 || entry.Value[0].Pet!.AwaitingOwnerUntilUtc <= nowUtc)
+                    (done ??= new List<int>()).Add(entry.Key);
+            }
+
+            if (done == null)
+                return;
+
+            foreach (int ownerId in done)
+            {
+                _awaitingOwner.Remove(ownerId, out List<NpcCharacter>? pets);
+                foreach (NpcCharacter pet in pets!)
+                    Dismiss(pet, "owner did not return", charmTurnsOnOwner: false);
+            }
+        }
+
         /// <summary>
         /// CharmNpc: <paramref name="npc"/> serves <paramref name="owner"/> as a pet for as long as the charm nano
         /// <paramref name="nanoId"/> stays in its NCU. Its own brain is set aside (it goes back to it when the charm

@@ -30,7 +30,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
 
             // From here on the client's positions are its own in this zone (CharDCMoveMessageHandler).
-            player.ClientInPlay = true;
+            player.MarkClientInPlay(DateTime.UtcNow);
             if (player.Cell == null)
                 return;
 

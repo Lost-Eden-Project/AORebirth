@@ -62,6 +62,52 @@ namespace ZoneEngine_New.Core.Chat
         /// <summary>The blob live sends with a pet's answer to its owner (capture 2026-10-24T02:22).</summary>
         public static readonly byte[] PetAnswerBlob = [0x04];
 
+        /// <summary>
+        /// Loot line blobs. The client routes a 0x23 line on its first blob byte (GUI.dll
+        /// ChatGUIModule_c::HandleVicinityMessage 0x10086c53): 6 to Vicinity Loot Messages (group 0x4200001B), 7 to Team
+        /// Loot Messages (0x4200001A). Live sends one of each per item looted (retail 2026-10-28).
+        /// </summary>
+        public static readonly byte[] VicinityLootBlob = [0x06];
+
+        public static readonly byte[] TeamLootBlob = [0x07];
+
+        /// <summary>
+        /// "<paramref name="looter"/> looted <paramref name="item"/> from <paramref name="corpse"/>.": to the looter's team
+        /// (Team Loot Messages) and to the players in say range of the corpse (Vicinity Loot Messages).
+        /// </summary>
+        public void AnnounceLoot(Player looter, Corpse corpse, Inventory.Item item)
+        {
+            ArgumentNullException.ThrowIfNull(looter);
+            ArgumentNullException.ThrowIfNull(corpse);
+            ArgumentNullException.ThrowIfNull(item);
+
+            Playfield? playfield = corpse.Playfield;
+            if (playfield == null)
+                return;
+
+            string text = Helpers.ClientFeedback.FormatText(
+                Helpers.ClientFeedback.LootedItemFrom,
+                looter.Name ?? string.Empty,
+                item.LowId,
+                item.HighId > 0 ? item.HighId : item.LowId,
+                item.Quality,
+                item.Name ?? string.Empty,
+                corpse.Name);
+
+            if (playfield.GetService<Teams.TeamService>()?.GetTeam(looter) is { } team)
+                Announce(text, team.MemberIds, TeamLootBlob);
+
+            TryResolveRange(ChatMessageType.Say, out float range);
+            var nearby = new List<int>();
+            foreach (Player other in playfield.GetRequiredService<DynelRegistry>().PlayerEntities())
+            {
+                if (corpse.GetEdgeDistanceTo(other) <= range)
+                    nearby.Add(other.Identity.Instance);
+            }
+
+            Announce(text, nearby, VicinityLootBlob);
+        }
+
         private void Send(Character speaker, ChatMessageType type, string text, string? senderName)
         {
             Playfield? playfield = speaker.Playfield;

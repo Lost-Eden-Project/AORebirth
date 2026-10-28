@@ -657,6 +657,22 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         protected override IEnumerable<Container> AppearanceWearPages => [Equipment];
 
+        /// <summary>Armor page wear slots start after the 16 weapon page slots (ArmorSlots.Head 2 is wear slot 18).</summary>
+        const int ArmorWearSlotBase = 16;
+
+        /// <summary>
+        /// NPC equipment slots are free-slot order, so an armor piece places its meshes by its own DefaultPos armor
+        /// slot (ICC Peacekeeper Helmet 286563: 2, head; Shoulderpad 286450: 4, right shoulder).
+        /// </summary>
+        protected override int AppearanceWearSlot(int slot, Item item)
+        {
+            if ((ItemClass)item.GetStat(CharacterStat.ItemClass) != ItemClass.Armor)
+                return slot;
+
+            int armorSlot = StatCollection.Normalize(item.GetStat(CharacterStat.DefaultPos));
+            return armorSlot is > 0 and < ArmorWearSlotBase ? ArmorWearSlotBase + armorSlot : slot;
+        }
+
         /// <summary>
         /// First melee/ranged equipment item; later ones are ignored. Drawn in the right hand and shown as
         /// the swinging weapon; the monster weapon still rolls the damage.

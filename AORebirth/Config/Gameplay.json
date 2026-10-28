@@ -3,6 +3,7 @@
   "stuckCooldownSeconds": 300,
   "stuckLocation": { "playfield": 566, "x": 440, "y": 29, "z": 285 },
   "requireAmmo": true,
+  "zoneInGraceSeconds": 1,
   "shops": { "preferDatabaseStock": true },
   "loot": { "qualityVariancePercent": 25 },
   "xp": {

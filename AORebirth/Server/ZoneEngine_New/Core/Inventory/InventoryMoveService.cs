@@ -1038,7 +1038,12 @@ namespace ZoneEngine_New.Core.Inventory
                     if (!destPage.Add(destSlot, item))
                         throw new InvalidOperationException("Reserved inventory move destination changed.");
                 }, expectedSources: expectedSources);
-            if (committed) lootSource?.NotifyLootChanged();
+            if (committed)
+            {
+                lootSource?.NotifyLootChanged();
+                if (lootSource is Corpse corpse)
+                    player.Playfield?.GetService<Chat.VicinityChatRelay>()?.AnnounceLoot(player, corpse, item);
+            }
             return committed;
         }
 

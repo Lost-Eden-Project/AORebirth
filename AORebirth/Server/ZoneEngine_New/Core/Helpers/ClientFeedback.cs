@@ -183,6 +183,13 @@ namespace ZoneEngine_New.Core.Helpers
         /// </summary>
         public const int DeathXpAddedToPool = 7144452;
 
+        /// <summary>
+        /// "%s looted %s from %s." (category 110, 60420421): looter name, item low id, high id, QL, item name, corpse name.
+        /// Live sends it from the chat server (retail 2026-10-28, "Kustephe looted Battered Low-Tech Armor Shorts from
+        /// Remains of 34-I Helper.").
+        /// </summary>
+        public const int LootedItemFrom = 60420421;
+
         /// <summary>A text argument the client looks up itself: 'R' + base-85 category + base-85 message id.</summary>
         public readonly record struct TextReference(int Category, int MessageId);
 
@@ -212,6 +219,22 @@ namespace ZoneEngine_New.Core.Helpers
             if (character is not Player player || player.Session == null)
                 return;
 
+            player.Session.Send(new FormatFeedbackMessage
+            {
+                Identity = player.Identity,
+                Unknown = 1,
+                Unknown1 = unknown1,
+                Unknown2 = 0,
+                FormattedMessage = FormatText(messageId, args)
+            });
+        }
+
+        /// <summary>
+        /// The "~&" formatted text of category 110 message <paramref name="messageId"/> with <paramref name="args"/>, as
+        /// <see cref="SendFormatted"/> sends it. The chat server carries the same text (a loot line).
+        /// </summary>
+        public static string FormatText(int messageId, params object[] args)
+        {
             var text = new StringBuilder("~&").Append(Base85(CategoryId)).Append(Base85(messageId));
             foreach (object arg in args)
             {
@@ -232,15 +255,7 @@ namespace ZoneEngine_New.Core.Helpers
 
             // Retail closes the formatted text with '~' (no-ammo capture 2026-10-23, "...s\x19Bolter Cannon 42mm - 40C~").
             text.Append('~');
-
-            player.Session.Send(new FormatFeedbackMessage
-            {
-                Identity = player.Identity,
-                Unknown = 1,
-                Unknown1 = unknown1,
-                Unknown2 = 0,
-                FormattedMessage = text.ToString()
-            });
+            return text.ToString();
         }
 
         /// <summary>Five base-85 digits offset by '!', most significant first (110 -> "!!!\":").</summary>
