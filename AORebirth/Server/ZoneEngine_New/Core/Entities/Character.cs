@@ -1449,6 +1449,12 @@ namespace ZoneEngine_New.Core.Entities
                     Target = target,
                     Action = action
                 });
+
+            // Being attacked gives a sneaker away from the moment the fight starts, before the first swing.
+            if (Playfield != null
+                && Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? attacked)
+                && attacked is Character defender)
+                defender.BreakSneak();
         }
 
         public virtual SpecialAttackWeaponMessage BuildSpecialAttackWeaponMessage()
@@ -2008,8 +2014,9 @@ namespace ZoneEngine_New.Core.Entities
                 characterWeapon.LogicalSlot,
                 weapon,
                 IsPlayer);
-            // A swing gives a sneaker away, hit or miss.
+            // A swing gives a sneaker away, hit or miss: the one swinging and the one swung at.
             BreakSneak();
+            target.BreakSneak();
             // Every swing spends a round from a clip that tracks one, hit or miss.
             int? roundsLeft = ConsumeRound(characterWeapon);
             // An evading NPC is untouchable on its way home: every swing is a miss.

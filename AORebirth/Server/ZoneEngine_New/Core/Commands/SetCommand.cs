@@ -11,8 +11,19 @@ namespace ZoneEngine_New.Core.Commands
     {
         public string Name => "set";
 
-        /// <summary>Below this GM level, .set only changes the caller's own stats.</summary>
+        /// <summary>
+        /// Below this GM level, .set only changes the caller's own stats (built-in; GmPermissions.json actions
+        /// setOtherCharacter overrides it).
+        /// </summary>
         public const int OtherCharacterGmLevel = 100;
+
+        readonly int _otherCharacterGmLevel;
+
+        public SetCommand(Configuration.GmPermissions? permissions = null)
+        {
+            _otherCharacterGmLevel = permissions?.ActionLevel(Configuration.GmPermissions.SetOtherCharacterAction, OtherCharacterGmLevel)
+                ?? OtherCharacterGmLevel;
+        }
 
         public int RequiredGmLevel => 1;
 
@@ -28,7 +39,7 @@ namespace ZoneEngine_New.Core.Commands
                 new(".set Health 1", "Health to 1."),
                 new(".set 589 4329", "A stat by id."),
             ],
-            "Another character's stats need GM level 100. GmLevel cannot be set this way.");
+            "Another character's stats need the GmPermissions.json setOtherCharacter level (100 by default). GmLevel cannot be set this way.");
 
         public void Execute(GmCommandContext context)
         {
@@ -52,12 +63,12 @@ namespace ZoneEngine_New.Core.Commands
                 return;
 
             if (!ReferenceEquals(subject, context.Player)
-                && context.Player.Stats.GetOrZero(CharacterStat.GmLevel) < OtherCharacterGmLevel)
+                && context.Player.Stats.GetOrZero(CharacterStat.GmLevel) < _otherCharacterGmLevel)
             {
                 GmCommandFeedback.Send(
                     context.Session,
                     context.Player,
-                    "Setting another character's stats requires GM level " + OtherCharacterGmLevel + ".");
+                    "Setting another character's stats requires GM level " + _otherCharacterGmLevel + ".");
                 return;
             }
 

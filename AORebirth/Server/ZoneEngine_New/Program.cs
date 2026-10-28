@@ -287,6 +287,15 @@ namespace ZoneEngine_New
                     $"Gameplay config stuckCooldownSeconds={settings.StuckCooldownSeconds} stuckLocation=pf {settings.StuckLocation!.Playfield} ({settings.StuckLocation.X}, {settings.StuckLocation.Y}, {settings.StuckLocation.Z}) xpKillPercentPerLevelDifference={settings.Xp.KillPercentPerLevelDifference} sideXpBonusPercent={settings.Xp.SideBonusPercent} halloweenEnabled={settings.Events.Halloween.Enabled} from {path}");
                 return settings;
             });
+            services.AddSingleton(provider =>
+            {
+                string path = ZoneEngine_New.Core.Configuration.GmPermissions.ResolvePath(
+                    provider.GetRequiredService<IGameData>().RootPath);
+                var permissions = ZoneEngine_New.Core.Configuration.GmPermissions.Load(path);
+                provider.GetRequiredService<IZoneLogger>().Info(
+                    $"GM permissions commands={permissions.Commands.Count} actions={permissions.Actions.Count} from {path}");
+                return permissions;
+            });
             services.AddSingleton(provider => ZoneEngine_New.Core.Modules.ZoneModuleHost.Load(
                 provider.GetRequiredService<IGameData>().RootPath, provider.GetRequiredService<IZoneLogger>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.Knubot.KnubotCatalog>(),

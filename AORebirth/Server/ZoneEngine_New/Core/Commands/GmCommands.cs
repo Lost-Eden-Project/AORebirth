@@ -246,7 +246,8 @@ namespace ZoneEngine_New.Core.Commands
         public GmCommandDispatcher(
             IEnumerable<IGmCommand> commands,
             ZoneEngine_New.Core.Modules.ZoneModuleHost? modules = null,
-            ZoneEngine_New.Core.Logging.IZoneLogger? logger = null)
+            ZoneEngine_New.Core.Logging.IZoneLogger? logger = null,
+            ZoneEngine_New.Core.Configuration.GmPermissions? permissions = null)
         {
             ArgumentNullException.ThrowIfNull(commands);
             _commands = new Dictionary<string, IGmCommand>(StringComparer.OrdinalIgnoreCase);
@@ -262,6 +263,44 @@ namespace ZoneEngine_New.Core.Commands
                 foreach ((string moduleId, AORebirth.Modules.Commands.ModuleGmCommand command) in modules.BindGmCommands(_commands.Keys.ToArray()))
                     _commands.Add(command.Name, new ZoneEngine_New.Core.Modules.ModuleGmCommandAdapter(moduleId, command, logger));
             }
+
+            if (permissions != null)
+                ApplyPermissions(permissions, logger);
+        }
+
+        /// <summary>
+        /// Gives each command the level GmPermissions.json sets for it. The level travels with the command, so the
+        /// check, its help popup and the command index all show the same one.
+        /// </summary>
+        void ApplyPermissions(ZoneEngine_New.Core.Configuration.GmPermissions permissions, ZoneEngine_New.Core.Logging.IZoneLogger? logger)
+        {
+            foreach (string name in _commands.Keys.ToArray())
+            {
+                IGmCommand command = _commands[name];
+                int level = permissions.CommandLevel(name, command.RequiredGmLevel);
+                if (level != command.RequiredGmLevel)
+                    _commands[name] = new ConfiguredLevelCommand(command, level);
+            }
+
+            foreach (string name in permissions.Commands.Keys)
+            {
+                if (!_commands.ContainsKey(name))
+                    logger?.Warn("GmPermissions.json lists ." + name + ", which is not a command; it is ignored.");
+            }
+        }
+
+        /// <summary>A command with the GM level the config gives it in place of its own.</summary>
+        sealed class ConfiguredLevelCommand(IGmCommand inner, int requiredGmLevel) : IGmCommand
+        {
+            public string Name => inner.Name;
+
+            public int RequiredGmLevel { get; } = requiredGmLevel;
+
+            public string Usage => inner.Usage;
+
+            public GmCommandHelp Help => inner.Help;
+
+            public void Execute(GmCommandContext context) => inner.Execute(context);
         }
 
         /// <summary>

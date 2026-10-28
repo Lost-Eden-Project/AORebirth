@@ -377,6 +377,8 @@ namespace ZoneEngine_New.Core.Inventory
                 // A hostile nano hit from someone else can break crowd control before its threat lands.
                 if (!ReferenceEquals(caster, target))
                 {
+                    // A hostile nano hit (a nuke or a damage tick) gives a sneaking target away.
+                    target.BreakSneak();
                     target.RollBuffBreaks(BuffBreakCause.SpellAttack, caster);
 
                     if (direct)

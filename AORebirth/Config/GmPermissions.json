@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "commands": {
+    "online": 0,
+    "chest": 1,
+    "debug": 1,
+    "despawn": 1,
+    "diag": 1,
+    "gametime": 1,
+    "get": 1,
+    "give": 1,
+    "npc": 1,
+    "quests": 1,
+    "serverstats": 1,
+    "set": 1,
+    "spawn": 1,
+    "tp": 1,
+    "weather": 1,
+    "visibility": 100,
+    "shutdown": 1000
+  },
+  "actions": {
+    "setOtherCharacter": 100
+  }
+}

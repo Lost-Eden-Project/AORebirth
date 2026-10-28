@@ -155,6 +155,8 @@ namespace ZoneEngine_New.Core.Helpers
 
             if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack)
                 attacker.BreakSneak();
+            // Being attacked gives a sneaker away.
+            target.BreakSneak();
 
             // Brawl and Dimach strike with a skill-tier item instead of the hand weapon's damage.
             Item? specialItem = special switch
@@ -636,14 +638,19 @@ namespace ZoneEngine_New.Core.Helpers
         static bool IsSneaking(Character character) => character.Motor.State == MovementState.Sneak;
 
         /// <summary>
-        /// Whether <paramref name="observer"/> notices <paramref name="sneaker"/>: hidden when concealment beats
-        /// 5x the observer's level (up to level 200) or 7x (up to 240); above 240 always seen. Perception is not used.
+        /// Whether <paramref name="observer"/> notices <paramref name="sneaker"/>: hidden when the sneaker's Concealment
+        /// beats the observer's Perception, the rule that also keeps a sneaker off other players' clients
+        /// (LocalityVisibility). An observer without Perception falls back to its level: hidden when Concealment beats
+        /// 5x the level (up to level 200) or 7x (up to 240); above 240 always seen.
         /// </summary>
-        /// <summary>The observer notices the sneaker: its level is not beaten by the sneaker's Concealment.</summary>
         internal static bool CanSee(Character observer, Character sneaker)
         {
-            int level = observer.Stats.GetOrOne(CharacterStat.Level);
             int concealment = sneaker.Stats.GetOrZero(CharacterStat.Concealment);
+            int perception = observer.Stats.GetOrZero(CharacterStat.Perception);
+            if (perception > 0)
+                return concealment <= perception;
+
+            int level = observer.Stats.GetOrOne(CharacterStat.Level);
             if (level <= 200 && concealment > 5 * level)
                 return false;
             if (level <= 240 && concealment > 7 * level)

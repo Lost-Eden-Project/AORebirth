@@ -24,11 +24,16 @@ namespace ZoneEngine_New.Core.Commands
         readonly ZoneEngine_New.Core.World.WorldLink? _world;
         readonly ConcurrentDictionary<int, DateTime> _lastUseUtc = new();
 
-        public OnlineCommand(Lazy<PlayfieldManager> playfields, ZoneEngine_New.Core.World.WorldLink? world = null)
+        /// <summary>The GM level that runs .tp, so the list offers teleport links only to those who can use them.</summary>
+        readonly int _teleportGmLevel;
+
+        public OnlineCommand(Lazy<PlayfieldManager> playfields, ZoneEngine_New.Core.World.WorldLink? world = null,
+            Configuration.GmPermissions? permissions = null)
         {
             ArgumentNullException.ThrowIfNull(playfields);
             _playfields = playfields;
             _world = world;
+            _teleportGmLevel = permissions?.CommandLevel("tp", TeleportCommand.GmLevel) ?? TeleportCommand.GmLevel;
         }
 
         sealed record Entry(string Name, bool Teleportable, int Level, int Profession);
@@ -62,7 +67,7 @@ namespace ZoneEngine_New.Core.Commands
             }
 
             _lastUseUtc[callerId] = nowUtc;
-            bool canTeleport = context.Player.Stats.GetOrZero(CharacterStat.GmLevel) >= TeleportCommand.GmLevel;
+            bool canTeleport = context.Player.Stats.GetOrZero(CharacterStat.GmLevel) >= _teleportGmLevel;
 
             // Characters hidden with .visibility off are left off the list for players; GMs still see them.
             bool showHidden = context.Player.IsGm;

@@ -480,12 +480,21 @@ namespace ZoneEngine_New.Core.Ai
             if (_evading || Npc.IsPacified)
                 return;
             bool newAttacker = !Hate.Contains(identity);
+            AddHate(identity, amount);
+            if (newAttacker)
+                CallForHelp(identity);
+        }
+
+        /// <summary>
+        /// Puts <paramref name="identity"/> on the hate list. The first hate starts the NPC's fight, whoever started it
+        /// (an attack on it, its own proximity aggro, a call for help), so its scripts' CombatStart runs.
+        /// </summary>
+        void AddHate(Identity identity, float amount)
+        {
             bool firstHate = Hate.IsEmpty;
             Hate.Add(identity, amount);
             if (firstHate)
                 Npc.Scripts?.Raise(NpcScripts.NpcScriptTrigger.CombatStart);
-            if (newAttacker)
-                CallForHelp(identity);
         }
 
         /// <summary>
@@ -580,7 +589,7 @@ namespace ZoneEngine_New.Core.Ai
             if (_evading || Npc.IsPacified || Hate.Contains(attacker))
                 return;
 
-            Hate.Add(attacker, NpcAiRules.ProximityHate);
+            AddHate(attacker, NpcAiRules.ProximityHate);
             if (chain)
                 CallForHelp(attacker);
         }
@@ -688,7 +697,7 @@ namespace ZoneEngine_New.Core.Ai
             if (!Npc.HasLineOfSightTo(other) || !HasChance(other))
                 return;
 
-            Hate.Add(other.Identity, NpcAiRules.ProximityHate);
+            AddHate(other.Identity, NpcAiRules.ProximityHate);
             CallForHelp(other.Identity);
         }
 
@@ -730,6 +739,9 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             if (guard && IsPvping(player))
                 return;
+            // A sneaker whose Concealment beats this NPC's Perception goes unnoticed.
+            if (player.Motor.State == Movement.MovementState.Sneak && !ZoneEngine_New.Core.Helpers.SpecialAttacks.CanSee(Npc, player))
+                return;
             // A "gray" NPC (below the player's LevelEligibility.json range, the same rule that makes its kill worth
             // 1 XP) never starts a fight. It still fights back when attacked.
             if (Teams.TeamLevelEligibility.Current.IsTooLowForMember(
@@ -748,7 +760,7 @@ namespace ZoneEngine_New.Core.Ai
             if (!WithinProximityWalk(player, range))
                 return;
 
-            Hate.Add(player.Identity, NpcAiRules.ProximityHate);
+            AddHate(player.Identity, NpcAiRules.ProximityHate);
             CallForHelp(player.Identity);
         }
 
