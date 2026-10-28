@@ -43,3 +43,23 @@ the production selector campaign. The existing mission selector's item QL cap
 is preserved in offline coverage; source-supported family maxima are retained.
 Use the actual production selector for runtime simulations and retain every
 normal build, Windows acceptance and release requirement.
+
+`reconcile_captured_loot.py` joins captured low/high template descriptors and
+their recorded quality to the existing metadata, requirement classification,
+historical reconstruction, authored approvals and negative policy catalogs.
+`build-index` takes `--metadata-root`, `--archive-root`, `--gamedata-root` and
+`--output`. It verifies the existing export and classification source hashes,
+then creates a private SQLite lookup with a source manifest; it does not rebuild
+the item census. `classify` takes `--index`, `--input` and `--output` for a JSON
+array of descriptors. Requirements, historical associations and generation
+approval remain separate fields. A descriptor's two template endpoints do not
+represent two physical drops.
+
+`merge-evidence` takes `--existing`, `--input` and `--output` to produce an
+additive offline HistoricalEvidence copy. Only explicitly verified inventory
+records with exact session, chest, packet and slot locators are admitted.
+Existing assertions and sources retain their order and values; repeated
+observations are deduplicated by their complete evidence. Capture observations
+append acquisition evidence without changing origin, exclusions, approvals,
+rarity or QL policy. Keep the lookup, input records, source manifest and merged
+evidence outside canonical GameData and public Git.

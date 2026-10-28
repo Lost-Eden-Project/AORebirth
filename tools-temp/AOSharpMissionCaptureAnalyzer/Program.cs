@@ -68,6 +68,9 @@ namespace AOSharpMissionCaptureAnalyzer
 
         private static int Main(string[] args)
         {
+            if (args.Length == 3 && string.Equals(args[0], "--chests", StringComparison.OrdinalIgnoreCase))
+                return ChestLootPacketReplay.Run(args[1], args[2]);
+
             if (args.Length == 1 && string.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
             {
                 return RunSelfTest();
@@ -101,7 +104,7 @@ namespace AOSharpMissionCaptureAnalyzer
             if (args.Length != 1)
             {
                 Console.Error.WriteLine(
-                    "Usage: AOSharpMissionCaptureAnalyzer.exe <capture-folder> | --extract <capture-folder> | --corpus <captures-root> [output-json] | --generate-catalog <captures-root> <output-cs> | --self-test");
+                    "Usage: AOSharpMissionCaptureAnalyzer.exe <capture-folder> | --extract <capture-folder> | --corpus <captures-root> [output-json] | --generate-catalog <captures-root> <output-cs> | --chests <selected-jsonl> <output-jsonl> | --self-test");
                 return 2;
             }
 

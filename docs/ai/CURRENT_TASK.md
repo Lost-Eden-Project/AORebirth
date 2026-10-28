@@ -1,5 +1,27 @@
 # Current Task
 
+Active request (2026-10-28): recover actual mission chest contents from all
+supplied October 27–28 recording sessions. Work is isolated on
+`codex/mission-chest-loot-recovery` from public master
+`c679d683aeff50c3f3c2d737974fe1880feddb7a`.
+
+- Reuse completed original-client protocol research and the original known-answer
+  fixture. Correct offline decoding and exact identity/handle/slot joins only.
+- Include incomplete finalizations; preserve all original captures.
+- Resolve current item definitions and append acquisition evidence through the
+  existing offline catalog infrastructure. Keep private output/catalog records
+  ignored, outside canonical GameData and public Git.
+- Preserve runtime loot policy, rarity, QL, approvals and exclusions. Do not
+  include unmerged trap or typed-content development in this feature.
+- Validate complete packet accounting, known-answer recovery, deterministic
+  reports and source integrity. No master merge, deployment, live DB/server
+  changes, new captures or client control is authorized.
+
+Offline workflow and output semantics:
+`tools-temp/AOSharpMissionCaptureAnalyzer/CHEST_LOOT_RECOVERY.md`.
+
+## Previous task context (not current release authorization)
+
 Complete the existing ordinary RK mission chest restriction and its governed
 Windows-first release. Starting freshly fetched public master:
 `7213f2ab63aca7333b7d7be19a0d360c7af5c558`.

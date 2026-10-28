@@ -34,6 +34,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Web.Extensions" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\AOSharpCaptureProtocol\RawSimpleCharFullUpdateDecoder.cs">
@@ -45,6 +46,10 @@
     <Compile Include="AcgLayoutExtractor.cs" />
     <Compile Include="MissionAcgCapturedLayoutCatalogEmitter.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="ChestLootPacketReplay.cs" />
+    <Compile Include="..\AOSharpCaptureProtocol\RawChestLootPacketDecoder.cs">
+      <Link>RawChestLootPacketDecoder.cs</Link>
+    </Compile>
   </ItemGroup>
   <ItemGroup Condition="Exists('..\external\aosharp-github\AOSharp.Common\AOSharp.Common.csproj')">
     <ProjectReference Include="..\external\aosharp-github\AOSharp.Common\AOSharp.Common.csproj">
