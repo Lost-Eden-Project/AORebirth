@@ -78,7 +78,7 @@ namespace ZoneEngine_New.Core.Quests
         public List<QuestRewardItem>? StartItems { get; set; }
 
         /// <summary>
-        /// The journal compass waypoint live sends on the quest action: playfield and position (y is 0). Quests whose
+        /// The journal compass waypoint live sends on the quest action: playfield and a target or position (y is 0). Quests whose
         /// <see cref="Action"/> has no journal layout also take the action's version and slot type from here.
         /// </summary>
         public QuestWaypoint? Waypoint { get; set; }
@@ -131,14 +131,21 @@ namespace ZoneEngine_New.Core.Quests
     }
 
     /// <summary>
-    /// Live's quest action waypoint (QuestActionInfo PlayfieldId and Position): the compass points at
-    /// <see cref="Position"/> while the player is in <see cref="Playfield"/>.
+    /// Live's quest action waypoint (QuestActionInfo PlayfieldId and Position): the compass points at the
+    /// <see cref="Target"/>'s position, or at <see cref="Position"/>, while the player is in <see cref="Playfield"/>.
     /// </summary>
     public sealed class QuestWaypoint
     {
         public int Playfield { get; set; }
 
-        /// <summary>[x, y, z]; live sends y as 0.</summary>
+        /// <summary>
+        /// What the compass points at, looked up when the journal is sent: an NPC hash (the NPC standing on the playfield,
+        /// else its Spawns.json record) or an ItemTemplates.json hash of a statel placed by Dynels.dat. When it does
+        /// not resolve, <see cref="Position"/> is used.
+        /// </summary>
+        public string? Target { get; set; }
+
+        /// <summary>[x, y, z]; live sends y as 0. The point itself, or the fallback for <see cref="Target"/>.</summary>
         public float[] Position { get; set; } = [];
 
         /// <summary>QuestActionInfo version live sent (24 talk/use, 23 return, 20 kill in area, 18 assemble, 6 deliver, 1 kill).</summary>

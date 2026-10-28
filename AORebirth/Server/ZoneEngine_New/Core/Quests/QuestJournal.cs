@@ -7,8 +7,11 @@ namespace ZoneEngine_New.Core.Quests
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
+    using AORebirth.Core.GameData;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Missions;
+    using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
     /// Client journal entries for Quests.json quests, laid out like the retail Rubi-Ka tutorial chain
@@ -234,7 +237,10 @@ namespace ZoneEngine_New.Core.Quests
             uint expiresOnClient = ClientExpiry(player, DateTime.SpecifyKind(expires, DateTimeKind.Utc), DateTime.UtcNow);
 
             // Waypoint: the dungeon entrance for terminal missions, else the quest's captured live waypoint.
-            QuestWaypoint? waypoint = dungeon == null && template.Waypoint is { Playfield: > 0, Position.Length: 3 } w ? w : null;
+            QuestWaypoint? waypoint = dungeon == null && template.Waypoint is { Playfield: > 0 } w ? w : null;
+            SmokeLounge.AOtomation.Messaging.GameData.Vector3? waypointPoint = waypoint == null ? null : WaypointPoint(player, waypoint, template, layout.Version);
+            if (waypointPoint == null)
+                waypoint = null;
             Identity waypointPlayfield = dungeon != null
                 ? new Identity { Type = (IdentityType)dungeon.DestinationType, Instance = dungeon.EntrancePlayfield }
                 : waypoint != null
@@ -242,9 +248,7 @@ namespace ZoneEngine_New.Core.Quests
                     : new Identity();
             SmokeLounge.AOtomation.Messaging.GameData.Vector3? waypointPosition = dungeon != null
                 ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(dungeon.EntranceX, dungeon.EntranceY, dungeon.EntranceZ)
-                : waypoint != null
-                    ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(waypoint.Position[0], waypoint.Position[1], waypoint.Position[2])
-                    : null;
+                : waypointPoint;
 
             return new QuestActionInfo
             {
@@ -283,6 +287,81 @@ namespace ZoneEngine_New.Core.Quests
                 : Network.GameClock.UnixSeconds(nowUtc);
             long expires = clientNow + (long)Math.Ceiling((expiresUtc - nowUtc).TotalSeconds);
             return (uint)Math.Min(expires, int.MaxValue);
+        }
+
+        /// <summary>
+        /// Quest action versions whose live action names its target (captured journals): 1 kill one, 6 deliver/return/show,
+        /// 8 use on an object. Talk (24), assemble (18) and kill in area (20) send only a point.
+        /// </summary>
+        static readonly HashSet<int> TargetedActionVersions = [1, 6, 8];
+
+        /// <summary>
+        /// The point a Quests.json waypoint sends: its target's position when that resolves, else its
+        /// <see cref="QuestWaypoint.Position"/>; null when it has neither. The target is <see cref="QuestWaypoint.Target"/>,
+        /// or for an action live names a target on, the step's objective NPC.
+        /// </summary>
+        static SmokeLounge.AOtomation.Messaging.GameData.Vector3? WaypointPoint(Player player, QuestWaypoint waypoint,
+            QuestTemplate template, int actionVersion)
+        {
+            string? target = !string.IsNullOrEmpty(waypoint.Target) ? waypoint.Target
+                : TargetedActionVersions.Contains(actionVersion) ? template.Objective.Npc : null;
+            if (!string.IsNullOrEmpty(target) && TryTargetPosition(player, waypoint.Playfield, target, out float x, out float z))
+                // Live sends whole-number x and z, and y as 0 (Alex Gibbs at 3520.79, 856.69 is sent as 3520, 856).
+                return new SmokeLounge.AOtomation.Messaging.GameData.Vector3(MathF.Truncate(x), 0, MathF.Truncate(z));
+
+            return waypoint.Position is { Length: 3 } position
+                ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(position[0], position[1], position[2])
+                : null;
+        }
+
+        /// <summary>
+        /// Where <paramref name="target"/> is on <paramref name="playfieldId"/>, nearest the player when there are several:
+        /// an NPC with that spawn or template hash standing there, else that hash's Spawns.json record, else a
+        /// Dynels.dat statel whose template the ItemTemplates.json hash covers.
+        /// </summary>
+        static bool TryTargetPosition(Player player, int playfieldId, string target, out float x, out float z)
+        {
+            x = z = 0;
+            if (player.Playfield is not { } playfield || playfield.GetService<IGameData>() is not IGameData gameData)
+                return false;
+
+            var from = player.Position;
+            float best = float.MaxValue, bestX = 0, bestZ = 0;
+            void Consider(float px, float pz)
+            {
+                float dx = px - (float)from.x, dz = pz - (float)from.z, distance = dx * dx + dz * dz;
+                if (distance < best)
+                    (best, bestX, bestZ) = (distance, px, pz);
+            }
+
+            if (playfield.Identity.Instance == playfieldId)
+                foreach (Dynel dynel in playfield.GetRequiredService<DynelRegistry>().Dynels())
+                    if (dynel is NpcCharacter npc && !npc.IsDead
+                        && (string.Equals(npc.SpawnHash, target, StringComparison.Ordinal)
+                            || string.Equals(npc.MobTemplate?.Hash, target, StringComparison.Ordinal)))
+                        Consider((float)npc.Position.x, (float)npc.Position.z);
+
+            // The spawn record only when no such NPC stands there (dead, or the player is elsewhere).
+            if (best == float.MaxValue)
+                foreach (PlayfieldSpawnEntry spawn in gameData.GetPlayfieldSpawns(playfieldId).Spawns ?? [])
+                    if (string.Equals(spawn.HashText, target, StringComparison.Ordinal) && spawn.Position is { Length: >= 3 } at)
+                        Consider(at[0], at[2]);
+
+            var leaves = new List<HashInstance>();
+            if (best == float.MaxValue)
+                gameData.CollectHashLeafInstances(target, leaves);
+            if (leaves.Count > 0 && gameData.GetPlayfieldGeometry(playfieldId).Dynels?.Dynels is { } statels)
+            {
+                var templates = new HashSet<int>();
+                foreach (HashInstance leaf in leaves)
+                    templates.UnionWith(leaf.TemplateIds);
+                foreach (var statel in statels)
+                    if (templates.Contains(statel.TemplateId))
+                        Consider(statel.Position.X, statel.Position.Z);
+            }
+
+            (x, z) = (bestX, bestZ);
+            return best < float.MaxValue;
         }
 
         static string ShortName(string name)
