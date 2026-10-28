@@ -203,6 +203,14 @@ namespace ZoneEngine_New.Core.Inventory
 
             var stat = (CharacterStat)statId;
 
+            // Daily Mission XP Reward [XP, 100, 0, 0] (levels 1-100) down to [XP, 5, 0, 0] (215+): a percentage of the
+            // current level's bar, awarded as XP so it levels.
+            if (stat == CharacterStat.XP && spell.ArgumentCount >= 3 && third == 0 && minHit > 0)
+            {
+                target.AwardLevelPercentXp(minHit);
+                return true;
+            }
+
             // Max 0 with a nonzero Min is a percentage of the stat's maximum: Complete Healing [27,100,0,0] heals fully,
             // Minor Regeneration of Health and Nano [27,5,0,91] / [214,5,0,91] restores 5%, Wall Hacks! [27,-30,0,91]
             // takes 30%. The damage type still names the hit; caster Add Damage does not apply to a percentage.

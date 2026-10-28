@@ -165,12 +165,6 @@ namespace ZoneEngine_New.Core.Quests
 
         public int Xp { get; set; }
 
-        /// <summary>Also one full level's worth of XP at the player's level when it is paid (the DOJA chip reward).</summary>
-        public bool FullLevelXp { get; set; }
-
-        /// <summary>Also the side's tokens for the player's level tier, as the daily mission reward gives (clan/omni).</summary>
-        public bool SideTokens { get; set; }
-
         /// <summary>Alternative item sets; one record is given, all its items together.</summary>
         public List<List<QuestRewardItem>>? Records { get; set; }
     }

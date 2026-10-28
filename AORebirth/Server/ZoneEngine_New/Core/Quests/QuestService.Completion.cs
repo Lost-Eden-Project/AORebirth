@@ -339,6 +339,7 @@ public sealed partial class QuestService
                 }
                 var items = new List<Item>();
                 var skippedUnique = new List<string>();
+                var used = new List<Item>();
                 foreach (var definition in definitions)
                 {
                     if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
@@ -354,6 +355,13 @@ public sealed partial class QuestService
                         continue;
                     }
                     var item = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
+                    // Live's virtual reward items (Daily Mission XP Reward, Token Add, Set Flag items) carry the Null
+                    // flag: they are used on the player, never placed in the inventory.
+                    if (IsUsedOnReward(item.Flags))
+                    {
+                        used.Add(item);
+                        continue;
+                    }
                     items.Add(item);
                 }
                 if (skippedUnique.Count > 0)
@@ -364,26 +372,13 @@ public sealed partial class QuestService
                     NotifyPending(player, quest);
                     return;
                 }
-                int level = player.Stats.GetOrOne(CharacterStat.Level);
-                int xpReward = Math.Max(0, reward?.Xp ?? 0)
-                    + (reward?.FullLevelXp == true ? ProgressionRewardRules.GetFullRubikaLevelXpReward(level) : 0);
-                var xp = DirectXpRewardPlan.CreateQuestReward(player, xpReward);
+                var xp = DirectXpRewardPlan.CreateQuestReward(player, Math.Max(0, reward?.Xp ?? 0));
                 // Runtime vitals are published by the full XP plan; only durable stats belong in the reward transaction.
                 var values = xp.Stats.Where(pair => !StatCollection.IsRuntimeOnly(pair.Key))
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
                 if (reward?.Credits > 0)
                     values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
                         (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + reward.Credits);
-                int sideTokens = 0;
-                CharacterStat sideTokenStat = default;
-                if (reward?.SideTokens == true
-                    && ProgressionRewardRules.TryGetSideTokenStatId(player.Stats.GetOrZero(CharacterStat.Side), out int tokenStatId)
-                    && (sideTokens = ProgressionRewardRules.GetSideTokenReward(level, player.Stats.GetOrZero(CharacterStat.Side))) > 0)
-                {
-                    sideTokenStat = (CharacterStat)tokenStatId;
-                    values[sideTokenStat] = (int)Math.Min(int.MaxValue,
-                        (long)player.Stats.GetOrZero(sideTokenStat, StatDetail.Base) + sideTokens);
-                }
                 if (rewardTemplate.MissionBit is int bit && MissionBits.IsValid(bit))
                 {
                     var (stat, mask) = MissionBits.Locate(bit);
@@ -439,9 +434,9 @@ public sealed partial class QuestService
                 foreach (var pair in values.Where(pair => !xp.Stats.ContainsKey(pair.Key)))
                     player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
                 player.FlushDirtyStats();
-                if (sideTokens > 0)
-                    ClientFeedback.SendFormatted(player, ClientFeedback.PlainText, string.Format(CultureInfo.InvariantCulture,
-                        "Side tokens collected: {0}.", values[sideTokenStat]));
+                if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
+                    foreach (Item item in used)
+                        item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
                 QuestJournal.Delete(player, quest);
                 ClientFeedback.Send(player, "Feedback_MissionAccomplished");
                 _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId
@@ -471,6 +466,9 @@ public sealed partial class QuestService
             return false;
         }
     }
+
+    /// <summary>A reward item live uses on the player instead of handing over: its template has the Null flag.</summary>
+    static bool IsUsedOnReward(int flags) => (flags & (int)ItemFlags.Null) != 0;
 
     static IReadOnlyList<QuestRewardItem> SelectRewardRecord(PlayerQuest quest, QuestReward? reward)
     {
