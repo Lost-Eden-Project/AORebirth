@@ -417,7 +417,7 @@ def load_optional(bundle, item):
     return None if item is None else load_descriptor(bundle, item).read_bytes()
 
 
-def exporter_source_closure(root, public_sha):
+def exporter_source_closure(root, public_sha, verify_working_tree=True):
     """The existing exporter project, its static links and tracked MSBuild inputs."""
     project = ET.fromstring(git(root, "show", public_sha + ":" + EXPORTER_PROJECT))
     if project.findall(".//ProjectReference") or project.findall(".//Import"):
@@ -440,13 +440,95 @@ def exporter_source_closure(root, public_sha):
     for path in sorted(paths):
         data = git(root, "show", public_sha + ":" + path)
         checked(root, path)
-        if git(root, "hash-object", "--path=" + path, path).decode().strip() != blob(data):
+        if verify_working_tree and git(root, "hash-object", "--path=" + path, path).decode().strip() != blob(data):
             raise ValueError("Current exporter source differs from exact public master")
         rows.append(content_identity(data, path))
     untracked = git(root, "ls-files", "--others", "--exclude-standard", "--", "Tools/RDBDataExtractor").strip()
     if untracked:
         raise ValueError("Untracked exporter source is not authoritative")
     return rows
+
+
+def inert_exporter_source_change(path, before, after):
+    """Recognize only the reviewed guard opt-in and unused spawn-path declaration."""
+    if path == "Directory.Build.targets":
+        original, current = ET.fromstring(before), ET.fromstring(after)
+        old = original.find("./Target[@Name='RequireGovernedWindowsProductBuild']")
+        new = current.find("./Target[@Name='RequireGovernedWindowsProductBuild']")
+        normalize = lambda value: " ".join(value.split())
+        clause = ("And ('$(AORebirthGovernedRelease)' == 'true' Or '$(AO_REBIRTH_BUILD_CHILD)' != '' "
+                  "Or '$(AO_REBIRTH_BUILD_TOKEN)' != '' Or '$(AO_REBIRTH_BUILD_STATE)' != '') ")
+        if (old is None or new is None or "'$(AORebirthProductEntry)' == 'true'" not in old.get("Condition", "")
+                or normalize(new.get("Condition", "")).count(clause) != 1
+                or normalize(new.get("Condition", "")).replace(clause, "", 1) != normalize(old.get("Condition", ""))):
+            raise ValueError("Exporter reuse cannot ignore changed MSBuild behavior")
+        new.set("Condition", old.get("Condition"))
+        for tree in (original, current):
+            for node in tree.iter():
+                if node.text is not None and not node.text.strip():
+                    node.text = None
+                if node.tail is not None and not node.tail.strip():
+                    node.tail = None
+        if ET.tostring(original) != ET.tostring(current):
+            raise ValueError("Exporter reuse cannot ignore other MSBuild changes")
+        return "PRODUCT_COMPILATION_GUARD_OPT_IN_ONLY"
+    if path == "AORebirth/Libraries/Source/AORebirth.Core/GameData/GameDataPaths.cs":
+        declaration = ('        /// <summary>Hash spawn points that are not loaded (ZoneEngine_New SpawnExclusionCatalog).</summary>\n'
+                       '        public const string SpawnExclusionsFileName = "SpawnExclusions.json";\n\n')
+        old, new = before.decode("utf-8"), after.decode("utf-8")
+        if new.count(declaration) != 1 or "SpawnExclusionsFileName" in old or new.replace(declaration, "", 1) != old:
+            raise ValueError("Exporter reuse cannot ignore changed shared code")
+        return "UNUSED_SPAWN_PATH_CONSTANT_ONLY"
+    raise ValueError("Exporter functional source or dependency changed: " + path)
+
+
+def validate_exporter_source_qualification(original, qualification):
+    if not isinstance(qualification, dict) or set(qualification) != {"CURRENT_SOURCE_CLOSURE", "INERT_CHANGES"}:
+        raise ValueError("Exporter source qualification schema differs")
+    current = qualification["CURRENT_SOURCE_CLOSURE"]
+    validate_manifest(current)
+    old, new = ({row["path"]: row for row in rows} for rows in (original, current))
+    if set(old) != set(new):
+        raise ValueError("Exporter source path set changed")
+    changed = {path for path in old if old[path] != new[path]}
+    records = qualification["INERT_CHANGES"]
+    if not changed or not isinstance(records, list) or [row.get("PATH") for row in records] != sorted(changed):
+        raise ValueError("Exporter source qualification omits or duplicates a change")
+    for record in records:
+        if set(record) != {"PATH", "BEFORE", "AFTER", "CLASSIFICATION"}:
+            raise ValueError("Exporter inert change schema differs")
+        path = record["PATH"]
+        before, after = (base64.b64decode(record[key], validate=True) for key in ("BEFORE", "AFTER"))
+        if content_identity(before, path) != old[path] or content_identity(after, path) != new[path]:
+            raise ValueError("Exporter qualification source identity differs")
+        if inert_exporter_source_change(path, before, after) != record["CLASSIFICATION"]:
+            raise ValueError("Exporter inert change classification differs")
+
+
+def qualify_exporter_sources(root, original_sha, current_sha, original, current):
+    old, new = ({row["path"]: row for row in rows} for rows in (original, current))
+    if set(old) != set(new):
+        raise ValueError("Exporter source path set changed")
+    changed = sorted(path for path in old if old[path] != new[path])
+    if not changed:
+        return None
+    records = []
+    for path in changed:
+        before, after = (git(root, "show", sha + ":" + path) for sha in (original_sha, current_sha))
+        classification = inert_exporter_source_change(path, before, after)
+        if classification == "UNUSED_SPAWN_PATH_CONSTANT_ONLY":
+            for other in new:
+                if other != path:
+                    source = git(root, "show", current_sha + ":" + other).decode("utf-8")
+                    if (re.search(r"\bSpawnExclusionsFileName\b", source)
+                            or re.search(r"\bGameDataPaths\b(?!\s*\.)", source)
+                            or re.search(r"\bGet(?:Exported)?Types\s*\(", source)):
+                        raise ValueError("New spawn constant is referenced or shared type reflection requires review")
+        records.append({"PATH": path, "BEFORE": base64.b64encode(before).decode("ascii"),
+                        "AFTER": base64.b64encode(after).decode("ascii"), "CLASSIFICATION": classification})
+    value = {"CURRENT_SOURCE_CLOSURE": current, "INERT_CHANGES": records}
+    validate_exporter_source_qualification(original, value)
+    return value
 
 
 def validate_generated_items_provenance(proof, public_sha):
@@ -460,11 +542,14 @@ def validate_generated_items_provenance(proof, public_sha):
     reuse = proof.get("QUALIFIED_REUSE")
     original = {key: value for key, value in proof.items() if key != "QUALIFIED_REUSE"}
     if proof["PUBLIC_MASTER_SHA"] != public_sha:
-        if (not isinstance(reuse, dict) or set(reuse) != {"REQUESTING_PUBLIC_MASTER_SHA", "EXPORTER_SOURCE_CLOSURE_SHA256", "ORIGINAL_PROVENANCE_SHA256"}
+        fields = {"REQUESTING_PUBLIC_MASTER_SHA", "EXPORTER_SOURCE_CLOSURE_SHA256", "ORIGINAL_PROVENANCE_SHA256"}
+        if (not isinstance(reuse, dict) or not fields <= set(reuse) or set(reuse) - fields - {"SOURCE_QUALIFICATION"}
                 or reuse["REQUESTING_PUBLIC_MASTER_SHA"] != public_sha
                 or reuse["EXPORTER_SOURCE_CLOSURE_SHA256"] != digest(encoded(proof["EXPORTER_SOURCE_CLOSURE"]))
                 or reuse["ORIGINAL_PROVENANCE_SHA256"] != digest(encoded(original))):
             raise ValueError("Generated items reuse lacks its requesting source and unchanged original provenance")
+        if "SOURCE_QUALIFICATION" in reuse:
+            validate_exporter_source_qualification(proof["EXPORTER_SOURCE_CLOSURE"], reuse["SOURCE_QUALIFICATION"])
     elif reuse is not None:
         raise ValueError("Generated items reuse must identify a different requesting source")
     source, build, inputs, export, output, validation = (proof[key] for key in
@@ -591,9 +676,11 @@ def generated_items_receipt(root, profile, receipt_path, public_sha):
     proof["EXPORT"]["COMMAND"] = [EXPORTER_OUTPUT + "/RDBDataExtractor.exe", "extract", "--ao-path", "<AO_CLIENT_ROOT>",
                                  "--gamedata-dir", "<STAGED_GAMEDATA_ROOT>", *EXPORTER_SKIP_ARGS]
     validate_generated_items_provenance(proof, proof["PUBLIC_MASTER_SHA"])
-    for source_sha in dict.fromkeys((proof["PUBLIC_MASTER_SHA"], public_sha)):
-        if proof["EXPORTER_SOURCE_CLOSURE"] != exporter_source_closure(root, source_sha):
-            raise ValueError("Exporter source closure differs from original generation or requesting public master")
+    original = exporter_source_closure(root, proof["PUBLIC_MASTER_SHA"], verify_working_tree=False)
+    current = exporter_source_closure(root, public_sha)
+    if proof["EXPORTER_SOURCE_CLOSURE"] != original:
+        raise ValueError("Exporter source closure differs from original generation")
+    qualification = qualify_exporter_sources(root, proof["PUBLIC_MASTER_SHA"], public_sha, original, current)
     output_rows, _ = inventory(checked(root, EXPORTER_OUTPUT))
     output_rows = [{**row, "path": EXPORTER_OUTPUT + "/" + row["path"]} for row in output_rows]
     if output_rows != proof["TOOL_BUILD"]["BINARIES"]:
@@ -602,6 +689,8 @@ def generated_items_receipt(root, profile, receipt_path, public_sha):
         proof["QUALIFIED_REUSE"] = {"REQUESTING_PUBLIC_MASTER_SHA": public_sha,
             "EXPORTER_SOURCE_CLOSURE_SHA256": digest(encoded(proof["EXPORTER_SOURCE_CLOSURE"])),
             "ORIGINAL_PROVENANCE_SHA256": digest(encoded(proof))}
+        if qualification is not None:
+            proof["QUALIFIED_REUSE"]["SOURCE_QUALIFICATION"] = qualification
     validate_generated_items_provenance(proof, public_sha)
     return proof, data, raw
 

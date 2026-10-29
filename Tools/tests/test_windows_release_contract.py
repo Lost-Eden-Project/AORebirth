@@ -1014,5 +1014,134 @@ class DeveloperMSBuildTests(unittest.TestCase):
         self.assertFalse((state_root / "acceptance.json").exists())
 
 
+class ExporterReuseQualificationTests(unittest.TestCase):
+    """Only inert, payload-bound changes may reuse a measured item export."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.request = "d" * 40
+        self.paths = "AORebirth/Libraries/Source/AORebirth.Core/GameData/GameDataPaths.cs"
+        self.declaration = ('        /// <summary>Hash spawn points that are not loaded (ZoneEngine_New SpawnExclusionCatalog).</summary>\n'
+                            '        public const string SpawnExclusionsFileName = "SpawnExclusions.json";\n\n')
+        condition = "'$(AORebirthProductEntry)' == 'true' And !('$(DesignTimeBuild)' == 'true')"
+        self.clause = ("And ('$(AORebirthGovernedRelease)' == 'true' Or '$(AO_REBIRTH_BUILD_CHILD)' != '' "
+                       "Or '$(AO_REBIRTH_BUILD_TOKEN)' != '' Or '$(AO_REBIRTH_BUILD_STATE)' != '') ")
+        old_xml = ('<Project><Target Name="RequireGovernedWindowsProductBuild" Condition="' + condition
+                   + '"><Exec Command="verify-build-token" /></Target></Project>')
+        self.before = {gate.EXPORTER_PROJECT: b"synthetic project", "Tools/RDBDataExtractor/Exporter.cs": b"class Exporter {}",
+                       "Directory.Build.targets": old_xml.encode(), self.paths: b"class GameDataPaths {\n}\n"}
+        self.after = dict(self.before)
+        self.after["Directory.Build.targets"] = old_xml.replace("And !(", self.clause + "And !(").encode()
+        self.after[self.paths] = ("class GameDataPaths {\n" + self.declaration + "}\n").encode()
+
+    @staticmethod
+    def rows(values):
+        return [gate.content_identity(data, path) for path, data in sorted(values.items())]
+
+    def qualify(self):
+        def source(root, *args):
+            self.assertEqual(args[0], "show")
+            sha, path = args[1].split(":", 1)
+            return (self.before if sha == PUBLIC else self.after)[path]
+        with mock.patch.object(gate, "git", side_effect=source):
+            return gate.qualify_exporter_sources(self.root, PUBLIC, self.request, self.rows(self.before), self.rows(self.after))
+
+    def test_accepts_only_the_two_reviewed_inert_changes_and_portable_replay(self):
+        value = self.qualify()
+        self.assertEqual(value["CURRENT_SOURCE_CLOSURE"], self.rows(self.after))
+        self.assertEqual(len(value["INERT_CHANGES"]), 2)
+        gate.validate_exporter_source_qualification(self.rows(self.before), value)
+
+    def test_rejects_algorithm_project_package_or_added_source_changes(self):
+        for path in ("Tools/RDBDataExtractor/Exporter.cs", gate.EXPORTER_PROJECT):
+            with self.subTest(path=path):
+                original = self.after[path]
+                self.after[path] += b" changed algorithm or package"
+                with self.assertRaises(ValueError):
+                    self.qualify()
+                self.after[path] = original
+        self.after["Tools/RDBDataExtractor/Added.cs"] = b"new source"
+        with self.assertRaisesRegex(ValueError, "path set"):
+            self.qualify()
+
+    def test_rejects_msbuild_command_or_compiler_input_changes(self):
+        for transform in (lambda b: b.replace(b"verify-build-token", b"change-inputs"),
+                          lambda b: b.replace(b"</Project>", b'<ItemGroup><Compile Include="injected.cs" /></ItemGroup></Project>')):
+            with self.subTest(transform=transform):
+                value = transform(self.after["Directory.Build.targets"])
+                with self.assertRaises(ValueError):
+                    gate.inert_exporter_source_change("Directory.Build.targets", self.before["Directory.Build.targets"], value)
+
+    def test_rejects_used_constant_type_reflection_and_changed_shared_code(self):
+        path = "Tools/RDBDataExtractor/Exporter.cs"
+        for source in (b"GameDataPaths.SpawnExclusionsFileName", b"typeof(GameDataPaths)", b"assembly.GetTypes()"):
+            with self.subTest(source=source):
+                original = self.before[path]
+                self.before[path] = self.after[path] = source
+                with self.assertRaisesRegex(ValueError, "referenced|reflection"):
+                    self.qualify()
+                self.before[path] = self.after[path] = original
+        for changed in (self.after[self.paths].replace(b"SpawnExclusions.json", b"items.dat"), self.after[self.paths] + b"new method"):
+            with self.assertRaises(ValueError):
+                gate.inert_exporter_source_change(self.paths, self.before[self.paths], changed)
+
+    def test_rejects_tampered_or_omitted_portable_qualification(self):
+        valid = self.qualify()
+        for mutate in (lambda v: v["INERT_CHANGES"].pop(),
+                       lambda v: v["INERT_CHANGES"][0].update(AFTER="eA=="),
+                       lambda v: v["INERT_CHANGES"][0].update(CLASSIFICATION="ignored"),
+                       lambda v: v["CURRENT_SOURCE_CLOSURE"][0].update(sha256="f" * 64)):
+            value = copy.deepcopy(valid)
+            mutate(value)
+            with self.assertRaises(ValueError):
+                gate.validate_exporter_source_qualification(self.rows(self.before), value)
+
+    def test_generated_reuse_preserves_original_receipt_and_output_identities(self):
+        path, receipt, _ = make_generated_fixture(self.root)
+        receipt["EXPORTER_SOURCE_CLOSURE"] = self.rows(self.before)
+        gate.write_json(path, receipt)
+        raw = path.read_bytes()
+        def source(root, *args):
+            if args[0] == "check-ignore":
+                return b"ignored"
+            sha, relative = args[1].split(":", 1)
+            return (self.before if sha == PUBLIC else self.after)[relative]
+        with mock.patch.object(gate, "git", side_effect=source), \
+                mock.patch.object(gate, "exporter_source_closure", side_effect=[self.rows(self.before), self.rows(self.after)]):
+            proof, data, observed = gate.generated_items_receipt(self.root, {"CANONICAL_GAMEDATA_ROOT": str(self.root / "canonical")}, path, self.request)
+        self.assertEqual(path.read_bytes(), raw)
+        self.assertEqual(observed, raw)
+        self.assertEqual(proof["PUBLIC_MASTER_SHA"], PUBLIC)
+        self.assertEqual(proof["EXPORTER_SOURCE_CLOSURE"], receipt["EXPORTER_SOURCE_CLOSURE"])
+        self.assertEqual(proof["OUTPUT"]["sha256"], gate.digest(data))
+        self.assertIn("SOURCE_QUALIFICATION", proof["QUALIFIED_REUSE"])
+        gate.validate_generated_items_provenance(proof, self.request)
+
+    def test_historical_git_closure_does_not_relax_current_checkout_validation(self):
+        self.before[gate.EXPORTER_PROJECT] = self.after[gate.EXPORTER_PROJECT] = b'<Project Sdk="Microsoft.NET.Sdk" />'
+        for relative, data in self.after.items():
+            target = self.root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        def source(root, *args):
+            if args[0] == "show":
+                sha, relative = args[1].split(":", 1)
+                return (self.before if sha == PUBLIC else self.after)[relative]
+            if args[0] == "hash-object":
+                return gate.blob(self.after[args[-1]]).encode()
+            if args[:2] == ("ls-tree", "-r"):
+                return "\n".join(sorted(self.before)).encode()
+            if args[0] == "ls-tree":
+                return args[-1].encode() if args[-1] in self.before else b""
+            return b""
+        with mock.patch.object(gate, "git", side_effect=source):
+            with self.assertRaisesRegex(ValueError, "Current exporter source differs"):
+                gate.exporter_source_closure(self.root, PUBLIC)
+            self.assertEqual(gate.exporter_source_closure(self.root, PUBLIC, verify_working_tree=False), self.rows(self.before))
+            self.assertEqual(gate.exporter_source_closure(self.root, self.request), self.rows(self.after))
+
+
 if __name__ == "__main__":
     unittest.main()
