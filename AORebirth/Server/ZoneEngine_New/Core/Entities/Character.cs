@@ -57,6 +57,9 @@ namespace ZoneEngine_New.Core.Entities
     {
         Kill,
         Quest,
+
+        /// <summary>Daily reward items (Daily Mission XP Reward): a share of the level bar, not capped by xp.caps.</summary>
+        Daily,
     }
 
     /// <summary>
@@ -538,7 +541,7 @@ namespace ZoneEngine_New.Core.Entities
                     suppressed = researcher;
             }
 
-            if (current.NextLevelXp > 0)
+            if (current.NextLevelXp > 0 && source != XpSource.Daily)
             {
                 double capPercent = source == XpSource.Kill ? XpCaps.KillXp : XpCaps.Quest;
                 amount = (int)Math.Min(amount, GameplayXpCaps.Of(capPercent, current.NextLevelXp));
@@ -595,6 +598,20 @@ namespace ZoneEngine_New.Core.Entities
             if (recouped > 0)
                 ClientFeedback.SendFormatted(this, ClientFeedback.DeathXpRecouped, recouped,
                     Math.Max(0, Stats.GetOrZero(CharacterStat.DeathXpPool, StatDetail.Base)));
+        }
+
+        /// <summary>
+        /// Daily reward XP (item Hit [XP, percent, 0, 0]): <paramref name="percent"/> of the current level's bar, awarded
+        /// uncapped; what passes the next level carries into it.
+        /// </summary>
+        public void AwardLevelPercentXp(int percent)
+        {
+            if (percent <= 0 || Playfield?.GetService<IGameData>() is not IGameData gameData
+                || !gameData.TryGetXpLevel(Stats.GetOrOne(CharacterStat.Level), out XpLevelEntry current)
+                || current.NextLevelXp <= 0)
+                return;
+
+            AwardXp((int)Math.Min(int.MaxValue, (long)current.NextLevelXp * percent / 100), XpSource.Daily);
         }
 
         /// <summary>

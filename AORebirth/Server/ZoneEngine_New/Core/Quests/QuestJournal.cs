@@ -7,8 +7,11 @@ namespace ZoneEngine_New.Core.Quests
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
+    using AORebirth.Core.GameData;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Missions;
+    using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
     /// Client journal entries for Quests.json quests, laid out like the retail Rubi-Ka tutorial chain
@@ -56,7 +59,14 @@ namespace ZoneEngine_New.Core.Quests
         static readonly TimeSpan DisplayedLifetime = TimeSpan.FromDays(5);
 
         /// <summary>Retail action layout per Quests.json action, from the captured KION/KLTR/FDTH journals.</summary>
-        sealed record ActionLayout(int Version, int IconId, int SlotType, bool TargetInSlot3);
+        sealed record ActionLayout(int Version, int IconId, int SlotType, bool TargetInSlot3, bool NamesTarget = true);
+
+        /// <summary>
+        /// Live's waypoint identity type and the two values it sends beside every Quests.json waypoint (captured
+        /// Arete Landing journals, 2026-09-29: PlayfieldId Playfield2:6553, Unknown10 = Unknown11 = 100000).
+        /// </summary>
+        const int WaypointPlayfieldType = 0x9C50;
+        const int WaypointUnknown = 100000;
 
         static readonly Dictionary<string, ActionLayout> Layouts = new(StringComparer.Ordinal)
         {
@@ -112,6 +122,12 @@ namespace ZoneEngine_New.Core.Quests
             QuestReward? reward = template.Reward;
             int journalInstance = JournalInstance(quest.QuestId);
             Layouts.TryGetValue(template.Action, out ActionLayout? layout);
+
+            // A quest whose Action has no journal layout (talk, use, deliver, return, assemble) still gets live's
+            // action when it has a captured waypoint: the action is what carries the compass point.
+            if (layout == null && template.Waypoint is { Version: > 0 } waypoint)
+                layout = new ActionLayout(waypoint.Version, DefaultIconId, waypoint.SlotType != 0 ? waypoint.SlotType : 0xD2FC,
+                    TargetInSlot3: false, NamesTarget: false);
 
             // Dungeon quests (accepted terminal missions): the terminal's icon, and an action whatever the objective,
             // because the action carries the waypoint to the dungeon entrance.
@@ -188,7 +204,7 @@ namespace ZoneEngine_New.Core.Quests
             var objectiveItem = template.IsFindItem ? dungeon?.ObjectiveItem : null;
             Identity actionIdentity = objectiveItem?.Identity ?? new Identity();
             Identity destinationIdentity = new();
-            Identity npcIdentity = template.IsFindItem || layout.TargetInSlot3
+            Identity npcIdentity = template.IsFindItem || layout.TargetInSlot3 || !layout.NamesTarget
                 ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = target };
             if (dungeon != null)
             {
@@ -222,6 +238,20 @@ namespace ZoneEngine_New.Core.Quests
             DateTime expires = quest.ExpiresAtUtc ?? quest.AssignedAtUtc + DisplayedLifetime;
             uint expiresOnClient = ClientExpiry(player, DateTime.SpecifyKind(expires, DateTimeKind.Utc), DateTime.UtcNow);
 
+            // Waypoint: the dungeon entrance for terminal missions, else the quest's captured live waypoint.
+            QuestWaypoint? waypoint = dungeon == null && template.Waypoint is { Playfield: > 0 } w ? w : null;
+            SmokeLounge.AOtomation.Messaging.GameData.Vector3? waypointPoint = waypoint == null ? null : WaypointPoint(player, waypoint, template, layout.Version);
+            if (waypointPoint == null)
+                waypoint = null;
+            Identity waypointPlayfield = dungeon != null
+                ? new Identity { Type = (IdentityType)dungeon.DestinationType, Instance = dungeon.EntrancePlayfield }
+                : waypoint != null
+                    ? new Identity { Type = (IdentityType)WaypointPlayfieldType, Instance = waypoint.Playfield }
+                    : new Identity();
+            SmokeLounge.AOtomation.Messaging.GameData.Vector3? waypointPosition = dungeon != null
+                ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(dungeon.EntranceX, dungeon.EntranceY, dungeon.EntranceZ)
+                : waypointPoint;
+
             return new QuestActionInfo
             {
                 Version = layout.Version,
@@ -235,15 +265,11 @@ namespace ZoneEngine_New.Core.Quests
                 // Retail's four bytes here are the big-endian Unix time the quest expires.
                 UnknownHash1 = BigEndianChars(expiresOnClient),
                 UnknownId7 = new Identity { Type = (IdentityType)layout.SlotType, Instance = 0x18000000 | slot },
-                // Waypoint: the dungeon entrance's playfield and position, with the entrance building's template pair.
-                PlayfieldId = dungeon == null
-                    ? new Identity()
-                    : new Identity { Type = (IdentityType)dungeon.DestinationType, Instance = dungeon.EntrancePlayfield },
-                Unknown10 = dungeon?.BuildingLowId ?? 0,
-                Unknown11 = dungeon?.BuildingHighId ?? 0,
-                Position = dungeon == null
-                    ? null
-                    : new SmokeLounge.AOtomation.Messaging.GameData.Vector3(dungeon.EntranceX, dungeon.EntranceY, dungeon.EntranceZ)
+                // Waypoint: playfield and position; a dungeon entrance also carries the entrance building's template pair.
+                PlayfieldId = waypointPlayfield,
+                Unknown10 = dungeon?.BuildingLowId ?? (waypoint != null ? WaypointUnknown : 0),
+                Unknown11 = dungeon?.BuildingHighId ?? (waypoint != null ? WaypointUnknown : 0),
+                Position = waypointPosition
             };
         }
 
@@ -266,12 +292,98 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>Retail cuts a longer title to 28 characters and "..." ("Talk to the ICC Bio-Inspecto...", HYIY).</summary>
+        /// <summary>
+        /// Quest action versions whose live action names its target (captured journals): 1 kill one, 6 deliver/return/show,
+        /// 8 use on an object. Talk (24), assemble (18) and kill in area (20) send only a point.
+        /// </summary>
+        static readonly HashSet<int> TargetedActionVersions = [1, 6, 8];
+
+        /// <summary>
+        /// The point a Quests.json waypoint sends: its target's position when that resolves, else its
+        /// <see cref="QuestWaypoint.Position"/>; null when it has neither. The target is <see cref="QuestWaypoint.Target"/>,
+        /// or for an action live names a target on, the step's objective NPC.
+        /// </summary>
+        static SmokeLounge.AOtomation.Messaging.GameData.Vector3? WaypointPoint(Player player, QuestWaypoint waypoint,
+            QuestTemplate template, int actionVersion)
+        {
+            string? target = !string.IsNullOrEmpty(waypoint.Target) ? waypoint.Target
+                : TargetedActionVersions.Contains(actionVersion) ? template.Objective.Npc : null;
+            if (!string.IsNullOrEmpty(target) && TryTargetPosition(player, waypoint.Playfield, target, out float x, out float z))
+                // Live sends whole-number x and z, and y as 0 (Alex Gibbs at 3520.79, 856.69 is sent as 3520, 856).
+                return new SmokeLounge.AOtomation.Messaging.GameData.Vector3(MathF.Truncate(x), 0, MathF.Truncate(z));
+
+            return waypoint.Position is { Length: 3 } position
+                ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(position[0], position[1], position[2])
+                : null;
+        }
+
+        /// <summary>
+        /// Where <paramref name="target"/> is on <paramref name="playfieldId"/>, nearest the player when there are several:
+        /// an NPC with that spawn or template hash standing there, else that hash's Spawns.json record, else a
+        /// Dynels.dat statel whose template the ItemTemplates.json hash covers.
+        /// </summary>
+        static bool TryTargetPosition(Player player, int playfieldId, string target, out float x, out float z)
+        {
+            x = z = 0;
+            if (player.Playfield is not { } playfield || playfield.GetService<IGameData>() is not IGameData gameData)
+                return false;
+
+            var from = player.Position;
+            float best = float.MaxValue, bestX = 0, bestZ = 0;
+            void Consider(float px, float pz)
+            {
+                float dx = px - (float)from.x, dz = pz - (float)from.z, distance = dx * dx + dz * dz;
+                if (distance < best)
+                    (best, bestX, bestZ) = (distance, px, pz);
+            }
+
+            if (playfield.Identity.Instance == playfieldId)
+                foreach (Dynel dynel in playfield.GetRequiredService<DynelRegistry>().Dynels())
+                    if (dynel is NpcCharacter npc && !npc.IsDead
+                        && (string.Equals(npc.SpawnHash, target, StringComparison.Ordinal)
+                            || string.Equals(npc.MobTemplate?.Hash, target, StringComparison.Ordinal)))
+                        Consider((float)npc.Position.x, (float)npc.Position.z);
+
+            // The spawn record only when no such NPC stands there (dead, or the player is elsewhere).
+            if (best == float.MaxValue)
+                foreach (PlayfieldSpawnEntry spawn in gameData.GetPlayfieldSpawns(playfieldId).Spawns ?? [])
+                    if (string.Equals(spawn.HashText, target, StringComparison.Ordinal) && spawn.Position is { Length: >= 3 } at)
+                        Consider(at[0], at[2]);
+
+            var leaves = new List<HashInstance>();
+            if (best == float.MaxValue)
+                gameData.CollectHashLeafInstances(target, leaves);
+            if (leaves.Count > 0 && gameData.GetPlayfieldGeometry(playfieldId).Dynels?.Dynels is { } statels)
+            {
+                var templates = new HashSet<int>();
+                foreach (HashInstance leaf in leaves)
+                    templates.UnionWith(leaf.TemplateIds);
+                foreach (var statel in statels)
+                    if (templates.Contains(statel.TemplateId))
+                        Consider(statel.Position.X, statel.Position.Z);
+            }
+
+            (x, z) = (bestX, bestZ);
+            return best < float.MaxValue;
+        }
+
         static string ShortName(string name)
             => name.Length <= MaxShortInfoLength ? name : name[..(MaxShortInfoLength - 3)] + "...";
 
+        /// <summary>
+        /// For a quest with live's journal text, Summary is live's own short name, used when it fits (live shortens
+        /// long names itself: "Use the Stim on a Wounded Do..."). Otherwise (hand-written quests, whose Summary is a
+        /// sentence: KION "kill the target NPC") the name cut to fit.
+        /// </summary>
+        static string ShortInfo(QuestTemplate template)
+            => !string.IsNullOrWhiteSpace(template.Description)
+                && !string.IsNullOrEmpty(template.Summary) && template.Summary.Length <= MaxShortInfoLength
+                ? template.Summary
+                : ShortName(template.Name);
+
         static string LongInfo(QuestTemplate template)
         {
-            if (!string.IsNullOrEmpty(template.Description))
+            if (!string.IsNullOrWhiteSpace(template.Description))
                 return template.Description;
 
             var text = new StringBuilder(template.Name);

@@ -343,19 +343,29 @@ namespace ZoneEngine_New.Core.Quests
         /// <see cref="QuestObjective.SpecItem"/> hash covers that item complete.
         /// </summary>
         public void OnItemAssembled(Player player, Item result)
+            => CompleteItemAction(player, QuestTemplate.AssembleAction, result);
+
+        /// <summary>
+        /// The player equipped <paramref name="item"/>: active Equip quests whose <see cref="QuestObjective.SpecItem"/>
+        /// hash covers that item complete.
+        /// </summary>
+        public void OnItemEquipped(Player player, Item item)
+            => CompleteItemAction(player, QuestTemplate.EquipAction, item);
+
+        void CompleteItemAction(Player player, string action, Item item)
         {
             ArgumentNullException.ThrowIfNull(player);
-            ArgumentNullException.ThrowIfNull(result);
+            ArgumentNullException.ThrowIfNull(item);
             if (player.Playfield?.GetService<IGameData>() is not IGameData gameData)
                 return;
 
             List<PlayerQuest>? found = null;
             foreach (PlayerQuest quest in GetLog(player).Quests.Values)
             {
-                if (quest.IsActive && string.Equals(quest.Template.Action, QuestTemplate.AssembleAction, StringComparison.Ordinal)
+                if (quest.IsActive && string.Equals(quest.Template.Action, action, StringComparison.Ordinal)
                     && !RequiresBoundObjective(quest)
                     && quest.Template.Objective.SpecItem is { Length: > 0 } specItem
-                    && HashHolds(gameData, specItem, result))
+                    && HashHolds(gameData, specItem, item))
                     (found ??= new List<PlayerQuest>()).Add(quest);
             }
 
@@ -364,14 +374,14 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>Template ids each item hash covers (all its leaf families), resolved once per hash.</summary>
-        readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<int>> _assembleHashIds = new(StringComparer.Ordinal);
+        readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<int>> _itemHashIds = new(StringComparer.Ordinal);
 
         bool HashHolds(IGameData gameData, string hash, Item item)
         {
             if (string.IsNullOrEmpty(hash))
                 return false;
 
-            HashSet<int> ids = _assembleHashIds.GetOrAdd(hash, key =>
+            HashSet<int> ids = _itemHashIds.GetOrAdd(hash, key =>
             {
                 var leaves = new List<HashInstance>();
                 gameData.CollectHashLeafInstances(key, leaves);
@@ -416,6 +426,9 @@ namespace ZoneEngine_New.Core.Quests
         void Advance(Player player, PlayerQuest quest, NpcCharacter npc)
         {
             quest.Progress = Math.Min(quest.RequiredCount, quest.Progress + 1);
+            // A search ("find a Bio Analyzing Computer by killing robots") can end on any kill.
+            if (quest.Remaining > 0 && quest.Template.Objective.FindChance is int chance && Random.Shared.Next(100) < chance)
+                quest.Progress = quest.RequiredCount;
             if (quest.Remaining > 0)
             {
                 Save(player, quest);
