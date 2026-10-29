@@ -294,6 +294,7 @@
     <Compile Include="Messages\N3Messages\QuestMessage.cs" />
     <Compile Include="Messages\N3Messages\RaidCmdMessage.cs" />
     <Compile Include="Messages\N3Messages\RaidMessage.cs" />
+    <Compile Include="Messages\N3Messages\AbsorbMessage.cs" />
     <Compile Include="Messages\N3Messages\ReflectAttackMessage.cs" />
     <Compile Include="Messages\N3Messages\RemovePetMessage.cs" />
     <Compile Include="Messages\N3Messages\ResearchRequestMessage.cs" />

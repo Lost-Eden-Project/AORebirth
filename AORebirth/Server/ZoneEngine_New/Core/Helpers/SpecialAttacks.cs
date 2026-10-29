@@ -296,8 +296,10 @@ namespace ZoneEngine_New.Core.Helpers
             int damage = DamageReturn.Resolve(attacker, target, attacker.ScaleOutgoingDamage(target, result.Damage), damageType,
                 shield: true, out DamageReturn.Returned returned);
             DamageReturn.Announce(attacker, target, returned);
+            // The shown number is the damage taken: what the target's absorb layer and the PvP hit cap leave.
+            damage = target.TakeOffShields(attacker, damage, damageType);
             target.ApplyDamage(attacker, damage, result.HitType);
-            if (target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
+            if (damage == 0 || target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
                 AnnounceSpecialHit(attacker, target, special, slot, roundsLeft ?? bullets, damage);
 
             // A special is a weapon hit too: offensive and defensive procs roll on it.

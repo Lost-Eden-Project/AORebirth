@@ -7,6 +7,7 @@ namespace ZoneEngine_New.Core.Nanos
 
     using SmokeLounge.AOtomation.Messaging.GameData;
 
+    using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
 
     /// <summary>Why an active buff left NCU. Only <see cref="Cancelled"/> comes from the owner.</summary>
@@ -132,6 +133,53 @@ namespace ZoneEngine_New.Core.Nanos
                 return SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear) ? wear : [];
             }
         }
+
+        /// <summary>
+        /// The absorb layers this buff grants: ChangeVariable on an Absorb AC stat (238-246; 273386 gives 1334 to each of
+        /// Projectile through Poison). The stat is the pool of damage of that type still absorbed. The owner adds the grant
+        /// when the buff lands and takes back what is left of it when the buff leaves.
+        /// </summary>
+        public IEnumerable<(CharacterStat Stat, int Amount)> AbsorbGrants
+        {
+            get
+            {
+                IReadOnlyList<ItemSpell> spells = ModifierSpells;
+                for (int i = 0; i < spells.Count; i++)
+                {
+                    ItemSpell spell = spells[i];
+                    if (!spell.Is(FunctionType.ChangeVariable)
+                        || !spell.TryReadInt(0, out int statId) || !spell.TryReadInt(1, out int amount))
+                        continue;
+
+                    var stat = (CharacterStat)statId;
+                    if (amount > 0 && DamageCalculator.IsAbsorbStat(stat))
+                        yield return (stat, amount);
+                }
+            }
+        }
+
+        /// <summary>What is left of this buff's grant to <paramref name="stat"/>.</summary>
+        public int AbsorbLeft(CharacterStat stat)
+            => _absorbLeft != null && _absorbLeft.TryGetValue(stat, out int left) ? left : 0;
+
+        internal void SetAbsorbLeft(CharacterStat stat, int left)
+        {
+            _absorbLeft ??= new Dictionary<CharacterStat, int>();
+            _absorbLeft[stat] = Math.Max(0, left);
+        }
+
+        /// <summary>Takes up to <paramref name="amount"/> off what this buff has left for <paramref name="stat"/>; returns what it took.</summary>
+        internal int SpendAbsorb(CharacterStat stat, int amount)
+        {
+            int left = AbsorbLeft(stat);
+            int spent = Math.Min(left, amount);
+            if (spent > 0)
+                _absorbLeft![stat] = left - spent;
+            return spent;
+        }
+
+        /// <summary>What is left of each absorb layer this buff granted, by stat. Null until it grants one.</summary>
+        Dictionary<CharacterStat, int>? _absorbLeft;
 
         /// <summary>Functions to run once when the buff leaves NCU.</summary>
         public IReadOnlyList<ItemSpell> TerminateSpells

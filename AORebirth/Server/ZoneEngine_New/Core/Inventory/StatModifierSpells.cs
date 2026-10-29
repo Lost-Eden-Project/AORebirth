@@ -117,7 +117,9 @@ namespace ZoneEngine_New.Core.Inventory
         {
             if (!TryReadModify(spell, out CharacterStat stat, out int value))
                 return;
-            if (stat == CharacterStat.Cash || stat == CharacterStat.Health)
+            // An absorb layer (238-246) is a pool the character spends; the buff grants and revokes it
+            // (Character.GrantAbsorbs), so a rebase must not fill it back up.
+            if (stat == CharacterStat.Cash || stat == CharacterStat.Health || Helpers.DamageCalculator.IsAbsorbStat(stat))
                 return;
 
             stats.Set(stat, value - stats.GetOrZero(stat, StatDetail.Base), StatDetail.Bonus);

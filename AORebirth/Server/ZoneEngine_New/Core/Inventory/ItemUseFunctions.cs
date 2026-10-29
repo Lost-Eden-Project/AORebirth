@@ -395,6 +395,7 @@ namespace ZoneEngine_New.Core.Inventory
                 int damage = DamageReturn.Resolve(caster, target, caster.ScaleOutgoingDamage(target, -delta), acStat, shield: false,
                     out DamageReturn.Returned returned);
                 DamageReturn.Announce(caster, target, returned);
+                damage = target.TakeOffShields(caster, damage, acStat);
                 int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
                 target.ApplyDamage(caster, damage, HitType.Normal);
 

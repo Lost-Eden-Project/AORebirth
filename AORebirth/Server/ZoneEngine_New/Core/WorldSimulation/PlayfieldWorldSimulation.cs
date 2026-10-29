@@ -1346,37 +1346,59 @@
                 if (!events.SpellList.ContainsKey(EventType.OnTargetInVicinity))
                     continue;
 
-                float x = d.Position.X;
-                float y = d.Position.Y;
-                float z = d.Position.Z;
-                float r = TriggerVolumeCatalog.TargetVicinityRadius;
-                bool explicitRange = events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0;
-                if (explicitRange)
-                    r = vicinityRange;
-                var pad = new ZoneTriggerVolume
-                {
-                    Kind = ZoneTriggerKind.TargetVicinity,
-                    Id = _nextTriggerId++,
-                    MinX = x - r,
-                    MaxX = x + r,
-                    MinZ = z - r,
-                    MaxZ = z + r,
-                    CenterX = x,
-                    CenterY = y,
-                    CenterZ = z,
-                    Radius = r,
-                    DynelInstance = d.IdentityInstance,
-                    VicinityEvents = events
-                };
-                float h = TriggerVolumeCatalog.HalfHeight(pad);
-                pad.MinY = y - h;
-                pad.MaxY = y + h;
-                // Without a VicinityRange the pad is the ring's own collision sphere against the player's, as for a door:
-                // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
-                if (!explicitRange)
-                    ApplyClientSphere(pad, d, x, y, z);
-                _triggers.Add(pad);
+                PlacedLook(d, out int mesh, out int scale);
+                AddVicinityPad(d.IdentityInstance, d.TemplateId, events, d.Position.X, d.Position.Y, d.Position.Z, mesh, scale);
             }
+        }
+
+        /// <summary>
+        /// Gives a dynel spawned after the bake (a hash-spawned static such as the Elysium teleporter 245613) the
+        /// walk-in pad its OnTargetInVicinity spells need. False when it has none or already has a pad.
+        /// </summary>
+        public bool RegisterVicinityDynel(int dynelInstance, ItemTemplate events, float x, float y, float z)
+        {
+            ArgumentNullException.ThrowIfNull(events);
+            if (!events.SpellList.ContainsKey(EventType.OnTargetInVicinity)
+                || _triggers.HasDynel(ZoneTriggerKind.TargetVicinity, dynelInstance))
+                return false;
+
+            AddVicinityPad(dynelInstance, events.Id, events, x, y, z, placedMesh: 0, placedScale: 0);
+            return true;
+        }
+
+        /// <summary>Drops the pad <see cref="RegisterVicinityDynel"/> gave a dynel that has since despawned.</summary>
+        public void UnregisterVicinityDynel(int dynelInstance)
+            => _triggers.RemoveDynel(ZoneTriggerKind.TargetVicinity, dynelInstance);
+
+        void AddVicinityPad(int dynelInstance, int templateId, ItemTemplate events, float x, float y, float z, int placedMesh, int placedScale)
+        {
+            float r = TriggerVolumeCatalog.TargetVicinityRadius;
+            bool explicitRange = events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0;
+            if (explicitRange)
+                r = vicinityRange;
+            var pad = new ZoneTriggerVolume
+            {
+                Kind = ZoneTriggerKind.TargetVicinity,
+                Id = _nextTriggerId++,
+                MinX = x - r,
+                MaxX = x + r,
+                MinZ = z - r,
+                MaxZ = z + r,
+                CenterX = x,
+                CenterY = y,
+                CenterZ = z,
+                Radius = r,
+                DynelInstance = dynelInstance,
+                VicinityEvents = events
+            };
+            float h = TriggerVolumeCatalog.HalfHeight(pad);
+            pad.MinY = y - h;
+            pad.MaxY = y + h;
+            // Without a VicinityRange the pad is the ring's own collision sphere against the player's, as for a door:
+            // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
+            if (!explicitRange)
+                ApplyClientSphere(pad, templateId, x, y, z, placedMesh: placedMesh, placedScale: placedScale);
+            _triggers.Add(pad);
         }
 
         /// <summary>Doors as sight blockers: the playfield's static doors, plus quest dungeon doors as they spawn.</summary>

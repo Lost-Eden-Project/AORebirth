@@ -2008,7 +2008,8 @@ namespace ZoneEngine_New.Core.Entities
             DamageCalculator.DamageResult result = DamageCalculator.CalculateFromWeapon(
                 this,
                 target,
-                characterWeapon.DamageItem);
+                characterWeapon.DamageItem,
+                damageTypeSource: characterWeapon.DamageTypeItem);
             int attackInfoSlot = AttackInfoRules.ResolveWeaponSlot(
                 characterWeapon,
                 characterWeapon.LogicalSlot,
@@ -2046,10 +2047,13 @@ namespace ZoneEngine_New.Core.Entities
             // so its damage line never showed.
             // The target's reflect takes its share off before the hit is shown. Reflect and damage shield are announced
             // ahead of the AttackInfo, as live does, and taken off this attacker once the hit has landed.
-            int damageType = DamageCalculator.ResolveDamageType(this, characterWeapon.DamageItem);
+            int damageType = DamageCalculator.ResolveDamageType(this, characterWeapon.DamageTypeItem);
             int damage = DamageReturn.Resolve(this, target, ScaleOutgoingDamage(target, result.Damage), damageType, shield: true,
                 out DamageReturn.Returned returned);
             DamageReturn.Announce(this, target, returned);
+            // The target's absorb layer and the PvP hit cap take theirs before the hit is shown: the shown number is
+            // the damage taken.
+            damage = target.TakeOffShields(this, damage, damageType);
             bool killingHit = damage >= Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
             Cell?.Announce(
                 new AttackInfoMessage
@@ -2108,7 +2112,8 @@ namespace ZoneEngine_New.Core.Entities
             => Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp.ScaleDamage(this, target, damage) ?? damage;
 
         /// <summary>
-        /// Applies hit-point damage. Returns true when this hit killed the character.
+        /// Applies hit-point damage. A hit with a damage type goes through <see cref="TakeOffShields"/> first. Returns
+        /// true when this hit killed the character.
         /// </summary>
         public virtual bool ApplyDamage(Character attacker, int damage, HitType hitType)
         {
@@ -2152,6 +2157,103 @@ namespace ZoneEngine_New.Core.Entities
 
             OnDeath(attacker);
             return true;
+        }
+
+        /// <summary>
+        /// What of a hit of <paramref name="damageType"/> (90-97, the AC stat ids) reaches health. The absorb layer for
+        /// that type takes it 1:1 until the layer runs out (273386: 1334 of each type) and the Absorb line is announced,
+        /// then the PvP cap (Gameplay.json pvp.maxHitPercent) holds what is left to a share of max health. The layer
+        /// takes the uncapped hit: capping first let a character with little max health sit a huge shield behind a tiny
+        /// cap. Before the hit is shown, as live orders it (ReflectAttack, Absorb, then an AttackInfo of what got through).
+        /// </summary>
+        public int TakeOffShields(Character attacker, int damage, int damageType)
+        {
+            if (damage <= 0)
+                return 0;
+
+            if (DamageCalculator.TryGetAbsorbStat(damageType, out CharacterStat layer))
+            {
+                int absorbed = Math.Min(Math.Max(0, Stats.GetOrZero(layer, StatDetail.Base)), damage);
+                if (absorbed > 0)
+                {
+                    SpendAbsorb(layer, absorbed);
+                    Cell?.Announce(new AbsorbMessage { Identity = Identity, Amount = absorbed, DamageType = damageType });
+                    damage -= absorbed;
+                }
+            }
+
+            if (damage <= 0)
+                return 0;
+            return Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp.CapHit(attacker, this, damage) ?? damage;
+        }
+
+        // The absorb pools (238-246) are never sent as stat updates: live does not, the client keeps its own count from
+        // the nano's ChangeVariable and the Absorb lines. FullCharacter still carries the pool at spawn.
+
+        /// <summary>
+        /// Adds <paramref name="buff"/>'s absorb layers (<see cref="Buff.AbsorbGrants"/>) to the pools. A recast lands as a
+        /// new buff after <see cref="RevokeAbsorbs"/> on the one it replaces, so it brings the pool back to the full grant.
+        /// </summary>
+        void GrantAbsorbs(Buff buff)
+        {
+            foreach ((CharacterStat stat, int amount) in buff.AbsorbGrants)
+            {
+                buff.SetAbsorbLeft(stat, amount);
+                Stats.Set(stat, Math.Max(0, Stats.GetOrZero(stat, StatDetail.Base)) + amount, StatDetail.Base);
+            }
+        }
+
+        /// <summary>Takes what is left of <paramref name="buff"/>'s absorb layers back out of the pools: unspent absorb leaves with its buff.</summary>
+        void RevokeAbsorbs(Buff buff)
+        {
+            foreach ((CharacterStat stat, _) in buff.AbsorbGrants)
+            {
+                int left = buff.AbsorbLeft(stat);
+                if (left <= 0)
+                    continue;
+
+                buff.SetAbsorbLeft(stat, 0);
+                Stats.Set(stat, Math.Max(0, Stats.GetOrZero(stat, StatDetail.Base) - left), StatDetail.Base);
+            }
+        }
+
+        /// <summary>Takes <paramref name="amount"/> out of the <paramref name="stat"/> pool, the oldest buff's grant first.</summary>
+        void SpendAbsorb(CharacterStat stat, int amount)
+        {
+            int pool = Math.Max(0, Stats.GetOrZero(stat, StatDetail.Base));
+            Stats.Set(stat, Math.Max(0, pool - amount), StatDetail.Base);
+            for (int i = 0; i < _buffs.Count && amount > 0; i++)
+                amount -= _buffs[i].SpendAbsorb(stat, amount);
+        }
+
+        /// <summary>
+        /// Holds each absorb pool to what the buffs in NCU grant. For a character back from the database: the pools are
+        /// stored, the buffs' shares of them are not, so each restored buff is given the pool up to its grant, and a pool
+        /// no buff accounts for (a stale value, a buff that ran out offline) is dropped.
+        /// </summary>
+        public void ReconcileAbsorbs()
+        {
+            for (CharacterStat stat = CharacterStat.AbsorbProjectileAC; stat <= CharacterStat.AbsorbNanoAC; stat++)
+            {
+                int pool = Math.Max(0, Stats.GetOrZero(stat, StatDetail.Base));
+                int unclaimed = pool;
+                for (int i = 0; i < _buffs.Count; i++)
+                {
+                    Buff buff = _buffs[i];
+                    foreach ((CharacterStat granted, int amount) in buff.AbsorbGrants)
+                    {
+                        if (granted != stat)
+                            continue;
+
+                        int share = Math.Min(amount, unclaimed);
+                        buff.SetAbsorbLeft(stat, share);
+                        unclaimed -= share;
+                    }
+                }
+
+                if (unclaimed > 0)
+                    Stats.Set(stat, pool - unclaimed, StatDetail.Base);
+            }
         }
 
         /// <summary>Nano spent per point of absorbed damage when no DamageToNanoMultiplier is set: 1 to 1.</summary>
@@ -2858,10 +2960,14 @@ namespace ZoneEngine_New.Core.Entities
                 return decision;
 
             if (replaced != null)
+            {
                 _buffs.Remove(replaced);
+                RevokeAbsorbs(replaced);
+            }
 
             applied = Buff.Create(spell, source, ++_nextNanoInstance, nowUtc);
             _buffs.Add(applied);
+            GrantAbsorbs(applied);
 
             OnBuffsChanged();
             return decision;
@@ -2926,6 +3032,7 @@ namespace ZoneEngine_New.Core.Entities
                 return BuffRemovalOutcome.NotCancellable;
 
             _buffs.Remove(buff);
+            RevokeAbsorbs(buff);
             removed = buff;
             OnBuffsChanged();
             return BuffRemovalOutcome.Removed;
@@ -2942,6 +3049,8 @@ namespace ZoneEngine_New.Core.Entities
 
             var removed = new List<Buff>(_buffs);
             _buffs.Clear();
+            for (int i = 0; i < removed.Count; i++)
+                RevokeAbsorbs(removed[i]);
             OnBuffsChanged();
             return removed;
         }
@@ -2959,6 +3068,7 @@ namespace ZoneEngine_New.Core.Entities
                 removed ??= [];
                 removed.Add(_buffs[i]);
                 _buffs.RemoveAt(i);
+                RevokeAbsorbs(removed[^1]);
             }
 
             if (removed == null)
@@ -2980,6 +3090,7 @@ namespace ZoneEngine_New.Core.Entities
                 expired ??= [];
                 expired.Add(_buffs[i]);
                 _buffs.RemoveAt(i);
+                RevokeAbsorbs(expired[^1]);
             }
 
             if (expired == null)

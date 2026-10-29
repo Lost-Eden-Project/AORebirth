@@ -535,6 +535,9 @@ namespace ZoneEngine_New.Core.Ai
             int side = Npc.Stats.GetOrZero(CharacterStat.Side);
             int clan = Npc.Stats.GetOrZero(CharacterStat.Clan);
             bool npcAttacker = enemy is NpcCharacter { PetOwner: null };
+            // A guard's call reaches every guard of its side (socialAggro.guardDefaultRadius), whoever the attacker is: a
+            // player of their own side that turns on one guard has the rest on it, not just the one it hit.
+            bool guardCall = Npc.MobTemplate?.Has(Mobs.NpcFeature.Guard) == true;
             playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc, rules.SearchRadius, _nearbyNpcs);
             _helpers.Clear();
             for (int i = 0; i < _nearbyNpcs.Count; i++)
@@ -543,12 +546,13 @@ namespace ZoneEngine_New.Core.Ai
                 if (ReferenceEquals(other, Npc) || other.IsDead || !other.Attackable || other.Brain is not NpcBrain brain
                     || brain.Pet != null || brain._evading || other.IsPacified || brain.Hate.Contains(attacker))
                     continue;
+                bool guards = guardCall && other.MobTemplate?.Has(Mobs.NpcFeature.Guard) == true;
                 if (other.Stats.GetOrZero(CharacterStat.Side) != side
-                    || (rules.SameClanOnly && other.Stats.GetOrZero(CharacterStat.Clan) != clan))
+                    || (rules.SameClanOnly && !guards && other.Stats.GetOrZero(CharacterStat.Clan) != clan))
                     continue;
 
                 double distance = Npc.GetEdgeDistanceTo(other);
-                if (distance > rules.RadiusFor(brain.SpawnAssistanceRadius(), npcAttacker) || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
+                if (distance > rules.RadiusFor(brain.SpawnAssistanceRadius(), npcAttacker, guards) || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
                     continue;
                 if (rules.RequireLineOfSight && !other.HasLineOfSightTo(Npc))
                     continue;

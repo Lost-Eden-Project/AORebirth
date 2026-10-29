@@ -81,6 +81,13 @@ namespace ZoneEngine_New.Core.Entities
         public Item? DamageItem => Item;
 
         /// <summary>
+        /// Item whose DamageType the swing deals. The client labels a hit by the weapon it sees it come from, so a swing
+        /// shown as the visible hand weapon (a Vanguard Watcher's rifle: projectile) deals that type, whatever the
+        /// monster weapon behind it says; every other swing deals its own item's type.
+        /// </summary>
+        public Item? DamageTypeItem => VisualHand ?? Item;
+
+        /// <summary>
         /// NPC SAW / AttackInfo weapon tag (4-char packed int). Zero for player hands / fists.
         /// Must match SpecialAttack.Unknown3 when non-zero.
         /// </summary>

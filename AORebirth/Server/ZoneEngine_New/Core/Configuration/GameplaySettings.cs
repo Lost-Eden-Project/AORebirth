@@ -168,11 +168,13 @@ namespace ZoneEngine_New.Core.Configuration
             if (SocialAggro == null
                 || !float.IsFinite(SocialAggro.DefaultRadius) || SocialAggro.DefaultRadius < 0
                 || !float.IsFinite(SocialAggro.NpcVsNpcDefaultRadius) || SocialAggro.NpcVsNpcDefaultRadius < 0
+                || !float.IsFinite(SocialAggro.GuardDefaultRadius) || SocialAggro.GuardDefaultRadius < 0
                 || !float.IsFinite(SocialAggro.MaxRadius) || SocialAggro.MaxRadius < 0
                 || SocialAggro.DefaultRadius >= Ai.NpcAiRules.MaxLeashRange
                 || SocialAggro.NpcVsNpcDefaultRadius >= Ai.NpcAiRules.MaxLeashRange
+                || SocialAggro.GuardDefaultRadius >= Ai.NpcAiRules.MaxLeashRange
                 || SocialAggro.MaxRadius >= Ai.NpcAiRules.MaxLeashRange)
-                throw new InvalidDataException(path + ": socialAggro.defaultRadius, npcVsNpcDefaultRadius and maxRadius must be 0 up to below the "
+                throw new InvalidDataException(path + ": socialAggro.defaultRadius, npcVsNpcDefaultRadius, guardDefaultRadius and maxRadius must be 0 up to below the "
                     + Ai.NpcAiRules.MaxLeashRange + " m leash range.");
             if (SocialAggro.MaxHelpers < 0)
                 throw new InvalidDataException(path + ": socialAggro.maxHelpers must be 0 (no limit) or more.");
@@ -382,19 +384,32 @@ namespace ZoneEngine_New.Core.Configuration
         public float NpcVsNpcDefaultRadius { get; init; }
 
         /// <summary>
-        /// The radius a helper with <paramref name="assistanceRadius"/> from its spawn point comes from;
-        /// <paramref name="npcAttacker"/> when the enemy is an NPC that is not a player's pet.
+        /// Assist radius for a guard answering another guard of its side, whatever the attacker (a player of their own
+        /// side included), when its spawn point gives none. Guard spawns mostly carry AssistanceRadius 0, and a player
+        /// attacker otherwise falls to <see cref="DefaultRadius"/>. 0 falls back to the other defaults.
         /// </summary>
-        public float RadiusFor(int assistanceRadius, bool npcAttacker = false)
+        public float GuardDefaultRadius { get; init; }
+
+        /// <summary>
+        /// The radius a helper with <paramref name="assistanceRadius"/> from its spawn point comes from;
+        /// <paramref name="npcAttacker"/> when the enemy is an NPC that is not a player's pet, <paramref name="guards"/>
+        /// when a guard is answering a guard.
+        /// </summary>
+        public float RadiusFor(int assistanceRadius, bool npcAttacker = false, bool guards = false)
         {
-            float fallback = npcAttacker && NpcVsNpcDefaultRadius > 0 ? NpcVsNpcDefaultRadius : DefaultRadius;
+            float fallback = guards && GuardDefaultRadius > 0 ? GuardDefaultRadius
+                : npcAttacker && NpcVsNpcDefaultRadius > 0 ? NpcVsNpcDefaultRadius
+                : DefaultRadius;
             return Math.Min(assistanceRadius > 0 ? assistanceRadius : fallback, MaxRadius);
         }
 
         /// <summary>The farthest any helper can come: how far a call for help has to look.</summary>
-        public float SearchRadius => Math.Max(Math.Max(DefaultRadius, NpcVsNpcDefaultRadius), MaxRadius);
+        public float SearchRadius => Math.Max(Math.Max(Math.Max(DefaultRadius, NpcVsNpcDefaultRadius), GuardDefaultRadius), MaxRadius);
 
-        /// <summary>Helpers must share the NPC's Clan (5), its kind of creature, as well as its Side.</summary>
+        /// <summary>
+        /// Helpers must share the NPC's Clan (5), its kind of creature, as well as its Side. Guards answering a guard are
+        /// one force whatever their kind, so this does not hold them back.
+        /// </summary>
         public bool SameClanOnly { get; init; } = true;
 
         /// <summary>Helpers must have line of sight to the NPC under attack.</summary>
@@ -436,8 +451,8 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>
         /// <paramref name="damage"/> as <paramref name="source"/> deals it to <paramref name="target"/>: in PvP scaled by
-        /// <see cref="DamagePercent"/> (rounded half up, never below 1 while there was any), then capped at
-        /// <see cref="MaxHitPercent"/> of the target's max health.
+        /// <see cref="DamagePercent"/> (rounded half up, never below 1 while there was any). The hit cap is
+        /// <see cref="CapHit"/>, applied to what gets past the target's absorb layers.
         /// </summary>
         public int ScaleDamage(Entities.Character? source, Entities.Character target, int damage)
         {
@@ -446,18 +461,27 @@ namespace ZoneEngine_New.Core.Configuration
             if (DamagePercent == 0)
                 return 0;
 
-            int scaled = DamagePercent == 100
+            return DamagePercent == 100
                 ? damage
                 : (int)Math.Clamp(Math.Round(damage * DamagePercent / 100, MidpointRounding.AwayFromZero), 1, int.MaxValue);
-            if (MaxHitPercent >= 100)
-                return scaled;
+        }
+
+        /// <summary>
+        /// <paramref name="damage"/> held to <see cref="MaxHitPercent"/> of the target's max health, in PvP. Applied to what
+        /// reaches health after the absorb layers, never to the layers: a layer takes the full hit, so a low max health
+        /// does not shrink what a shield has to take (retail moved the cap behind the absorbs for that reason).
+        /// </summary>
+        public int CapHit(Entities.Character? source, Entities.Character target, int damage)
+        {
+            if (damage <= 0 || MaxHitPercent >= 100 || !IsPvp(source, target))
+                return damage;
 
             int maxHealth = target.Stats.GetOrZero(SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.MaxHealth);
             if (maxHealth <= 0)
-                return scaled;
+                return damage;
 
             int cap = (int)Math.Max(1, Math.Round(maxHealth * MaxHitPercent / 100, MidpointRounding.AwayFromZero));
-            return Math.Min(scaled, cap);
+            return Math.Min(damage, cap);
         }
 
         /// <summary>The percent chance to crit, <paramref name="critChance"/>, scaled in PvP.</summary>
