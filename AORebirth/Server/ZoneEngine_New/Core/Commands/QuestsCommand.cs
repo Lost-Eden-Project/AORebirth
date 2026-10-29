@@ -22,7 +22,8 @@ namespace ZoneEngine_New.Core.Commands
 
     /// <summary>
     /// <c>.quests</c>: the selected player's (or your own) active quests in a popup. Every quest gets a link to
-    /// <c>.quests info &lt;questId&gt; &lt;characterId&gt;</c> (all of its details), and a quest with an ACG dungeon a link
+    /// <c>.quests info &lt;questId&gt; &lt;characterId&gt;</c> (all of its details; <c>.quests info &lt;questHash&gt;</c> shows the
+    /// Quests.json template itself), and a quest with an ACG dungeon a link
     /// that runs <c>.quests tp &lt;questId&gt;</c>, which puts you (never the selected player) at its entrance.
     /// </summary>
     public sealed class QuestsCommand : IGmCommand
@@ -44,26 +45,28 @@ namespace ZoneEngine_New.Core.Commands
 
         public int RequiredGmLevel => 1;
 
-        public string Usage => ".quests (selected player's active quests) | .quests info <questId> [characterId] | .quests tp <questId> | .quests done [characterId] | .quests wipe <questHash> [characterId]";
+        public string Usage => ".quests (selected player's active quests) | .quests info <questHash> | .quests info <questId> [characterId] | .quests tp <questId> | .quests done [characterId] | .quests wipe <questHash> [characterId]";
 
         public GmCommandHelp Help { get; } = new(
             "Shows and inspects quests.",
             [
                 new(".quests", "Your look-at player's active quests (or yours)."),
-                new(".quests info <questId> [characterId]", "Every detail of one quest, in a popup."),
+                new(".quests info <questHash>", "One Quests.json quest: objective, reward, chain, and your look-at player's bit and journal state."),
+                new(".quests info <questId> [characterId]", "Every detail of one quest in a player's journal, in a popup."),
                 new(".quests tp <questId>", "Takes you to the quest's dungeon entrance."),
                 new(".quests done [characterId]", "Your look-at player's completed quests: every quest whose mission bit is set, plus completed journal entries."),
                 new(".quests wipe <questHash> [characterId]", "Development: clears the quest's mission bit on your look-at player, so it counts as not completed."),
             ],
             [
                 new(".quests", "Active quests of your target."),
+                new(".quests info ABCD", "Quest ABCD as written in Quests.json."),
                 new(".quests info 12", "Details of quest 12."),
                 new(".quests tp 12", "Go to quest 12's entrance."),
                 new(".quests done", "Completed quests of your target, each with a wipe link."),
                 new(".quests wipe ABCD", "Clear quest ABCD's mission bit on your target."),
             ],
-            "Wipe only clears the mission bit (what HasCompletedQuest and item requirements read). A completed journal entry "
-            + "for the quest stays, so a 'quest HASH done' check still passes. Quests that share the bit are cleared with it.");
+            "Wipe clears the mission bit, which is what 'quest HASH done', HasCompletedQuest and item requirements read. "
+            + "The completed journal entry stays. Quests that share the bit are cleared with it.");
 
         public void Execute(GmCommandContext context)
         {
@@ -149,6 +152,12 @@ namespace ZoneEngine_New.Core.Commands
             }
 
             string questId = context.Args[1];
+            if (context.Args.Length == 2 && TryGetTemplate(questId, out QuestTemplate catalogTemplate))
+            {
+                ShowTemplate(context, catalogTemplate);
+                return;
+            }
+
             Player subject;
             if (context.Args.Length >= 3)
             {
@@ -261,6 +270,152 @@ namespace ZoneEngine_New.Core.Commands
             GmCommandFeedback.SendLines(context.Session, context.Player, lines);
         }
 
+        bool TryGetTemplate(string hash, out QuestTemplate template)
+            => _catalog.TryGet(hash.Trim(), out template) || _catalog.TryGet(hash.Trim().ToUpperInvariant(), out template);
+
+        /// <summary>
+        /// <c>.quests info &lt;hash&gt;</c>: one Quests.json quest as written, its chain (the quests that lead into it and
+        /// its next step, each linked), and where the look-at player (or the GM) stands on it.
+        /// </summary>
+        void ShowTemplate(GmCommandContext context, QuestTemplate template)
+        {
+            context.TryResolveSubject(out Player subject, requirePlayerTarget: false);
+
+            string none = DiagAoml.Muted("none");
+            var rows = new List<string>
+            {
+                DiagAoml.Title(Safe(template.Name)) + " " + DiagAoml.Label("[" + Safe(template.Hash) + "]"),
+                DiagAoml.Field("Action", DiagAoml.Name(Safe(template.Action)))
+                    + DiagAoml.Field("Scope", DiagAoml.Name(Safe(template.Scope)))
+                    + DiagAoml.Field("Flags", DiagAoml.Name(Safe(template.Flags))),
+                DiagAoml.Field("QAS", template.QasInstance != 0 ? DiagAoml.Name(template.QasInstance.ToString(CultureInfo.InvariantCulture)) : none)
+                    + DiagAoml.Field("Needed", DiagAoml.Name(template.RequiredCount.ToString(CultureInfo.InvariantCulture))),
+            };
+
+            if (template.MissionBit is int bit)
+            {
+                var shared = new List<string>();
+                foreach (QuestTemplate other in _catalog.Templates)
+                {
+                    if (other.MissionBit == bit && !ReferenceEquals(other, template))
+                        shared.Add(QuestLink(other));
+                }
+
+                rows.Add(DiagAoml.Field("Mission bit", DiagAoml.Name(bit.ToString(CultureInfo.InvariantCulture)))
+                    + (shared.Count == 0 ? string.Empty : DiagAoml.Muted("shared with ") + string.Join(", ", shared)));
+            }
+            else
+                rows.Add(DiagAoml.Field("Mission bit", none));
+
+            if (!string.IsNullOrWhiteSpace(template.Summary))
+            {
+                rows.Add(DiagAoml.Section("Summary"));
+                rows.Add(Safe(template.Summary));
+            }
+
+            rows.Add(DiagAoml.Section("Objective"));
+            QuestObjective objective = template.Objective;
+            bool anyObjective = false;
+            if (!string.IsNullOrWhiteSpace(objective.Npc)) { rows.Add(DiagAoml.Indent + DiagAoml.Field("NPC", DiagAoml.Name(Safe(objective.Npc)))); anyObjective = true; }
+            if (objective.Count is int count) { rows.Add(DiagAoml.Indent + DiagAoml.Field("Count", DiagAoml.Name(count.ToString(CultureInfo.InvariantCulture)))); anyObjective = true; }
+            if (!string.IsNullOrWhiteSpace(objective.SpecItem)) { rows.Add(DiagAoml.Indent + DiagAoml.Field("Item", DiagAoml.Name(Safe(objective.SpecItem)))); anyObjective = true; }
+            if (!string.IsNullOrWhiteSpace(objective.WorldItem)) { rows.Add(DiagAoml.Indent + DiagAoml.Field("World item", DiagAoml.Name(Safe(objective.WorldItem)))); anyObjective = true; }
+            if (!anyObjective)
+                rows.Add(DiagAoml.Indent + none);
+
+            rows.Add(DiagAoml.Section("Reward"));
+            if (template.Reward is QuestReward reward)
+            {
+                rows.Add(DiagAoml.Indent + DiagAoml.Field("Credits", DiagAoml.Name(reward.Credits.ToString("N0", CultureInfo.InvariantCulture)))
+                    + DiagAoml.Field("XP", DiagAoml.Name(reward.Xp.ToString("N0", CultureInfo.InvariantCulture)))
+                    + (string.IsNullOrWhiteSpace(reward.Hash) ? string.Empty : DiagAoml.Muted("[" + Safe(reward.Hash) + "]")));
+                if (reward.Records is { Count: > 0 } records)
+                {
+                    for (int i = 0; i < records.Count; i++)
+                    {
+                        rows.Add(DiagAoml.Indent + DiagAoml.Label(records.Count == 1 ? "Items" : "Choice " + (i + 1).ToString(CultureInfo.InvariantCulture)));
+                        foreach (QuestRewardItem item in records[i])
+                            rows.Add(DiagAoml.Indent + DiagAoml.Indent + DiagAoml.Name(Safe(item.Name)) + " "
+                                + DiagAoml.Muted("QL" + item.Quality.ToString(CultureInfo.InvariantCulture) + " (" + item.Id.ToString(CultureInfo.InvariantCulture)
+                                    + (item.HighId is int high && high != item.Id ? "/" + high.ToString(CultureInfo.InvariantCulture) : string.Empty) + ")"));
+                    }
+                }
+            }
+            else
+                rows.Add(DiagAoml.Indent + none);
+
+            if (_quests.Rewards is QuestRewardTable table && table.Has(template.Reward?.Hash))
+            {
+                string mapped;
+                try
+                {
+                    table.TryResolve(template.Reward!.Hash, subject, out IReadOnlyList<QuestRewardItem> items);
+                    var names = new List<string>(items.Count);
+                    foreach (QuestRewardItem item in items)
+                        names.Add(DiagAoml.Name(Safe(string.IsNullOrEmpty(item.Name) ? item.Id.ToString(CultureInfo.InvariantCulture) : item.Name))
+                            + " " + DiagAoml.Muted("QL" + item.Quality.ToString(CultureInfo.InvariantCulture)
+                                + " (" + item.Id.ToString(CultureInfo.InvariantCulture) + ")"));
+                    mapped = names.Count == 0 ? DiagAoml.Muted("no entry matches") : string.Join(", ", names);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    mapped = DiagAoml.Color(DiagAoml.Red, Safe(exception.Message));
+                }
+
+                rows.Add(DiagAoml.Indent + DiagAoml.Field("QuestRewards.json for " + WhoOf(subject), mapped));
+            }
+
+            var previous = new List<string>();
+            foreach (QuestTemplate other in _catalog.Templates)
+            {
+                if (string.Equals(other.NextStep, template.Hash, StringComparison.Ordinal))
+                    previous.Add(QuestLink(other));
+            }
+
+            rows.Add(DiagAoml.Section("Chain"));
+            rows.Add(DiagAoml.Indent + DiagAoml.Field("From", previous.Count == 0 ? none : string.Join(", ", previous)));
+            string next = none;
+            if (!string.IsNullOrWhiteSpace(template.NextStep))
+                next = TryGetTemplate(template.NextStep, out QuestTemplate nextTemplate)
+                    ? QuestLink(nextTemplate)
+                    : DiagAoml.Color(DiagAoml.Red, Safe(template.NextStep) + " (not in Quests.json)");
+            rows.Add(DiagAoml.Indent + DiagAoml.Field("Next", next));
+
+            string who = WhoOf(subject);
+            rows.Add(DiagAoml.Section(who));
+            if (template.MissionBit is int subjectBit)
+                rows.Add(DiagAoml.Indent + DiagAoml.Field("Mission bit", MissionBits.Has(subject.Stats, subjectBit)
+                    ? DiagAoml.Color(DiagAoml.Green, "set") : DiagAoml.Muted("clear")));
+
+            PlayerQuest? held = null;
+            foreach (PlayerQuest entry in _quests.GetLog(subject).Quests.Values)
+            {
+                if (string.Equals(entry.Template.Hash, template.Hash, StringComparison.Ordinal) && (held == null || entry.IsActive))
+                    held = entry;
+            }
+
+            rows.Add(DiagAoml.Indent + DiagAoml.Field("Journal", held == null
+                ? DiagAoml.Muted("not held")
+                : DiagAoml.Name(held.State.ToString()) + " " + DiagAoml.Muted(held.Progress.ToString(CultureInfo.InvariantCulture) + "/" + held.RequiredCount.ToString(CultureInfo.InvariantCulture))
+                    + " " + InfoLink(held.QuestId, subject)));
+
+            string title = string.Format(CultureInfo.InvariantCulture, "{0} [{1}]", Safe(template.Name), Safe(template.Hash));
+            IReadOnlyList<string> chunks = GetStatsAomlBuilder.ChunkRows(rows, GetStatsAomlBuilder.DefaultMaxBodyLength);
+            var lines = new List<string>(chunks.Count);
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                string label = chunks.Count == 1
+                    ? title
+                    : string.Format(CultureInfo.InvariantCulture, "{0} ({1}/{2})", title, i + 1, chunks.Count);
+                lines.Add(GetStatsAomlBuilder.BuildLink(chunks[i], label));
+            }
+
+            GmCommandFeedback.SendLines(context.Session, context.Player, lines);
+        }
+
+        static string QuestLink(QuestTemplate template)
+            => DiagAoml.Link(".quests info " + Safe(template.Hash), Safe(template.Name) + " [" + Safe(template.Hash) + "]");
+
         /// <summary>
         /// The subject for <c>done</c> / <c>wipe</c>: an online character id at <paramref name="index"/>, else the look-at
         /// player, else the GM.
@@ -309,9 +464,7 @@ namespace ZoneEngine_New.Core.Commands
             var journalOnly = new List<PlayerQuest>();
             foreach (PlayerQuest quest in _quests.GetLog(subject).Quests.Values)
             {
-                if (quest.State != QuestState.Completed)
-                    continue;
-                if (quest.Template.MissionBit is int bit && byBit.ContainsKey(bit))
+                if (quest.State != QuestState.Completed || quest.Template.MissionBit is int)
                     continue;
                 journalOnly.Add(quest);
             }
@@ -442,19 +595,6 @@ namespace ZoneEngine_New.Core.Commands
 
             if (shared.Count > 0)
                 lines.Add(DiagAoml.Color(DiagAoml.Orange, "Shared bit:") + " " + DiagAoml.Muted(string.Join(", ", shared)));
-
-            bool journalDone = false;
-            foreach (PlayerQuest entry in _quests.GetLog(subject).Quests.Values)
-            {
-                if (entry.State == QuestState.Completed && string.Equals(entry.Template.Hash, template.Hash, StringComparison.Ordinal))
-                {
-                    journalDone = true;
-                    break;
-                }
-            }
-
-            if (journalDone)
-                lines.Add(DiagAoml.Color(DiagAoml.Orange, "Journal:") + " " + DiagAoml.Muted("a completed journal entry remains, so 'quest " + Safe(template.Hash) + " done' still passes."));
 
             GmCommandFeedback.SendLines(context.Session, context.Player, lines);
         }

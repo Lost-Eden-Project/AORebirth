@@ -74,7 +74,9 @@ namespace ZoneEngine_New.Core.DebugMcp
             builder.Services.AddSingleton(endpoint);
             builder.Services.AddSingleton(zoneServices.GetRequiredService<Quests.Dungeons.QuestDungeonService>());
             builder.Services.AddSingleton(zoneServices.GetRequiredService<Knubot.KnubotCatalog>());
-            builder.Services.AddMcpServer().WithHttpTransport().WithTools<ZoneDebugTools>().WithTools<ZoneDiagTools>().WithTools<KnubotDebugTools>();
+            builder.Services.AddSingleton(zoneServices.GetRequiredService<GameData.GameDataReloadRegistry>());
+            builder.Services.AddMcpServer().WithHttpTransport().WithTools<ZoneDebugTools>().WithTools<ZoneDiagTools>().WithTools<KnubotDebugTools>()
+                .WithTools<GameDataReloadTools>();
 
             WebApplication app = builder.Build();
             app.MapMcp(DebugMcpOptions.Route);

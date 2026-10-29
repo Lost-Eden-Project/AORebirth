@@ -51,7 +51,8 @@ public sealed class KnubotLoadContext(QuestCatalog quests, IGameData gameData, I
 
 /// <summary>
 /// One check from an <c>If</c> list. Prefix <c>!</c> to negate. Forms:
-/// <c>quest HASH none|active|done|failed|expired|abandoned</c>, <c>HasQuest HASH</c> (in the journal now),
+/// <c>quest HASH none|active|done|failed|expired|abandoned</c> (<c>done</c> is the quest's mission bit when it has one,
+/// else a completed journal entry), <c>HasQuest HASH</c> (in the journal now),
 /// <c>HasAnyQuest HASH,HASH,...</c> (any of them in the journal now),
 /// <c>HasCompletedQuest HASH</c> (the quest's mission bit), <c>has ITEMHASH [count]</c>, <c>met</c>.
 /// Stat checks are <c>Requirements</c> rows, compiled by <see cref="TryParseRequirements"/>.
@@ -89,7 +90,7 @@ public abstract record KnubotCondition(bool Negated)
         switch (words[0].ToLowerInvariant())
         {
             case "quest":
-                if (words.Length != 3 || !load.Quests.TryGet(words[1], out _))
+                if (words.Length != 3 || !load.Quests.TryGet(words[1], out QuestTemplate quest))
                 {
                     error = "expected 'quest HASH state' with a Quests.json hash: " + trimmed;
                     return false;
@@ -101,7 +102,9 @@ public abstract record KnubotCondition(bool Negated)
                     return false;
                 }
 
-                condition = new KnubotQuestCondition(negated, words[1], state);
+                condition = state == QuestState.Completed && quest.MissionBit is int doneBit
+                    ? new KnubotMissionBitCondition(negated, doneBit)
+                    : new KnubotQuestCondition(negated, words[1], state);
                 return true;
 
             case "hasquest":

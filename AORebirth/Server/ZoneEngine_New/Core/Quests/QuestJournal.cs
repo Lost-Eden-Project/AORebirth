@@ -135,7 +135,7 @@ namespace ZoneEngine_New.Core.Quests
                 QuestId = new Identity { Type = IdentityType.Mission, Instance = journalInstance },
                 Version = 15,
                 Flags = flags,
-                ShortInfo = ShortName(template.Name),
+                ShortInfo = ShortName(string.IsNullOrEmpty(template.Title) ? template.Name : template.Title),
                 LongInfo = LongInfo(template),
                 // Retail names the giver NPC here; Quests.json has no giver, so the instance stays 0.
                 UnknownId1 = new Identity { Type = IdentityType.CanbeAffected, Instance = 0 },
@@ -144,11 +144,13 @@ namespace ZoneEngine_New.Core.Quests
                 ExperienceReward = reward?.Xp ?? 0,
                 Unknown9 = 0x3F1,
                 Unknown10 = 0x3F1,
-                MissionItemData = RewardItems(reward),
+                MissionItemData = RewardItems(player, reward),
                 UnknownHash1 = reward?.Hash ?? string.Empty,
                 Unknown14 = 220,
                 UnknownId2 = Copy(player.Identity),
-                MissionIconId = isDungeon && dungeon.MissionIconId > 0 ? dungeon.MissionIconId : layout?.IconId ?? DefaultIconId,
+                MissionIconId = isDungeon && dungeon.MissionIconId > 0 ? dungeon.MissionIconId
+                    : template.IconId is int icon and > 0 ? icon
+                    : layout?.IconId ?? DefaultIconId,
                 Unknown20 = 7200,
                 Unknown21 = 7200,
                 QuestActions = layout == null ? [] : [Action(player, layout, template, quest, slot, isDungeon ? dungeon : null)],
@@ -263,11 +265,15 @@ namespace ZoneEngine_New.Core.Quests
             return (uint)Math.Min(expires, int.MaxValue);
         }
 
+        /// <summary>Retail cuts a longer title to 28 characters and "..." ("Talk to the ICC Bio-Inspecto...", HYIY).</summary>
         static string ShortName(string name)
-            => name.Length <= MaxShortInfoLength ? name : name[..MaxShortInfoLength];
+            => name.Length <= MaxShortInfoLength ? name : name[..(MaxShortInfoLength - 3)] + "...";
 
         static string LongInfo(QuestTemplate template)
         {
+            if (!string.IsNullOrEmpty(template.Description))
+                return template.Description;
+
             var text = new StringBuilder(template.Name);
             if (!string.IsNullOrEmpty(template.Summary))
             {
@@ -278,14 +284,28 @@ namespace ZoneEngine_New.Core.Quests
             return text.ToString();
         }
 
-        static MissionItemReward[] RewardItems(QuestReward? reward)
+        /// <summary>
+        /// The reward items the journal shows: the player's QuestRewards.json entry when the reward hash has one,
+        /// else the first Quests.json record (records are alternatives).
+        /// </summary>
+        static MissionItemReward[] RewardItems(Player player, QuestReward? reward)
         {
-            if (reward?.Records is not { Count: > 0 } records)
-                return [];
+            IReadOnlyList<QuestRewardItem> shown;
+            try
+            {
+                shown = player.Playfield?.GetService<QuestRewardTable>() is QuestRewardTable table
+                    && table.TryResolve(reward?.Hash, player, out IReadOnlyList<QuestRewardItem> mapped)
+                    ? mapped
+                    : reward?.Records is { Count: > 0 } records ? records[0] : [];
+            }
+            catch (InvalidOperationException)
+            {
+                // A mapping that no longer resolves shows no items; completion reports it.
+                shown = [];
+            }
 
-            // Records are alternatives; the journal shows the first set.
-            var items = new List<MissionItemReward>();
-            foreach (QuestRewardItem item in records[0])
+            var items = new List<MissionItemReward>(shown.Count);
+            foreach (QuestRewardItem item in shown)
                 items.Add(new MissionItemReward { LowId = item.Id, HighId = item.HighId ?? item.Id, Ql = Math.Max(1, item.Quality) });
             return items.ToArray();
         }

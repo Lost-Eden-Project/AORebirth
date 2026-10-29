@@ -348,6 +348,7 @@ namespace ZoneEngine_New
 
             //Quests
             services.AddSingleton<ZoneEngine_New.Core.Quests.QuestCatalog>();
+            services.AddSingleton<ZoneEngine_New.Core.Quests.QuestRewardTable>();
             services.AddSingleton<ICharacterQuestStore, MySqlCharacterQuestStore>();
             services.AddSingleton<ZoneEngine_New.Core.Quests.QuestService>();
             services.AddSingleton(_ => Utility.GameData.Missions.MissionDestinationCatalog.Load(
@@ -369,6 +370,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcScriptsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.ItemTemplatesReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.KnubotReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.Quests.QuestRewardsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>();
 
             //Commands

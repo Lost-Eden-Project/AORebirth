@@ -201,7 +201,17 @@
     },
     "find_inspector": {
       "Text": "How do I find the inspector?",
+      "If": [
+        "!quest HYIY done"
+      ],
       "Goto": "inspector_where"
+    },
+    "find_inspector_again": {
+      "Text": "How do I find the inspector?",
+      "If": [
+        "quest HYIY done"
+      ],
+      "Goto": "inspector_where_again"
     }
   },
   "Lines": {
@@ -447,10 +457,17 @@
       "Replies": [
         "be_right_back",
         "find_inspector",
+        "find_inspector_again",
         "have_parts_here"
       ]
     },
     "inspector_where": {
+      "Text": [
+        "{givequest HYIY}",
+        "A bit west of here, there's a tunnel in the rock surface. The Inspector is likely to be in that area."
+      ]
+    },
+    "inspector_where_again": {
       "Text": "A bit west of here, there's a tunnel in the rock surface. The Inspector is likely to be in that area."
     },
     "belt": {
@@ -497,6 +514,7 @@
       "Replies": [
         "be_right_back",
         "find_inspector",
+        "find_inspector_again",
         "have_parts_here"
       ]
     },

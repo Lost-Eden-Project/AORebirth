@@ -37,6 +37,15 @@ namespace ZoneEngine_New.Core.Quests
 
         public string Name { get; set; } = string.Empty;
 
+        /// <summary>Journal title (retail ShortInfo); <see cref="Name"/> when absent.</summary>
+        public string? Title { get; set; }
+
+        /// <summary>Journal text (retail LongInfo, which starts with the title); built from the name and summary when absent.</summary>
+        public string? Description { get; set; }
+
+        /// <summary>Journal icon; the action's retail icon when absent.</summary>
+        public int? IconId { get; set; }
+
         public int QasInstance { get; set; }
 
         /// <summary>"Solo" or "Team".</summary>

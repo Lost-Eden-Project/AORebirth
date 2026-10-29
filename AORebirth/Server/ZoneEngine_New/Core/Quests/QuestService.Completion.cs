@@ -329,7 +329,7 @@ public sealed partial class QuestService
                         ?? throw new InvalidOperationException("Stored reward definition is unavailable.")
                     : quest.Template;
                 var reward = rewardTemplate.Reward;
-                var definitions = SelectRewardRecord(quest, reward).ToList();
+                var definitions = SelectRewardItems(player, quest, reward).ToList();
                 if (tokenReward?.Won == true)
                 {
                     definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
@@ -452,6 +452,12 @@ public sealed partial class QuestService
             return false;
         }
     }
+
+    /// <summary>The reward hash's QuestRewards.json entry for the player when it has one, else a Quests.json record.</summary>
+    IReadOnlyList<QuestRewardItem> SelectRewardItems(Player player, PlayerQuest quest, QuestReward? reward)
+        => _rewards != null && _rewards.TryResolve(reward?.Hash, player, out IReadOnlyList<QuestRewardItem> mapped)
+            ? mapped
+            : SelectRewardRecord(quest, reward);
 
     static IReadOnlyList<QuestRewardItem> SelectRewardRecord(PlayerQuest quest, QuestReward? reward)
     {

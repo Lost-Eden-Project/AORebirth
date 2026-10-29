@@ -34,6 +34,7 @@ namespace ZoneEngine_New.Core.Quests
         readonly Func<DateTime> _now;
         readonly AORebirth.Interfaces.Persistence.Missions.IMissionDao? _completionDao;
         readonly ZoneEngine_New.Core.Characters.CharacterSnapshotService? _snapshot;
+        readonly QuestRewardTable? _rewards;
 
         public QuestService(
             QuestCatalog catalog,
@@ -42,8 +43,9 @@ namespace ZoneEngine_New.Core.Quests
             InventoryFlushService flush,
             IZoneLogger logger,
             AORebirth.Interfaces.Persistence.Missions.IMissionDao? completionDao = null,
-            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null)
-            : this(catalog, store, items, flush, logger, () => DateTime.UtcNow, completionDao, snapshot)
+            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null,
+            QuestRewardTable? rewards = null)
+            : this(catalog, store, items, flush, logger, () => DateTime.UtcNow, completionDao, snapshot, rewards)
         {
         }
 
@@ -55,7 +57,8 @@ namespace ZoneEngine_New.Core.Quests
             IZoneLogger logger,
             Func<DateTime> now,
             AORebirth.Interfaces.Persistence.Missions.IMissionDao? completionDao = null,
-            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null)
+            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null,
+            QuestRewardTable? rewards = null)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -65,9 +68,13 @@ namespace ZoneEngine_New.Core.Quests
             _now = now ?? throw new ArgumentNullException(nameof(now));
             _completionDao = completionDao;
             _snapshot = snapshot;
+            _rewards = rewards;
         }
 
         public QuestCatalog Catalog => _catalog;
+
+        /// <summary>QuestRewards.json, when this zone loads it.</summary>
+        public QuestRewardTable? Rewards => _rewards;
 
         /// <summary>
         /// A player's quest left the active state (abandoned, completed or expired), after it was saved and removed
