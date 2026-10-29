@@ -27,8 +27,19 @@ namespace aorf
         constexpr unsigned long AoRebirthLocalIpClientArgumentOrder =
             (1ul << 24) | 127ul;
         constexpr unsigned long AoRebirthLoginPort = 7500;
-        constexpr const char* AoRebirthDailyLoginIp = "2.24.96.30";
         constexpr const char* AoRebirthDailyLoginHost = "uwg.daily.icc-rk";
+
+        struct DailyLoginTarget
+        {
+            const char* ip;
+            const wchar_t* wideIp;
+            unsigned char address[4];
+        };
+
+        constexpr DailyLoginTarget ProductionDailyLoginTarget =
+            { "2.24.96.30", L"2.24.96.30", { 2, 24, 96, 30 } };
+        constexpr DailyLoginTarget LocalDailyLoginTarget =
+            { "127.0.0.1", L"127.0.0.1", { 127, 0, 0, 1 } };
 
         using FnGetAddrInfoA = int(WSAAPI*)(PCSTR, PCSTR, const ADDRINFOA*, PADDRINFOA*);
         using FnGetAddrInfoW = int(WSAAPI*)(PCWSTR, PCWSTR, const ADDRINFOW*, PADDRINFOW*);
@@ -55,6 +66,7 @@ namespace aorf
 
         LONG WorkerStarted = 0;
         bool RoutingEnabled = false;
+        const DailyLoginTarget* RoutingTarget = &ProductionDailyLoginTarget;
         HMODULE Ws2 = nullptr;
         FnGetAddrInfoA RealGetAddrInfoA = nullptr;
         FnGetAddrInfoW RealGetAddrInfoW = nullptr;
@@ -229,6 +241,14 @@ namespace aorf
                  endpoint.ip == AoRebirthLocalIpHostOrder ||
                  endpoint.ip == AoRebirthLocalIpClientArgumentOrder) &&
                 endpoint.port == AoRebirthLoginPort;
+        }
+
+        const DailyLoginTarget& SelectDailyLoginTarget(const LaunchEndpoint& endpoint)
+        {
+            return IsAoRebirthEndpoint(endpoint) &&
+                (endpoint.ip == AoRebirthLocalIpHostOrder ||
+                 endpoint.ip == AoRebirthLocalIpClientArgumentOrder)
+                ? LocalDailyLoginTarget : ProductionDailyLoginTarget;
         }
 
         bool IsDailyLoginHost(const std::string& host)
@@ -583,14 +603,18 @@ namespace aorf
                 return false;
             }
 
+            LaunchEndpoint endpoint = {};
+            const bool hasEndpoint = TryParseLaunchEndpoint(GetCommandLineW(), endpoint);
+            // Select once before any hooks are installed; local testing must not use production.
+            RoutingTarget = &SelectDailyLoginTarget(endpoint);
+
             if (length > 0 && _stricmp(value, "Always") == 0)
             {
                 Log("DAILYLOGIN route=ARMED reason=policy_always");
                 return true;
             }
 
-            LaunchEndpoint endpoint = {};
-            if (!TryParseLaunchEndpoint(GetCommandLineW(), endpoint))
+            if (!hasEndpoint)
             {
                 Log("DAILYLOGIN route=SKIP reason=auto_endpoint_unavailable");
                 return false;
@@ -639,8 +663,8 @@ namespace aorf
         {
             if (RoutingEnabled && nodeName && IsDailyLoginHost(nodeName))
             {
-                Log("DAILYLOGIN route=dns host=%s target=%s", nodeName, AoRebirthDailyLoginIp);
-                return RealGetAddrInfoA(AoRebirthDailyLoginIp, serviceName, hints, result);
+                Log("DAILYLOGIN route=dns host=%s target=%s", nodeName, RoutingTarget->ip);
+                return RealGetAddrInfoA(RoutingTarget->ip, serviceName, hints, result);
             }
 
             return RealGetAddrInfoA(nodeName, serviceName, hints, result);
@@ -666,9 +690,8 @@ namespace aorf
                     nullptr);
                 if (converted > 0 && IsDailyLoginHost(host))
                 {
-                    Log("DAILYLOGIN route=dnsw host=%s target=%s", host, AoRebirthDailyLoginIp);
-                    wchar_t target[] = L"2.24.96.30";
-                    return RealGetAddrInfoW(target, serviceName, hints, result);
+                    Log("DAILYLOGIN route=dnsw host=%s target=%s", host, RoutingTarget->ip);
+                    return RealGetAddrInfoW(RoutingTarget->wideIp, serviceName, hints, result);
                 }
             }
 
@@ -689,12 +712,9 @@ namespace aorf
                 };
 
                 thread_local HostStorage storage = {};
-                strcpy_s(storage.name, AoRebirthDailyLoginIp);
+                strcpy_s(storage.name, RoutingTarget->ip);
                 storage.aliases[0] = nullptr;
-                storage.address[0] = 2;
-                storage.address[1] = 24;
-                storage.address[2] = 96;
-                storage.address[3] = 30;
+                std::memcpy(storage.address, RoutingTarget->address, sizeof(storage.address));
                 storage.addressList[0] = reinterpret_cast<char*>(storage.address);
                 storage.addressList[1] = nullptr;
                 storage.entry.h_name = storage.name;
@@ -702,7 +722,7 @@ namespace aorf
                 storage.entry.h_addrtype = AF_INET;
                 storage.entry.h_length = 4;
                 storage.entry.h_addr_list = storage.addressList;
-                Log("DAILYLOGIN route=gethostbyname host=%s target=%s", name, AoRebirthDailyLoginIp);
+                Log("DAILYLOGIN route=gethostbyname host=%s target=%s", name, RoutingTarget->ip);
                 return &storage.entry;
             }
 
@@ -869,13 +889,54 @@ namespace aorf
     {
         LaunchEndpoint endpoint = {};
         if (!TryParseLaunchEndpoint(L"anarchyonline.exe IA2.24.96.30 IP7500 DUprivate", endpoint) ||
-            !IsAoRebirthEndpoint(endpoint))
+            !IsAoRebirthEndpoint(endpoint) ||
+            &SelectDailyLoginTarget(endpoint) != &ProductionDailyLoginTarget)
         {
             return false;
         }
 
+        const unsigned char productionAddress[] = { 2, 24, 96, 30 };
+        if (std::strcmp(ProductionDailyLoginTarget.ip, "2.24.96.30") != 0 ||
+            wcscmp(ProductionDailyLoginTarget.wideIp, L"2.24.96.30") != 0 ||
+            std::memcmp(ProductionDailyLoginTarget.address, productionAddress, sizeof(productionAddress)) != 0)
+        {
+            return false;
+        }
+
+        const wchar_t* localCommands[] =
+        {
+            L"anarchyonline.exe IA127.0.0.1 IP7500 DUlocal",
+            L"anarchyonline.exe IA2130706433 IP7500 DUlocal",
+            L"anarchyonline.exe IA16777343 IP7500 DUlocal"
+        };
+        const unsigned char localAddress[] = { 127, 0, 0, 1 };
+        for (const wchar_t* command : localCommands)
+        {
+            if (!TryParseLaunchEndpoint(command, endpoint) || !IsAoRebirthEndpoint(endpoint))
+            {
+                return false;
+            }
+
+            const DailyLoginTarget& target = SelectDailyLoginTarget(endpoint);
+            if (&target != &LocalDailyLoginTarget ||
+                std::strcmp(target.ip, "127.0.0.1") != 0 ||
+                wcscmp(target.wideIp, L"127.0.0.1") != 0 ||
+                std::memcmp(target.address, localAddress, sizeof(localAddress)) != 0)
+            {
+                return false;
+            }
+        }
+
         if (!TryParseLaunchEndpoint(L"anarchyonline.exe IA2.24.96.30 IP7505 DUofficial", endpoint) ||
-            IsAoRebirthEndpoint(endpoint))
+            IsAoRebirthEndpoint(endpoint) ||
+            &SelectDailyLoginTarget(endpoint) != &ProductionDailyLoginTarget)
+        {
+            return false;
+        }
+
+        if (!TryParseLaunchEndpoint(L"anarchyonline.exe IA127.0.0.1 IP7505 DUother", endpoint) ||
+            IsAoRebirthEndpoint(endpoint) ||
+            &SelectDailyLoginTarget(endpoint) != &ProductionDailyLoginTarget)
         {
             return false;
         }
