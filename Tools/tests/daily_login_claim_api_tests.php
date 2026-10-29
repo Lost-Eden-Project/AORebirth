@@ -14,7 +14,7 @@ function check($condition, $message) {
     if (!$condition) throw new RuntimeException($message);
 }
 
-function invoke_endpoint($method, $query = array(), $body = array(), $selectedRoots = null) {
+function invoke_endpoint($method, $query = array(), $body = array(), $selectedRoots = null, $headers = array()) {
     global $endpoint, $roots, $fixtureAccount;
     $payload = $method === 'POST' ? json_encode($body) : '';
     $claimsRoots = implode(PATH_SEPARATOR, $selectedRoots === null ? $roots : $selectedRoots);
@@ -55,7 +55,7 @@ function invoke_endpoint($method, $query = array(), $body = array(), $selectedRo
             check(is_array($proof) && isset($proof['accountKey']) && $proof['accountKey'] === $fixtureAccount, 'HTTP fixture did not select the isolated claim roots; POST was not sent.');
         }
         $context = stream_context_create(array('http' => array(
-            'method' => $method, 'header' => "Content-Type: application/json\r\nConnection: close\r\n",
+            'method' => $method, 'header' => "Content-Type: application/json\r\nConnection: close\r\n" . implode("\r\n", $headers) . "\r\n",
             'content' => $payload, 'ignore_errors' => true, 'timeout' => 5
         )));
         $response = @file_get_contents('http://' . $address . '/claim.php?' . http_build_query($query), false, $context);
@@ -92,6 +92,37 @@ test_case('GET without hints does not create directories or attribute the global
     $result = invoke_endpoint('GET', array(), array(), array($absent));
     check($result['hasIdentity'] === false && $result['taken'] === array(), 'Anonymous GET inherited an account.');
     check(!is_dir($absent), 'GET created a claim directory.');
+});
+
+test_case('Native character headers bootstrap only the matching character and queue no grant', function () {
+    global $roots, $fixtureAccount;
+    $headers = array('X-Anarchy-CharacterID: 606');
+    $board = invoke_endpoint('GET', array('accountKey' => $fixtureAccount), array(), null, $headers);
+    check($board['characterId'] === 606 && $board['nativeCharacterHint'] === true && $board['hasIdentity'] === true, 'Native character routing was not returned.');
+    check($board['accountKey'] === '' && $board['taken'] === array(), 'An unknown character inherited an unrelated account board.');
+    $queued = invoke_endpoint('POST', array(), array('claimToken' => 'ctest-native-header'), null, $headers);
+    check($queued['armed'] === true && $queued['committed'] === false && $queued['characterId'] === 606, 'Native hint did not queue its exact character.');
+    foreach ($roots as $root) {
+        $request = json_decode(file_get_contents($root . DIRECTORY_SEPARATOR . 'request-ctest-native-header.json'), true);
+        check($request['CharacterId'] === 606 && $request['AccountKey'] === '', 'Native hint became an account identity.');
+        check(!is_file($root . DIRECTORY_SEPARATOR . 'result-ctest-native-header.json'), 'HTTP produced a grant receipt.');
+    }
+});
+
+test_case('Native headers reject invalid and conflicting routes without changing saved requests', function () {
+    global $roots;
+    foreach (array('0', '-1', '2147483648', '7x', '7,8') as $invalid) {
+        $response = invoke_endpoint('GET', array(), array(), null, array('X-Anarchy-CharacterID: ' . $invalid));
+        check($response['ok'] === false, 'Invalid native character header was accepted: ' . $invalid);
+    }
+    $maximum = invoke_endpoint('GET', array(), array(), null, array('X-Anarchy-CharacterID: 2147483647'));
+    check($maximum['characterId'] === 2147483647, 'The native signed character-ID boundary was rejected.');
+    $before = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'request-ctest-native-header.json');
+    $conflict = invoke_endpoint('POST', array(), array('claimToken' => 'ctest-native-header', 'characterId' => 607), null, array('X-Anarchy-CharacterID: 606'));
+    check($conflict['ok'] === false && $conflict['armed'] === false, 'Conflicting body/header character routes were accepted.');
+    check(invoke_endpoint('GET', array('characterId' => 607), array(), null, array('X-Anarchy-CharacterID: 606'))['ok'] === false, 'Conflicting query/header routes were accepted.');
+    check(invoke_endpoint('POST', array('characterId' => 607), array('claimToken' => 'ctest-native-header', 'characterId' => 606), null, array('X-Anarchy-CharacterID: 606'))['ok'] === false, 'A conflicting query was hidden by the body route.');
+    foreach ($roots as $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'request-ctest-native-header.json') === $before, 'A conflict changed the original request.');
 });
 
 test_case('POST only queues an immutable token request and never writes progress or a grant result', function () {

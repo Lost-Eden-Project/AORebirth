@@ -8,6 +8,19 @@ function daily_safe_key($key) {
     return preg_replace('/[^a-z0-9_\-]+/', '_', strtolower(trim(strval($key))));
 }
 
+function daily_character_hint($value, $required = false) {
+    if (!is_int($value) && !is_string($value)) {
+        throw new InvalidArgumentException('Invalid daily reward character routing hint.');
+    }
+    $text = strval($value);
+    if (!$required && ($text === '' || $text === '0')) return 0;
+    if (!preg_match('/^[1-9][0-9]{0,9}$/D', $text) || strlen($text) > 10 ||
+        (strlen($text) === 10 && strcmp($text, '2147483647') > 0)) {
+        throw new InvalidArgumentException('Invalid daily reward character routing hint.');
+    }
+    return intval($text);
+}
+
 function daily_claim_roots() {
     $configured = getenv('AO_REBIRTH_DAILY_LOGIN_CLAIMS_ROOTS');
     if ($configured !== false && trim($configured) !== '') {
@@ -187,7 +200,7 @@ function daily_board($characterId, $accountKey) {
     } else if ($accountKey !== '') {
         $board = daily_read_consistent('board-account-' . daily_safe_key($accountKey) . '.json');
     }
-    if ($board === null && $accountKey !== '') {
+    if ($board === null && $characterId <= 0 && $accountKey !== '') {
         $progress = daily_read_consistent('account-' . daily_safe_key($accountKey) . '.json');
         if ($progress !== null) {
             $taken = isset($progress['Taken']) && is_array($progress['Taken']) ? $progress['Taken'] : array();
@@ -202,7 +215,8 @@ function daily_board($characterId, $accountKey) {
     if ($board === null || empty($board['accountKey'])) {
         $hasHint = $characterId > 0 || $accountKey !== '';
         return array(
-            'ok' => true, 'hasIdentity' => $hasHint, 'accountKey' => $accountKey,
+            'ok' => true, 'hasIdentity' => $hasHint, 'characterId' => $characterId,
+            'accountKey' => $characterId > 0 ? '' : $accountKey,
             'taken' => array(), 'claimedCount' => 0, 'lastClaimUtc' => '', 'lastGrantedUtc' => '',
             'message' => $hasHint ? 'The game server will validate the routing hint when the native claim action arrives.' : 'This browser has no character or account routing hint. Open Daily Rewards from the logged-in character.'
         );
@@ -211,6 +225,7 @@ function daily_board($characterId, $accountKey) {
     daily_read_consistent('account-' . daily_safe_key($board['accountKey']) . '.json');
     $board['ok'] = true;
     $board['hasIdentity'] = true;
+    $board['characterId'] = $characterId;
     return daily_project_board($board);
 }
 
@@ -229,7 +244,18 @@ try {
         }
         $body = $decoded;
     }
-    $characterId = isset($body['characterId']) ? intval($body['characterId']) : (isset($_GET['characterId']) ? intval($_GET['characterId']) : 0);
+    $bodyCharacterId = isset($body['characterId']) ? daily_character_hint($body['characterId']) : 0;
+    $queryCharacterId = isset($_GET['characterId']) ? daily_character_hint($_GET['characterId']) : 0;
+    // The native browser supplies this per-request header. It is only a route;
+    // the authenticated game session still owns every grant and account decision.
+    $nativeCharacterId = isset($_SERVER['HTTP_X_ANARCHY_CHARACTERID'])
+        ? daily_character_hint($_SERVER['HTTP_X_ANARCHY_CHARACTERID'], true) : 0;
+    if (($bodyCharacterId > 0 && $queryCharacterId > 0 && $bodyCharacterId !== $queryCharacterId) ||
+        ($nativeCharacterId > 0 && (($bodyCharacterId > 0 && $bodyCharacterId !== $nativeCharacterId) ||
+            ($queryCharacterId > 0 && $queryCharacterId !== $nativeCharacterId)))) {
+        throw new InvalidArgumentException('Daily reward character routing hints conflict. The saved request was not changed.');
+    }
+    $characterId = $nativeCharacterId > 0 ? $nativeCharacterId : ($bodyCharacterId > 0 ? $bodyCharacterId : $queryCharacterId);
     $accountKey = isset($body['accountKey']) ? daily_safe_key($body['accountKey']) : (isset($_GET['accountKey']) ? daily_safe_key($_GET['accountKey']) : '');
 
     if ($method === 'GET') {
@@ -254,7 +280,9 @@ try {
             ));
             exit;
         }
-        echo json_encode(daily_board($characterId, $accountKey));
+        $board = daily_board($characterId, $accountKey);
+        $board['nativeCharacterHint'] = $nativeCharacterId > 0;
+        echo json_encode($board);
         exit;
     }
 
@@ -280,7 +308,8 @@ try {
     echo json_encode(array(
         'ok' => true, 'armed' => true, 'committed' => false,
         'claimToken' => $request['ClaimToken'], 'accountKey' => $request['AccountKey'],
-        'message' => 'Claim queued. Waiting for the authenticated game-server action.'
+        'characterId' => $request['CharacterId'],
+        'message' => 'Claim queued. Close the Daily Login window to submit it, then reopen for confirmation.'
     ));
 } catch (Exception $error) {
     http_response_code(503);

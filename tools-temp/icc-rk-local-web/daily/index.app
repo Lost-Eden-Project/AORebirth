@@ -191,6 +191,9 @@
     var TAKEN_DAYS = {};
     var TAKEN_IMG = "assets/cells/taken.png";
     var identityKey = "";
+    var nativeCharacterId = "";
+    var nativeCharacterHint = false;
+    var identitySynchronized = false;
     var serverStateLoaded = false;
     var claimMessage = "";
     var pendingClaimToken = "";
@@ -320,7 +323,7 @@
         last: p + ".lastClaimUtc",
         granted: p + ".lastGrantedUtc",
         taken: p + ".taken",
-        account: "aorebirth.daily.acct.v1.accountKey"
+        account: currentIdentityKey() ? "aorebirth.daily.identity.v1." + currentIdentityKey() : ""
       };
     }
     function resetTakenMap() {
@@ -334,12 +337,13 @@
       resetTakenMap();
     }
     function pendingStorageKey() {
-      var identity = currentIdentityKey();
-      return "aorebirth.daily.pending.v1." + (identity || (knownAccountKey ? "a" + knownAccountKey : "pending"));
+      var idn = resolveIdentity();
+      return idn.id ? "aorebirth.daily.pending.v1.c" + String(idn.id) : "";
     }
     function loadPending() {
       pendingClaimToken = "";
       pendingClaimStorageKey = pendingStorageKey();
+      if (!pendingClaimStorageKey) return;
       try {
         if (window.localStorage) pendingClaimToken = localStorage.getItem(pendingClaimStorageKey) || "";
       } catch (ePending) {}
@@ -348,6 +352,7 @@
       try {
         if (!window.localStorage) return;
         var key = pendingClaimStorageKey || pendingStorageKey();
+        if (!key) return;
         if (pendingClaimToken) localStorage.setItem(key, pendingClaimToken);
         else localStorage.removeItem(key);
       } catch (ePending) {}
@@ -356,7 +361,8 @@
       try {
         if (!window.localStorage) return;
         var identity = currentIdentityKey();
-        var ak = localStorage.getItem(identity ? "aorebirth.daily.identity.v1." + identity : "aorebirth.daily.acct.v1.accountKey");
+        if (!identity) return;
+        var ak = localStorage.getItem("aorebirth.daily.identity.v1." + identity);
         if (ak) knownAccountKey = String(ak).toLowerCase();
       } catch (eAk) {}
     }
@@ -366,7 +372,6 @@
       knownAccountKey = String(ak).toLowerCase();
       try {
         if (window.localStorage) {
-          localStorage.setItem("aorebirth.daily.acct.v1.accountKey", knownAccountKey);
           var identity = currentIdentityKey();
           if (identity) localStorage.setItem("aorebirth.daily.identity.v1." + identity, knownAccountKey);
         }
@@ -394,7 +399,7 @@
       try {
         if (!window.localStorage) return;
         var k = storageKeys();
-        if (knownAccountKey) {
+        if (knownAccountKey && k.account) {
           localStorage.setItem(k.account, knownAccountKey);
         }
         localStorage.setItem(k.count, String(claimedCount));
@@ -421,7 +426,7 @@
           claiming = false;
           pollingToken = "";
           resumeAttempted = false;
-          loadPending();
+          if (identitySynchronized) loadPending();
         }
         paint();
       }
@@ -760,7 +765,7 @@
     function pollClaimResult(token, left, done, rearm) {
       if (token !== pendingClaimToken) return;
       if (!token || left <= 0) {
-        done("The game server has not confirmed this claim. The request is saved; reopen Daily Rewards or retry to check it again.", false, false);
+        done("The request is saved. Close the Daily Login window to submit it, then reopen for confirmation.", false, false);
         return;
       }
       try {
@@ -795,7 +800,8 @@
                   return;
                 }
               }
-              tryNativeClaim();
+              claimMessage = "The request is saved. Close the Daily Login window to submit it, then reopen for confirmation.";
+              paint();
             }
           } catch (e2) {}
           setTimeout(function () { pollClaimResult(token, left - 1, done, rearm); }, 400);
@@ -866,7 +872,8 @@
           done("The claim response could not be read. The request is saved for retry.", false, false);
           return false;
         }
-        tryNativeClaim();
+        claimMessage = "Claim queued. Close the Daily Login window to submit it, then reopen for confirmation.";
+        paint();
         pollingToken = token;
         pollClaimResult(token, 20, done);
       } catch (e3) {
@@ -876,6 +883,7 @@
     }
 
     function resolveIdentity() {
+      if (nativeCharacterHint) return { id: nativeCharacterId, name: "" };
       var id = "";
       var name = "";
       try {
@@ -899,17 +907,6 @@
       return { id: id, name: name };
     }
 
-    function tryNativeClaim() {
-      try {
-        var ao = window.AnarchyOnline;
-        if (!ao) return;
-        if (typeof ao.ClaimDailyReward === "function") { ao.ClaimDailyReward(); return; }
-        if (typeof ao.ClaimReward === "function") { ao.ClaimReward(); return; }
-        if (typeof ao.ClaimDaily === "function") { ao.ClaimDaily(); return; }
-        if (typeof ao.SendCharacterAction === "function") { ao.SendCharacterAction(263); return; }
-      } catch (e) {}
-    }
-
     function applyServerState(j) {
       if (!j) return;
       if (j.ok !== true) {
@@ -917,13 +914,29 @@
         claimMessage = j.message || "The account board could not be verified. The saved request is unchanged.";
         return;
       }
+      if (j.nativeCharacterHint === true) {
+        var route = String(j.characterId || "");
+        if (!/^[1-9][0-9]{0,9}$/.test(route) || Number(route) > 2147483647) {
+          serverStateLoaded = false;
+          claimMessage = "The character routing hint could not be verified. The saved request is unchanged.";
+          return;
+        }
+        nativeCharacterHint = true;
+        nativeCharacterId = route;
+        refreshIdentity();
+      }
       if (typeof j.freeTestMode === "boolean") freeTestMode = j.freeTestMode;
       if (j.accountKey) setKnownAccountKey(j.accountKey);
       else if (j.boardAccount) setKnownAccountKey(j.boardAccount);
+      else knownAccountKey = "";
       serverStateLoaded = j.hasIdentity === true || (j.hasIdentity !== false && !!knownAccountKey);
       if (!serverStateLoaded) {
         resetBoard();
         return;
+      }
+      if (!identitySynchronized) {
+        identitySynchronized = true;
+        loadPending();
       }
       if (typeof j.lastGrantedUtc === "string") lastGrantedUtc = j.lastGrantedUtc;
       if (typeof j.lastClaimUtc === "string") lastClaimUtc = j.lastClaimUtc;
@@ -941,16 +954,18 @@
     }
 
     function syncFromServer() {
-      refreshIdentity();
-      loadStoredAccountKey();
+      if (identitySynchronized) {
+        refreshIdentity();
+        loadStoredAccountKey();
+      }
       var idn = resolveIdentity();
       var requestedIdentity = currentIdentityKey();
       try {
         var x = new XMLHttpRequest();
         var q = "claim.php?month=" + encodeURIComponent(utcMonth())
-          + "&characterId=" + encodeURIComponent(idn.id || "")
+          + "&characterId=" + encodeURIComponent(nativeCharacterHint ? "" : (idn.id || ""))
           + "&character=" + encodeURIComponent(idn.name || "")
-          + "&accountKey=" + encodeURIComponent(knownAccountKey || "")
+          + "&accountKey=" + encodeURIComponent(nativeCharacterHint ? "" : (knownAccountKey || ""))
           + "&t=" + new Date().getTime();
         x.open("GET", q, true);
         x.onreadystatechange = function () {
@@ -1029,10 +1044,7 @@
     }
 
     identityKey = currentIdentityKey();
-    loadStoredAccountKey();
-    loadLocal();
-    loadPending();
-    refreshIdentity();
+    resetBoard();
     loadRewards();
     buildGrid();
     paint();

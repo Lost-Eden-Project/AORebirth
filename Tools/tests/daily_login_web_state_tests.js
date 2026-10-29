@@ -29,7 +29,7 @@ class Element {
   }
 }
 
-function browser(seed, identity) {
+function browser(seed, identity, withoutNative) {
   const elements = {};
   elements.claimBtn = new Element("a");
   elements.claimBtn.innerHTML = indexSource.match(/<a[^>]*id="claimBtn"[^>]*>([\s\S]*?)<\/a>/)[1];
@@ -72,7 +72,8 @@ function browser(seed, identity) {
     clearTimeout() {},
     setInterval: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; }
   };
-  context.window = { localStorage, AnarchyOnline: native };
+  context.window = { localStorage };
+  if (!withoutNative) context.window.AnarchyOnline = native;
   vm.runInNewContext(script, context, { filename: indexPath });
   function response(request, payload) {
     assert.ok(request, "Expected a pending HTTP request");
@@ -126,7 +127,8 @@ test("A queued claim never marks Taken before a committed grant", () => {
   page.state();
   page.elements.claimBtn.onclick();
   assert.equal(page.taken(), 0);
-  assert.equal(page.nativeCalls.length, 1);
+  assert.equal(page.nativeCalls.length, 0, "A queued request must use normal window closure, not guessed JavaScript calls");
+  assert.match(page.elements.claimStatus.innerHTML, /Close the Daily Login window/);
   assert.ok([...page.stored.values()].some(value => /^c\d+$/.test(value)), "Pending token must survive closing the page");
   page.poll({ ok: true, armed: true });
   assert.equal(page.taken(), 0, "An armed or older success response is not a committed grant");
@@ -191,13 +193,14 @@ test("Reopening resumes a saved token without creating another pending request",
   reopened.poll({ ok: null, pending: true, armed: true });
   assert.equal(reopened.requests.filter(item => item.method === "POST").length, 0);
   assert.equal(reopened.requests.filter(item => item.url.startsWith("claim.php?token=")).length, 1);
-  assert.equal(reopened.nativeCalls.length, 1, "A durable pending request can safely re-trigger the native action once on reopen");
+  assert.equal(reopened.nativeCalls.length, 0, "Reopening must not invoke an unproven native JavaScript method");
+  assert.match(reopened.elements.claimStatus.innerHTML, /Close the Daily Login window/);
   reopened.timeouts.filter(timer => timer.delay === 400).pop().fn();
   reopened.poll({ ok: null, pending: true, armed: true });
-  assert.equal(reopened.nativeCalls.length, 1, "Result polling must not repeatedly trigger native actions");
+  assert.equal(reopened.nativeCalls.length, 0, "Result polling must not trigger native actions");
 });
 
-test("Reopening requeues an absent saved request with the original token before triggering native", () => {
+test("Reopening requeues an absent saved request with the original token before normal window closure", () => {
   const originalToken = "csaved123";
   const page = browser({ "aorebirth.daily.pending.v1.c101": originalToken });
   page.state();
@@ -206,7 +209,8 @@ test("Reopening requeues an absent saved request with the original token before 
   const posts = page.requests.filter(item => item.method === "POST");
   assert.equal(posts.length, 1);
   assert.equal(JSON.parse(posts[0].body).claimToken, originalToken);
-  assert.equal(page.nativeCalls.length, 1);
+  assert.equal(page.nativeCalls.length, 0);
+  assert.match(page.elements.claimStatus.innerHTML, /Close the Daily Login window/);
   assert.equal(page.taken(), 0);
 });
 
@@ -250,6 +254,46 @@ test("A failed board verification disables claiming without discarding the last 
   assert.equal(page.taken(), 1);
   assert.equal(page.elements.claimBtn.style.display, "none");
   assert.match(page.elements.claimStatus.innerHTML, /originals preserved/);
+});
+
+test("A native header binds the character before any saved token is loaded without a JavaScript identity API", () => {
+  const page = browser({
+    "aorebirth.daily.acct.v1.accountKey": "unrelated",
+    "aorebirth.daily.pending.v1.pending": "anonymous-old-token",
+    "aorebirth.daily.pending.v1.c606": "saved-606"
+  }, null, true);
+  assert.equal(page.requests.filter(item => item.url.startsWith("claim.php?token=")).length, 0);
+  const initial = page.requests.find(item => item.url.startsWith("claim.php?month="));
+  assert.match(initial.url, /&accountKey=&/);
+  page.state({ nativeCharacterHint: true, characterId: 606, accountKey: "", taken: [] });
+  assert.equal(page.elements.claimBtn.style.display, "inline-block");
+  page.timeouts.find(timer => timer.delay === 1000).fn();
+  const polling = page.requests.filter(item => item.url.startsWith("claim.php?token=")).pop();
+  assert.match(polling.url, /token=saved-606&/);
+  assert.equal(page.requests.filter(item => item.method === "POST").length, 0);
+  assert.equal(page.nativeCalls.length, 0);
+  assert.equal(page.stored.get("aorebirth.daily.pending.v1.pending"), "anonymous-old-token", "Anonymous history is retained but never resumed");
+});
+
+test("A changed native character repins storage and rejects the previous character's in-flight result", () => {
+  const page = browser({ "aorebirth.daily.pending.v1.c606": "saved-606" }, null, true);
+  page.state({ nativeCharacterHint: true, characterId: 606, accountKey: "first", taken: [] });
+  page.timeouts.find(timer => timer.delay === 1000).fn();
+  const oldPoll = page.requests.filter(item => item.url.startsWith("claim.php?token=")).pop();
+  page.intervals[0].fn();
+  const refresh = page.requests.filter(item => item.url.startsWith("claim.php?month=") && item.readyState !== 4).pop();
+  assert.match(refresh.url, /&characterId=&/);
+  assert.match(refresh.url, /&accountKey=&/);
+  page.state({ nativeCharacterHint: true, characterId: 607, accountKey: "second", taken: [] });
+  page.response(oldPoll, { ok: true, committed: true, accountKey: "first", taken: [1], lastGrantedUtc: today });
+  assert.equal(page.taken(), 0);
+  page.elements.claimBtn.onclick();
+  const body = JSON.parse(page.requests.filter(item => item.method === "POST").pop().body);
+  assert.equal(body.characterId, 607);
+  assert.equal(body.accountKey, "second");
+  assert.equal(page.stored.get("aorebirth.daily.pending.v1.c606"), "saved-606");
+  assert.ok(page.stored.get("aorebirth.daily.pending.v1.c607"));
+  assert.equal(page.nativeCalls.length, 0);
 });
 
 test("Both entry pages contain the same repaired claim logic", () => {

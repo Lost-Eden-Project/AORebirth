@@ -10,8 +10,8 @@ account progress and pending requests, commit reward rows and the account
 receipt atomically, and require committed confirmation before displaying Taken.
 Mike explicitly approved the scoped development ledger migration and focused
 success, concurrency, persistence, rollback, UTC progression and web tests.
-Development validation: 42 focused C# tests, 12 browser-state tests and 11 actual
-PHP HTTP checks pass. Disposable real-MySQL checks pass for migration reruns,
+Development validation retains the prior 42 focused C# passes; the current 14
+browser-state tests and 13 PHP HTTP checks pass. Disposable real-MySQL checks pass for migration reruns,
 account ownership, concurrent characters, UTC-day uniqueness, four partial-write
 rollback points, lost commit acknowledgements and restart replay. Empty schema
 rollback succeeds; populated rollback refuses and preserves the ledger.
@@ -29,6 +29,15 @@ the original profession-nano catalog is recovered unchanged. Days 19 and 21 stil
 reject without advancing. The 84 fixed blueprint definitions in day 13 and the
 65 QL-1 prototypes in day 14 retain the original fixed-template fallback; their
 declared level scaling cannot override their actual template quality bounds.
+
+Local browser integration now uses the observed per-request
+`X-Anarchy-CharacterID` header as a routing hint, with conflicting hints rejected
+before writes. The Daily window does not expose the guessed claim JavaScript
+methods: closing that window invokes the native RequestClaims/action 263 path.
+The page queues the request and explains closing/reopening, keeps storage
+character-scoped, and still requires committed confirmation before Taken.
+Local client routing preserves original HTTP request bytes; production routing
+remains unchanged. The existing native package checks pass.
 
 This is FEATURE_VALIDATION only, not Windows release acceptance. Development AO
 client verification (including immediate inventory visibility, native browser
