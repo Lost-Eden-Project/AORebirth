@@ -1486,8 +1486,11 @@ namespace ZoneEngine_New.Core.Playfield
         {
             ArgumentNullException.ThrowIfNull(player);
             int characterId = player.Identity.Instance;
-            // Its pets were captured for the destination to summon again; these copies go.
-            _playfield.GetRequiredService<Pets.PetService>().DismissAll(player, "owner changed zone instance", charmTurnsOnOwner: false);
+            // Its towers stay and wait; the other pets were captured for the destination to summon again, so these
+            // copies go.
+            Pets.PetService pets = _playfield.GetRequiredService<Pets.PetService>();
+            pets.HoldStayBehindPets(player);
+            pets.DismissAll(player, "owner changed zone instance", charmTurnsOnOwner: false);
             player.SetFightingTarget(Identity.None);
             // Its team goes on on the destination instance.
             _playfieldManager.Teams.DetachForTransfer(player);

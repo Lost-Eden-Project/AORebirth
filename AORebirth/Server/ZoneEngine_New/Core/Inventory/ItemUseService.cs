@@ -144,7 +144,7 @@ namespace ZoneEngine_New.Core.Inventory
                     RequirementFeedback.SendIfUnmet(player, item.Definition, ActionType.ToUse,
                         resolve: ItemTemplate.WithActionTarget(player.ResolvePerkRequirement, player, useTarget),
                         getTargetStat: stat => useTarget.Stats.Get(stat),
-                        resolveTarget: useTarget.ResolveRequirement);
+                        resolveTarget: ItemTemplate.WithActionTarget(useTarget.ResolveRequirement, player, useTarget));
                 return ItemUseStart.Rejected;
             }
 

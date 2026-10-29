@@ -1260,7 +1260,7 @@ namespace ZoneEngine_New.Core.Entities
                 return "perk locked";
             if (starting && !use.Template.MeetsActionRequirements(stat => PerkActionStat(stat, use.Target),
                 ActionType.ToUse, ItemTemplate.WithActionTarget(ResolvePerkRequirement, this, use.Target),
-                stat => use.Target.Stats.Get(stat), use.Target.ResolveRequirement))
+                stat => use.Target.Stats.Get(stat), ItemTemplate.WithActionTarget(use.Target.ResolveRequirement, this, use.Target)))
                 return UseRequirementsFailure;
             if (!ReferenceEquals(use.Target, this))
             {

@@ -211,7 +211,9 @@ namespace ZoneEngine_New.Core.World
             foreach (NpcCharacter pet in player.OwnedPets.All.ToList())
             {
                 // A charm holds only where it was cast.
-                if (pet.Pet is not { } controller || controller.IsCharmed || pet.IsDead || controller.HasExpired(now))
+                // A tower stays behind and waits (PetService.HoldStayBehindPets).
+                if (pet.Pet is not { } controller || controller.IsCharmed || pet.IsDead || controller.HasExpired(now)
+                    || Pets.PetTypes.StaysBehind(controller.Type))
                     continue;
                 int max = pet.Stats.GetOrZero(CharacterStat.MaxHealth);
                 envelope.Pets.Add(new PetEnvelope
@@ -222,7 +224,8 @@ namespace ZoneEngine_New.Core.World
                     RemainingSeconds = controller.ExpiresUtc is DateTime expires
                         ? Math.Max(1, (int)Math.Ceiling((expires - now).TotalSeconds))
                         : 0,
-                    Mode = (int)controller.Mode
+                    Mode = (int)controller.Mode,
+                    AggDef = pet.Stats.GetOrZero(CharacterStat.AggDef, StatDetail.Base)
                 });
             }
 
@@ -257,6 +260,8 @@ namespace ZoneEngine_New.Core.World
                     int max = pet.Stats.GetOrZero(CharacterStat.MaxHealth);
                     if (max > 0)
                         pet.Stats.Set(CharacterStat.Health, Math.Max(1, (int)Math.Round(max * carried.HealthFraction)), StatDetail.Base, dirty: true);
+                    if (carried.HasAggDef)
+                        pet.Stats.Set(CharacterStat.AggDef, carried.AggDef, StatDetail.Base, dirty: true);
                     if (Enum.IsDefined(typeof(Pets.PetMode), carried.Mode))
                         pet.Pet?.Order((Pets.PetMode)carried.Mode);
                 }

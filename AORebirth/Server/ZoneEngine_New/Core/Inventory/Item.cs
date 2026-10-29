@@ -214,7 +214,8 @@ namespace ZoneEngine_New.Core.Inventory
             => CanStillUse(player)
                 && Definition.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse,
                     ItemTemplate.WithActionTarget(player.ResolvePerkRequirement, player, target ?? player),
-                    target == null ? null : stat => target.Stats.Get(stat), target == null ? null : target.ResolveRequirement);
+                    target == null ? null : stat => target.Stats.Get(stat),
+                    target == null ? null : ItemTemplate.WithActionTarget(target.ResolveRequirement, player, target));
 
         /// <summary>
         /// Gates checked again when a delayed use completes. ToUse requirements are not among them: met when the use

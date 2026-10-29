@@ -198,18 +198,49 @@ namespace ZoneEngine_New.Core.Pets
                     continue;
                 }
 
-                owner.OwnedPets.Remove(pet);
-                controller.AwaitOwner(until);
-                pet.Brain?.StopFighting();
-                pet.Brain?.DropEngagement();
-                pet.Brain?.StopPathing();
-                if (!_awaitingOwner.TryGetValue(owner.Identity.Instance, out List<NpcCharacter>? held))
-                    _awaitingOwner[owner.Identity.Instance] = held = new List<NpcCharacter>();
-                held.Add(pet);
-                _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                    "Pet id={0} hash={1} waits for owner={2} until={3:o}",
-                    pet.Identity.Instance, controller.Hash, owner.Identity.Instance, until));
+                Hold(owner, pet, controller, until);
             }
+        }
+
+        /// <summary>
+        /// <paramref name="owner"/> is leaving this playfield: its towers (<see cref="PetTypes.StaysBehind"/>) stay
+        /// here and wait <see cref="OwnerReturnSeconds"/> for it to come back, as for a logout. Returns true when one
+        /// stayed.
+        /// </summary>
+        public bool HoldStayBehindPets(Player owner)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            bool any = false;
+            DateTime until = DateTime.UtcNow.AddSeconds(OwnerReturnSeconds);
+            NpcCharacter[] pets = [.. owner.OwnedPets.All];
+            foreach (NpcCharacter pet in pets)
+            {
+                if (pet.Pet is not PetController controller || controller.IsCharmed || pet.IsDead
+                    || !PetTypes.StaysBehind(controller.Type) || !ReferenceEquals(pet.Playfield, _playfield))
+                    continue;
+
+                Hold(owner, pet, controller, until);
+                any = true;
+            }
+
+            if (any)
+                PublishPetsStat(owner);
+            return any;
+        }
+
+        void Hold(Player owner, NpcCharacter pet, PetController controller, DateTime until)
+        {
+            owner.OwnedPets.Remove(pet);
+            controller.AwaitOwner(until);
+            pet.Brain?.StopFighting();
+            pet.Brain?.DropEngagement();
+            pet.Brain?.StopPathing();
+            if (!_awaitingOwner.TryGetValue(owner.Identity.Instance, out List<NpcCharacter>? held))
+                _awaitingOwner[owner.Identity.Instance] = held = new List<NpcCharacter>();
+            held.Add(pet);
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Pet id={0} hash={1} waits for owner={2} until={3:o}",
+                pet.Identity.Instance, controller.Hash, owner.Identity.Instance, until));
         }
 
         /// <summary>
@@ -428,6 +459,8 @@ namespace ZoneEngine_New.Core.Pets
         public void LeaveWithOwner(Player owner)
         {
             ArgumentNullException.ThrowIfNull(owner);
+            // Towers stay put and wait for the owner instead.
+            HoldStayBehindPets(owner);
             SpawnService spawn = _playfield.GetRequiredService<SpawnService>();
             NpcCharacter[] pets = [.. owner.OwnedPets.All];
             foreach (NpcCharacter pet in pets)
@@ -458,6 +491,8 @@ namespace ZoneEngine_New.Core.Pets
         public void ArriveWithOwner(Player owner)
         {
             ArgumentNullException.ThrowIfNull(owner);
+            // Towers it left waiting here (a zone change that came straight back) serve it again.
+            ReclaimAwaitingPets(owner);
             if (owner.OwnedPets.Count == 0)
                 return;
 

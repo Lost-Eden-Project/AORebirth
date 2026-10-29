@@ -140,8 +140,8 @@ namespace ZoneEngine_New.Core.Nanos
             DynelRegistry? registry = playfield?.GetService<DynelRegistry>();
             if (registry == null)
             {
-                if (AcceptsRecipient(caster, center, child))
-                    NanoRuntime.TryApplyImmediate(caster, center, nanoId, items, inventory, nowUtc);
+                if (AcceptsRecipient(caster, center, child, area: true))
+                    NanoRuntime.TryApplyImmediate(caster, center, nanoId, items, inventory, nowUtc, areaSpread: true);
                 return true;
             }
 
@@ -153,14 +153,14 @@ namespace ZoneEngine_New.Core.Nanos
                     continue;
                 if (center.Distance3D(candidate) > radius)
                     continue;
-                if (!AcceptsRecipient(caster, candidate, child))
+                if (!AcceptsRecipient(caster, candidate, child, area: true))
                     continue;
                 // The area spreads from its centre only to what that centre can see: a wall or a closed door between
                 // them shelters the candidate (area nukes such as 100198).
                 if (!center.HasLineOfSightTo(candidate))
                     continue;
 
-                NanoRuntime.TryApplyImmediate(caster, candidate, nanoId, items, inventory, nowUtc);
+                NanoRuntime.TryApplyImmediate(caster, candidate, nanoId, items, inventory, nowUtc, areaSpread: true);
             }
 
             return true;
@@ -296,7 +296,11 @@ namespace ZoneEngine_New.Core.Nanos
             return true;
         }
 
-        internal static bool AcceptsRecipient(Character source, Character candidate, NanoSpell child)
+        /// <param name="area">
+        /// An AreaCastNano spread: everything in range is caught, friend or foe. A hostile child spares only its
+        /// caster and NPCs that cannot be attacked (or that an NPC caster leaves alone); a friendly one reaches all.
+        /// </param>
+        internal static bool AcceptsRecipient(Character source, Character candidate, NanoSpell child, bool area = false)
         {
             if (candidate.IsDead)
                 return false;
@@ -305,6 +309,8 @@ namespace ZoneEngine_New.Core.Nanos
             bool self = ReferenceEquals(source, candidate);
             if (child.IsHostile && !self && IsSparedByNpcArea(source, candidate))
                 return false;
+            if (area)
+                return !child.IsHostile || IsCaughtByHostileArea(source, candidate);
             if ((can & (CanFlags.ApplyOnSelf | CanFlags.ApplyOnFriendly | CanFlags.ApplyOnHostile)) == 0)
             {
                 // Area nukes such as Volcanic Eruption store Can as 0 and IsHostile on the child.
@@ -326,6 +332,15 @@ namespace ZoneEngine_New.Core.Nanos
 
             return !child.IsHostile || (accepted && CombatRules.CanAttack(source, candidate));
         }
+
+        /// <summary>
+        /// A hostile area effect catches friend and foe alike: everyone in range but its source, NPCs that cannot be
+        /// attacked, and the NPCs an NPC source leaves alone (<see cref="IsSparedByNpcArea"/>).
+        /// </summary>
+        internal static bool IsCaughtByHostileArea(Character source, Character candidate)
+            => !ReferenceEquals(source, candidate)
+                && candidate is not NpcCharacter { Attackable: false }
+                && !IsSparedByNpcArea(source, candidate);
 
         /// <summary>
         /// An NPC's hostile area nano leaves other NPCs alone unless it is fighting that NPC.

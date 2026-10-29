@@ -94,12 +94,15 @@ namespace ZoneEngine_New.Core.Ai
         /// <summary>
         /// A player's pet rejoins its owner when it is more than <see cref="PetService.MaxPlayerPetDistance"/> away,
         /// when its walking got stuck, or when it is far behind and no route leads back. A waiting pet stays put
-        /// unless it is too far away. An NPC's pet stays on the navmesh like any NPC.
+        /// unless it is too far away. An NPC's pet stays on the navmesh like any NPC. A rooted or immobile pet never
+        /// rejoins.
         /// </summary>
         public static bool ShouldRejoinOwner(NpcBrain brain)
         {
             PetController pet = brain.Pet!;
-            if (!pet.IsPlayerPet)
+            // An NPC's pet stays on the navmesh like any NPC; a rooted pet, or one that cannot move at all (a tower),
+            // stays where it is however far its owner goes.
+            if (!pet.IsPlayerPet || brain.Npc.IsImmobile || brain.Npc.IsRooted)
             {
                 pet.WarpRequested = false;
                 return false;

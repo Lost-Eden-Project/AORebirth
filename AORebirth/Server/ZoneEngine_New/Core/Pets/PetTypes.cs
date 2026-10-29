@@ -25,6 +25,12 @@ namespace ZoneEngine_New.Core.Pets
         /// </summary>
         public const int MindControlledSlot = 7;
 
+        /// <summary>The tower slot (service towers and other pets of type 5000-5999).</summary>
+        public const int TowerSlot = 5;
+
+        /// <summary>A tower stays where it was put: it does not zone with its owner.</summary>
+        public static bool StaysBehind(int petType) => Slot(petType) == TowerSlot;
+
         /// <summary>
         /// The pet type a charmed NPC takes: the mindcontrolled place its charm nano lets it fill, one under the
         /// TestNumPets value that allowed the cast (7001: the first, 7000; 7002: the second, 7001). Each charm nano

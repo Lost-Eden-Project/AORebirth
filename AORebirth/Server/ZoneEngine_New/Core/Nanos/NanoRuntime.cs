@@ -478,7 +478,8 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>
         /// Lands a nano immediately: no cast bar, recharge, nano spend, or upload check.
-        /// Buffs occupy NCU; instant nanos just run their OnUse effects.
+        /// Buffs occupy NCU; instant nanos just run their OnUse effects. <paramref name="areaSpread"/> (an area nano
+        /// catching everything in range): a hostile nano also lands on targets the source could not attack directly.
         /// </summary>
         public static bool TryApplyImmediate(
             Character source,
@@ -487,7 +488,8 @@ namespace ZoneEngine_New.Core.Nanos
             IItemBuilder items,
             IInventoryRepository inventory,
             DateTime nowUtc,
-            bool gmApply = false)
+            bool gmApply = false,
+            bool areaSpread = false)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(target);
@@ -501,7 +503,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (template.Id != nanoId)
                 return false;
 
-            return LandImmediate(source, target, NanoSpell.From(template), inventory, items, nowUtc, gmApply);
+            return LandImmediate(source, target, NanoSpell.From(template), inventory, items, nowUtc, gmApply, areaSpread);
         }
 
         /// <summary>
@@ -516,14 +518,15 @@ namespace ZoneEngine_New.Core.Nanos
             IInventoryRepository inventory,
             IItemBuilder items,
             DateTime nowUtc,
-            bool gmApply = false)
+            bool gmApply = false,
+            bool areaSpread = false)
         {
             if (!gmApply)
             {
                 if (IsNoCombat(source) || IsNoCombat(target))
                     return false;
 
-                if (spell.IsHostile && !IsHostileNanoTarget(source, target))
+                if (spell.IsHostile && !areaSpread && !IsHostileNanoTarget(source, target))
                     return false;
 
                 if (spell.IsHostile && target.IsEvading)

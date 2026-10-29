@@ -397,6 +397,8 @@ message PetEnvelope {
   // Seconds of summon left; 0 for a pet that never expires.
   int32 remaining_seconds = 4;
   int32 mode = 5;
+  // The robot's AGG/DEF setting (stat 51), as a Trimmer left it.
+  optional int32 agg_def = 6;
 }
 
 message PresenceUpdate {
