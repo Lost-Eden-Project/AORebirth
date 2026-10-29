@@ -251,6 +251,12 @@ namespace aorf
                 ? LocalDailyLoginTarget : ProductionDailyLoginTarget;
         }
 
+        bool ShouldRewriteDailyLoginHttp(const DailyLoginTarget& target)
+        {
+            // Local hosting accepts the original host; preserve its request bytes and send counts.
+            return std::memcmp(target.address, LocalDailyLoginTarget.address, sizeof(target.address)) != 0;
+        }
+
         bool IsDailyLoginHost(const std::string& host)
         {
             std::string lower = ToLower(host);
@@ -732,7 +738,8 @@ namespace aorf
         int WSAAPI HookSend(SOCKET socket, const char* buffer, int length, int flags)
         {
             std::vector<char> rewritten;
-            if (RoutingEnabled && RewriteDailyLoginHttpRequest(buffer, length, rewritten))
+            if (RoutingEnabled && ShouldRewriteDailyLoginHttp(*RoutingTarget) &&
+                RewriteDailyLoginHttpRequest(buffer, length, rewritten))
             {
                 return RealSend(
                     socket,
@@ -796,6 +803,7 @@ namespace aorf
             std::vector<char> rewritten;
             WSABUF replacement = {};
             if (RoutingEnabled &&
+                ShouldRewriteDailyLoginHttp(*RoutingTarget) &&
                 RewriteDailyLoginHttpRequestFromWsabufs(buffers, bufferCount, rewritten))
             {
                 if (overlapped)
@@ -890,7 +898,8 @@ namespace aorf
         LaunchEndpoint endpoint = {};
         if (!TryParseLaunchEndpoint(L"anarchyonline.exe IA2.24.96.30 IP7500 DUprivate", endpoint) ||
             !IsAoRebirthEndpoint(endpoint) ||
-            &SelectDailyLoginTarget(endpoint) != &ProductionDailyLoginTarget)
+            &SelectDailyLoginTarget(endpoint) != &ProductionDailyLoginTarget ||
+            !ShouldRewriteDailyLoginHttp(SelectDailyLoginTarget(endpoint)))
         {
             return false;
         }
@@ -919,6 +928,7 @@ namespace aorf
 
             const DailyLoginTarget& target = SelectDailyLoginTarget(endpoint);
             if (&target != &LocalDailyLoginTarget ||
+                ShouldRewriteDailyLoginHttp(target) ||
                 std::strcmp(target.ip, "127.0.0.1") != 0 ||
                 wcscmp(target.wideIp, L"127.0.0.1") != 0 ||
                 std::memcmp(target.address, localAddress, sizeof(localAddress)) != 0)
