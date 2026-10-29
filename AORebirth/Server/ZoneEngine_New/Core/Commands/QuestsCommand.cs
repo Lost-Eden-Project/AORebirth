@@ -213,15 +213,17 @@ namespace ZoneEngine_New.Core.Commands
             {
                 rows.Add(Row("Reward", reward.Credits.ToString(CultureInfo.InvariantCulture) + " credits, "
                     + reward.Xp.ToString(CultureInfo.InvariantCulture) + " XP" + (string.IsNullOrWhiteSpace(reward.Hash) ? string.Empty : " (" + Safe(reward.Hash) + ")")));
-                if (reward.Records != null)
+                try
                 {
-                    for (int i = 0; i < reward.Records.Count; i++)
-                    {
-                        var items = new List<string>();
-                        foreach (QuestRewardItem item in reward.Records[i])
-                            items.Add(Safe(string.IsNullOrEmpty(item.Hash) ? item.Name : item.Hash) + " QL" + item.Quality.ToString(CultureInfo.InvariantCulture) + " (" + item.Id.ToString(CultureInfo.InvariantCulture) + ")");
-                        rows.Add(Row("Reward choice " + (i + 1).ToString(CultureInfo.InvariantCulture), string.Join(", ", items)));
-                    }
+                    var items = new List<string>();
+                    foreach (QuestRewardItem item in _quests.RewardItemsFor(subject, quest))
+                        items.Add(Safe(string.IsNullOrEmpty(item.Name) ? item.Id.ToString(CultureInfo.InvariantCulture) : item.Name)
+                            + " QL" + item.Quality.ToString(CultureInfo.InvariantCulture) + " (" + item.Id.ToString(CultureInfo.InvariantCulture) + ")");
+                    rows.Add(Row("Reward items", items.Count == 0 ? "none" : string.Join(", ", items)));
+                }
+                catch (InvalidOperationException exception)
+                {
+                    rows.Add(Row("Reward items", "error: " + Safe(exception.Message)));
                 }
             }
             else
@@ -292,6 +294,9 @@ namespace ZoneEngine_New.Core.Commands
                     + DiagAoml.Field("Needed", DiagAoml.Name(template.RequiredCount.ToString(CultureInfo.InvariantCulture))),
             };
 
+            if (!string.IsNullOrEmpty(template.LoadProblem))
+                rows.Add(DiagAoml.Field("Problem", DiagAoml.Color(DiagAoml.Red, Safe(template.LoadProblem))));
+
             if (template.MissionBit is int bit)
             {
                 var shared = new List<string>();
@@ -329,41 +334,33 @@ namespace ZoneEngine_New.Core.Commands
                 rows.Add(DiagAoml.Indent + DiagAoml.Field("Credits", DiagAoml.Name(reward.Credits.ToString("N0", CultureInfo.InvariantCulture)))
                     + DiagAoml.Field("XP", DiagAoml.Name(reward.Xp.ToString("N0", CultureInfo.InvariantCulture)))
                     + (string.IsNullOrWhiteSpace(reward.Hash) ? string.Empty : DiagAoml.Muted("[" + Safe(reward.Hash) + "]")));
-                if (reward.Records is { Count: > 0 } records)
+
+                string mapped;
+                if (_quests.Rewards is not QuestRewardTable table || !table.Has(reward.Hash))
+                    mapped = DiagAoml.Color(DiagAoml.Orange, "no QuestRewards.json entry");
+                else
                 {
-                    for (int i = 0; i < records.Count; i++)
+                    try
                     {
-                        rows.Add(DiagAoml.Indent + DiagAoml.Label(records.Count == 1 ? "Items" : "Choice " + (i + 1).ToString(CultureInfo.InvariantCulture)));
-                        foreach (QuestRewardItem item in records[i])
-                            rows.Add(DiagAoml.Indent + DiagAoml.Indent + DiagAoml.Name(Safe(item.Name)) + " "
-                                + DiagAoml.Muted("QL" + item.Quality.ToString(CultureInfo.InvariantCulture) + " (" + item.Id.ToString(CultureInfo.InvariantCulture)
+                        table.TryResolve(reward.Hash, subject, null, out IReadOnlyList<QuestRewardItem> items);
+                        var names = new List<string>(items.Count);
+                        foreach (QuestRewardItem item in items)
+                            names.Add(DiagAoml.Name(Safe(string.IsNullOrEmpty(item.Name) ? item.Id.ToString(CultureInfo.InvariantCulture) : item.Name))
+                                + " " + DiagAoml.Muted("QL" + item.Quality.ToString(CultureInfo.InvariantCulture)
+                                    + " (" + item.Id.ToString(CultureInfo.InvariantCulture)
                                     + (item.HighId is int high && high != item.Id ? "/" + high.ToString(CultureInfo.InvariantCulture) : string.Empty) + ")"));
+                        mapped = names.Count == 0 ? DiagAoml.Muted("no entry matches") : string.Join(", ", names);
+                    }
+                    catch (InvalidOperationException exception)
+                    {
+                        mapped = DiagAoml.Color(DiagAoml.Red, Safe(exception.Message));
                     }
                 }
+
+                rows.Add(DiagAoml.Indent + DiagAoml.Field("Items for " + WhoOf(subject), mapped));
             }
             else
                 rows.Add(DiagAoml.Indent + none);
-
-            if (_quests.Rewards is QuestRewardTable table && table.Has(template.Reward?.Hash))
-            {
-                string mapped;
-                try
-                {
-                    table.TryResolve(template.Reward!.Hash, subject, out IReadOnlyList<QuestRewardItem> items);
-                    var names = new List<string>(items.Count);
-                    foreach (QuestRewardItem item in items)
-                        names.Add(DiagAoml.Name(Safe(string.IsNullOrEmpty(item.Name) ? item.Id.ToString(CultureInfo.InvariantCulture) : item.Name))
-                            + " " + DiagAoml.Muted("QL" + item.Quality.ToString(CultureInfo.InvariantCulture)
-                                + " (" + item.Id.ToString(CultureInfo.InvariantCulture) + ")"));
-                    mapped = names.Count == 0 ? DiagAoml.Muted("no entry matches") : string.Join(", ", names);
-                }
-                catch (InvalidOperationException exception)
-                {
-                    mapped = DiagAoml.Color(DiagAoml.Red, Safe(exception.Message));
-                }
-
-                rows.Add(DiagAoml.Indent + DiagAoml.Field("QuestRewards.json for " + WhoOf(subject), mapped));
-            }
 
             var previous = new List<string>();
             foreach (QuestTemplate other in _catalog.Templates)

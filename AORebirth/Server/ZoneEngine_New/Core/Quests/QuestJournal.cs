@@ -78,6 +78,29 @@ namespace ZoneEngine_New.Core.Quests
             ["TargetNpc"] = new(16, 11335, 0xD2F1, TargetInSlot3: false),
         };
 
+        /// <summary>
+        /// The action live sends for a Quests.json action that has no journal layout of its own, used only to carry a
+        /// waypoint (captured journals, PR #46): talk and use 24, return 23, assemble 18, deliver 6, use on an object 8.
+        /// The protocol values live here, by action, not in the content.
+        /// </summary>
+        static readonly Dictionary<string, ActionLayout> WaypointLayouts = new(StringComparer.Ordinal)
+        {
+            ["TalkTo"] = new(24, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            ["UseItemOnCharacter"] = new(24, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            ["UseItemOnCharacterDev"] = new(24, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            ["ReturnToQuestGiver"] = new(23, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            [QuestTemplate.AssembleAction] = new(18, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            [QuestTemplate.ReturnItemAction] = new(6, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            ["BringItemHere"] = new(6, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+            [QuestTemplate.RepairAction] = new(8, DefaultIconId, 0xD2FC, TargetInSlot3: false, NamesTarget: false),
+        };
+
+        /// <summary>
+        /// Spawns.json record and Dynels.dat statel positions per (playfield, target hash), as [x0, z0, x1, z1, ...]: static
+        /// GameData, read once.
+        /// </summary>
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Playfield, string Hash), float[]> StaticTargets = new();
+
         internal static int JournalInstance(string questId)
         {
             // FNV-1a over the id, folded to 24 bits: stable across sessions for the same quest.
@@ -124,10 +147,9 @@ namespace ZoneEngine_New.Core.Quests
             Layouts.TryGetValue(template.Action, out ActionLayout? layout);
 
             // A quest whose Action has no journal layout (talk, use, deliver, return, assemble) still gets live's
-            // action when it has a captured waypoint: the action is what carries the compass point.
-            if (layout == null && template.Waypoint is { Version: > 0 } waypoint)
-                layout = new ActionLayout(waypoint.Version, DefaultIconId, waypoint.SlotType != 0 ? waypoint.SlotType : 0xD2FC,
-                    TargetInSlot3: false, NamesTarget: false);
+            // action when it has a waypoint: the action is what carries the compass point.
+            if (layout == null && template.Waypoint is { Playfield: > 0 })
+                WaypointLayouts.TryGetValue(template.Action, out layout);
 
             // Dungeon quests (accepted terminal missions): the terminal's icon, and an action whatever the objective,
             // because the action carries the waypoint to the dungeon entrance.
@@ -160,7 +182,7 @@ namespace ZoneEngine_New.Core.Quests
                 ExperienceReward = reward?.Xp ?? 0,
                 Unknown9 = 0x3F1,
                 Unknown10 = 0x3F1,
-                MissionItemData = RewardItems(player, reward),
+                MissionItemData = RewardItems(player, quest),
                 UnknownHash1 = reward?.Hash ?? string.Empty,
                 Unknown14 = 220,
                 UnknownId2 = Copy(player.Identity),
@@ -291,7 +313,6 @@ namespace ZoneEngine_New.Core.Quests
             return (uint)Math.Min(expires, int.MaxValue);
         }
 
-        /// <summary>Retail cuts a longer title to 28 characters and "..." ("Talk to the ICC Bio-Inspecto...", HYIY).</summary>
         /// <summary>
         /// Quest action versions whose live action names its target (captured journals): 1 kill one, 6 deliver/return/show,
         /// 8 use on an object. Talk (24), assemble (18) and kill in area (20) send only a point.
@@ -318,9 +339,10 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
-        /// Where <paramref name="target"/> is on <paramref name="playfieldId"/>, nearest the player when there are several:
-        /// an NPC with that spawn or template hash standing there, else that hash's Spawns.json record, else a
-        /// Dynels.dat statel whose template the ItemTemplates.json hash covers.
+        /// Where <paramref name="target"/> is on <paramref name="playfieldId"/>, nearest the player when there are several.
+        /// On the player's playfield the spawn system answers: a living NPC of that spawn or template hash, else its spawn
+        /// point. Otherwise, or when it has none, the hash's Spawns.json records and the Dynels.dat statels whose template
+        /// the ItemTemplates.json hash covers.
         /// </summary>
         static bool TryTargetPosition(Player player, int playfieldId, string target, out float x, out float z)
         {
@@ -328,58 +350,64 @@ namespace ZoneEngine_New.Core.Quests
             if (player.Playfield is not { } playfield || playfield.GetService<IGameData>() is not IGameData gameData)
                 return false;
 
-            var from = player.Position;
-            float best = float.MaxValue, bestX = 0, bestZ = 0;
-            void Consider(float px, float pz)
+            AORebirth.Core.Vector.Vector3 from = player.Position;
+            if (playfield.Identity.Instance == playfieldId && playfield.GetService<HashSpawnSystem>() is HashSpawnSystem spawns
+                && spawns.TryFindNearest(target, from, out AORebirth.Core.Vector.Vector3 at))
             {
-                float dx = px - (float)from.x, dz = pz - (float)from.z, distance = dx * dx + dz * dz;
-                if (distance < best)
-                    (best, bestX, bestZ) = (distance, px, pz);
+                (x, z) = ((float)at.x, (float)at.z);
+                return true;
             }
 
-            if (playfield.Identity.Instance == playfieldId)
-                foreach (Dynel dynel in playfield.GetRequiredService<DynelRegistry>().Dynels())
-                    if (dynel is NpcCharacter npc && !npc.IsDead
-                        && (string.Equals(npc.SpawnHash, target, StringComparison.Ordinal)
-                            || string.Equals(npc.MobTemplate?.Hash, target, StringComparison.Ordinal)))
-                        Consider((float)npc.Position.x, (float)npc.Position.z);
+            float[] points = StaticTargets.GetOrAdd((playfieldId, target), key => BuildStaticTargets(gameData, key.Playfield, key.Hash));
+            double best = double.MaxValue;
+            for (int i = 0; i + 1 < points.Length; i += 2)
+            {
+                double dx = points[i] - from.x, dz = points[i + 1] - from.z, distance = (dx * dx) + (dz * dz);
+                if (distance < best)
+                    (best, x, z) = (distance, points[i], points[i + 1]);
+            }
 
-            // The spawn record only when no such NPC stands there (dead, or the player is elsewhere).
-            if (best == float.MaxValue)
-                foreach (PlayfieldSpawnEntry spawn in gameData.GetPlayfieldSpawns(playfieldId).Spawns ?? [])
-                    if (string.Equals(spawn.HashText, target, StringComparison.Ordinal) && spawn.Position is { Length: >= 3 } at)
-                        Consider(at[0], at[2]);
+            return best < double.MaxValue;
+        }
+
+        static float[] BuildStaticTargets(IGameData gameData, int playfieldId, string target)
+        {
+            var points = new List<float>();
+            foreach (PlayfieldSpawnEntry spawn in gameData.GetPlayfieldSpawns(playfieldId).Spawns ?? [])
+            {
+                if (string.Equals(spawn.HashText, target, StringComparison.Ordinal) && spawn.Position is { Length: >= 3 } at)
+                {
+                    points.Add(at[0]);
+                    points.Add(at[2]);
+                }
+            }
+
+            if (points.Count > 0)
+                return points.ToArray();
 
             var leaves = new List<HashInstance>();
-            if (best == float.MaxValue)
-                gameData.CollectHashLeafInstances(target, leaves);
+            gameData.CollectHashLeafInstances(target, leaves);
             if (leaves.Count > 0 && gameData.GetPlayfieldGeometry(playfieldId).Dynels?.Dynels is { } statels)
             {
                 var templates = new HashSet<int>();
                 foreach (HashInstance leaf in leaves)
                     templates.UnionWith(leaf.TemplateIds);
                 foreach (var statel in statels)
+                {
                     if (templates.Contains(statel.TemplateId))
-                        Consider(statel.Position.X, statel.Position.Z);
+                    {
+                        points.Add(statel.Position.X);
+                        points.Add(statel.Position.Z);
+                    }
+                }
             }
 
-            (x, z) = (bestX, bestZ);
-            return best < float.MaxValue;
+            return points.ToArray();
         }
 
+        /// <summary>Retail cuts a longer title to 28 characters and "..." ("Talk to the ICC Bio-Inspecto...", HYIY).</summary>
         static string ShortName(string name)
             => name.Length <= MaxShortInfoLength ? name : name[..(MaxShortInfoLength - 3)] + "...";
-
-        /// <summary>
-        /// For a quest with live's journal text, Summary is live's own short name, used when it fits (live shortens
-        /// long names itself: "Use the Stim on a Wounded Do..."). Otherwise (hand-written quests, whose Summary is a
-        /// sentence: KION "kill the target NPC") the name cut to fit.
-        /// </summary>
-        static string ShortInfo(QuestTemplate template)
-            => !string.IsNullOrWhiteSpace(template.Description)
-                && !string.IsNullOrEmpty(template.Summary) && template.Summary.Length <= MaxShortInfoLength
-                ? template.Summary
-                : ShortName(template.Name);
 
         static string LongInfo(QuestTemplate template)
         {
@@ -396,19 +424,13 @@ namespace ZoneEngine_New.Core.Quests
             return text.ToString();
         }
 
-        /// <summary>
-        /// The reward items the journal shows: the player's QuestRewards.json entry when the reward hash has one,
-        /// else the first Quests.json record (records are alternatives).
-        /// </summary>
-        static MissionItemReward[] RewardItems(Player player, QuestReward? reward)
+        /// <summary>The reward items the journal shows: what completing the quest would pay this player now.</summary>
+        static MissionItemReward[] RewardItems(Player player, PlayerQuest quest)
         {
             IReadOnlyList<QuestRewardItem> shown;
             try
             {
-                shown = player.Playfield?.GetService<QuestRewardTable>() is QuestRewardTable table
-                    && table.TryResolve(reward?.Hash, player, out IReadOnlyList<QuestRewardItem> mapped)
-                    ? mapped
-                    : reward?.Records is { Count: > 0 } records ? records[0] : [];
+                shown = player.Playfield?.GetService<QuestService>()?.RewardItemsFor(player, quest) ?? [];
             }
             catch (InvalidOperationException)
             {

@@ -56,26 +56,10 @@ void Write(string name, string title, string source, Type type, JsonSerializerOp
                 };
             if (context.PropertyInfo is { } questProperty && questProperty.DeclaringType == typeof(QuestTemplate) && node is JsonObject questNode)
                 RefineQuestProperty(questProperty.Name, questNode);
-            if (context.PropertyInfo == null && context.TypeInfo.Type == typeof(QuestTemplate) && node is JsonObject quest
-                && quest["properties"] is JsonObject questProperties)
-                // The dump's waypoints: kept in the file, not read by the server.
-                questProperties["Waypoints"] = new JsonObject
-                {
-                    ["description"] = "Dumped waypoints; not read by the server.",
-                    ["type"] = new JsonArray("array", "null"),
-                    ["items"] = new JsonObject
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new JsonObject
-                        {
-                            ["Playfield"] = new JsonObject { ["type"] = "integer" },
-                            ["X"] = new JsonObject { ["type"] = "integer" },
-                            ["Y"] = new JsonObject { ["type"] = "integer" },
-                            ["Z"] = new JsonObject { ["type"] = "integer" },
-                        },
-                        ["additionalProperties"] = false,
-                    },
-                };
+            // Quests.json reward items live in QuestRewards.json, keyed by Reward.Hash; Records is not read from it.
+            if (context.TypeInfo.Type == typeof(QuestReward) && node is JsonObject rewardNode
+                && rewardNode["properties"] is JsonObject rewardProperties)
+                rewardProperties.Remove("Records");
             if (node is JsonObject obj && obj.ContainsKey("properties") && !obj.ContainsKey("additionalProperties"))
                 obj["additionalProperties"] = false;
             return node;
@@ -123,7 +107,7 @@ static void RefineQuestProperty(string name, JsonObject node)
             break;
         case nameof(QuestTemplate.Action):
             node["enum"] = new JsonArray("KillOne", "KillMultiple", "TargetNpc", "TalkTo", "FindItem", "FindItem2",
-                "ReturnToQuestGiver", "UseItemOnCharacter", "UseItemOnCharacterDev", "UseItemOnItem", "Assemble",
+                "ReturnToQuestGiver", "UseItemOnCharacter", "UseItemOnCharacterDev", "UseItemOnItem", "Assemble", "Equip",
                 "CreateItem", "BringItemHere", "EscortItem", "Escort");
             break;
         case nameof(QuestTemplate.Flags):

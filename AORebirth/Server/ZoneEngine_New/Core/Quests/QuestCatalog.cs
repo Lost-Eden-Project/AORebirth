@@ -11,8 +11,9 @@ namespace ZoneEngine_New.Core.Quests
     using ZoneEngine_New.Core.Logging;
 
     /// <summary>
-    /// GameData/Quests.json templates keyed by hash. Items are named by ItemTemplates.json hash: reward and start
-    /// items are resolved to template ids here, and a quest naming an item hash that does not resolve is left out.
+    /// GameData/Quests.json templates keyed by hash. Start items may be named by ItemTemplates.json hash and are resolved
+    /// to template ids here; one that does not resolve is recorded on the quest (<see cref="QuestTemplate.LoadProblem"/>),
+    /// which still loads. Reward items come from QuestRewards.json.
     /// </summary>
     public sealed class QuestCatalog
     {
@@ -54,6 +55,7 @@ namespace ZoneEngine_New.Core.Quests
                 List<QuestTemplate>? loaded = JsonSerializer.Deserialize<List<QuestTemplate>>(
                     File.ReadAllText(path), QuestTemplate.JsonOptions);
                 int skipped = 0;
+                var recordsIgnored = new List<string>();
                 foreach (QuestTemplate template in loaded ?? [])
                 {
                     if (string.IsNullOrEmpty(template.Hash) || !_templates.TryAdd(template.Hash, template))
@@ -69,15 +71,31 @@ namespace ZoneEngine_New.Core.Quests
                         template.MissionBit = null;
                     }
 
+                    // Live's dumped compass point stands in for a waypoint nobody wrote by hand.
+                    if (template.Waypoint == null && template.Waypoints is { Count: > 0 } && template.Waypoints[0] is { Playfield: > 0 } dumped)
+                        template.Waypoint = new QuestWaypoint { Playfield = dumped.Playfield, Position = [dumped.X, dumped.Y, dumped.Z] };
+
+                    // Items come only from QuestRewards.json, by Reward.Hash; a record left in Quests.json is dropped so it cannot pay.
+                    if (template.Reward?.Records is { Count: > 0 })
+                    {
+                        recordsIgnored.Add(template.Hash);
+                        template.Reward.Records = null;
+                    }
+
+                    // A hash that does not resolve keeps the quest (its chain still runs); the item is left out when it
+                    // would be given, and the problem shows in the log and in .quests info.
                     if (UnresolvedItem(template) is string unresolved)
                     {
-                        logger.Warn(string.Format(CultureInfo.InvariantCulture,
-                            "Quest {0} names item hash {1}, which does not resolve to one item; quest skipped", template.Hash, unresolved));
-                        _templates.Remove(template.Hash);
-                        skipped++;
+                        template.LoadProblem = "item hash " + unresolved + " does not resolve to one item";
+                        logger.Warn(string.Format(CultureInfo.InvariantCulture, "Quest {0}: {1}", template.Hash, template.LoadProblem));
                     }
                 }
 
+                if (recordsIgnored.Count > 0)
+                    logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "{0} quests carry Reward.Records, which are not read; move them to QuestRewards.json: {1}{2}",
+                        recordsIgnored.Count, string.Join(", ", recordsIgnored.GetRange(0, Math.Min(8, recordsIgnored.Count))),
+                        recordsIgnored.Count > 8 ? ", ..." : string.Empty));
                 logger.Info(string.Format(CultureInfo.InvariantCulture, "GameData quests={0} skipped={1} from {2}", _templates.Count, skipped, path));
             }
             catch (Exception exception)
@@ -87,16 +105,13 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
-        /// Resolves every hash-named item of <paramref name="template"/> to its template ids for the item's quality.
+        /// Resolves every hash-named start item of <paramref name="template"/> to its template ids for the item's quality.
         /// Returns the first hash that does not resolve, or null. A hash must name one item family (an ItemTemplates.json
         /// leaf) so the quest always hands over the same item.
         /// </summary>
         string? UnresolvedItem(QuestTemplate template)
         {
-            var items = new List<QuestRewardItem>();
-            foreach (List<QuestRewardItem> record in template.Reward?.Records ?? [])
-                items.AddRange(record);
-            items.AddRange(template.StartItems ?? []);
+            var items = new List<QuestRewardItem>(template.StartItems ?? []);
 
             var leaves = new List<HashInstance>();
             foreach (QuestRewardItem item in items)
@@ -109,7 +124,12 @@ namespace ZoneEngine_New.Core.Quests
                 // Only the ids come from the hash: the item keeps the quest's Quality, as it did when quests named ids.
                 if (leaves.Count != 1 || _minter == null
                     || !_minter.TryRollIds(item.Hash, item.Quality, out int lowId, out int highId, out _))
+                {
+                    // Left at 0, so the grant leaves it out instead of handing over a wrong item.
+                    item.Id = 0;
+                    item.HighId = null;
                     return item.Hash;
+                }
 
                 item.Id = lowId;
                 item.HighId = highId;

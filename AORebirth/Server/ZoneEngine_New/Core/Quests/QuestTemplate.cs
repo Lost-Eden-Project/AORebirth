@@ -77,17 +77,27 @@ namespace ZoneEngine_New.Core.Quests
         public QuestReward? Reward { get; set; }
 
         /// <summary>
-        /// Items the player is handed as this step starts after the previous one (live, Surveillance Uplink: the
-        /// Rebuilt HC-12 SecTec Monitor arrives with the Deliver the Bio Analyzing Computer reward). Granted with the
-        /// previous step's reward, not shown in its reward box.
+        /// Items the player is handed when this step is assigned, however it starts (a previous step, Knubot
+        /// <c>{givequest}</c>, <c>.quests</c>): live, Surveillance Uplink, the Rebuilt HC-12 SecTec Monitor arrives with the
+        /// step. Not part of any reward box.
         /// </summary>
         public List<QuestRewardItem>? StartItems { get; set; }
 
         /// <summary>
-        /// The journal compass waypoint live sends on the quest action: playfield and a target or position (y is 0). Quests whose
-        /// <see cref="Action"/> has no journal layout also take the action's version and slot type from here.
+        /// The journal compass waypoint live sends on the quest action: playfield and a target or position (y is 0). The
+        /// action's protocol values come from <see cref="Action"/> (QuestJournal), never from the content.
         /// </summary>
         public QuestWaypoint? Waypoint { get; set; }
+
+        /// <summary>
+        /// The compass point as dumped from live's journal ([{Playfield, X, Y, Z}]). <see cref="QuestCatalog"/> folds the
+        /// first into <see cref="Waypoint"/> when none is written, so an action with a journal layout gets its point.
+        /// </summary>
+        public List<QuestDumpWaypoint>? Waypoints { get; set; }
+
+        /// <summary>What did not resolve when Quests.json loaded (an item hash); null when nothing. The quest still runs.</summary>
+        [JsonIgnore]
+        public string? LoadProblem { get; set; }
 
         [JsonIgnore]
         public bool IsKill => string.Equals(Action, KillOneAction, StringComparison.Ordinal)
@@ -154,11 +164,18 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>[x, y, z]; live sends y as 0. The point itself, or the fallback for <see cref="Target"/>.</summary>
         public float[] Position { get; set; } = [];
 
-        /// <summary>QuestActionInfo version live sent (24 talk/use, 23 return, 20 kill in area, 18 assemble, 6 deliver, 1 kill).</summary>
-        public int Version { get; set; }
+    }
 
-        /// <summary>Identity type of the action's UnknownId7 slot live sent (0xD2FC = 54012, 0xD2F1 = 54001).</summary>
-        public int SlotType { get; set; }
+    /// <summary>One dumped compass point (<see cref="QuestTemplate.Waypoints"/>).</summary>
+    public sealed class QuestDumpWaypoint
+    {
+        public int Playfield { get; set; }
+
+        public float X { get; set; }
+
+        public float Y { get; set; }
+
+        public float Z { get; set; }
     }
 
     public sealed class QuestReward

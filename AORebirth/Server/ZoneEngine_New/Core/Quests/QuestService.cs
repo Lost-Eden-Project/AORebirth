@@ -460,7 +460,39 @@ namespace ZoneEngine_New.Core.Quests
             Save(player, quest);
             // The announce flag makes the client print "You got a new mission" itself.
             QuestJournal.Send(player, quest, announce: true);
+            GrantStartItems(player, quest);
             return quest;
+        }
+
+        /// <summary>
+        /// The step's <see cref="QuestTemplate.StartItems"/>, handed over as it is assigned: to the first free inventory
+        /// slot, else overflow, like a Knubot <c>{spawn}</c>. A Unique item already held is left out; one whose item hash did
+        /// not resolve at load is left out with a warning (the quest still runs).
+        /// </summary>
+        void GrantStartItems(Player player, PlayerQuest quest)
+        {
+            if (quest.Template.StartItems is not { Count: > 0 } startItems)
+                return;
+
+            foreach (QuestRewardItem definition in startItems)
+            {
+                if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
+                {
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Quest {0} start item {1} does not resolve; not given char={2}",
+                        quest.QuestId, string.IsNullOrEmpty(definition.Hash) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Hash,
+                        player.Identity.Instance));
+                    continue;
+                }
+
+                Item item = _items.CreateWithNewInstance(definition.Id, definition.HighId ?? definition.Id, definition.Quality, ItemSource.Quest);
+                if (UniqueItems.WouldDuplicate(player, item, out string uniqueName))
+                {
+                    ClientFeedback.SendFormatted(player, ClientFeedback.AlreadyHaveUniqueItem, uniqueName);
+                    continue;
+                }
+
+                Knubot.KnubotItems.Give(player, item, _flush);
+            }
         }
 
         void ExpireDue(Player player, QuestLog log)

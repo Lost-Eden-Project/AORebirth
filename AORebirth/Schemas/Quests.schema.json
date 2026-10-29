@@ -58,6 +58,7 @@
           "UseItemOnCharacterDev",
           "UseItemOnItem",
           "Assemble",
+          "Equip",
           "CreateItem",
           "BringItemHere",
           "EscortItem",
@@ -79,6 +80,12 @@
           "Npc": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "FindChance": {
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -131,42 +138,44 @@
           },
           "Xp": {
             "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StartItems": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/items/properties/Reward/properties/Records/items/items"
+        }
+      },
+      "Waypoint": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "Playfield": {
+            "type": "integer"
           },
-          "Records": {
+          "Target": {
             "type": [
-              "array",
+              "string",
               "null"
-            ],
+            ]
+          },
+          "Position": {
+            "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "Id": {
-                    "type": "integer"
-                  },
-                  "HighId": {
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  },
-                  "Name": {
-                    "type": "string"
-                  },
-                  "Quality": {
-                    "type": "integer"
-                  }
-                },
-                "additionalProperties": false
-              }
+              "type": "number"
             }
           }
         },
         "additionalProperties": false
       },
       "Waypoints": {
-        "description": "Dumped waypoints; not read by the server.",
         "type": [
           "array",
           "null"
@@ -178,13 +187,13 @@
               "type": "integer"
             },
             "X": {
-              "type": "integer"
+              "type": "number"
             },
             "Y": {
-              "type": "integer"
+              "type": "number"
             },
             "Z": {
-              "type": "integer"
+              "type": "number"
             }
           },
           "additionalProperties": false

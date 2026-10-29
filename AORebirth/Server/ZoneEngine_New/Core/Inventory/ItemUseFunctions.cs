@@ -211,6 +211,13 @@ namespace ZoneEngine_New.Core.Inventory
                 return true;
             }
 
+            // Alien Daily Mission XP Reward 288545 [AlienXP, 10, 0, 0]: the same, of the current alien level's bar.
+            if (stat == CharacterStat.AlienXP && spell.ArgumentCount >= 3 && third == 0 && minHit > 0)
+            {
+                target.AwardAlienLevelPercentXp(minHit);
+                return true;
+            }
+
             // Max 0 with a nonzero Min is a percentage of the stat's maximum: Complete Healing [27,100,0,0] heals fully,
             // Minor Regeneration of Health and Nano [27,5,0,91] / [214,5,0,91] restores 5%, Wall Hacks! [27,-30,0,91]
             // takes 30%. The damage type still names the hit; caster Add Damage does not apply to a percentage.

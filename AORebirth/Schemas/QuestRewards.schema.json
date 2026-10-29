@@ -13,6 +13,9 @@
           "null"
         ]
       },
+      "PickOne": {
+        "type": "boolean"
+      },
       "Entries": {
         "type": [
           "array",
@@ -62,6 +65,12 @@
                   "HighId": {
                     "type": [
                       "integer",
+                      "null"
+                    ]
+                  },
+                  "Name": {
+                    "type": [
+                      "string",
                       "null"
                     ]
                   },

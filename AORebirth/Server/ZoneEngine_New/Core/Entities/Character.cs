@@ -1212,6 +1212,22 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
+        /// Daily reward alien XP (item Hit [AlienXP, percent, 0, 0], Alien Daily Mission XP Reward 288545):
+        /// <paramref name="percent"/> of the current alien level's bar, like <see cref="AwardLevelPercentXp"/>: not scaled
+        /// by the XP modifier nor capped by xp.caps; what passes the next alien level carries into it.
+        /// </summary>
+        public void AwardAlienLevelPercentXp(int percent)
+        {
+            if (percent <= 0 || !IsPlayer || Playfield?.GetService<IGameData>() is not IGameData gameData
+                || !gameData.TryGetAlienXpLevel(Stats.GetOrZero(CharacterStat.AlienLevel) + 1, out AlienXpLevelEntry current)
+                || current.NextLevelXp <= 0)
+                return;
+
+            long amount = (long)current.NextLevelXp * percent / 100;
+            SettleAlienXp(gameData, Stats.GetOrZero(CharacterStat.AlienXP) + amount);
+        }
+
+        /// <summary>
         /// Takes alien levels while <paramref name="progress"/> covers the next step and the character level allows it
         /// (AlienXp.json MinLevel), then stores what is left. A bar held full by the level cap is settled again on a level
         /// up, so the alien level comes at once (level 14 at 9000/9000 reaching 15 becomes AI 3 without another kill).
