@@ -10,6 +10,7 @@ namespace aorf
     };
 
     ClientProfile GetLoadedN3ClientProfile();
+    bool VerifyLoadedModuleFileHash(void* module, const char* expected);
     bool InstallClientCrashMitigation();
     bool RunClientCrashMitigationSelfTest();
 }

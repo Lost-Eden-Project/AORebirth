@@ -1,6 +1,7 @@
 #include "daily_login_routing.h"
 
 #include "logging.h"
+#include "roomspace_fix.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -564,6 +565,309 @@ namespace aorf
             }
         }
 
+        using AweJsCallback = void(__cdecl*)(void*, const void*, const void*, const void*);
+        using AweFinishCallback = void(__cdecl*)(void*);
+        using FnSetJsCallback = void(__cdecl*)(void*, AweJsCallback);
+        using FnSetFinishCallback = void(__cdecl*)(void*, AweFinishCallback);
+        using FnAweDestroy = void(__cdecl*)(void*);
+        using FnAweGetUrl = void*(__cdecl*)(void*);
+        using FnAweString = void*(__cdecl*)(const char*, unsigned int);
+        using FnAweStringDestroy = void(__cdecl*)(void*);
+        using FnAweToUtf8 = unsigned int(__cdecl*)(const void*, char*, unsigned int);
+        using FnAweCreateObject = void(__cdecl*)(void*, const void*);
+        using FnAweObjectCallback = void(__cdecl*)(void*, const void*, const void*);
+        using FnAweArraySize = unsigned int(__cdecl*)(const void*);
+        using FnInterfaceInstance = void*(__cdecl*)();
+        using FnRequestClaims = void(__thiscall*)(void*);
+
+        struct BridgeModule
+        {
+            const wchar_t* name;
+            const char* hash;
+            HMODULE handle;
+        };
+        BridgeModule BridgeModules[] =
+        {
+            { L"GUI.dll", "e485384721e2fe13972e840dfb6a9fe29b1ba4eb71b42cc049e5097a570b6de1", nullptr },
+            { L"Interfaces.dll", "3aa79a44e76c3413543404058c5d07323bd3b69f4c3493c7b136befa1a55b0a7", nullptr },
+            { L"Gamecode.dll", "654969a6b65946cb161f0e60aed8589260fc5eca1795488f66bb56f8fff73726", nullptr },
+            { L"Awesomium.dll", "4965938928358ad7e99f7465806324336f49ca51e467ed0ac36a4ba65139b2d0", nullptr }
+        };
+        LONG NativeBridgeReady = 0;
+        bool NativeBridgeRejected = false;
+        bool NativeBridgeEndpoint = false;
+        FnSetJsCallback RealSetJsCallback = nullptr;
+        FnSetFinishCallback RealSetFinishCallback = nullptr;
+        FnAweDestroy RealAweDestroy = nullptr;
+        FnAweGetUrl AweGetUrl = nullptr;
+        FnAweString AweString = nullptr;
+        FnAweStringDestroy AweStringDestroy = nullptr;
+        FnAweToUtf8 AweToUtf8 = nullptr;
+        FnAweCreateObject AweCreateObject = nullptr;
+        FnAweObjectCallback AweObjectCallback = nullptr;
+        FnAweArraySize AweArraySize = nullptr;
+        FnInterfaceInstance InterfaceInstance = nullptr;
+        FnRequestClaims RequestClaims = nullptr;
+
+        struct BridgeView
+        {
+            void* view = nullptr;
+            DWORD thread = 0;
+            AweJsCallback js = nullptr;
+            AweFinishCallback finish = nullptr;
+            bool registered = false;
+            bool destroying = false;
+        };
+        SRWLOCK BridgeViewsLock = SRWLOCK_INIT;
+        BridgeView BridgeViews[32];
+
+        bool AllowedDailyBridgeUrl(const char* url)
+        {
+            return url && (_stricmp(url, "http://dailyrewards.anarchy-online.com/") == 0 ||
+                _stricmp(url, "http://dailyrewards.anarchy-online.com/index.app") == 0 ||
+                _stricmp(url, "http://uwg.daily.icc-rk/index.app") == 0 ||
+                _stricmp(url, "http://www.daily.icc-rk/index.app") == 0);
+        }
+
+        bool CanDispatchDailyBridge(bool ready, bool endpoint, bool origin, const BridgeView& view, DWORD thread)
+        {
+            return ready && endpoint && origin && view.view && view.registered && !view.destroying &&
+                view.thread != 0 && view.thread == thread && view.js && view.finish;
+        }
+
+        BridgeView SnapshotBridgeView(void* view)
+        {
+            BridgeView result;
+            AcquireSRWLockShared(&BridgeViewsLock);
+            for (const auto& entry : BridgeViews) if (entry.view == view) { result = entry; break; }
+            ReleaseSRWLockShared(&BridgeViewsLock);
+            return result;
+        }
+
+        bool RecordBridgeView(void* view, AweJsCallback js, AweFinishCallback finish)
+        {
+            AcquireSRWLockExclusive(&BridgeViewsLock);
+            BridgeView* selected = nullptr;
+            for (auto& entry : BridgeViews) if (entry.view == view) { selected = &entry; break; }
+            if (!selected) for (auto& entry : BridgeViews) if (!entry.view) { selected = &entry; break; }
+            const bool recorded = selected && (!selected->view || selected->thread == GetCurrentThreadId());
+            if (recorded) {
+                selected->view = view;
+                selected->thread = GetCurrentThreadId();
+                if (js) selected->js = js;
+                if (finish) selected->finish = finish;
+            }
+            ReleaseSRWLockExclusive(&BridgeViewsLock);
+            return recorded;
+        }
+
+        bool NativeBridgeModulesMatch()
+        {
+            for (const auto& module : BridgeModules)
+                if (!module.handle || GetModuleHandleW(module.name) != module.handle ||
+                    !VerifyLoadedModuleFileHash(module.handle, module.hash)) return false;
+            return true;
+        }
+
+        FARPROC BridgeExport(HMODULE module, const char* name)
+        {
+            FARPROC result = RealGetProcAddressKernel32(module, name);
+            MEMORY_BASIC_INFORMATION memory = {};
+            return result && VirtualQuery(reinterpret_cast<const void*>(result), &memory, sizeof(memory)) == sizeof(memory) &&
+                memory.AllocationBase == module ? result : nullptr;
+        }
+
+        bool ReadAweString(const void* text, char* output, unsigned int capacity)
+        {
+            if (!text || !output || capacity == 0) return false;
+            const unsigned int length = AweToUtf8(text, nullptr, 0);
+            if (length >= capacity) return false;
+            output[0] = 0;
+            AweToUtf8(text, output, length + 1);
+            output[length] = 0;
+            return true;
+        }
+
+        bool AllowedBridgeViewOrigin(void* view)
+        {
+            void* url = AweGetUrl(view); // This C API returns an owned awe_string.
+            char text[1024] = {};
+            bool allowed = url && ReadAweString(url, text, sizeof(text)) && AllowedDailyBridgeUrl(text);
+            if (url) AweStringDestroy(url);
+            return allowed;
+        }
+
+        void __cdecl HookAweJsCallback(void* view, const void* object, const void* method, const void* arguments)
+        {
+            BridgeView entry = SnapshotBridgeView(view);
+            char objectName[64] = {}, methodName[64] = {};
+            const bool ours = ReadAweString(object, objectName, sizeof(objectName)) &&
+                ReadAweString(method, methodName, sizeof(methodName)) &&
+                std::strcmp(objectName, "AORebirthDaily") == 0 && std::strcmp(methodName, "Claim") == 0;
+            if (!ours) { if (entry.js) entry.js(view, object, method, arguments); return; }
+            // No worker-thread native calls, alternate packets, or changes to the native guard.
+            if (!CanDispatchDailyBridge(InterlockedCompareExchange(&NativeBridgeReady, 0, 0) == 1,
+                    NativeBridgeEndpoint, true, entry, GetCurrentThreadId())) {
+                Log("DAILYLOGIN native=BLOCKED reason=view_thread"); return;
+            }
+            if (!NativeBridgeModulesMatch() || !AllowedBridgeViewOrigin(view) ||
+                !arguments || AweArraySize(arguments) != 0) {
+                Log("DAILYLOGIN native=BLOCKED reason=identity_origin_or_arguments"); return;
+            }
+            void* instance = InterfaceInstance();
+            MEMORY_BASIC_INFORMATION instanceMemory = {};
+            if (!instance || VirtualQuery(instance, &instanceMemory, sizeof(instanceMemory)) != sizeof(instanceMemory) ||
+                instanceMemory.State != MEM_COMMIT || (instanceMemory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+                Log("DAILYLOGIN native=BLOCKED reason=no_interface"); return;
+            }
+            RequestClaims(instance);
+            Log("DAILYLOGIN native=REQUESTED action=263");
+        }
+
+        void __cdecl HookAweFinishLoading(void* view)
+        {
+            BridgeView entry = SnapshotBridgeView(view);
+            if (entry.finish) entry.finish(view);
+            entry = SnapshotBridgeView(view); // The original callback may have destroyed the view.
+            if (!entry.view || entry.destroying || entry.thread != GetCurrentThreadId() || !entry.js ||
+                !NativeBridgeEndpoint || !NativeBridgeModulesMatch() || !AllowedBridgeViewOrigin(view)) return;
+            void* object = AweString("AORebirthDaily", 14);
+            void* method = AweString("Claim", 5);
+            if (object && method) {
+                AweCreateObject(view, object);
+                AweObjectCallback(view, object, method);
+                AcquireSRWLockExclusive(&BridgeViewsLock);
+                for (auto& current : BridgeViews) if (current.view == view) current.registered = true;
+                ReleaseSRWLockExclusive(&BridgeViewsLock);
+                Log("DAILYLOGIN native=READY api=AORebirthDaily.Claim");
+            }
+            if (method) AweStringDestroy(method);
+            if (object) AweStringDestroy(object);
+        }
+
+        void __cdecl HookSetAweJsCallback(void* view, AweJsCallback callback)
+        {
+            const auto expected = reinterpret_cast<AweJsCallback>(reinterpret_cast<unsigned char*>(BridgeModules[0].handle) + 0x10c39e);
+            if (view && callback == expected && RecordBridgeView(view, callback, nullptr)) {
+                RealSetJsCallback(view, HookAweJsCallback);
+            } else RealSetJsCallback(view, callback);
+        }
+
+        void __cdecl HookSetAweFinishCallback(void* view, AweFinishCallback callback)
+        {
+            const auto expected = reinterpret_cast<AweFinishCallback>(reinterpret_cast<unsigned char*>(BridgeModules[0].handle) + 0x10b2b8);
+            if (view && callback == expected && RecordBridgeView(view, nullptr, callback)) {
+                RealSetFinishCallback(view, HookAweFinishLoading);
+            } else RealSetFinishCallback(view, callback);
+        }
+
+        void __cdecl HookAweDestroy(void* view)
+        {
+            AcquireSRWLockExclusive(&BridgeViewsLock);
+            for (auto& entry : BridgeViews) if (entry.view == view) entry.destroying = true;
+            ReleaseSRWLockExclusive(&BridgeViewsLock);
+            RealAweDestroy(view);
+            AcquireSRWLockExclusive(&BridgeViewsLock);
+            for (auto& entry : BridgeViews) if (entry.view == view) entry = BridgeView{};
+            ReleaseSRWLockExclusive(&BridgeViewsLock);
+        }
+
+        AweJsCallback BridgeTestInstalled = nullptr;
+        unsigned int BridgeTestForwarded = 0;
+        void __cdecl BridgeTestSetJs(void*, AweJsCallback callback) { BridgeTestInstalled = callback; }
+        void __cdecl BridgeTestOriginalJs(void*, const void*, const void*, const void*) { ++BridgeTestForwarded; }
+        unsigned int __cdecl BridgeTestToUtf8(const void* text, char* output, unsigned int capacity)
+        {
+            const auto length = static_cast<unsigned int>(std::strlen(static_cast<const char*>(text)));
+            if (output && capacity > length) std::memcpy(output, text, length + 1);
+            return length;
+        }
+
+        bool RunNativeBridgeMockSelfTest()
+        {
+            // Offline fixtures replace only our C API pointers, never a loaded client or native call.
+            BridgeView savedViews[32];
+            std::memcpy(savedViews, BridgeViews, sizeof(savedViews));
+            const HMODULE savedGui = BridgeModules[0].handle;
+            const auto savedSetter = RealSetJsCallback;
+            const auto savedUtf8 = AweToUtf8;
+            const bool savedEndpoint = NativeBridgeEndpoint;
+            const LONG savedReady = InterlockedExchange(&NativeBridgeReady, 0);
+            BridgeModules[0].handle = reinterpret_cast<HMODULE>(0x10000000);
+            RealSetJsCallback = BridgeTestSetJs;
+            AweToUtf8 = BridgeTestToUtf8;
+            NativeBridgeEndpoint = true;
+            BridgeTestForwarded = 0;
+            const auto expected = reinterpret_cast<AweJsCallback>(0x1010c39e);
+            for (unsigned int i = 0; i < 32; ++i)
+                BridgeViews[i] = BridgeView{ reinterpret_cast<void*>(i + 1), GetCurrentThreadId(), BridgeTestOriginalJs, HookAweFinishLoading, true, false };
+            HookSetAweJsCallback(reinterpret_cast<void*>(100), expected);
+            bool passed = BridgeTestInstalled == expected; // Full table must pass through unchanged.
+            BridgeViews[0].thread = GetCurrentThreadId() + 1;
+            HookSetAweJsCallback(BridgeViews[0].view, expected);
+            passed = passed && BridgeTestInstalled == expected; // Wrong owner must also pass through.
+            HookSetAweJsCallback(BridgeViews[0].view, BridgeTestOriginalJs);
+            passed = passed && BridgeTestInstalled == BridgeTestOriginalJs;
+            BridgeViews[0].thread = GetCurrentThreadId();
+            HookAweJsCallback(BridgeViews[0].view, "OtherObject", "OtherMethod", nullptr);
+            passed = passed && BridgeTestForwarded == 1;
+            HookAweJsCallback(BridgeViews[0].view, "AORebirthDaily", "Claim", nullptr);
+            passed = passed && BridgeTestForwarded == 1; // An unready bridge cannot dispatch native work.
+            std::memcpy(BridgeViews, savedViews, sizeof(savedViews));
+            BridgeModules[0].handle = savedGui;
+            RealSetJsCallback = savedSetter;
+            AweToUtf8 = savedUtf8;
+            NativeBridgeEndpoint = savedEndpoint;
+            InterlockedExchange(&NativeBridgeReady, savedReady);
+            return passed;
+        }
+
+        bool ResolveNativeBridge()
+        {
+            if (InterlockedCompareExchange(&NativeBridgeReady, 0, 0) == 1) return true;
+            if (NativeBridgeRejected) return false;
+            for (auto& module : BridgeModules) {
+                module.handle = GetModuleHandleW(module.name);
+                if (!module.handle) return false;
+            }
+            LaunchEndpoint endpoint = {};
+            NativeBridgeEndpoint = TryParseLaunchEndpoint(GetCommandLineW(), endpoint) && IsAoRebirthEndpoint(endpoint);
+            if (!NativeBridgeEndpoint || !NativeBridgeModulesMatch()) {
+                NativeBridgeRejected = true; Log("DAILYLOGIN native=BLOCKED reason=unsupported_endpoint_or_modules"); return false;
+            }
+            HMODULE awe = BridgeModules[3].handle;
+            RealSetJsCallback = reinterpret_cast<FnSetJsCallback>(BridgeExport(awe, "awe_webview_set_callback_js_callback"));
+            RealSetFinishCallback = reinterpret_cast<FnSetFinishCallback>(BridgeExport(awe, "awe_webview_set_callback_finish_loading"));
+            RealAweDestroy = reinterpret_cast<FnAweDestroy>(BridgeExport(awe, "awe_webview_destroy"));
+            AweGetUrl = reinterpret_cast<FnAweGetUrl>(BridgeExport(awe, "awe_webview_get_url"));
+            AweString = reinterpret_cast<FnAweString>(BridgeExport(awe, "awe_string_create_from_ascii"));
+            AweStringDestroy = reinterpret_cast<FnAweStringDestroy>(BridgeExport(awe, "awe_string_destroy"));
+            AweToUtf8 = reinterpret_cast<FnAweToUtf8>(BridgeExport(awe, "awe_string_to_utf8"));
+            AweCreateObject = reinterpret_cast<FnAweCreateObject>(BridgeExport(awe, "awe_webview_create_object"));
+            AweObjectCallback = reinterpret_cast<FnAweObjectCallback>(BridgeExport(awe, "awe_webview_set_object_callback"));
+            AweArraySize = reinterpret_cast<FnAweArraySize>(BridgeExport(awe, "awe_jsarray_get_size"));
+            InterfaceInstance = reinterpret_cast<FnInterfaceInstance>(BridgeExport(BridgeModules[1].handle, "?GetInstance@N3InterfaceModule_t@@SAPAV1@XZ"));
+            RequestClaims = reinterpret_cast<FnRequestClaims>(BridgeExport(BridgeModules[1].handle, "?N3Msg_RequestClaims@N3InterfaceModule_t@@QAEXXZ"));
+            if (!RealSetJsCallback || !RealSetFinishCallback || !RealAweDestroy || !AweGetUrl || !AweString ||
+                !AweStringDestroy || !AweToUtf8 || !AweCreateObject || !AweObjectCallback || !AweArraySize ||
+                !InterfaceInstance || !RequestClaims) {
+                NativeBridgeRejected = true; Log("DAILYLOGIN native=BLOCKED reason=exports"); return false;
+            }
+            InterlockedExchange(&NativeBridgeReady, 1);
+            return true;
+        }
+
+        unsigned long PatchNativeBridge()
+        {
+            if (!ResolveNativeBridge()) return 0;
+            HMODULE gui = BridgeModules[0].handle;
+            unsigned long patched = 0;
+            patched += PatchImport(gui, "Awesomium.dll", "awe_webview_set_callback_js_callback", reinterpret_cast<void*>(RealSetJsCallback), reinterpret_cast<void*>(HookSetAweJsCallback)) ? 1ul : 0ul;
+            patched += PatchImport(gui, "Awesomium.dll", "awe_webview_set_callback_finish_loading", reinterpret_cast<void*>(RealSetFinishCallback), reinterpret_cast<void*>(HookSetAweFinishCallback)) ? 1ul : 0ul;
+            patched += PatchImport(gui, "Awesomium.dll", "awe_webview_destroy", reinterpret_cast<void*>(RealAweDestroy), reinterpret_cast<void*>(HookAweDestroy)) ? 1ul : 0ul;
+            return patched;
+        }
+
         unsigned long PatchAllLoadedModules()
         {
             HANDLE snapshot = CreateToolhelp32Snapshot(
@@ -576,7 +880,7 @@ namespace aorf
 
             MODULEENTRY32W entry = {};
             entry.dwSize = sizeof(entry);
-            unsigned long patched = 0;
+            unsigned long patched = PatchNativeBridge();
             if (Module32FirstW(snapshot, &entry))
             {
                 do
@@ -895,6 +1199,32 @@ namespace aorf
 
     bool RunDailyLoginRoutingSelfTest()
     {
+        if (!RunNativeBridgeMockSelfTest()) return false;
+        if (!AllowedDailyBridgeUrl("http://dailyrewards.anarchy-online.com/") ||
+            !AllowedDailyBridgeUrl("http://uwg.daily.icc-rk/index.app") ||
+            AllowedDailyBridgeUrl("http://uwg.daily.icc-rk.evil/index.app") ||
+            AllowedDailyBridgeUrl("http://uwg.daily.icc-rk@evil/index.app") ||
+            AllowedDailyBridgeUrl("http://uwg.daily.icc-rk/other.app") ||
+            AllowedDailyBridgeUrl("http://127.0.0.1/index.app") ||
+            AllowedDailyBridgeUrl("http://uwg.daily.icc-rk/index.app?redirect=evil")) return false;
+        BridgeView dispatchView{ reinterpret_cast<void*>(1), 23, HookAweJsCallback, HookAweFinishLoading, true, false };
+        if (!CanDispatchDailyBridge(true, true, true, dispatchView, 23) ||
+            CanDispatchDailyBridge(false, true, true, dispatchView, 23) ||
+            CanDispatchDailyBridge(true, false, true, dispatchView, 23) ||
+            CanDispatchDailyBridge(true, true, false, dispatchView, 23) ||
+            CanDispatchDailyBridge(true, true, true, dispatchView, 24)) return false;
+        dispatchView.registered = false;
+        if (CanDispatchDailyBridge(true, true, true, dispatchView, 23)) return false;
+        dispatchView.registered = true;
+        dispatchView.destroying = true;
+        if (CanDispatchDailyBridge(true, true, true, dispatchView, 23)) return false;
+        dispatchView.destroying = false;
+        dispatchView.js = nullptr;
+        if (CanDispatchDailyBridge(true, true, true, dispatchView, 23)) return false;
+        dispatchView.js = HookAweJsCallback;
+        dispatchView.finish = nullptr;
+        if (CanDispatchDailyBridge(true, true, true, dispatchView, 23)) return false;
+
         LaunchEndpoint endpoint = {};
         if (!TryParseLaunchEndpoint(L"anarchyonline.exe IA2.24.96.30 IP7500 DUprivate", endpoint) ||
             !IsAoRebirthEndpoint(endpoint) ||

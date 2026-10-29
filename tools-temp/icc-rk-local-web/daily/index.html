@@ -732,6 +732,20 @@
       return true;
     }
 
+    function nativeClaimAvailable() {
+      try { return !!window.AORebirthDaily && typeof window.AORebirthDaily.Claim === "function"; }
+      catch (eNative) { return false; }
+    }
+
+    function invokeNativeClaim() {
+      if (!nativeClaimAvailable()) return false;
+      return window.AORebirthDaily.Claim() !== false;
+    }
+
+    function nativeClaimUnavailable() {
+      return "Daily Rewards claim control is unavailable. Update the AORebirth client patch, then retry.";
+    }
+
     function queueClaim(token) {
       var idn = resolveIdentity();
       var x = new XMLHttpRequest();
@@ -765,7 +779,7 @@
     function pollClaimResult(token, left, done, rearm) {
       if (token !== pendingClaimToken) return;
       if (!token || left <= 0) {
-        done("The request is saved. Close the Daily Login window to submit it, then reopen for confirmation.", false, false);
+        done("The request is saved, but the game server has not confirmed delivery yet. Retry to check the same claim.", false, false);
         return;
       }
       try {
@@ -793,14 +807,32 @@
             }
             if (j && j.pending === true && rearm === true) {
               rearm = false;
+              if (!nativeClaimAvailable()) {
+                done(nativeClaimUnavailable(), false, false);
+                return;
+              }
               if (j.armed !== true) {
-                var acknowledgement = queueClaim(token);
+                var acknowledgement;
+                try { acknowledgement = queueClaim(token); }
+                catch (eQueue) {
+                  done("The saved request could not be queued. Retry to check the same claim.", false, false);
+                  return;
+                }
                 if (!acknowledgement || acknowledgement.ok !== true || acknowledgement.armed !== true || (acknowledgement.claimToken && acknowledgement.claimToken !== token)) {
                   done((acknowledgement && acknowledgement.message) || "The saved request could not be queued. Retry to check it again.", false, false);
                   return;
                 }
               }
-              claimMessage = "The request is saved. Close the Daily Login window to submit it, then reopen for confirmation.";
+              try {
+                if (!invokeNativeClaim()) {
+                  done(nativeClaimUnavailable(), false, false);
+                  return;
+                }
+              } catch (eNative) {
+                done("The native claim could not be submitted. Your request is saved for retry.", false, false);
+                return;
+              }
+              claimMessage = "Claim submitted. Waiting for the game server to confirm delivery.";
               paint();
             }
           } catch (e2) {}
@@ -827,6 +859,11 @@
       var day = nextDay();
       if (day < 1) {
         if (status) status.innerHTML = "All 28 rewards claimed this month.";
+        paint();
+        return false;
+      }
+      if (!nativeClaimAvailable()) {
+        claimMessage = nativeClaimUnavailable();
         paint();
         return false;
       }
@@ -872,7 +909,16 @@
           done("The claim response could not be read. The request is saved for retry.", false, false);
           return false;
         }
-        claimMessage = "Claim queued. Close the Daily Login window to submit it, then reopen for confirmation.";
+        try {
+          if (!invokeNativeClaim()) {
+            done(nativeClaimUnavailable(), false, false);
+            return false;
+          }
+        } catch (eNative) {
+          done("The native claim could not be submitted. Your request is saved for retry.", false, false);
+          return false;
+        }
+        claimMessage = "Claim submitted. Waiting for the game server to confirm delivery.";
         paint();
         pollingToken = token;
         pollClaimResult(token, 20, done);

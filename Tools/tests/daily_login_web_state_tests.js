@@ -29,7 +29,8 @@ class Element {
   }
 }
 
-function browser(seed, identity, withoutNative) {
+function browser(seed, identity, withoutNative, options) {
+  options = options || {};
   const elements = {};
   elements.claimBtn = new Element("a");
   elements.claimBtn.innerHTML = indexSource.match(/<a[^>]*id="claimBtn"[^>]*>([\s\S]*?)<\/a>/)[1];
@@ -38,6 +39,7 @@ function browser(seed, identity, withoutNative) {
   const intervals = [];
   const stored = new Map(Object.entries(seed || {}));
   const nativeCalls = [];
+  const effects = [];
   const localStorage = {
     getItem: key => stored.has(key) ? stored.get(key) : null,
     setItem: (key, value) => stored.set(key, String(value)),
@@ -50,10 +52,14 @@ function browser(seed, identity, withoutNative) {
     send(body) {
       this.body = body;
       requests.push(this);
+      if (this.method === "GET" && this.url.startsWith("claim.php?token=")) effects.push("result-poll");
       if (this.async === false && this.method === "POST") {
+        effects.push("queue-post");
         this.status = 200;
-        this.responseText = JSON.stringify({ ok: true, armed: true, claimToken: JSON.parse(body).claimToken });
+        const request = JSON.parse(body);
+        this.responseText = JSON.stringify(options.queueResponse ? options.queueResponse(request) : { ok: true, armed: true, claimToken: request.claimToken });
         this.readyState = 4;
+        effects.push("queue-reply");
       }
     }
   }
@@ -72,8 +78,18 @@ function browser(seed, identity, withoutNative) {
     clearTimeout() {},
     setInterval: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; }
   };
-  context.window = { localStorage };
+  context.window = { localStorage, close: () => effects.push("window-close") };
   if (!withoutNative) context.window.AnarchyOnline = native;
+  const claimBridge = {
+    Claim() {
+      assert.equal(this, claimBridge, "The registered native method retains its browser object receiver");
+      nativeCalls.push("Claim");
+      effects.push("native-claim");
+      if (options.nativeThrows) throw new Error("Native dispatch failed");
+      return options.nativeResult;
+    }
+  };
+  if (options.claimBridge !== false) context.window.AORebirthDaily = options.claimBridge === "nonfunction" ? { Claim: true } : claimBridge;
   vm.runInNewContext(script, context, { filename: indexPath });
   function response(request, payload) {
     assert.ok(request, "Expected a pending HTTP request");
@@ -92,7 +108,7 @@ function browser(seed, identity, withoutNative) {
   }
   const slots = () => elements.grid.children.flatMap(row => row.children.map(cell => cell.children[0]));
   const taken = () => slots().filter(slot => slot.className === "slot taken").length;
-  return { elements, requests, timeouts, intervals, stored, native, nativeCalls, response, state, poll, taken };
+  return { elements, requests, timeouts, intervals, stored, native, nativeCalls, effects, response, state, poll, taken };
 }
 
 function test(name, run) {
@@ -127,8 +143,10 @@ test("A queued claim never marks Taken before a committed grant", () => {
   page.state();
   page.elements.claimBtn.onclick();
   assert.equal(page.taken(), 0);
-  assert.equal(page.nativeCalls.length, 0, "A queued request must use normal window closure, not guessed JavaScript calls");
-  assert.match(page.elements.claimStatus.innerHTML, /Close the Daily Login window/);
+  assert.deepEqual(page.nativeCalls, ["Claim"], "The registered callback submits the armed intent exactly once");
+  assert.deepEqual(page.effects.slice(0, 4), ["queue-post", "queue-reply", "native-claim", "result-poll"], "Durable HTTP acknowledgement must precede native dispatch and receipt polling");
+  assert.ok(!page.effects.includes("window-close"), "The claim must submit while the window remains open");
+  assert.match(page.elements.claimStatus.innerHTML, /Waiting for the game server to confirm/);
   assert.ok([...page.stored.values()].some(value => /^c\d+$/.test(value)), "Pending token must survive closing the page");
   page.poll({ ok: true, armed: true });
   assert.equal(page.taken(), 0, "An armed or older success response is not a committed grant");
@@ -193,14 +211,14 @@ test("Reopening resumes a saved token without creating another pending request",
   reopened.poll({ ok: null, pending: true, armed: true });
   assert.equal(reopened.requests.filter(item => item.method === "POST").length, 0);
   assert.equal(reopened.requests.filter(item => item.url.startsWith("claim.php?token=")).length, 1);
-  assert.equal(reopened.nativeCalls.length, 0, "Reopening must not invoke an unproven native JavaScript method");
-  assert.match(reopened.elements.claimStatus.innerHTML, /Close the Daily Login window/);
+  assert.deepEqual(reopened.nativeCalls, ["Claim"], "An armed saved intent uses the registered callback once");
+  assert.match(reopened.elements.claimStatus.innerHTML, /Waiting for the game server to confirm/);
   reopened.timeouts.filter(timer => timer.delay === 400).pop().fn();
   reopened.poll({ ok: null, pending: true, armed: true });
-  assert.equal(reopened.nativeCalls.length, 0, "Result polling must not trigger native actions");
+  assert.equal(reopened.nativeCalls.length, 1, "Later result polls must not trigger another native action");
 });
 
-test("Reopening requeues an absent saved request with the original token before normal window closure", () => {
+test("Reopening requeues the original saved token before immediate native submission", () => {
   const originalToken = "csaved123";
   const page = browser({ "aorebirth.daily.pending.v1.c101": originalToken });
   page.state();
@@ -209,8 +227,9 @@ test("Reopening requeues an absent saved request with the original token before 
   const posts = page.requests.filter(item => item.method === "POST");
   assert.equal(posts.length, 1);
   assert.equal(JSON.parse(posts[0].body).claimToken, originalToken);
-  assert.equal(page.nativeCalls.length, 0);
-  assert.match(page.elements.claimStatus.innerHTML, /Close the Daily Login window/);
+  assert.deepEqual(page.nativeCalls, ["Claim"]);
+  assert.deepEqual(page.effects.slice(-3), ["queue-post", "queue-reply", "native-claim"], "A missing saved queue must be acknowledged before native dispatch");
+  assert.match(page.elements.claimStatus.innerHTML, /Waiting for the game server to confirm/);
   assert.equal(page.taken(), 0);
 });
 
@@ -293,7 +312,74 @@ test("A changed native character repins storage and rejects the previous charact
   assert.equal(body.accountKey, "second");
   assert.equal(page.stored.get("aorebirth.daily.pending.v1.c606"), "saved-606");
   assert.ok(page.stored.get("aorebirth.daily.pending.v1.c607"));
+  assert.deepEqual(page.nativeCalls, ["Claim"]);
+});
+
+test("An absent or non-callable registered bridge blocks new queues without invoking guessed APIs", () => {
+  for (const claimBridge of [false, "nonfunction"]) {
+    const page = browser({}, null, false, { claimBridge });
+    page.state();
+    page.elements.claimBtn.onclick();
+    assert.equal(page.requests.filter(item => item.method === "POST").length, 0);
+    assert.equal(page.nativeCalls.length, 0);
+    assert.equal([...page.stored.keys()].filter(key => key.startsWith("aorebirth.daily.pending.")).length, 0);
+    assert.match(page.elements.claimStatus.innerHTML, /claim control is unavailable.*client patch/i);
+    assert.equal(page.taken(), 0);
+  }
+});
+
+test("Rejected, unarmed, or mismatched queue acknowledgements never dispatch native claims", () => {
+  const replies = [
+    () => ({ ok: false, message: "Queue rejected." }),
+    () => ({ ok: true, armed: false }),
+    () => ({ ok: true, armed: true, claimToken: "different-token" })
+  ];
+  for (const queueResponse of replies) {
+    const page = browser({}, null, false, { queueResponse });
+    page.state();
+    page.elements.claimBtn.onclick();
+    assert.equal(page.nativeCalls.length, 0);
+    assert.equal(page.requests.filter(item => item.url.startsWith("claim.php?token=")).length, 0);
+    assert.equal(page.taken(), 0);
+    assert.ok(page.stored.get("aorebirth.daily.pending.v1.c101"), "Unresolved intent remains available for a safe retry");
+  }
+});
+
+test("A rejected or throwing native callback preserves intent without reporting a grant", () => {
+  for (const options of [{ nativeResult: false }, { nativeThrows: true }]) {
+    const page = browser({}, null, false, options);
+    page.state();
+    page.elements.claimBtn.onclick();
+    assert.equal(page.nativeCalls.length, 1);
+    assert.equal(page.taken(), 0);
+    assert.ok(page.stored.get("aorebirth.daily.pending.v1.c101"));
+    assert.equal(page.requests.filter(item => item.url.startsWith("claim.php?token=")).length, 0);
+    assert.match(page.elements.claimStatus.innerHTML, /unavailable|request is saved for retry/i);
+  }
+});
+
+test("An unavailable bridge preserves saved intent and cannot rearm an absent request", () => {
+  for (const armed of [true, false]) {
+    const page = browser({ "aorebirth.daily.pending.v1.c101": "csaved-unavailable" }, null, false, { claimBridge: false });
+    page.state();
+    page.timeouts.find(timer => timer.delay === 1000).fn();
+    page.poll({ ok: null, pending: true, armed });
+    assert.equal(page.requests.filter(item => item.method === "POST").length, 0);
+    assert.equal(page.nativeCalls.length, 0);
+    assert.equal(page.stored.get("aorebirth.daily.pending.v1.c101"), "csaved-unavailable");
+    assert.match(page.elements.claimStatus.innerHTML, /claim control is unavailable/i);
+  }
+});
+
+test("A committed saved result is consumed without another queue or native dispatch", () => {
+  const page = browser({ "aorebirth.daily.pending.v1.c101": "csaved-committed" });
+  page.state();
+  page.timeouts.find(timer => timer.delay === 1000).fn();
+  page.poll({ ok: true, committed: true, hasIdentity: true, accountKey: "first", taken: [1], lastGrantedUtc: today, lastClaimUtc: today });
+  assert.equal(page.requests.filter(item => item.method === "POST").length, 0);
   assert.equal(page.nativeCalls.length, 0);
+  assert.equal(page.taken(), 1);
+  assert.equal(page.stored.has("aorebirth.daily.pending.v1.c101"), false);
 });
 
 test("Both entry pages contain the same repaired claim logic", () => {

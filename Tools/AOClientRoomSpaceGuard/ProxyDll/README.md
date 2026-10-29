@@ -129,7 +129,15 @@ exceptions, arbitrary driver faults, stack corruption, or unknown callsite failu
 Only the targeted, byte-verified repairs listed above resume execution. The
 proxy never modifies AO files after installation. It contains no
 LargeAddressAware patch, XML/settings changes, DValues, camera/input hooks,
-other UI modifications, or Project Rubi-Ka-specific behavior.
+unrelated UI modifications, or Project Rubi-Ka-specific behavior.
+
+The Daily Rewards adapter registers `AORebirthDaily.Claim` through the existing
+Awesomium callbacks for the verified module set. It checks the AORebirth login
+endpoint, current Daily view URL, owning GUI thread and callback arguments before
+calling the client's existing `RequestClaims` function. The web page queues its
+request first and waits for server confirmation while remaining open; HTTP and
+the callback's return value never establish a completed grant. Unsupported
+modules fail closed, and other browser callbacks retain their original handlers.
 
 ## Build
 

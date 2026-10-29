@@ -565,6 +565,16 @@ namespace aorf
         }
     }
 
+    bool VerifyLoadedModuleFileHash(void* module, const char* expected)
+    {
+        if (!module || !expected) return false;
+        wchar_t path[MAX_PATH] = {};
+        DWORD length = GetModuleFileNameW(static_cast<HMODULE>(module), path, MAX_PATH);
+        if (length == 0 || length >= MAX_PATH) return false;
+        std::string hash;
+        return Sha256File(path, hash) && _stricmp(hash.c_str(), expected) == 0;
+    }
+
     ClientProfile GetLoadedN3ClientProfile()
     {
         const PatchProfile* profile = GetLoadedProfile();

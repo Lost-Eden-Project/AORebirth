@@ -10,7 +10,7 @@ account progress and pending requests, commit reward rows and the account
 receipt atomically, and require committed confirmation before displaying Taken.
 Mike explicitly approved the scoped development ledger migration and focused
 success, concurrency, persistence, rollback, UTC progression and web tests.
-Development validation retains the prior 42 focused C# passes; the current 14
+Development validation retains the prior 42 focused C# passes; the current 19
 browser-state tests and 13 PHP HTTP checks pass. Disposable real-MySQL checks pass for migration reruns,
 account ownership, concurrent characters, UTC-day uniqueness, four partial-write
 rollback points, lost commit acknowledgements and restart replay. Empty schema
@@ -33,9 +33,13 @@ declared level scaling cannot override their actual template quality bounds.
 Local browser integration now uses the observed per-request
 `X-Anarchy-CharacterID` header as a routing hint, with conflicting hints rejected
 before writes. The Daily window does not expose the guessed claim JavaScript
-methods: closing that window invokes the native RequestClaims/action 263 path.
-The page queues the request and explains closing/reopening, keeps storage
-character-scoped, and still requires committed confirmation before Taken.
+methods: its stock close handler invokes the native RequestClaims/action 263 path.
+The verified client adapter now registers `AORebirthDaily.Claim` through the
+existing Awesomium callback API and invokes that same native function on the
+owning GUI thread. The page queues first, invokes the registered callback, and
+polls confirmation while remaining open. Storage stays character-scoped and
+Taken still requires committed confirmation. Endpoint, module hashes, current
+view URL, thread, callback ownership and arguments fail closed.
 Local client routing preserves original HTTP request bytes; production routing
 remains unchanged. The existing native package checks pass.
 

@@ -309,7 +309,7 @@ try {
         'ok' => true, 'armed' => true, 'committed' => false,
         'claimToken' => $request['ClaimToken'], 'accountKey' => $request['AccountKey'],
         'characterId' => $request['CharacterId'],
-        'message' => 'Claim queued. Close the Daily Login window to submit it, then reopen for confirmation.'
+        'message' => 'Claim queued. Waiting for the game server to confirm delivery.'
     ));
 } catch (Exception $error) {
     http_response_code(503);
