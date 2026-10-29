@@ -211,7 +211,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             if (!dynel.CanBeginUse(player))
             {
-                RequirementFeedback.SendIfUnmet(player, dynel.Template, ActionType.ToUse);
+                RequirementFeedback.SendIfUnmet(player, dynel.Template, ActionType.ToUse, resolve: dynel.UseResolver(player));
                 return ItemUseStart.Rejected;
             }
 
