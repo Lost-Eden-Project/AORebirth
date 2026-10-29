@@ -87,12 +87,47 @@ namespace ZoneEngine_New.Core.Helpers
             if (!CombatRules.CanAttack(attacker, target))
                 return false;
 
+            // A player's special that could not go off now is refused with live's reason, and starts no fight.
+            if (attacker is Player && Blocker(attacker, target, special) is int blocked)
+            {
+                ClientFeedback.Send(attacker, blocked);
+                return false;
+            }
+
             if (attacker.FightingTarget.Instance == 0)
                 attacker.StartFightingForSpecial(target.Identity);
 
             attacker.SetFightingTarget(target.Identity);
             attacker.QueueSpecial(special, target.Identity);
             return true;
+        }
+
+        /// <summary>
+        /// Why the special cannot go off at <paramref name="target"/> right now, as a feedback message; null when it
+        /// can. Live prints only one reason: range, then line of sight, then the target noticing a stealth strike.
+        /// </summary>
+        static int? Blocker(Character attacker, Character target, CharacterStat special)
+        {
+            if (TryGetCanFlag(special, out CanFlags canFlag) && TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out _)
+                && attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
+                return ClientFeedback.SpecialOutOfRange;
+            if (!attacker.HasLineOfSightTo(target))
+                return ClientFeedback.SpecialNoLineOfSight;
+            if (IsNoticedStealthStrike(attacker, target, special))
+                return ClientFeedback.SpecialTargetAware;
+            return null;
+        }
+
+        /// <summary>Aimed Shot or Sneak Attack the target would notice (a Sneak Attack that can backstab instead is fine).</summary>
+        static bool IsNoticedStealthStrike(Character attacker, Character target, CharacterStat special)
+        {
+            bool noticed = !IsSneaking(attacker) || CanSee(target, attacker);
+            return special switch
+            {
+                CharacterStat.AimedShot => noticed,
+                CharacterStat.SneakAttack => noticed && !CanBackstab(attacker, target),
+                _ => false
+            };
         }
 
         /// <summary>Gun specials hold while their shooter moves.</summary>
@@ -122,25 +157,15 @@ namespace ZoneEngine_New.Core.Helpers
             if (attacker.IsStunned || (WaitsForStandingStill(special) && attacker.Motor.IsMoving))
                 return FireResult.Waiting;
 
-            if (special == CharacterStat.AimedShot && (!IsSneaking(attacker) || CanSee(target, attacker)))
+            if (IsNoticedStealthStrike(attacker, target, special))
             {
-                SendText(attacker, target.Name + " is aware of your presence.");
+                ClientFeedback.Send(attacker, ClientFeedback.SpecialTargetAware);
                 return FireResult.Dropped;
             }
 
             // Sneak Attack from stealth on an unaware target; otherwise a Shade or Adventurer behind a target that
             // someone else is fighting backstabs it, without needing stealth.
-            bool backstab = false;
-            if (special == CharacterStat.SneakAttack && (!IsSneaking(attacker) || CanSee(target, attacker)))
-            {
-                if (!CanBackstab(attacker, target))
-                {
-                    SendText(attacker, target.Name + " is aware of your presence.");
-                    return FireResult.Dropped;
-                }
-
-                backstab = true;
-            }
+            bool backstab = special == CharacterStat.SneakAttack && (!IsSneaking(attacker) || CanSee(target, attacker));
 
             if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out int slot))
                 return FireResult.Dropped;
@@ -658,11 +683,6 @@ namespace ZoneEngine_New.Core.Helpers
             return true;
         }
 
-        static void SendText(Character character, string text)
-        {
-            if (character is Player player)
-                player.Session?.Send(new ChatTextMessage { Identity = player.Identity, Text = text });
-        }
 
         static CharacterActionMessage Action(Player player, CharacterActionType action, int parameter1, int parameter2)
             => new()

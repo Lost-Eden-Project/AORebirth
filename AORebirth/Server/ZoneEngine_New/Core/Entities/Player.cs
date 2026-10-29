@@ -3108,17 +3108,30 @@ namespace ZoneEngine_New.Core.Entities
             return tuples;
         }
 
-        static GameTuple<byte, short>[] BuildFullCharacterShortStats(StatCollection stats, CharacterStat[] ids)
+        /// <summary>
+        /// The 16-bit block. A base value outside the short range (a bad stored value) is clamped and logged rather
+        /// than aborting the spawn: an overflow here locked the character out of every login.
+        /// </summary>
+        GameTuple<byte, short>[] BuildFullCharacterShortStats(StatCollection stats, CharacterStat[] ids)
         {
             ids = ids.Where(id => stats.TryGetValue(id, out _)).ToArray();
             var tuples = new GameTuple<byte, short>[ids.Length];
             for (int i = 0; i < ids.Length; i++)
             {
                 CharacterStat id = ids[i];
+                int value = RequireWireStat(stats, id);
+                if (value is < short.MinValue or > short.MaxValue)
+                {
+                    Logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "FullCharacter character={0} stat={1} base={2} does not fit 16 bits; clamped",
+                        Identity.Instance, id, value));
+                    value = Math.Clamp(value, short.MinValue, short.MaxValue);
+                }
+
                 tuples[i] = new GameTuple<byte, short>
                 {
                     Value1 = (byte)id,
-                    Value2 = checked((short)RequireWireStat(stats, id))
+                    Value2 = (short)value
                 };
             }
 

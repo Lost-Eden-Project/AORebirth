@@ -252,10 +252,10 @@ namespace ZoneEngine_New.Core.Inventory
             if (!player.TryPreparePerkAction(hash, out Player.PerkActionUse? use) || use == null)
                 return ItemUseStart.Rejected;
 
-            // Using a perk action gives a sneaking user away, whether it lands or misses.
-            player.BreakSneak();
+            // A perk action gives a sneaking user away when it goes off: a miss now, a landing one once its wind-up ends.
             if (!player.PerkActionLands(use))
             {
+                player.BreakSneak();
                 player.FailPerkAction(use, _inventoryRepository);
                 return ItemUseStart.Executed;
             }
@@ -265,7 +265,11 @@ namespace ZoneEngine_New.Core.Inventory
                 player,
                 string.Format(CultureInfo.InvariantCulture, "perkAction={0:X8} template={1}", hash, use.Template.Id),
                 () => player.RevalidatePerkAction(use, starting: false),
-                () => player.ExecutePerkAction(use, _inventoryRepository),
+                () =>
+                {
+                    player.BreakSneak();
+                    return player.ExecutePerkAction(use, _inventoryRepository);
+                },
                 lockTarget: null,
                 delay,
                 perkHash: hash);

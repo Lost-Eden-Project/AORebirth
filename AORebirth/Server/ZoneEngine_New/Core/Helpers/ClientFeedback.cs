@@ -43,6 +43,15 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"You are already running this action!" (category 110). Live perk spam capture 2026-10-02T03:54:58Z.</summary>
         public const int AlreadyRunningAction = 171187118;
 
+        /// <summary>"The target is outside special attack range!" (category 110).</summary>
+        public const int SpecialOutOfRange = 165509237;
+
+        /// <summary>"You have no line of sight to the target!" (category 110).</summary>
+        public const int SpecialNoLineOfSight = 175658468;
+
+        /// <summary>"Special attack not possible. The target is aware of your presence." (category 110).</summary>
+        public const int SpecialTargetAware = 90809749;
+
         /// <summary>"%d credits were deducted from your account." (category 110, FormatFeedback). Insurance save fee.</summary>
         public const int CreditsDeducted = 57671460;
 
