@@ -1,5 +1,19 @@
 # Current Task
 
+Active task: final public master integration of the three completed retail chest
+commits. Starting public master is `c679d683aeff50c3f3c2d737974fe1880feddb7a`;
+the direct fast-forward candidate is `d76a2fdeecc78afd921fec23263c61ddb2b7eb36`.
+Approved private content is fixed at `2b5431fd382bd5fa00a7b232efb85dc556ad7cc2`.
+Work is isolated on `codex/mission-chest-retail-master-merge` to preserve unrelated
+Windows checkout changes. Review the source/content pair, run fresh bounded
+governed chest/objective checks, record the required merge report and publish
+public master only after those checks succeed. Do not replace working runtime
+implementations, regenerate catalogs, restart servers, touch player data or
+perform Windows/Linux deployment. Fresh candidate validation is separate from
+historical feature evidence and from future Windows release acceptance.
+
+## Prior basket correction
+
 Active correction: restore the verified captured Gift wrapped basket at its
 exact supported QL to ordinary RK chest eligibility. Remain on
 `codex/mission-chest-retail-integration` after `5c6b3103a804bd05c535fd70a0fcb9293acc82cf`.
