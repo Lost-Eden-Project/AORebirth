@@ -38,6 +38,7 @@
     td { padding:0; vertical-align:middle; text-align:center; width:14.28%; }
     a.slot {
       display:block; position:relative;
+      min-height:54px;
       border:2px solid #6a7380; background:#000;
       text-decoration:none; cursor:default; overflow:hidden;
     }
@@ -49,6 +50,14 @@
       border:0; z-index:2;
     }
     a.slot.taken img.taken-mark {
+      display:block;
+    }
+    a.slot .taken-label {
+      display:none; position:absolute; left:5px; right:5px; top:38%;
+      padding:4px 0; background:#0a1520; color:#d4e8f8;
+      font-weight:bold; text-align:center; z-index:3;
+    }
+    a.slot.taken .taken-label {
       display:block;
     }
     a.slot.taken {
@@ -75,7 +84,8 @@
       background:#0a1520 url(assets/claim-reward.png) center center no-repeat;
       background-size:208px 86px;
       border:0; text-decoration:none; cursor:pointer;
-      vertical-align:middle;
+      vertical-align:middle; line-height:86px;
+      color:#d4e8f8; font-weight:bold; font-size:14px;
     }
     a.claim.disabled {
       filter:alpha(opacity=45);
@@ -129,7 +139,7 @@
     <table class="grid" id="grid" cellspacing="5" cellpadding="0"></table>
   </div>
   <div class="actions">
-    <a class="claim" href="#" id="claimBtn" title="CLAIM REWARD"></a>
+    <a class="claim" href="#" id="claimBtn" title="CLAIM REWARD">CLAIM REWARD</a>
   </div>
   <div class="info" id="info">
     <div id="infoTitle"><b>Daily Login Rewards</b></div>
@@ -181,6 +191,12 @@
     var TAKEN_DAYS = {};
     var TAKEN_IMG = "assets/cells/taken.png";
     var identityKey = "";
+    var serverStateLoaded = false;
+    var claimMessage = "";
+    var pendingClaimToken = "";
+    var pendingClaimStorageKey = "";
+    var pollingToken = "";
+    var resumeAttempted = false;
 
     function parseCellName(image) {
       if (!image) return null;
@@ -310,10 +326,37 @@
     function resetTakenMap() {
       TAKEN_DAYS = {};
     }
+    function resetBoard() {
+      claimedCount = 0;
+      lastClaimUtc = "";
+      lastGrantedUtc = "";
+      selectedDay = 1;
+      resetTakenMap();
+    }
+    function pendingStorageKey() {
+      var identity = currentIdentityKey();
+      return "aorebirth.daily.pending.v1." + (identity || (knownAccountKey ? "a" + knownAccountKey : "pending"));
+    }
+    function loadPending() {
+      pendingClaimToken = "";
+      pendingClaimStorageKey = pendingStorageKey();
+      try {
+        if (window.localStorage) pendingClaimToken = localStorage.getItem(pendingClaimStorageKey) || "";
+      } catch (ePending) {}
+    }
+    function savePending() {
+      try {
+        if (!window.localStorage) return;
+        var key = pendingClaimStorageKey || pendingStorageKey();
+        if (pendingClaimToken) localStorage.setItem(key, pendingClaimToken);
+        else localStorage.removeItem(key);
+      } catch (ePending) {}
+    }
     function loadStoredAccountKey() {
       try {
         if (!window.localStorage) return;
-        var ak = localStorage.getItem("aorebirth.daily.acct.v1.accountKey");
+        var identity = currentIdentityKey();
+        var ak = localStorage.getItem(identity ? "aorebirth.daily.identity.v1." + identity : "aorebirth.daily.acct.v1.accountKey");
         if (ak) knownAccountKey = String(ak).toLowerCase();
       } catch (eAk) {}
     }
@@ -324,37 +367,28 @@
       try {
         if (window.localStorage) {
           localStorage.setItem("aorebirth.daily.acct.v1.accountKey", knownAccountKey);
+          var identity = currentIdentityKey();
+          if (identity) localStorage.setItem("aorebirth.daily.identity.v1." + identity, knownAccountKey);
         }
       } catch (eSet) {}
-      // Move pending-session board onto the real account key.
+      // A different account must never inherit the previous account's board.
       if (prev !== knownAccountKey) {
-        saveLocal();
+        resetBoard();
+        if (prev !== "") {
+          claiming = false;
+          pollingToken = "";
+          resumeAttempted = false;
+          claimMessage = "";
+          loadPending();
+        }
       }
     }
     function loadLocal() {
-      claimedCount = 0;
-      lastClaimUtc = "";
-      // keep lastGrantedUtc unless storage has a value
-      resetTakenMap();
-      try {
-        if (!window.localStorage) return;
-        loadStoredAccountKey();
-        var k = storageKeys();
-        var n = parseInt(localStorage.getItem(k.count), 10);
-        if (!isNaN(n) && n > 0) claimedCount = n > TOTAL ? TOTAL : n;
-        var last = localStorage.getItem(k.last);
-        if (last) lastClaimUtc = last;
-        var granted = localStorage.getItem(k.granted);
-        if (granted) lastGrantedUtc = granted;
-        var takenRaw = localStorage.getItem(k.taken);
-        if (takenRaw) {
-          var arr = eval("(" + takenRaw + ")");
-          var i;
-          if (arr && arr.length) {
-            for (i = 0; i < arr.length; i++) markTaken(parseInt(arr[i], 10));
-          }
-        }
-      } catch (e2) {}
+      // Older pages persisted optimistic Taken/dates before a grant existed.
+      // Retain those cache entries as history, but never use them as progress.
+      // Only an authoritative board or committed result may paint Taken.
+      resetBoard();
+      loadStoredAccountKey();
     }
     function saveLocal() {
       try {
@@ -377,8 +411,18 @@
     function refreshIdentity() {
       var next = currentIdentityKey();
       if (next !== identityKey) {
+        var switching = serverStateLoaded || identityKey !== "" || knownAccountKey !== "" || pendingClaimToken !== "";
         identityKey = next;
-        // Account board is shared — do not wipe Taken on character switch.
+        if (switching) {
+          knownAccountKey = "";
+          resetBoard();
+          serverStateLoaded = false;
+          claimMessage = "";
+          claiming = false;
+          pollingToken = "";
+          resumeAttempted = false;
+          loadPending();
+        }
         paint();
       }
       return identityKey;
@@ -405,8 +449,7 @@
       return false;
     }
     function canClaimNow() {
-      // Button shows until today's account grant is confirmed (Zone LastGrantedUtc).
-      // Without CharacterID, local lastGrantedUtc / result poll drives this.
+      if (!serverStateLoaded || claiming) return false;
       if (claimedToday()) return false;
       var next = nextDay();
       if (next < 1) return false;
@@ -574,7 +617,7 @@
       while (grid.firstChild) grid.removeChild(grid.firstChild);
       slots = [];
       var day = 1;
-      var r, c, tr, td, a, icon, mark;
+      var r, c, tr, td, a, icon, mark, takenLabel;
       for (r = 0; r < 4; r++) {
         tr = document.createElement("tr");
         for (c = 0; c < COLS; c++) {
@@ -595,6 +638,10 @@
           mark.alt = "Taken";
           a.appendChild(icon);
           a.appendChild(mark);
+          takenLabel = document.createElement("span");
+          takenLabel.className = "taken-label";
+          takenLabel.appendChild(document.createTextNode("Taken"));
+          a.appendChild(takenLabel);
           a.onmouseover = (function (d, el) {
             return function () {
               cancelHidePopup();
@@ -657,7 +704,11 @@
         }
       }
       if (status) {
-        if (claimedToday()) {
+        if (claimMessage) {
+          status.innerHTML = claimMessage;
+        } else if (!serverStateLoaded) {
+          status.innerHTML = "Waiting for the game server to identify this account.";
+        } else if (claimedToday()) {
           status.innerHTML = "Daily reward already claimed today on this account. Come back tomorrow.";
         } else if (next < 1) {
           status.innerHTML = "All 28 rewards claimed. Board resets tomorrow.";
@@ -671,29 +722,45 @@
     }
 
     function applyClaimResult(j) {
-      if (!j) return;
-      if (j.accountKey) setKnownAccountKey(j.accountKey);
-      if (j.taken && j.taken.length) {
-        resetTakenMap();
-        var i;
-        for (i = 0; i < j.taken.length; i++) markTaken(parseInt(j.taken[i], 10));
-      } else if (j.day > 0) {
-        markTaken(parseInt(j.day, 10));
-      }
-      if (j.lastGrantedUtc) lastGrantedUtc = String(j.lastGrantedUtc);
-      else if (j.ok === true || j.claimedToday) lastGrantedUtc = utcDay();
-      if (j.lastClaimUtc) lastClaimUtc = String(j.lastClaimUtc);
-      claimedCount = 0;
-      var d;
-      for (d = 1; d <= TOTAL; d++) {
-        if (TAKEN_DAYS[d]) claimedCount++;
-      }
-      saveLocal();
+      if (!j || j.ok !== true || j.committed !== true) return false;
+      applyServerState(j);
+      return true;
     }
 
-    function pollClaimResult(token, left, done) {
+    function queueClaim(token) {
+      var idn = resolveIdentity();
+      var x = new XMLHttpRequest();
+      x.open("POST", "claim.php", false);
+      x.setRequestHeader("Content-Type", "application/json");
+      x.send(
+        "{\"month\":\"" + utcMonth() + "\""
+        + ",\"claimToken\":\"" + token + "\""
+        + ",\"characterId\":" + (idn.id ? parseInt(idn.id, 10) || 0 : 0)
+        + ",\"accountKey\":\"" + String(knownAccountKey || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\""
+        + ",\"character\":\"" + String(idn.name || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\""
+        + "}"
+      );
+      return eval("(" + x.responseText + ")");
+    }
+
+    function newClaimToken() {
+      try {
+        if (window.crypto && window.crypto.getRandomValues && typeof Uint8Array !== "undefined") {
+          var bytes = new Uint8Array(24);
+          window.crypto.getRandomValues(bytes);
+          var token = "c", i;
+          for (i = 0; i < bytes.length; i++) token += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+          return token;
+        }
+      } catch (eRandom) {}
+      // The token correlates retries; it is never proof of account ownership.
+      return "c" + String(new Date().getTime()) + Math.floor(Math.random() * 100000);
+    }
+
+    function pollClaimResult(token, left, done, rearm) {
+      if (token !== pendingClaimToken) return;
       if (!token || left <= 0) {
-        done("Game server did not confirm the claim. Try again.", false);
+        done("The game server has not confirmed this claim. The request is saved; reopen Daily Rewards or retry to check it again.", false, false);
         return;
       }
       try {
@@ -701,34 +768,51 @@
         x.open("GET", "claim.php?token=" + encodeURIComponent(token) + "&t=" + new Date().getTime(), true);
         x.onreadystatechange = function () {
           if (x.readyState !== 4) return;
+          if (token !== pendingClaimToken) return;
           try {
             var j = eval("(" + x.responseText + ")");
-            if (j && j.ok === true) {
+            if (j && j.ok === true && j.committed === true) {
               applyClaimResult(j);
-              done(j.message || "Reward claimed.", true);
+              done(j.message || "Reward delivered.", true, true);
+              return;
+            }
+            if (j && j.ok === true && (j.legacyResolved === true || (typeof j.committed === "undefined" && j.day > 0))) {
+              // A pre-repair success is resolved history, not a new atomic grant.
+              // Only the published account board can restore its Taken state.
+              done("A prior claim is already recorded. Refreshing the saved account board.", false, true);
               return;
             }
             if (j && j.ok === false) {
-              // Still apply board if Zone returned account Taken (e.g. already claimed today).
-              if (j.taken && j.taken.length) {
-                applyClaimResult(j);
-                done(j.message || "Already claimed today.", true);
-                return;
-              }
-              done(j.message || "Claim failed.", false);
+              done(j.message || "The game server could not grant this reward.", false, j.terminal === true);
               return;
             }
+            if (j && j.pending === true && rearm === true) {
+              rearm = false;
+              if (j.armed !== true) {
+                var acknowledgement = queueClaim(token);
+                if (!acknowledgement || acknowledgement.ok !== true || acknowledgement.armed !== true || (acknowledgement.claimToken && acknowledgement.claimToken !== token)) {
+                  done((acknowledgement && acknowledgement.message) || "The saved request could not be queued. Retry to check it again.", false, false);
+                  return;
+                }
+              }
+              tryNativeClaim();
+            }
           } catch (e2) {}
-          setTimeout(function () { pollClaimResult(token, left - 1, done); }, 400);
+          setTimeout(function () { pollClaimResult(token, left - 1, done, rearm); }, 400);
         };
         x.send(null);
       } catch (e3) {
-        setTimeout(function () { pollClaimResult(token, left - 1, done); }, 400);
+        setTimeout(function () { pollClaimResult(token, left - 1, done, rearm); }, 400);
       }
     }
 
     function doClaim() {
       if (claiming) return false;
+      if (!serverStateLoaded) {
+        claimMessage = "Wait for the game server to identify this account before claiming.";
+        paint();
+        return false;
+      }
       if (claimedToday()) {
         if (status) status.innerHTML = "Daily reward already claimed today on this account.";
         paint();
@@ -741,60 +825,52 @@
         return false;
       }
 
-      // Instant UI: mark taken.png + hide CLAIM (server midnight unlocks next day).
-      markTaken(day);
-      lastGrantedUtc = utcDay();
-      lastClaimUtc = utcDay();
-      claimedCount = 0;
-      var dCount;
-      for (dCount = 1; dCount <= TOTAL; dCount++) {
-        if (TAKEN_DAYS[dCount]) claimedCount++;
-      }
-      saveLocal();
       claiming = true;
-      if (claimBtn) {
-        claimBtn.className = "claim disabled";
-        claimBtn.style.display = "none";
-      }
-      if (status) status.innerHTML = "Claimed day " + day + ". Come back after 00:00 server time for the next reward.";
+      resumeAttempted = true;
+      claimMessage = "Waiting for the game server to grant day " + day + ".";
       paint();
 
-      var idn = resolveIdentity();
-      var token = "c" + String(new Date().getTime()) + Math.floor(Math.random() * 100000);
-      var optimisticDay = day;
+      var token = pendingClaimToken || newClaimToken();
+      if (!pendingClaimToken) pendingClaimStorageKey = pendingStorageKey();
+      pendingClaimToken = token;
+      savePending();
 
-      var done = function (msg, ok) {
+      var done = function (msg, ok, terminal) {
+        if (token !== pendingClaimToken) return;
         claiming = false;
-        // Keep optimistic taken.png even if poll times out — Zone may still have granted.
-        // Board is corrected on next syncFromServer / reopen via accountKey.
-        saveLocal();
-        if (status) status.innerHTML = msg || (ok ? ("Claimed day " + optimisticDay + ".") : "Claim sent. If the item is missing, reopen daily rewards.");
-        if (ok) syncFromServer();
+        pollingToken = "";
+        if (terminal) {
+          pendingClaimToken = "";
+          savePending();
+        }
+        claimMessage = msg || (ok ? "Reward delivered." : "Claim is awaiting game-server confirmation.");
+        syncFromServer();
         paint();
       };
       try {
-        var x = new XMLHttpRequest();
-        x.open("POST", "claim.php", false);
-        x.setRequestHeader("Content-Type", "application/json");
-        x.send(
-          "{\"month\":\"" + utcMonth() + "\""
-          + ",\"claimToken\":\"" + token + "\""
-          + ",\"characterId\":" + (idn.id ? parseInt(idn.id, 10) || 0 : 0)
-          + ",\"character\":\"" + String(idn.name || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\""
-          + "}"
-        );
         try {
-          var j = eval("(" + x.responseText + ")");
+          var j = queueClaim(token);
           if (j && j.ok === false) {
-            done(j.message || "Claim failed.", false);
+            done(j.message || "Claim failed.", false, j.terminal === true);
             return false;
           }
-          if (j && j.claimToken) token = String(j.claimToken);
-        } catch (e2) {}
+          if (!j || j.ok !== true || j.armed !== true) {
+            done("The claim was not acknowledged. The request is saved for retry.", false, false);
+            return false;
+          }
+          if (j.claimToken && String(j.claimToken) !== token) {
+            done("The game server returned a different claim token. The original request is saved.", false, false);
+            return false;
+          }
+        } catch (e2) {
+          done("The claim response could not be read. The request is saved for retry.", false, false);
+          return false;
+        }
         tryNativeClaim();
+        pollingToken = token;
         pollClaimResult(token, 20, done);
       } catch (e3) {
-        done("Claim failed to reach server.", false);
+        done("Claim failed to reach the server. The request is saved for retry.", false, false);
       }
       return false;
     }
@@ -836,15 +912,22 @@
 
     function applyServerState(j) {
       if (!j) return;
+      if (j.ok !== true) {
+        serverStateLoaded = false;
+        claimMessage = j.message || "The account board could not be verified. The saved request is unchanged.";
+        return;
+      }
       if (typeof j.freeTestMode === "boolean") freeTestMode = j.freeTestMode;
       if (j.accountKey) setKnownAccountKey(j.accountKey);
       else if (j.boardAccount) setKnownAccountKey(j.boardAccount);
-      // Need account board data (from accountKey query or character identity).
-      if (j.hasIdentity === false && !(j.taken && j.taken.length)) return;
-      if (typeof j.claimedCount === "number") claimedCount = j.claimedCount;
-      if (j.lastGrantedUtc) lastGrantedUtc = String(j.lastGrantedUtc);
-      if (j.lastClaimUtc) lastClaimUtc = String(j.lastClaimUtc);
-      if (j.taken && j.taken.length) {
+      serverStateLoaded = j.hasIdentity === true || (j.hasIdentity !== false && !!knownAccountKey);
+      if (!serverStateLoaded) {
+        resetBoard();
+        return;
+      }
+      if (typeof j.lastGrantedUtc === "string") lastGrantedUtc = j.lastGrantedUtc;
+      if (typeof j.lastClaimUtc === "string") lastClaimUtc = j.lastClaimUtc;
+      if (j.taken && typeof j.taken.length === "number") {
         resetTakenMap();
         var i;
         for (i = 0; i < j.taken.length; i++) markTaken(parseInt(j.taken[i], 10));
@@ -861,6 +944,7 @@
       refreshIdentity();
       loadStoredAccountKey();
       var idn = resolveIdentity();
+      var requestedIdentity = currentIdentityKey();
       try {
         var x = new XMLHttpRequest();
         var q = "claim.php?month=" + encodeURIComponent(utcMonth())
@@ -871,6 +955,7 @@
         x.open("GET", q, true);
         x.onreadystatechange = function () {
           if (x.readyState === 4 && x.status === 200) {
+            if (requestedIdentity !== currentIdentityKey()) return;
             try {
               applyServerState(eval("(" + x.responseText + ")"));
               paint();
@@ -887,6 +972,28 @@
         syncFromServer();
         pollServer(left - 1);
       }, 700);
+    }
+
+    function resumePendingClaim() {
+      if (!pendingClaimToken || pollingToken || claiming || !serverStateLoaded || resumeAttempted) return;
+      resumeAttempted = true;
+      var token = pendingClaimToken;
+      pollingToken = token;
+      claiming = true;
+      claimMessage = "Checking the saved claim with the game server.";
+      paint();
+      pollClaimResult(token, 20, function (msg, ok, terminal) {
+        if (token !== pendingClaimToken) return;
+        claiming = false;
+        pollingToken = "";
+        if (terminal) {
+          pendingClaimToken = "";
+          savePending();
+        }
+        claimMessage = msg;
+        syncFromServer();
+        paint();
+      }, true);
     }
 
     function onClaimClick() {
@@ -921,19 +1028,23 @@
       }, msUntilNextUtcMidnight() + 250);
     }
 
+    identityKey = currentIdentityKey();
     loadStoredAccountKey();
     loadLocal();
+    loadPending();
     refreshIdentity();
     loadRewards();
     buildGrid();
     paint();
     syncFromServer();
+    setTimeout(function () { resumePendingClaim(); }, 1000);
     scheduleMidnightRefresh();
     setInterval(function () {
       refreshIdentity();
       // Also re-check day rollover every minute (backup for midnight timer).
       paint();
       syncFromServer();
+      resumePendingClaim();
     }, 60000);
   })();
   </script>

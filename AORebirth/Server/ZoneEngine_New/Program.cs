@@ -313,6 +313,19 @@ namespace ZoneEngine_New
             services.AddSingleton(provider => new Lazy<PlayfieldManager>(provider.GetRequiredService<PlayfieldManager>));
             services.AddSingleton<InventoryFlushService>();
             services.AddSingleton<IInventoryMutationPersistence, MySqlInventoryMutationPersistence>();
+            services.AddSingleton<AORebirth.Interfaces.Persistence.Characters.IDailyLoginClaimDao>(provider =>
+                (AORebirth.Interfaces.Persistence.Characters.IDailyLoginClaimDao)provider.GetRequiredService<AORebirth.Interfaces.Persistence.Characters.ICharacterPersistenceDao>());
+            services.AddSingleton(provider => new Lazy<ZoneEngine_New.Core.DailyLogin.DailyLoginClaimBridge>(() =>
+            {
+                var paths = ZoneEngine_New.Core.DailyLogin.DailyLoginBridgePaths.Resolve();
+                var catalog = ZoneEngine_New.Core.DailyLogin.DailyLoginRewardCatalog.Load(paths.RewardsJson, paths.ProfessionNanosJson);
+                var dao = provider.GetRequiredService<AORebirth.Interfaces.Persistence.Characters.IDailyLoginClaimDao>();
+                var rewards = new ZoneEngine_New.Core.DailyLogin.DailyLoginRewardService(
+                    new ZoneEngine_New.Core.DailyLogin.DailyLoginRewardSelector(provider.GetRequiredService<IItemTemplateCatalog>(), catalog, provider.GetRequiredService<IGameData>()),
+                    provider.GetRequiredService<IItemBuilder>(), provider.GetRequiredService<InventoryFlushService>(), dao);
+                return new ZoneEngine_New.Core.DailyLogin.DailyLoginClaimBridge(rewards, dao,
+                    new ZoneEngine_New.Core.DailyLogin.DailyLoginClaimFiles(paths.ClaimsRoots), provider.GetRequiredService<IZoneLogger>());
+            }));
             services.AddSingleton<InventoryActionService>();
             services.AddSingleton(provider =>
             {

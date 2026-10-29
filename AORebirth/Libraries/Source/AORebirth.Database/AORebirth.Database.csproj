@@ -115,6 +115,7 @@
     <Compile Include="Domain\Characters\MySqlCharacterPersistenceDao.cs" />
     <Compile Include="Domain\Characters\MySqlCharacterPersistenceDao.Inventory.cs" />
     <Compile Include="Domain\Characters\MySqlCharacterPersistenceDao.Transactions.cs" />
+    <Compile Include="Domain\Characters\MySqlCharacterPersistenceDao.DailyLogin.cs" />
     <Compile Include="Domain\Characters\MySqlCharacterPersistenceDao.Legacy.cs" />
     <Compile Include="Domain\Characters\MySqlCharacterDao.Legacy.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.cs" />

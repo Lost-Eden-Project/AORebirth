@@ -30,13 +30,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
         private readonly InventoryActionService _inventoryActions;
         private readonly TeamService _teams;
         private readonly Tradeskills.TradeskillService? _tradeskills;
+        private readonly Lazy<DailyLogin.DailyLoginClaimBridge>? _dailyLogin;
 
         public CharacterActionMessageHandler(InventoryActionService inventoryActions, TeamService teams,
-            Tradeskills.TradeskillService? tradeskills = null)
+            Tradeskills.TradeskillService? tradeskills = null, Lazy<DailyLogin.DailyLoginClaimBridge>? dailyLogin = null)
         {
             _inventoryActions = inventoryActions;
             _teams = teams;
             _tradeskills = tradeskills;
+            _dailyLogin = dailyLogin;
         }
 
         public Type MessageBodyType => typeof(CharacterActionMessage);
@@ -129,6 +131,19 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 case CharacterActionType.StandUp:
                     // Sit posture arrives via CharDCMove (MoveType SwitchToSit), not CharacterAction.
                     ApplyStand(player);
+                    break;
+
+                case CharacterActionType.SitDown:
+                    // Daily claim Action=263 Target=self, captured 20260806-063619 and recovered from feec603.
+                    // Actual posture uses movement/ChangeAnimationAndStance, not this historical enum label.
+                    if (message.Target != player.Identity)
+                        break;
+                    try { _dailyLogin?.Value.HandleClaim(player, session.AccountName, DateTime.UtcNow); }
+                    catch (Exception exception)
+                    {
+                        LogUtil.Debug(DebugInfoDetail.Engine, "Daily Login bridge unavailable: " + exception.Message);
+                        Commands.GmCommandFeedback.Send(session, player, "Daily Login is unavailable. No claim has been lost; please try again later.");
+                    }
                     break;
 
                 case CharacterActionType.StartSneak: //TODO: Wire in hiding when sneaking

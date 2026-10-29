@@ -33,7 +33,8 @@ public static class SchemaContract
         "20261001_character_perk_locks.sql",
         "20261013_character_research.sql",
         "20261016_character_nano_line_locks.sql",
-        "20261025_character_pet_names.sql"
+        "20261025_character_pet_names.sql",
+        "20261029_daily_login_claims.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -53,7 +54,7 @@ public static class SchemaContract
         "generatedmissionsequences", "generatedmissionbatches", "generatedmissionoffers",
         "generatedmissionbindings", "generatedmissionobservations", "generatedmissionartifacts", "generatedmissionobjects",
         "characterskilllocks", "characterquests", "generatedquests", "questdungeonkeys",
-        "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames"
+        "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames", "dailyloginclaims"
     });
 
     public static readonly IReadOnlyList<(string Table, string Columns)> UniqueKeys = Array.AsReadOnly(new[]
@@ -75,7 +76,8 @@ public static class SchemaContract
         ("characterperklocks", "CharacterId,PerkId"),
         ("characterresearch", "CharacterId,ResearchId"),
         ("characternanolinelocks", "CharacterId,NanoStrain"),
-        ("characterpetnames", "CharacterId,PetType")
+        ("characterpetnames", "CharacterId,PetType"),
+        ("dailyloginclaims", "Id"), ("dailyloginclaims", "ClaimToken"), ("dailyloginclaims", "AccountId,ClaimDateUtc")
     });
 
     private static IReadOnlyList<ColumnRequirement> BuildColumns()
@@ -167,6 +169,12 @@ public static class SchemaContract
         Add("characternanolinelocks", "bigint", "ExpiresAtUtcTicks", false);
         Add("characterpetnames", "int", "CharacterId PetType", false);
         Add("characterpetnames", "varchar", "Name", false);
+        Add("dailyloginclaims", "bigint", "Id CreatedAtUtcTicks", false);
+        Add("dailyloginclaims", "int", "AccountId CharacterId", false);
+        Add("dailyloginclaims", "varchar", "ClaimToken");
+        Add("dailyloginclaims", "date", "ClaimDateUtc");
+        Add("dailyloginclaims", "mediumtext", "StateJson ResultJson");
+        Add("dailyloginclaims", "tinyint", "IsLegacyImport", true);
         return result.AsReadOnly();
     }
 }

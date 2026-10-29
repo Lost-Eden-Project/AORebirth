@@ -1,5 +1,44 @@
 # Current Task
 
+Active task (2026-10-29): restore Daily Login Rewards on
+`codex/repair-daily-login-rewards`, based on public master
+`465e7ff882d71a2669dfbb56f08ec9bd3d950e1e`.
+
+Recover behavior from `feec603be8a2b8d788279c094fa53514417952d1` without
+restoring the retired engine. Use current item/inventory/DAO owners, preserve
+account progress and pending requests, commit reward rows and the account
+receipt atomically, and require committed confirmation before displaying Taken.
+Mike explicitly approved the scoped development ledger migration and focused
+success, concurrency, persistence, rollback, UTC progression and web tests.
+Development validation: 42 focused C# tests, 12 browser-state tests and 11 actual
+PHP HTTP checks pass. Disposable real-MySQL checks pass for migration reruns,
+account ownership, concurrent characters, UTC-day uniqueness, four partial-write
+rollback points, lost commit acknowledgements and restart replay. Empty schema
+rollback succeeds; populated rollback refuses and preserves the ledger.
+
+The native claim trigger now uses the authenticated account and actual inventory
+grant plan. Committed receipts and account progress share the inventory transaction;
+file projections recover from interrupted publication. Existing account JSON and
+successful receipts seed the ledger once, original progress bytes are retained,
+and pending requests are not deleted. The browser never trusts old optimistic
+cache entries or marks a new claim Taken before committed confirmation.
+
+Calendar IDs, pools and quantities are preserved. Public historical relation data
+restores 172 explicit family records using the current item-family resolver;
+the original profession-nano catalog is recovered unchanged. Days 19 and 21 still
+reject without advancing. The 84 fixed blueprint definitions in day 13 and the
+65 QL-1 prototypes in day 14 retain the original fixed-template fallback; their
+declared level scaling cannot override their actual template quality bounds.
+
+This is FEATURE_VALIDATION only, not Windows release acceptance. Development AO
+client verification (including immediate inventory visibility, native browser
+identity/action delivery, relog and UTC rollover) remains unverified. Anonymous
+or ambiguous legacy requests fail closed and remain available for review.
+No production data, deployment or client operation occurred; no Linux work was
+performed. Engines remain stopped.
+
+## Prior task context
+
 Active task: final public master integration of the three completed retail chest
 commits. Starting public master is `c679d683aeff50c3f3c2d737974fe1880feddb7a`;
 the direct fast-forward candidate is `d76a2fdeecc78afd921fec23263c61ddb2b7eb36`.

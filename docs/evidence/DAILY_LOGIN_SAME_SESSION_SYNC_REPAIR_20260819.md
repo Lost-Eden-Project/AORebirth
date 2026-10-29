@@ -45,3 +45,19 @@ Those packet identities contradicted the actual in-memory and persisted placemen
 | Same-session continued gameplay | NOT TESTED |
 
 Production remains on `reconnect-fe6617b3`. This document does not claim production acceptance.
+
+## Development restoration, 2026-10-29
+
+The preceding production observations retain their historical scope. The active
+`ZoneEngine_New` restoration recovers selection/account behavior from public
+commit `feec603be8a2b8d788279c094fa53514417952d1`; it does not restore that engine.
+The grant uses current `InventoryGrantPlan`: persist every actual inventory row
+and the account receipt in one DAO transaction, then publish the existing
+`AddTemplateMessage` inventory notification for the real inventory placement.
+It never advertises a synthetic overflow move or replaces unrelated contents.
+
+Focused tests prove notification occurs after commit, old inventory references
+remain intact, and receipt replay publishes no duplicate item. Immediate display
+in the original AO client, together with continued inventory/gameplay operation,
+still requires Mike's development client verification. No production operation
+or deployment was performed for this restoration.

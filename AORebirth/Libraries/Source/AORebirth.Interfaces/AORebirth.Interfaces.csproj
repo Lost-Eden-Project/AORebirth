@@ -64,6 +64,7 @@
     <Compile Include="Persistence\Characters\ICharacterDao.cs" />
     <Compile Include="Persistence\Characters\ICharacterPersistenceDao.cs" />
     <Compile Include="Persistence\Characters\CharacterPersistenceData.cs" />
+    <Compile Include="Persistence\Characters\DailyLoginPersistenceData.cs" />
     <Compile Include="Persistence\Characters\CharacterDirectoryData.cs" />
     <Compile Include="Persistence\Characters\StaleOnlineCharacterData.cs" />
     <Compile Include="Persistence\Characters\StaleOnlineRecoveryData.cs" />

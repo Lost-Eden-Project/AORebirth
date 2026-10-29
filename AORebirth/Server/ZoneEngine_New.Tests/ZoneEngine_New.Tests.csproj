@@ -44,6 +44,11 @@
   </ItemGroup>
   <!-- Explicit focused run: the clean baseline contains unrelated stale test types.
        The default/full suite remains unchanged and continues reporting those failures. -->
+  <ItemGroup Condition="'$(DailyLoginFocusedTests)' == 'true'">
+    <Compile Remove="@(Compile)" />
+    <Compile Include="TestDoubles.cs" />
+    <Compile Include="DailyLogin*.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(MissionDestinationFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />

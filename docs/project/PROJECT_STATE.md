@@ -1,5 +1,16 @@
 # AORebirth Project State
 
+PROVEN DEVELOPMENT VALIDATION (2026-10-29, Daily Login repair): the development
+branch restores the recovered reward processor through current inventory and
+DAO owners, with one atomic account/UTC-day claim ledger, preserved legacy
+progress and pending evidence, replay recovery and committed-only browser Taken
+state. Focused checks pass: 42 C#, 12 browser-state and 11 actual PHP HTTP cases;
+disposable real-MySQL migration, concurrency, rollback and restart/commit-ack
+recovery checks also pass. Days 19/21 remain empty and block calendar completion;
+historically fixed day-13/14 item quality bounds are preserved. This does not
+establish live AO client or release acceptance. No production database,
+deployment, Linux change or client operation occurred. Details are in CURRENT_TASK.
+
 PROVEN DEVELOPMENT VALIDATION (2026-10-26, ordinary RK mission chests): the
 reviewed positive policy and independent seasonal/special vetoes constrain new
 loot and withhold restricted persisted rows without deleting their audit records

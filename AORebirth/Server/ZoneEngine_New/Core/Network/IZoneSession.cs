@@ -13,6 +13,9 @@ namespace ZoneEngine_New.Core.Network
 
         Player? Player { get; }
 
+        /// <summary>Account established by the authenticated zone handoff; browser fields are never authority.</summary>
+        string AccountName => string.Empty;
+
         bool IsClosed => State == SessionState.Closed;
 
         void BindPlayer(Player player);
