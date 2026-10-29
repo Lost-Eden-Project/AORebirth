@@ -353,6 +353,53 @@ public sealed class MissionChestRKPolicyTests
             }
         }
         Assert.AreEqual(0, ids.Calls, "New-band selector and command probes must never allocate item instances.");
+        var requiredFullPoolProbes = new List<object>();
+        if (review.RootElement.TryGetProperty("RequiredFullPoolSelections", out JsonElement requiredSelections))
+        {
+            foreach (JsonElement request in requiredSelections.EnumerateArray())
+            {
+                int lowId = request.GetProperty("LowId").GetInt32();
+                int highId = request.GetProperty("HighId").GetInt32();
+                int quality = request.GetProperty("Quality").GetInt32();
+                int maximumPopulations = request.GetProperty("MaxPopulations").GetInt32();
+                int seed = request.GetProperty("Seed").GetInt32();
+                Assert.IsTrue(quality is >= 1 and <= 250 && maximumPopulations is >= 1 and <= 50000);
+                Assert.IsTrue(allowlist.IsAllowed(lowId, highId, quality), "Required full-pool selection must be authorized by the installed policy.");
+                MissionChestLootPreview? matched = null;
+                IReadOnlyList<MissionChestLootPreview>? matchingPopulation = null;
+                int matchingSeed = 0, populationsTried = 0;
+                for (int attempt = 0; attempt < maximumPopulations; attempt++)
+                {
+                    int currentSeed = unchecked(seed + attempt);
+                    IReadOnlyList<MissionChestLootPreview> population = service.RollPreview(quality, new Random(currentSeed));
+                    populationsTried++;
+                    Assert.IsTrue(population.Count is >= 1 and <= 3);
+                    foreach (MissionChestLootPreview item in population)
+                    {
+                        Assert.IsTrue(allowlist.IsAllowed(item.LowId, item.HighId, item.Quality));
+                        Assert.AreEqual(0, allowlist.ExclusionReasons(item.LowId, item.HighId).Length);
+                        Assert.IsTrue(item.Quality >= Math.Max(1, quality - 5) && item.Quality <= Math.Min(250, quality + 5));
+                    }
+                    matched = population.FirstOrDefault(item => item.LowId == lowId && item.HighId == highId && item.Quality == quality);
+                    if (matched == null)
+                        continue;
+                    matchingPopulation = population;
+                    matchingSeed = currentSeed;
+                    break;
+                }
+                Assert.IsNotNull(matched, $"Required identity {lowId}/{highId} QL {quality} was not selected within {maximumPopulations} normal full-pool populations.");
+                string command = string.Join("\n", ChestCommand.Simulate(service, quality,
+                    "required full-pool selection", 1, new Random(matchingSeed)));
+                Assert.IsTrue(command.Contains($"ID {lowId}/{highId}; QL {quality}; rarity ", StringComparison.Ordinal));
+                requiredFullPoolProbes.Add(new
+                {
+                    LowId = lowId, HighId = highId, Quality = quality, InitialSeed = seed, MaxPopulations = maximumPopulations,
+                    PopulationsTried = populationsTried, MatchingSeed = matchingSeed, Matched = matched,
+                    MatchingPopulation = matchingPopulation, FullInstalledPolicy = true, ChestCommandReportsSelection = true
+                });
+            }
+        }
+        Assert.AreEqual(0, ids.Calls, "Required full-pool selector and command probes must never allocate item instances.");
         string result = JsonSerializer.Serialize(new
         {
             Campaign = "ProductionSelectorRKChestPopulations", Populations = populations, TotalItems = totalItems,
@@ -365,6 +412,7 @@ public sealed class MissionChestRKPolicyTests
             UnauthorizedItems = 0, ExcludedItems = 0, ReviewSha256 = reviewedHash,
             PreviousDefinitionsRetained = previousIds.Length, PreviousBandsRetained = previousBands.Length,
             NewlyApprovedBands = newBands.Length, NewBandProbes = newBandProbes,
+            RequiredFullPoolSelections = requiredFullPoolProbes,
             NewBandNormalCampaignItemCounts = newBands.Select(band => new
             {
                 band.LowId, band.HighId, band.MinQuality, band.MaxQuality,

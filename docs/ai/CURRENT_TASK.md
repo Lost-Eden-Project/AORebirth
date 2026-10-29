@@ -1,5 +1,25 @@
 # Current Task
 
+Active correction: restore the verified captured Gift wrapped basket at its
+exact supported QL to ordinary RK chest eligibility. Remain on
+`codex/mission-chest-retail-integration` after `5c6b3103a804bd05c535fd70a0fcb9293acc82cf`.
+Quest-use metadata is independent of acquisition eligibility. Remove only the
+incorrect basket exclusion; retain every other approval, negative restriction,
+loot mechanic and quest-use definition. Use exact capture-bound review evidence
+for the item metadata exception. Validate through the existing bounded feature
+workflow, update private review/manifests, commit and push public-safe changes.
+No master merge, deployment, live data/server change or AO client operation.
+
+Completed: exact QL 1 approval restored; actual totals are 186/186 eligible
+captured pairs, 25,118 definitions and 13,269 bands. Other approvals/exclusions
+and quest-use data remain unchanged. Fourteen catalog tests, 99 focused tests,
+50 MySQL checks and connected TCP validation completed (known shutdown baseline
+retained). Full installed-pool selection and chest-command replay proved the
+item selectable at QL 1. The pre-existing incomplete Smug/Eel exchange content is
+documented separately, with no quest implementation added.
+
+## Previous integration (basket exclusion superseded by this correction)
+
 Active request (2026-10-28): integrate eligible recovered retail mission chest
 items into the actual private development RK chest policy. Work is isolated on
 `codex/mission-chest-retail-integration`, following recovery commit

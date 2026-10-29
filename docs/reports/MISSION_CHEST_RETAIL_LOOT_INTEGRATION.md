@@ -1,5 +1,38 @@
 # Recovered retail mission chest loot integration
 
+## Current correction: captured quest-use item restored
+
+The initial basket exclusion below was incorrect: additional quest use does not
+establish acquisition exclusivity. The verified captured fixed QL 1 item is now
+approved, and only its erroneous special exclusion was removed. Current totals
+are **186/186 eligible captured pairs, 25,118 approved definitions and 13,269
+approval bands**. All prior 25,117 definitions and 13,268 bands are preserved.
+
+The catalog tool binds the reviewed Unique exception to exact hash-verified
+world-chest slot evidence and captured qualities. Quest-use metadata remains
+independent. Other explicit exclusions, seasonal bytes and gameplay mechanics
+are unchanged. The existing automatic quest-role audit flagged one separate
+association/exclusivity ambiguity for review; it was left unchanged.
+
+Fourteen catalog tests, 99 focused chest/inventory tests and 50 disposable MySQL
+checks passed. A bounded check of the full installed production pool selected
+the restored QL 1 item after 2,229 populations (matching seed 10147); the same
+service/seed reproduced it through the chest command. The broad 10,000-population
+campaign produced 19,948 authorized items with no exclusion leaks. Its fixed seed
+did not happen to draw this item; the targeted full-pool proof is separate.
+Connected TCP passed with the retained proven shutdown baseline exception.
+
+All 39 related item/quest/NPC/script files remain byte-identical. The existing
+Smug/Eel quest records reference the item, but canonical content lacks the
+completed basket-to-Tuner exchange binding. Preservation is verified; a working
+end-to-end exchange is not claimed or introduced by this correction.
+
+The following initial-integration record is retained as history. Its basket
+rejection and blanket Unique-veto description are superseded by this correction.
+No master merge or deployment has occurred.
+
+## Initial integration history
+
 Status: development policy installed and validated, 2026-10-28. No master merge,
 production deployment, AO client operation or live database change.
 

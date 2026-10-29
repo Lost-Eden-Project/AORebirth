@@ -10,6 +10,8 @@ import hashlib
 import json
 from pathlib import Path
 
+SOURCE_ROOT=Path(__file__).resolve().parents[2]
+
 def read(path):
     return json.loads(path.read_text(encoding='utf-8-sig'))
 
@@ -21,7 +23,67 @@ def write(path, value):
     partial.write_text(json.dumps(value, indent=2, ensure_ascii=True)+'\n', encoding='utf-8')
     partial.replace(path)
 
-def reviewed_metadata_exceptions(row, items, flags):
+def reviewed_acquisition(row, items, source_root):
+    """Bind an authored acquisition review to immutable exact world-chest slots."""
+    source=row.get('AcquisitionSource')
+    if source is None:
+        return None
+    if (not isinstance(source,dict) or set(source)!={'Path','Sha256','LootIds'}
+            or not isinstance(source['Path'],str) or not source['Path'] or Path(source['Path']).is_absolute()
+            or not isinstance(source['Sha256'],str)
+            or not isinstance(source['LootIds'],list) or not source['LootIds']
+            or any(not isinstance(value,str) or not value for value in source['LootIds'])
+            or len(source['LootIds'])!=len(set(source['LootIds']))):
+        raise ValueError('AcquisitionSource requires an exact private path, hash and distinct LootIds')
+    path=(source_root/source['Path']).resolve()
+    if (not path.is_relative_to(source_root) or path.relative_to(source_root).parts[0]!='.local'
+            or sha(path)!=source['Sha256']):
+        raise ValueError('Acquisition source is outside private checkout evidence or changed')
+    records=read(path).get('Records',[])
+    indexed=defaultdict(list)
+    for record in records:
+        indexed[record.get('LootId')].append(record)
+    verified=[]
+    def is_hash(value):
+        return isinstance(value,str) and len(value)==64 and all(char in '0123456789abcdefABCDEF' for char in value)
+    for loot_id in source['LootIds']:
+        candidates=indexed.get(loot_id,[])
+        if len(candidates)!=1:
+            raise ValueError('Acquisition LootId is missing or ambiguous: '+loot_id)
+        record=candidates[0]
+        packet=record.get('Source') or {}
+        owner=record.get('ChestIdentity') or {}
+        low,high,quality=(record.get(name) for name in ('FamilyLowId','FamilyHighId','Quality'))
+        session=record.get('Session')
+        ordinal=record.get('InventoryOrdinal')
+        slot=record.get('Slot')
+        world=record.get('WorldId')
+        if (record.get('EvidenceStatus')!='VERIFIED_CONTENTS'
+                or record.get('WorldEvidence')!='EXACT_PARENTLESS_FULL_UPDATE_AND_WORLD_MEMORY_IDENTITY_PLAYFIELD'
+                or owner.get('Type')!=51017 or type(owner.get('Instance')) is not int or owner['Instance']<=0
+                or set(row['TemplateIds'])!={low,high} or type(quality) is not int
+                or low==high and record.get('TemplateId')!=low
+                or any(id not in items for id in (low,high))
+                or not items[low]['Quality']<=quality<=items[high]['Quality']
+                or not isinstance(session,str) or not session or packet.get('Session')!=session
+                or type(ordinal) is not int or str(packet.get('GlobalOrdinal'))!=str(ordinal)
+                or type(slot) is not int or slot<0 or type(packet.get('SourceRecord')) is not int or packet['SourceRecord']<1
+                or packet.get('Direction')!='IN'
+                or loot_id!=f'{session}|inventory:{ordinal}|slot:{slot}'
+                or not isinstance(world,str) or not world.startswith(f'{session}|51017:{owner["Instance"]}|pf:')
+                or not world.rsplit('|pf:',1)[-1].isdigit() or int(world.rsplit('|pf:',1)[-1])<1
+                or not is_hash(record.get('RawPacketSha256'))
+                or record['RawPacketSha256']!=packet.get('PacketSha256') or not is_hash(packet.get('SourceCsvSha256'))):
+            raise ValueError('Acquisition record lacks exact verified world-chest provenance: '+loot_id)
+        verified.append({'LootId':loot_id,'LowId':low,'HighId':high,'Quality':quality,
+            'ChestIdentity':owner,'WorldId':world,'Session':session,'InventoryOrdinal':ordinal,'Slot':slot,
+            'PacketSha256':record['RawPacketSha256'],'SourceCsvSha256':packet['SourceCsvSha256'],
+            'SourceRecord':packet['SourceRecord']})
+    return {'Path':source['Path'],'Sha256':source['Sha256'],'ValidatedRecords':verified,
+            'Qualities':sorted({record['Quality'] for record in verified})}
+
+
+def reviewed_metadata_exceptions(row, items, flags, acquisition=None):
     """Validate only explicitly reviewed flag/target-context false positives."""
     exception=row.get('MetadataExceptions')
     if exception is None:
@@ -35,9 +97,18 @@ def reviewed_metadata_exceptions(row, items, flags):
     names=exception.get('AllowedFlags',[])
     targets=exception.get('TargetCriteria',[])
     if (not isinstance(names,list) or any(not isinstance(name,str) for name in names) or len(names)!=len(set(names))
-            or any(name not in {'Special','NoDrop'} for name in names)
+            or any(name not in {'Special','NoDrop','Unique'} for name in names)
             or not isinstance(targets,list) or not names and not targets):
         raise ValueError('Unsupported or empty metadata exception')
+    if 'Unique' in names:
+        if acquisition is None:
+            raise ValueError('Unique exception requires verified exact ordinary RK chest acquisition')
+        qualities={record['Quality'] for record in acquisition['ValidatedRecords']}
+        ids=row['TemplateIds']
+        ranges=row.get('ApprovedQualityRanges') or [[min(items[id]['Quality'] for id in ids),max(items[id]['Quality'] for id in ids)]]
+        if any(type(low) is not int or type(high) is not int or low<1 or high<low
+                or not set(range(low,high+1))<=qualities for low,high in ranges):
+            raise ValueError('Unique exception may approve only qualities verified in the exact acquisition records')
     allowed_flags=0
     for name in names:
         if not any(id in items and items[id]['Flags'] & flags[name] for id in row['TemplateIds']):
@@ -118,7 +189,7 @@ def prepare(input_root: Path, gamedata: Path, output: Path, reviews_path: Path |
     if reviews.get('Version') != 1 or reviews.get('ItemsSha256') != receipt['SourceSha256'] or reviews.get('FamiliesSha256') != sha(template_path):
         raise ValueError('Review inputs are not tied to the current item/family source')
     pair_sources={}
-    source_root=Path(__file__).resolve().parents[2]
+    source_root=SOURCE_ROOT
     for relative,expected_sha in reviews.get('PairSources',{}).items():
         path=(source_root/relative).resolve()
         if not path.is_relative_to(source_root) or sha(path)!=expected_sha:
@@ -139,6 +210,7 @@ def prepare(input_root: Path, gamedata: Path, output: Path, reviews_path: Path |
         return None
     accepted={}
     accepted_reviews=[]
+    acquisitions=[]
     rejected=[]
     for row in reviews['Reviews']:
         ids=row['TemplateIds']
@@ -158,7 +230,10 @@ def prepare(input_root: Path, gamedata: Path, output: Path, reviews_path: Path |
                 raise ValueError('Review differs from its explicit existing pair source')
             if any(id not in items for id in ids) or [items[id]['Quality'] for id in ids]!=[original['LowQl'],original['HighQl']]:
                 raise ValueError('Pair source QLs disagree with current stored endpoint metadata')
-        allowed_flags,allowed_terms=reviewed_metadata_exceptions(row,items,flags)
+        acquisition=reviewed_acquisition(row,items,source_root)
+        if acquisition is not None or row.get('QuestUse') is not None:
+            acquisitions.append((row,acquisition))
+        allowed_flags,allowed_terms=reviewed_metadata_exceptions(row,items,flags,acquisition)
         reasons={str(id): ('MISSING_TEMPLATE' if id not in items else veto(items[id],allowed_flags,allowed_terms.get(id))) for id in ids}
         bad={key:value for key,value in reasons.items() if value}
         if bad:
@@ -194,11 +269,16 @@ def prepare(input_root: Path, gamedata: Path, output: Path, reviews_path: Path |
                 interval=(low,high,start,end)
                 proof=list(dict.fromkeys(row['RkEvidence']+row['OrdinaryEvidence']
                     +row.get('MetadataExceptions',{}).get('Evidence',[])))
+                if row.get('AcquisitionSource'):
+                    proof.extend('reviewed-acquisition:'+row['AcquisitionSource']['Path']+'@sha256:'
+                        +row['AcquisitionSource']['Sha256']+'#LootId='+loot_id for loot_id in row['AcquisitionSource']['LootIds'])
                 entries[interval]={'LowId':low,'HighId':high,'MinQuality':start,'MaxQuality':end,
                     'Classification':'OrdinaryRubiKa','Evidence':proof,'Description':row['Category']+': '+items[low]['Name']}
     values=[entries[key] for key in sorted(entries)]
     retained_definitions=[]
     retained_rejections=[]
+    retained_exceptions=[]
+    retained_acquisitions=[]
     merge_manifest=None
     if existing_policy is not None:
         prior=read(existing_policy)
@@ -242,6 +322,8 @@ def prepare(input_root: Path, gamedata: Path, output: Path, reviews_path: Path |
         # Preserve every previous JSON entry value and its order; append only new pair/QL coverage.
         values=prior['Entries']+additions
         retained_rejections=prior_reviews.get('Rejected',[])
+        retained_exceptions=prior_reviews.get('ReviewedMetadataExceptions',[])
+        retained_acquisitions=prior_reviews.get('ReviewedAcquisitions',[])
         merge_manifest={'ExistingPolicySha256':sha(existing_policy),'ExistingReviewResultsSha256':sha(existing_review_results),
             'RetainedExistingBands':len(prior['Entries']),'RetainedExistingDefinitions':len(retained_definitions),
             'AddedBands':len(additions),'ExistingEntriesPreservedVerbatim':values[:len(prior['Entries'])]==prior['Entries'],
@@ -275,10 +357,15 @@ def prepare(input_root: Path, gamedata: Path, output: Path, reviews_path: Path |
     summary['AllowlistSha256']=sha(output/'MissionChestRKAllowlist.json')
     write(output/'ordinary-rk-coverage.json',{'Summary':summary,'MissionCoverage':coverage})
     review_results={'Summary':summary,'Rejected':retained_rejections+rejected,'ApprovedDefinitions':approved_definitions}
-    exceptions=[{'RuleId':row['RuleId'],'TemplateIds':row['TemplateIds'],'MetadataExceptions':row['MetadataExceptions']}
+    exceptions=retained_exceptions+[{'RuleId':row['RuleId'],'TemplateIds':row['TemplateIds'],'MetadataExceptions':row['MetadataExceptions']}
                 for row in accepted_reviews if row.get('MetadataExceptions')]
     if exceptions:
         review_results['ReviewedMetadataExceptions']=exceptions
+    acquisition_reviews=retained_acquisitions+[{'RuleId':row['RuleId'],'TemplateIds':row['TemplateIds'],
+        'QuestUse':row.get('QuestUse'),'AcquisitionSource':row.get('AcquisitionSource'),
+        'AcquisitionValidation':validation,'Accepted':row in accepted_reviews} for row,validation in acquisitions]
+    if acquisition_reviews:
+        review_results['ReviewedAcquisitions']=acquisition_reviews
     write(output/'ordinary-rk-review-results.json',review_results)
     if merge_manifest is not None:
         write(output/'ordinary-rk-merge-manifest.json',merge_manifest)

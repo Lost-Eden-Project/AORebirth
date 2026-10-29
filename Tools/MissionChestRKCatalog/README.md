@@ -59,16 +59,27 @@ retained/added counts in `ordinary-rk-merge-manifest.json`. It does not rebuild
 historical reviews or reinterpret their older typed pair sources.
 
 A review may explicitly explain a current-metadata false positive through
-`MetadataExceptions`. `AllowedFlags` accepts only `Special` and `NoDrop`.
+`MetadataExceptions`. `AllowedFlags` accepts `Special` and `NoDrop`.
 `TargetCriteria` accepts exact `NPCFamily` terms with `TermIndex` and
 `Target: "OnTarget"`; ordered requirement selectors must prove that subject in
 the current metadata. `Evidence` must contain exact source locators and `Reason`
 must explain the authored exception. Raw numeric target fields alone do not
-prove an OnTarget requirement. These exceptions never waive Unique, Disabled,
-Stationary, exclusion catalogs, expansion, quest or GM restrictions, or direct
+prove an OnTarget requirement. These exceptions never waive Disabled,
+Stationary, exclusion catalogs, expansion, quest-stat or GM restrictions, or direct
 NPCFamily stats. Positive RK and ordinary evidence remain mandatory. Without
 explicit exceptions and additive options, existing validation behavior remains
 unchanged.
+
+`Unique` additionally requires an `AcquisitionSource` with an ignored,
+checkout-relative `.local` JSON `Path`, exact `Sha256`, and distinct `LootIds`.
+The retained `Records` must prove those exact template IDs and qualities in a
+parentless world chest, with exact owner/session/slot references and packet and
+CSV hashes. Approved intervals cannot extend beyond captured qualities for a
+Unique exception. This authorizes neither other Unique items nor other qualities.
+The source binding and any separately authored `QuestUse` object are retained in
+`ReviewedAcquisitions`; using an item in a quest does not establish exclusive
+quest acquisition. Additive preparation preserves earlier acquisition and
+metadata-exception records. All current negative catalogs still take precedence.
 
 `reconcile_captured_loot.py` joins captured low/high template descriptors and
 their recorded quality to the existing metadata, requirement classification,

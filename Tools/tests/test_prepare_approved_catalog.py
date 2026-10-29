@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 SOURCE=Path(__file__).resolve().parents[1]/'MissionChestRKCatalog'/'prepare_approved_catalog.py'
 SPEC=importlib.util.spec_from_file_location('prepare_approved_catalog',SOURCE)
@@ -49,7 +50,7 @@ class ReviewedCatalogTests(unittest.TestCase):
             'FamiliesSha256':CATALOG.sha(self.data/'ItemTemplates.json'),'Reviews':rows or [self.review]})
 
     def prepare(self,**kwargs):
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stdout(io.StringIO()),mock.patch.object(CATALOG,'SOURCE_ROOT',self.root):
             CATALOG.prepare(self.inputs,self.data,self.output,self.reviews,**kwargs)
         return CATALOG.read(self.output/'MissionChestRKAllowlist.json')
 
@@ -152,6 +153,82 @@ class ReviewedCatalogTests(unittest.TestCase):
         self.items[0]['Flags']=1; self.exception(AllowedFlags=['Special']); self.refresh()
         self.write(self.inputs/'MissionChestSpecialExclusions.json',{'Version':1,'Entries':[{'TemplateIds':[1]}]})
         self.assertEqual(self.prepare()['Entries'],[])
+
+    def captured_unique(self):
+        self.items[0]['Flags']=16|8
+        self.review['TemplateIds']=[1]
+        self.review.pop('FamilyHash',None)
+        self.review['ApprovedQualityRanges']=[[1,1]]
+        self.review['QuestUse']={'Evidence':['quest-use source'],'Reason':'Use in a quest is recorded independently of acquisition'}
+        private=self.root/'.local'; private.mkdir(exist_ok=True)
+        source=private/'captured-loot.json'
+        records=[]
+        for ordinal in (10,20):
+            records.append({'LootId':f'fixture|inventory:{ordinal}|slot:0','EvidenceStatus':'VERIFIED_CONTENTS',
+                'WorldEvidence':'EXACT_PARENTLESS_FULL_UPDATE_AND_WORLD_MEMORY_IDENTITY_PLAYFIELD',
+                'ChestIdentity':{'Type':51017,'Instance':123},'WorldId':'fixture|51017:123|pf:1',
+                'FamilyLowId':1,'FamilyHighId':1,'TemplateId':1,'Quality':1,'Session':'fixture',
+                'InventoryOrdinal':ordinal,'Slot':0,'RawPacketSha256':'a'*64,
+                'Source':{'Session':'fixture','GlobalOrdinal':str(ordinal),'Direction':'IN',
+                    'SourceRecord':ordinal,'PacketSha256':'a'*64,'SourceCsvSha256':'b'*64}})
+        self.write(source,{'Records':records})
+        self.review['AcquisitionSource']={'Path':'.local/captured-loot.json','Sha256':CATALOG.sha(source),
+            'LootIds':[r['LootId'] for r in records]}
+        self.exception(AllowedFlags=['NoDrop','Unique'])
+        self.refresh()
+        return source,records
+
+    def test_quest_use_and_exact_verified_acquisition_can_approve_scoped_unique(self):
+        self.captured_unique()
+        result=self.prepare()
+        self.assertEqual([(r['LowId'],r['HighId'],r['MinQuality'],r['MaxQuality']) for r in result['Entries']],[(1,1,1,1)])
+        reviewed=CATALOG.read(self.output/'ordinary-rk-review-results.json')['ReviewedAcquisitions'][0]
+        self.assertEqual(reviewed['QuestUse'],self.review['QuestUse'])
+        self.assertTrue(reviewed['Accepted'])
+        self.assertEqual(reviewed['AcquisitionValidation']['Qualities'],[1])
+        self.assertEqual(len(reviewed['AcquisitionValidation']['ValidatedRecords']),2)
+
+    def test_unique_exception_requires_capture_binding_and_cannot_broaden_qualities(self):
+        self.captured_unique()
+        saved=self.review.pop('AcquisitionSource'); self.refresh()
+        with self.assertRaisesRegex(ValueError,'Unique exception requires'): self.prepare()
+        self.review['AcquisitionSource']=saved
+        self.review['ApprovedQualityRanges']=[[1,2]]; self.refresh()
+        with self.assertRaisesRegex(ValueError,'only qualities verified'): self.prepare()
+
+    def test_unique_capture_rejects_unverified_wrong_owner_pair_and_changed_source(self):
+        source,records=self.captured_unique()
+        original=json.loads(json.dumps(records))
+        for field,value in [('EvidenceStatus','UNRESOLVED'),('ChestIdentity',{'Type':51050,'Instance':123}),('FamilyHighId',2)]:
+            changed=json.loads(json.dumps(original)); changed[0][field]=value
+            self.write(source,{'Records':changed}); self.review['AcquisitionSource']['Sha256']=CATALOG.sha(source); self.refresh()
+            with self.assertRaisesRegex(ValueError,'world-chest provenance'): self.prepare()
+        self.write(source,{'Records':original}); self.refresh()
+        with self.assertRaisesRegex(ValueError,'changed'): self.prepare()
+        self.review['AcquisitionSource']['Sha256']=CATALOG.sha(source)
+        self.review['AcquisitionSource']['Path']=str(source.resolve()); self.refresh()
+        with self.assertRaisesRegex(ValueError,'private path'): self.prepare()
+
+    def test_verified_unique_acquisition_never_waives_expansion_gm_or_seasonal_veto(self):
+        self.captured_unique()
+        for stat in ['Expansion','GmLevel','QuestStat']:
+            self.items[0]['NamedStats']={'Can':1,stat:1}; self.refresh()
+            self.assertEqual(self.prepare()['Entries'],[])
+        self.items[0]['NamedStats']={'Can':1}; self.refresh()
+        self.write(self.inputs/'MissionChestSeasonalExclusions.json',{'Version':1,'Entries':[{'TemplateIds':[1]}]})
+        self.assertEqual(self.prepare()['Entries'],[])
+
+    def test_additive_merge_preserves_previous_exception_and_acquisition_metadata(self):
+        policy,results,_,_=self.prior()
+        prior=CATALOG.read(results)
+        prior['ReviewedMetadataExceptions']=[{'retained':'original exception'}]
+        prior['ReviewedAcquisitions']=[{'QuestUse':{'retained':'original quest role'}}]
+        self.write(results,prior)
+        self.refresh()
+        self.prepare(existing_policy=policy,existing_review_results=results)
+        updated=CATALOG.read(self.output/'ordinary-rk-review-results.json')
+        self.assertEqual(updated['ReviewedMetadataExceptions'],prior['ReviewedMetadataExceptions'])
+        self.assertEqual(updated['ReviewedAcquisitions'],prior['ReviewedAcquisitions'])
 
 
 if __name__=='__main__':
