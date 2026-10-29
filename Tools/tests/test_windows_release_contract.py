@@ -978,6 +978,20 @@ class DeveloperMSBuildTests(unittest.TestCase):
                 self.assertIn("WINDOWS_RELEASE_CONTRACT=FAIL", result.stdout)
         self.assertFalse((self.root / ".local").exists())
 
+    def test_developer_verify_build_token_tolerates_active_build_markers(self):
+        for name in ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE"):
+            with self.subTest(marker=name):
+                command = [sys.executable, str(TOOLS / "windows_release_contract.py"),
+                           "verify-build-token", "--repository-root", str(self.root), "--developer-build",
+                           "--entrypoint", "NewZoneEngineBuild/build.cmd"]
+                result = subprocess.run(command, cwd=self.root, env={**self.environment, name: "fixture-invalid"},
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                                        errors="replace", check=False, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout[-9000:])
+                self.assertIn("WINDOWS_BUILD_SCOPE=DEVELOPER", result.stdout)
+                self.assertIn("DEPLOYABLE=NO", result.stdout)
+        self.assertFalse((self.root / ".local").exists())
+
     def test_live_synthetic_governed_capability_still_validates_and_observes_compiler(self):
         def local_git(*arguments):
             return subprocess.run(["git", *arguments], cwd=self.root, env=self.environment,
