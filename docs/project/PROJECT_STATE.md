@@ -12,12 +12,14 @@ historically fixed day-13/14 item quality bounds are preserved. OBSERVED local
 client verification (2026-10-29): Mike confirmed the reward arrived and Taken
 appeared without closing Daily Rewards. The registered native callback and
 committed server receipt were verified before the per-character revision. Its
-local four-engine build passed and a fresh local database backup is complete.
-The character-scope migration awaits explicit approval and client verification
+local four-engine build and explicitly approved character-scope migration passed,
+after a fresh database backup. Schema validation passed and all three existing
+claim rows retained identical fingerprints. Per-character client verification
 is pending; existing earned
 progress is retained. Relog and uninterrupted client UTC
-rollover remain unverified; this is not release acceptance. Local engines are
-stopped pending the approved schema update. No production database, deployment or Linux change occurred. Details
+rollover remain unverified; this is not release acceptance. All four rebuilt local
+engines and the local Daily page are ready for testing. No production database,
+deployment or Linux change occurred. Details
 are in CURRENT_TASK.
 
 PROVEN DEVELOPMENT VALIDATION (2026-10-26, ordinary RK mission chests): the

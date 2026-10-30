@@ -8,9 +8,10 @@ with independent calendars for characters on the same account, on
 Retain authenticated account ownership, atomic inventory/receipt commits,
 idempotent tokens and the verified immediate native Claim callback. Preserve
 earned progress and all old account-era evidence; do not copy cumulative account
-progress to sibling characters. The new character/day index migration is prepared
-but not yet applied to the local database; applying it requires explicit approval
-after a fresh backup. This versioned schema change is a material trigger for any
+progress to sibling characters. Mike explicitly approved the new character/day
+index migration; it was applied to the local database after a fresh backup.
+Schema validation passed and all three existing claim rows retained identical
+fingerprints. This versioned schema change is a material trigger for any
 later authorized release. This local task does not authorize Linux work or deployment.
 
 Recover behavior from `feec603be8a2b8d788279c094fa53514417952d1` without
@@ -57,12 +58,11 @@ client verification (2026-10-29): Mike confirmed the reward arrived and Taken
 appeared while the Daily window stayed open. PROVEN server-side evidence records
 the registered native callback, action-263 request and matching committed receipt
 in both configured claim roots. That check predates the per-character revision,
-whose local four-engine build passed. A fresh local database backup is complete;
-the character-scope migration awaits explicit approval and client verification
-is pending. Relog and
+whose local four-engine build and approved character-scope migration passed.
+All four engine listeners and the local Daily page are ready; per-character
+client verification is pending. Relog and
 uninterrupted client UTC rollover remain unverified. Anonymous or ambiguous legacy requests still fail closed.
-All four local engines are stopped by the approved build guard until the new
-character-scope migration is approved and applied. The earlier approved local
+All four rebuilt local engines remain running for Mike's testing. The approved local
 migration and client patch installation occurred; no production data, deployment
 or Linux work was involved, and the agent did not launch or control the AO client.
 
