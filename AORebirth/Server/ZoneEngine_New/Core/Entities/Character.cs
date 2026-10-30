@@ -3028,6 +3028,21 @@ namespace ZoneEngine_New.Core.Entities
         {
             ArgumentNullException.ThrowIfNull(cast);
             PendingCast = cast;
+            ResetChargingAttacks();
+        }
+
+        /// <summary>
+        /// Starting a nano cast empties every attack bar that is charging, as live does: after the cast the weapons charge
+        /// a full attack again instead of swinging at once (cast weaving). A bar that is recharging after a swing keeps
+        /// its progress.
+        /// </summary>
+        void ResetChargingAttacks()
+        {
+            foreach (CharacterWeapon weapon in Weapons.Values)
+            {
+                if (weapon != null && weapon.State == WeaponState.Attacking)
+                    weapon.ResetAttack();
+            }
         }
 
         /// <summary>

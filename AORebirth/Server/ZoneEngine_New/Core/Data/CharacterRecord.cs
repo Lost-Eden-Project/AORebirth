@@ -32,5 +32,8 @@ namespace ZoneEngine_New.Core.Data
 
         /// <summary>The owning account's login.AccountFlags; the character's AccountFlags stat is set from it.</summary>
         public int AccountFlags { get; init; }
+
+        /// <summary>The owning account's login.GM; the character's GmLevel stat is set from it.</summary>
+        public int GmLevel { get; init; }
     }
 }

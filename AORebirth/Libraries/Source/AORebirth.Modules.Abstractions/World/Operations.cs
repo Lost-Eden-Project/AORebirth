@@ -192,5 +192,15 @@ namespace AORebirth.Modules.World
 
         /// <summary>Blocks the account from logging in: <c>reason</c>.</summary>
         public const string AccountBan = "account.ban";
+
+        /// <summary>
+        /// Shuts this zone instance down gracefully after a countdown every online player is told about (module API 1.7):
+        /// <c>seconds</c>, optional <c>message</c> (shown after each countdown line) and <c>reason</c> (for the log).
+        /// Scheduling again replaces the countdown. Target <see cref="TargetKind.None"/>.
+        /// </summary>
+        public const string ServerShutdown = "server.shutdown";
+
+        /// <summary>Cancels a scheduled shutdown and tells players (module API 1.7); fails when none is scheduled.</summary>
+        public const string ServerShutdownAbort = "server.shutdown-abort";
     }
 }

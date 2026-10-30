@@ -110,8 +110,47 @@ namespace ZoneEngine_New.Core.Modules
                     [Optional("reason", OperationValueType.String, "For the log.")],
                     Ban);
             }
+            if (_shutdown != null)
+            {
+                Add(OperationNames.ServerShutdown, TargetKind.None,
+                    "Shuts this zone instance down gracefully (players saved) after a countdown every online player is told about. Scheduling again replaces it.",
+                    [
+                        Required("seconds", OperationValueType.Int, "Seconds until the shutdown, 1 to 86400."),
+                        Optional("message", OperationValueType.String, "Shown to players after each countdown line."),
+                        Optional("reason", OperationValueType.String, "For the log.")
+                    ],
+                    ScheduleShutdown);
+                Add(OperationNames.ServerShutdownAbort, TargetKind.None,
+                    "Cancels a scheduled shutdown and tells online players.",
+                    [Optional("reason", OperationValueType.String, "For the log.")],
+                    AbortShutdown);
+            }
 
             return operations;
+        }
+
+        Task<OperationResult> ScheduleShutdown(OperationTarget target, OperationArgs args)
+        {
+            args.TryGetInt("seconds", out int seconds);
+            if (seconds < 1 || seconds > ZoneEngine_New.Core.Lifecycle.ShutdownScheduler.MaxSeconds)
+                return Task.FromResult(OperationResult.Fail(OperationCodes.BadArgs, string.Format(CultureInfo.InvariantCulture,
+                    "seconds must be 1 to {0}.", ZoneEngine_New.Core.Lifecycle.ShutdownScheduler.MaxSeconds)));
+
+            // The scheduler counts down on its own timer and announces from there, so this never waits on a tick.
+            _shutdown!().Schedule(seconds, ShutdownRequester(args), args.GetString("message"));
+            return Task.FromResult(OperationResult.Success(string.Format(CultureInfo.InvariantCulture,
+                "Shutdown in {0}s.", seconds)));
+        }
+
+        Task<OperationResult> AbortShutdown(OperationTarget target, OperationArgs args)
+            => Task.FromResult(_shutdown!().Abort(ShutdownRequester(args))
+                ? OperationResult.Success()
+                : OperationResult.Fail(OperationCodes.Failed, "No shutdown is scheduled."));
+
+        static string ShutdownRequester(OperationArgs args)
+        {
+            string reason = args.GetString("reason");
+            return reason.Length == 0 ? "module operation" : "module operation (" + reason + ")";
         }
 
         static OperationResult Done(bool done, string notHere)

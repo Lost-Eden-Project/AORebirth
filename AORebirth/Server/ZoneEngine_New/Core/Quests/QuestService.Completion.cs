@@ -362,7 +362,11 @@ public sealed partial class QuestService
                         used.Add(_items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest));
                         continue;
                     }
-                    items.Add(_items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest));
+                    Item minted = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
+                    // A configured Count replaces the template's mint count, as a daily login reward's does.
+                    if (definition.Count is int count)
+                        minted.StackCount = count;
+                    items.Add(minted);
                 }
                 if (skippedUnique.Count > 0)
                     _logger.Info("Quest reward unique items already held, left out char=" + player.Identity.Instance

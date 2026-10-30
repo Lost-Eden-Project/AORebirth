@@ -38,6 +38,8 @@ namespace ZoneEngine_New.Core.Lifecycle
         DateTime _dueUtc;
         int _lastAnnounced;
         int _generation;
+        // Added after each countdown line, or empty (module API 1.7 server.shutdown "message").
+        string _message = string.Empty;
 
         public ShutdownScheduler(Lazy<PlayfieldManager> playfields, IEngineShutdown shutdown, IZoneLogger logger)
         {
@@ -59,12 +61,16 @@ namespace ZoneEngine_New.Core.Lifecycle
             }
         }
 
-        /// <summary>Starts (or replaces) a countdown of <paramref name="seconds"/> and announces it.</summary>
-        public void Schedule(int seconds, string requestedBy)
+        /// <summary>
+        /// Starts (or replaces) a countdown of <paramref name="seconds"/> and announces it. <paramref name="message"/>, when
+        /// given, follows every countdown line (why, or what to expect).
+        /// </summary>
+        public void Schedule(int seconds, string requestedBy, string? message = null)
         {
             if (seconds < 1 || seconds > MaxSeconds)
                 throw new ArgumentOutOfRangeException(nameof(seconds));
 
+            string suffix = string.IsNullOrWhiteSpace(message) ? string.Empty : " " + message.Trim();
             lock (_gate)
             {
                 _timer?.Dispose();
@@ -72,11 +78,12 @@ namespace ZoneEngine_New.Core.Lifecycle
                 int generation = _generation;
                 _dueUtc = DateTime.UtcNow.AddSeconds(seconds);
                 _lastAnnounced = seconds;
+                _message = suffix;
                 _timer = new Timer(_ => Tick(generation), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
             }
 
             _logger.Info(string.Format(CultureInfo.InvariantCulture, "Shutdown scheduled in {0}s by {1}", seconds, requestedBy));
-            Announce("The server will shut down in " + FormatDuration(seconds) + ".");
+            Announce("The server will shut down in " + FormatDuration(seconds) + "." + suffix);
         }
 
         /// <summary>Cancels a pending countdown. False when none was pending.</summary>
@@ -101,11 +108,13 @@ namespace ZoneEngine_New.Core.Lifecycle
         {
             int remaining;
             int? checkpoint = null;
+            string suffix;
             lock (_gate)
             {
                 if (_timer == null || generation != _generation)
                     return;
 
+                suffix = _message;
                 remaining = Math.Max(0, (int)Math.Ceiling((_dueUtc - DateTime.UtcNow).TotalSeconds));
                 if (remaining <= 0)
                 {
@@ -140,7 +149,7 @@ namespace ZoneEngine_New.Core.Lifecycle
             }
 
             if (checkpoint != null)
-                Announce("The server will shut down in " + FormatDuration(checkpoint.Value) + ".");
+                Announce("The server will shut down in " + FormatDuration(checkpoint.Value) + "." + suffix);
         }
 
         void Announce(string text)

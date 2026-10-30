@@ -292,7 +292,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 {
                     Id = source.Id, Name = source.Name, FirstName = source.FirstName, LastName = source.LastName,
                     Playfield = playfieldId, X = position.xf, Y = position.yf, Z = position.zf,
-                    HeadingX = source.HeadingX, HeadingY = source.HeadingY, HeadingZ = source.HeadingZ, HeadingW = source.HeadingW
+                    HeadingX = source.HeadingX, HeadingY = source.HeadingY, HeadingZ = source.HeadingZ, HeadingW = source.HeadingW,
+                    AccountFlags = source.AccountFlags, GmLevel = source.GmLevel
                 },
                 Stats = hydration.Stats, Items = hydration.Items, UploadedNanoIds = hydration.UploadedNanoIds
             };

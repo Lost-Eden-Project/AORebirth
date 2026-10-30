@@ -29,5 +29,806 @@
         ]
       }
     ]
+  },
+  "8439": {
+    "Notes": "Everyone gets DLMS (Daily Mission XP Reward); each profession also gets its StartPackages.json character-create kit, by private hash where one maps to that template, else by id. A profession with no package gets only DLMS.",
+    "Entries": [
+      {
+        "Items": [
+          {
+            "Hash": "DLMS",
+            "Name": "Daily Mission XP Reward",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 1
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SLPO",
+            "Name": "Solar-Powered Assault Rifle",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARQYXF",
+            "Name": "Nano Crystal (Partial Deflection Shield)",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 2
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SSSW",
+            "Name": "Worn Bow",
+            "Ql": 1
+          },
+          {
+            "Hash": "OABO",
+            "Name": "Worn Oak Bo",
+            "Ql": 1
+          },
+          {
+            "Hash": "AROJXY",
+            "Name": "Nano Crystal (Iron Fist)",
+            "Ql": 4
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 3
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SP38",
+            "Name": "Solar-Powered Pistol",
+            "Ql": 1
+          },
+          {
+            "Hash": "SAGR",
+            "Name": "Solar-Powered Grenade Launcher",
+            "Ql": 1
+          },
+          {
+            "Hash": "AROCVA",
+            "Name": "Engineer: Startup Crystal - Feeble Automaton",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 4
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "NQ04",
+            "Name": "Solar-Powered Submachine Gun",
+            "Ql": 1
+          },
+          {
+            "Id": 297633,
+            "Name": "Nano Crystal (Restock Special Ammo)",
+            "Ql": 10
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 5
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SOPO",
+            "Name": "Solar-Powered Rifle",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARRRTX",
+            "Name": "Nano Crystal (Detain Suspect)",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 6
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SP38",
+            "Name": "Solar-Powered Pistol",
+            "Ql": 1
+          },
+          {
+            "Hash": "TIAD",
+            "Name": "Worn Sword",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARTFLF",
+            "Name": "Nano Crystal (Pronouncement of Greatness)",
+            "Ql": 20
+          },
+          {
+            "Hash": "TIAD",
+            "Name": "Worn Sword",
+            "Ql": 1
+          },
+          {
+            "Hash": "SP38",
+            "Name": "Solar-Powered Pistol",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 7
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SAOF",
+            "Name": "Solar-Powered Shotgun",
+            "Ql": 1
+          },
+          {
+            "Hash": "NQ07",
+            "Name": "Startup Crystal: Nano Crystal (Weak Health Funnel)",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 8
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SP38",
+            "Name": "Solar-Powered Pistol",
+            "Ql": 1
+          },
+          {
+            "Id": 46456,
+            "Name": "Nano Crystal (Basic Worker-Droid)",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 9
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "FLHA",
+            "Name": "Worn Hammer",
+            "Ql": 1
+          },
+          {
+            "Hash": "ASEB",
+            "Name": "Worn Baseball Bat",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARWVQA",
+            "Name": "Nano Crystal (Mongo Slam!)",
+            "Ql": 17
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 10
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SP38",
+            "Name": "Solar-Powered Pistol",
+            "Ql": 1
+          },
+          {
+            "Hash": "DOIH",
+            "Name": "Doctor: Startup Crystal - Improved Healing",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 11
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "NAIF",
+            "Name": "Nanotechnician: Startup Crystal - Ice Flechette",
+            "Ql": 1
+          },
+          {
+            "Hash": "SP38",
+            "Name": "Solar-Powered Pistol",
+            "Ql": 1
+          },
+          {
+            "Id": 297665,
+            "Name": "Worn Cyberdeck",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 12
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "SSSW",
+            "Name": "Worn Bow",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARKVNU",
+            "Name": "Nano Crystal (Summon Anger Manifestation)",
+            "Ql": 1
+          },
+          {
+            "Id": 302163,
+            "Name": "Damaged Staff of Naja",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 14
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "KESW",
+            "Name": "Worn Blade",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARSJCW",
+            "Name": "Nano Crystal (Adaptive Ambient Restoration)",
+            "Ql": 1
+          }
+        ]
+      },
+      {
+        "If": [
+          {
+            "Stat": "Profession",
+            "Operator": "EqualTo",
+            "Value": 15
+          }
+        ],
+        "Items": [
+          {
+            "Hash": "FIAI",
+            "Name": "Health and Nano Recharger",
+            "Ql": 1,
+            "Count": 50
+          },
+          {
+            "Id": 291043,
+            "Name": "Health and Nano Stim",
+            "Ql": 1,
+            "Count": 25
+          },
+          {
+            "Hash": "BABM",
+            "Name": "Blackmane's Belt Component Platform",
+            "Ql": 1
+          },
+          {
+            "Id": 292235,
+            "Name": "Razor's Polarized Specs",
+            "Ql": 1
+          },
+          {
+            "Id": 296977,
+            "Name": "Colonist Survival Pack",
+            "Ql": 1
+          },
+          {
+            "Hash": "ARIXMX",
+            "Name": "Nano Crystal (Composite Utility Expertise)",
+            "Ql": 25
+          },
+          {
+            "Hash": "TIDI",
+            "Name": "Worn Dagger",
+            "Ql": 1
+          },
+          {
+            "Hash": "NWCH",
+            "Name": "Nano Crystal (Whetstone Effect)",
+            "Ql": 1
+          },
+          {
+            "Hash": "TIDI",
+            "Name": "Worn Dagger",
+            "Ql": 1
+          }
+        ]
+      }
+    ]
   }
 }

@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.6**.
+The current version is **1.7**.
 
 ## Loading
 
@@ -42,6 +42,7 @@ The current version is **1.6**.
 | 1.4 | `RegisterHandoffHook` (admit or refuse login handoffs to this zone) |
 | 1.5 | `RegisterMessageObserver`, `World.Session`, `Actions.Operations` and `Actions.Invoke` (named operations), module.json `Operations`, the `observe-messages` and `read-sessions` capabilities |
 | 1.6 | `Clock` and a timestamp on every event; action, cooldown, movement-correction, item-move, chat and combat events; `RegisterVisibilityObserver`; `World.Cooldowns` and `World.MessageCounts`; `MessageSubscription.AllTypes`; more on `NpcSpawned`, `NpcInfo` and `PlayerInfo`; the `observe-actions`, `observe-visibility`, `observe-chat` and `read-chat-text` capabilities |
+| 1.7 | `PlayerInfo.TeamId`, `TeamLeader` and `OrgId`; the `server.shutdown` and `server.shutdown-abort` operations |
 
 ## Context members
 
@@ -291,6 +292,8 @@ engine additions and don't change the module API.
 | `player.teleport` | character | `playfield`, `x`, `y`, `z` | Within the character's playfield, a soft teleport as `.tp` does. To another playfield, the normal playfield transfer (to another instance too), with no exit-proxy return. An unknown playfield is `bad_args`. |
 | `player.kick` | character | `reason` (optional) | Logs the character out as a client logout does, with the normal logout save. |
 | `account.ban` | account | `reason` (optional) | Sets the account's `login.Flags` to 1. LoginEngine and the account broker admit an account only while it is 0. Characters in play stay until they log out or are kicked. Lifting it is a normal account edit (Flags back to 0). |
+| `server.shutdown` | none | `seconds` (1 to 86400), `message` (optional), `reason` (optional) | Shuts this zone instance down the normal way (players saved) after a countdown, as `.shutdown` does: every online player is told at the start and at the usual checkpoints (1 hour ... 1 second), with `message` after each line. Scheduling again replaces the countdown (1.7). |
+| `server.shutdown-abort` | none | `reason` (optional) | Cancels a scheduled shutdown and tells online players; fails when none is scheduled (1.7). |
 
 ## Clock and timestamps
 
@@ -367,3 +370,13 @@ between NPCs are left out to keep the volume down.
 - `NpcInfo` adds `SpawnedAt` (on `Clock`) and `Hostile` (attacks players on sight).
 - `MessageTypes` adds `CharSecSpecAttack`, `Feedback`, `ChatText`, `SpecialAttackInfo`, `MissedAttackInfo` and
   `TemplateAction`.
+
+## World additions (1.7)
+
+- `PlayerInfo` adds `TeamId` (0 when not in a team), `TeamLeader` and `OrgId` (0 when not in an organization).
+  Two players share a `TeamId` exactly when they are in the same team; it is stable while that team exists, and a
+  team re-formed later gets a new one. Same snapshot rules as the other fields (`read-world`, up to one tick stale).
+  There is no team-change event: compare `TeamId` between snapshots.
+- `server.shutdown` and `server.shutdown-abort` drive the engine's own timed shutdown (the `.shutdown` GM command), so a
+  module's countdown and a GM's are the same one: either can replace or cancel the other. Each needs its own name as a
+  capability. They shut down this zone instance only.

@@ -2,6 +2,7 @@ namespace ZoneEngine_New.Core.Knubot;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -150,6 +151,14 @@ public sealed class KnubotScript(string id, string[] npcs, KnubotOpener[] opener
 
     /// <summary>Line id said when an accepted Give Item window matches no trade; null when the script has none.</summary>
     public string? TradeRefused { get; } = tradeRefused;
+
+    /// <summary>
+    /// The Give Item window's slots: enough for the largest trade, counting every wanted item as its own slot (an
+    /// unstacked offer), at least 1 and at most the window's <see cref="Trade.TradeOffer.Capacity"/>.
+    /// </summary>
+    public int TradeSlots { get; } = Math.Clamp(
+        trades.Length == 0 ? 1 : trades.Max(trade => trade.Items.Sum(item => Math.Max(1, item.Count))),
+        1, Trade.TradeOffer.Capacity);
 
     /// <summary>A reply with no content behind it yet: the engine says a debug line and offers the same replies again.</summary>
     public bool IsDeadEnd(KnubotReply reply)

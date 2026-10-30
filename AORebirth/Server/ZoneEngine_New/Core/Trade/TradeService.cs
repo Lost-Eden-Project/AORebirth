@@ -1276,7 +1276,8 @@ namespace ZoneEngine_New.Core.Trade
         /// at the index the client used, the first free one. Nothing is written until the trade commits, so an
         /// interrupted trade leaves every item at its stored location.
         /// </summary>
-        public bool TryOpenKnubot(Player player, NpcCharacter npc, string message)
+        /// <param name="slots">The window's item slots: the script's largest trade (<see cref="Knubot.KnubotScript.TradeSlots"/>).</param>
+        public bool TryOpenKnubot(Player player, NpcCharacter npc, string message, int slots = TradeOffer.Capacity)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(npc);
@@ -1299,7 +1300,9 @@ namespace ZoneEngine_New.Core.Trade
                 Close(existing, "opening another trade");
             }
 
-            Register(player, new TradeSession(Identity.None, TradeKind.Knubot, player, partner: null, machine: null, npc));
+            var session = new TradeSession(Identity.None, TradeKind.Knubot, player, partner: null, machine: null, npc,
+                initiatorSlots: slots);
+            Register(player, session);
 
             // The client rejects an empty text (length must be 1..10000).
             player.Session.Send(new KnuBotStartTradeMessage
@@ -1307,7 +1310,7 @@ namespace ZoneEngine_New.Core.Trade
                 Identity = player.Identity,
                 Unknown1 = 2,
                 Target = npc.Identity,
-                NumberOfItemSlotsInTradeWindow = TradeOffer.Capacity,
+                NumberOfItemSlotsInTradeWindow = session.InitiatorOffer.Slots,
                 Message = string.IsNullOrWhiteSpace(message) ? "Trade" : message
             });
 
@@ -1543,7 +1546,7 @@ namespace ZoneEngine_New.Core.Trade
 
         static int FirstFreeOfferSlot(TradeOffer offer)
         {
-            for (int slot = 0; slot < TradeOffer.Capacity; slot++)
+            for (int slot = 0; slot < offer.Slots; slot++)
             {
                 if (!offer.Items.ContainsKey(slot))
                     return slot;

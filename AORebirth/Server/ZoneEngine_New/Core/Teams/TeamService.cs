@@ -315,6 +315,24 @@ namespace ZoneEngine_New.Core.Teams
                     : null;
         }
 
+        /// <summary>The player's team id and whether it leads it, without copying the roster; false when not in a team.</summary>
+        public bool TryGetTeamId(Player player, out int teamId, out bool isLeader)
+        {
+            lock (_sync)
+            {
+                if (Owns(player) && _membership.TryGetValue(player.Identity.Instance, out Team? team))
+                {
+                    teamId = team.Id;
+                    isLeader = team.Leader == player.Identity.Instance;
+                    return true;
+                }
+            }
+
+            teamId = 0;
+            isLeader = false;
+            return false;
+        }
+
         public bool AreTeammates(Player first, Player second)
         {
             lock (_sync)

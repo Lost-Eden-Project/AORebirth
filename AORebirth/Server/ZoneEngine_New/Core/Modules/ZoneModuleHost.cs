@@ -45,14 +45,14 @@ namespace ZoneEngine_New.Core.Modules
 
         private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, IZoneGameData gameData,
             Func<Playfield.PlayfieldManager> playfields, Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? accounts,
-            string? gameDataRoot)
+            string? gameDataRoot, Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown)
         {
             _logger = logger;
             _knubot = knubot;
             _gameData = gameData;
             Events = new ZoneModuleEvents(logger);
             World = new ZoneModuleWorld(playfields);
-            _actions = new ZoneModuleActions(playfields, accounts, gameDataRoot, logger);
+            _actions = new ZoneModuleActions(playfields, accounts, gameDataRoot, logger, shutdown);
             _messages = new ModuleMessageObservers(logger);
         }
 
@@ -72,14 +72,15 @@ namespace ZoneEngine_New.Core.Modules
             Func<Knubot.KnubotCatalog> knubot,
             Func<Playfield.PlayfieldManager> playfields,
             Func<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>? gameData = null,
-            Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? accounts = null)
+            Func<ZoneEngine_New.Core.Data.ILoginFlagsRepository>? accounts = null,
+            Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown = null)
         {
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(knubot);
             ArgumentNullException.ThrowIfNull(playfields);
             var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot),
                 new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([]))), playfields,
-                accounts, gameDataRoot);
+                accounts, gameDataRoot, shutdown);
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {

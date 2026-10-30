@@ -92,7 +92,8 @@ namespace ZoneEngine_New.Core.Characters
                 || error.StartsWith("unset-sentinel:", StringComparison.Ordinal)))
                 return new CharacterHydrationValidationResult(errors);
 
-            if (!stats.TryGetValue(CharacterStat.GmLevel, out int gmLevel) || gmLevel <= 0)
+            // The account's GM level, not the stored stat: PlayerHydrator replaces the stat with it at every zone-in.
+            if (character.GmLevel <= 0)
             {
                 int flags = stats[CharacterStat.Flags];
                 if (((CharacterFlags)flags).HasFlag(CharacterFlags.Tower)) errors.Add("player-flags-tower");

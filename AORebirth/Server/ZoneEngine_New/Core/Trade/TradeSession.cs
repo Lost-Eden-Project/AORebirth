@@ -27,6 +27,16 @@ namespace ZoneEngine_New.Core.Trade
 
         readonly Dictionary<int, Item> _items = new();
 
+        /// <param name="slots">The window's slots, 1 to <see cref="Capacity"/>: a Knubot window has only as many as its
+        /// largest trade needs.</param>
+        public TradeOffer(int slots = Capacity)
+        {
+            Slots = Math.Clamp(slots, 1, Capacity);
+        }
+
+        /// <summary>How many items this side of the window holds.</summary>
+        public int Slots { get; }
+
         public IReadOnlyDictionary<int, Item> Items => _items;
 
         public int Credits { get; set; }
@@ -43,7 +53,7 @@ namespace ZoneEngine_New.Core.Trade
         {
             ArgumentNullException.ThrowIfNull(item);
 
-            for (int slot = 0; slot < Capacity; slot++)
+            for (int slot = 0; slot < Slots; slot++)
             {
                 if (_items.ContainsKey(slot))
                     continue;
@@ -59,7 +69,7 @@ namespace ZoneEngine_New.Core.Trade
         public bool TryRestore(int slot, Item item)
         {
             ArgumentNullException.ThrowIfNull(item);
-            if (slot < 0 || slot >= Capacity || _items.ContainsKey(slot))
+            if (slot < 0 || slot >= Slots || _items.ContainsKey(slot))
                 return false;
 
             _items[slot] = item;
@@ -104,7 +114,8 @@ namespace ZoneEngine_New.Core.Trade
             Player initiator,
             Player? partner,
             VendingMachine? machine,
-            NpcCharacter? npc = null)
+            NpcCharacter? npc = null,
+            int initiatorSlots = TradeOffer.Capacity)
         {
             ArgumentNullException.ThrowIfNull(initiator);
 
@@ -115,7 +126,7 @@ namespace ZoneEngine_New.Core.Trade
             Machine = machine;
             Npc = npc;
             AcceptedShopTransport = machine?.Stock.IsConfiguredSnapshot == true ? initiator.Session : null;
-            InitiatorOffer = new TradeOffer();
+            InitiatorOffer = new TradeOffer(initiatorSlots);
             PartnerOffer = new TradeOffer();
         }
 

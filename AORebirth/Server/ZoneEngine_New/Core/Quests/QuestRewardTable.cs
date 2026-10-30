@@ -21,12 +21,12 @@ namespace ZoneEngine_New.Core.Quests
 
     /// <summary>
     /// GameData/QuestRewards.json: the only source of the items a Quests.json quest pays, keyed by the quest's
-    /// <c>Reward.Hash</c> (retail's mission treasure). Each hash lists entries checked in order; the first whose <c>If</c>
-    /// rows (item requirement form, as Knubot <c>Requirements</c>) the player meets gives all of its <c>Items</c>, so an
-    /// entry with no <c>If</c> last is the default. <c>PickOne</c> on a hash gives one of the matching entries instead,
-    /// chosen once per accepted run. An item is an item <c>Hash</c> or a template <c>Id</c> [<c>HighId</c>], at <c>Ql</c>
-    /// (a number, or "level" for the player's level); <c>Name</c> is for the reader. A hash with no entry, or no matching
-    /// entry, pays no item. Loaded whole and swapped on reload; a file that fails to load keeps the old table.
+    /// <c>Reward.Hash</c> (retail's mission treasure). Every entry whose <c>If</c> rows (item requirement form, as Knubot
+    /// <c>Requirements</c>) the player meets gives all of its <c>Items</c>; an entry with no <c>If</c> always does.
+    /// <c>PickOne</c> on a hash gives only one of the matching entries, chosen once per accepted run. An item is an item <c>Hash</c> or a template
+    /// <c>Id</c> [<c>HighId</c>], at <c>Ql</c> (a number, or "level" for the player's level), optionally <c>Count</c> as its
+    /// stack size; <c>Name</c> is for the reader. A hash not in the file pays no item. Loaded whole and swapped on reload;
+    /// a file that fails to load keeps the old table.
     /// </summary>
     public sealed class QuestRewardTable
     {
@@ -75,20 +75,23 @@ namespace ZoneEngine_New.Core.Quests
             {
                 if (entry.Requirements.Length == 0
                     || ItemTemplate.MeetsRequirements(entry.Requirements, stat => player.Stats.Get(stat)))
-                {
                     matching.Add(entry);
-                    if (!table.PickOne)
-                        break;
-                }
             }
 
             if (matching.Count == 0)
                 return true;
 
-            RewardEntry chosen = matching[quest != null && matching.Count > 1 ? StableIndex(quest, matching.Count) : 0];
-            var resolved = new List<QuestRewardItem>(chosen.Items.Length);
-            foreach (RewardItem item in chosen.Items)
-                resolved.Add(Resolve(item, player, rewardHash));
+            // Every matching entry pays; with PickOne only one of them does.
+            IEnumerable<RewardEntry> paying = table.PickOne
+                ? [matching[quest != null && matching.Count > 1 ? StableIndex(quest, matching.Count) : 0]]
+                : matching;
+            var resolved = new List<QuestRewardItem>();
+            foreach (RewardEntry entry in paying)
+            {
+                foreach (RewardItem item in entry.Items)
+                    resolved.Add(Resolve(item, player, rewardHash));
+            }
+
             items = resolved;
             return true;
         }
@@ -111,11 +114,11 @@ namespace ZoneEngine_New.Core.Quests
         {
             int quality = item.Quality ?? player.Stats.GetOrOne(CharacterStat.Level);
             if (item.Hash == null)
-                return new QuestRewardItem { Id = item.Id, HighId = item.HighId ?? item.Id, Quality = Math.Max(1, quality), Name = item.Name ?? string.Empty };
+                return new QuestRewardItem { Id = item.Id, HighId = item.HighId ?? item.Id, Quality = Math.Max(1, quality), Name = item.Name ?? string.Empty, Count = item.Count };
 
             if (!_minter.TryRollIds(item.Hash, quality, out int lowId, out int highId, out int rolled))
                 throw new InvalidOperationException("Quest reward " + rewardHash + " item hash " + item.Hash + " does not resolve.");
-            return new QuestRewardItem { Id = lowId, HighId = highId, Quality = rolled, Name = item.Name ?? item.Hash };
+            return new QuestRewardItem { Id = lowId, HighId = highId, Quality = rolled, Name = item.Name ?? item.Hash, Count = item.Count };
         }
 
         /// <summary>Reads the file (through the GameData override folder) and swaps it in; on any error the old table stays.</summary>
@@ -232,7 +235,13 @@ namespace ZoneEngine_New.Core.Quests
                 return false;
             }
 
-            parsed = new RewardItem(hasHash ? item.Hash!.Trim() : null, item.Id, item.HighId, item.Name, quality);
+            if (item.Count is int count && (count < 1 || count > InventoryStacking.MaxStackCount))
+            {
+                problems.Add(at + "Count must be 1 to " + InventoryStacking.MaxStackCount.ToString(CultureInfo.InvariantCulture));
+                return false;
+            }
+
+            parsed = new RewardItem(hasHash ? item.Hash!.Trim() : null, item.Id, item.HighId, item.Name, quality, item.Count);
             return true;
         }
 
@@ -240,8 +249,8 @@ namespace ZoneEngine_New.Core.Quests
 
         sealed record RewardEntry(ItemRequirement[] Requirements, RewardItem[] Items);
 
-        /// <summary><see cref="Quality"/> null means the player's level.</summary>
-        sealed record RewardItem(string? Hash, int Id, int? HighId, string? Name, int? Quality);
+        /// <summary><see cref="Quality"/> null means the player's level; <see cref="Count"/> null the item's own mint count.</summary>
+        sealed record RewardItem(string? Hash, int Id, int? HighId, string? Name, int? Quality, int? Count);
 
         sealed class RewardFile
         {
@@ -272,6 +281,9 @@ namespace ZoneEngine_New.Core.Quests
             public string? Name { get; set; }
 
             public JsonElement Ql { get; set; }
+
+            /// <summary>The stack size to deliver; left out, the item's own mint count.</summary>
+            public int? Count { get; set; }
         }
     }
 

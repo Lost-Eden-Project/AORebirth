@@ -279,6 +279,7 @@ namespace ZoneEngine_New.Core.Modules
         {
             int playfieldId = playfield.Identity.Instance;
             Knubot.KnubotCatalog? knubot = playfield.GetService<Knubot.KnubotCatalog>();
+            Teams.TeamService? teams = playfield.GetService<Teams.TeamService>();
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             var players = new List<PlayerInfo>();
             var npcs = new List<NpcInfo>();
@@ -287,7 +288,7 @@ namespace ZoneEngine_New.Core.Modules
                 if (!ReferenceEquals(dynel.Playfield, playfield))
                     continue;
                 if (dynel is Player player)
-                    players.Add(Project(player, playfieldId));
+                    players.Add(Project(player, playfieldId, teams));
                 else if (dynel is NpcCharacter npc)
                     npcs.Add(Project(npc, playfieldId, knubot));
             }
@@ -326,10 +327,13 @@ namespace ZoneEngine_New.Core.Modules
             return value;
         }
 
-        internal static PlayerInfo Project(Player player, int playfieldId)
+        internal static PlayerInfo Project(Player player, int playfieldId, Teams.TeamService? teams)
         {
             AORebirth.Core.Vector.Vector3 at = player.Position;
             Identity target = player.Target;
+            int teamId = 0;
+            bool teamLeader = false;
+            teams?.TryGetTeamId(player, out teamId, out teamLeader);
             return new PlayerInfo
             {
                 CharacterId = player.Identity.Instance,
@@ -352,7 +356,10 @@ namespace ZoneEngine_New.Core.Modules
                 IsConnected = player.Session != null,
                 InCombat = player.IsInCombat,
                 IsSitting = player.Motor.State == ZoneEngine_New.Core.Movement.MovementState.Sit,
-                IsMoving = player.Motor.IsMoving
+                IsMoving = player.Motor.IsMoving,
+                TeamId = teamId,
+                TeamLeader = teamLeader,
+                OrgId = player.Stats.GetOrZero(CharacterStat.Clan)
             };
         }
 

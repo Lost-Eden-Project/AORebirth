@@ -206,5 +206,8 @@ namespace ZoneEngine_New.Core.Quests
         public string Name { get; set; } = string.Empty;
 
         public int Quality { get; set; } = 1;
+
+        /// <summary>The stack size to deliver (QuestRewards.json <c>Count</c>), or null for the item's own mint count.</summary>
+        public int? Count { get; set; }
     }
 }

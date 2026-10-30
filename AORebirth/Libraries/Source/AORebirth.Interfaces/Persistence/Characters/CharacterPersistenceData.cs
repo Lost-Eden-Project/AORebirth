@@ -21,6 +21,9 @@ namespace AORebirth.Interfaces.Persistence.Characters
 
         /// <summary>The owning account's login.AccountFlags (read at load; never saved from here).</summary>
         public int AccountFlags { get; set; }
+
+        /// <summary>The owning account's login.GM (read at load; never saved from here).</summary>
+        public int GmLevel { get; set; }
     }
 
     /// <summary>Persisted base value, not an effective value with equipment/nano modifiers applied.</summary>

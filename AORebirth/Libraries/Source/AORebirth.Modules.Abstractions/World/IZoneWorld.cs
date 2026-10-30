@@ -149,6 +149,18 @@ namespace AORebirth.Modules.World
 
         /// <summary>The motor has the character moving (module API 1.6).</summary>
         public bool IsMoving { get; init; }
+
+        /// <summary>
+        /// The team the character is in, or 0 when none (module API 1.7). Two players share it exactly when they are in
+        /// the same team; it is stable while that team exists.
+        /// </summary>
+        public int TeamId { get; init; }
+
+        /// <summary>The character leads its team; false when not in one (module API 1.7).</summary>
+        public bool TeamLeader { get; init; }
+
+        /// <summary>The character's organization id, or 0 when none (module API 1.7).</summary>
+        public int OrgId { get; init; }
     }
 
     /// <summary>A spawned NPC as one playfield tick last saw it.</summary>

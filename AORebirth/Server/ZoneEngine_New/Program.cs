@@ -302,7 +302,8 @@ namespace ZoneEngine_New
                 () => provider.GetRequiredService<ZoneEngine_New.Core.Knubot.KnubotCatalog>(),
                 () => provider.GetRequiredService<PlayfieldManager>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>(),
-                () => new ZoneEngine_New.Core.Data.MySqlLoginFlagsRepository()));
+                () => new ZoneEngine_New.Core.Data.MySqlLoginFlagsRepository(),
+                () => provider.GetRequiredService<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>()));
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
             services.AddSingleton<HashItemMinter>();
             services.AddSingleton<PlayerHydrator>();

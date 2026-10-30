@@ -54,6 +54,8 @@ namespace ZoneEngine_New.Core.Movement
 
         Quaternion? _syncedRotation;
         int _playerPathIndex = -1;
+        // The character a player's acknowledged /follow steers at, or null.
+        Character? _followTarget;
         bool _voidWarned;
         bool _holdingOverVoid;
         bool _hadFlightAuthority;
@@ -409,6 +411,78 @@ namespace ZoneEngine_New.Core.Movement
             return remaining;
         }
 
+        /// <summary>How far behind its target a /follow stops (Gamecode.dll player vehicle forward channel, 10071537).</summary>
+        public const float FollowDistanceMeters = 4f;
+
+        /// <summary>The character this player's /follow steers at, or null.</summary>
+        public Character? FollowTarget => _followTarget;
+
+        /// <summary>
+        /// Starts the server's copy of a player /follow, as every client that applies the FollowTarget ack runs it: each
+        /// tick the body steers at the point <see cref="FollowDistanceMeters"/> short of the target and stops inside it.
+        /// The follower's client sends no movement actions meanwhile, only an Update about every 5 s, which corrects the
+        /// position. Its next other movement action ends the follow (<see cref="Consume"/>), as it does on the clients.
+        /// </summary>
+        public void BeginFollow(Character target)
+        {
+            ArgumentNullException.ThrowIfNull(target);
+            if (!IsPlayer || ReferenceEquals(target, _character))
+                return;
+
+            ClearPath();
+            // As a server path does: standing status, and the follower drives the body directly.
+            _move.Apply((int)MovementAction.FullStop);
+            _followTarget = target;
+            _move.OnWaypointPath = true;
+        }
+
+        /// <summary>Ends a /follow: the status takes the body back, stopped, as when a server path ends.</summary>
+        public void EndFollow()
+        {
+            if (_followTarget == null)
+                return;
+
+            _followTarget = null;
+            _move.OnWaypointPath = false;
+            _sim.SetForwardDrive(0f);
+            _sim.Halt();
+            _sim.SetDirection(1);
+        }
+
+        /// <summary>
+        /// One tick of the follow: hold while held in place (rooted or stunned: the client's Features lack 0x4), stop
+        /// inside <see cref="FollowDistanceMeters"/>, otherwise drive at the point that far short of the target. Ends when
+        /// the target is gone, dead or on another playfield, or the follower died.
+        /// </summary>
+        void SteerFollow()
+        {
+            Character target = _followTarget!;
+            if (_character.IsDead || target.IsDead || !ReferenceEquals(target.Playfield, _character.Playfield))
+            {
+                EndFollow();
+                return;
+            }
+
+            if (_character.IsRooted)
+            {
+                _sim.SetForwardDrive(0f);
+                return;
+            }
+
+            float dx = (float)target.Position.x - _sim.Position.X;
+            float dz = (float)target.Position.z - _sim.Position.Z;
+            float distance = MathF.Sqrt((dx * dx) + (dz * dz));
+            if (distance <= FollowDistanceMeters)
+            {
+                _sim.SetForwardDrive(0f);
+                return;
+            }
+
+            var toward = new Vec3(dx / distance, 0f, dz / distance);
+            _sim.SetRelRot(Quat.LookRotation(toward, Vec3.ReferenceUp));
+            _sim.SetForwardDrive(1f);
+        }
+
         public void ClearPath()
         {
             bool had = HasPath || _path.Count > 0;
@@ -548,8 +622,9 @@ namespace ZoneEngine_New.Core.Movement
         public void ResetForPlayfieldTransfer(Vector3 position)
         {
             // Key releases on the old/loading connection may never reach this motor.
-            // The destination must not inherit input or a path from the previous world.
+            // The destination must not inherit input, a path or a follow from the previous world.
             ClearPath();
+            EndFollow();
             // A full status, no transition: standing still in the current mode.
             RulesStatus.Fields fields = RulesStatus.Fields.Default;
             fields.Mode = _move.State;
@@ -600,6 +675,10 @@ namespace ZoneEngine_New.Core.Movement
 
             ClearPath();
             var action = (MovementAction)message.MoveType;
+            // A following client sends only Updates; any other action is the player taking the controls back, which ends
+            // the follow on every client.
+            if (action != MovementAction.Update)
+                EndFollow();
             // A position update carries no transition, so it never goes through the state machine.
             bool accepted = action == MovementAction.Update || ApplyAction(action);
             ApplyClientHeading(message);
@@ -827,6 +906,7 @@ namespace ZoneEngine_New.Core.Movement
                 return;
 
             bool idle = !HasPath
+                && _followTarget == null
                 && (CurrentFlags & (TranslationFlags | TurnFlags)) == 0
                 && _move.State != (int)MovementState.Fly
                 && !_sim.Airborne
@@ -844,6 +924,8 @@ namespace ZoneEngine_New.Core.Movement
                 if (IsPlayer)
                     SteerAlongPlayerPath();
             }
+            else if (_followTarget != null)
+                SteerFollow();
 
             if (surface != null)
                 _move.Tick(dt);

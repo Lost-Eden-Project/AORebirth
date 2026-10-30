@@ -57,6 +57,10 @@ namespace ZoneEngine_New.Core.Characters
             // checks read the Unset sentinel, whose bits fail "NOT (AccountFlags & n)" gates such as zone doors.
             player.Stats.Set(CharacterStat.AccountFlags, character.AccountFlags, StatDetail.Base);
 
+            // The account also owns GmLevel (login.GM): refreshed on every zone-in, so a promotion or demotion applies
+            // at the next login instead of only to characters created afterwards.
+            player.Stats.Set(CharacterStat.GmLevel, character.GmLevel, StatDetail.Base);
+
             ApplyXpThresholds(player);
 
             player.Inventory.Apply(hydration, character.Id, _items);

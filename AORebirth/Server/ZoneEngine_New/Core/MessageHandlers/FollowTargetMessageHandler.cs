@@ -12,10 +12,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Playfield.Locality;
 
     /// <summary>
-    /// Player /follow. The client drives the follow itself (it steers its own body and sends CharDCMove), but its
-    /// FollowTarget is a pass-on command (<c>FollowTargetIIR_c</c>, Gamecode.dll 0x1007381e) that only takes effect once
-    /// the server sends it back. Live acknowledges to the follower alone (capture 2026-10-05T02:36:46Z):
-    /// FollowTarget, follower identity, info type 2, MoveType 0, the followed character, 0x40 0x20000000, zero XYZ.
+    /// Player /follow. The client's FollowTarget is a pass-on command (<c>FollowTargetIIR_c</c>, Gamecode.dll
+    /// 0x1007381e) that only takes effect once the server sends it back: FollowTarget, follower identity, info type 2,
+    /// MoveType 0, the followed character, 0x40 0x20000000, zero XYZ (capture 2026-10-05T02:36:46Z). Live sends that ack
+    /// to every client that sees the follower, the follower included; each of them then walks the follower 4 m behind
+    /// the target itself, and the follower's client sends only a CharDCMove Update about every 5 s. The server runs the
+    /// same follow on the follower's motor (<see cref="Movement.CharacterMotor.BeginFollow"/>) so its position keeps up
+    /// between Updates. The ack goes out after the follower's earlier CharDCMoves (same tick order, same send queues),
+    /// because a watcher that applies a non-Update move after the ack ends the follow. A FollowStop ends the server's
+    /// copy only; what live sends for it is not captured.
     /// </summary>
     public sealed class FollowTargetMessageHandler : IMessageHandler<FollowTargetMessage>
     {
@@ -39,11 +44,21 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
 
             Player? player = session.Player;
-            if (player == null || message.Info is not FollowTargetInfo request)
+            if (player == null)
                 return;
 
-            // The client also passes on FollowTargets it executed for others (NPC paths); only its own is a request.
+            // The client also passes on FollowTargets it executed for others (NPC paths and other players' follows);
+            // only its own is a request.
             if (message.Identity.Instance != 0 && message.Identity.Instance != player.Identity.Instance)
+                return;
+
+            if (message.Info is FollowStopInfo)
+            {
+                player.Motor.EndFollow();
+                return;
+            }
+
+            if (message.Info is not FollowTargetInfo request)
                 return;
 
             Identity target = request.Target;
@@ -61,7 +76,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (!player.TryBeginFollowAck(followed.Identity, DateTime.UtcNow))
                 return;
 
-            session.Send(
+            player.Motor.BeginFollow(followed);
+            playfield.GetRequiredService<PlayfieldLocality>().Announce(
+                player,
                 new FollowTargetMessage
                 {
                     Identity = player.Identity,
@@ -77,7 +94,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         Y = 0f,
                         Z = 0f
                     }
-                });
+                },
+                includeSelf: true);
         }
     }
 }
