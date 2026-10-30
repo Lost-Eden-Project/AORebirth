@@ -5690,5 +5690,3272 @@
     "ARWR": {"Templates": [226285]},
     "ARBHWC": {"Templates": [301019]},
     "ARPZSC": {"Templates": [301018]},
-    "ARPKXU": {"Templates": [301017]}
+    "ARPKXU": {"Templates": [301017]},
+    "1SED": {
+        "Templates": [128734, 128735]
+    },
+    "1TED": {
+        "Templates": [247228, 247229]
+    },
+    "AABW": {
+        "Templates": [104163, 104164]
+    },
+    "AAFM": {
+        "Templates": [102354, 102355]
+    },
+    "AAQS": {
+        "Templates": [104586, 104587]
+    },
+    "ABBD": {
+        "Templates": [102573, 102574]
+    },
+    "ABWS": {
+        "Templates": [102609, 102610]
+    },
+    "ACBB": {
+        "Templates": [104613, 104614]
+    },
+    "ACBI": {
+        "Templates": [102923, 102924]
+    },
+    "ACBR": {
+        "Templates": [102988, 102989]
+    },
+    "ACBY": {
+        "Templates": [104043, 104044]
+    },
+    "ACFP": {
+        "Templates": [101135, 101136]
+    },
+    "ACPA": {
+        "Templates": [214784]
+    },
+    "ACPT": {
+        "Templates": [214785]
+    },
+    "ACSQ": {
+        "Templates": [101301, 101302]
+    },
+    "ACTX": {
+        "Templates": [259864]
+    },
+    "ACXA": {
+        "Templates": [265361]
+    },
+    "ADBB": {
+        "Templates": [104522, 104523]
+    },
+    "ADBH": {
+        "Templates": [103314, 103315]
+    },
+    "ADBI": {
+        "Templates": [102782, 102783]
+    },
+    "ADBN": {
+        "Templates": [103922, 103923]
+    },
+    "ADBP": {
+        "Templates": [101245, 101246]
+    },
+    "ADBS": {
+        "Templates": [101117, 101118]
+    },
+    "ADFB": {
+        "Templates": [101199, 101200]
+    },
+    "ADFT": {
+        "Templates": [101597, 101598]
+    },
+    "ADHA": {
+        "Children": ["ARDSEK"]
+    },
+    "ADHC": {
+        "Templates": [254383]
+    },
+    "ADLI": {
+        "Templates": [262539]
+    },
+    "AEBL": {
+        "Templates": [103689, 103690]
+    },
+    "AEBV": {
+        "Templates": [103175, 103176]
+    },
+    "AEDP": {
+        "Templates": [279067]
+    },
+    "AEFH": {
+        "Templates": [101489, 101490]
+    },
+    "AEFS": {
+        "Templates": [102639, 102640]
+    },
+    "AEFT": {
+        "Templates": [101345, 101346]
+    },
+    "AELT": {
+        "Templates": [103215, 103216]
+    },
+    "AENE": {
+        "Templates": [203263]
+    },
+    "AENH": {
+        "Templates": [242658]
+    },
+    "AENN": {
+        "Templates": [287561]
+    },
+    "AENS": {
+        "Templates": [203265]
+    },
+    "AEVI": {
+        "Templates": [262311]
+    },
+    "AEXA": {
+        "Templates": [275722]
+    },
+    "AFBA": {
+        "Templates": [101123, 101124]
+    },
+    "AFBI": {
+        "Templates": [101293, 101294]
+    },
+    "AFBJ": {
+        "Templates": [101311, 101312]
+    },
+    "AFBY": {
+        "Templates": [101593, 101594]
+    },
+    "AFFB": {
+        "Templates": [104520, 104521]
+    },
+    "AFFF": {
+        "Templates": [101103, 101104]
+    },
+    "AFFH": {
+        "Templates": [101603, 101604]
+    },
+    "AFFM": {
+        "Templates": [101429, 101430]
+    },
+    "AGBK": {
+        "Templates": [104127, 104128]
+    },
+    "AGBM": {
+        "Templates": [101107, 101108]
+    },
+    "AGBU": {
+        "Templates": [102309, 102310]
+    },
+    "AGBV": {
+        "Templates": [102605, 102606]
+    },
+    "AGFA": {
+        "Templates": [101519, 101520]
+    },
+    "AGSN": {
+        "Templates": [103478, 103479]
+    },
+    "AGSW": {
+        "Templates": [101109, 101110]
+    },
+    "AHBB": {
+        "Templates": [103933, 103934]
+    },
+    "AHBF": {
+        "Templates": [101139, 101140]
+    },
+    "AHBK": {
+        "Templates": [103334, 103335]
+    },
+    "AHBU": {
+        "Templates": [102625, 102626]
+    },
+    "AHFH": {
+        "Templates": [101315, 101316]
+    },
+    "AHFL": {
+        "Templates": [101339, 101340]
+    },
+    "AIBM": {
+        "Templates": [102356, 102357]
+    },
+    "AIBW": {
+        "Templates": [104085, 104086]
+    },
+    "AICN": {
+        "Templates": [236702]
+    },
+    "AICW": {
+        "Templates": [285745]
+    },
+    "AIDV": {
+        "Templates": [214998, 263858]
+    },
+    "AIFH": {
+        "Templates": [101183, 101184]
+    },
+    "AIFN": {
+        "Templates": [101119, 101120]
+    },
+    "AIFR": {
+        "Templates": [101394, 101395]
+    },
+    "AIFT": {
+        "Templates": [101507, 101508]
+    },
+    "AILT": {
+        "Templates": [203737]
+    },
+    "AIPA": {
+        "Templates": [265489]
+    },
+    "AIRX": {
+        "Templates": [279328]
+    },
+    "AISN": {
+        "Templates": [102611, 102612]
+    },
+    "AISW": {
+        "Templates": [103751, 103752]
+    },
+    "AIXA": {
+        "Templates": [275721]
+    },
+    "ALBG": {
+        "Templates": [102382, 102383]
+    },
+    "ALBM": {
+        "Templates": [102876, 102877]
+    },
+    "ALBP": {
+        "Templates": [103554, 103555]
+    },
+    "ALBY": {
+        "Templates": [104548, 104549]
+    },
+    "ALFD": {
+        "Templates": [101406, 101334]
+    },
+    "ALFF": {
+        "Templates": [101369, 101370]
+    },
+    "ALLL": {
+        "Templates": [203738]
+    },
+    "ALRA": {
+        "Templates": [268384]
+    },
+    "ALRP": {
+        "Templates": [265491]
+    },
+    "ALSG": {
+        "Templates": [101173, 101174]
+    },
+    "AMBC": {
+        "Templates": [103875, 103876]
+    },
+    "AMBG": {
+        "Templates": [101105, 101106]
+    },
+    "AMBH": {
+        "Templates": [102813, 102814]
+    },
+    "AMBK": {
+        "Templates": [103861, 103862]
+    },
+    "AMBL": {
+        "Templates": [103763, 103764]
+    },
+    "AMBN": {
+        "Templates": [102946, 102947]
+    },
+    "AMBP": {
+        "Templates": [103419, 103420]
+    },
+    "AMBR": {
+        "Templates": [103348, 103349]
+    },
+    "AMDF": {
+        "Templates": [102575, 102576]
+    },
+    "AMFD": {
+        "Templates": [101167, 101168]
+    },
+    "AMFT": {
+        "Templates": [101447, 101448]
+    },
+    "AMMA": {
+        "Templates": [101217, 101218]
+    },
+    "AMMR": {
+        "Templates": [101589, 101590]
+    },
+    "AMOP": {
+        "Templates": [101529, 101530]
+    },
+    "ANBY": {
+        "Templates": [102708, 102709]
+    },
+    "ANCN": {
+        "Templates": [236705]
+    },
+    "ANDE": {
+        "Templates": [214998, 263858]
+    },
+    "ANDT": {
+        "Templates": [203260]
+    },
+    "ANFF": {
+        "Templates": [101400, 101401]
+    },
+    "ANFM": {
+        "Templates": [101537, 101538]
+    },
+    "ANFQ": {
+        "Templates": [269449]
+    },
+    "ANJR": {
+        "Templates": [269397]
+    },
+    "ANPT": {
+        "Templates": [214783]
+    },
+    "ANSN": {
+        "Templates": [102739, 102740]
+    },
+    "ANSQ": {
+        "Templates": [101305, 101306]
+    },
+    "ANTR": {
+        "Templates": [217041]
+    },
+    "ANXN": {
+        "Templates": [275720]
+    },
+    "AOBF": {
+        "Templates": [103833, 103834]
+    },
+    "AOBH": {
+        "Templates": [102522, 102523]
+    },
+    "AOBK": {
+        "Templates": [103467, 103468]
+    },
+    "AOBR": {
+        "Templates": [102735, 102736]
+    },
+    "AODS": {
+        "Templates": [203204]
+    },
+    "AODT": {
+        "Templates": [203246]
+    },
+    "AOFM": {
+        "Templates": [101363, 101364]
+    },
+    "APBA": {
+        "Templates": [102619, 102658]
+    },
+    "APBH": {
+        "Templates": [101169, 101170]
+    },
+    "APBI": {
+        "Templates": [103455, 103513]
+    },
+    "APBM": {
+        "Templates": [103959, 103960]
+    },
+    "APBN": {
+        "Templates": [104071, 104072]
+    },
+    "APBR": {
+        "Templates": [101171, 101172]
+    },
+    "APBY": {
+        "Templates": [102722, 102723]
+    },
+    "APFF": {
+        "Templates": [101573, 101574]
+    },
+    "APFJ": {
+        "Templates": [101215, 101216]
+    },
+    "APFO": {
+        "Templates": [101247, 101248]
+    },
+    "APFR": {
+        "Templates": [101309, 101310]
+    },
+    "AQFQ": {
+        "Templates": [101483, 101484]
+    },
+    "AQLU": {
+        "Templates": [101341, 101342]
+    },
+    "AQSN": {
+        "Templates": [101303, 101304]
+    },
+    "AQWY": {
+        "Templates": [103459, 103460]
+    },
+    "ARBF": {
+        "Templates": [101137, 101138]
+    },
+    "ARBK": {
+        "Templates": [104141, 104142]
+    },
+    "ARBV": {
+        "Templates": [104562, 104563]
+    },
+    "ARCH": {
+        "Templates": [163452, 163453]
+    },
+    "ARCO": {
+        "Templates": [100352]
+    },
+    "ARDSEK": {
+        "Templates": [87810, 87814]
+    },
+    "ARFD": {
+        "Templates": [101333, 101371]
+    },
+    "ARFM": {
+        "Templates": [101414, 101415]
+    },
+    "ARIXMX": {
+        "Templates": [287047]
+    },
+    "ARKVNU": {
+        "Templates": [43330]
+    },
+    "ARLATJ": {
+        "Templates": [99727, 81758]
+    },
+    "ARLP": {
+        "Templates": [101201, 101202]
+    },
+    "AROCVA": {
+        "Templates": [43329]
+    },
+    "AROJXY": {
+        "Templates": [28943]
+    },
+    "ARPN": {
+        "Templates": [104536, 104537]
+    },
+    "ARQYXF": {
+        "Templates": [70401]
+    },
+    "ARRRTX": {
+        "Templates": [56238]
+    },
+    "ARSJCW": {
+        "Templates": [210529]
+    },
+    "ARSL": {
+        "Templates": [101141, 101142]
+    },
+    "ARTFLF": {
+        "Templates": [82838]
+    },
+    "ARTU": {
+        "Templates": [102994, 102995]
+    },
+    "ARWVQA": {
+        "Templates": [100202]
+    },
+    "ASBB": {
+        "Templates": [103568, 103569]
+    },
+    "ASBC": {
+        "Templates": [101165, 101166]
+    },
+    "ASBW": {
+        "Templates": [102755, 102756]
+    },
+    "ASBY": {
+        "Templates": [101101, 101102]
+    },
+    "ASEB": {
+        "Templates": [121564]
+    },
+    "ASFB": {
+        "Templates": [204719]
+    },
+    "ASFR": {
+        "Templates": [101531, 101532]
+    },
+    "ASFU": {
+        "Templates": [101567, 101568]
+    },
+    "ASSQ": {
+        "Templates": [101499, 101500]
+    },
+    "ASSV": {
+        "Templates": [102567, 102568]
+    },
+    "ASSX": {
+        "Templates": [101241, 101242]
+    },
+    "ASTC": {
+        "Templates": [285741]
+    },
+    "ATBQ": {
+        "Templates": [102376, 102377]
+    },
+    "ATBU": {
+        "Templates": [102526, 102527]
+    },
+    "ATCE": {
+        "Templates": [262225]
+    },
+    "ATFA": {
+        "Templates": [101151, 101152]
+    },
+    "ATFC": {
+        "Templates": [101579, 101580]
+    },
+    "ATFF": {
+        "Templates": [101388, 101389]
+    },
+    "ATFG": {
+        "Templates": [101453, 101454]
+    },
+    "ATFN": {
+        "Templates": [101561, 101562]
+    },
+    "ATFO": {
+        "Templates": [101408, 101409]
+    },
+    "ATFR": {
+        "Templates": [101321, 101322]
+    },
+    "ATFU": {
+        "Templates": [101376, 101377]
+    },
+    "ATKJ": {
+        "Templates": [102691, 102692]
+    },
+    "ATNS": {
+        "Templates": [203264]
+    },
+    "AUBE": {
+        "Templates": [102307, 102308]
+    },
+    "AUBH": {
+        "Templates": [103027, 103028]
+    },
+    "AUBI": {
+        "Templates": [103898, 103899]
+    },
+    "AUBR": {
+        "Templates": [103647, 103648]
+    },
+    "AUBS": {
+        "Templates": [103749, 103750]
+    },
+    "AUBY": {
+        "Templates": [104202, 104203]
+    },
+    "AUFR": {
+        "Templates": [101477, 101478]
+    },
+    "AUPL": {
+        "Templates": [265488]
+    },
+    "AUPM": {
+        "Templates": [101473, 101474]
+    },
+    "AUPT": {
+        "Templates": [265661]
+    },
+    "AUSB": {
+        "Templates": [101157, 101158]
+    },
+    "AUSF": {
+        "Templates": [101481, 101482]
+    },
+    "AVBS": {
+        "Templates": [102937, 102938]
+    },
+    "AVBT": {
+        "Templates": [103526, 103527]
+    },
+    "AVFR": {
+        "Templates": [101351, 101352]
+    },
+    "AWBE": {
+        "Templates": [103791, 103792]
+    },
+    "AWBH": {
+        "Templates": [102508, 102509]
+    },
+    "AWBR": {
+        "Templates": [104057, 104058]
+    },
+    "AWFE": {
+        "Templates": [101585, 101586]
+    },
+    "AWFO": {
+        "Templates": [101471, 101472]
+    },
+    "AWSG": {
+        "Templates": [101113, 101114]
+    },
+    "AWST": {
+        "Templates": [103677, 103678]
+    },
+    "AWSY": {
+        "Templates": [101111, 101112]
+    },
+    "AXBT": {
+        "Templates": [101402, 101403]
+    },
+    "AXFA": {
+        "Templates": [101513, 101514]
+    },
+    "AXRQ": {
+        "Templates": [102925, 102926]
+    },
+    "AXSB": {
+        "Templates": [101237, 101238]
+    },
+    "AYBG": {
+        "Templates": [102827, 102828]
+    },
+    "AYBI": {
+        "Templates": [103366, 103367]
+    },
+    "AYBS": {
+        "Templates": [103231, 103232]
+    },
+    "AYBW": {
+        "Templates": [103297, 103298]
+    },
+    "AYBY": {
+        "Templates": [103217, 103218]
+    },
+    "AYFF": {
+        "Templates": [101591, 101592]
+    },
+    "AYFP": {
+        "Templates": [101549, 101550]
+    },
+    "BABM": {
+        "Templates": [252158]
+    },
+    "BAJA": {
+        "Templates": [275678]
+    },
+    "BAMO": {
+        "Templates": [165280]
+    },
+    "BARN": {
+        "Templates": [163497, 163498]
+    },
+    "BCBT": {
+        "Templates": [260026]
+    },
+    "BCMC": {
+        "Templates": [262213]
+    },
+    "BCSM": {
+        "Templates": [275828]
+    },
+    "BDPT": {
+        "Templates": [214868]
+    },
+    "BDQG": {
+        "Templates": [103528, 103529]
+    },
+    "BDSX": {
+        "Templates": [104528, 104529]
+    },
+    "BEIF": {
+        "Templates": [103765, 103766]
+    },
+    "BENK": {
+        "Templates": [104556, 104557]
+    },
+    "BFRB": {
+        "Templates": [103342, 103343]
+    },
+    "BGCD": {
+        "Templates": [101153, 101154]
+    },
+    "BGSR": {
+        "Templates": [258251]
+    },
+    "BHGT": {
+        "Templates": [104560, 104561]
+    },
+    "BIBN": {
+        "Templates": [263641]
+    },
+    "BINM": {
+        "Templates": [103114, 103115]
+    },
+    "BIOS": {
+        "Templates": [268374]
+    },
+    "BISE": {
+        "Templates": [223760]
+    },
+    "BKSY": {
+        "Templates": [104617, 104618]
+    },
+    "BKUW": {
+        "Templates": [258256]
+    },
+    "BLBO": {
+        "Templates": [31246]
+    },
+    "BLKN": {
+        "Templates": [164106, 164107]
+    },
+    "BMLO": {
+        "Templates": [102880, 102881]
+    },
+    "BOFP": {
+        "Templates": [252502]
+    },
+    "BOMU": {
+        "Templates": [258267]
+    },
+    "BOOP": {
+        "Templates": [103330, 103331]
+    },
+    "BPTS": {
+        "Templates": [103947, 103948]
+    },
+    "BRRI": {
+        "Templates": [165278]
+    },
+    "BRSW": {
+        "Templates": [165277]
+    },
+    "BRXA": {
+        "Templates": [265352]
+    },
+    "BSDY": {
+        "Templates": [101185, 101186]
+    },
+    "BTBG": {
+        "Templates": [258676]
+    },
+    "BTBU": {
+        "Templates": [130623]
+    },
+    "BTCI": {
+        "Templates": [102695, 102810]
+    },
+    "BUAC": {
+        "Templates": [103322, 103361]
+    },
+    "BURI": {
+        "Templates": [123063, 123064]
+    },
+    "BVBQ": {
+        "Templates": [103530, 103531]
+    },
+    "BXLK": {
+        "Templates": [103239, 103240]
+    },
+    "BYJK": {
+        "Templates": [103394, 103395]
+    },
+    "BYVH": {
+        "Templates": [103873, 103874]
+    },
+    "BYYU": {
+        "Templates": [101313, 101314]
+    },
+    "BZKC": {
+        "Templates": [103312, 103313]
+    },
+    "BZZU": {
+        "Templates": [103896, 103897]
+    },
+    "CACY": {
+        "Templates": [275471]
+    },
+    "CARO": {
+        "Templates": [150274, 150273]
+    },
+    "CART": {
+        "Templates": [123059, 123060]
+    },
+    "CATU": {
+        "Templates": [236678, 236679]
+    },
+    "CAXA": {
+        "Templates": [264066]
+    },
+    "CBNU": {
+        "Templates": [284701]
+    },
+    "CCAS": {
+        "Templates": [103879, 103880]
+    },
+    "CCPY": {
+        "Templates": [262209]
+    },
+    "CDTS": {
+        "Templates": [258800]
+    },
+    "CEEQ": {
+        "Templates": [103695, 103696]
+    },
+    "CETO": {
+        "Templates": [223763]
+    },
+    "CFYU": {
+        "Templates": [104089, 104090]
+    },
+    "CGLC": {
+        "Templates": [104206, 104207]
+    },
+    "CGOO": {
+        "Templates": [102693, 102694]
+    },
+    "CHMS": {
+        "Templates": [278937]
+    },
+    "CHRT": {
+        "Templates": [123065, 123066]
+    },
+    "CHTT": {
+        "Templates": [234601]
+    },
+    "CHWL": {
+        "Templates": [103490, 103491]
+    },
+    "CLMI": {
+        "Templates": [96350]
+    },
+    "CLOO": {
+        "Templates": [103120, 103121]
+    },
+    "CLTU": {
+        "Templates": [236680, 236681]
+    },
+    "CMKY": {
+        "Templates": [251972]
+    },
+    "CMQL": {
+        "Templates": [103386, 103387]
+    },
+    "CMRI": {
+        "Templates": [123073, 123074]
+    },
+    "CMSC": {
+        "Templates": [258760]
+    },
+    "CMSU": {
+        "Templates": [248358]
+    },
+    "CNPY": {
+        "Templates": [262208]
+    },
+    "COCO": {
+        "Templates": [158224]
+    },
+    "COIT": {
+        "Templates": [259958]
+    },
+    "COKJ": {
+        "Templates": [101115, 101116]
+    },
+    "COKY": {
+        "Templates": [251971]
+    },
+    "CPCL": {
+        "Templates": [275468]
+    },
+    "CPCS": {
+        "Templates": [275474]
+    },
+    "CRDD": {
+        "Templates": [262655]
+    },
+    "CRLT": {
+        "Templates": [263819]
+    },
+    "CRMS": {
+        "Templates": [275669]
+    },
+    "CROF": {
+        "Templates": [164105]
+    },
+    "CSRV": {
+        "Templates": [103843, 103844]
+    },
+    "CSSG": {
+        "Templates": [263818]
+    },
+    "CTMD": {
+        "Templates": [262653]
+    },
+    "CUCS": {
+        "Templates": [275469]
+    },
+    "CUCY": {
+        "Templates": [275470]
+    },
+    "CULE": {
+        "Templates": [263820]
+    },
+    "CUOS": {
+        "Templates": [234603]
+    },
+    "CVQL": {
+        "Templates": [101205, 101206]
+    },
+    "CXQB": {
+        "Templates": [102633, 102634]
+    },
+    "CXUB": {
+        "Templates": [104125, 104126]
+    },
+    "CYDO": {
+        "Templates": [273281]
+    },
+    "CYOB": {
+        "Templates": [101197, 101198]
+    },
+    "CYZO": {
+        "Templates": [102623, 102624]
+    },
+    "CZKS": {
+        "Templates": [102520, 102521]
+    },
+    "CZOD": {
+        "Templates": [102603, 102604]
+    },
+    "DABF": {
+        "Templates": [165231]
+    },
+    "DACP": {
+        "Templates": [284957]
+    },
+    "DASM": {
+        "Templates": [165470]
+    },
+    "DATO": {
+        "Templates": [260652]
+    },
+    "DDEB": {
+        "Templates": [102811, 102812]
+    },
+    "DDFE": {
+        "Templates": [101601, 101602]
+    },
+    "DECN": {
+        "Templates": [263915]
+    },
+    "DEDT": {
+        "Templates": [259248]
+    },
+    "DFUI": {
+        "Templates": [274604]
+    },
+    "DGBF": {
+        "Templates": [165241]
+    },
+    "DGBU": {
+        "Templates": [165251]
+    },
+    "DGSK": {
+        "Templates": [262210]
+    },
+    "DHBH": {
+        "Templates": [102830, 102831]
+    },
+    "DHWV": {
+        "Templates": [102776, 102777]
+    },
+    "DICI": {
+        "Templates": [284959]
+    },
+    "DICL": {
+        "Templates": [284961]
+    },
+    "DICT": {
+        "Templates": [287879]
+    },
+    "DIDE": {
+        "Templates": [275527]
+    },
+    "DIID": {
+        "Templates": [258802]
+    },
+    "DIPR": {
+        "Templates": [214867]
+    },
+    "DJCH": {
+        "Templates": [284955]
+    },
+    "DJQB": {
+        "Templates": [102599, 102600]
+    },
+    "DLCO": {
+        "Templates": [256557]
+    },
+    "DLKS": {
+        "Templates": [104103, 104104]
+    },
+    "DLMO": {
+        "Templates": [286989]
+    },
+    "DLMS": {
+        "Templates": [285612]
+    },
+    "DMSK": {
+        "Templates": [234602]
+    },
+    "DMWE": {
+        "Templates": [102631, 102632]
+    },
+    "DNCN": {
+        "Templates": [287880]
+    },
+    "DOBF": {
+        "Templates": [165261]
+    },
+    "DOIH": {
+        "Templates": [28778]
+    },
+    "DRRJ": {
+        "Templates": [275860]
+    },
+    "DRRN": {
+        "Templates": [281838]
+    },
+    "DRRU": {
+        "Templates": [275861]
+    },
+    "DRTS": {
+        "Templates": [268460]
+    },
+    "DRZT": {
+        "Templates": [103855, 103856]
+    },
+    "DSCI": {
+        "Templates": [287881]
+    },
+    "DSCT": {
+        "Templates": [287875]
+    },
+    "DTBF": {
+        "Templates": [165271]
+    },
+    "DTCH": {
+        "Templates": [258259]
+    },
+    "DTOJ": {
+        "Templates": [102890, 102891]
+    },
+    "DWQZ": {
+        "Templates": [103685, 103686]
+    },
+    "DWWP": {
+        "Templates": [103037, 102943]
+    },
+    "DXMV": {
+        "Templates": [101386, 101387]
+    },
+    "DZEX": {
+        "Templates": [101317, 101318]
+    },
+    "DZFX": {
+        "Templates": [102593, 102594]
+    },
+    "EAPK": {
+        "Templates": [103891, 103892]
+    },
+    "ECAF": {
+        "Templates": [102933, 102934]
+    },
+    "EDRJ": {
+        "Templates": [104228, 104229]
+    },
+    "EEOC": {
+        "Templates": [263317]
+    },
+    "EEOH": {
+        "Templates": [259956]
+    },
+    "EEOO": {
+        "Templates": [259765]
+    },
+    "EFAQ": {
+        "Templates": [104530, 104531]
+    },
+    "EFVK": {
+        "Templates": [104532, 104533]
+    },
+    "EGGT": {
+        "Templates": [102741, 102742]
+    },
+    "EHWG": {
+        "Templates": [102710, 102711]
+    },
+    "EIEY": {
+        "Templates": [102927, 102928]
+    },
+    "EINO": {
+        "Templates": [104045, 104046]
+    },
+    "EIPA": {
+        "Templates": [286239]
+    },
+    "EIPC": {
+        "Templates": [286242]
+    },
+    "EIRO": {
+        "Templates": [103084, 103085]
+    },
+    "EKFX": {
+        "Templates": [104420, 104421]
+    },
+    "EKKN": {
+        "Templates": [102635, 102636]
+    },
+    "EKRT": {
+        "Templates": [102907, 102908]
+    },
+    "EKTP": {
+        "Templates": [104418, 104419]
+    },
+    "ELDM": {
+        "Templates": [102884, 102885]
+    },
+    "ELRN": {
+        "Templates": [101353, 101354]
+    },
+    "EMDC": {
+        "Templates": [283777]
+    },
+    "EMLY": {
+        "Templates": [102780, 102781]
+    },
+    "EMVC": {
+        "Templates": [102798, 102799]
+    },
+    "ENDA": {
+        "Templates": [259249]
+    },
+    "ENKE": {
+        "Templates": [259247]
+    },
+    "ENKO": {
+        "Templates": [258201, 258202, 258203]
+    },
+    "ENPR": {
+        "Templates": [100350]
+    },
+    "EPPA": {
+        "Templates": [286423]
+    },
+    "EQIY": {
+        "Templates": [267213]
+    },
+    "EQPC": {
+        "Templates": [286257]
+    },
+    "EQPK": {
+        "Templates": [286277]
+    },
+    "EQYQ": {
+        "Templates": [103741, 103742]
+    },
+    "ERJX": {
+        "Templates": [104077, 104078]
+    },
+    "ERWY": {
+        "Templates": [102804, 102805]
+    },
+    "ESDK": {
+        "Templates": [101424, 101554]
+    },
+    "ESOA": {
+        "Templates": [259766]
+    },
+    "ESOC": {
+        "Templates": [261610]
+    },
+    "ESOP": {
+        "Templates": [229065]
+    },
+    "ESOT": {
+        "Templates": [259768]
+    },
+    "ESOZ": {
+        "Templates": [259767]
+    },
+    "ESPX": {
+        "Templates": [101396, 101397]
+    },
+    "ETBK": {
+        "Templates": [102817, 102818]
+    },
+    "EUPA": {
+        "Templates": [286238]
+    },
+    "EWFJ": {
+        "Templates": [103831, 103832]
+    },
+    "EXOF": {
+        "Templates": [251930]
+    },
+    "EYOT": {
+        "Templates": [259805]
+    },
+    "FADO": {
+        "Templates": [162848]
+    },
+    "FAEF": {
+        "Templates": [104554, 104555]
+    },
+    "FASJ": {
+        "Templates": [103465, 103466]
+    },
+    "FBJD": {
+        "Templates": [101121, 101122]
+    },
+    "FGSM": {
+        "Templates": [259700]
+    },
+    "FIAI": {
+        "Templates": [291082, 291083, 291084, 293296, 293297]
+    },
+    "FIAN": {
+        "Templates": [100295]
+    },
+    "FKCJ": {
+        "Templates": [104564, 104565]
+    },
+    "FLAL": {
+        "Templates": [165279]
+    },
+    "FLDF": {
+        "Templates": [104456, 104457]
+    },
+    "FLHA": {
+        "Templates": [218406]
+    },
+    "FLVI": {
+        "Templates": [103356, 103357]
+    },
+    "FOLT": {
+        "Templates": [258263]
+    },
+    "FOPR": {
+        "Templates": [258262]
+    },
+    "FQGG": {
+        "Templates": [102617, 102618]
+    },
+    "FRGI": {
+        "Templates": [102467, 102525]
+    },
+    "FRZG": {
+        "Templates": [103737, 103738]
+    },
+    "FSBR": {
+        "Templates": [103837, 103838]
+    },
+    "FTBE": {
+        "Templates": [259875]
+    },
+    "FURA": {
+        "Templates": [259869]
+    },
+    "FURE": {
+        "Templates": [263264]
+    },
+    "FUTT": {
+        "Templates": [102512, 102513]
+    },
+    "FVMJ": {
+        "Templates": [103839, 103840]
+    },
+    "FWAO": {
+        "Templates": [104131, 104132]
+    },
+    "FXLC": {
+        "Templates": [104204, 104205]
+    },
+    "FZBW": {
+        "Templates": [104546, 104547]
+    },
+    "FZKU": {
+        "Templates": [103649, 103650]
+    },
+    "G55T": {
+        "Templates": [258327]
+    },
+    "GCMW": {
+        "Templates": [103859, 103860]
+    },
+    "GEHJ": {
+        "Templates": [104615, 104616]
+    },
+    "GERO": {
+        "Templates": [263794]
+    },
+    "GFLJ": {
+        "Templates": [103755, 103756]
+    },
+    "GFRQ": {
+        "Templates": [103291, 103292]
+    },
+    "GFYE": {
+        "Templates": [101416, 101417]
+    },
+    "GGCM": {
+        "Templates": [104544, 104545]
+    },
+    "GGOG": {
+        "Templates": [102388, 102389]
+    },
+    "GGYY": {
+        "Templates": [103235, 103236]
+    },
+    "GHFL": {
+        "Templates": [281450]
+    },
+    "GIWE": {
+        "Templates": [253408]
+    },
+    "GIWR": {
+        "Templates": [203261]
+    },
+    "GLSU": {
+        "Templates": [268462]
+    },
+    "GNKL": {
+        "Templates": [203277]
+    },
+    "GOUN": {
+        "Templates": [103912, 103913]
+    },
+    "GOWW": {
+        "Templates": [101553, 101407]
+    },
+    "GPBO": {
+        "Templates": [104246, 104247]
+    },
+    "GRHI": {
+        "Templates": [103902, 103903]
+    },
+    "GSTS": {
+        "Templates": [264079]
+    },
+    "GTXC": {
+        "Templates": [103169, 103170]
+    },
+    "GUID": {
+        "Templates": [281349]
+    },
+    "GURU": {
+        "Templates": [102297, 102298]
+    },
+    "GXDJ": {
+        "Templates": [101189, 101190]
+    },
+    "GXGG": {
+        "Templates": [101329, 101330]
+    },
+    "GYJK": {
+        "Templates": [103687, 103688]
+    },
+    "GYVI": {
+        "Templates": [103667, 103668]
+    },
+    "GZIU": {
+        "Templates": [103400, 103401]
+    },
+    "GZWI": {
+        "Templates": [103500, 103501]
+    },
+    "HAON": {
+        "Templates": [283788]
+    },
+    "HAPE": {
+        "Templates": [163837, 163838, 163839, 163840, 163841, 163842, 163843]
+    },
+    "HARC": {
+        "Templates": [263886]
+    },
+    "HAVA": {
+        "Templates": [248180]
+    },
+    "HECK": {
+        "Templates": [203278]
+    },
+    "HFOJ": {
+        "Templates": [263318]
+    },
+    "HGUR": {
+        "Templates": [101221, 101222]
+    },
+    "HJMC": {
+        "Templates": [103000, 103001]
+    },
+    "HKTE": {
+        "Templates": [104208, 104209]
+    },
+    "HLHF": {
+        "Templates": [102404, 102405]
+    },
+    "HLSU": {
+        "Templates": [259877]
+    },
+    "HMCS": {
+        "Templates": [102607, 102608]
+    },
+    "HMCY": {
+        "Templates": [162833]
+    },
+    "HPOI": {
+        "Templates": [101129, 101130]
+    },
+    "HSMP": {
+        "Templates": [102806, 102807]
+    },
+    "HSUJ": {
+        "Templates": [103396, 103397]
+    },
+    "HUDI": {
+        "Templates": [259811]
+    },
+    "HVWJ": {
+        "Templates": [101159, 101160]
+    },
+    "HWGE": {
+        "Templates": [101533, 101534]
+    },
+    "HYBF": {
+        "Templates": [104117, 104118]
+    },
+    "HZTP": {
+        "Templates": [101479, 101480]
+    },
+    "ICGD": {
+        "Templates": [162873]
+    },
+    "ICGI": {
+        "Templates": [162870]
+    },
+    "ICGR": {
+        "Templates": [162869]
+    },
+    "IDAN": {
+        "Templates": [101563, 101564]
+    },
+    "IDDI": {
+        "Templates": [249106]
+    },
+    "IDDS": {
+        "Templates": [249108]
+    },
+    "IDVI": {
+        "Templates": [102714, 102715]
+    },
+    "IGOT": {
+        "Templates": [214789]
+    },
+    "IHPD": {
+        "Templates": [103841, 103842]
+    },
+    "IJLQ": {
+        "Templates": [102504, 102505]
+    },
+    "IJRE": {
+        "Templates": [248357]
+    },
+    "IKSQ": {
+        "Templates": [104516, 104517]
+    },
+    "ILLT": {
+        "Templates": [102984, 102985]
+    },
+    "IMIM": {
+        "Templates": [102986, 102987]
+    },
+    "INGD": {
+        "Templates": [162872]
+    },
+    "INGI": {
+        "Templates": [162871]
+    },
+    "INGR": {
+        "Templates": [162865]
+    },
+    "IOQX": {
+        "Templates": [101599, 101600]
+    },
+    "ISHW": {
+        "Templates": [102743, 102744]
+    },
+    "ISOA": {
+        "Templates": [214788]
+    },
+    "IVGI": {
+        "Templates": [102378, 102379]
+    },
+    "IVNW": {
+        "Templates": [102597, 102598]
+    },
+    "IVRH": {
+        "Templates": [103757, 103758]
+    },
+    "IWEV": {
+        "Templates": [102528, 102529]
+    },
+    "IWGJ": {
+        "Templates": [104039, 104040]
+    },
+    "IWXT": {
+        "Templates": [101517, 101518]
+    },
+    "IZFT": {
+        "Templates": [104483, 104484]
+    },
+    "JAHE": {
+        "Templates": [165469]
+    },
+    "JAWE": {
+        "Templates": [165468]
+    },
+    "JBBR": {
+        "Templates": [223762]
+    },
+    "JCUW": {
+        "Templates": [102338, 102339]
+    },
+    "JDOG": {
+        "Templates": [102716, 102717]
+    },
+    "JERS": {
+        "Templates": [263917]
+    },
+    "JGRE": {
+        "Templates": [103904, 103905]
+    },
+    "JGSI": {
+        "Templates": [269313]
+    },
+    "JGXC": {
+        "Templates": [102352, 102353]
+    },
+    "JJPX": {
+        "Templates": [102998, 102999]
+    },
+    "JKHN": {
+        "Templates": [101335, 101336]
+    },
+    "JKUZ": {
+        "Templates": [103346, 103347]
+    },
+    "JPHM": {
+        "Templates": [102878, 102879]
+    },
+    "JPMA": {
+        "Templates": [102944, 102945]
+    },
+    "JPNX": {
+        "Templates": [103908, 103909]
+    },
+    "JQHS": {
+        "Templates": [101535, 101536]
+    },
+    "JRBU": {
+        "Templates": [102613, 102614]
+    },
+    "JRJM": {
+        "Templates": [103916, 103917]
+    },
+    "JRRM": {
+        "Templates": [104083, 104084]
+    },
+    "JSZR": {
+        "Templates": [101551, 101552]
+    },
+    "JUOF": {
+        "Templates": [258757]
+    },
+    "JUSN": {
+        "Templates": [102896, 102897]
+    },
+    "JVCZ": {
+        "Templates": [103506, 103507]
+    },
+    "JVKN": {
+        "Templates": [103626, 103456]
+    },
+    "JVSL": {
+        "Templates": [102720, 102721]
+    },
+    "JVZU": {
+        "Templates": [103761, 103762]
+    },
+    "JXXR": {
+        "Templates": [102808, 102809]
+    },
+    "KAHI": {
+        "Templates": [101359, 101360]
+    },
+    "KBHM": {
+        "Templates": [102948, 102949]
+    },
+    "KBKH": {
+        "Templates": [102317, 102318]
+    },
+    "KCIS": {
+        "Templates": [103671, 103672]
+    },
+    "KDXD": {
+        "Templates": [104574, 104575]
+    },
+    "KESW": {
+        "Templates": [218403]
+    },
+    "KEUB": {
+        "Templates": [102350, 102351]
+    },
+    "KFBC": {
+        "Templates": [101251, 101252]
+    },
+    "KFCU": {
+        "Templates": [101127, 101128]
+    },
+    "KFUF": {
+        "Templates": [104487, 104488]
+    },
+    "KGNU": {
+        "Templates": [101331, 101332]
+    },
+    "KJBI": {
+        "Templates": [102637, 102638]
+    },
+    "KNGY": {
+        "Templates": [104200, 104201]
+    },
+    "KOSM": {
+        "Templates": [103404, 103405]
+    },
+    "KQBB": {
+        "Templates": [103542, 103543]
+    },
+    "KQHC": {
+        "Templates": [104178, 104179]
+    },
+    "KSFH": {
+        "Templates": [104175, 104176]
+    },
+    "KSJD": {
+        "Templates": [102643, 102644]
+    },
+    "KSOR": {
+        "Templates": [101541, 101542]
+    },
+    "KTEE": {
+        "Templates": [236577]
+    },
+    "KUUD": {
+        "Templates": [101443, 101444]
+    },
+    "KVDN": {
+        "Templates": [103516, 103517]
+    },
+    "KVEU": {
+        "Templates": [101509, 101510]
+    },
+    "KVOK": {
+        "Templates": [102939, 102940]
+    },
+    "KWNA": {
+        "Templates": [103924, 103925]
+    },
+    "KYIN": {
+        "Templates": [262656]
+    },
+    "KYST": {
+        "Templates": [247100]
+    },
+    "LADN": {
+        "Templates": [268729]
+    },
+    "LART": {
+        "Templates": [123069, 123070]
+    },
+    "LAWH": {
+        "Templates": [104568, 104569]
+    },
+    "LBUY": {
+        "Templates": [103835, 103836]
+    },
+    "LCBA": {
+        "Templates": [273240]
+    },
+    "LEDO": {
+        "Templates": [156599]
+    },
+    "LENL": {
+        "Templates": [101493, 101494]
+    },
+    "LETT": {
+        "Templates": [214882]
+    },
+    "LFJP": {
+        "Templates": [104121, 104122]
+    },
+    "LFMY": {
+        "Templates": [103308, 103309]
+    },
+    "LGJP": {
+        "Templates": [101155, 101156]
+    },
+    "LGRW": {
+        "Templates": [103071, 103072]
+    },
+    "LGSF": {
+        "Templates": [103492, 103493]
+    },
+    "LHFT": {
+        "Templates": [104161, 104162]
+    },
+    "LHKJ": {
+        "Templates": [101147, 101148]
+    },
+    "LIOF": {
+        "Templates": [165112, 165111]
+    },
+    "LIPI": {
+        "Templates": [267393]
+    },
+    "LITR": {
+        "Templates": [85655, 22104]
+    },
+    "LITS": {
+        "Templates": [258801]
+    },
+    "LLLO": {
+        "Children": ["ARLATJ"]
+    },
+    "LLOW": {
+        "Templates": [103116, 103117]
+    },
+    "LNMS": {
+        "Templates": [102980, 102981]
+    },
+    "LODL": {
+        "Templates": [254461]
+    },
+    "LORU": {
+        "Templates": [123061, 123062]
+    },
+    "LPRW": {
+        "Templates": [103683, 103684]
+    },
+    "LROM": {
+        "Templates": [263319]
+    },
+    "LSKM": {
+        "Templates": [103914, 103915]
+    },
+    "LTCO": {
+        "Templates": [102706, 102707]
+    },
+    "LTER": {
+        "Templates": [275486]
+    },
+    "LXHX": {
+        "Templates": [103233, 103234]
+    },
+    "LYZS": {
+        "Templates": [101511, 101512]
+    },
+    "MAFR": {
+        "Templates": [100351]
+    },
+    "MBLG": {
+        "Templates": [263182]
+    },
+    "MCDF": {
+        "Templates": [104534, 104535]
+    },
+    "MDHO": {
+        "Templates": [104171, 104172]
+    },
+    "MDOF": {
+        "Templates": [102518, 102519]
+    },
+    "MERO": {
+        "Templates": [248356]
+    },
+    "MFCN": {
+        "Templates": [102386, 102387]
+    },
+    "MFFM": {
+        "Templates": [284554]
+    },
+    "MFHG": {
+        "Templates": [102565, 102566]
+    },
+    "MFTC": {
+        "Templates": [247236]
+    },
+    "MFTR": {
+        "Templates": [254101]
+    },
+    "MHBG": {
+        "Templates": [102757, 102758]
+    },
+    "MIFP": {
+        "Templates": [101455, 101456]
+    },
+    "MILG": {
+        "Templates": [258758]
+    },
+    "MKFU": {
+        "Templates": [102340, 102341]
+    },
+    "MKRQ": {
+        "Templates": [101145, 101146]
+    },
+    "MKXE": {
+        "Templates": [101255, 101256]
+    },
+    "MMPT": {
+        "Templates": [268396]
+    },
+    "MNRC": {
+        "Templates": [265477]
+    },
+    "MOYV": {
+        "Templates": [101487, 101488]
+    },
+    "MPDU": {
+        "Templates": [103881, 103882]
+    },
+    "MPLJ": {
+        "Templates": [103743, 103744]
+    },
+    "MQBR": {
+        "Templates": [102900, 102901]
+    },
+    "MQON": {
+        "Templates": [103173, 103174]
+    },
+    "MRMG": {
+        "Templates": [104139, 104140]
+    },
+    "MSFP": {
+        "Templates": [104485, 104486]
+    },
+    "MTOE": {
+        "Templates": [102982, 102983]
+    },
+    "MWDK": {
+        "Templates": [104224, 104225]
+    },
+    "MWEL": {
+        "Templates": [102653, 102654]
+    },
+    "MYCA": {
+        "Templates": [252552]
+    },
+    "MYPD": {
+        "Templates": [103360, 103418]
+    },
+    "NACG": {
+        "Templates": [100349]
+    },
+    "NAIF": {
+        "Templates": [28815]
+    },
+    "NBCF": {
+        "Templates": [102500, 102501]
+    },
+    "NBPP": {
+        "Templates": [103857, 103858]
+    },
+    "NCDF": {
+        "Templates": [103645, 103646]
+    },
+    "NEGI": {
+        "Templates": [130595]
+    },
+    "NELQ": {
+        "Templates": [103643, 103644]
+    },
+    "NEMC": {
+        "Templates": [275456]
+    },
+    "NEON": {
+        "Templates": [260660]
+    },
+    "NESE": {
+        "Templates": [263815]
+    },
+    "NEUS": {
+        "Templates": [101233, 101234]
+    },
+    "NFNF": {
+        "Templates": [103390, 103391]
+    },
+    "NGYV": {
+        "Templates": [104081, 104082]
+    },
+    "NKCI": {
+        "Templates": [101249, 101250]
+    },
+    "NKLU": {
+        "Templates": [101515, 101516]
+    },
+    "NLOC": {
+        "Templates": [264006]
+    },
+    "NLRN": {
+        "Templates": [101149, 101150]
+    },
+    "NLYJ": {
+        "Templates": [101143, 101144]
+    },
+    "NNCO": {
+        "Templates": [100348]
+    },
+    "NNJH": {
+        "Templates": [102655, 102656]
+    },
+    "NNJK": {
+        "Templates": [101571, 101572]
+    },
+    "NOFU": {
+        "Templates": [260526]
+    },
+    "NPNT": {
+        "Templates": [102771, 102829]
+    },
+    "NQ04": {
+        "Templates": [121571]
+    },
+    "NQ07": {
+        "Templates": [78417]
+    },
+    "NQUM": {
+        "Templates": [101239, 101240]
+    },
+    "NSOF": {
+        "Templates": [262200]
+    },
+    "NSUH": {
+        "Templates": [102601, 102602]
+    },
+    "NTGC": {
+        "Templates": [104079, 104080]
+    },
+    "NTXE": {
+        "Templates": [103910, 103911]
+    },
+    "NVMW": {
+        "Templates": [102585, 102586]
+    },
+    "NWCH": {
+        "Templates": [211155]
+    },
+    "NWDP": {
+        "Templates": [104623, 104624]
+    },
+    "NYDB": {
+        "Templates": [104619, 104620]
+    },
+    "NYJL": {
+        "Templates": [102800, 102801]
+    },
+    "NZLW": {
+        "Templates": [232580]
+    },
+    "OABO": {
+        "Templates": [121565]
+    },
+    "OCDQ": {
+        "Templates": [103697, 103698]
+    },
+    "OCST": {
+        "Templates": [223565]
+    },
+    "ODCO": {
+        "Templates": [252264]
+    },
+    "ODHH": {
+        "Templates": [104637, 104638]
+    },
+    "ODWI": {
+        "Templates": [102856, 102857]
+    },
+    "OFAA": {
+        "Templates": [101125, 101126]
+    },
+    "OJQK": {
+        "Templates": [103759, 103760]
+    },
+    "OLBE": {
+        "Templates": [263642]
+    },
+    "OLCO": {
+        "Templates": [252179]
+    },
+    "OLPI": {
+        "Templates": [214877]
+    },
+    "OMND": {
+        "Templates": [248773]
+    },
+    "OMNT": {
+        "Templates": [284700]
+    },
+    "OMPE": {
+        "Templates": [254112]
+    },
+    "ONMS": {
+        "Templates": [96349]
+    },
+    "ONND": {
+        "Templates": [254322]
+    },
+    "ONQY": {
+        "Templates": [101427, 101428]
+    },
+    "OPEA": {
+        "Templates": [104621, 104622]
+    },
+    "OPUE": {
+        "Templates": [102996, 102997]
+    },
+    "OQJE": {
+        "Templates": [104053, 104054]
+    },
+    "OQNO": {
+        "Templates": [102651, 102652]
+    },
+    "OQTF": {
+        "Templates": [103715, 103716]
+    },
+    "ORDJ": {
+        "Templates": [104609, 104610]
+    },
+    "OSEV": {
+        "Templates": [103894, 103895]
+    },
+    "OSYJ": {
+        "Templates": [103920, 103921]
+    },
+    "OUFA": {
+        "Templates": [203270]
+    },
+    "OVWC": {
+        "Templates": [103318, 103319]
+    },
+    "OWMH": {
+        "Templates": [102595, 102596]
+    },
+    "OYGJ": {
+        "Templates": [101410, 101411]
+    },
+    "OYSV": {
+        "Templates": [104462, 104596]
+    },
+    "PAOT": {
+        "Templates": [259807]
+    },
+    "PATF": {
+        "Templates": [158267]
+    },
+    "PATL": {
+        "Templates": [158268]
+    },
+    "PATO": {
+        "Templates": [158266]
+    },
+    "PBUW": {
+        "Templates": [101374, 101375]
+    },
+    "PCOR": {
+        "Templates": [258254]
+    },
+    "PCOT": {
+        "Templates": [267399]
+    },
+    "PCOW": {
+        "Templates": [259966]
+    },
+    "PDBL": {
+        "Templates": [259957]
+    },
+    "PEBJ": {
+        "Templates": [103711, 103712]
+    },
+    "PEOW": {
+        "Templates": [259960]
+    },
+    "PESC": {
+        "Templates": [103745, 103746]
+    },
+    "PEWD": {
+        "Templates": [253407]
+    },
+    "PGAR": {
+        "Templates": [104331, 104332]
+    },
+    "PGUO": {
+        "Templates": [103867, 103868]
+    },
+    "PGZJ": {
+        "Templates": [101187, 101188]
+    },
+    "PHBV": {
+        "Templates": [101365, 101366]
+    },
+    "PHJF": {
+        "Templates": [103225, 103226]
+    },
+    "PIOW": {
+        "Templates": [259968]
+    },
+    "PJQE": {
+        "Templates": [102303, 102304]
+    },
+    "PJYO": {
+        "Templates": [203269]
+    },
+    "PKNK": {
+        "Templates": [101161, 101162]
+    },
+    "PKVN": {
+        "Templates": [103237, 103238]
+    },
+    "PLPU": {
+        "Templates": [101449, 101450]
+    },
+    "PLQQ": {
+        "Templates": [104069, 104070]
+    },
+    "PLXX": {
+        "Templates": [284441]
+    },
+    "PMIR": {
+        "Templates": [269630]
+    },
+    "PODE": {
+        "Templates": [259970]
+    },
+    "POGR": {
+        "Templates": [162832]
+    },
+    "POOG": {
+        "Templates": [259967]
+    },
+    "PPII": {
+        "Templates": [101337, 101338]
+    },
+    "PQHS": {
+        "Templates": [103295, 103296]
+    },
+    "PRCR": {
+        "Templates": [229603, 229604]
+    },
+    "PRIF": {
+        "Templates": [102380, 102381]
+    },
+    "PRKF": {
+        "Templates": [259802]
+    },
+    "PRLC": {
+        "Templates": [258266]
+    },
+    "PRRT": {
+        "Templates": [123075]
+    },
+    "PRSY": {
+        "Templates": [248307]
+    },
+    "PRVI": {
+        "Templates": [100355]
+    },
+    "PTCX": {
+        "Templates": [281351]
+    },
+    "PTEN": {
+        "Templates": [263308]
+    },
+    "PTOK": {
+        "Templates": [259787]
+    },
+    "PTSL": {
+        "Templates": [253431]
+    },
+    "PYHQ": {
+        "Templates": [102319, 102320]
+    },
+    "PZNW": {
+        "Templates": [101521, 101522]
+    },
+    "QASD": {
+        "Templates": [103949, 103950]
+    },
+    "QBCA": {
+        "Templates": [103753, 103754]
+    },
+    "QBJS": {
+        "Templates": [103370, 103371]
+    },
+    "QBKJ": {
+        "Templates": [102821, 102822]
+    },
+    "QCOF": {
+        "Templates": [103023, 103024]
+    },
+    "QCRO": {
+        "Templates": [102964, 102965]
+    },
+    "QETT": {
+        "Templates": [103299, 103300]
+    },
+    "QEYV": {
+        "Templates": [103877, 103878]
+    },
+    "QFDB": {
+        "Templates": [102336, 102337]
+    },
+    "QFNW": {
+        "Templates": [102551, 102552]
+    },
+    "QHYW": {
+        "Templates": [102718, 102719]
+    },
+    "QIBD": {
+        "Templates": [102408, 102409]
+    },
+    "QIJF": {
+        "Templates": [103544, 103545]
+    },
+    "QKTR": {
+        "Templates": [102358, 102359]
+    },
+    "QMKB": {
+        "Templates": [102882, 102883]
+    },
+    "QMLT": {
+        "Templates": [101343, 101344]
+    },
+    "QMXJ": {
+        "Templates": [103639, 103640]
+    },
+    "QNEH": {
+        "Templates": [101527, 101528]
+    },
+    "QNFM": {
+        "Templates": [102677, 102678]
+    },
+    "QOAW": {
+        "Templates": [203273]
+    },
+    "QQLH": {
+        "Templates": [101523, 101524]
+    },
+    "QSEU": {
+        "Templates": [103364, 103365]
+    },
+    "QTFY": {
+        "Templates": [102952, 102953]
+    },
+    "QTRC": {
+        "Templates": [102962, 102963]
+    },
+    "QTZV": {
+        "Templates": [103219, 103220]
+    },
+    "QURT": {
+        "Templates": [123067, 123068]
+    },
+    "QUYQ": {
+        "Templates": [103669, 103670]
+    },
+    "QVLH": {
+        "Templates": [104611, 104612]
+    },
+    "QWJQ": {
+        "Templates": [103721, 103475]
+    },
+    "QYJK": {
+        "Templates": [103306, 103307]
+    },
+    "QZWQ": {
+        "Templates": [103362, 103363]
+    },
+    "RACL": {
+        "Templates": [263571]
+    },
+    "RAGN": {
+        "Templates": [223764]
+    },
+    "RAIS": {
+        "Templates": [100354]
+    },
+    "RAST": {
+        "Templates": [101253, 101254]
+    },
+    "RBRK": {
+        "Templates": [104123, 104124]
+    },
+    "RDAI": {
+        "Templates": [101347, 101348]
+    },
+    "RDHM": {
+        "Templates": [259778]
+    },
+    "RDOM": {
+        "Templates": [102874, 102875]
+    },
+    "REAC": {
+        "Templates": [248774]
+    },
+    "REBC": {
+        "Templates": [104576, 104577]
+    },
+    "REHB": {
+        "Templates": [253393]
+    },
+    "REOA": {
+        "Templates": [214891]
+    },
+    "REOD": {
+        "Templates": [258265]
+    },
+    "REPC": {
+        "Templates": [102917, 102918]
+    },
+    "RERE": {
+        "Templates": [259776]
+    },
+    "RFFC": {
+        "Templates": [273265]
+    },
+    "RGEL": {
+        "Templates": [101485, 101486]
+    },
+    "RGXT": {
+        "Templates": [103171, 103172]
+    },
+    "RHHA": {
+        "Templates": [259775]
+    },
+    "RHLW": {
+        "Templates": [103227, 103228]
+    },
+    "RIDT": {
+        "Templates": [275465]
+    },
+    "RIEF": {
+        "Templates": [222956]
+    },
+    "RIKR": {
+        "Children": ["UNRT", "CART", "LORU", "BURI", "CHRT", "QURT", "LART", "SNRI", "CMRI", "PRRT"]
+    },
+    "RIOS": {
+        "Templates": [104339, 104340]
+    },
+    "RITA": {
+        "Templates": [245581]
+    },
+    "RLCW": {
+        "Templates": [103118, 103119]
+    },
+    "RLIJ": {
+        "Templates": [103398, 103399]
+    },
+    "RMAC": {
+        "Templates": [285746]
+    },
+    "RNUP": {
+        "Templates": [104570, 104571]
+    },
+    "RONR": {
+        "Templates": [101325, 101326]
+    },
+    "RORE": {
+        "Templates": [258260]
+    },
+    "ROST": {
+        "Templates": [223578]
+    },
+    "RQBE": {
+        "Templates": [104119, 104120]
+    },
+    "RQJK": {
+        "Templates": [104087, 104088]
+    },
+    "RRKG": {
+        "Templates": [103338, 103339]
+    },
+    "RRXP": {
+        "Templates": [103871, 103872]
+    },
+    "RSFL": {
+        "Templates": [284236]
+    },
+    "RSFR": {
+        "Templates": [275526]
+    },
+    "RSIC": {
+        "Templates": [103211, 103212]
+    },
+    "RTFL": {
+        "Templates": [285919]
+    },
+    "RUIK": {
+        "Templates": [101583, 101584]
+    },
+    "RUWO": {
+        "Templates": [100353]
+    },
+    "RVNR": {
+        "Templates": [103681, 103682]
+    },
+    "RXJA": {
+        "Templates": [102514, 102515]
+    },
+    "SABA": {
+        "Templates": [99228]
+    },
+    "SACC": {
+        "Templates": [101439, 101440]
+    },
+    "SACD": {
+        "Templates": [258738]
+    },
+    "SAGR": {
+        "Templates": [248338]
+    },
+    "SALT": {
+        "Templates": [214792]
+    },
+    "SAOF": {
+        "Templates": [121570]
+    },
+    "SAOT": {
+        "Templates": [100346]
+    },
+    "SAXA": {
+        "Templates": [265476]
+    },
+    "SBDH": {
+        "Templates": [101565, 101566]
+    },
+    "SBJH": {
+        "Templates": [103310, 103311]
+    },
+    "SCDE": {
+        "Templates": [254100]
+    },
+    "SCWH": {
+        "Templates": [130598]
+    },
+    "SCWI": {
+        "Templates": [253358]
+    },
+    "SCXA": {
+        "Templates": [265474]
+    },
+    "SCXN": {
+        "Templates": [265475]
+    },
+    "SDNA": {
+        "Templates": [300893]
+    },
+    "SDYT": {
+        "Templates": [269383]
+    },
+    "SE7R": {
+        "Templates": [288547]
+    },
+    "SEEQ": {
+        "Templates": [258463]
+    },
+    "SEHU": {
+        "Templates": [102506, 102507]
+    },
+    "SELB": {
+        "Templates": [281449]
+    },
+    "SEQG": {
+        "Templates": [102571, 102572]
+    },
+    "SEXF": {
+        "Templates": [103332, 103333]
+    },
+    "SEYH": {
+        "Templates": [262956]
+    },
+    "SGWY": {
+        "Templates": [104524, 104525]
+    },
+    "SHMS": {
+        "Templates": [259784]
+    },
+    "SIEG": {
+        "Templates": [259979]
+    },
+    "SIGU": {
+        "Templates": [103546, 103547]
+    },
+    "SISB": {
+        "Templates": [203451]
+    },
+    "SISY": {
+        "Templates": [258261]
+    },
+    "SITL": {
+        "Templates": [259972]
+    },
+    "SITO": {
+        "Templates": [259978]
+    },
+    "SIVN": {
+        "Templates": [259980]
+    },
+    "SIXG": {
+        "Templates": [102392, 102393]
+    },
+    "SJCC": {
+        "Templates": [104212, 104213]
+    },
+    "SJOK": {
+        "Templates": [103725, 103726]
+    },
+    "SJQU": {
+        "Templates": [102886, 102887]
+    },
+    "SJTT": {
+        "Templates": [104226, 104227]
+    },
+    "SKOR": {
+        "Templates": [258255]
+    },
+    "SKPP": {
+        "Templates": [103229, 103230]
+    },
+    "SKQZ": {
+        "Templates": [103719, 103720]
+    },
+    "SKSN": {
+        "Templates": [259981]
+    },
+    "SLGD": {
+        "Templates": [254099]
+    },
+    "SLLT": {
+        "Templates": [214793]
+    },
+    "SLPB": {
+        "Templates": [102629, 102630]
+    },
+    "SLPO": {
+        "Templates": [121569]
+    },
+    "SMCH": {
+        "Templates": [258252]
+    },
+    "SMOC": {
+        "Templates": [273487]
+    },
+    "SNAL": {
+        "Templates": [258258]
+    },
+    "SNRI": {
+        "Templates": [123071, 123072]
+    },
+    "SODC": {
+        "Templates": [259759]
+    },
+    "SOHI": {
+        "Templates": [262427]
+    },
+    "SOMW": {
+        "Templates": [104133, 104134]
+    },
+    "SOPO": {
+        "Templates": [121568]
+    },
+    "SOYH": {
+        "Templates": [102712, 102713]
+    },
+    "SP38": {
+        "Templates": [121567]
+    },
+    "SPCA": {
+        "Templates": [165273]
+    },
+    "SPEX": {
+        "Templates": [263888]
+    },
+    "SPHR": {
+        "Templates": [259790]
+    },
+    "SPJA": {
+        "Templates": [275676]
+    },
+    "SPPR": {
+        "Templates": [100344]
+    },
+    "SPPY": {
+        "Templates": [263901]
+    },
+    "SPYG": {
+        "Templates": [104526, 104527]
+    },
+    "SQIZ": {
+        "Templates": [102321, 102322]
+    },
+    "SRCQ": {
+        "Templates": [102832, 102833]
+    },
+    "SREO": {
+        "Templates": [236677, 236676]
+    },
+    "SRKY": {
+        "Templates": [101361, 101362]
+    },
+    "SRPO": {
+        "Templates": [232985]
+    },
+    "SSDA": {
+        "Templates": [258769]
+    },
+    "SSFS": {
+        "Templates": [236648, 238955]
+    },
+    "SSMH": {
+        "Templates": [258756]
+    },
+    "SSOL": {
+        "Templates": [259863]
+    },
+    "SSSW": {
+        "Templates": [248339]
+    },
+    "STCF": {
+        "Templates": [246927]
+    },
+    "STCH": {
+        "Templates": [263183]
+    },
+    "STES": {
+        "Templates": [101390, 101391]
+    },
+    "STMX": {
+        "Templates": [268429]
+    },
+    "SUAY": {
+        "Templates": [258264]
+    },
+    "SUHV": {
+        "Templates": [102935, 102936]
+    },
+    "SUME": {
+        "Templates": [100347]
+    },
+    "SUPE": {
+        "Templates": [100299]
+    },
+    "SUQV": {
+        "Templates": [102745, 102746]
+    },
+    "SUTI": {
+        "Templates": [258767]
+    },
+    "SUTJ": {
+        "Templates": [103167, 103168]
+    },
+    "SUTM": {
+        "Templates": [258742]
+    },
+    "SWIB": {
+        "Templates": [203272]
+    },
+    "SWIN": {
+        "Templates": [259838]
+    },
+    "SWJA": {
+        "Templates": [275677]
+    },
+    "SXSS": {
+        "Templates": [103747, 103748]
+    },
+    "SYCC": {
+        "Templates": [258764]
+    },
+    "SYCM": {
+        "Templates": [258761]
+    },
+    "SYOA": {
+        "Templates": [264007]
+    },
+    "TABR": {
+        "Templates": [258253]
+    },
+    "TARA": {
+        "Templates": [100293]
+    },
+    "TBB1": {
+        "Templates": [269437]
+    },
+    "TBBC": {
+        "Templates": [262960]
+    },
+    "TBBI": {
+        "Templates": [262958]
+    },
+    "TEBF": {
+        "Templates": [262957]
+    },
+    "TEGJ": {
+        "Templates": [103930, 103893]
+    },
+    "TEKE": {
+        "Templates": [226985]
+    },
+    "TEKH": {
+        "Templates": [226992]
+    },
+    "TEKY": {
+        "Templates": [226988]
+    },
+    "TERC": {
+        "Templates": [262264]
+    },
+    "TESG": {
+        "Templates": [262348]
+    },
+    "TFBE": {
+        "Templates": [262959]
+    },
+    "TFHJ": {
+        "Templates": [104210, 104211]
+    },
+    "TGOL": {
+        "Templates": [263316]
+    },
+    "TGSH": {
+        "Templates": [263912]
+    },
+    "THBK": {
+        "Templates": [256581]
+    },
+    "THCP": {
+        "Templates": [265515]
+    },
+    "THKY": {
+        "Templates": [226986]
+    },
+    "THSC": {
+        "Templates": [100345]
+    },
+    "TIAD": {
+        "Templates": [218404]
+    },
+    "TIDI": {
+        "Templates": [218395]
+    },
+    "TIOA": {
+        "Templates": [259955]
+    },
+    "TKKE": {
+        "Templates": [226989]
+    },
+    "TKKO": {
+        "Templates": [226987]
+    },
+    "TKKT": {
+        "Templates": [226991]
+    },
+    "TKKY": {
+        "Templates": [226990]
+    },
+    "TLFH": {
+        "Templates": [102589, 102590]
+    },
+    "TMDI": {
+        "Templates": [101539, 101540]
+    },
+    "TMST": {
+        "Templates": [269312]
+    },
+    "TOCG": {
+        "Templates": [103384, 103385]
+    },
+    "TOOT": {
+        "Templates": [281451]
+    },
+    "TPVP": {
+        "Templates": [101203, 101204]
+    },
+    "TQPL": {
+        "Templates": [101372, 101373]
+    },
+    "TRBF": {
+        "Templates": [204730]
+    },
+    "TSTQ": {
+        "Templates": [104041, 104042]
+    },
+    "TTTA": {
+        "Templates": [262287]
+    },
+    "TTTU": {
+        "Templates": [287993]
+    },
+    "TYKO": {
+        "Templates": [226993]
+    },
+    "TYKT": {
+        "Templates": [226995]
+    },
+    "TZBZ": {
+        "Templates": [104550, 104551]
+    },
+    "UCKP": {
+        "Templates": [103564, 103565]
+    },
+    "UCWK": {
+        "Templates": [104368, 104369]
+    },
+    "UDPE": {
+        "Templates": [206886]
+    },
+    "UGLY": {
+        "Templates": [104157, 104158]
+    },
+    "UHJG": {
+        "Templates": [102342, 102343]
+    },
+    "UHXC": {
+        "Templates": [103887, 103888]
+    },
+    "UIIE": {
+        "Templates": [103301, 103302]
+    },
+    "UINN": {
+        "Templates": [288082]
+    },
+    "UITO": {
+        "Templates": [253392]
+    },
+    "UJJX": {
+        "Templates": [102657, 102582]
+    },
+    "UKDE": {
+        "Templates": [247444]
+    },
+    "UKTQ": {
+        "Templates": [102687, 102688]
+    },
+    "UMGQ": {
+        "Templates": [104538, 104539]
+    },
+    "UMHX": {
+        "Templates": [102902, 102903]
+    },
+    "UNRO": {
+        "Templates": [165274]
+    },
+    "UNRT": {
+        "Templates": [123057, 123058]
+    },
+    "UNWE": {
+        "Templates": [285752]
+    },
+    "UPPL": {
+        "Templates": [223761]
+    },
+    "UQAU": {
+        "Templates": [103221, 103222]
+    },
+    "URHV": {
+        "Templates": [101575, 101576]
+    },
+    "URLE": {
+        "Templates": [259758]
+    },
+    "URNO": {
+        "Templates": [265350]
+    },
+    "URSE": {
+        "Templates": [100341]
+    },
+    "URUO": {
+        "Templates": [104364, 104365]
+    },
+    "URVT": {
+        "Templates": [101195, 101196]
+    },
+    "UVMI": {
+        "Templates": [103336, 103337]
+    },
+    "UYAJ": {
+        "Templates": [102627, 102628]
+    },
+    "UZUU": {
+        "Templates": [102615, 102616]
+    },
+    "VACL": {
+        "Templates": [273381, 204397]
+    },
+    "VAND": {
+        "Templates": [248772]
+    },
+    "VANO": {
+        "Templates": [248175]
+    },
+    "VDLE": {
+        "Templates": [258338]
+    },
+    "VDNY": {
+        "Templates": [101559, 101560]
+    },
+    "VEEL": {
+        "Templates": [102929, 102930]
+    },
+    "VELC": {
+        "Templates": [258268]
+    },
+    "VFEG": {
+        "Templates": [274727]
+    },
+    "VFXN": {
+        "Templates": [102904, 102734]
+    },
+    "VGEW": {
+        "Templates": [101380, 101381]
+    },
+    "VGOB": {
+        "Templates": [103769, 103770]
+    },
+    "VJIR": {
+        "Templates": [103795, 103796]
+    },
+    "VKSD": {
+        "Templates": [102667, 102668]
+    },
+    "VKXI": {
+        "Templates": [104416, 104417]
+    },
+    "VLLR": {
+        "Templates": [102577, 102578]
+    },
+    "VNLB": {
+        "Templates": [103863, 103864]
+    },
+    "VNTC": {
+        "Templates": [101437, 101438]
+    },
+    "VOKC": {
+        "Templates": [103906, 103907]
+    },
+    "VOSI": {
+        "Templates": [103885, 103886]
+    },
+    "VPLQ": {
+        "Templates": [102579, 102580]
+    },
+    "VQNJ": {
+        "Templates": [102510, 102511]
+    },
+    "VSTR": {
+        "Templates": [165281]
+    },
+    "VTVK": {
+        "Templates": [104552, 104553]
+    },
+    "VUAK": {
+        "Templates": [101131, 101132]
+    },
+    "VUDO": {
+        "Templates": [101191, 101192]
+    },
+    "VVMT": {
+        "Templates": [101163, 101164]
+    },
+    "VVNE": {
+        "Templates": [102675, 102676]
+    },
+    "VWGV": {
+        "Templates": [103637, 103638]
+    },
+    "VXDN": {
+        "Templates": [102894, 102895]
+    },
+    "VXFT": {
+        "Templates": [103090, 103091]
+    },
+    "VXLA": {
+        "Templates": [103883, 103884]
+    },
+    "VXLZ": {
+        "Templates": [102372, 102373]
+    },
+    "VXXA": {
+        "Templates": [103086, 103087]
+    },
+    "VYLN": {
+        "Templates": [103293, 103294]
+    },
+    "WBJT": {
+        "Templates": [103392, 103393]
+    },
+    "WCLS": {
+        "Templates": [102950, 102951]
+    },
+    "WELO": {
+        "Templates": [100356]
+    },
+    "WEPG": {
+        "Templates": [258759]
+    },
+    "WEST": {
+        "Templates": [103065, 103066]
+    },
+    "WHDT": {
+        "Templates": [102931, 102932]
+    },
+    "WIWI": {
+        "Templates": [130613]
+    },
+    "WIXM": {
+        "Templates": [102315, 102316]
+    },
+    "WIXY": {
+        "Templates": [102737, 102738]
+    },
+    "WJDK": {
+        "Templates": [242660]
+    },
+    "WJTL": {
+        "Templates": [103739, 103740]
+    },
+    "WLPX": {
+        "Templates": [102905, 102906]
+    },
+    "WLRJ": {
+        "Templates": [102689, 102690]
+    },
+    "WMLZ": {
+        "Templates": [104518, 104519]
+    },
+    "WMON": {
+        "Templates": [104075, 104076]
+    },
+    "WMQF": {
+        "Templates": [101545, 101546]
+    },
+    "WNHR": {
+        "Templates": [104105, 104106]
+    },
+    "WNLD": {
+        "Templates": [102966, 102967]
+    },
+    "WOAU": {
+        "Templates": [103641, 103642]
+    },
+    "WRMP": {
+        "Templates": [104337, 104338]
+    },
+    "WRUY": {
+        "Templates": [101587, 101588]
+    },
+    "WSSS": {
+        "Templates": [102621, 102622]
+    },
+    "WTEQ": {
+        "Templates": [101367, 101368]
+    },
+    "WWLT": {
+        "Templates": [103223, 103224]
+    },
+    "WXFC": {
+        "Templates": [102778, 102779]
+    },
+    "WZFE": {
+        "Templates": [273257]
+    },
+    "WZTG": {
+        "Templates": [102502, 102503]
+    },
+    "XAAR": {
+        "Templates": [275715]
+    },
+    "XAAT": {
+        "Templates": [275716]
+    },
+    "XAPR": {
+        "Templates": [265349]
+    },
+    "XAQW": {
+        "Templates": [103691, 103692]
+    },
+    "XARI": {
+        "Templates": [265357]
+    },
+    "XASC": {
+        "Templates": [265356]
+    },
+    "XBRP": {
+        "Templates": [103069, 103070]
+    },
+    "XBRX": {
+        "Templates": [102390, 102391]
+    },
+    "XCFE": {
+        "Templates": [103729, 103730]
+    },
+    "XDGS": {
+        "Templates": [102645, 102646]
+    },
+    "XDQT": {
+        "Templates": [103865, 103866]
+    },
+    "XFMG": {
+        "Templates": [102954, 102955]
+    },
+    "XFPH": {
+        "Templates": [101235, 101236]
+    },
+    "XIBG": {
+        "Templates": [103918, 103919]
+    },
+    "XJJY": {
+        "Templates": [103213, 103214]
+    },
+    "XKOJ": {
+        "Templates": [103673, 103674]
+    },
+    "XMLM": {
+        "Templates": [101505, 101506]
+    },
+    "XNAR": {
+        "Templates": [275717]
+    },
+    "XNHY": {
+        "Templates": [104572, 104573]
+    },
+    "XNRE": {
+        "Templates": [103900, 103901]
+    },
+    "XNYH": {
+        "Templates": [104566, 104567]
+    },
+    "XPBV": {
+        "Templates": [103368, 103369]
+    },
+    "XRGK": {
+        "Templates": [104244, 104245]
+    },
+    "XSBI": {
+        "Templates": [104097, 104098]
+    },
+    "XTSN": {
+        "Templates": [101219, 101220]
+    },
+    "XTXW": {
+        "Templates": [102802, 102803]
+    },
+    "XUKI": {
+        "Templates": [103693, 103694]
+    },
+    "XXBE": {
+        "Templates": [130607]
+    },
+    "YAAF": {
+        "Templates": [104107, 104108]
+    },
+    "YADJ": {
+        "Templates": [104047, 104048]
+    },
+    "YBHY": {
+        "Templates": [103088, 103089]
+    },
+    "YCKU": {
+        "Templates": [102815, 102816]
+    },
+    "YHNO": {
+        "Templates": [101243, 101244]
+    },
+    "YIQJ": {
+        "Templates": [101581, 101582]
+    },
+    "YJKG": {
+        "Templates": [104454, 104455]
+    },
+    "YKMP": {
+        "Templates": [103358, 103359]
+    },
+    "YLOE": {
+        "Templates": [103767, 103768]
+    },
+    "YNZL": {
+        "Templates": [101569, 101570]
+    },
+    "YSBG": {
+        "Templates": [104173, 104174]
+    },
+    "YSFB": {
+        "Templates": [102516, 102517]
+    },
+    "YUFI": {
+        "Templates": [269381]
+    },
+    "YUNR": {
+        "Templates": [101595, 101596]
+    },
+    "YWBR": {
+        "Templates": [104135, 104136]
+    },
+    "ZAXN": {
+        "Templates": [103122, 103123]
+    },
+    "ZCBH": {
+        "Templates": [103627, 103628]
+    },
+    "ZCON": {
+        "Templates": [102898, 102899]
+    },
+    "ZCUF": {
+        "Templates": [102941, 102942]
+    },
+    "ZDRP": {
+        "Templates": [263312]
+    },
+    "ZEWI": {
+        "Templates": [102402, 102403]
+    },
+    "ZKZP": {
+        "Templates": [101181, 101182]
+    },
+    "ZQGX": {
+        "Templates": [104580, 104581]
+    },
+    "ZTHE": {
+        "Templates": [103388, 103389]
+    },
+    "ZWNS": {
+        "Templates": [103793, 103794]
+    },
+    "ZYEK": {
+        "Templates": [103340, 103341]
+    }
 }
