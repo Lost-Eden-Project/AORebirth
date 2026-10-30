@@ -13,6 +13,8 @@ namespace AORebirth.Interfaces.Persistence.Characters
     {
         CharacterStateData LoadCharacter(int characterId);
         IList<CharacterStatData> LoadStats(int characterId);
+        /// <summary>The organizations row for an org id (stats Clan), or null when none exists.</summary>
+        PersistedOrganizationData LoadOrganization(int organizationId);
         IList<PersistedItemData> LoadCarriedItems(int characterId);
         IList<PersistedItemData> LoadBankItems(int characterId);
         IList<PersistedItemData> LoadContainerItems(int containerInstanceId);

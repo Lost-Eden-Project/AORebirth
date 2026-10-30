@@ -665,9 +665,29 @@ namespace ChatEngine.CoreServer
             // character (TeamChatBridge); joining every existing team channel here put each new login into every
             // team's chat.
 
-            foreach (ChannelBase channel in this.ChannelsByType<OrganizationChannel>())
+            int characterId = (int)client.Character.CharacterId;
+            DBStats orgStat = StatDao.Instance.GetById(50000, characterId, 5);
+            int orgId = orgStat.StatValue;
+
+            if (orgId > 0)
             {
-                channel.AddClient(client);
+                var org = OrganizationDao.Instance.Get(orgId);
+                if (org != null)
+                {
+                    ChannelBase orgChannel;
+                    lock (this.Channels)
+                    {
+                        orgChannel = this.Channels.FirstOrDefault(
+                            x => x is OrganizationChannel && x.ChannelId == (uint)orgId);
+                        if (orgChannel == null)
+                        {
+                            orgChannel = new OrganizationChannel(orgId);
+                            this.Channels.Add(orgChannel);
+                        }
+                    }
+
+                    orgChannel.AddClient(client);
+                }
             }
         }
 

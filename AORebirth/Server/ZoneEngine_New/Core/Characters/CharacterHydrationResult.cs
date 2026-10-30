@@ -35,6 +35,9 @@ namespace ZoneEngine_New.Core.Characters
         /// <summary>Stored /pet rename names per pet type from characterpetnames.</summary>
         public IReadOnlyList<PetNameRecord> PetNames { get; init; } = [];
 
+        /// <summary>The organizations row for the character's Clan stat, or null when it has none.</summary>
+        public OrganizationRecord? Organization { get; init; }
+
         public bool IsSpawnReady => CharacterHydrationValidator.Validate(this).IsValid;
     }
 }

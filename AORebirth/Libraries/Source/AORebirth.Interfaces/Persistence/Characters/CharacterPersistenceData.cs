@@ -1,5 +1,6 @@
 namespace AORebirth.Interfaces.Persistence.Characters
 {
+    using System;
     using System.Collections.Generic;
 
     /// <summary>Existing characters-row gameplay projection. Other character columns are never overwritten.</summary>
@@ -121,7 +122,21 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public long ExpiresAtUtcTicks { get; set; }
     }
 
-    /// <summary>One /pet rename: the pet type (the slot a summon fills) and the name its pets of that type take.</summary>
+    /// <summary>One organizations row with its leader's character name (stats Clan = Id).</summary>
+    public sealed class PersistedOrganizationData
+    {
+        public int Id { get; set; }
+        public DateTime Creation { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int LeaderId { get; set; }
+        public string LeaderName { get; set; } = string.Empty;
+        public int GovernmentForm { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string Objective { get; set; } = string.Empty;
+        public string History { get; set; } = string.Empty;
+    }
+
+    /// <summary>One /pet rename: the pet type
     public sealed class PersistedPetNameData
     {
         public int PetType { get; set; }

@@ -4504,10 +4504,11 @@ namespace ZoneEngine_New.Core.Entities
                     pcInfo.FirstName = namedPlayer.FirstName ?? string.Empty;
                     pcInfo.LastName = namedPlayer.LastName ?? string.Empty;
                 }
-                // if (!string.IsNullOrEmpty(OrganizationName))
-                // {
-                //     pcInfo.OrgName = OrganizationName;
-                // }
+                if (this is Player orgPlayer && orgPlayer.Organization is { } organization)
+                {
+                    pcInfo.OrgId = organization.Id;
+                    pcInfo.OrgName = organization.Name;
+                }
 
                 scfu.CharacterInfo = pcInfo;
             }

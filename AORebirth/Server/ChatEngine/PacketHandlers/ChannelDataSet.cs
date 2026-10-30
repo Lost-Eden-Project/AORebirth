@@ -34,6 +34,7 @@ namespace ChatEngine.PacketHandlers
     #region Usings ...
 
     using System;
+    using AORebirth.Database.Dao;
     using ChatEngine.Channels;
     using ChatEngine.CoreClient;
 
@@ -111,6 +112,48 @@ namespace ChatEngine.PacketHandlers
 
                         break;
                     }
+                }
+            }
+            else if (this.channelId.Length == 5 && this.channelId[0] == (byte)ChannelType.Organization
+                && client.IsBot && client.Character.CharacterId != 0)
+            {
+                // Same bot join as the raid, for an existing org channel. The id is accepted little-endian
+                // (as the raid id is) or big-endian (as the client sends it in group messages).
+                uint littleEndianId = BitConverter.ToUInt32(this.channelId, 1);
+                uint bigEndianId = (uint)System.Net.IPAddress.NetworkToHostOrder((int)littleEndianId);
+                ChannelBase orgChannel = null;
+                lock (client.ChatServer().Channels)
+                {
+                    foreach (ChannelBase channel in client.ChatServer().Channels)
+                    {
+                        if (channel.channelType == ChannelType.Organization
+                            && (channel.ChannelId == littleEndianId || channel.ChannelId == bigEndianId))
+                        {
+                            orgChannel = channel;
+                            break;
+                        }
+                    }
+
+                    // The bot may connect before any member: create the channel like AddClientToChannels does,
+                    // but only for an organization that exists.
+                    if (orgChannel == null)
+                    {
+                        foreach (uint candidate in new[] { littleEndianId, bigEndianId })
+                        {
+                            if (candidate != 0 && candidate < int.MaxValue
+                                && OrganizationDao.Instance.Get((int)candidate) != null)
+                            {
+                                orgChannel = new OrganizationChannel((int)candidate);
+                                client.ChatServer().Channels.Add(orgChannel);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (orgChannel != null)
+                {
+                    orgChannel.AddClient(client);
                 }
             }
             reader.Finish();

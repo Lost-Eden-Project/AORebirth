@@ -22,6 +22,7 @@ namespace ZoneEngine_New.Core.Characters
         private readonly IResearchRepository? _research;
         private readonly INanoLineLockRepository? _nanoLineLocks;
         private readonly IPetNameRepository? _petNames;
+        private readonly IOrganizationRepository? _organizations;
         private readonly IZoneLogger _logger;
 
         public CharacterHydrationService(
@@ -36,7 +37,8 @@ namespace ZoneEngine_New.Core.Characters
             IPerkLockRepository? perkLocks = null,
             IResearchRepository? research = null,
             INanoLineLockRepository? nanoLineLocks = null,
-            IPetNameRepository? petNames = null)
+            IPetNameRepository? petNames = null,
+            IOrganizationRepository? organizations = null)
         {
             ArgumentNullException.ThrowIfNull(skillLocks);
             ArgumentNullException.ThrowIfNull(characters);
@@ -57,6 +59,7 @@ namespace ZoneEngine_New.Core.Characters
             _research = research;
             _nanoLineLocks = nanoLineLocks;
             _petNames = petNames;
+            _organizations = organizations;
             _logger = logger;
         }
 
@@ -69,10 +72,16 @@ namespace ZoneEngine_New.Core.Characters
             if (character == null || character.Playfield <= 0)
                 return null;
 
+            var stats = RestoreLegacyDefaults(_stats.GetForCharacter(characterId));
+            int orgId = 0;
+            foreach (StatRecord stat in stats)
+                if (stat.StatId == 5) orgId = stat.StatValue;
+
             var result = new CharacterHydrationResult
             {
                 Character = character,
-                Stats = RestoreLegacyDefaults(_stats.GetForCharacter(characterId)),
+                Stats = stats,
+                Organization = orgId > 0 ? _organizations?.GetById(orgId) : null,
                 Items = _inventory.GetCarriedItems(characterId),
                 UploadedNanoIds = _uploadedNanos.GetForCharacter(characterId),
                 ActiveNanos = _activeNanos.GetForCharacter(characterId),

@@ -40,6 +40,8 @@ namespace ChatEngine.CoreClient
 
     using SmokeLounge.AOtomation.Messaging.GameData;
 
+    using Utility;
+
     #endregion
 
     /// <summary>

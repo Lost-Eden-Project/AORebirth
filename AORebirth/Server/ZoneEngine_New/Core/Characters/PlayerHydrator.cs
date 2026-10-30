@@ -78,6 +78,7 @@ namespace ZoneEngine_New.Core.Characters
             foreach (SkillLockRecord record in hydration.NanoLineLocks)
                 player.NanoLineLocks.Restore(record.StatId, new DateTime(record.ExpiresAtUtcTicks, DateTimeKind.Utc), nowUtc);
             player.PetNames.Restore(hydration.PetNames);
+            player.Organization = hydration.Organization;
         }
 
         /// <summary>

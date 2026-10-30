@@ -161,6 +161,24 @@ namespace AORebirth.Database.Domain.Characters
                 "@Type", (int)IdentityType.CanbeAffected, "@Instance", characterId);
         }
 
+        public PersistedOrganizationData LoadOrganization(int organizationId)
+        {
+            if (organizationId <= 0) return null;
+            var rows = Query("SELECT o.Id,o.Creation,o.Name,o.LeaderId,COALESCE(c.Name,''),o.GovernmentForm,"
+                + "o.Description,o.Objective,o.History "
+                + "FROM organizations o LEFT JOIN characters c ON c.Id=o.LeaderId WHERE o.Id=@Id LIMIT 1",
+                r => new PersistedOrganizationData
+                {
+                    Id = r.GetInt32(0), Creation = r.IsDBNull(1) ? DateTime.MinValue : r.GetDateTime(1),
+                    Name = r.IsDBNull(2) ? string.Empty : r.GetString(2), LeaderId = r.GetInt32(3),
+                    LeaderName = r.IsDBNull(4) ? string.Empty : r.GetString(4), GovernmentForm = r.GetInt32(5),
+                    Description = r.IsDBNull(6) ? string.Empty : r.GetString(6),
+                    Objective = r.IsDBNull(7) ? string.Empty : r.GetString(7),
+                    History = r.IsDBNull(8) ? string.Empty : r.GetString(8)
+                }, "@Id", organizationId);
+            return rows.Count == 0 ? null : rows[0];
+        }
+
         public IDictionary<int, string> LoadItemNames()
         {
             var result = new Dictionary<int, string>();

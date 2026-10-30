@@ -1137,6 +1137,31 @@ namespace ZoneEngine_New.Core.Playfield
                         }
                     ]
                 });
+
+            // Capture 20260623-042326: Clan then ClanLevel as separate Stat messages (Unknown=0).
+            int clanId = player.Stats.GetOrZero(CharacterStat.Clan, StatDetail.Base);
+            if (clanId > 0)
+            {
+                session.Send(new StatMessage
+                {
+                    Identity = player.Identity,
+                    Unknown = 0,
+                    Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.Clan, Value2 = (uint)clanId }]
+                });
+                session.Send(new StatMessage
+                {
+                    Identity = player.Identity,
+                    Unknown = 0,
+                    Stats =
+                    [
+                        new GameTuple<CharacterStat, uint>
+                        {
+                            Value1 = CharacterStat.ClanLevel,
+                            Value2 = (uint)player.Stats.GetOrZero(CharacterStat.ClanLevel, StatDetail.Base)
+                        }
+                    ]
+                });
+            }
         }
 
         private void SendRetailWorldEntryCompletion(IZoneSession session, Player player)
