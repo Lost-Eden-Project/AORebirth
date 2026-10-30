@@ -26,7 +26,19 @@ namespace ZoneEngine_New.Core.Modules
             NpcSpawned = new HandlerList<NpcSpawnEvent>("NpcSpawned", logger);
             NpcDespawned = new HandlerList<NpcSpawnEvent>("NpcDespawned", logger);
             KnubotChatOpened = new HandlerList<KnubotChatOpenedEvent>("KnubotChatOpened", logger);
+            PlayerActionAttempted = new HandlerList<PlayerActionEvent>("PlayerActionAttempted", logger);
+            PlayerActionResolved = new HandlerList<PlayerActionEvent>("PlayerActionResolved", logger);
+            CooldownStarted = new HandlerList<CooldownEvent>("CooldownStarted", logger);
+            CooldownEnded = new HandlerList<CooldownEvent>("CooldownEnded", logger);
+            PlayerMovementCorrected = new HandlerList<PlayerMovementCorrectedEvent>("PlayerMovementCorrected", logger);
+            ItemMoved = new HandlerList<ItemMovedEvent>("ItemMoved", logger);
+            PlayerSpoke = new HandlerList<PlayerSpokeEvent>("PlayerSpoke", logger);
+            CombatResolved = new HandlerList<CombatResolvedEvent>("CombatResolved", logger);
+            Visibility = new ModuleVisibilityObservers(logger);
         }
+
+        /// <summary>The visibility observers (module API 1.6), reached through the playfield service like the events.</summary>
+        public ModuleVisibilityObservers Visibility { get; }
 
         public HandlerList<NpcKilledEvent> NpcKilled { get; }
 
@@ -46,6 +58,23 @@ namespace ZoneEngine_New.Core.Modules
 
         public HandlerList<KnubotChatOpenedEvent> KnubotChatOpened { get; }
 
+        // Module API 1.6
+        public HandlerList<PlayerActionEvent> PlayerActionAttempted { get; }
+
+        public HandlerList<PlayerActionEvent> PlayerActionResolved { get; }
+
+        public HandlerList<CooldownEvent> CooldownStarted { get; }
+
+        public HandlerList<CooldownEvent> CooldownEnded { get; }
+
+        public HandlerList<PlayerMovementCorrectedEvent> PlayerMovementCorrected { get; }
+
+        public HandlerList<ItemMovedEvent> ItemMoved { get; }
+
+        public HandlerList<PlayerSpokeEvent> PlayerSpoke { get; }
+
+        public HandlerList<CombatResolvedEvent> CombatResolved { get; }
+
         internal void RemoveModule(string moduleId)
         {
             NpcKilled.RemoveModule(moduleId);
@@ -57,6 +86,15 @@ namespace ZoneEngine_New.Core.Modules
             NpcSpawned.RemoveModule(moduleId);
             NpcDespawned.RemoveModule(moduleId);
             KnubotChatOpened.RemoveModule(moduleId);
+            PlayerActionAttempted.RemoveModule(moduleId);
+            PlayerActionResolved.RemoveModule(moduleId);
+            CooldownStarted.RemoveModule(moduleId);
+            CooldownEnded.RemoveModule(moduleId);
+            PlayerMovementCorrected.RemoveModule(moduleId);
+            ItemMoved.RemoveModule(moduleId);
+            PlayerSpoke.RemoveModule(moduleId);
+            CombatResolved.RemoveModule(moduleId);
+            Visibility.RemoveModule(moduleId);
         }
 
         /// <summary>

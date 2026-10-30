@@ -218,7 +218,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
             // Players activate visibility after self spawn packets (see ActivatePlayerVisibility).
             if (dynel is not Player)
-                _visibility.Reconcile(dynel);
+                _visibility.Reconcile(dynel, AORebirth.Modules.Events.VisibilityReason.Spawned);
         }
 
         public void ActivatePlayerVisibility(Player player)
@@ -315,7 +315,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                     Dynel dynel = _respawnBuffer[i];
                     _pendingRespawns.Remove(dynel);
                     if (_tracked.Contains(dynel))
-                        _visibility.Reconcile(dynel);
+                        _visibility.Reconcile(dynel, AORebirth.Modules.Events.VisibilityReason.Spawned);
                 }
             }
 

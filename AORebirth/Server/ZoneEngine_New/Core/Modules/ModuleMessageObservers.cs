@@ -32,25 +32,34 @@ namespace ZoneEngine_New.Core.Modules
         readonly object _sync = new();
         Dictionary<int, Entry[]> _inbound = Empty;
         Dictionary<int, Entry[]> _outbound = Empty;
+        // Observers of every type (module API 1.6 AllTypes), each way.
+        Entry[] _inboundAll = Array.Empty<Entry>();
+        Entry[] _outboundAll = Array.Empty<Entry>();
 
         internal ModuleMessageObservers(IZoneLogger logger)
         {
             _logger = logger;
         }
 
-        public bool HasInbound => Volatile.Read(ref _inbound).Count != 0;
+        public bool HasInbound => Volatile.Read(ref _inbound).Count != 0 || Volatile.Read(ref _inboundAll).Length != 0;
 
-        public bool HasOutbound => Volatile.Read(ref _outbound).Count != 0;
+        public bool HasOutbound => Volatile.Read(ref _outbound).Count != 0 || Volatile.Read(ref _outboundAll).Length != 0;
 
         public bool Wants(MessageDirection direction, int messageType)
-            => Table(direction).ContainsKey(messageType);
+            => All(direction).Length != 0 || Table(direction).ContainsKey(messageType);
 
-        /// <summary>Calls every observer of the sample's direction and type, in registration order.</summary>
+        /// <summary>Calls every observer of the sample's direction and type, then every all-types observer, in registration order.</summary>
         public void Publish(in MessageSample sample)
         {
-            if (!Table(sample.Direction).TryGetValue(sample.MessageType, out Entry[]? entries))
-                return;
+            if (Table(sample.Direction).TryGetValue(sample.MessageType, out Entry[]? entries))
+                PublishTo(entries, in sample);
+            Entry[] all = All(sample.Direction);
+            if (all.Length != 0)
+                PublishTo(all, in sample);
+        }
 
+        void PublishTo(Entry[] entries, in MessageSample sample)
+        {
             for (int i = 0; i < entries.Length; i++)
             {
                 Entry entry = entries[i];
@@ -85,18 +94,36 @@ namespace ZoneEngine_New.Core.Modules
             ArgumentNullException.ThrowIfNull(observer);
             ArgumentNullException.ThrowIfNull(subscription);
             int[] types = (subscription.MessageTypes ?? Array.Empty<int>()).Distinct().ToArray();
-            if (types.Length == 0)
-                throw new ArgumentException("A message subscription names at least one message type.");
+            if (types.Length == 0 && !subscription.AllTypes)
+                throw new ArgumentException("A message subscription names at least one message type, or AllTypes.");
             if ((subscription.Directions & MessageDirection.Both) == MessageDirection.None)
                 throw new ArgumentException("A message subscription names a direction.");
 
             var entry = new Entry(moduleId, observer);
             lock (_sync)
             {
-                if (subscription.Directions.HasFlag(MessageDirection.Inbound))
-                    Volatile.Write(ref _inbound, With(_inbound, types, entry));
-                if (subscription.Directions.HasFlag(MessageDirection.Outbound))
-                    Volatile.Write(ref _outbound, With(_outbound, types, entry));
+                if (subscription.AllTypes)
+                {
+                    if (subscription.Directions.HasFlag(MessageDirection.Inbound))
+                        Volatile.Write(ref _inboundAll, [.. _inboundAll, entry]);
+                    if (subscription.Directions.HasFlag(MessageDirection.Outbound))
+                        Volatile.Write(ref _outboundAll, [.. _outboundAll, entry]);
+                }
+                else
+                {
+                    if (subscription.Directions.HasFlag(MessageDirection.Inbound))
+                        Volatile.Write(ref _inbound, With(_inbound, types, entry));
+                    if (subscription.Directions.HasFlag(MessageDirection.Outbound))
+                        Volatile.Write(ref _outbound, With(_outbound, types, entry));
+                }
+            }
+
+            if (subscription.AllTypes)
+            {
+                // Every message on every connection calls it: flagged so an operator sees what it costs.
+                _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                    "Module {0} message observer directions={1} types=ALL (called for every message)", moduleId, subscription.Directions));
+                return;
             }
 
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
@@ -110,8 +137,13 @@ namespace ZoneEngine_New.Core.Modules
             {
                 Volatile.Write(ref _inbound, Without(_inbound, entry => entry.ModuleId == moduleId));
                 Volatile.Write(ref _outbound, Without(_outbound, entry => entry.ModuleId == moduleId));
+                Volatile.Write(ref _inboundAll, _inboundAll.Where(entry => entry.ModuleId != moduleId).ToArray());
+                Volatile.Write(ref _outboundAll, _outboundAll.Where(entry => entry.ModuleId != moduleId).ToArray());
             }
         }
+
+        Entry[] All(MessageDirection direction)
+            => direction == MessageDirection.Outbound ? Volatile.Read(ref _outboundAll) : Volatile.Read(ref _inboundAll);
 
         Dictionary<int, Entry[]> Table(MessageDirection direction)
             => direction == MessageDirection.Outbound ? Volatile.Read(ref _outbound) : Volatile.Read(ref _inbound);
@@ -125,6 +157,8 @@ namespace ZoneEngine_New.Core.Modules
                 entry.Removed = true;
                 Volatile.Write(ref _inbound, Without(_inbound, candidate => ReferenceEquals(candidate, entry)));
                 Volatile.Write(ref _outbound, Without(_outbound, candidate => ReferenceEquals(candidate, entry)));
+                Volatile.Write(ref _inboundAll, _inboundAll.Where(candidate => !ReferenceEquals(candidate, entry)).ToArray());
+                Volatile.Write(ref _outboundAll, _outboundAll.Where(candidate => !ReferenceEquals(candidate, entry)).ToArray());
                 return true;
             }
         }

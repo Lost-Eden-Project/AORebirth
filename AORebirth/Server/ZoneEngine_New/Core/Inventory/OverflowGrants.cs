@@ -4,11 +4,14 @@ namespace ZoneEngine_New.Core.Inventory
     using System.Collections.Generic;
     using System.Linq;
 
+    using AORebirth.Modules.Events;
+
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Modules;
 
     /// <summary>
     /// The overflow window's side of giving a player an item: the client message that puts an item there, keeping the
@@ -113,8 +116,9 @@ namespace ZoneEngine_New.Core.Inventory
             ArgumentNullException.ThrowIfNull(player);
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
             List<(Item Item, int Slot)> removed = player.Inventory.TrimOverflow(Capacity(player), graveyard);
-            foreach ((Item _, int slot) in removed)
+            foreach ((Item gone, int slot) in removed)
             {
+                ModuleHooks.ItemMoved(player, gone, ModuleHooks.Place(ItemPlaceKind.Inventory), ModuleHooks.Place(ItemPlaceKind.Destroyed));
                 player.Session?.Send(new CharacterActionMessage
                 {
                     Identity = player.Identity,
@@ -144,7 +148,9 @@ namespace ZoneEngine_New.Core.Inventory
             if (!player.Inventory.IsHydrated || player.Inventory.Overflow.Content.Count == 0)
                 return;
 
-            player.Inventory.TrimOverflow(Capacity(player), new Identity { Type = IdentityType.None, Instance = player.Identity.Instance });
+            foreach ((Item gone, int _) in player.Inventory.TrimOverflow(Capacity(player),
+                         new Identity { Type = IdentityType.None, Instance = player.Identity.Instance }))
+                ModuleHooks.ItemMoved(player, gone, ModuleHooks.Place(ItemPlaceKind.Inventory), ModuleHooks.Place(ItemPlaceKind.Destroyed));
             player.Inventory.PackOverflow();
             // The whole window in one InventoryUpdate, as retail shows overflow.
             SendWindow(player);

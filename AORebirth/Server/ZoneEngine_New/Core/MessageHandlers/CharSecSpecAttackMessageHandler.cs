@@ -51,7 +51,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
             if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Target, out Dynel? dynel)
                 || dynel is not Character target || target.IsDead)
+            {
+                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.SpecialAttack, message.Stat,
+                    AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.Target,
+                    target: message.Target, detail: "no living target");
                 return;
+            }
 
             // Queued, then tried at once: standing in reach it fires on this tick, as before.
             if (SpecialAttacks.Queue(player, target, (CharacterStat)message.Stat))

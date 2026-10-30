@@ -113,6 +113,27 @@ public sealed class ModuleMessageApiTests
     }
 
     [TestMethod]
+    public void Api16GuaranteedFieldsRead()
+    {
+        var special = Reader(new CharSecSpecAttackMessage { Identity = Self, Target = Other, Stat = 142 });
+        AssertIdentity(special, "Identity", Self);
+        AssertIdentity(special, "Target", Other);
+        AssertInt(special, "Stat", 142);
+
+        var use = Reader(new GenericCmdMessage { Identity = Self, Temp1 = 7 });
+        AssertInt(use, "Temp1", 7);
+
+        var feedback = Reader(new FeedbackMessage { Identity = Self, MessageId = 0x2A });
+        AssertIdentity(feedback, "Identity", Self);
+        AssertInt(feedback, "MessageId", 0x2A);
+
+        var chat = Reader(new ChatTextMessage { Identity = Self, Text = "hello" });
+        AssertIdentity(chat, "Identity", Self);
+        Assert.IsTrue(chat.TryGetString("Text", out string text), "Text");
+        Assert.AreEqual("hello", text, "Text");
+    }
+
+    [TestMethod]
     public void FollowTargetReadsThroughTheRuntimeInfoType()
     {
         var follow = Reader(new FollowTargetMessage

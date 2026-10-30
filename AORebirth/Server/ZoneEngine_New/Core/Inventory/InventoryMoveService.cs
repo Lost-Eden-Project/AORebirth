@@ -1043,6 +1043,12 @@ namespace ZoneEngine_New.Core.Inventory
                 lootSource?.NotifyLootChanged();
                 if (lootSource is Corpse corpse)
                     player.Playfield?.GetService<Chat.VicinityChatRelay>()?.AnnounceLoot(player, corpse, item);
+                if (Modules.ModuleHooks.WantsItemMoves(player.Playfield))
+                {
+                    ItemPlaces.Moved(player, item, ItemPlaces.Of(sourcePage, lootSource), ItemPlaces.Of(destPage));
+                    if (existingDest != null)
+                        ItemPlaces.Moved(player, existingDest, ItemPlaces.Of(destPage), ItemPlaces.Of(sourcePage, lootSource));
+                }
             }
             return committed;
         }

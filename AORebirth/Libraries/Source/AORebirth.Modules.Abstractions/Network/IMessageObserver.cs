@@ -26,6 +26,13 @@ namespace AORebirth.Modules.Network
         public IReadOnlyList<int> MessageTypes { get; init; } = Array.Empty<int>();
 
         public MessageDirection Directions { get; init; } = MessageDirection.Inbound;
+
+        /// <summary>
+        /// Observe every message type; <see cref="MessageTypes"/> is then ignored (module API 1.6). It costs a call per
+        /// message, so the startup log names every module that asks for it. For tools that need everything (a packet
+        /// logger, protocol research).
+        /// </summary>
+        public bool AllTypes { get; init; }
     }
 
     /// <summary>
@@ -107,5 +114,13 @@ namespace AORebirth.Modules.Network
         public const int GenericCmd = 0x52526858;
         public const int LookAt = 0x2252445f;
         public const int StopFight = 0x4a41203e;
+
+        // Module API 1.6
+        public const int CharSecSpecAttack = 0x51492120;
+        public const int Feedback = 0x50544d19;
+        public const int ChatText = 0x5f4b442a;
+        public const int SpecialAttackInfo = 0x754f1115;
+        public const int MissedAttackInfo = 0x5c654b28;
+        public const int TemplateAction = 0x35505644;
     }
 }

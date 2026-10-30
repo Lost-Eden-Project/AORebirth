@@ -3,12 +3,14 @@ namespace ZoneEngine_New.Core.Inventory
     using System;
 
     using AORebirth.Enums;
+    using AORebirth.Modules.Events;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Modules;
     using ZoneEngine_New.Core.Playfield;
 
     using AoVector3 = AORebirth.Core.Vector.Vector3;
@@ -72,7 +74,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (!TryPlace(player, playfield, requested, out AoVector3 rest, out AoVector3 normal))
                 return Refuse(player, logger, "drop ray hit nothing");
 
-            if (!inventoryActions.TryDelete(player, slot, item.InstanceId))
+            if (!inventoryActions.TryDelete(player, slot, item.InstanceId, ItemPlaceKind.World))
                 return Refuse(player, logger, "inventory row could not be retired");
 
             player.Session?.Send(new CharacterActionMessage
@@ -129,6 +131,9 @@ namespace ZoneEngine_New.Core.Inventory
                 });
             if (!committed)
                 return false;
+
+            ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.World, worldItem.Identity),
+                ModuleHooks.Place(ItemPlaceKind.Inventory));
 
             // AddTemplate lands in the client's first free slot, which is the one reserved here.
             player.Session?.Send(new AddTemplateMessage

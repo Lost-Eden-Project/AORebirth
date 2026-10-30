@@ -17,6 +17,14 @@ namespace ZoneEngine_New.Core.Inventory
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
 
+    using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
+    using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
+    using CooldownKind = AORebirth.Modules.Events.CooldownKind;
+    using CooldownKey = AORebirth.Modules.Events.CooldownKey;
+    using PlayerActionKind = AORebirth.Modules.Events.PlayerActionKind;
+    using PlayerActionOutcome = AORebirth.Modules.Events.PlayerActionOutcome;
+    using ActionRefusal = AORebirth.Modules.Events.ActionRefusal;
+
     public enum ItemUseStart
     {
         Rejected,
@@ -104,13 +112,24 @@ namespace ZoneEngine_New.Core.Inventory
             if (!ReferenceEquals(player.Playfield, _playfield)
                 || IsQueueFull(player.Identity.Instance)
                 || _moves.HasPending(player.Identity.Instance))
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, BusyRefusal(player), "queue full or busy");
 
             if (item.IsBackpackUse)
-                return item.Use(player, slot, _inventoryRepository, _items) ? ItemUseStart.Executed : ItemUseStart.Rejected;
+            {
+                ModuleHooks.ActionAttempted(player, PlayerActionKind.ItemUse, item.LowId, PlayerActionOutcome.Started, item: item);
+                bool used;
+                using (ModuleCooldowns.During(PlayerActionKind.ItemUse, item.LowId))
+                    used = item.Use(player, slot, _inventoryRepository, _items);
+                ModuleHooks.ActionResolved(player, PlayerActionKind.ItemUse, item.LowId,
+                    used ? PlayerActionOutcome.Executed : PlayerActionOutcome.Failed,
+                    used ? ActionRefusal.None : ActionRefusal.Other, item);
+                return used ? ItemUseStart.Executed : ItemUseStart.Rejected;
+            }
 
-            if (RejectMissingSpawnHash(player, item.Definition) || RejectHeldUniqueSpawn(player, item.Definition))
-                return ItemUseStart.Rejected;
+            if (RejectMissingSpawnHash(player, item.Definition))
+                return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, ActionRefusal.Other, "spawn hash not defined");
+            if (RejectHeldUniqueSpawn(player, item.Definition))
+                return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, ActionRefusal.Requirements, "unique item held");
 
             player.SyncCharState();
             CanFlags can = UseTargetRules.CanOf(item.Definition);
@@ -119,7 +138,7 @@ namespace ZoneEngine_New.Core.Inventory
                 && !UseTargetRules.TryResolve(player, can, out useTarget, out UseTargetRules.Failure targetFailure))
             {
                 UseTargetRules.SendFailure(player, targetFailure, player.TryResolveFightingTarget());
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.ItemUseOn, item.LowId, item, TargetRefusal(targetFailure), "target rules");
             }
 
             if (!ReferenceEquals(useTarget, player))
@@ -127,32 +146,38 @@ namespace ZoneEngine_New.Core.Inventory
                 useTarget.SyncCharState();
             }
 
+            // An item used on someone else is ItemUseOn for modules.
+            PlayerActionKind kind = ReferenceEquals(useTarget, player) ? PlayerActionKind.ItemUse : PlayerActionKind.ItemUseOn;
+
             // A skill the use would lock that is still locked refuses the use outright, before its use time starts: no
             // timer, no success reply, only the "skill is locked" line.
             if (item.Definition.TryFindActiveSkillLock(EventType.OnUse, useTarget, player, DateTime.UtcNow,
                     out int lockedStat, out TimeSpan lockedFor))
             {
                 player.SendSkillLocked(lockedStat, lockedFor);
-                return ItemUseStart.Rejected;
+                return Refused(player, kind, item.LowId, item, ActionRefusal.Cooldown, "skill locked", useTarget.Identity,
+                    new CooldownKey(CooldownKind.SkillLock, lockedStat), lockedFor);
             }
 
             if (!item.CanBeginUse(player, useTarget))
             {
-                if (item.UsesFightingTarget && player.TryResolveFightingTarget() == null)
+                bool noFightingTarget = item.UsesFightingTarget && player.TryResolveFightingTarget() == null;
+                if (noFightingTarget)
                     ClientFeedback.Send(player, ClientFeedback.RequiresFightingTarget);
                 else
                     RequirementFeedback.SendIfUnmet(player, item.Definition, ActionType.ToUse,
                         resolve: ItemTemplate.WithActionTarget(player.ResolvePerkRequirement, player, useTarget),
                         getTargetStat: stat => useTarget.Stats.Get(stat),
                         resolveTarget: ItemTemplate.WithActionTarget(useTarget.ResolveRequirement, player, useTarget));
-                return ItemUseStart.Rejected;
+                return Refused(player, kind, item.LowId, item,
+                    noFightingTarget ? ActionRefusal.Target : ActionRefusal.Requirements, "use requirements", useTarget.Identity);
             }
 
             if (UseTargetRules.AppliesToFriendly(can)
                 && UseTargetRules.CheckFriendlyReach(player, item.Definition, useTarget) is { } reachFailure)
             {
                 UseTargetRules.SendFailure(player, reachFailure, useTarget);
-                return ItemUseStart.Rejected;
+                return Refused(player, kind, item.LowId, item, TargetRefusal(reachFailure), "friendly reach", useTarget.Identity);
             }
 
             // A hostile use aimed at a player, or a friendly one on a PvP-enabled player, flags the user for PvP.
@@ -175,7 +200,10 @@ namespace ZoneEngine_New.Core.Inventory
                     },
                 () => item.ExecuteUse(player, slot, _inventoryRepository, _items, useTarget),
                 lockTarget: locked => item.Locked = locked,
-                ResolveDelayCentiseconds(item));
+                ResolveDelayCentiseconds(item))
+            {
+                Kind = kind, AbilityId = item.LowId, Item = item, Target = useTarget.Identity, Request = ModuleHooks.RequestNow
+            };
             ItemUseStart itemStart = Enqueue(pending);
             // Queuing an item use gives a sneaking user away.
             if (itemStart != ItemUseStart.Rejected)
@@ -192,13 +220,17 @@ namespace ZoneEngine_New.Core.Inventory
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(dynel);
 
+            // Modules see a world object's use as Other: no inventory item, the object as target.
+            int templateId = dynel.Template.Id;
             if (!ReferenceEquals(player.Playfield, _playfield)
                 || IsQueueFull(player.Identity.Instance)
                 || _moves.HasPending(player.Identity.Instance))
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.Other, templateId, null, BusyRefusal(player), "queue full or busy", dynel.Identity);
 
-            if (RejectMissingSpawnHash(player, dynel.Template) || RejectHeldUniqueSpawn(player, dynel.Template))
-                return ItemUseStart.Rejected;
+            if (RejectMissingSpawnHash(player, dynel.Template))
+                return Refused(player, PlayerActionKind.Other, templateId, null, ActionRefusal.Other, "spawn hash not defined", dynel.Identity);
+            if (RejectHeldUniqueSpawn(player, dynel.Template))
+                return Refused(player, PlayerActionKind.Other, templateId, null, ActionRefusal.Requirements, "unique item held", dynel.Identity);
 
             // As for an item: a skill the use would lock that is still locked refuses it before anything runs (a
             // Stationary Surgery Clinic has no use time, so the effect would otherwise play every click).
@@ -206,13 +238,14 @@ namespace ZoneEngine_New.Core.Inventory
                     out int lockedStat, out TimeSpan lockedFor))
             {
                 player.SendSkillLocked(lockedStat, lockedFor);
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.Other, templateId, null, ActionRefusal.Cooldown, "skill locked", dynel.Identity,
+                    new CooldownKey(CooldownKind.SkillLock, lockedStat), lockedFor);
             }
 
             if (!dynel.CanBeginUse(player))
             {
                 RequirementFeedback.SendIfUnmet(player, dynel.Template, ActionType.ToUse, resolve: dynel.UseResolver(player));
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.Other, templateId, null, ActionRefusal.Requirements, "use requirements", dynel.Identity);
             }
 
             var pending = new PendingItemUse(
@@ -221,7 +254,10 @@ namespace ZoneEngine_New.Core.Inventory
                 () => RevalidateDynel(player, dynel),
                 () => dynel.ExecuteUse(player),
                 lockTarget: null,
-                ResolveDelayCentiseconds(dynel));
+                ResolveDelayCentiseconds(dynel))
+            {
+                Kind = PlayerActionKind.Other, AbilityId = templateId, Target = dynel.Identity, Request = ModuleHooks.RequestNow
+            };
             return Enqueue(pending);
         }
 
@@ -237,26 +273,32 @@ namespace ZoneEngine_New.Core.Inventory
         {
             ArgumentNullException.ThrowIfNull(player);
 
+            // Module action events use the action's hash as the perk's ability id: it is what the request names.
             if (!ReferenceEquals(player.Playfield, _playfield) || _moves.HasPending(player.Identity.Instance))
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.Perk, hash, null,
+                    _moves.HasPending(player.Identity.Instance) ? ActionRefusal.Busy : ActionRefusal.State, "busy");
 
             if (IsQueued(player.Identity.Instance, hash))
             {
                 ClientFeedback.Send(player, ClientFeedback.AlreadyRunningAction);
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.Perk, hash, null, ActionRefusal.Busy, "already queued");
             }
 
             if (IsQueueFull(player.Identity.Instance))
-                return ItemUseStart.Rejected;
+                return Refused(player, PlayerActionKind.Perk, hash, null, ActionRefusal.QueueFull, "queue full");
 
+            // TryPreparePerkAction raises the module refusal itself: it knows why.
             if (!player.TryPreparePerkAction(hash, out Player.PerkActionUse? use) || use == null)
                 return ItemUseStart.Rejected;
 
             // A perk action gives a sneaking user away when it goes off: a miss now, a landing one once its wind-up ends.
             if (!player.PerkActionLands(use))
             {
+                ModuleHooks.ActionAttempted(player, PlayerActionKind.Perk, hash, PlayerActionOutcome.Started, target: use.Target.Identity);
                 player.BreakSneak();
-                player.FailPerkAction(use, _inventoryRepository);
+                using (ModuleCooldowns.During(PlayerActionKind.Perk, hash))
+                    player.FailPerkAction(use, _inventoryRepository);
+                ModuleHooks.ActionResolved(player, PlayerActionKind.Perk, hash, PlayerActionOutcome.Missed, target: use.Target.Identity);
                 return ItemUseStart.Executed;
             }
 
@@ -272,7 +314,10 @@ namespace ZoneEngine_New.Core.Inventory
                 },
                 lockTarget: null,
                 delay,
-                perkHash: hash);
+                perkHash: hash)
+            {
+                Kind = PlayerActionKind.Perk, AbilityId = hash, Target = use.Target.Identity, Request = ModuleHooks.RequestNow
+            };
             ItemUseStart start = Enqueue(pending);
             if (start != ItemUseStart.Rejected)
                 player.Session?.Send(new CharacterActionMessage
@@ -330,19 +375,33 @@ namespace ZoneEngine_New.Core.Inventory
         ItemUseStart Enqueue(PendingItemUse pending)
         {
             int id = pending.Player.Identity.Instance;
+            bool full = false;
+            bool waits = false;
             lock (_gate)
             {
                 if (!_queues.TryGetValue(id, out List<PendingItemUse>? queue))
                     queue = [];
                 if (queue.Count >= MaxQueuedUses)
-                    return ItemUseStart.Rejected;
-
-                queue.Add(pending);
-                _queues[id] = queue;
-                pending.SetLocked(true);
-                if (queue.Count > 1)
-                    return ItemUseStart.Started;
+                    full = true;
+                else
+                {
+                    queue.Add(pending);
+                    _queues[id] = queue;
+                    pending.SetLocked(true);
+                    waits = queue.Count > 1;
+                }
             }
+
+            // Module events are raised outside the gate: a handler must not run under it.
+            if (full)
+            {
+                Attempted(pending, PlayerActionOutcome.Refused, ActionRefusal.QueueFull);
+                return ItemUseStart.Rejected;
+            }
+
+            Attempted(pending, waits ? PlayerActionOutcome.Queued : PlayerActionOutcome.Started);
+            if (waits)
+                return ItemUseStart.Started;
 
             ItemUseStart result = StartFront(pending, immediate: true);
             AdvanceQueue(id);
@@ -367,7 +426,10 @@ namespace ZoneEngine_New.Core.Inventory
             if (immediate)
             {
                 pending.SetLocked(false);
-                return pending.Execute() ? ItemUseStart.Executed : ItemUseStart.Rejected;
+                int lockNotices = pending.Player.SkillLockNotices;
+                bool executed = pending.Execute();
+                Resolved(pending, executed, failure: null, lockNotices);
+                return executed ? ItemUseStart.Executed : ItemUseStart.Rejected;
             }
 
             return Complete(pending) ? ItemUseStart.Executed : ItemUseStart.Rejected;
@@ -417,7 +479,10 @@ namespace ZoneEngine_New.Core.Inventory
             }
 
             foreach (PendingItemUse pending in queue)
+            {
                 pending.SetLocked(false);
+                Cancelled(pending, "cancelled");
+            }
         }
 
         public void Tick(double deltaTime)
@@ -462,7 +527,10 @@ namespace ZoneEngine_New.Core.Inventory
             }
 
             foreach (PendingItemUse pending in stale)
+            {
                 pending.SetLocked(false);
+                Cancelled(pending, "left playfield");
+            }
 
             foreach (PendingItemUse pending in due)
             {
@@ -480,7 +548,12 @@ namespace ZoneEngine_New.Core.Inventory
             string? failure = RevalidatePlayer(player) ?? pending.Revalidate();
             int lockNotices = player.SkillLockNotices;
             if (failure == null && pending.Execute())
+            {
+                Resolved(pending, executed: true, failure: null, lockNotices);
                 return true;
+            }
+
+            Resolved(pending, executed: false, failure, lockNotices);
 
             _logger.Warn(
                 string.Format(
@@ -533,6 +606,73 @@ namespace ZoneEngine_New.Core.Inventory
             return null;
         }
 
+        // ---- module API 1.6: action events ----
+
+        /// <summary>A request refused before it was queued: raises Attempted Refused and returns Rejected.</summary>
+        static ItemUseStart Refused(Player player, PlayerActionKind kind, int abilityId, Item? item, ActionRefusal refusal,
+            string detail, Identity target = default, CooldownKey? cooldown = null, TimeSpan readyIn = default)
+        {
+            ModuleHooks.ActionAttempted(player, kind, abilityId, PlayerActionOutcome.Refused, refusal, item, target, cooldown,
+                readyIn, detail);
+            return ItemUseStart.Rejected;
+        }
+
+        ActionRefusal BusyRefusal(Player player)
+            => IsQueueFull(player.Identity.Instance) ? ActionRefusal.QueueFull
+                : _moves.HasPending(player.Identity.Instance) ? ActionRefusal.Busy
+                : ActionRefusal.State;
+
+        /// <summary>The module refusal (API 1.6) for a use-target failure.</summary>
+        internal static ActionRefusal TargetRefusal(UseTargetRules.Failure failure) => failure switch
+        {
+            UseTargetRules.Failure.OutOfRange => ActionRefusal.Range,
+            UseTargetRules.Failure.NoLineOfSight => ActionRefusal.LineOfSight,
+            _ => ActionRefusal.Target
+        };
+
+        static void Attempted(PendingItemUse pending, PlayerActionOutcome outcome, ActionRefusal refusal = ActionRefusal.None)
+            => ModuleHooks.ActionAttempted(pending.Player, pending.Kind, pending.AbilityId, outcome, refusal, pending.Item,
+                pending.Target, requestTimestamp: pending.Request);
+
+        static void Cancelled(PendingItemUse pending, string detail)
+            => ModuleHooks.ActionResolved(pending.Player, pending.Kind, pending.AbilityId, PlayerActionOutcome.Cancelled,
+                item: pending.Item, target: pending.Target, detail: detail, requestTimestamp: pending.Request);
+
+        /// <summary>
+        /// A use that reached its turn: Executed, or Failed with why. A failed execute that told the player a skill lock
+        /// (<see cref="Character.SkillLockNotices"/> moved) was refused by that lock.
+        /// </summary>
+        static void Resolved(PendingItemUse pending, bool executed, string? failure, int lockNotices)
+        {
+            if (executed)
+            {
+                ModuleHooks.ActionResolved(pending.Player, pending.Kind, pending.AbilityId, PlayerActionOutcome.Executed,
+                    item: pending.Item, target: pending.Target, requestTimestamp: pending.Request);
+                return;
+            }
+
+            ActionRefusal refusal = failure != null ? FailureRefusal(failure)
+                : pending.Player.SkillLockNotices != lockNotices ? ActionRefusal.Cooldown
+                : ActionRefusal.Other;
+            ModuleHooks.ActionResolved(pending.Player, pending.Kind, pending.AbilityId, PlayerActionOutcome.Failed, refusal,
+                pending.Item, pending.Target, detail: failure ?? "use effects failed", requestTimestamp: pending.Request);
+        }
+
+        /// <summary>The module refusal for a revalidation failure (the strings the Revalidate functions return).</summary>
+        static ActionRefusal FailureRefusal(string failure) => failure switch
+        {
+            "session not InPlay" or "player dead or quarantined" or "playfield changed" or "inventory not hydrated"
+                => ActionRefusal.State,
+            "slot changed" => ActionRefusal.Resources,
+            "use gates failed" => ActionRefusal.Requirements,
+            "dynel gone" or UseTargetRules.LostFightingTarget => ActionRefusal.Target,
+            // An item's use-target failure comes back as "target " + the UseTargetRules.Failure name.
+            "target OutOfRange" => ActionRefusal.Range,
+            "target NoLineOfSight" => ActionRefusal.LineOfSight,
+            "target NoHostileTarget" or "target NotAttackable" or "target NoFriendlyTarget" => ActionRefusal.Target,
+            _ => Player.PerkFailureRefusal(failure)
+        };
+
         static void Tell(Player player, string text)
         {
             player.Session?.Send(
@@ -572,9 +712,26 @@ namespace ZoneEngine_New.Core.Inventory
 
             public double RemainingSeconds { get; set; }
 
+            // Module API 1.6: what the request was, for its action events.
+            public PlayerActionKind Kind { get; init; }
+
+            public int AbilityId { get; init; }
+
+            public Item? Item { get; init; }
+
+            public Identity Target { get; init; }
+
+            /// <summary>The receive time of the message that asked for it (<see cref="ModuleHooks.RequestNow"/>).</summary>
+            public long Request { get; init; }
+
             public string? Revalidate() => revalidate();
 
-            public bool Execute() => execute();
+            /// <summary>Runs the use; a lock it sets names this action as its module source.</summary>
+            public bool Execute()
+            {
+                using (ModuleCooldowns.During(Kind, AbilityId))
+                    return execute();
+            }
 
             public void SetLocked(bool locked) => lockTarget?.Invoke(locked);
         }

@@ -31,7 +31,10 @@ namespace ZoneEngine_New.Core.Network
             _logger = logger;
         }
 
-        public void Dispatch(Message message, IZoneSession session)
+        public void Dispatch(Message message, IZoneSession session) => Dispatch(message, session, 0);
+
+        /// <param name="receivedAt">When the receive loop read it; module events the message causes carry it.</param>
+        public void Dispatch(Message message, IZoneSession session, long receivedAt)
         {
             if (message?.Body == null)
                 return;
@@ -67,7 +70,8 @@ namespace ZoneEngine_New.Core.Network
                 new GameplayInboundItem
                 {
                     Session = session,
-                    Body = body
+                    Body = body,
+                    ReceivedAt = receivedAt
                 });
         }
     }

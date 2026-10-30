@@ -4,11 +4,13 @@ namespace ZoneEngine_New.Core.Inventory
     using System.Collections.Generic;
     using System.Linq;
     using AORebirth.Enums;
+    using AORebirth.Modules.Events;
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Modules;
     using ZoneEngine_New.Core.Network;
 
     /// <summary>Plan first, commit all durable rows, then publish one inventory mutation.</summary>
@@ -71,19 +73,21 @@ namespace ZoneEngine_New.Core.Inventory
 
         static bool IsTemplateOf(Item item, int templateId) => templateId == item.LowId || templateId == item.HighId;
 
-        public bool TryDelete(Player player, Identity slot, int expectedInstanceId)
+        /// <param name="destination">Where the item goes, for module item moves: destroyed, or dropped into the world.</param>
+        public bool TryDelete(Player player, Identity slot, int expectedInstanceId,
+            ItemPlaceKind destination = ItemPlaceKind.Destroyed)
         {
             Chest? chest = InventoryMoveService.FindChestSource(player, slot);
             if (chest != null)
             {
                 lock (player.PersistenceGate)
                     lock (chest.LootGate)
-                        return chest.CanTransferLoot(player) && TryDeleteCore(player, slot, expectedInstanceId);
+                        return chest.CanTransferLoot(player) && TryDeleteCore(player, slot, expectedInstanceId, destination);
             }
-            return TryDeleteCore(player, slot, expectedInstanceId);
+            return TryDeleteCore(player, slot, expectedInstanceId, destination);
         }
 
-        bool TryDeleteCore(Player player, Identity slot, int expectedInstanceId)
+        bool TryDeleteCore(Player player, Identity slot, int expectedInstanceId, ItemPlaceKind destination)
         {
             if (!TryResolveDeleteSlot(player, slot, out Container page, out int placement, out Item item, out LootableDynel? loot)
                 || item.InstanceId != expectedInstanceId) return false;
@@ -99,7 +103,10 @@ namespace ZoneEngine_New.Core.Inventory
                     && (loot is not Chest sourceChest || sourceChest.CanDistribute(item)),
                 () => page.Content.Remove(placement), expectedSources: expectedSources);
             if (result)
+            {
                 loot?.NotifyLootChanged();
+                ModuleHooks.ItemMoved(player, item, ItemPlaces.Of(page, loot), ModuleHooks.Place(destination));
+            }
             if (result && page.Identity.Type.IsWearPage())
             {
                 player.Rebase();

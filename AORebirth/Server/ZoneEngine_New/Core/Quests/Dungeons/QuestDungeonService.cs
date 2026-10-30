@@ -1114,6 +1114,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         player.Inventory.Discard(item, new Identity { Type = IdentityType.None, Instance = 0 });
                         page.Content.Remove(entry.Key);
                         _flush.NotifyDirty(player);
+                        Modules.ModuleHooks.ItemMoved(player, item, ItemPlaces.Of(page),
+                            Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
                         if (page.Identity.Type == IdentityType.Container)
                         {
                             if (page.IsOpen && page.InventoryHandle > 0)

@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 using AORebirth.Enums;
+using AORebirth.Modules.Events;
 
 using SmokeLounge.AOtomation.Messaging.GameData;
 
@@ -19,6 +20,7 @@ using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
+using ZoneEngine_New.Core.Modules;
 using ZoneEngine_New.Core.Nanos;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Playfield;
@@ -214,6 +216,7 @@ public sealed class GiveSetupService(
                 if (page.Remove(slot) is { } item)
                 {
                     worn.Discard(item, graveyard);
+                    ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Equipment), ModuleHooks.Place(ItemPlaceKind.Destroyed));
                     removed++;
                 }
             }
@@ -223,6 +226,7 @@ public sealed class GiveSetupService(
         {
             placement.Page.Add(placement.Slot, placement.Item);
             worn.MarkDirty(placement.Item, placement.Page, placement.Slot);
+            ModuleHooks.ItemMoved(player, placement.Item, ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Equipment));
         }
 
         // Profession first: level IP and skill costs follow it. VisualProfession follows on rebase.

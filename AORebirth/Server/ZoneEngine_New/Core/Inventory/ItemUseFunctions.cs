@@ -27,6 +27,8 @@ namespace ZoneEngine_New.Core.Inventory
 
     using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
     using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using CombatResult = AORebirth.Modules.Events.CombatResult;
+    using CombatSource = AORebirth.Modules.Events.CombatSource;
     using Quaternion = AORebirth.Core.Vector.Quaternion;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
@@ -58,16 +60,16 @@ namespace ZoneEngine_New.Core.Inventory
                     return target is Player bankPlayer
                         && OpenBank(bankPlayer, inventoryRepository, items);
                 case FunctionType.Hit:
-                    return Hit(target, source, spell, addDamage);
+                    return Hit(target, source, spell, addDamage, Origin(templateId, sourceTemplate));
                 // SpecialHit (perk attacks such as Pulverize [Health, -72, -145, 0]) carries Hit's arguments; with
                 // no damage type of its own it hits as the template's DamageType (Pulverize 436 = MeleeAC, which
                 // live HealthDamage reports as type 91).
                 case FunctionType.SpecialHit:
-                    return Hit(target, source, spell, addDamage, templateDamageType);
+                    return Hit(target, source, spell, addDamage, (CombatSource.Perk, templateId), templateDamageType);
                 case FunctionType.AreaHit:
-                    return AreaHit(target, source, spell, addDamage);
+                    return AreaHit(target, source, spell, addDamage, Origin(templateId, sourceTemplate));
                 case FunctionType.DrainHit:
-                    return DrainHit(target, source, spell, addDamage);
+                    return DrainHit(target, source, spell, addDamage, Origin(templateId, sourceTemplate));
                 case FunctionType.Set:
                     return Set(target, spell);
                 case FunctionType.SetFlag:
@@ -172,7 +174,12 @@ namespace ZoneEngine_New.Core.Inventory
             return true;
         }
 
-        static bool Hit(Character target, Character? source, ItemSpell spell, bool addDamage, int defaultAcStat = 0)
+        /// <summary>What a hit came from, for module combat events: a nano's own id, or the item's template id.</summary>
+        static (CombatSource Source, int Id) Origin(int templateId, ItemTemplate? sourceTemplate)
+            => (sourceTemplate is NanoSpell ? CombatSource.Nano : CombatSource.Item, templateId);
+
+        static bool Hit(Character target, Character? source, ItemSpell spell, bool addDamage,
+            (CombatSource Source, int Id) origin, int defaultAcStat = 0)
         {
             if (!spell.TryReadInt(0, out int statId) || !spell.TryReadInt(1, out int minHit))
                 return false;
@@ -225,7 +232,7 @@ namespace ZoneEngine_New.Core.Inventory
                 && TryPercentOfMax(target, stat, minHit, out int percentDelta))
             {
                 if (stat == CharacterStat.Health)
-                    return ApplyHealthDelta(target, source, percentDelta, acStat, addDamage: false, direct: addDamage);
+                    return ApplyHealthDelta(target, source, percentDelta, acStat, addDamage: false, direct: addDamage, origin: origin);
                 return ApplyNanoDelta(target, percentDelta);
             }
 
@@ -241,7 +248,7 @@ namespace ZoneEngine_New.Core.Inventory
                 : Random.Shared.Next(minHit, maxHit + 1);
 
             if (stat == CharacterStat.Health)
-                return ApplyHealthDelta(target, source, delta, acStat, addDamage, direct: addDamage);
+                return ApplyHealthDelta(target, source, delta, acStat, addDamage, direct: addDamage, origin: origin);
 
             if (stat == CharacterStat.CurrentNano || stat == CharacterStat.NanoPool)
                 return ApplyNanoDelta(target, delta);
@@ -255,7 +262,8 @@ namespace ZoneEngine_New.Core.Inventory
         /// Damages <paramref name="target"/> like a hostile Hit, then heals the source by Percent of the
         /// damage actually dealt. Only Health damage is supported.
         /// </summary>
-        static bool DrainHit(Character target, Character? source, ItemSpell spell, bool addDamage)
+        static bool DrainHit(Character target, Character? source, ItemSpell spell, bool addDamage,
+            (CombatSource Source, int Id) origin)
         {
             if (!spell.TryReadInt(0, out int statId) || (CharacterStat)statId != CharacterStat.Health
                 || !spell.TryReadInt(1, out int minHit) || !spell.TryReadInt(2, out int maxHit))
@@ -268,7 +276,8 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
 
             int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
-            ApplyHealthDelta(target, source, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage);
+            ApplyHealthDelta(target, source, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage,
+                origin: origin);
             int dealt = before - Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
             int drained = (int)((long)dealt * Math.Clamp(percent, 0, 100) / 100);
             // The drain returns a share of the damage dealt; healing efficiency and reactivity do not change it.
@@ -282,7 +291,8 @@ namespace ZoneEngine_New.Core.Inventory
         /// Damages <paramref name="center"/> (the function's ApplyOn character) and everything the
         /// user may attack within Radius metres of it, each with its own roll. Only hostile Health hits.
         /// </summary>
-        static bool AreaHit(Character center, Character? source, ItemSpell spell, bool addDamage)
+        static bool AreaHit(Character center, Character? source, ItemSpell spell, bool addDamage,
+            (CombatSource Source, int Id) origin)
         {
             if (!spell.TryReadInt(0, out int statId) || (CharacterStat)statId != CharacterStat.Health
                 || !spell.TryReadInt(1, out int minHit) || !spell.TryReadInt(2, out int maxHit)
@@ -310,7 +320,8 @@ namespace ZoneEngine_New.Core.Inventory
                     || !center.HasLineOfSightTo(candidate))
                     continue;
 
-                ApplyHealthDelta(candidate, caster, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage);
+                ApplyHealthDelta(candidate, caster, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage,
+                    origin: origin);
             }
 
             return true;
@@ -383,7 +394,7 @@ namespace ZoneEngine_New.Core.Inventory
         /// <paramref name="healModifiers"/> false (a drain's own heal) leaves a heal as it is.
         /// </summary>
         static bool ApplyHealthDelta(Character target, Character? source, int delta, int acStat, bool addDamage = false,
-            bool direct = false, bool healModifiers = true)
+            bool direct = false, bool healModifiers = true, (CombatSource Source, int Id) origin = default)
         {
             Character caster = source ?? target;
 
@@ -411,6 +422,9 @@ namespace ZoneEngine_New.Core.Inventory
                     out DamageReturn.Returned returned);
                 DamageReturn.Announce(caster, target, returned);
                 damage = target.TakeOffShields(caster, damage, acStat);
+                // An evading NPC takes nothing (ApplyDamage drops it).
+                Modules.ModuleHooks.CombatResolved(caster, target, origin.Source, origin.Id,
+                    target.IsEvading ? CombatResult.Evaded : CombatResult.Hit, target.IsEvading ? 0 : damage, acStat);
                 int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
                 target.ApplyDamage(caster, damage, HitType.Normal);
 
@@ -726,6 +740,8 @@ namespace ZoneEngine_New.Core.Inventory
 
             player.Inventory.MarkDirty(item, page, slot);
             player.Playfield.GetService<InventoryFlushService>()?.NotifyDirty(player);
+            Modules.ModuleHooks.ItemMoved(player, item, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
+                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
             if (ReferenceEquals(page, player.Inventory.Overflow))
             {
                 // A full inventory: it waits in overflow, which keeps only its newest items.

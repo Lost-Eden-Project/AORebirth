@@ -25,6 +25,15 @@ namespace ZoneEngine_New.Core.Entities
     using ZoneEngine_New.Core.Playfield.Locality;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
+    using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
+    using ModuleClock = ZoneEngine_New.Core.Modules.ModuleClock;
+    using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
+    using CooldownKind = AORebirth.Modules.Events.CooldownKind;
+    using CooldownKey = AORebirth.Modules.Events.CooldownKey;
+    using CooldownEndReason = AORebirth.Modules.Events.CooldownEndReason;
+    using PlayerActionKind = AORebirth.Modules.Events.PlayerActionKind;
+    using PlayerActionOutcome = AORebirth.Modules.Events.PlayerActionOutcome;
+    using ActionRefusal = AORebirth.Modules.Events.ActionRefusal;
 
     /// <summary>
     /// Online player character. Session is attached at login via SpawnService.
@@ -189,12 +198,30 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>LockPerk: the perk's actions are unusable for <paramref name="durationSeconds"/>; zero or less clears it.</summary>
         public void LockPerk(int perkId, int durationSeconds, DateTime nowUtc)
         {
+            // Module API 1.6: a running lock cleared early ends here (Cleared); one that runs out ends with PerkAvailable.
+            DateTime clearedDueUtc = default;
+            TimeSpan clearedLength = default;
+            bool cleared = durationSeconds <= 0
+                && PerkLocks.TryGet(perkId, out clearedDueUtc, out clearedLength) && clearedDueUtc > nowUtc;
             PerkLocks.Lock(perkId, durationSeconds, nowUtc);
             Playfield?.GetService<InventoryFlushService>()?.NotifyDirty(this);
             if (durationSeconds > 0)
+            {
                 AnnouncePerkLock(perkId, durationSeconds, nowUtc);
-            else if (_announcedPerkLocks.Remove(perkId))
-                AnnouncePerkAvailable(perkId);
+                // The client is told only while in play (AnnouncePerkLock).
+                ModuleHooks.CooldownStarted(this, CooldownKind.PerkLock, perkId, TimeSpan.FromSeconds(durationSeconds),
+                    ModuleCooldowns.SourceKind, ModuleCooldowns.SourceId,
+                    _announcedPerkLocks.ContainsKey(perkId) ? TimeSpan.FromSeconds(durationSeconds) : null);
+            }
+            else
+            {
+                bool notified = _announcedPerkLocks.Remove(perkId) && Session?.State == SessionState.InPlay;
+                if (notified)
+                    AnnouncePerkAvailable(perkId);
+                if (cleared)
+                    ModuleHooks.CooldownEnded(this, CooldownKind.PerkLock, perkId, clearedLength, ModuleClock.At(clearedDueUtc),
+                        CooldownEndReason.Cleared, notified);
+            }
         }
 
         /// <summary>Perk locks shown on the client, by expiry; each gets PerkAvailable when it runs out.</summary>
@@ -259,8 +286,11 @@ namespace ZoneEngine_New.Core.Entities
 
             foreach (int perkId in expired)
             {
-                _announcedPerkLocks.Remove(perkId);
+                _announcedPerkLocks.Remove(perkId, out DateTime dueUtc);
                 AnnouncePerkAvailable(perkId);
+                if (PerkLocks.TryGet(perkId, out _, out TimeSpan length))
+                    ModuleHooks.CooldownEnded(this, CooldownKind.PerkLock, perkId, length, ModuleClock.At(dueUtc),
+                        CooldownEndReason.Expired, clientNotified: Session?.State == SessionState.InPlay);
             }
         }
 
@@ -1134,11 +1164,11 @@ namespace ZoneEngine_New.Core.Entities
         {
             use = null;
             if (Session == null || Playfield == null || IsDead)
-                return false;
+                return RefusePerkAction(hash, ActionRefusal.State, "dead or not in play");
 
             int index = Array.FindIndex(_perkActions, action => action.Hash == hash);
             if (index < 0)
-                return false;
+                return RefusePerkAction(hash, ActionRefusal.Requirements, "perk action not held");
 
             ItemTemplate template;
             int lowId, highId, quality;
@@ -1150,7 +1180,7 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
                     "Perk action {0:X8} has no usable template.", hash));
-                return false;
+                return RefusePerkAction(hash, ActionRefusal.Other, "no usable template");
             }
 
             // ApplyOnFightingTarget actions need the character being fought; ApplyOnHostile ones any attackable character,
@@ -1164,7 +1194,7 @@ namespace ZoneEngine_New.Core.Entities
                 if (!UseTargetRules.TryResolve(this, can, out target, out UseTargetRules.Failure targetFailure))
                 {
                     UseTargetRules.SendFailure(this, targetFailure, TryResolveFightingTarget());
-                    return false;
+                    return RefusePerkAction(hash, ItemUseService.TargetRefusal(targetFailure), "target rules");
                 }
             }
             else if (template.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells)
@@ -1179,7 +1209,7 @@ namespace ZoneEngine_New.Core.Entities
                 if (resolved == null)
                 {
                     RequirementFeedback.SendText(this, "You need a target to use this.");
-                    return false;
+                    return RefusePerkAction(hash, ActionRefusal.Target, "no target");
                 }
 
                 // ...and only on a friendly one, as a friendly nano: never on a monster or an enemy.
@@ -1189,7 +1219,7 @@ namespace ZoneEngine_New.Core.Entities
                     if (friendlyRefusal != Nanos.NanoCastRefusal.None)
                     {
                         Nanos.NanoRuntime.Refuse(this, friendlyRefusal);
-                        return false;
+                        return RefusePerkAction(hash, ActionRefusal.Target, "not a friendly target", resolved.Identity);
                     }
                 }
 
@@ -1213,7 +1243,10 @@ namespace ZoneEngine_New.Core.Entities
                     RequirementFeedback.SendIfUnmet(this, template, ActionType.ToUse,
                         stat => PerkActionStat(stat, target), ResolvePerkRequirement,
                         stat => target.Stats.Get(stat), resolveTarget: target.ResolveRequirement);
-                return false;
+                if (failure == PerkLockedFailure && TryFindPerkActionLock(template, out int lockedPerk))
+                    return RefusePerkAction(hash, ActionRefusal.Cooldown, failure, target.Identity,
+                        new CooldownKey(CooldownKind.PerkLock, lockedPerk), PerkLocks.Remaining(lockedPerk, DateTime.UtcNow));
+                return RefusePerkAction(hash, PerkFailureRefusal(failure), failure, target.Identity);
             }
 
             // A hostile perk action aimed at a player, or a friendly one on a PvP-enabled player, flags this player for PvP.
@@ -1246,6 +1279,28 @@ namespace ZoneEngine_New.Core.Entities
 
         const string UseRequirementsFailure = "use requirements failed";
 
+        const string PerkLockedFailure = "perk locked";
+
+        /// <summary>Module API 1.6: a perk action request refused before it was queued.</summary>
+        bool RefusePerkAction(int hash, ActionRefusal refusal, string detail, Identity target = default,
+            CooldownKey? cooldown = null, TimeSpan readyIn = default)
+        {
+            ModuleHooks.ActionAttempted(this, PlayerActionKind.Perk, hash, PlayerActionOutcome.Refused, refusal,
+                target: target, cooldown: cooldown, readyIn: readyIn, detail: detail);
+            return false;
+        }
+
+        /// <summary>The module refusal (API 1.6) for a <see cref="RevalidatePerkAction"/> failure.</summary>
+        internal static ActionRefusal PerkFailureRefusal(string failure) => failure switch
+        {
+            OutOfRangeFailure => ActionRefusal.Range,
+            NoLineOfSightFailure => ActionRefusal.LineOfSight,
+            NotAttackableFailure or "target gone" or UseTargetRules.LostFightingTarget => ActionRefusal.Target,
+            UseRequirementsFailure or "perk action no longer held" => ActionRefusal.Requirements,
+            PerkLockedFailure => ActionRefusal.Cooldown,
+            _ => ActionRefusal.Other
+        };
+
         /// <summary>
         /// Gates checked when a perk action is asked for and again when its AttackDelay ends: still held, not locked, and
         /// a living, attackable target (the fighting target when the action needs one). ToUse requirements, AttackRange
@@ -1257,7 +1312,7 @@ namespace ZoneEngine_New.Core.Entities
             if (Array.FindIndex(_perkActions, action => action.Hash == use.Hash) < 0)
                 return "perk action no longer held";
             if (IsPerkActionLocked(use.Template))
-                return "perk locked";
+                return PerkLockedFailure;
             if (starting && !use.Template.MeetsActionRequirements(stat => PerkActionStat(stat, use.Target),
                 ActionType.ToUse, ItemTemplate.WithActionTarget(ResolvePerkRequirement, this, use.Target),
                 stat => use.Target.Stats.Get(stat), ItemTemplate.WithActionTarget(use.Target.ResolveRequirement, this, use.Target)))
@@ -1294,6 +1349,8 @@ namespace ZoneEngine_New.Core.Entities
             ClientFeedback.SendFormatted(this, ClientFeedback.TargetVerbYourAction,
                 new ClientFeedback.TextReference(ClientFeedback.CategoryId, ClientFeedback.Evaded), use.Template.Name ?? string.Empty);
             ClientFeedback.Send(this, ClientFeedback.TargetResisted);
+            Modules.ModuleHooks.CombatResolved(this, use.Target, AORebirth.Modules.Events.CombatSource.Perk, use.Hash,
+                AORebirth.Modules.Events.CombatResult.Evaded, 0, 0);
             use.Template.ExecuteSpells(EventType.OnFailure, use.Target, inventoryRepository, _items, source: this);
         }
 
@@ -1406,8 +1463,12 @@ namespace ZoneEngine_New.Core.Entities
         /// True while a perk the action would lock (its OnUse LockPerk) is still locked, so a use cannot
         /// bypass the cooldown even when the action's ToUse criteria omit IsPerkUnlocked.
         /// </summary>
-        bool IsPerkActionLocked(ItemTemplate template)
+        bool IsPerkActionLocked(ItemTemplate template) => TryFindPerkActionLock(template, out _);
+
+        /// <summary><see cref="IsPerkActionLocked"/>, naming the locked perk (for the module refusal).</summary>
+        bool TryFindPerkActionLock(ItemTemplate template, out int lockedPerkId)
         {
+            lockedPerkId = 0;
             if (!template.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells))
                 return false;
 
@@ -1417,7 +1478,10 @@ namespace ZoneEngine_New.Core.Entities
                 if (spell.Is(FunctionType.LockPerk)
                     && ItemUseFunctions.TryReadPerkLock(spell, out int perkId, out _)
                     && PerkLocks.IsLocked(perkId, nowUtc))
+                {
+                    lockedPerkId = perkId;
                     return true;
+                }
             }
 
             return false;

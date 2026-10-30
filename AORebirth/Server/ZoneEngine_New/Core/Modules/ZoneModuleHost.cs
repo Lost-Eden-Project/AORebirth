@@ -323,7 +323,8 @@ namespace ZoneEngine_New.Core.Modules
             {
                 ModuleCapabilities.ReadWorld, ModuleCapabilities.RefreshNpc, ModuleCapabilities.SendMessages,
                 ModuleCapabilities.GameDataReload, ModuleCapabilities.RespawnNpc, ModuleCapabilities.ObserveMessages,
-                ModuleCapabilities.ReadSessions
+                ModuleCapabilities.ReadSessions, ModuleCapabilities.ObserveActions, ModuleCapabilities.ObserveVisibility,
+                ModuleCapabilities.ObserveChat, ModuleCapabilities.ReadChatText
             };
             known.UnionWith(operations);
             var capabilities = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -380,6 +381,13 @@ namespace ZoneEngine_New.Core.Modules
             _messages.Add(moduleId, observer, subscription);
         }
 
+        private void RegisterVisibilityObserver(string moduleId, IVisibilityObserver observer, VisibilitySubscription subscription)
+        {
+            if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Visibility observers can only be registered during Initialize.");
+            Events.Visibility.Add(moduleId, observer, subscription);
+        }
+
         private void RegisterHandoffHook(string moduleId, IHandoffHook hook)
         {
             ArgumentNullException.ThrowIfNull(hook);
@@ -406,7 +414,7 @@ namespace ZoneEngine_New.Core.Modules
                 ModuleId = moduleId;
                 ModuleDirectory = moduleDirectory;
                 Log = new ModuleLogger(host._logger, moduleId);
-                Events = new ModuleEventsView(host.Events, moduleId);
+                Events = new ModuleEventsView(host.Events, moduleId, gate);
                 Knubot = host._knubot;
                 World = new GatedWorld(host.World, gate);
                 Actions = new GatedActions(host._actions, gate);
@@ -429,6 +437,8 @@ namespace ZoneEngine_New.Core.Modules
 
             public IKnubotScripts Knubot { get; }
 
+            public IZoneClock Clock => ModuleClock.Instance;
+
             public T? GetConfig<T>() where T : class
             {
                 string path = Path.Combine(ModuleDirectory, "config.json");
@@ -450,17 +460,111 @@ namespace ZoneEngine_New.Core.Modules
                 _gate.Require(ModuleCapabilities.ObserveMessages);
                 _host.RegisterMessageObserver(ModuleId, observer, subscription);
             }
+
+            public void RegisterVisibilityObserver(IVisibilityObserver observer, VisibilitySubscription subscription)
+            {
+                _gate.Require(ModuleCapabilities.ObserveVisibility);
+                _host.RegisterVisibilityObserver(ModuleId, observer, subscription);
+            }
         }
 
         private sealed class ModuleEventsView : IZoneEvents
         {
             private readonly ZoneModuleEvents _events;
             private readonly string _moduleId;
+            private readonly CapabilityGate _gate;
 
-            public ModuleEventsView(ZoneModuleEvents events, string moduleId)
+            // A module without read-chat-text gets its PlayerSpoke handler wrapped so the text is stripped; the wrapper is
+            // kept to unsubscribe it.
+            private readonly Dictionary<Action<PlayerSpokeEvent>, Action<PlayerSpokeEvent>> _chatWrappers = new();
+
+            public ModuleEventsView(ZoneModuleEvents events, string moduleId, CapabilityGate gate)
             {
                 _events = events;
                 _moduleId = moduleId;
+                _gate = gate;
+            }
+
+            public event Action<PlayerActionEvent> PlayerActionAttempted
+            {
+                add { _gate.Require(ModuleCapabilities.ObserveActions); _events.PlayerActionAttempted.Add(_moduleId, value); }
+                remove => _events.PlayerActionAttempted.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerActionEvent> PlayerActionResolved
+            {
+                add { _gate.Require(ModuleCapabilities.ObserveActions); _events.PlayerActionResolved.Add(_moduleId, value); }
+                remove => _events.PlayerActionResolved.Remove(_moduleId, value);
+            }
+
+            public event Action<CooldownEvent> CooldownStarted
+            {
+                add { _gate.Require(ModuleCapabilities.ObserveActions); _events.CooldownStarted.Add(_moduleId, value); }
+                remove => _events.CooldownStarted.Remove(_moduleId, value);
+            }
+
+            public event Action<CooldownEvent> CooldownEnded
+            {
+                add { _gate.Require(ModuleCapabilities.ObserveActions); _events.CooldownEnded.Add(_moduleId, value); }
+                remove => _events.CooldownEnded.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerMovementCorrectedEvent> PlayerMovementCorrected
+            {
+                add => _events.PlayerMovementCorrected.Add(_moduleId, value);
+                remove => _events.PlayerMovementCorrected.Remove(_moduleId, value);
+            }
+
+            public event Action<ItemMovedEvent> ItemMoved
+            {
+                add => _events.ItemMoved.Add(_moduleId, value);
+                remove => _events.ItemMoved.Remove(_moduleId, value);
+            }
+
+            public event Action<PlayerSpokeEvent> PlayerSpoke
+            {
+                add
+                {
+                    ArgumentNullException.ThrowIfNull(value);
+                    _gate.Require(ModuleCapabilities.ObserveChat);
+                    if (_gate.Allows(ModuleCapabilities.ReadChatText))
+                    {
+                        _events.PlayerSpoke.Add(_moduleId, value);
+                        return;
+                    }
+
+                    Action<PlayerSpokeEvent> withoutText = spoke => value(new PlayerSpokeEvent
+                    {
+                        CharacterId = spoke.CharacterId,
+                        PlayfieldId = spoke.PlayfieldId,
+                        Timestamp = spoke.Timestamp,
+                        RequestTimestamp = spoke.RequestTimestamp,
+                        Channel = spoke.Channel,
+                        Length = spoke.Length
+                    });
+                    lock (_chatWrappers)
+                        _chatWrappers[value] = withoutText;
+                    _events.PlayerSpoke.Add(_moduleId, withoutText);
+                }
+                remove
+                {
+                    lock (_chatWrappers)
+                    {
+                        if (_chatWrappers.Remove(value, out Action<PlayerSpokeEvent>? wrapper))
+                        {
+                            _events.PlayerSpoke.Remove(_moduleId, wrapper);
+                            return;
+                        }
+                    }
+
+                    _events.PlayerSpoke.Remove(_moduleId, value);
+                }
+            }
+
+            public event Action<CombatResolvedEvent> CombatResolved
+            {
+                add => _events.CombatResolved.Add(_moduleId, value);
+                remove => _events.CombatResolved.Remove(_moduleId, value);
             }
 
             public event Action<NpcKilledEvent> NpcKilled

@@ -81,7 +81,9 @@ namespace ZoneEngine_New.Core.Playfield
                         Metrics.TickStallWatch.Stage(
                             InboundStageName(gameplay.Body),
                             gameplay.Session.Player?.Identity.Instance ?? 0);
-                        router.Route(new Message { Body = gameplay.Body }, gameplay.Session);
+                        // Module events this message causes carry its receive time as RequestTimestamp.
+                        using (Modules.ModuleRequest.Begin(gameplay.ReceivedAt))
+                            router.Route(new Message { Body = gameplay.Body }, gameplay.Session);
                         break;
                 }
             }

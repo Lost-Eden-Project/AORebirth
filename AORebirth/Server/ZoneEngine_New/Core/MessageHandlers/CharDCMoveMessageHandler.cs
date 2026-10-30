@@ -59,12 +59,22 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (!player.AcceptsClientMoves(DateTime.UtcNow))
                 return;
 
+            // A rooted move is rewritten to the held position: keep what the client reported for a correction event.
+            SmokeLounge.AOtomation.Messaging.GameData.Vector3? reported = message.Coordinates;
             bool accepted = player.Motor.Consume(message);
 
             // Rooted but the client moved, or a hop the character could not have made: snap it back in place with a
             // soft intrazone teleport; heading is kept.
             if ((player.Motor.RootCorrectionDue || player.Motor.JumpCorrectionDue) && player.Playfield != null)
+            {
                 session.SendIntrazoneTeleport(player.Position, player.Rotation, player.Playfield.ClientPlayfieldId);
+                if (reported != null)
+                    Modules.ModuleHooks.MovementCorrected(player,
+                        new AORebirth.Core.Vector.Vector3(reported.X, reported.Y, reported.Z), player.Position,
+                        player.Motor.RootCorrectionDue
+                            ? AORebirth.Modules.Events.MovementCorrection.Rooted
+                            : AORebirth.Modules.Events.MovementCorrection.Jump);
+            }
             if (!accepted)
                 return;
 

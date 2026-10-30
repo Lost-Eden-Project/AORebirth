@@ -113,6 +113,18 @@ namespace ZoneEngine_New.Core.Modules
             gate.Require(ModuleCapabilities.ReadSessions);
             return world.Session(characterId);
         }
+
+        public IReadOnlyList<CooldownInfo> Cooldowns(int characterId)
+        {
+            gate.Require(ModuleCapabilities.ObserveActions);
+            return world.Cooldowns(characterId);
+        }
+
+        public IReadOnlyDictionary<int, MessageCount>? MessageCounts(Guid sessionId)
+        {
+            gate.Require(ModuleCapabilities.ReadSessions);
+            return world.MessageCounts(sessionId);
+        }
     }
 
     internal sealed class GatedActions(IZoneActions actions, CapabilityGate gate) : IZoneActions

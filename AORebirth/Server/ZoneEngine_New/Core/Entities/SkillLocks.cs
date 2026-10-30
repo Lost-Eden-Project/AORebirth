@@ -73,6 +73,41 @@ namespace ZoneEngine_New.Core.Entities
 
         public bool IsLocked(int statId, DateTime nowUtc) => Remaining(statId, nowUtc) > TimeSpan.Zero;
 
+        /// <summary>
+        /// The last lock set on <paramref name="statId"/>, run out or not: its expiry and the length it was locked for.
+        /// False once it was cleared (or never set). For module cooldown events (module API 1.6).
+        /// </summary>
+        public bool TryGet(int statId, out DateTime expiresAtUtc, out TimeSpan duration)
+        {
+            lock (_gate)
+            {
+                if (!_expiresAtUtc.TryGetValue(statId, out expiresAtUtc))
+                {
+                    duration = TimeSpan.Zero;
+                    return false;
+                }
+
+                duration = TimeSpan.FromSeconds(_durationSeconds.TryGetValue(statId, out int seconds) ? seconds : 0);
+                return true;
+            }
+        }
+
+        /// <summary>Every unexpired lock with the seconds it was locked for and its expiry (module API 1.6 reads).</summary>
+        public List<(int Id, int DurationSeconds, DateTime ExpiresAtUtc)> ActiveUntil(DateTime nowUtc)
+        {
+            lock (_gate)
+            {
+                var active = new List<(int, int, DateTime)>(_expiresAtUtc.Count);
+                foreach (KeyValuePair<int, DateTime> entry in _expiresAtUtc)
+                {
+                    if (entry.Value > nowUtc)
+                        active.Add((entry.Key, _durationSeconds.TryGetValue(entry.Key, out int seconds) ? seconds : 0, entry.Value));
+                }
+
+                return active;
+            }
+        }
+
         /// <summary>Every unexpired lock and its remaining time.</summary>
         public List<(int Id, TimeSpan Remaining)> Active(DateTime nowUtc)
         {

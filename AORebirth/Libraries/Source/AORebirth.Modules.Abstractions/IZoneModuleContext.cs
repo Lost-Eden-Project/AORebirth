@@ -31,6 +31,9 @@ namespace AORebirth.Modules
         /// <summary>Reloadable GameData and the override folder it is read through (module API 1.3).</summary>
         IZoneGameData GameData { get; }
 
+        /// <summary>The clock every module timestamp is on (module API 1.6).</summary>
+        IZoneClock Clock { get; }
+
         /// <summary>
         /// Reads Modules/&lt;Id&gt;/config.json (case-insensitive, comments allowed), or returns null when it is absent.
         /// </summary>
@@ -60,5 +63,11 @@ namespace AORebirth.Modules
         /// <see cref="IZoneModule.Initialize"/>; several modules may each register several. Needs <c>observe-messages</c>.
         /// </summary>
         void RegisterMessageObserver(IMessageObserver observer, MessageSubscription subscription);
+
+        /// <summary>
+        /// Adds an observer told when a client is told an entity exists and when it stops (module API 1.6). Only during
+        /// <see cref="IZoneModule.Initialize"/>; several modules may each register several. Needs <c>observe-visibility</c>.
+        /// </summary>
+        void RegisterVisibilityObserver(IVisibilityObserver observer, VisibilitySubscription subscription);
     }
 }

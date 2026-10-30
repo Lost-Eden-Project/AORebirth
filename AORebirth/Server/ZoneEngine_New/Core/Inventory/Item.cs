@@ -352,6 +352,8 @@ namespace ZoneEngine_New.Core.Inventory
                     SendDeleteItem(player, page.Identity.Type, placement);
             }
 
+            Modules.ModuleHooks.ItemMoved(player, this, ItemPlaces.Of(page),
+                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed), 1);
             player.Playfield?.GetRequiredService<InventoryFlushService>().NotifyDirty(player);
             return true;
         }
@@ -386,6 +388,8 @@ namespace ZoneEngine_New.Core.Inventory
                 inventory.Discard(this, ConsumedGraveyard(player));
             }
 
+            Modules.ModuleHooks.ItemMoved(player, this, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
+                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed), count);
             player.Playfield?.GetRequiredService<InventoryFlushService>().NotifyDirty(player);
             return true;
         }

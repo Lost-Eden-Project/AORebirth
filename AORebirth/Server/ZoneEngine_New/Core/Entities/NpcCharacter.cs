@@ -101,6 +101,12 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public string? SpawnHash { get; init; }
 
+        /// <summary>The hash spawn point's key (hash, position, stack ordinal), or null when no spawn point owns it.</summary>
+        public string? SpawnPointKey { get; init; }
+
+        /// <summary>When it spawned, on the module clock (<see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>).</summary>
+        public long SpawnedAt { get; init; } = System.Diagnostics.Stopwatch.GetTimestamp();
+
         public bool IsAiBusy => Brain?.IsBusy == true;
 
         /// <summary>

@@ -70,7 +70,19 @@ namespace AORebirth.Modules.World
         /// <summary><see cref="Network.IMessageObserver"/> (module API 1.5).</summary>
         public const string ObserveMessages = "observe-messages";
 
-        /// <summary><see cref="IZoneWorld.Session"/> (module API 1.5).</summary>
+        /// <summary><see cref="IZoneWorld.Session"/> (module API 1.5) and <see cref="IZoneWorld.MessageCounts"/> (1.6).</summary>
         public const string ReadSessions = "read-sessions";
+
+        /// <summary>The action and cooldown events (module API 1.6).</summary>
+        public const string ObserveActions = "observe-actions";
+
+        /// <summary><see cref="Events.IVisibilityObserver"/> (module API 1.6).</summary>
+        public const string ObserveVisibility = "observe-visibility";
+
+        /// <summary><see cref="Events.IZoneEvents.PlayerSpoke"/> without the text (module API 1.6).</summary>
+        public const string ObserveChat = "observe-chat";
+
+        /// <summary>The text of <see cref="Events.IZoneEvents.PlayerSpoke"/> (module API 1.6).</summary>
+        public const string ReadChatText = "read-chat-text";
     }
 }
