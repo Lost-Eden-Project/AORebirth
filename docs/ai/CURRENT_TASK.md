@@ -1,25 +1,34 @@
 # Current Task
 
-Active task (2026-10-29): restore Daily Login Rewards on
+Active task (2026-10-29): make Daily Login Rewards once per UTC day per character,
+with independent calendars for characters on the same account, on
 `codex/repair-daily-login-rewards`, based on public master
 `465e7ff882d71a2669dfbb56f08ec9bd3d950e1e`.
 
+Retain authenticated account ownership, atomic inventory/receipt commits,
+idempotent tokens and the verified immediate native Claim callback. Preserve
+earned progress and all old account-era evidence; do not copy cumulative account
+progress to sibling characters. The new character/day index migration is prepared
+but not yet applied to the local database; applying it requires explicit approval
+after a fresh backup. This versioned schema change is a material trigger for any
+later authorized release. This local task does not authorize Linux work or deployment.
+
 Recover behavior from `feec603be8a2b8d788279c094fa53514417952d1` without
 restoring the retired engine. Use current item/inventory/DAO owners, preserve
-account progress and pending requests, commit reward rows and the account
+earned progress and pending requests, commit reward rows and the character
 receipt atomically, and require committed confirmation before displaying Taken.
 Mike explicitly approved the scoped development ledger migration and focused
 success, concurrency, persistence, rollback, UTC progression and web tests.
-Development validation retains the prior 42 focused C# passes; the current 19
-browser-state tests and 13 PHP HTTP checks pass. Disposable real-MySQL checks pass for migration reruns,
-account ownership, concurrent characters, UTC-day uniqueness, four partial-write
+Development validation passes 65 focused C# checks, 22 browser-state checks and
+17 PHP HTTP checks. Disposable real-MySQL checks pass for migration reruns,
+account ownership, concurrent sibling characters, UTC-character-day uniqueness, four partial-write
 rollback points, lost commit acknowledgements and restart replay. Empty schema
 rollback succeeds; populated rollback refuses and preserves the ledger.
 
 The native claim trigger now uses the authenticated account and actual inventory
-grant plan. Committed receipts and account progress share the inventory transaction;
-file projections recover from interrupted publication. Existing account JSON and
-successful receipts seed the ledger once, original progress bytes are retained,
+grant plan. Committed receipts and character progress share the inventory transaction;
+file projections recover from interrupted publication. Account-era JSON and
+receipts remain unchanged; only verified character-owned evidence can seed progress,
 and pending requests are not deleted. The browser never trusts old optimistic
 cache entries or marks a new claim Taken before committed confirmation.
 
@@ -47,8 +56,9 @@ This is FEATURE_VALIDATION only, not Windows release acceptance. OBSERVED local
 client verification (2026-10-29): Mike confirmed the reward arrived and Taken
 appeared while the Daily window stayed open. PROVEN server-side evidence records
 the registered native callback, action-263 request and matching committed receipt
-in both configured claim roots. Relog and uninterrupted client UTC rollover remain
-unverified. Anonymous or ambiguous legacy requests still fail closed.
+in both configured claim roots. That check predates the per-character revision,
+whose local migration/rebuild and client verification are pending. Relog and
+uninterrupted client UTC rollover remain unverified. Anonymous or ambiguous legacy requests still fail closed.
 All four local engines remain running for Mike's testing. The approved local
 migration and client patch installation occurred; no production data, deployment
 or Linux work was involved, and the agent did not launch or control the AO client.

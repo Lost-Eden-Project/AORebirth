@@ -2,16 +2,18 @@
 
 PROVEN DEVELOPMENT VALIDATION (2026-10-29, Daily Login repair): the development
 branch restores the recovered reward processor through current inventory and
-DAO owners, with one atomic account/UTC-day claim ledger, preserved legacy
+DAO owners, with one atomic character/UTC-day claim ledger, preserved legacy
 progress and pending evidence, replay recovery and committed-only browser Taken
-state. Prior runtime validation retains 42 C# passes; current focused checks pass
-19 browser-state and 13 actual PHP HTTP cases, plus the native package checks;
+state. Current focused checks pass 65 C#, 22 browser-state and 17 actual PHP HTTP
+cases, plus the unchanged native package checks;
 disposable real-MySQL migration, concurrency, rollback and restart/commit-ack
 recovery checks also pass. Days 19/21 remain empty and block calendar completion;
 historically fixed day-13/14 item quality bounds are preserved. OBSERVED local
 client verification (2026-10-29): Mike confirmed the reward arrived and Taken
 appeared without closing Daily Rewards. The registered native callback and
-committed server receipt were verified. Relog and uninterrupted client UTC
+committed server receipt were verified before the per-character revision. Its
+local migration/rebuild and client verification are pending; existing earned
+progress is retained. Relog and uninterrupted client UTC
 rollover remain unverified; this is not release acceptance. Local engines remain
 running. No production database, deployment or Linux change occurred. Details
 are in CURRENT_TASK.
