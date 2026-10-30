@@ -1,5 +1,20 @@
 # Current Task
 
+Active integration (2026-10-30): combine Mike's locally accepted Daily Login
+Rewards feature at `c8fed6c026f3110043b8a0a18c19460485c62c9d` with freshly
+fetched public master `132459c1d3f732a88abffca4750150446933f57b` on
+`codex/daily-rewards-master-integration`, validate the combined source, and
+integrate it into public master. All requested combat, world-object, developer
+build and quest updates, including PR #46 and its follow-ups, are already
+ancestors of that public tip. Preserve those changes and the Daily Rewards
+account ownership, atomic grants, per-character progress and quiet callback
+behavior. Update the Daily test adapter to the upstream boolean transfer API.
+Private local configuration, character repairs, content and client artifacts
+remain outside public commits. This source integration does not authorize
+Linux work, publishing, deployment or release acceptance of the combined inputs.
+
+## Accepted Daily Login feature
+
 Active follow-up (2026-10-29): keep native Daily Login callbacks quiet when no
 request is waiting, and avoid contradictory daily-limit chat after a successful
 grant from the same queued batch. Preserve one claim per UTC day per character
@@ -69,8 +84,8 @@ only: empty callbacks and successful receipt replays stay quiet; a fresh grant
 suppresses only later, explicitly typed daily-limit feedback in the same batch.
 Every token still receives its normal durable result, standalone refusals and
 other errors remain visible, and no schema or inventory semantics changed.
-The 68 focused checks and updated four-engine build passed; Mike's verification
-of the message follow-up is pending. Relog and
+The 68 focused checks and updated four-engine build passed; Mike then confirmed
+all his character logins and Daily Rewards work locally. Relog and
 uninterrupted client UTC rollover remain unverified. Anonymous or ambiguous legacy requests still fail closed.
 All four rebuilt local engines remain running for Mike's testing. The approved local
 migration and client patch installation occurred; no production data, deployment

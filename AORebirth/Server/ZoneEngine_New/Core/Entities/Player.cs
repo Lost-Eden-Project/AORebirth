@@ -2082,7 +2082,9 @@ namespace ZoneEngine_New.Core.Entities
             Playfield destination = destinationAdmission.Playfield;
             if (Session != null)
             {
-                Session.TransferToPlayfield(destination, landing);
+                // A move already on its way (a zone crossing as the character died) carries them; the respawn stands down.
+                if (!Session.IsTransferring)
+                    Session.TransferToPlayfield(destination, landing);
                 return;
             }
 
@@ -2468,10 +2470,14 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Called after a Weapons / Armor / Implant / Social slot changes.
-        /// A visible hand weapon announces its WeaponInstance.
+        /// A visible hand weapon announces its WeaponInstance; the item now worn there counts for Equip quests.
         /// </summary>
         public void OnEquipmentChanged(EquipSlot slot)
         {
+            // Equip quests (Install the implant). Social clothing is cosmetic and does not count.
+            if (slot.Page != IdentityType.SocialPage && Inventory.TryGetItem(slot.Page, slot.Placement, out Item worn))
+                Playfield?.GetService<Quests.QuestService>()?.OnItemEquipped(this, worn);
+
             if (slot.Page != IdentityType.WeaponPage)
                 return;
 

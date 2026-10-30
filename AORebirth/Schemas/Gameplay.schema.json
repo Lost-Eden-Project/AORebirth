@@ -35,33 +35,11 @@
       },
       "additionalProperties": false
     },
-    "loot": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "qualityVariancePercent": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Corpse drops (item table and equipment spawns) roll their QL within this percent either side of the NPC's level or the spawn's QL. An item table row with its own levelMod (above 0) uses that instead."
-        }
-      }
-    },
-    "shops": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "preferDatabaseStock": {
-          "type": "boolean"
-        }
-      }
-    },
     "requireAmmo": {
       "type": "boolean"
     },
     "zoneInGraceSeconds": {
-      "type": "number",
-      "minimum": 0
+      "type": "number"
     },
     "xp": {
       "type": "object",
@@ -73,8 +51,7 @@
           "type": "number"
         },
         "alienMinimumXp": {
-          "type": "integer",
-          "minimum": 0
+          "type": "integer"
         },
         "noKillXpNpcFamilies": {
           "type": "array",
@@ -94,13 +71,6 @@
         "tradeskillXpPerQl": {
           "type": "integer"
         },
-        "teamMemberPercent": {
-          "description": "Percent of the team kill share each nearby member gets, by member count (entry 0 = 1 member; larger teams use the last entry). NOT correct: a stand-in until live's team XP rule is known.",
-          "type": "array",
-          "items": {
-            "type": "number"
-          }
-        },
         "caps": {
           "type": "object",
           "properties": {
@@ -115,6 +85,12 @@
             }
           },
           "additionalProperties": false
+        },
+        "teamMemberPercent": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
         }
       },
       "additionalProperties": false
@@ -152,18 +128,6 @@
       },
       "additionalProperties": false
     },
-    "proximityAggro": {
-      "type": "object",
-      "description": "Unprovoked (proximity) aggro limits.",
-      "properties": {
-        "maxWalkFactor": {
-          "type": "number",
-          "minimum": 0,
-          "description": "An NPC only aggroes a player it can walk to within this many times its aggro range: one under a bridge stays put. 0 turns the check off."
-        }
-      },
-      "additionalProperties": false
-    },
     "socialAggro": {
       "type": "object",
       "properties": {
@@ -176,12 +140,17 @@
         "maxRadius": {
           "type": "number"
         },
+        "npcVsNpcDefaultRadius": {
+          "type": "number"
+        },
+        "guardDefaultRadius": {
+          "type": "number"
+        },
         "searchRadius": {
           "type": "number"
         },
         "sameClanOnly": {
-          "type": "boolean",
-          "description": "Helpers must share the attacked NPC's Clan stat (its kind of creature) as well as its Side."
+          "type": "boolean"
         },
         "requireLineOfSight": {
           "type": "boolean"
@@ -191,6 +160,15 @@
         },
         "chain": {
           "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "proximityAggro": {
+      "type": "object",
+      "properties": {
+        "maxWalkFactor": {
+          "type": "number"
         }
       },
       "additionalProperties": false
@@ -250,6 +228,24 @@
           "type": "number"
         },
         "healBelowPercent": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "shops": {
+      "type": "object",
+      "properties": {
+        "preferDatabaseStock": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "loot": {
+      "type": "object",
+      "properties": {
+        "qualityVariancePercent": {
           "type": "integer"
         }
       },

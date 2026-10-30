@@ -365,6 +365,8 @@ namespace ZoneEngine_New.Core.Playfield
 
             _registry.Register(dynel);
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(dynel);
+            (_playfield as ACGPlayfield)?.World?.RegisterVicinityDynel(
+                identity.Instance, template, position.xf, position.yf, position.zf);
 
             _logger.Info(
                 string.Format(
@@ -430,6 +432,7 @@ namespace ZoneEngine_New.Core.Playfield
             ArgumentNullException.ThrowIfNull(dynel);
 
             Identity identity = dynel.Identity;
+            (_playfield as ACGPlayfield)?.World?.UnregisterVicinityDynel(identity.Instance);
             _playfield.GetRequiredService<PlayfieldLocality>().UnregisterDynel(dynel);
             _registry.Unregister(identity);
             dynel.Playfield = null;

@@ -10,7 +10,7 @@ using ZoneEngine_New.Core.Inventory;
 /// <summary>
 /// Turns line text into ordered pieces and effects. Tags:
 /// text <c>{name}</c> <c>{npc}</c> <c>{itemref LOW HIGH QL}</c> <c>{emote}…{/emote}</c> <c>{delay SECONDS}</c>;
-/// effects (applied when the text reaches them) <c>{givequest HASH}</c> <c>{completequest HASH}</c> <c>{spawn ITEMHASH QL|level [count]}</c> <c>{shop}</c> <c>{opentrade}</c>; flow <c>{goto LINE}</c> <c>{close [SECONDS]}</c>.
+/// effects (applied when the text reaches them) <c>{givequest HASH}</c> <c>{completequest HASH}</c> <c>{spawn ITEMHASH QL|level [count]}</c> <c>{shop}</c> <c>{opentrade}</c> <c>{givebuff NANOID}</c> <c>{useitem ITEMID}</c>; flow <c>{goto LINE}</c> <c>{close [SECONDS]}</c>.
 /// <c>{{</c> and <c>}}</c> write literal braces. Reply text allows only the text tags without delay.
 /// </summary>
 public static class KnubotParser
@@ -196,6 +196,16 @@ public static class KnubotParser
                     }
 
                     Effect(new KnubotGiveBuff(nanoId));
+                    break;
+
+                case "useitem":
+                    if (words.Length != 2 || !KnubotCondition.TryPositive(words[1], out int useItemId) || !load.Items.TryGet(useItemId, out _))
+                    {
+                        errors.Add("expected {useitem ITEMID} with a known item id: {" + body + "}");
+                        break;
+                    }
+
+                    Effect(new KnubotUseItem(useItemId));
                     break;
 
                 case "goto":

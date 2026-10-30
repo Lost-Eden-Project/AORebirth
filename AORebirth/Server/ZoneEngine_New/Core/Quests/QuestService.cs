@@ -34,6 +34,7 @@ namespace ZoneEngine_New.Core.Quests
         readonly Func<DateTime> _now;
         readonly AORebirth.Interfaces.Persistence.Missions.IMissionDao? _completionDao;
         readonly ZoneEngine_New.Core.Characters.CharacterSnapshotService? _snapshot;
+        readonly QuestRewardTable? _rewards;
 
         public QuestService(
             QuestCatalog catalog,
@@ -42,8 +43,9 @@ namespace ZoneEngine_New.Core.Quests
             InventoryFlushService flush,
             IZoneLogger logger,
             AORebirth.Interfaces.Persistence.Missions.IMissionDao? completionDao = null,
-            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null)
-            : this(catalog, store, items, flush, logger, () => DateTime.UtcNow, completionDao, snapshot)
+            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null,
+            QuestRewardTable? rewards = null)
+            : this(catalog, store, items, flush, logger, () => DateTime.UtcNow, completionDao, snapshot, rewards)
         {
         }
 
@@ -55,7 +57,8 @@ namespace ZoneEngine_New.Core.Quests
             IZoneLogger logger,
             Func<DateTime> now,
             AORebirth.Interfaces.Persistence.Missions.IMissionDao? completionDao = null,
-            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null)
+            ZoneEngine_New.Core.Characters.CharacterSnapshotService? snapshot = null,
+            QuestRewardTable? rewards = null)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -65,9 +68,13 @@ namespace ZoneEngine_New.Core.Quests
             _now = now ?? throw new ArgumentNullException(nameof(now));
             _completionDao = completionDao;
             _snapshot = snapshot;
+            _rewards = rewards;
         }
 
         public QuestCatalog Catalog => _catalog;
+
+        /// <summary>QuestRewards.json, when this zone loads it.</summary>
+        public QuestRewardTable? Rewards => _rewards;
 
         /// <summary>
         /// A player's quest left the active state (abandoned, completed or expired), after it was saved and removed
@@ -336,19 +343,29 @@ namespace ZoneEngine_New.Core.Quests
         /// <see cref="QuestObjective.SpecItem"/> hash covers that item complete.
         /// </summary>
         public void OnItemAssembled(Player player, Item result)
+            => CompleteItemAction(player, QuestTemplate.AssembleAction, result);
+
+        /// <summary>
+        /// The player equipped <paramref name="item"/>: active Equip quests whose <see cref="QuestObjective.SpecItem"/>
+        /// hash covers that item complete.
+        /// </summary>
+        public void OnItemEquipped(Player player, Item item)
+            => CompleteItemAction(player, QuestTemplate.EquipAction, item);
+
+        void CompleteItemAction(Player player, string action, Item item)
         {
             ArgumentNullException.ThrowIfNull(player);
-            ArgumentNullException.ThrowIfNull(result);
+            ArgumentNullException.ThrowIfNull(item);
             if (player.Playfield?.GetService<IGameData>() is not IGameData gameData)
                 return;
 
             List<PlayerQuest>? found = null;
             foreach (PlayerQuest quest in GetLog(player).Quests.Values)
             {
-                if (quest.IsActive && string.Equals(quest.Template.Action, QuestTemplate.AssembleAction, StringComparison.Ordinal)
+                if (quest.IsActive && string.Equals(quest.Template.Action, action, StringComparison.Ordinal)
                     && !RequiresBoundObjective(quest)
                     && quest.Template.Objective.SpecItem is { Length: > 0 } specItem
-                    && HashHolds(gameData, specItem, result))
+                    && HashHolds(gameData, specItem, item))
                     (found ??= new List<PlayerQuest>()).Add(quest);
             }
 
@@ -357,14 +374,14 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>Template ids each item hash covers (all its leaf families), resolved once per hash.</summary>
-        readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<int>> _assembleHashIds = new(StringComparer.Ordinal);
+        readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<int>> _itemHashIds = new(StringComparer.Ordinal);
 
         bool HashHolds(IGameData gameData, string hash, Item item)
         {
             if (string.IsNullOrEmpty(hash))
                 return false;
 
-            HashSet<int> ids = _assembleHashIds.GetOrAdd(hash, key =>
+            HashSet<int> ids = _itemHashIds.GetOrAdd(hash, key =>
             {
                 var leaves = new List<HashInstance>();
                 gameData.CollectHashLeafInstances(key, leaves);
@@ -409,6 +426,9 @@ namespace ZoneEngine_New.Core.Quests
         void Advance(Player player, PlayerQuest quest, NpcCharacter npc)
         {
             quest.Progress = Math.Min(quest.RequiredCount, quest.Progress + 1);
+            // A search ("find a Bio Analyzing Computer by killing robots") can end on any kill.
+            if (quest.Remaining > 0 && quest.Template.Objective.FindChance is int chance && Random.Shared.Next(100) < chance)
+                quest.Progress = quest.RequiredCount;
             if (quest.Remaining > 0)
             {
                 Save(player, quest);
@@ -440,7 +460,39 @@ namespace ZoneEngine_New.Core.Quests
             Save(player, quest);
             // The announce flag makes the client print "You got a new mission" itself.
             QuestJournal.Send(player, quest, announce: true);
+            GrantStartItems(player, quest);
             return quest;
+        }
+
+        /// <summary>
+        /// The step's <see cref="QuestTemplate.StartItems"/>, handed over as it is assigned: to the first free inventory
+        /// slot, else overflow, like a Knubot <c>{spawn}</c>. A Unique item already held is left out; one whose item hash did
+        /// not resolve at load is left out with a warning (the quest still runs).
+        /// </summary>
+        void GrantStartItems(Player player, PlayerQuest quest)
+        {
+            if (quest.Template.StartItems is not { Count: > 0 } startItems)
+                return;
+
+            foreach (QuestRewardItem definition in startItems)
+            {
+                if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
+                {
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Quest {0} start item {1} does not resolve; not given char={2}",
+                        quest.QuestId, string.IsNullOrEmpty(definition.Hash) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Hash,
+                        player.Identity.Instance));
+                    continue;
+                }
+
+                Item item = _items.CreateWithNewInstance(definition.Id, definition.HighId ?? definition.Id, definition.Quality, ItemSource.Quest);
+                if (UniqueItems.WouldDuplicate(player, item, out string uniqueName))
+                {
+                    ClientFeedback.SendFormatted(player, ClientFeedback.AlreadyHaveUniqueItem, uniqueName);
+                    continue;
+                }
+
+                Knubot.KnubotItems.Give(player, item, _flush);
+            }
         }
 
         void ExpireDue(Player player, QuestLog log)

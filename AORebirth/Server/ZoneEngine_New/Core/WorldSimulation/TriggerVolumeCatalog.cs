@@ -275,6 +275,35 @@ namespace ZoneEngine_New.Core.WorldSimulation
             }
         }
 
+        /// <summary>Removes a dynel's trigger of <paramref name="kind"/>; false when it had none.</summary>
+        public bool RemoveDynel(ZoneTriggerKind kind, int dynelInstance)
+        {
+            int index = _all.FindIndex(v => v.Kind == kind && v.DynelInstance == dynelInstance);
+            if (index < 0)
+                return false;
+
+            ZoneTriggerVolume volume = _all[index];
+            _all.RemoveAt(index);
+            if (kind == ZoneTriggerKind.TargetVicinity)
+                VicinityTriggerCount--;
+
+            int minBinX = (int)MathF.Floor(volume.MinX / BinSize);
+            int maxBinX = (int)MathF.Floor(volume.MaxX / BinSize);
+            int minBinZ = (int)MathF.Floor(volume.MinZ / BinSize);
+            int maxBinZ = (int)MathF.Floor(volume.MaxZ / BinSize);
+            for (int bz = minBinZ; bz <= maxBinZ; bz++)
+            {
+                for (int bx = minBinX; bx <= maxBinX; bx++)
+                {
+                    long key = ((long)bx << 32) ^ (uint)bz;
+                    if (_bins.TryGetValue(key, out List<ZoneTriggerVolume>? list))
+                        list.Remove(volume);
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Tests the movement from (<paramref name="fromX"/>, <paramref name="fromZ"/>) to
         /// (<paramref name="x"/>, <paramref name="z"/>) against every trigger the path could touch.

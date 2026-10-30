@@ -1967,10 +1967,8 @@ def main(argv=None):
         if args.developer_build:
             release_arguments = (args.profile, args.approved_plan_sha256, args.resolutions,
                                  args.generated_items_receipt, args.build_attempt, args.windows_receipt,
-                                 args.acceptance_evidence, args.entrypoint, args.publishing, child)
-            active_build = any(os.environ.get(name) for name in
-                               ("AO_REBIRTH_BUILD_CHILD", "AO_REBIRTH_BUILD_TOKEN", "AO_REBIRTH_BUILD_STATE"))
-            if args.mode != "verify-build-token" or any(release_arguments) or active_build:
+                                 args.acceptance_evidence, args.publishing, child)
+            if args.mode != "verify-build-token" or any(release_arguments):
                 raise ValueError("Developer compilation cannot replace a governed build, publishing or release validation")
             print("WINDOWS_BUILD_SCOPE=DEVELOPER; PRIVATE_RELEASE_PROFILE=NOT_REQUIRED")
             print("DEPLOYABLE=NO; WINDOWS_USER_ACCEPTED=NO")

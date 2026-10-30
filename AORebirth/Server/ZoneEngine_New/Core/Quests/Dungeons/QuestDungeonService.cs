@@ -432,8 +432,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                             player.Rotation, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon) == true;
                     }
 
-                    session.TransferToPlayfield(world, layout.Spawn);
-                    return true;
+                    return session.TransferToPlayfield(world, layout.Spawn);
                 }
 
                 return false;

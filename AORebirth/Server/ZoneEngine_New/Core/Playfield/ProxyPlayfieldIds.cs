@@ -119,14 +119,21 @@ namespace ZoneEngine_New.Core.Playfield
                 PlayfieldDynel dynel = dynels[i];
                 if (dynel.IdentityType != (int)IdentityType.Door || (dynel.IdentityInstance & 0x00FFFFFF) != doorLow24)
                     continue;
-                if (!PortalDoorLandingResolver.TryReadPortal(dynel, out PortalDestination portal)
-                    || portal.Kind != PortalLandingKind.DoorDynel
-                    || !portal.RecordsReturn)
+
+                int destination = 0;
+                int destinationDoor = 0;
+                if (PortalDoorLandingResolver.TryReadPortal(dynel, out PortalDestination portal))
+                {
+                    if (portal.Kind != PortalLandingKind.DoorDynel || !portal.RecordsReturn)
+                        continue;
+                    destination = portal.PlayfieldId;
+                    destinationDoor = portal.DoorInstance;
+                    TryApplyRoute(gameData, sourcePlayfieldId, dynel.IdentityInstance, ref destination, ref destinationDoor);
+                }
+                // A plain door with a teleports route is an entrance too (PlayfieldWorldSimulation.BakeExitDoorTriggers).
+                else if (!TryApplyRoute(gameData, sourcePlayfieldId, dynel.IdentityInstance, ref destination, ref destinationDoor))
                     continue;
 
-                int destination = portal.PlayfieldId;
-                int destinationDoor = portal.DoorInstance;
-                TryApplyRoute(gameData, sourcePlayfieldId, dynel.IdentityInstance, ref destination, ref destinationDoor);
                 if (!ShouldInstance(gameData, destination))
                     return false;
 

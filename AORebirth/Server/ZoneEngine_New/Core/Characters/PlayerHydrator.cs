@@ -101,6 +101,9 @@ namespace ZoneEngine_New.Core.Characters
                     _items.CreateTemplate(record.NanoId, record.NanoId, quality: 1));
                 player.TryRestoreBuff(spell, player.Identity, record.NanoInstance, expiresAtUtc);
             }
+
+            // The absorb pools came back with the stats; hand them to the buffs that grant them, and drop the rest.
+            player.ReconcileAbsorbs();
         }
 
         void ApplyXpThresholds(Player player)

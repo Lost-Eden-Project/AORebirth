@@ -203,6 +203,21 @@ namespace ZoneEngine_New.Core.Inventory
 
             var stat = (CharacterStat)statId;
 
+            // Daily Mission XP Reward [XP, 100, 0, 0] (levels 1-100) down to [XP, 5, 0, 0] (215+): a percentage of the
+            // current level's bar, awarded as XP so it levels.
+            if (stat == CharacterStat.XP && spell.ArgumentCount >= 3 && third == 0 && minHit > 0)
+            {
+                target.AwardLevelPercentXp(minHit);
+                return true;
+            }
+
+            // Alien Daily Mission XP Reward 288545 [AlienXP, 10, 0, 0]: the same, of the current alien level's bar.
+            if (stat == CharacterStat.AlienXP && spell.ArgumentCount >= 3 && third == 0 && minHit > 0)
+            {
+                target.AwardAlienLevelPercentXp(minHit);
+                return true;
+            }
+
             // Max 0 with a nonzero Min is a percentage of the stat's maximum: Complete Healing [27,100,0,0] heals fully,
             // Minor Regeneration of Health and Nano [27,5,0,91] / [214,5,0,91] restores 5%, Wall Hacks! [27,-30,0,91]
             // takes 30%. The damage type still names the hit; caster Add Damage does not apply to a percentage.
@@ -395,6 +410,7 @@ namespace ZoneEngine_New.Core.Inventory
                 int damage = DamageReturn.Resolve(caster, target, caster.ScaleOutgoingDamage(target, -delta), acStat, shield: false,
                     out DamageReturn.Returned returned);
                 DamageReturn.Announce(caster, target, returned);
+                damage = target.TakeOffShields(caster, damage, acStat);
                 int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
                 target.ApplyDamage(caster, damage, HitType.Normal);
 
@@ -934,7 +950,7 @@ namespace ZoneEngine_New.Core.Inventory
             // An unloaded destination builds in the background; the move completes on this player's tick.
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(playfieldId, player, destination =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 session.TransferToPlayfield(destination, destination.SnapFeetToFloor(new Vector3(x, y, z)));
             }, new ZoneEngine_New.Core.World.RemoteArrival(new Vector3(x, y, z), Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
@@ -998,7 +1014,7 @@ namespace ZoneEngine_New.Core.Inventory
             player.Rotation = heading;
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(playfieldId, player, destPlayfield =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 session.TransferToPlayfield(destPlayfield, landing, heading);
             }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
@@ -1160,7 +1176,7 @@ namespace ZoneEngine_New.Core.Inventory
             source.GetService<WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(targetPlayfield, player, arrival =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 if (!landsOnLine && arrival is ACGPlayfield acg)
                     acg.World?.RegisterExitProxyDoor(destDoor);
@@ -1218,7 +1234,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(destination.PlayfieldId, player, destPlayfield =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 session.TransferToPlayfield(destPlayfield, landing, heading);
             }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));

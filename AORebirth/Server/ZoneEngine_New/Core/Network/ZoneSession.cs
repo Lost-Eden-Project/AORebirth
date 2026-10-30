@@ -292,14 +292,27 @@ namespace ZoneEngine_New.Core.Network
             Send(InitiateCompressionPacket);
         }
 
-        public void TransferToPlayfield(Playfield destination, Vector3 landing)
+        /// <summary>
+        /// A move is on its way (scheduled here, or to another zone instance), or the session is not in play. Every
+        /// mover checks this before starting a move. The session leaves InPlay the moment a move is scheduled, so the
+        /// client's input stops at the same moment (<see cref="ZoneMessageDispatcher"/> drops it).
+        /// </summary>
+        public bool IsTransferring => _transfer != null || _remoteTransfer || State != SessionState.InPlay;
+
+        public bool TransferToPlayfield(Playfield destination, Vector3 landing)
             => TransferToPlayfield(destination, landing, Player?.Rotation
                 ?? throw new InvalidOperationException("Session has no bound player."));
 
-        public void TransferToPlayfield(Playfield destination, Vector3 landing, AORebirth.Core.Vector.Quaternion heading)
+        public bool TransferToPlayfield(Playfield destination, Vector3 landing, AORebirth.Core.Vector.Quaternion heading)
             => TransferToPlayfield(destination, landing, heading, null);
 
-        internal void TransferToPlayfield(Playfield destination, Vector3 landing,
+        /// <summary>
+        /// Schedules the move on the source playfield's transfer tick and takes the session out of play at once, so
+        /// neither a second move (a door used and walked into in the same tick) nor further client input can start
+        /// before it departs. False when a move is already on its way: the first move stands. Throws only for a
+        /// session that cannot move at all (no player, closed, not in play, quarantined, same playfield).
+        /// </summary>
+        internal bool TransferToPlayfield(Playfield destination, Vector3 landing,
             AORebirth.Core.Vector.Quaternion heading, Func<bool>? stillAuthorized)
         {
             ArgumentNullException.ThrowIfNull(destination);
@@ -313,8 +326,16 @@ namespace ZoneEngine_New.Core.Network
                 {
                     Player player = Player ?? throw new InvalidOperationException("Session has no bound player.");
                     Playfield source = player.Playfield ?? throw new InvalidOperationException("Player is not on a playfield.");
+                    if (_transfer != null || _remoteTransfer)
+                    {
+                        _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                            "Transfer to playfield {0} not started for character {1}: a transfer is already on its way",
+                            destination.Identity.Instance, player.Identity.Instance));
+                        return false;
+                    }
+
                     if (_closed || State != SessionState.InPlay || !ReferenceEquals(player.Session, this)
-                        || _transfer != null || player.IsPersistenceQuarantined)
+                        || player.IsPersistenceQuarantined)
                         throw new InvalidOperationException("Session is not the current playable transfer owner.");
                     if (ReferenceEquals(source, destination))
                         throw new InvalidOperationException("Destination playfield matches current playfield.");
@@ -326,7 +347,12 @@ namespace ZoneEngine_New.Core.Network
                         _transfer = null;
                         throw new ObjectDisposedException(nameof(source));
                     }
+
+                    // Out of play from here: the same step a move to another zone instance takes in TryBeginRemoteTransfer.
+                    // FinishTransfer puts the session back in play if the move never departs or returns the character.
+                    State = SessionState.Loading;
                     destinationAdmission = null;
+                    return true;
                 }
             }
             finally
@@ -350,9 +376,18 @@ namespace ZoneEngine_New.Core.Network
             ];
         }
 
-        internal void FinishTransfer(PlayfieldTransfer transfer)
+        /// <summary>
+        /// The transfer is over. <paramref name="playerStays"/>: it never departed, or brought the character back, so
+        /// the session plays on here and goes back into play (undoing the Loading set when it was scheduled).
+        /// </summary>
+        internal void FinishTransfer(PlayfieldTransfer transfer, bool playerStays)
         {
-            if (ReferenceEquals(_transfer, transfer)) _transfer = null;
+            if (!ReferenceEquals(_transfer, transfer))
+                return;
+
+            _transfer = null;
+            if (playerStays && !_closed && State == SessionState.Loading && Player is { } player && ReferenceEquals(player.Session, this))
+                State = SessionState.InPlay;
         }
 
         private bool _remoteTransfer;

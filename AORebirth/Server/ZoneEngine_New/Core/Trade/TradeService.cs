@@ -1525,10 +1525,14 @@ namespace ZoneEngine_New.Core.Trade
             return false;
         }
 
-        /// <summary>How the client finds the item in its window: instanced items by identity, others by template and QL.</summary>
-        static KnuBotRejectedItem RejectedItem(Item item) => item.Identity.Type != IdentityType.None
-            ? new KnuBotRejectedItem { LowId = (int)item.Identity.Type, HighId = item.Identity.Instance, Quality = -1 }
-            : new KnuBotRejectedItem { LowId = item.LowId, HighId = item.HighId, Quality = item.Quality };
+        /// <summary>
+        /// How the client finds the item in its window: by template ids and QL, with the unset-stat sentinel last, for
+        /// every item. Live returned a refused item that way (Professor Dedlock refusing item 300674 QL 200, capture
+        /// 2026-10-30T02:53:14Z). The identity form (LowId = type, HighId = instance, QL -1) left a refused Dedlock book
+        /// unmatched: the client dropped its copy until the next zone.
+        /// </summary>
+        static KnuBotRejectedItem RejectedItem(Item item)
+            => new() { LowId = item.LowId, HighId = item.HighId, Quality = item.Quality, Unknown = (int)CharacterStat.Unset };
 
         static KnuBotRejectedItemsMessage RejectedItemsFrame(Player player, NpcCharacter npc, KnuBotRejectedItem[] items, int credits)
             => new()

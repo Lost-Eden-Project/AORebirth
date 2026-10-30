@@ -40,6 +40,7 @@
     "enabled": true,
     "defaultRadius": 0,
     "npcVsNpcDefaultRadius": 20,
+    "guardDefaultRadius": 20,
     "maxRadius": 30,
     "sameClanOnly": true,
     "requireLineOfSight": true,

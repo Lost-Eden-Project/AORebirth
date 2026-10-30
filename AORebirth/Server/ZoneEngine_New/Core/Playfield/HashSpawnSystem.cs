@@ -219,6 +219,7 @@ namespace ZoneEngine_New.Core.Playfield
         private readonly bool _halloweenEnabled;
         private readonly Dictionary<int, List<HashSpawnPoint>> _pointsByCell = new();
         private readonly List<HashSpawnPoint> _allPoints = new();
+        private readonly Dictionary<string, List<HashSpawnPoint>> _pointsByHash = new(StringComparer.Ordinal);
         private readonly Dictionary<Dynel, HashSpawnPoint> _pointBySpawned = new();
         private int _spawnRate = 1;
         private bool _initialized;
@@ -385,7 +386,7 @@ namespace ZoneEngine_New.Core.Playfield
                 }
 
                 list.Add(point);
-                _allPoints.Add(point);
+                AddPoint(point);
             }
 
             if (skipped > 0)
@@ -567,7 +568,7 @@ namespace ZoneEngine_New.Core.Playfield
                         }
 
                         list.Add(point);
-                        _allPoints.Add(point);
+                        AddPoint(point);
                         added++;
                     }
                 }
@@ -665,8 +666,58 @@ namespace ZoneEngine_New.Core.Playfield
             }
 
             list.Add(point);
-            _allPoints.Add(point);
+            AddPoint(point);
             return true;
+        }
+
+        void AddPoint(HashSpawnPoint point)
+        {
+            _allPoints.Add(point);
+            if (!_pointsByHash.TryGetValue(point.HashText, out List<HashSpawnPoint>? byHash))
+                _pointsByHash[point.HashText] = byHash = new List<HashSpawnPoint>();
+            byHash.Add(point);
+        }
+
+        /// <summary>
+        /// Where <paramref name="hash"/> is on this playfield, nearest <paramref name="from"/>: a living NPC of a spawn point
+        /// with that spawn hash, else such a point's first site (nothing alive there now); when no point has the hash, a
+        /// living spawned NPC whose template hash it is. False when none. Playfield thread.
+        /// </summary>
+        public bool TryFindNearest(string hash, Vector3 from, out Vector3 at)
+        {
+            at = default;
+            if (string.IsNullOrEmpty(hash))
+                return false;
+
+            double best = double.MaxValue;
+            Vector3 found = default;
+            void Consider(Vector3 position)
+            {
+                double dx = position.x - from.x, dz = position.z - from.z, distance = (dx * dx) + (dz * dz);
+                if (distance < best)
+                    (best, found) = (distance, position);
+            }
+
+            if (_pointsByHash.TryGetValue(hash, out List<HashSpawnPoint>? points))
+            {
+                foreach (HashSpawnPoint point in points)
+                    foreach (Dynel member in point.MembersSnapshot())
+                        if (member is NpcCharacter { IsDead: false } npc)
+                            Consider(npc.Position);
+
+                if (best == double.MaxValue)
+                    foreach (HashSpawnPoint point in points)
+                        Consider(point.Sites[0].Centre);
+            }
+            else
+            {
+                foreach (Dynel spawned in _pointBySpawned.Keys)
+                    if (spawned is NpcCharacter { IsDead: false } npc && string.Equals(npc.MobTemplate?.Hash, hash, StringComparison.Ordinal))
+                        Consider(npc.Position);
+            }
+
+            at = found;
+            return best < double.MaxValue;
         }
 
         private bool HasInactiveEvent(PlayfieldSpawnEntry entry)

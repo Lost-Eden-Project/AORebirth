@@ -389,7 +389,7 @@ public sealed class DailyLoginRewardServiceTests
         public Player? Player { get; private set; }
         public void BindPlayer(Player player) => Player = player;
         public void UnbindPlayer() => Player = null;
-        public void TransferToPlayfield(Playfield destination, Vector3 landing) => throw new NotSupportedException();
+        public bool TransferToPlayfield(Playfield destination, Vector3 landing) => throw new NotSupportedException();
         public void Send(byte[] packet) => throw new NotSupportedException();
         public void Send(Message message) => throw new NotSupportedException();
         public void Send(MessageBody body) => Messages.Add(body);

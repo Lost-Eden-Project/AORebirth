@@ -56,7 +56,14 @@ namespace ZoneEngine_New.Core.Entities
         public bool CanBeginUse(Player player)
             => CanStillUse(player)
                 && GetEdgeDistanceTo(player) <= LootableDynel.OpenRange
-                && Template.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse);
+                && Template.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.ToUse, UseResolver(player));
+
+        /// <summary>
+        /// The user's answer to ToUse leaves a stat cannot settle: running nanos (the teleport pad 258912 wants
+        /// HasNotRunningNano 259452, its own 30 s lockout), perks, worn items. Without it such a leaf fails closed.
+        /// </summary>
+        public Func<ItemRequirement, bool?> UseResolver(Player player)
+            => ItemTemplate.WithActionTarget(player.ResolvePerkRequirement, player, this);
 
         /// <summary>
         /// Gates checked again when a delayed use completes: the user is on this object's playfield. Reach and ToUse

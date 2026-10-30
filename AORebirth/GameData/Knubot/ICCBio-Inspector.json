@@ -64,8 +64,36 @@
     "what_now_done": {
       "Text": "What should I do now?",
       "If": [
-        "quest 5NCC done"
-      ]
+        "quest 5NCC done",
+        "!HasAnyQuest PRIF,070Y,87A3,CRTP,ZKO6,9BBO",
+        "!quest 9BBO done"
+      ],
+      "Goto": "leader_given"
+    },
+    "what_now_adri": {
+      "Text": "What should I do now?",
+      "If": [
+        "quest 9BBO done",
+        "!HasQuest AIOJ",
+        "!quest AIOJ done"
+      ],
+      "Goto": "adri_given"
+    },
+    "what_now_adri_again": {
+      "Text": "What should I do now?",
+      "If": [
+        "quest 9BBO done",
+        "HasQuest AIOJ"
+      ],
+      "Goto": "adri_where"
+    },
+    "what_now_adri_done": {
+      "Text": "What should I do now?",
+      "If": [
+        "quest 9BBO done",
+        "quest AIOJ done"
+      ],
+      "Goto": "adri_where"
     },
     "stacklund": {
       "Text": "Do you know where to find Antonio Stacklund?",
@@ -138,7 +166,10 @@
       "Text": "",
       "Replies": [
         "what_now",
-        "what_now_done"
+        "what_now_done",
+        "what_now_adri",
+        "what_now_adri_again",
+        "what_now_adri_done"
       ]
     },
     "thorn_good": {
@@ -219,6 +250,15 @@
         "{delay 2}I'd like you to find out where they all are, starting with the snake. I'll upload the details to you. Come back when you're done, I'll make sure to compensate you."
       ]
     },
+    "adri_given": {
+      "Text": [
+        "{givequest AIOJ}",
+        "You've done more than your share here already, friend. If you want more work, go see Adri Afeli. He's just through the tunnel, keeping an eye on the docks. He always has some job or other going and he pays fair."
+      ]
+    },
+    "adri_where": {
+      "Text": "Adri Afeli could use a hand. He's just through the tunnel, keeping an eye on the docks. He always has some job or other going and he pays fair."
+    },
     "boss_back": {
       "Text": "Welcome back, friend. How did it go?",
       "Replies": [
@@ -228,11 +268,15 @@
     "boss_done": {
       "Text": [
         "{completequest 9BBO}",
+        "{givequest AIOJ}",
         "Thank you so much. I'm very grateful for all the help you've given me. Here, take these credits and this range meter I had lying around. I'm sure it'll help you handle the dangers of Rubi-Ka."
       ],
       "Replies": [
         "what_now",
-        "what_now_done"
+        "what_now_done",
+        "what_now_adri",
+        "what_now_adri_again",
+        "what_now_adri_done"
       ]
     }
   }

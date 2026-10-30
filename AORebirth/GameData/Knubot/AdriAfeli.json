@@ -6,6 +6,30 @@
   "Openers": [
     {
       "If": [
+        "HasQuest AIOJ"
+      ],
+      "Say": "hey_aioj"
+    },
+    {
+      "If": [
+        "HasQuest OLJO"
+      ],
+      "Say": "robots_back"
+    },
+    {
+      "If": [
+        "HasAnyQuest MFCN,Q9I7,NP3L,XBRX,7N06,X56X,SIXG"
+      ],
+      "Say": "robots_busy"
+    },
+    {
+      "If": [
+        "HasCompletedQuest OLJO"
+      ],
+      "Say": "all_done"
+    },
+    {
+      "If": [
         "HasQuest 14VI"
       ],
       "Say": "hey_items"
@@ -134,6 +158,16 @@
   "Lines": {
     "hey": {
       "Text": "Hey there.",
+      "Replies": [
+        "who",
+        "stacklund"
+      ]
+    },
+    "hey_aioj": {
+      "Text": [
+        "{completequest AIOJ}",
+        "Hey there."
+      ],
       "Replies": [
         "who",
         "stacklund"
@@ -305,6 +339,31 @@
     },
     "refused": {
       "Text": "This isn't all I need. You sure you don't have anything else?"
+    },
+    "robots_back": {
+      "Text": [
+        "{completequest OLJO}",
+        "Well, would you look at that. The docks are quiet for the first time since the crates blew. Nice work, kid. Here's your pay, as promised.",
+        "{delay 2}\nThat was the last job I had for you, I'm afraid. If you want to keep busy, head up to Travis Molen, the shuttleport manager. He always needs an extra pair of hands."
+      ],
+      "Replies": [
+        "travis_next",
+        "travis_next_again"
+      ]
+    },
+    "robots_busy": {
+      "Text": "Those robots still running around down at the docks? Go on, clear them out and come back to me. I'll be right here.",
+      "Replies": [
+        "stacklund_done"
+      ]
+    },
+    "all_done": {
+      "Text": "Hey there, kid. Docks are still quiet, thanks to you. Travis Molen up in the main compound is the one to see for more work now.",
+      "Replies": [
+        "travis_next",
+        "travis_next_again",
+        "stacklund_done"
+      ]
     }
   },
   "Trades": {

@@ -365,7 +365,8 @@ namespace ZoneEngine_New.Core.Commands
                 if (!ReferenceEquals(subject, context.Player))
                     GmCommandFeedback.Send(subject.Session, subject, toSubject);
 
-                subject.Session.TransferToPlayfield(destination, landing);
+                if (!subject.Session.TransferToPlayfield(destination, landing))
+                    GmCommandFeedback.Send(context.Session, context.Player, who + " is already zoning; the teleport did not start.");
                 return;
             }
 

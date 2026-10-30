@@ -329,13 +329,14 @@ public sealed partial class QuestService
                         ?? throw new InvalidOperationException("Stored reward definition is unavailable.")
                     : quest.Template;
                 var reward = rewardTemplate.Reward;
-                var definitions = SelectRewardRecord(quest, reward).ToList();
+                var definitions = RewardItemsFor(player, quest, reward).ToList();
                 if (tokenReward?.Won == true)
                 {
                     definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
                 }
                 var items = new List<Item>();
                 var skippedUnique = new List<string>();
+                var used = new List<Item>();
                 foreach (var definition in definitions)
                 {
                     if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
@@ -350,8 +351,14 @@ public sealed partial class QuestService
                         skippedUnique.Add(string.IsNullOrEmpty(definition.Name) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Name);
                         continue;
                     }
-                    var item = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
-                    items.Add(item);
+                    // Live's virtual reward items (Daily Mission XP Reward, Token Add, Set Flag items) carry the Null
+                    // flag: they are used on the player, never placed in the inventory, so no instance is minted.
+                    if (IsUsedOnReward(definition.Id, highId, definition.Quality))
+                    {
+                        used.Add(_items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest));
+                        continue;
+                    }
+                    items.Add(_items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest));
                 }
                 if (skippedUnique.Count > 0)
                     _logger.Info("Quest reward unique items already held, left out char=" + player.Identity.Instance
@@ -423,6 +430,9 @@ public sealed partial class QuestService
                 foreach (var pair in values.Where(pair => !xp.Stats.ContainsKey(pair.Key)))
                     player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
                 player.FlushDirtyStats();
+                if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
+                    foreach (Item item in used)
+                        item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
                 QuestJournal.Delete(player, quest);
                 ClientFeedback.Send(player, "Feedback_MissionAccomplished");
                 _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId
@@ -453,13 +463,41 @@ public sealed partial class QuestService
         }
     }
 
+    /// <summary>
+    /// The items a quest pays this player now. A Quests.json quest's come only from QuestRewards.json, by its reward
+    /// hash: none when the hash has no entry or no entry matches. A generated quest's are the record stored with it.
+    /// </summary>
+    public IReadOnlyList<QuestRewardItem> RewardItemsFor(Player player, PlayerQuest quest, QuestReward? reward = null)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(quest);
+        reward ??= quest.Template.Reward;
+        if (quest.Source == QuestSource.Generated)
+            return SelectRewardRecord(quest, reward);
+
+        return _rewards != null && _rewards.TryResolve(reward?.Hash, player, quest, out IReadOnlyList<QuestRewardItem> mapped)
+            ? mapped
+            : [];
+    }
+
+    /// <summary>A generated quest's stored record; records are alternatives, one chosen per accepted run.</summary>
     static IReadOnlyList<QuestRewardItem> SelectRewardRecord(PlayerQuest quest, QuestReward? reward)
     {
         if (reward?.Records is not { Count: > 0 }) return [];
-        // Stable per accepted run: reconnects and failed deliveries cannot reroll an alternative.
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(quest.QuestId + ":" + quest.AssignedAtUtc.Ticks));
-        int index = (int)(BitConverter.ToUInt32(hash, 0) % (uint)reward.Records.Count);
-        return reward.Records[index];
+        return reward.Records[QuestRewardTable.StableIndex(quest, reward.Records.Count)];
+    }
+
+    /// <summary>A reward item live uses on the player instead of handing over: its template has the Null flag.</summary>
+    bool IsUsedOnReward(int lowId, int highId, int quality)
+    {
+        try
+        {
+            return (_items.CreateTemplate(lowId, highId, quality).Flags & (int)ItemFlags.Null) != 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     static ICharacterQuestCompletionTransaction RequireCompletion(IMissionDaoTransaction transaction)

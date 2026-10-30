@@ -401,28 +401,37 @@
 
                 _triggers.ClearOverlapOutside(x, y, z, state.Overlapping);
 
-                if (TryResolveZoneCrossing(
-                        fromX,
-                        fromZ,
-                        player.Position,
-                        state.Overlapping,
-                        ReadProxyReturn(player),
-                        out ZoneCrossing crossing))
+                // One character's failed crossing is that character's problem, not the playfield's tick.
+                try
                 {
-                    // A crossing can transfer the player synchronously (destination already loaded): the watchdog
-                    // names it rather than the whole soft-trigger pass.
-                    Metrics.TickStallWatch.Stage("world.crossing", id);
-                    if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity)
-                        FireTargetVicinity(playfield, player, crossing.Trigger);
-                    else if (crossing.Trigger.Kind == ZoneTriggerKind.MissionEntrance)
-                        EnterMissionEntrance(playfield, player, crossing.Trigger);
-                    else if (crossing.Trigger.Kind == ZoneTriggerKind.ExitDoor && crossing.DestPlayfieldId == 0)
-                        TellExitDestinationUnknown(player, crossing.Trigger);
-                    else if (crossing.Trigger.Kind == ZoneTriggerKind.WaterExit
-                             && crossing.DestPlayfieldId == WaterExit.ToSavePoint)
-                        SendToSavePoint(playfield, player, crossing, now);
-                    else if (MayWalkThrough(player, crossing.Trigger))
-                        TryTransfer(playfield, player, crossing, now);
+                    if (TryResolveZoneCrossing(
+                            fromX,
+                            fromZ,
+                            player.Position,
+                            state.Overlapping,
+                            ReadProxyReturn(player),
+                            out ZoneCrossing crossing))
+                    {
+                        // A crossing can transfer the player synchronously (destination already loaded): the watchdog
+                        // names it rather than the whole soft-trigger pass.
+                        Metrics.TickStallWatch.Stage("world.crossing", id);
+                        if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity)
+                            FireTargetVicinity(playfield, player, crossing.Trigger);
+                        else if (crossing.Trigger.Kind == ZoneTriggerKind.MissionEntrance)
+                            EnterMissionEntrance(playfield, player, crossing.Trigger);
+                        else if (crossing.Trigger.Kind == ZoneTriggerKind.ExitDoor && crossing.DestPlayfieldId == 0)
+                            TellExitDestinationUnknown(player, crossing.Trigger);
+                        else if (crossing.Trigger.Kind == ZoneTriggerKind.WaterExit
+                                 && crossing.DestPlayfieldId == WaterExit.ToSavePoint)
+                            SendToSavePoint(playfield, player, crossing, now);
+                        else if (MayWalkThrough(player, crossing.Trigger))
+                            TryTransfer(playfield, player, crossing, now);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
+                        "Zone trigger crossing failed for character {0} on playfield {1}; skipped this tick", id, _playfieldId));
                 }
             }
         }
@@ -790,7 +799,8 @@
                     _gameData, source.ResourceId, crossing.Trigger.DynelInstance, destPlayfieldId);
 
             IZoneSession? session = player.Session;
-            if (session == null)
+            // A move already on its way (the door used and walked into in the same tick) carries the character.
+            if (session == null || session.IsTransferring)
                 return;
 
             int id = player.Identity.Instance;
@@ -804,7 +814,7 @@
             // once it is ready, and only if they are still here with a session.
             source.GetRequiredService<PlayfieldManager>().WithPlayfield(destPlayfieldId, player, destination =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not IZoneSession current)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not IZoneSession { IsTransferring: false } current)
                     return;
 
                 WriteProxyReturn(player, source.Identity.Instance, crossing.Trigger);
@@ -1021,6 +1031,9 @@
         /// entrance/exit doors and starts a zone change on contact). The destination is not in the data, so it comes
         /// from the teleports table: a routed door becomes an ordinary door-to-door portal; an unrouted one becomes an
         /// <see cref="ZoneTriggerKind.ExitDoor"/>. Doors that already zone by their own events are left alone.
+        /// A plain door (no events, no ExitInstance) that has a teleports route is an entrance into an interior: it
+        /// becomes a door-to-door portal that records the way back, so it opens its own copy of the interior (4531's
+        /// C00611B3 into 4575, live capture 2026-10-30).
         /// </summary>
         void BakeExitDoorTriggers(PlayfieldDynels? dynels, int playfieldId)
         {
@@ -1032,8 +1045,11 @@
                 // Only the door's own events count: a dynel instance is unique per identity type, and a Terminal
                 // (4313's lift pad) can share this door's number.
                 if (d.IdentityType != (int)IdentityType.Door
-                    || PortalDoorLandingResolver.TryReadPortal(d, out _)
-                    || ExitInstanceOf(d) <= 0)
+                    || PortalDoorLandingResolver.TryReadPortal(d, out _))
+                    continue;
+
+                bool exit = ExitInstanceOf(d) > 0;
+                if (!exit && !_gameData.TryGetTeleportRoute(_playfieldId, (int)IdentityType.Door, unchecked((uint)d.IdentityInstance), out _, out _, out _))
                     continue;
 
                 float x = d.Position.X;
@@ -1059,7 +1075,15 @@
                 };
 
                 ApplyClientSphere(volume, d, x, y, z, DoorRotation(d));
-                TryApplyDoorRoute(volume, d.IdentityInstance);
+                bool routed = TryApplyDoorRoute(volume, d.IdentityInstance);
+                if (!exit)
+                {
+                    // A routed entrance; an unusable route leaves the plain door as it was.
+                    if (!routed)
+                        continue;
+                    volume.RecordsReturn = true;
+                }
+
                 _triggers.Add(volume);
             }
         }
@@ -1346,37 +1370,59 @@
                 if (!events.SpellList.ContainsKey(EventType.OnTargetInVicinity))
                     continue;
 
-                float x = d.Position.X;
-                float y = d.Position.Y;
-                float z = d.Position.Z;
-                float r = TriggerVolumeCatalog.TargetVicinityRadius;
-                bool explicitRange = events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0;
-                if (explicitRange)
-                    r = vicinityRange;
-                var pad = new ZoneTriggerVolume
-                {
-                    Kind = ZoneTriggerKind.TargetVicinity,
-                    Id = _nextTriggerId++,
-                    MinX = x - r,
-                    MaxX = x + r,
-                    MinZ = z - r,
-                    MaxZ = z + r,
-                    CenterX = x,
-                    CenterY = y,
-                    CenterZ = z,
-                    Radius = r,
-                    DynelInstance = d.IdentityInstance,
-                    VicinityEvents = events
-                };
-                float h = TriggerVolumeCatalog.HalfHeight(pad);
-                pad.MinY = y - h;
-                pad.MaxY = y + h;
-                // Without a VicinityRange the pad is the ring's own collision sphere against the player's, as for a door:
-                // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
-                if (!explicitRange)
-                    ApplyClientSphere(pad, d, x, y, z);
-                _triggers.Add(pad);
+                PlacedLook(d, out int mesh, out int scale);
+                AddVicinityPad(d.IdentityInstance, d.TemplateId, events, d.Position.X, d.Position.Y, d.Position.Z, mesh, scale);
             }
+        }
+
+        /// <summary>
+        /// Gives a dynel spawned after the bake (a hash-spawned static such as the Elysium teleporter 245613) the
+        /// walk-in pad its OnTargetInVicinity spells need. False when it has none or already has a pad.
+        /// </summary>
+        public bool RegisterVicinityDynel(int dynelInstance, ItemTemplate events, float x, float y, float z)
+        {
+            ArgumentNullException.ThrowIfNull(events);
+            if (!events.SpellList.ContainsKey(EventType.OnTargetInVicinity)
+                || _triggers.HasDynel(ZoneTriggerKind.TargetVicinity, dynelInstance))
+                return false;
+
+            AddVicinityPad(dynelInstance, events.Id, events, x, y, z, placedMesh: 0, placedScale: 0);
+            return true;
+        }
+
+        /// <summary>Drops the pad <see cref="RegisterVicinityDynel"/> gave a dynel that has since despawned.</summary>
+        public void UnregisterVicinityDynel(int dynelInstance)
+            => _triggers.RemoveDynel(ZoneTriggerKind.TargetVicinity, dynelInstance);
+
+        void AddVicinityPad(int dynelInstance, int templateId, ItemTemplate events, float x, float y, float z, int placedMesh, int placedScale)
+        {
+            float r = TriggerVolumeCatalog.TargetVicinityRadius;
+            bool explicitRange = events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0;
+            if (explicitRange)
+                r = vicinityRange;
+            var pad = new ZoneTriggerVolume
+            {
+                Kind = ZoneTriggerKind.TargetVicinity,
+                Id = _nextTriggerId++,
+                MinX = x - r,
+                MaxX = x + r,
+                MinZ = z - r,
+                MaxZ = z + r,
+                CenterX = x,
+                CenterY = y,
+                CenterZ = z,
+                Radius = r,
+                DynelInstance = dynelInstance,
+                VicinityEvents = events
+            };
+            float h = TriggerVolumeCatalog.HalfHeight(pad);
+            pad.MinY = y - h;
+            pad.MaxY = y + h;
+            // Without a VicinityRange the pad is the ring's own collision sphere against the player's, as for a door:
+            // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
+            if (!explicitRange)
+                ApplyClientSphere(pad, templateId, x, y, z, placedMesh: placedMesh, placedScale: placedScale);
+            _triggers.Add(pad);
         }
 
         /// <summary>Doors as sight blockers: the playfield's static doors, plus quest dungeon doors as they spawn.</summary>

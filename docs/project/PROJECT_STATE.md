@@ -19,7 +19,8 @@ work locally. The scoped feedback follow-up passed 68 focused checks and the
 four-engine build: empty callbacks and successful replays stay quiet, and only
 later daily-limit chat following a fresh same-batch grant is suppressed. Every
 token retains its durable result; standalone refusals and genuine failures stay
-visible. Client verification of the feedback follow-up remains pending. Existing earned
+visible. Mike confirmed all his character logins and Daily Rewards work locally.
+Existing earned
 progress is retained. Relog and uninterrupted client UTC
 rollover remain unverified; this is not release acceptance. All four rebuilt local
 engines and the local Daily page are ready for testing. No production database,

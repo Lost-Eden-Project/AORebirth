@@ -14,8 +14,6 @@ namespace ZoneEngine_New.Core.Helpers
     /// </summary>
     public static class DamageCalculator
     {
-        /// <summary>Steepness of the hit curve (see <see cref="HitPercentage"/>).</summary>
-        const double HitCurveSlope = 4.75;
         const float Post1000DamageReduction = 0.3f;
 
         static readonly Random SharedRandom = new();
@@ -47,7 +45,8 @@ namespace ZoneEngine_New.Core.Helpers
             int? critBonusOverride = null,
             bool alwaysHits = false,
             bool canCrit = true,
-            int? attackSkillOverride = null)
+            int? attackSkillOverride = null,
+            Item? damageTypeSource = null)
         {
             ArgumentNullException.ThrowIfNull(attacker);
             ArgumentNullException.ThrowIfNull(target);
@@ -64,7 +63,8 @@ namespace ZoneEngine_New.Core.Helpers
                 weaponMin = NormalizeStat(weapon.GetStat(CharacterStat.MinDamage));
                 weaponMax = Math.Max(weaponMin, NormalizeStat(weapon.GetStat(CharacterStat.MaxDamage)));
                 weaponCritBonus = NormalizeStat(weapon.GetStat(CharacterStat.DamageBonus));
-                rawDamageType = NormalizeStat(weapon.GetStat(CharacterStat.DamageType));
+                // The type comes from the weapon the hit is shown as (CharacterWeapon.DamageTypeItem) when that differs.
+                rawDamageType = NormalizeStat((damageTypeSource ?? weapon).GetStat(CharacterStat.DamageType));
                 // Fists, Martial Arts and Brawl items carry no DamageType: they hit as melee like any melee weapon, so
                 // melee damage modifiers and Melee AC apply.
                 if (rawDamageType == 0)
@@ -271,16 +271,16 @@ namespace ZoneEngine_New.Core.Helpers
             => NextDouble() <= HitPercentage(attackRating, defenseRating, aggDef);
 
         /// <summary>
-        /// Hit chance = 1 / (1 + e^(-4.75 x (AR / (sqrt(2) x DR) + AggDef / 500 - 0.5))). AR is the attack rating (attack
-        /// skills + Add All Off.), DR the defense rating (defense skills + Add All Def.), AggDef the defender's
-        /// aggressive/defensive bar, -100 (fully defensive, harder to hit) to 100. Equal ratings at AggDef 0 hit about 73%
-        /// of the time. A DR under 1 counts as 1.
+        /// Hit chance = 1 / sqrt(2) x AR / DR + AggDef / 500, held to 0..1. AR is the attack rating (attack skills + Add
+        /// All Off.), DR the defense rating (defense skills + Add All Def.), AggDef the defender's aggressive/defensive
+        /// bar, -100 (fully defensive, harder to hit) to 100. Equal ratings at AggDef 0 hit about 71% of the time; AR at
+        /// sqrt(2) x DR or more always hits. A DR under 1 counts as 1.
         /// </summary>
         static double HitPercentage(int attackRating, int defenseRating, int aggDef)
         {
             double ratio = Math.Max(0, attackRating) / (Math.Sqrt(2) * Math.Max(1, defenseRating));
             double aggression = Math.Clamp(aggDef, NanoDelayCalculator.AggDefMin, NanoDelayCalculator.AggDefMax) / 500.0;
-            return 1 / (1 + Math.Exp(-HitCurveSlope * (ratio + aggression - 0.5)));
+            return Math.Clamp(ratio + aggression, 0, 1);
         }
 
         static bool TryGetArmorStat(int rawDamageType, out CharacterStat armorStat)
@@ -315,6 +315,28 @@ namespace ZoneEngine_New.Core.Helpers
                     armorStat = 0;
                     return false;
             }
+        }
+
+        /// <summary>Whether <paramref name="stat"/> is an absorb layer (Absorb Projectile AC 238 to Absorb Nano AC 246).</summary>
+        internal static bool IsAbsorbStat(CharacterStat stat)
+            => stat is >= CharacterStat.AbsorbProjectileAC and <= CharacterStat.AbsorbNanoAC;
+
+        /// <summary>The absorb layer a hit of damage type <paramref name="rawDamageType"/> (90-97) is taken out of first.</summary>
+        internal static bool TryGetAbsorbStat(int rawDamageType, out CharacterStat absorbStat)
+        {
+            absorbStat = rawDamageType switch
+            {
+                90 => CharacterStat.AbsorbProjectileAC,
+                91 => CharacterStat.AbsorbMeleeAC,
+                92 => CharacterStat.AbsorbEnergyAC,
+                93 => CharacterStat.AbsorbChemicalAC,
+                94 => CharacterStat.AbsorbRadiationAC,
+                95 => CharacterStat.AbsorbColdAC,
+                96 => CharacterStat.AbsorbPoisonAC,
+                97 => CharacterStat.AbsorbFireAC,
+                _ => 0
+            };
+            return absorbStat != 0;
         }
 
         const int MeleeDamageType = 91;
