@@ -57,9 +57,12 @@ client verification (2026-10-29): Mike confirmed the reward arrived and Taken
 appeared while the Daily window stayed open. PROVEN server-side evidence records
 the registered native callback, action-263 request and matching committed receipt
 in both configured claim roots. That check predates the per-character revision,
-whose local migration/rebuild and client verification are pending. Relog and
+whose local four-engine build passed. A fresh local database backup is complete;
+the character-scope migration awaits explicit approval and client verification
+is pending. Relog and
 uninterrupted client UTC rollover remain unverified. Anonymous or ambiguous legacy requests still fail closed.
-All four local engines remain running for Mike's testing. The approved local
+All four local engines are stopped by the approved build guard until the new
+character-scope migration is approved and applied. The earlier approved local
 migration and client patch installation occurred; no production data, deployment
 or Linux work was involved, and the agent did not launch or control the AO client.
 
