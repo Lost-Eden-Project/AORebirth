@@ -3,12 +3,15 @@ namespace ZoneEngine_New.Core.Playfield.Locality
     using System;
     using System.Collections.Generic;
 
+    using AORebirth.Modules.Events;
+
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Modules;
     using ZoneEngine_New.Core.Network;
 
     /// <summary>
@@ -25,6 +28,10 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private readonly Dictionary<ulong, IZoneSession> _recipientSessions = new();
         private readonly List<int> _neighborBuffer = new();
         private readonly Dictionary<ulong, Dynel> _byIdentity = new();
+
+        // The playfield this locality serves, taken from the first recipient prepared here; module visibility hooks
+        // publish on it. Nothing is sent to a client before a recipient is prepared.
+        private Playfield? _owner;
 
         internal LocalityVisibility(CellGrid grid, LocalityPolicy policy, HashSet<Dynel> tracked)
         {
@@ -48,7 +55,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             if (transferredTo != null)
                 RemoveVisibleEntry(transferredTo.Identity.Long(), key);
             if (!NeverDespawns(dynel))
-                DespawnSourceFromObservers(dynel);
+                DespawnSourceFromObservers(dynel, Observed());
             RemoveSourceState(key);
             ForgetRecipient(key);
             _byIdentity.Remove(key);
@@ -63,6 +70,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _byIdentity.Clear();
         }
 
+        /// <summary>The playfield to raise visibility hooks on, or null when no module observes it (checked once per change set).</summary>
+        private Playfield? Observed() => ModuleHooks.WantsVisibility(_owner) ? _owner : null;
+
         /// <summary>
         /// After the joining player's self packets: snapshot neighborhood to the player, then announce the player out.
         /// </summary>
@@ -72,12 +82,14 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
             if (!PrepareRecipient(player)) return;
 
+            Playfield? observe = Observed();
             foreach (Dynel source in CollectCandidates(player))
             {
-                TryEnterVisibility(player, source);
+                TryEnterVisibility(player, source, observe, VisibilityReason.PlayerArrived);
             }
 
-            ReconcileSource(player);
+            // Everyone else near is told about the arriving player.
+            ReconcileSource(player, observe, VisibilityReason.Spawned);
         }
 
         /// <summary>
@@ -91,11 +103,12 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
             if (!PrepareRecipient(player)) return;
 
+            Playfield? observe = Observed();
             foreach (Dynel source in CollectCandidates(player))
             {
                 if (source is VendingMachine)
                 {
-                    TryEnterVisibility(player, source);
+                    TryEnterVisibility(player, source, observe, VisibilityReason.PlayerArrived);
                 }
             }
         }
@@ -112,11 +125,12 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             ulong recipientKey = player.Identity.Long();
             if (_visibleSourcesByRecipient.TryGetValue(recipientKey, out HashSet<ulong>? visibleSources))
             {
+                Playfield? observe = Observed();
                 foreach (ulong sourceKey in new List<ulong>(visibleSources))
                 {
                     if (_byIdentity.TryGetValue(sourceKey, out Dynel? source) && !NeverDespawns(source))
                     {
-                        LeaveVisibility(player, source);
+                        LeaveVisibility(player, source, observe, VisibilityReason.PlayerLeft);
                     }
                     else
                     {
@@ -143,33 +157,39 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
             if (_visibleRecipientsBySource.TryGetValue(source.Identity.Long(), out HashSet<ulong>? recipientKeys))
             {
+                Playfield? observe = Observed();
                 foreach (ulong recipientKey in new List<ulong>(recipientKeys))
                 {
                     if (_byIdentity.TryGetValue(recipientKey, out Dynel? recipientDynel)
                         && recipientDynel is Player recipient
                         && !ReferenceEquals(recipient, source))
                     {
-                        LeaveVisibility(recipient, source);
+                        LeaveVisibility(recipient, source, observe, VisibilityReason.Despawned);
                     }
                 }
             }
         }
 
-        internal void Reconcile(Dynel changed)
+        /// <param name="shownReason">
+        /// The module visibility reason for observers newly shown <paramref name="changed"/>: Spawned for a dynel that
+        /// was just registered or is shown again after a despawn, EnteredRange for one that moved or became perceivable.
+        /// </param>
+        internal void Reconcile(Dynel changed, VisibilityReason shownReason = VisibilityReason.EnteredRange)
         {
             if (changed == null)
             {
                 return;
             }
 
+            Playfield? observe = Observed();
             if (changed is Player player
                 && player.Session != null
                 && _initializedRecipients.Contains(player.Identity.Long()))
             {
-                ReconcileRecipient(player);
+                ReconcileRecipient(player, observe);
             }
 
-            ReconcileSource(changed);
+            ReconcileSource(changed, observe, shownReason);
         }
 
         internal void Announce(Dynel source, MessageBody message, bool includeSelf)
@@ -216,7 +236,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             return result.ToArray();
         }
 
-        private void ReconcileRecipient(Player recipient)
+        private void ReconcileRecipient(Player recipient, Playfield? observe)
         {
             HashSet<ulong> currentlyVisible = GetVisibleSourceKeys(recipient.Identity);
             HashSet<ulong> desired = new();
@@ -243,17 +263,17 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
                 if (!IsPinnedVisibility(recipient, source) && !NeverDespawns(source))
                 {
-                    LeaveVisibility(recipient, source);
+                    LeaveVisibility(recipient, source, observe, VisibilityReason.LeftRange);
                 }
             }
 
             foreach (Dynel source in CollectCandidates(recipient))
             {
-                TryEnterVisibility(recipient, source);
+                TryEnterVisibility(recipient, source, observe, VisibilityReason.EnteredRange);
             }
         }
 
-        private void ReconcileSource(Dynel source)
+        private void ReconcileSource(Dynel source, Playfield? observe, VisibilityReason shownReason)
         {
             foreach (Player recipient in GetInitializedConnectedRecipients())
             {
@@ -262,7 +282,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                     // A source that just went out of this recipient's sight (a sneaker it cannot perceive) leaves it.
                     if (!ReferenceEquals(recipient, source) && IsVisibleToRecipient(recipient, source)
                         && !IsPinnedVisibility(recipient, source) && !NeverDespawns(source))
-                        LeaveVisibility(recipient, source);
+                        LeaveVisibility(recipient, source, observe, VisibilityReason.LeftRange);
                     continue;
                 }
 
@@ -271,11 +291,11 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 bool isVisible = IsVisibleToRecipient(recipient, source);
                 if (shouldBeVisible && !isVisible)
                 {
-                    TryEnterVisibility(recipient, source);
+                    TryEnterVisibility(recipient, source, observe, shownReason);
                 }
                 else if (!shouldBeVisible && isVisible && !IsPinnedVisibility(recipient, source) && !NeverDespawns(source))
                 {
-                    LeaveVisibility(recipient, source);
+                    LeaveVisibility(recipient, source, observe, VisibilityReason.LeftRange);
                 }
             }
         }
@@ -344,7 +364,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             return _neighborBuffer.Contains(source.Cell.Id);
         }
 
-        private bool TryEnterVisibility(Player recipient, Dynel source)
+        /// <param name="observe">The playfield to raise the module visibility hook on, or null to raise none.</param>
+        private bool TryEnterVisibility(Player recipient, Dynel source, Playfield? observe, VisibilityReason reason)
         {
             if (!CanShare(recipient, source))
             {
@@ -394,6 +415,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 throw;
             }
 
+            if (observe != null)
+                ModuleHooks.Visibility(observe, recipient, source, true, reason);
+
             if (source is Character character)
             {
                 foreach (WeaponItemFullUpdateMessage wifu in character.BuildWeaponInstanceMessages())
@@ -415,6 +439,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 || !_byIdentity.TryGetValue(recipientKey, out Dynel? current)
                 || !ReferenceEquals(current, player)) return false;
 
+            _owner = player.Playfield ?? _owner;
+
             // Fence visibility to the exact transport. Repeating either priming or complete
             // activation on the same session preserves successful spawn de-duplication.
             if (!_recipientSessions.TryGetValue(recipientKey, out IZoneSession? previousSession)
@@ -433,7 +459,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             return true;
         }
 
-        private void LeaveVisibility(Player recipient, Dynel source)
+        /// <param name="observe">The playfield to raise the module visibility hook on, or null to raise none.</param>
+        private void LeaveVisibility(Player recipient, Dynel source, Playfield? observe, VisibilityReason reason)
         {
             if (recipient.Session != null)
             {
@@ -443,12 +470,14 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                         Identity = source.Identity,
                         Unknown = 1
                     });
+                if (observe != null)
+                    ModuleHooks.Visibility(observe, recipient, source, false, reason);
             }
 
             RemoveVisibleEntry(recipient.Identity.Long(), source.Identity.Long());
         }
 
-        private void DespawnSourceFromObservers(Dynel source)
+        private void DespawnSourceFromObservers(Dynel source, Playfield? observe)
         {
             ulong sourceKey = source.Identity.Long();
             if (!_visibleRecipientsBySource.TryGetValue(sourceKey, out HashSet<ulong>? recipientKeys))
@@ -471,6 +500,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                         Identity = source.Identity,
                         Unknown = 1
                     });
+                if (observe != null)
+                    ModuleHooks.Visibility(observe, recipient, source, false, VisibilityReason.Despawned);
             }
         }
 

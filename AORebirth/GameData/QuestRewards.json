@@ -4,7 +4,28 @@
     "Entries": [
       {
         "Items": [
-          { "Hash": "SABA", "Ql": 1 }
+          {
+            "Hash": "SABA",
+            "Ql": 1
+          }
+        ]
+      }
+    ]
+  },
+  "W2BI": {
+    "Notes": "Take belt to Antonio Stacklund (MWTD): he takes Blackmane's Belt (BCBT) and hands it back as Blackmane's Belt Component Platform (BABM) with an NCU chip (ao-universe shuttleport guide). The chip has no private hash, so it is by id: 2 - 3 NCU Memory. The nano-compressed vehicle he mentions is not mapped yet.",
+    "Entries": [
+      {
+        "Items": [
+          {
+            "Hash": "BABM",
+            "Ql": 1
+          },
+          {
+            "Id": 36779,
+            "Name": "2 - 3 NCU Memory",
+            "Ql": 1
+          }
         ]
       }
     ]

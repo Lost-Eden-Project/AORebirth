@@ -6,6 +6,7 @@ namespace ZoneEngine_New.Core.Trade
     using System.Linq;
 
     using AORebirth.Enums;
+    using AORebirth.Modules.Events;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
@@ -16,6 +17,7 @@ namespace ZoneEngine_New.Core.Trade
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Modules;
     using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
@@ -440,6 +442,8 @@ namespace ZoneEngine_New.Core.Trade
             // The slot it left is the player's to use while it is on the table, so its row leaves the slot too.
             player.Inventory.ParkOffered(item, player.Identity.Instance);
             _flush.NotifyDirty(player);
+            if (TablePlace(session, player) is ItemPlace table)
+                ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Inventory), table);
 
             Acknowledge(player, message);
 
@@ -488,6 +492,8 @@ namespace ZoneEngine_New.Core.Trade
 
             player.Inventory.MarkDirty(item, page, slot);
             _flush.NotifyDirty(player);
+            if (TablePlace(session, player) is ItemPlace table)
+                ModuleHooks.ItemMoved(player, item, table, ModuleHooks.Place(ItemPlaceKind.Inventory));
 
             SendReturnToInventory(player, tradeSlot);
             Acknowledge(player, message);
@@ -698,6 +704,12 @@ namespace ZoneEngine_New.Core.Trade
                 FailedCommit(session, exception, durable);
                 return;
             }
+
+            // Each side receives the other's table (raised before overflow trimming, which may destroy a delivery).
+            foreach (Delivery delivery in deliveries)
+                ModuleHooks.ItemMoved(delivery.Receiver, delivery.Item,
+                    ModuleHooks.Place(ItemPlaceKind.Trade, (ReferenceEquals(delivery.Receiver, initiator) ? partner : initiator).Identity),
+                    ModuleHooks.Place(ItemPlaceKind.Inventory));
 
             Unregister(initiator);
             Unregister(partner);
@@ -1112,11 +1124,12 @@ namespace ZoneEngine_New.Core.Trade
             session.Committing = true;
             bool durable = false;
             int soldCount = offer.Count;
+            Item[] sold = ModuleHooks.WantsItemMoves(player.Playfield) ? offer.Items.Values.ToArray() : [];
+            var deliveries = new List<Delivery>();
             try
             {
                 _flush.WithExclusivePlayers(player, null, () =>
                 {
-                    var deliveries = new List<Delivery>();
                     PlanDeliveries(bought, player, deliveries);
                     PersistPlan(player, checked((int)finalCash), null, 0, deliveries, offer.Items.Values.ToArray(), machine.Identity,
                         currency, payInCash ? 0 : checked((int)finalCurrency));
@@ -1133,6 +1146,15 @@ namespace ZoneEngine_New.Core.Trade
             {
                 FailedCommit(session, exception, durable);
                 return;
+            }
+
+            if (ModuleHooks.WantsItemMoves(player.Playfield))
+            {
+                ItemPlace shop = ModuleHooks.Place(ItemPlaceKind.Shop, owner?.Identity ?? machine.Identity);
+                foreach (Item item in sold)
+                    ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Inventory), shop);
+                foreach (Delivery delivery in deliveries)
+                    ModuleHooks.ItemMoved(player, delivery.Item, shop, ModuleHooks.Place(ItemPlaceKind.Inventory));
             }
 
             Unregister(player);
@@ -1312,12 +1334,12 @@ namespace ZoneEngine_New.Core.Trade
                 return;
 
             if (message.Action == KnuBotTradeAction.Add)
-                AddKnubotItem(player, session.InitiatorOffer, message.Container);
+                AddKnubotItem(player, session, session.InitiatorOffer, message.Container);
             else if (message.Action == KnuBotTradeAction.Remove)
-                RemoveKnubotItem(player, session.InitiatorOffer, message.Container.Instance);
+                RemoveKnubotItem(player, session, session.InitiatorOffer, message.Container.Instance);
         }
 
-        void AddKnubotItem(Player player, TradeOffer offer, Identity source)
+        void AddKnubotItem(Player player, TradeSession session, TradeOffer offer, Identity source)
         {
             // Overflow items can only be deleted or moved into the inventory, not handed to an NPC from there.
             Container page = source.Type switch
@@ -1355,6 +1377,8 @@ namespace ZoneEngine_New.Core.Trade
             // The slot it left is the player's to use while it is in the window, so its row leaves the slot too.
             player.Inventory.ParkOffered(item, player.Identity.Instance);
             _flush.NotifyDirty(player);
+            if (TablePlace(session, player) is ItemPlace table)
+                ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Inventory), table);
         }
 
         /// <summary>
@@ -1372,7 +1396,7 @@ namespace ZoneEngine_New.Core.Trade
             SendReturnToInventory(player, clientSlot);
         }
 
-        void RemoveKnubotItem(Player player, TradeOffer offer, int tradeSlot)
+        void RemoveKnubotItem(Player player, TradeSession session, TradeOffer offer, int tradeSlot)
         {
             Item? item = offer.Remove(tradeSlot);
             if (item == null)
@@ -1388,6 +1412,8 @@ namespace ZoneEngine_New.Core.Trade
 
             player.Inventory.MarkDirty(item, page, slot);
             _flush.NotifyDirty(player);
+            if (TablePlace(session, player) is ItemPlace table)
+                ModuleHooks.ItemMoved(player, item, table, ModuleHooks.Place(ItemPlaceKind.Inventory));
         }
 
         /// <summary>
@@ -1426,6 +1452,10 @@ namespace ZoneEngine_New.Core.Trade
                 return false;
             }
 
+            ItemPlace npcTable = ModuleHooks.Place(ItemPlaceKind.Trade, npc.Identity);
+            foreach (Item item in given)
+                ModuleHooks.ItemMoved(player, item, npcTable, ModuleHooks.Place(ItemPlaceKind.Destroyed));
+
             Unregister(player);
 
             // An empty list removes every item still in the client's window and closes it.
@@ -1462,6 +1492,7 @@ namespace ZoneEngine_New.Core.Trade
             TradeOffer offer = session.InitiatorOffer;
             var returned = new List<KnuBotRejectedItem>(offer.Count);
             var overflowed = new List<(Item Item, Container Page)>();
+            ItemPlace table = ModuleHooks.Place(ItemPlaceKind.Trade, session.Npc?.Identity ?? Identity.None);
             foreach (int tradeSlot in offer.Items.Keys.OrderBy(x => x).ToArray())
             {
                 Item item = offer.Remove(tradeSlot)!;
@@ -1469,11 +1500,13 @@ namespace ZoneEngine_New.Core.Trade
                 {
                     player.Inventory.MarkDirty(item, page, slot);
                     returned.Add(RejectedItem(item));
+                    ModuleHooks.ItemMoved(player, item, table, ModuleHooks.Place(ItemPlaceKind.Inventory));
                 }
                 else if (player.Inventory.TryPlace(item, out page, out slot))
                 {
                     player.Inventory.MarkDirty(item, page, slot);
                     overflowed.Add((item, page));
+                    ModuleHooks.ItemMoved(player, item, table, ModuleHooks.Place(ItemPlaceKind.Inventory));
                 }
                 else
                 {
@@ -1496,6 +1529,17 @@ namespace ZoneEngine_New.Core.Trade
             _logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot trade closed player={0} returned={1} overflow={2} reason={3}",
                 player.Identity.Instance, returned.Count, overflowed.Count, reason));
         }
+
+        /// <summary>
+        /// Where <paramref name="player"/>'s offered items sit, for module item moves: the trade table, owned by the other
+        /// side (the partner, or the NPC). Null for a shop, whose sales are raised on commit as Inventory to Shop.
+        /// </summary>
+        static ItemPlace? TablePlace(TradeSession session, Player player) => session.Kind switch
+        {
+            TradeKind.Player => ModuleHooks.Place(ItemPlaceKind.Trade, session.Other(player)?.Identity ?? Identity.None),
+            TradeKind.Knubot => ModuleHooks.Place(ItemPlaceKind.Trade, session.Npc?.Identity ?? Identity.None),
+            _ => null
+        };
 
         static int FirstFreeOfferSlot(TradeOffer offer)
         {
@@ -1613,13 +1657,13 @@ namespace ZoneEngine_New.Core.Trade
             // declined shop trade showed the offered item twice).
             bool clientRestores = session.Kind is TradeKind.Player or TradeKind.Shop;
 
-            ReturnOffer(session.Initiator, session.InitiatorOffer, clientRestores);
+            ReturnOffer(session.Initiator, session.InitiatorOffer, clientRestores, TablePlace(session, session.Initiator));
             Unregister(session.Initiator);
 
             Player? partner = session.Partner;
             if (partner != null)
             {
-                ReturnOffer(partner, session.PartnerOffer, clientRestores);
+                ReturnOffer(partner, session.PartnerOffer, clientRestores, TablePlace(session, partner));
                 Unregister(partner);
             }
 
@@ -1649,8 +1693,9 @@ namespace ZoneEngine_New.Core.Trade
         /// Puts a cancelled offer back: the first free inventory slot, or overflow when the inventory is full (the
         /// player may have used the slots the offer left). The client restores an inventory return itself when
         /// <paramref name="clientRestores"/>; an overflow return is always sent, then overflow is kept to its capacity.
+        /// <paramref name="table"/>: where the offer was, for module item moves (null for a shop's sell offer).
         /// </summary>
-        void ReturnOffer(Player owner, TradeOffer offer, bool clientRestores)
+        void ReturnOffer(Player owner, TradeOffer offer, bool clientRestores, ItemPlace? table)
         {
             var tradeSlots = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
             foreach (KeyValuePair<int, Item> entry in offer.Items)
@@ -1661,6 +1706,8 @@ namespace ZoneEngine_New.Core.Trade
                 if (owner.Inventory.TryPlace(item, out Container page, out int slot))
                 {
                     owner.Inventory.MarkDirty(item, page, slot);
+                    if (table is ItemPlace offeredAt)
+                        ModuleHooks.ItemMoved(owner, item, offeredAt, ModuleHooks.Place(ItemPlaceKind.Inventory));
                     if (page.Identity.Type == IdentityType.OverflowWindow)
                     {
                         // Retail: ContainerAddItem from the trade window into overflow; the window follows (Trim).

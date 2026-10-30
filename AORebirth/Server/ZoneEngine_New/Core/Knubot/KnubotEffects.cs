@@ -4,12 +4,14 @@ using System;
 using System.Collections.Generic;
 
 using AORebirth.Enums;
+using AORebirth.Modules.Events;
 
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Inventory;
+using ZoneEngine_New.Core.Modules;
 using ZoneEngine_New.Core.Quests;
 using ZoneEngine_New.Core.Trade;
 
@@ -251,6 +253,7 @@ public static class KnubotItems
 
         player.Inventory.MarkDirty(item, page, slot);
         flush.NotifyDirty(player);
+        ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Inventory));
         if (ReferenceEquals(page, player.Inventory.Overflow))
         {
             OverflowGrants.Send(player, item);

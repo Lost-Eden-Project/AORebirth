@@ -127,6 +127,40 @@ namespace ZoneEngine_New.Core.Network
             }
 
             ConnectedAtUtc = DateTime.UtcNow;
+            Live[id] = this;
+        }
+
+        /// <summary>Open connections by id, for <see cref="TryFind"/> (module API 1.6 message counts).</summary>
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, ZoneSession> Live = new();
+
+        /// <summary>The open connection with this id on this instance.</summary>
+        internal static bool TryFind(Guid id, out ZoneSession session) => Live.TryGetValue(id, out session!);
+
+        /// <summary>Messages of each N3 type this connection received and sent since it opened (module API 1.6).</summary>
+        readonly System.Collections.Concurrent.ConcurrentDictionary<int, MessageTally> _tallies = new();
+
+        sealed class MessageTally
+        {
+            public long Inbound;
+            public long Outbound;
+        }
+
+        void CountMessage(int messageType, bool inbound)
+        {
+            MessageTally tally = _tallies.GetOrAdd(messageType, static _ => new MessageTally());
+            if (inbound)
+                Interlocked.Increment(ref tally.Inbound);
+            else
+                Interlocked.Increment(ref tally.Outbound);
+        }
+
+        /// <summary>A copy of the per-type message counts.</summary>
+        internal Dictionary<int, AORebirth.Modules.World.MessageCount> MessageCounts()
+        {
+            var counts = new Dictionary<int, AORebirth.Modules.World.MessageCount>(_tallies.Count);
+            foreach ((int type, MessageTally tally) in _tallies)
+                counts[type] = new AORebirth.Modules.World.MessageCount(Interlocked.Read(ref tally.Inbound), Interlocked.Read(ref tally.Outbound));
+            return counts;
         }
 
         public Guid Id { get; }
@@ -593,6 +627,7 @@ namespace ZoneEngine_New.Core.Network
 
             _closed = true;
             State = SessionState.Closed;
+            Live.TryRemove(new KeyValuePair<Guid, ZoneSession>(Id, this));
             _handoffAuthority = null;
             _handoffCharacter = 0;
             _handoffCookie1 = 0;
@@ -760,9 +795,11 @@ namespace ZoneEngine_New.Core.Network
                             }
 
                             LogNetworkMessage("Received", message.Body);
+                            if (message.Body is N3Message counted)
+                                CountMessage((int)counted.N3MessageType, inbound: true);
                             if (_observers != null)
                                 ObserveInbound(message.Body, packet, received);
-                            _dispatcher.Dispatch(message, this);
+                            _dispatcher.Dispatch(message, this, received);
                         }
                         catch (Exception exception)
                         {
@@ -875,6 +912,9 @@ namespace ZoneEngine_New.Core.Network
                 await foreach (byte[] packet in _sendQueue.Reader.ReadAllAsync(cancellationToken)
                                    .ConfigureAwait(false))
                 {
+                    if (packet.Length >= HeaderLength + 4
+                        && BinaryPrimitives.ReadInt16BigEndian(packet.AsSpan(2)) == (short)PacketType.N3Message)
+                        CountMessage((int)TryReadN3MessageId(packet), inbound: false);
                     if (_observers != null)
                         ObserveOutbound(packet);
 

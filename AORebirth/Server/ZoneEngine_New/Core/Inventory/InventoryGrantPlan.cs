@@ -4,9 +4,11 @@ namespace ZoneEngine_New.Core.Inventory
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
+    using AORebirth.Modules.Events;
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Modules;
 
     /// <summary>
     /// Pure capacity/identity plan for a mission-owned transaction. The caller holds
@@ -70,9 +72,10 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>
         /// Puts the committed items in their planned slots. With <paramref name="notify"/> the client is told (AddTemplate
         /// for the inventory, an overflow grant for overflow) and overflow is then kept to its capacity; a caller that
-        /// tells the client itself calls <see cref="OverflowGrants.Trim"/> after it has.
+        /// tells the client itself calls <see cref="OverflowGrants.Trim"/> after it has. <paramref name="from"/>: where the
+        /// items came from, for module item moves; none (created) by default.
         /// </summary>
-        public bool PublishAfterCommit(bool notify = true)
+        public bool PublishAfterCommit(bool notify = true, ItemPlace? from = null)
         {
             if (!Monitor.IsEntered(_player.PersistenceGate)) throw new InvalidOperationException("Grant publication requires the player's persistence gate.");
             if (_published) return false;
@@ -86,6 +89,7 @@ namespace ZoneEngine_New.Core.Inventory
                 _items[i].IsPersisted = true;
                 if (ReferenceEquals(_pages[i], _player.Inventory.Overflow))
                     _player.Inventory.NoteOverflowArrival(_items[i]);
+                ModuleHooks.ItemMoved(_player, _items[i], from ?? ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Inventory));
             }
             if (!notify)
                 return true;

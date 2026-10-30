@@ -36,6 +36,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (!player.TryRelaySocialAction(message))
                 return;
 
+            // An emote carries no text.
+            Modules.ModuleHooks.PlayerSpoke(player, AORebirth.Modules.Events.ChatChannelKind.Emote, null);
+
             // Sleep and lounge are postures, not one-shot emotes: the client leaves them with
             // CharacterAction StandUp, so the motor holds the state until then (like sneak).
             switch (message.Action)

@@ -1,5 +1,5 @@
 {
-  "Notes": "Vendor Antonio Stacklund (EQVE), ICC Shuttleport (4582) at (934.5, 47.5, 873.5). Rebuilt from 8 QuestDialogCapture dumps (Vendor_Antonio_Stacklund_EQVE, 2026-10-20, characters Soldmen, Complicado). Target of MWTD (FindItem2, SpecItem BCBT): retail completes it in the chat ~1.5s after \"A belt? Let me have a look at it then!\", with no trade window (captures 033143154, 054239660); the belt, NCU chip and vehicle he mentions come from MWTD's reward. {shop} is placed where he points at the Shopping Cart button.",
+  "Notes": "Vendor Antonio Stacklund (EQVE), ICC Shuttleport (4582) at (934.5, 47.5, 873.5). Rebuilt from 8 QuestDialogCapture dumps (Vendor_Antonio_Stacklund_EQVE, 2026-10-20, characters Soldmen, Complicado). Target of MWTD (FindItem2, SpecItem BCBT): retail completes it in the chat ~1.5s after \"A belt? Let me have a look at it then!\" with no trade window (captures 033143154, 054239660); here the belt is handed over through the Give Items window (Trades.belt) and MWTD completes when he takes it, so the player must actually have it. The belt, NCU chip and vehicle he mentions come from MWTD's reward (W2BI). {shop} is placed where he points at the Shopping Cart button.",
   "Npcs": [
     "EQVE"
   ],
@@ -221,7 +221,8 @@
     "belt_look": {
       "Text": [
         "A belt? Let me have a look at it then!",
-        "{delay 2}{goto belt_identified}"
+        "{delay 1}\\n{emote}To give Antonio Stacklund the belt, click the Give Items button (the one with a hand holding a box), put the belt into the slot that appears, and confirm the trade by clicking the check (v) button.{/emote}",
+        "{opentrade}"
       ]
     },
     "belt_identified": {
@@ -405,6 +406,27 @@
         "special",
         "armor"
       ]
+    },
+    "trade_refused": {
+      "Text": [
+        "Hm? ",
+        "{delay 1}That's not the belt Brandon Thorn gave you. Bring me that one and I'll have a look at it."
+      ]
     }
-  }
+  },
+  "Trades": {
+    "belt": {
+      "If": [
+        "HasQuest MWTD"
+      ],
+      "Items": [
+        {
+          "Hash": "BCBT",
+          "Count": 1
+        }
+      ],
+      "Goto": "belt_identified"
+    }
+  },
+  "TradeRefused": "trade_refused"
 }

@@ -158,6 +158,8 @@ public sealed partial class AuthoredQuestService
                 publishAcceptedTrade();
                 player.Inventory.Inventory.Content.Remove(slot.Instance);
                 player.Session?.Send(new CharacterActionMessage { Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = slot });
+                Modules.ModuleHooks.ItemMoved(player, chip, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
+                    Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
                 if (snapshot.SideTokenReward > 0) player.Stats.Set((CharacterStat)snapshot.SideTokenStatId, (int)tokens, StatDetail.Base, dirty: false);
                 progression.PublishAfterCommit(player);
                 if (snapshot.SideTokenReward > 0) SendTokens(player, snapshot.SideTokenStatId, snapshot.SideTokenReward, tokens, rule.TokenText);

@@ -33,6 +33,13 @@ namespace ZoneEngine_New.Core.Chat
             if (chat == null || string.IsNullOrEmpty(chat.Text))
                 return;
 
+            Modules.ModuleHooks.PlayerSpoke(speaker, chat.Type switch
+            {
+                ChatMessageType.Say => AORebirth.Modules.Events.ChatChannelKind.Say,
+                ChatMessageType.Shout => AORebirth.Modules.Events.ChatChannelKind.Shout,
+                ChatMessageType.Whisper => AORebirth.Modules.Events.ChatChannelKind.Whisper,
+                _ => AORebirth.Modules.Events.ChatChannelKind.Other
+            }, chat.Text);
             Send(speaker, chat.Type, chat.Text, senderName: null);
         }
 

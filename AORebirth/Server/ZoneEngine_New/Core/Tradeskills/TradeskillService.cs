@@ -162,11 +162,31 @@ namespace ZoneEngine_New.Core.Tradeskills
                 return CombineOutcome.NoRecipe;
             Item? sourceItem = InventoryItem(player, source.Instance);
             Item? targetItem = InventoryItem(player, target.Instance);
-            if (sourceItem == null || targetItem == null
-                || !_catalog.TryMatch(sourceItem.LowId, sourceItem.HighId, targetItem.LowId, targetItem.HighId, out _, out _))
+            if (sourceItem == null || targetItem == null)
                 return CombineOutcome.NoRecipe;
+            if (!_catalog.TryMatch(sourceItem.LowId, sourceItem.HighId, targetItem.LowId, targetItem.HighId, out _, out _))
+            {
+                // Module API 1.6: an item used on another item is ItemUseOn; with no recipe it is refused.
+                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUseOn, sourceItem.LowId,
+                    AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.Other, sourceItem,
+                    detail: "no combination");
+                return CombineOutcome.NoRecipe;
+            }
 
-            return Combine(player, source.Instance, target.Instance, requestedQl: null);
+            CombineOutcome outcome = Combine(player, source.Instance, target.Instance, requestedQl: null);
+            // A combine runs at once: refused (feedback sent), or started and done.
+            if (outcome == CombineOutcome.Combined)
+            {
+                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUseOn, sourceItem.LowId,
+                    AORebirth.Modules.Events.PlayerActionOutcome.Started, item: sourceItem);
+                Modules.ModuleHooks.ActionResolved(player, AORebirth.Modules.Events.PlayerActionKind.ItemUseOn, sourceItem.LowId,
+                    AORebirth.Modules.Events.PlayerActionOutcome.Executed, item: sourceItem);
+            }
+            else
+                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUseOn, sourceItem.LowId,
+                    AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.Requirements,
+                    sourceItem, detail: "combine refused");
+            return outcome;
         }
 
         /// <summary>
@@ -310,6 +330,12 @@ namespace ZoneEngine_New.Core.Tradeskills
                 Feedback(player, "The combine could not be completed.");
                 return CombineOutcome.Refused;
             }
+
+            foreach ((int _, Item used) in consumed)
+                Modules.ModuleHooks.ItemMoved(player, used, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
+                    Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
+            Modules.ModuleHooks.ItemMoved(player, result, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
+                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
 
             if (!ReferenceEquals(resultPage, page))
                 OverflowGrants.Trim(player);

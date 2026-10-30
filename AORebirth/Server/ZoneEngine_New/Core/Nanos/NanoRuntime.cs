@@ -21,6 +21,16 @@ namespace ZoneEngine_New.Core.Nanos
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Playfield.Locality;
 
+    using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
+    using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
+    using CooldownKind = AORebirth.Modules.Events.CooldownKind;
+    using CooldownKey = AORebirth.Modules.Events.CooldownKey;
+    using PlayerActionKind = AORebirth.Modules.Events.PlayerActionKind;
+    using PlayerActionOutcome = AORebirth.Modules.Events.PlayerActionOutcome;
+    using ActionRefusal = AORebirth.Modules.Events.ActionRefusal;
+    using CombatSource = AORebirth.Modules.Events.CombatSource;
+    using CombatResult = AORebirth.Modules.Events.CombatResult;
+
     /// <summary>
     /// Drives nano casts and NCU entries: gates a cast, runs the cast bar, lands or refuses the
     /// buff, starts the recharge lockout, and tells the clients involved.
@@ -38,7 +48,8 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 // Clear first: the execute-time gate must not see this cast as "already casting".
                 character.CancelNanoCast();
-                Complete(character, cast, nowUtc);
+                using (ModuleCooldowns.During(PlayerActionKind.NanoCast, cast.Spell.Id))
+                    Complete(character, cast, nowUtc);
             }
 
             TickPeriodicEffects(character, nowUtc);
@@ -99,7 +110,10 @@ namespace ZoneEngine_New.Core.Nanos
         {
             ArgumentNullException.ThrowIfNull(character);
 
+            PendingNanoCast? cast = character.PendingCast;
             character.CancelNanoCast();
+            if (cast != null)
+                CastResolved(character, cast, PlayerActionOutcome.Interrupted, detail: "caster died");
             List<Buff> removed = character.RemoveAllBuffs(BuffRemovalReason.Death);
             for (int i = 0; i < removed.Count; i++)
                 AnnounceBuffRemoved(character, removed[i]);
@@ -152,6 +166,7 @@ namespace ZoneEngine_New.Core.Nanos
                     phase: "start",
                     detail: "spell resolve failed");
                 Refuse(caster, NanoCastRefusal.NotUploaded);
+                CastAttempted(caster, nanoId, target, NanoCastRefusal.NotUploaded, null, nowUtc);
                 return NanoCastRefusal.NotUploaded;
             }
 
@@ -202,6 +217,7 @@ namespace ZoneEngine_New.Core.Nanos
                     ClientFeedback.SendFormatted(caster, ClientFeedback.AlreadyHaveUniqueItem, heldUnique);
                 else
                     Refuse(caster, refusal);
+                CastAttempted(caster, nanoId, target, refusal, spell, nowUtc);
                 return refusal;
             }
 
@@ -224,18 +240,23 @@ namespace ZoneEngine_New.Core.Nanos
             caster.BreakSneak();
 
             Identity resolvedTarget = recipient!.Identity;
-            var cast = new PendingNanoCast(spell, resolvedTarget, nanoCost, attackTime, nowUtc);
+            var cast = new PendingNanoCast(spell, resolvedTarget, nanoCost, attackTime, nowUtc)
+            {
+                RequestTimestamp = ModuleHooks.RequestNow
+            };
             caster.BeginNanoCast(cast);
 
             // The nano cost is paid as the cast starts; an interrupted or refused cast does not refund it.
             SpendNano(caster, nanoCost);
             AnnounceCastStarted(caster, spell.Id, resolvedTarget);
+            CastAttempted(caster, spell.Id, resolvedTarget, NanoCastRefusal.None, spell, nowUtc);
 
             // Instant nanos have no cast bar; land them in the same tick.
             if (cast.IsReady(nowUtc))
             {
                 caster.CancelNanoCast();
-                Complete(caster, cast, nowUtc);
+                using (ModuleCooldowns.During(PlayerActionKind.NanoCast, spell.Id))
+                    Complete(caster, cast, nowUtc);
             }
 
             return NanoCastRefusal.None;
@@ -473,6 +494,7 @@ namespace ZoneEngine_New.Core.Nanos
             int nanoId = cast.Spell.Id;
             character.CancelNanoCast();
             AnnounceCastInterrupted(character, nanoId);
+            CastResolved(character, cast, PlayerActionOutcome.Interrupted);
             return true;
         }
 
@@ -596,6 +618,7 @@ namespace ZoneEngine_New.Core.Nanos
                     spell: spell);
                 AnnounceCastInterrupted(caster, spell.Id);
                 Refuse(caster, refusal);
+                CastFailed(caster, cast, refusal, nowUtc);
                 return;
             }
 
@@ -603,6 +626,7 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 AnnounceCastInterrupted(caster, spell.Id);
                 Refuse(caster, NanoCastRefusal.InvalidTarget);
+                CastFailed(caster, cast, NanoCastRefusal.InvalidTarget, nowUtc);
                 return;
             }
 
@@ -613,6 +637,7 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 AnnounceCastInterrupted(caster, spell.Id);
                 Refuse(caster, friendlyRefusal);
+                CastFailed(caster, cast, friendlyRefusal, nowUtc);
                 return;
             }
 
@@ -627,6 +652,7 @@ namespace ZoneEngine_New.Core.Nanos
                         caster.Identity.Instance,
                         spell.Id,
                         cast.Target.Instance));
+                CastResolved(caster, cast, PlayerActionOutcome.Failed, ActionRefusal.Other, detail: "duplicate land");
                 return;
             }
 
@@ -637,12 +663,30 @@ namespace ZoneEngine_New.Core.Nanos
                 ? 0
                 : NanoDelayCalculator.RechargeTimeCentiseconds(spell.RechargeDelayCentiseconds);
             caster.StartNanoRecharge(recharge, nowUtc);
+            // Module API 1.6: the client is told nothing of the recharge, so its end is found by the tick.
+            if (recharge > 0 && caster is Player)
+            {
+                ModuleHooks.CooldownStarted(caster, CooldownKind.NanoRecharge, 0, caster.NanoRechargeLength,
+                    PlayerActionKind.NanoCast, spell.Id);
+                caster.TrackModuleLockEnd(CooldownKind.NanoRecharge, 0, caster.NanoRechargeUntilUtc, caster.NanoRechargeLength);
+            }
 
             // A nano with a line cooldown (stat 643, or the longer local cooldown 254) locks its strain for the caster from
             // the finished cast, resisted or not. Persisted with an absolute expiry, so it keeps running while the player
             // is logged out, and FullCharacter shows the client what is left after a zone change or login.
             if (spell.NanoLineLockCentiseconds > 0 && spell.NanoStrain > 0)
-                caster.LockNanoLine(spell.NanoStrain, (int)Math.Ceiling(spell.NanoLineLockCentiseconds / 100.0), nowUtc);
+            {
+                int lineSeconds = (int)Math.Ceiling(spell.NanoLineLockCentiseconds / 100.0);
+                caster.LockNanoLine(spell.NanoStrain, lineSeconds, nowUtc);
+                // The client reads the line cooldown from the nano itself; it is sent no length.
+                if (caster is Player)
+                {
+                    TimeSpan lineLength = TimeSpan.FromSeconds(lineSeconds);
+                    ModuleHooks.CooldownStarted(caster, CooldownKind.NanoLine, spell.NanoStrain, lineLength,
+                        PlayerActionKind.NanoCast, spell.Id);
+                    caster.TrackModuleLockEnd(CooldownKind.NanoLine, spell.NanoStrain, nowUtc + lineLength, lineLength);
+                }
+            }
 
             // A finished hostile cast pulls the NPC whether it lands, is resisted or is refused; a resetting NPC ignores it.
             if (spell.IsHostile)
@@ -660,6 +704,8 @@ namespace ZoneEngine_New.Core.Nanos
                         caster.Identity.Instance,
                         spell.Id,
                         cast.Target.Instance));
+                ModuleHooks.CombatResolved(caster, recipient!, CombatSource.Nano, spell.Id, CombatResult.Evaded, 0, 0);
+                CastResolved(caster, cast, PlayerActionOutcome.Resisted, detail: "target evading");
                 return;
             }
 
@@ -677,6 +723,8 @@ namespace ZoneEngine_New.Core.Nanos
                         cast.Target.Instance,
                         spell.NanoStrain,
                         recipient.NanoStrainResistPercent(spell.NanoStrain)));
+                ModuleHooks.CombatResolved(caster, recipient!, CombatSource.Nano, spell.Id, CombatResult.Resisted, 0, 0);
+                CastResolved(caster, cast, PlayerActionOutcome.Resisted, detail: "strain resist");
                 return;
             }
 
@@ -697,6 +745,8 @@ namespace ZoneEngine_New.Core.Nanos
                         attackRating,
                         defenseRating,
                         landChance));
+                ModuleHooks.CombatResolved(caster, recipient!, CombatSource.Nano, spell.Id, CombatResult.Resisted, 0, 0);
+                CastResolved(caster, cast, PlayerActionOutcome.Resisted, detail: "nano defense");
                 return;
             }
 
@@ -704,6 +754,7 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 ClientFeedback.Send(caster, ClientFeedback.NanoExecutedSuccessfully);
                 ExecuteOnUseEffects(caster, recipient!, spell, skipPassiveModifiers: false);
+                CastResolved(caster, cast, PlayerActionOutcome.Executed);
                 return;
             }
 
@@ -732,6 +783,8 @@ namespace ZoneEngine_New.Core.Nanos
                         spell.StackingOrder,
                         spell.NcuCost));
                 Refuse(caster, decision);
+                // The cast finished and was spent; only the buff did not take (NCU, a better nano running).
+                CastResolved(caster, cast, PlayerActionOutcome.Failed, ActionRefusal.Target, detail: "buff not applied");
                 return;
             }
 
@@ -745,6 +798,7 @@ namespace ZoneEngine_New.Core.Nanos
             ExecuteOnUseEffects(caster, recipient, spell, skipPassiveModifiers: true);
             if (spell.IsHostile)
                 OnDebuffLanded(caster, recipient, applied, addThreat: false);
+            CastResolved(caster, cast, PlayerActionOutcome.Executed);
             LogUtil.Debug(
                 DebugInfoDetail.Engine,
                 string.Format(
@@ -758,6 +812,74 @@ namespace ZoneEngine_New.Core.Nanos
                     applied.DurationCentiseconds,
                     recharge));
         }
+
+        // ---- module API 1.6: action events (players only) ----
+
+        /// <summary>A player's cast request decided: Started (refusal None) or Refused.</summary>
+        static void CastAttempted(Character caster, int nanoId, Identity target, NanoCastRefusal refusal, NanoSpell? spell,
+            DateTime nowUtc)
+        {
+            if (caster is not Player player)
+                return;
+            if (refusal == NanoCastRefusal.None)
+            {
+                ModuleHooks.ActionAttempted(player, PlayerActionKind.NanoCast, nanoId, PlayerActionOutcome.Started, target: target);
+                return;
+            }
+
+            ModuleHooks.ActionAttempted(player, PlayerActionKind.NanoCast, nanoId, PlayerActionOutcome.Refused,
+                ModuleRefusal(refusal), target: target, cooldown: LockOf(refusal, spell),
+                readyIn: ReadyIn(caster, refusal, spell, nowUtc), detail: NanoCastRules.Describe(refusal));
+        }
+
+        /// <summary>A started cast ended: <paramref name="outcome"/> with the request it came from.</summary>
+        static void CastResolved(Character caster, PendingNanoCast cast, PlayerActionOutcome outcome,
+            ActionRefusal refusal = ActionRefusal.None, CooldownKey? cooldown = null, TimeSpan readyIn = default, string detail = "")
+        {
+            if (caster is Player player)
+                ModuleHooks.ActionResolved(player, PlayerActionKind.NanoCast, cast.Spell.Id, outcome, refusal, target: cast.Target,
+                    cooldown: cooldown, readyIn: readyIn, detail: detail, requestTimestamp: cast.RequestTimestamp);
+        }
+
+        /// <summary>A started cast refused when its bar finished (the gate checked again).</summary>
+        static void CastFailed(Character caster, PendingNanoCast cast, NanoCastRefusal refusal, DateTime nowUtc)
+        {
+            if (caster is Player)
+                CastResolved(caster, cast, PlayerActionOutcome.Failed, ModuleRefusal(refusal), LockOf(refusal, cast.Spell),
+                    ReadyIn(caster, refusal, cast.Spell, nowUtc), NanoCastRules.Describe(refusal));
+        }
+
+        static ActionRefusal ModuleRefusal(NanoCastRefusal refusal) => refusal switch
+        {
+            NanoCastRefusal.Recharging or NanoCastRefusal.NanoLineLocked => ActionRefusal.Cooldown,
+            NanoCastRefusal.AlreadyCasting => ActionRefusal.Busy,
+            NanoCastRefusal.NotUploaded or NanoCastRefusal.RequirementsNotMet or NanoCastRefusal.UniqueItemHeld
+                or NanoCastRefusal.CantReplaceOther => ActionRefusal.Requirements,
+            NanoCastRefusal.NotEnoughNano => ActionRefusal.Resources,
+            NanoCastRefusal.NotEnoughNcu or NanoCastRefusal.InvalidTarget or NanoCastRefusal.TargetDead
+                or NanoCastRefusal.BetterNanoRunning or NanoCastRefusal.FriendlyOnNpc or NanoCastRefusal.FriendlyOnEnemy
+                or NanoCastRefusal.TargetInVehicle => ActionRefusal.Target,
+            NanoCastRefusal.OutOfRange => ActionRefusal.Range,
+            NanoCastRefusal.NoLineOfSight => ActionRefusal.LineOfSight,
+            NanoCastRefusal.CasterDead or NanoCastRefusal.CasterStunned or NanoCastRefusal.CasterInVehicle
+                or NanoCastRefusal.MustStandStill or NanoCastRefusal.Swimming or NanoCastRefusal.Crawling
+                or NanoCastRefusal.Falling or NanoCastRefusal.MustStandUp => ActionRefusal.State,
+            _ => ActionRefusal.Other
+        };
+
+        static CooldownKey? LockOf(NanoCastRefusal refusal, NanoSpell? spell) => refusal switch
+        {
+            NanoCastRefusal.Recharging => new CooldownKey(CooldownKind.NanoRecharge, 0),
+            NanoCastRefusal.NanoLineLocked when spell != null => new CooldownKey(CooldownKind.NanoLine, spell.NanoStrain),
+            _ => null
+        };
+
+        static TimeSpan ReadyIn(Character caster, NanoCastRefusal refusal, NanoSpell? spell, DateTime nowUtc) => refusal switch
+        {
+            NanoCastRefusal.Recharging => caster.NanoRechargeUntilUtc - nowUtc,
+            NanoCastRefusal.NanoLineLocked when spell != null => caster.NanoLineLocks.Remaining(spell.NanoStrain, nowUtc),
+            _ => TimeSpan.Zero
+        };
 
         static NanoCastAttempt BuildAttempt(
             Character caster,

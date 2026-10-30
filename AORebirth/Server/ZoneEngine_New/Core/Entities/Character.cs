@@ -28,6 +28,14 @@ namespace ZoneEngine_New.Core.Entities
 
     using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
     using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
+    using ModuleClock = ZoneEngine_New.Core.Modules.ModuleClock;
+    using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
+    using CooldownKind = AORebirth.Modules.Events.CooldownKind;
+    using CooldownEndReason = AORebirth.Modules.Events.CooldownEndReason;
+    using PlayerActionKind = AORebirth.Modules.Events.PlayerActionKind;
+    using PlayerActionOutcome = AORebirth.Modules.Events.PlayerActionOutcome;
+    using ActionRefusal = AORebirth.Modules.Events.ActionRefusal;
 
     /// <summary>
     /// Why delayed character actions are being interrupted.
@@ -129,9 +137,23 @@ namespace ZoneEngine_New.Core.Entities
         public int LockSkill(int statId, int durationSeconds, DateTime nowUtc)
         {
             int seconds = ScaleSkillLock(statId, durationSeconds);
+            // Module API 1.6: a running lock cleared early ends here; one that runs out ends with its SpecialAvailable.
+            DateTime clearedDueUtc = default;
+            TimeSpan clearedLength = default;
+            bool cleared = seconds <= 0 && this is Player
+                && SkillLocks.TryGet(statId, out clearedDueUtc, out clearedLength) && clearedDueUtc > nowUtc;
             SkillLocks.Lock(statId, seconds, nowUtc);
             if (this is Player player)
+            {
                 Playfield?.GetService<InventoryFlushService>()?.NotifyDirty(player);
+                // The client is told the scripted length and applies SkillLockModifier itself (ShowSkillLock).
+                if (seconds > 0)
+                    ModuleHooks.CooldownStarted(player, CooldownKind.SkillLock, statId, TimeSpan.FromSeconds(seconds),
+                        ModuleCooldowns.SourceKind, ModuleCooldowns.SourceId, TimeSpan.FromSeconds(durationSeconds));
+                else if (cleared)
+                    ModuleHooks.CooldownEnded(player, CooldownKind.SkillLock, statId, clearedLength,
+                        ModuleClock.At(clearedDueUtc), CooldownEndReason.Cleared, clientNotified: false);
+            }
             return seconds;
         }
 
@@ -183,16 +205,38 @@ namespace ZoneEngine_New.Core.Entities
         /// queue, apart from the weapon bars: each fires on a tick when it can (in reach, and for a gun special not
         /// moving), and is dropped when its fight ends or moves to another target.
         /// </summary>
-        readonly List<(CharacterStat Special, Identity Target)> _queuedSpecials = new();
+        // Request: the receive time of the message that asked for it, for the module action event it resolves with.
+        readonly List<(CharacterStat Special, Identity Target, long Request)> _queuedSpecials = new();
 
         /// <summary>Queues <paramref name="special"/> against <paramref name="target"/>, replacing an earlier request for it.</summary>
-        public void QueueSpecial(CharacterStat special, Identity target)
+        public void QueueSpecial(CharacterStat special, Identity target, long requestTimestamp = 0)
         {
-            _queuedSpecials.RemoveAll(entry => entry.Special == special);
-            _queuedSpecials.Add((special, target));
+            int replaced = _queuedSpecials.FindIndex(entry => entry.Special == special);
+            if (replaced >= 0)
+            {
+                (CharacterStat _, Identity oldTarget, long oldRequest) = _queuedSpecials[replaced];
+                _queuedSpecials.RemoveAt(replaced);
+                if (this is Player player)
+                    ModuleHooks.ActionResolved(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Cancelled,
+                        target: oldTarget, detail: "replaced", requestTimestamp: oldRequest);
+            }
+
+            _queuedSpecials.Add((special, target, requestTimestamp));
         }
 
         public bool HasQueuedSpecial(CharacterStat special) => _queuedSpecials.Exists(entry => entry.Special == special);
+
+        /// <summary>Drops every queued special, resolving each as Cancelled for the module action event.</summary>
+        void DropQueuedSpecials(string detail)
+        {
+            if (_queuedSpecials.Count == 0)
+                return;
+            if (this is Player dropping)
+                foreach ((CharacterStat special, Identity target, long request) in _queuedSpecials)
+                    ModuleHooks.ActionResolved(dropping, PlayerActionKind.SpecialAttack, (int)special,
+                        PlayerActionOutcome.Cancelled, target: target, detail: detail, requestTimestamp: request);
+            _queuedSpecials.Clear();
+        }
 
         /// <summary>Fires every queued special that can go now and drops those that never will.</summary>
         public void TickQueuedSpecials()
@@ -201,23 +245,27 @@ namespace ZoneEngine_New.Core.Entities
                 return;
             if (IsDead || Playfield == null)
             {
-                _queuedSpecials.Clear();
+                DropQueuedSpecials("attacker dead or gone");
                 return;
             }
 
-            foreach ((CharacterStat special, Identity target) in _queuedSpecials.ToArray())
+            foreach ((CharacterStat special, Identity target, long request) in _queuedSpecials.ToArray())
             {
-                if (!_queuedSpecials.Contains((special, target)))
+                if (!_queuedSpecials.Contains((special, target, request)))
                     continue;
 
                 Character? victim = Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel)
                     ? dynel as Character
                     : null;
+                // TryFire raises the module Resolved for what it decides; a gone target is decided here.
                 SpecialAttacks.FireResult result = victim == null || victim.IsDead
                     ? SpecialAttacks.FireResult.Dropped
-                    : SpecialAttacks.TryFire(this, victim, special);
+                    : SpecialAttacks.TryFire(this, victim, special, request);
+                if ((victim == null || victim.IsDead) && this is Player player)
+                    ModuleHooks.ActionResolved(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Failed,
+                        ActionRefusal.Target, target: target, detail: "target gone", requestTimestamp: request);
                 if (result != SpecialAttacks.FireResult.Waiting)
-                    _queuedSpecials.Remove((special, target));
+                    _queuedSpecials.Remove((special, target, request));
                 if (Playfield == null)
                     return;
             }
@@ -260,6 +308,7 @@ namespace ZoneEngine_New.Core.Entities
 
         void TickSpecialsAvailable(DateTime nowUtc)
         {
+            TickModuleLockEnds(nowUtc);
             if (_specialsAvailableAt.Count == 0)
                 return;
 
@@ -275,9 +324,60 @@ namespace ZoneEngine_New.Core.Entities
 
             foreach (int statId in ready)
             {
-                _specialsAvailableAt.Remove(statId);
+                _specialsAvailableAt.Remove(statId, out DateTime dueUtc);
                 if (this is Player player)
+                {
                     SpecialAttacks.SendAvailable(player, statId);
+                    // A lock cleared early already raised its module Ended (LockSkill); TryGet is false then.
+                    if (SkillLocks.TryGet(statId, out _, out TimeSpan length))
+                        ModuleHooks.CooldownEnded(player, CooldownKind.SkillLock, statId, length, ModuleClock.At(dueUtc),
+                            CooldownEndReason.Expired, clientNotified: player.Session != null);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Locks the client gets no "available" message for (the nano recharge, nano line locks), set on a player, by
+        /// due time: module API 1.6 CooldownEnded is raised from the tick that finds them run out. Null until one is set.
+        /// </summary>
+        List<(CooldownKind Kind, int Id, DateTime DueUtc, TimeSpan Length)>? _moduleLockEnds;
+
+        /// <summary>Remembers a silent lock just set on a player so its module CooldownEnded fires when it runs out.</summary>
+        public void TrackModuleLockEnd(CooldownKind kind, int id, DateTime dueUtc, TimeSpan length)
+        {
+            if (this is not Player)
+                return;
+            _moduleLockEnds ??= [];
+            _moduleLockEnds.RemoveAll(entry => entry.Kind == kind && entry.Id == id);
+            _moduleLockEnds.Add((kind, id, dueUtc, length));
+        }
+
+        /// <summary>A tracked silent lock cleared early: its module CooldownEnded is Cleared, now.</summary>
+        void ClearModuleLockEnd(CooldownKind kind, int id)
+        {
+            if (_moduleLockEnds == null)
+                return;
+            for (int i = _moduleLockEnds.Count - 1; i >= 0; i--)
+            {
+                (CooldownKind entryKind, int entryId, DateTime dueUtc, TimeSpan length) = _moduleLockEnds[i];
+                if (entryKind != kind || entryId != id)
+                    continue;
+                _moduleLockEnds.RemoveAt(i);
+                ModuleHooks.CooldownEnded(this, kind, id, length, ModuleClock.At(dueUtc), CooldownEndReason.Cleared, clientNotified: false);
+            }
+        }
+
+        void TickModuleLockEnds(DateTime nowUtc)
+        {
+            if (_moduleLockEnds is not { Count: > 0 })
+                return;
+            for (int i = _moduleLockEnds.Count - 1; i >= 0; i--)
+            {
+                (CooldownKind kind, int id, DateTime dueUtc, TimeSpan length) = _moduleLockEnds[i];
+                if (dueUtc > nowUtc)
+                    continue;
+                _moduleLockEnds.RemoveAt(i);
+                ModuleHooks.CooldownEnded(this, kind, id, length, ModuleClock.At(dueUtc), CooldownEndReason.Expired, clientNotified: false);
             }
         }
 
@@ -319,7 +419,10 @@ namespace ZoneEngine_New.Core.Entities
             if (reason != TimedActionInterrupt.Movement)
                 Playfield?.GetRequiredService<InventoryMoveService>().CancelPending(Identity.Instance);
             if (reason == TimedActionInterrupt.LeavePlayfield)
+            {
                 Playfield?.GetService<ItemUseService>()?.CancelPending(Identity.Instance);
+                DropQueuedSpecials("left playfield");
+            }
             NanoRuntime.InterruptCast(this);
             TimedActionsInterrupted?.Invoke(this, reason);
         }
@@ -431,7 +534,8 @@ namespace ZoneEngine_New.Core.Entities
                         PlayfieldId = playfieldId,
                         PlayerInstance = Identity.Instance,
                         KillerInstance = killer?.Identity.Instance ?? 0,
-                        KilledByPlayer = killer?.IsPlayer == true
+                        KilledByPlayer = killer?.IsPlayer == true,
+                        Timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
                     });
                 return;
             }
@@ -445,7 +549,8 @@ namespace ZoneEngine_New.Core.Entities
                     NpcName = Name ?? npc.MobTemplate?.Name ?? string.Empty,
                     NpcLevel = Stats.GetOrOne(CharacterStat.Level),
                     KillerInstance = killer?.Identity.Instance ?? 0,
-                    CreditedPlayers = credited != null ? credited.ToArray() : Array.Empty<int>()
+                    CreditedPlayers = credited != null ? credited.ToArray() : Array.Empty<int>(),
+                    Timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
                 });
         }
 
@@ -2068,6 +2173,9 @@ namespace ZoneEngine_New.Core.Entities
                         Unknown4 = target.Identity,
                         Unknown5 = 0
                     });
+                Modules.ModuleHooks.CombatResolved(this, target, AutoAttackSource, 0,
+                    target.IsEvading ? AORebirth.Modules.Events.CombatResult.Evaded : AORebirth.Modules.Events.CombatResult.Miss,
+                    0, 0);
                 OnSwingShown(characterWeapon);
                 return;
             }
@@ -2102,6 +2210,9 @@ namespace ZoneEngine_New.Core.Entities
                 });
             // Weapon/unarmed auto-attacks stay AttackInfo-only. HealthDamage is for Hit/nano/status.
 
+            Modules.ModuleHooks.CombatResolved(this, target, AutoAttackSource, 0,
+                result.HitType == HitType.Critical ? AORebirth.Modules.Events.CombatResult.Critical : AORebirth.Modules.Events.CombatResult.Hit,
+                damage, damageType);
             target.ApplyDamage(this, damage, result.HitType);
             if (weapon != null && !target.IsDead)
                 ApplyOnHitProcs(target, weapon);
@@ -2109,6 +2220,12 @@ namespace ZoneEngine_New.Core.Entities
             DamageReturn.Apply(this, target, returned);
             OnSwingShown(characterWeapon);
         }
+
+        /// <summary>A pet's swing is reported as a pet's (module API 1.6).</summary>
+        AORebirth.Modules.Events.CombatSource AutoAttackSource
+            => this is NpcCharacter { PetOwner: not null }
+                ? AORebirth.Modules.Events.CombatSource.Pet
+                : AORebirth.Modules.Events.CombatSource.AutoAttack;
 
         /// <summary>
         /// Runs the weapon's OnHit functions after a connecting swing. Item 205012's
@@ -2931,9 +3048,22 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             _nanoRechargeUntilUtc = nowUtc.AddMilliseconds(centiseconds * 10L);
+            NanoRechargeLength = TimeSpan.FromMilliseconds(centiseconds * 10L);
         }
 
-        public void ClearNanoRecharge() => _nanoRechargeUntilUtc = DateTime.MinValue;
+        /// <summary>When the running nano recharge ends (in the past when none runs).</summary>
+        public DateTime NanoRechargeUntilUtc => _nanoRechargeUntilUtc;
+
+        /// <summary>The length of the last nano recharge started.</summary>
+        public TimeSpan NanoRechargeLength { get; private set; }
+
+        public void ClearNanoRecharge()
+        {
+            // Module API 1.6: a recharge still running (revive) ends Cleared rather than Expired.
+            if (_nanoRechargeUntilUtc > DateTime.UtcNow)
+                ClearModuleLockEnd(CooldownKind.NanoRecharge, 0);
+            _nanoRechargeUntilUtc = DateTime.MinValue;
+        }
 
         /// <summary>
         /// Client often emits CastNano + CastNanoSpell (or duplicates) for one click. A second

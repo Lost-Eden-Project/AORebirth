@@ -18,6 +18,9 @@ namespace ZoneEngine_New.Core.Playfield
     {
         public required IZoneSession Session { get; init; }
         public required MessageBody Body { get; init; }
+
+        /// <summary>When the receive loop read it (<see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>); 0 when not from the wire.</summary>
+        public long ReceivedAt { get; init; }
     }
 
     public sealed class PendingSpawnInboundItem : PlayfieldInboundItem

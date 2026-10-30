@@ -16,6 +16,7 @@ using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Helpers;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Missions;
+using ZoneEngine_New.Core.Modules;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Quests.Dungeons;
 
@@ -120,6 +121,8 @@ public sealed partial class QuestService
                 {
                     if (!ReferenceEquals(page.Remove(placement), source))
                         throw new InvalidOperationException("Committed mission source changed before publication.");
+                    ModuleHooks.ItemMoved(player, source, ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
+                        ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
                     player.Session?.Send(new TemplateActionMessage
                     {
                         Identity = player.Identity, ItemLowId = source.LowId, ItemHighId = source.HighId,
@@ -238,7 +241,8 @@ public sealed partial class QuestService
                 if (result.Status != (quest.Template.IsReturnItem ? CharacterQuestCompletionStatus.Collected : CharacterQuestCompletionStatus.Earned))
                     return false;
                 committed = true;
-                grant.PublishAfterCommit(notify: false);
+                grant.PublishAfterCommit(notify: false,
+                    from: ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.World, objective.Identity));
                 quest.Progress = quest.Template.IsReturnItem ? 1 : quest.RequiredCount;
                 quest.NextRewardRetryUtcTicks = 0;
                 // The objective dynel publishes the captured pickup acknowledgement first.

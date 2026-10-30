@@ -101,6 +101,8 @@ public sealed partial class AuthoredQuestService
                 {
                     if (action.UseProjection) PublishConsumption(player, slot, item!);
                     else { player.Inventory.Inventory.Content.Remove(slot.Instance); player.Session?.Send(new CharacterActionMessage { Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = slot }); }
+                    Modules.ModuleHooks.ItemMoved(player, item!, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
+                        Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
                 }
                 if (!action.AcknowledgementBeforeConsumption) acknowledge?.Invoke();
                 PublishStats(player, stats);

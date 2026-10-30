@@ -37,6 +37,9 @@ namespace ZoneEngine_New.Core.Nanos
 
         public DateTime CompletesAtUtc { get; }
 
+        /// <summary>The receive time of the cast request, for the module action event the cast resolves with (API 1.6).</summary>
+        public long RequestTimestamp { get; init; }
+
         public bool IsReady(DateTime nowUtc) => nowUtc >= CompletesAtUtc;
     }
 }

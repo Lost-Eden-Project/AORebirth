@@ -15,6 +15,16 @@ namespace ZoneEngine_New.Core.Helpers
     using ZoneEngine_New.Core.Movement;
     using ZoneEngine_New.Core.Nanos;
 
+    using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
+    using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
+    using CooldownKind = AORebirth.Modules.Events.CooldownKind;
+    using CooldownKey = AORebirth.Modules.Events.CooldownKey;
+    using PlayerActionKind = AORebirth.Modules.Events.PlayerActionKind;
+    using PlayerActionOutcome = AORebirth.Modules.Events.PlayerActionOutcome;
+    using ActionRefusal = AORebirth.Modules.Events.ActionRefusal;
+    using CombatSource = AORebirth.Modules.Events.CombatSource;
+    using CombatResult = AORebirth.Modules.Events.CombatResult;
+
     /// <summary>
     /// Weapon special attacks requested by CharSecSpecAttack: Brawl, Fast Attack, Burst, Fling Shot, Aimed Shot,
     /// Full Auto, Sneak Attack (which becomes Backstab for Shades and Adventurers) and Dimach.
@@ -80,25 +90,33 @@ namespace ZoneEngine_New.Core.Helpers
             if (remaining > TimeSpan.Zero)
             {
                 attacker.SendSkillLocked((int)special, remaining);
-                return false;
+                return Refused(attacker, target, special, ActionRefusal.Cooldown, "skill locked",
+                    new CooldownKey(CooldownKind.SkillLock, (int)special), remaining);
             }
 
             // Every special attack, player or NPC, needs a target its attacker may engage.
             if (!CombatRules.CanAttack(attacker, target))
-                return false;
+                return Refused(attacker, target, special, ActionRefusal.Target, "cannot attack target");
 
             // A player's special that could not go off now is refused with live's reason, and starts no fight.
             if (attacker is Player && Blocker(attacker, target, special) is int blocked)
             {
                 ClientFeedback.Send(attacker, blocked);
-                return false;
+                return Refused(attacker, target, special,
+                    blocked == ClientFeedback.SpecialOutOfRange ? ActionRefusal.Range
+                    : blocked == ClientFeedback.SpecialNoLineOfSight ? ActionRefusal.LineOfSight
+                    : ActionRefusal.Target, "blocked");
             }
 
             if (attacker.FightingTarget.Instance == 0)
                 attacker.StartFightingForSpecial(target.Identity);
 
             attacker.SetFightingTarget(target.Identity);
-            attacker.QueueSpecial(special, target.Identity);
+            // Module API 1.6: it waits in the special queue; TickQueuedSpecials / TryFire resolve it.
+            if (attacker is Player player)
+                ModuleHooks.ActionAttempted(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Queued,
+                    target: target.Identity);
+            attacker.QueueSpecial(special, target.Identity, ModuleHooks.RequestNow);
             return true;
         }
 
@@ -137,21 +155,27 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>
         /// One try at a queued special from <paramref name="attacker"/> against <paramref name="target"/>.
         /// </summary>
-        public static FireResult TryFire(Character attacker, Character target, CharacterStat special)
+        /// <param name="requestTimestamp">The receive time of the request that queued it, for the module Resolved.</param>
+        public static FireResult TryFire(Character attacker, Character target, CharacterStat special, long requestTimestamp = -1)
         {
             ArgumentNullException.ThrowIfNull(attacker);
             ArgumentNullException.ThrowIfNull(target);
 
             if (!TryGetCanFlag(special, out CanFlags canFlag))
-                return FireResult.Dropped;
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Other, "not a special");
 
             DateTime now = DateTime.UtcNow;
-            if (attacker.SkillLocks.Remaining((int)special, now) > TimeSpan.Zero)
-                return FireResult.Dropped;
+            TimeSpan locked = attacker.SkillLocks.Remaining((int)special, now);
+            if (locked > TimeSpan.Zero)
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Cooldown, "skill locked",
+                    new CooldownKey(CooldownKind.SkillLock, (int)special), locked);
 
             // Stopping the attack, or attacking something else, takes the queued specials with it.
-            if (attacker.FightingTarget != target.Identity || !CombatRules.CanAttack(attacker, target))
-                return FireResult.Dropped;
+            if (attacker.FightingTarget != target.Identity)
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.None, "fight ended or moved",
+                    outcome: PlayerActionOutcome.Cancelled);
+            if (!CombatRules.CanAttack(attacker, target))
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Target, "cannot attack target");
 
             // A stun pauses specials as it pauses the weapon bars; they fire once it ends.
             if (attacker.IsStunned || (WaitsForStandingStill(special) && attacker.Motor.IsMoving))
@@ -160,7 +184,7 @@ namespace ZoneEngine_New.Core.Helpers
             if (IsNoticedStealthStrike(attacker, target, special))
             {
                 ClientFeedback.Send(attacker, ClientFeedback.SpecialTargetAware);
-                return FireResult.Dropped;
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Target, "target aware");
             }
 
             // Sneak Attack from stealth on an unaware target; otherwise a Shade or Adventurer behind a target that
@@ -168,11 +192,13 @@ namespace ZoneEngine_New.Core.Helpers
             bool backstab = special == CharacterStat.SneakAttack && (!IsSneaking(attacker) || CanSee(target, attacker));
 
             if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out int slot))
-                return FireResult.Dropped;
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Requirements, "no weapon for it");
 
             // A reloading gun fires no special (the client holds them too); an empty one with no ammo never will.
             if (attacker is Player shooter && !WeaponAmmo.CanFire(shooter, weapon))
-                return weapon.IsReloading ? FireResult.Waiting : FireResult.Dropped;
+                return weapon.IsReloading
+                    ? FireResult.Waiting
+                    : Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Resources, "no ammo");
 
             // Same reach rules as an auto-attack swing; out of reach it stays queued and does not lock.
             if (!attacker.HasLineOfSightTo(target) || attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
@@ -191,25 +217,52 @@ namespace ZoneEngine_New.Core.Helpers
                 _ => null
             };
             if (special == CharacterStat.Dimach && specialItem == null)
-                return FireResult.Dropped;
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Requirements, "no dimach item");
 
             // Retail order (Full Auto capture 2026-10-22): SpecialUsed first, then the hit's own messages (FullAuto
             // rounds feedback, SpecialAttackInfo), then the target's health.
             int seconds = RechargeSeconds(attacker, special, specialItem ?? weapon.DamageItem, backstab);
-            attacker.LockSkill((int)special, seconds, now);
+            using (ModuleCooldowns.During(PlayerActionKind.SpecialAttack, (int)special))
+                attacker.LockSkill((int)special, seconds, now);
             attacker.ScheduleSpecialAvailable((int)special, now.AddSeconds(seconds));
             if (attacker is Player player)
                 player.Session?.Send(Action(player, CharacterActionType.SpecialUsed, (int)special, seconds));
 
-            Resolve(attacker, target, special, weapon, slot, backstab, specialItem);
+            bool landed = Resolve(attacker, target, special, weapon, slot, backstab, specialItem);
+            if (attacker is Player user)
+                ModuleHooks.ActionResolved(user, PlayerActionKind.SpecialAttack, (int)special,
+                    landed ? PlayerActionOutcome.Executed : PlayerActionOutcome.Missed, target: target.Identity,
+                    requestTimestamp: requestTimestamp);
             return FireResult.Fired;
+        }
+
+        /// <summary>Module API 1.6: a player's special attack request refused before it was queued.</summary>
+        static bool Refused(Character attacker, Character target, CharacterStat special, ActionRefusal refusal, string detail,
+            CooldownKey? cooldown = null, TimeSpan readyIn = default)
+        {
+            if (attacker is Player player)
+                ModuleHooks.ActionAttempted(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Refused,
+                    refusal, target: target.Identity, cooldown: cooldown, readyIn: readyIn, detail: detail);
+            return false;
+        }
+
+        /// <summary>Module API 1.6: a queued special that will never fire: Failed (refused at fire time) or Cancelled.</summary>
+        static FireResult Dropped(Character attacker, Character target, CharacterStat special, long requestTimestamp,
+            ActionRefusal refusal, string detail, CooldownKey? cooldown = null, TimeSpan readyIn = default,
+            PlayerActionOutcome outcome = PlayerActionOutcome.Failed)
+        {
+            if (attacker is Player player)
+                ModuleHooks.ActionResolved(player, PlayerActionKind.SpecialAttack, (int)special, outcome, refusal,
+                    target: target.Identity, cooldown: cooldown, readyIn: readyIn, detail: detail, requestTimestamp: requestTimestamp);
+            return FireResult.Dropped;
         }
 
         /// <summary>Tells the client the special's skill lock has run out (CharacterAction 0xA4, Parameter2 = stat).</summary>
         public static void SendAvailable(Player player, int statId)
             => player.Session?.Send(Action(player, CharacterActionType.SpecialAvailable, 0, statId));
 
-        static void Resolve(
+        /// <summary>Rolls and applies the special. True when it landed (a heal/drain Dimach always does), false on a miss.</summary>
+        static bool Resolve(
             Character attacker, Character target, CharacterStat special, CharacterWeapon weapon, int slot, bool backstab,
             Item? specialItem)
         {
@@ -220,7 +273,7 @@ namespace ZoneEngine_New.Core.Helpers
             {
                 // Keeper heal / Shade drain: the item's own functions are the whole effect.
                 RunItemFunctions(attacker, specialItem);
-                return;
+                return true;
             }
 
             // A player's gun fires from its clip (WeaponAmmo); anything else from a full magazine.
@@ -281,9 +334,11 @@ namespace ZoneEngine_New.Core.Helpers
                     Unknown4 = target.Identity,
                     Unknown5 = (int)special
                 });
+                ModuleHooks.CombatResolved(attacker, target, CombatSource.Special, (int)special,
+                    result.IsHit ? CombatResult.Evaded : CombatResult.Miss, 0, 0);
                 if (shooter != null)
                     WeaponAmmo.ReloadIfEmptied(shooter, weapon);
-                return;
+                return false;
             }
 
             int healthBefore = target.Stats.GetOrZero(CharacterStat.Health);
@@ -301,6 +356,8 @@ namespace ZoneEngine_New.Core.Helpers
             target.ApplyDamage(attacker, damage, result.HitType);
             if (damage == 0 || target.Stats.GetOrZero(CharacterStat.Health) < healthBefore)
                 AnnounceSpecialHit(attacker, target, special, slot, roundsLeft ?? bullets, damage);
+            ModuleHooks.CombatResolved(attacker, target, CombatSource.Special, (int)special,
+                result.HitType == HitType.Critical ? CombatResult.Critical : CombatResult.Hit, damage, damageType);
 
             // A special is a weapon hit too: offensive and defensive procs roll on it.
             Nanos.ProcRules.OnWeaponHit(attacker, target, specialItem ?? weapon.Item);
@@ -312,6 +369,7 @@ namespace ZoneEngine_New.Core.Helpers
             // the fighting target).
             if (specialItem != null && special is CharacterStat.Brawl or CharacterStat.Dimach)
                 RunItemFunctions(attacker, specialItem, target);
+            return true;
         }
 
         /// <summary>

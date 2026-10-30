@@ -89,6 +89,8 @@ namespace ZoneEngine_New.Core.Inventory
             target.StackCount += incoming.StackCount;
             inventory.MarkDirty(target, page, targetSlot);
             flush?.NotifyDirty(player);
+            Modules.ModuleHooks.ItemMoved(player, incoming, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
+                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
             SendGrantAndJoin(player, incoming, page, targetSlot, clientSlot);
             return true;
         }

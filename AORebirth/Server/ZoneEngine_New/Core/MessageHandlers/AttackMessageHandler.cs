@@ -11,6 +11,11 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
 
+    using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
+    using PlayerActionKind = AORebirth.Modules.Events.PlayerActionKind;
+    using PlayerActionOutcome = AORebirth.Modules.Events.PlayerActionOutcome;
+    using ActionRefusal = AORebirth.Modules.Events.ActionRefusal;
+
     public sealed class AttackMessageHandler : IMessageHandler<AttackMessage>
     {
         public Type MessageBodyType => typeof(AttackMessage);
@@ -50,10 +55,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
             if (target != null && CombatRules.CanAttack(player, target))
             {
+                // Module API 1.6: a fight start takes effect at once, so it resolves as it starts.
+                ModuleHooks.ActionAttempted(player, PlayerActionKind.FightStart, 0, PlayerActionOutcome.Started, target: target.Identity);
                 player.StartFighting(target.Identity, message.Action);
                 PvpAttackerFlag.OnHostileAction(player, target);
+                ModuleHooks.ActionResolved(player, PlayerActionKind.FightStart, 0, PlayerActionOutcome.Executed, target: target.Identity);
                 return;
             }
+
+            ModuleHooks.ActionAttempted(player, PlayerActionKind.FightStart, 0, PlayerActionOutcome.Refused, ActionRefusal.Target,
+                target: message.Target, detail: target == null ? "no such target" : "cannot be attacked");
 
             // Retail (capture 2026-10-20T19:48:40Z, attacking an unattackable target): the reason's Feedback, then
             // StartingAttackFailed 2, once per request. Without the second the client keeps its attack pending. A

@@ -44,7 +44,29 @@ namespace AORebirth.Modules.World
         /// not <c>read-world</c>: it carries the account and address.
         /// </summary>
         SessionInfo? Session(int characterId);
+
+        /// <summary>
+        /// The locks running on this player now (module API 1.6), including those restored at login or a zone change;
+        /// empty when the character is not in play here. Snapshot rules as <see cref="Stat"/>. Needs <c>observe-actions</c>.
+        /// </summary>
+        IReadOnlyList<CooldownInfo> Cooldowns(int characterId);
+
+        /// <summary>
+        /// Messages counted on this connection since it opened, by N3 message type and direction (module API 1.6), or null
+        /// when the connection is not on this instance. Live counters, never a snapshot, so it never waits. Needs
+        /// <c>read-sessions</c>.
+        /// </summary>
+        IReadOnlyDictionary<int, MessageCount>? MessageCounts(Guid sessionId);
     }
+
+    /// <summary>A lock running on a player (module API 1.6).</summary>
+    public sealed record CooldownInfo(Events.CooldownKey Key, TimeSpan Duration, long Deadline);
+
+    /// <summary>Messages of one type on one connection, each way (module API 1.6).</summary>
+    public readonly record struct MessageCount(long Inbound, long Outbound);
+
+    /// <summary>An item by its template ids and quality (module API 1.6); default for none.</summary>
+    public readonly record struct ItemRef(int LowId, int HighId, int Quality);
 
     /// <summary>A character's connection (module API 1.5).</summary>
     public sealed record SessionInfo
@@ -118,6 +140,15 @@ namespace AORebirth.Modules.World
 
         /// <summary>False while link-dead (the character stays in the world without a connection).</summary>
         public bool IsConnected { get; init; }
+
+        /// <summary>Fighting, or on an enemy's hate list (module API 1.6).</summary>
+        public bool InCombat { get; init; }
+
+        /// <summary>Sitting (module API 1.6).</summary>
+        public bool IsSitting { get; init; }
+
+        /// <summary>The motor has the character moving (module API 1.6).</summary>
+        public bool IsMoving { get; init; }
     }
 
     /// <summary>A spawned NPC as one playfield tick last saw it.</summary>
@@ -140,5 +171,11 @@ namespace AORebirth.Modules.World
 
         /// <summary>A Knubot script talks for this NPC, so using it opens the Knubot chat.</summary>
         public bool HasKnubotScript { get; init; }
+
+        /// <summary>When the NPC spawned, on <see cref="IZoneClock"/> (module API 1.6).</summary>
+        public long SpawnedAt { get; init; }
+
+        /// <summary>The NPC attacks players on sight (module API 1.6).</summary>
+        public bool Hostile { get; init; }
     }
 }

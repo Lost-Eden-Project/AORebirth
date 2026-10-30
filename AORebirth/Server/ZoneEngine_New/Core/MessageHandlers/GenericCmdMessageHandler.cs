@@ -296,16 +296,35 @@ namespace ZoneEngine_New.Core.MessageHandlers
             // Equipped items may be used unless the use would spend or destroy them.
             if (target.Type.IsWearPage() && item.DestroysOnUse)
             {
+                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
+                    AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.State, item,
+                    detail: "equipped item consumed on use");
                 Deny(session, message, player, "equipped item is consumed or destroyed on use; unequip it first");
                 return;
             }
 
             if (_quests.IsAuthoredItem(item))
             {
-                if (_quests.TryUseItem(player, target, item))
+                // Module API 1.6: an authored quest item runs at once, outside ItemUseService.
+                bool used;
+                using (Modules.ModuleCooldowns.During(AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId))
+                    used = _quests.TryUseItem(player, target, item);
+                if (used)
+                {
+                    Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
+                        AORebirth.Modules.Events.PlayerActionOutcome.Started, item: item);
+                    Modules.ModuleHooks.ActionResolved(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
+                        AORebirth.Modules.Events.PlayerActionOutcome.Executed, item: item);
                     Acknowledge(session, message, target);
-                else if (!player.IsPersistenceQuarantined && session.State == SessionState.InPlay)
-                    Deny(session, message, player, "authored item use was not committed");
+                }
+                else
+                {
+                    Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
+                        AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.Other, item,
+                        detail: "authored item use not committed");
+                    if (!player.IsPersistenceQuarantined && session.State == SessionState.InPlay)
+                        Deny(session, message, player, "authored item use was not committed");
+                }
                 return;
             }
 

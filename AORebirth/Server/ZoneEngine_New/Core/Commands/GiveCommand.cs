@@ -197,6 +197,8 @@ namespace ZoneEngine_New.Core.Commands
 
             subject.Inventory.MarkDirty(item, page, slot);
             _flush.NotifyDirty(subject);
+            Modules.ModuleHooks.ItemMoved(subject, item, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
+                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
 
             if (ReferenceEquals(page, subject.Inventory.Overflow))
             {

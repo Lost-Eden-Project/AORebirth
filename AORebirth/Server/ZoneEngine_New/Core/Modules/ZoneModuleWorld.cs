@@ -91,6 +91,41 @@ namespace ZoneEngine_New.Core.Modules
             };
         }
 
+        /// <summary>
+        /// The player's running locks (module API 1.6), from the snapshot their playfield publishes; read on the player's own
+        /// tick they come straight from the character.
+        /// </summary>
+        public IReadOnlyList<CooldownInfo> Cooldowns(int characterId)
+        {
+            if (!_manager.Value.FindPlayer(characterId, out Player player) || player.Playfield is not Playfield playfield)
+                return Array.Empty<CooldownInfo>();
+            if (playfield.IsTickHeldByCurrentThread)
+                return ModuleCooldowns.Read(player);
+
+            Slot slot = SlotFor(playfield);
+            long now = Stopwatch.GetTimestamp();
+            bool known = slot.CooldownWatch.ContainsKey(characterId);
+            slot.CooldownWatch[characterId] = now + DemandTicks;
+            slot.Demand(now + DemandTicks);
+            Snapshot? current = slot.Current;
+            if (known && current != null && current.Cooldowns.TryGetValue(characterId, out CooldownInfo[]? cached))
+                return cached;
+            if (Playfield.IsOnTickThread)
+                return current != null && current.Cooldowns.TryGetValue(characterId, out CooldownInfo[]? stale) ? stale : Array.Empty<CooldownInfo>();
+
+            // A newly watched player is in the snapshot after the next publish.
+            slot.NextPublish.Wait(WaitLimit);
+            return slot.Current is Snapshot published && published.Cooldowns.TryGetValue(characterId, out CooldownInfo[]? value)
+                ? value
+                : Array.Empty<CooldownInfo>();
+        }
+
+        /// <summary>Live counters on the connection (module API 1.6), never a snapshot.</summary>
+        public IReadOnlyDictionary<int, MessageCount>? MessageCounts(Guid sessionId)
+            => ZoneEngine_New.Core.Network.ZoneSession.TryFind(sessionId, out ZoneEngine_New.Core.Network.ZoneSession session)
+                ? session.MessageCounts()
+                : null;
+
         public int? Stat(EntityRef entity, int statId)
         {
             if (entity.Type != EntityRef.CharacterType)
@@ -148,6 +183,7 @@ namespace ZoneEngine_New.Core.Modules
                 {
                     slot.Current = null;
                     slot.Watch.Clear();
+                    slot.CooldownWatch.Clear();
                 }
 
                 return;
@@ -265,7 +301,17 @@ namespace ZoneEngine_New.Core.Modules
                     stats[watched.Key] = LiveStat(playfield, watched.Key);
             }
 
-            return new Snapshot(now, players.ToArray(), npcs.ToArray(), stats);
+            var cooldowns = new Dictionary<int, CooldownInfo[]>();
+            foreach (KeyValuePair<int, long> watched in slot.CooldownWatch)
+            {
+                if (now > watched.Value)
+                    slot.CooldownWatch.TryRemove(watched);
+                else if (registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = watched.Key }, out Dynel? dynel)
+                         && dynel is Player watchedPlayer && ReferenceEquals(watchedPlayer.Playfield, playfield))
+                    cooldowns[watched.Key] = ModuleCooldowns.Read(watchedPlayer);
+            }
+
+            return new Snapshot(now, players.ToArray(), npcs.ToArray(), stats, cooldowns);
         }
 
         static int? LiveStat(Playfield playfield, StatKey key)
@@ -303,7 +349,10 @@ namespace ZoneEngine_New.Core.Modules
                 GmLevel = player.Stats.GetOrZero(CharacterStat.GmLevel),
                 IsDead = player.IsDead,
                 Target = target.Instance == 0 ? default : new EntityRef((int)target.Type, target.Instance),
-                IsConnected = player.Session != null
+                IsConnected = player.Session != null,
+                InCombat = player.IsInCombat,
+                IsSitting = player.Motor.State == ZoneEngine_New.Core.Movement.MovementState.Sit,
+                IsMoving = player.Motor.IsMoving
             };
         }
 
@@ -319,7 +368,10 @@ namespace ZoneEngine_New.Core.Modules
                 PlayfieldId = playfieldId,
                 Position = new WorldPosition(at.xf, at.yf, at.zf),
                 IsDead = npc.IsDead,
-                HasKnubotScript = knubot != null && !npc.IsDead && knubot.TryResolve(npc, out _)
+                HasKnubotScript = knubot != null && !npc.IsDead && knubot.TryResolve(npc, out _),
+                SpawnedAt = npc.SpawnedAt,
+                Hostile = npc.Attackable
+                          && Ai.NpcAiRules.IsProximityHostile(npc.Stats.GetOrZero(CharacterStat.BreedHostility))
             };
         }
 
@@ -329,7 +381,8 @@ namespace ZoneEngine_New.Core.Modules
             long BuiltAt,
             PlayerInfo[] Players,
             NpcInfo[] Npcs,
-            Dictionary<StatKey, int?> Stats)
+            Dictionary<StatKey, int?> Stats,
+            Dictionary<int, CooldownInfo[]> Cooldowns)
         {
             public Dictionary<int, PlayerInfo> PlayersById { get; } = Index(Players, x => x.CharacterId);
 
@@ -348,6 +401,9 @@ namespace ZoneEngine_New.Core.Modules
         {
             public long DemandUntil;
             public readonly ConcurrentDictionary<StatKey, long> Watch = new();
+
+            /// <summary>Players whose locks a module read lately (module API 1.6), until when.</summary>
+            public readonly ConcurrentDictionary<int, long> CooldownWatch = new();
             volatile Snapshot? _current;
             TaskCompletionSource _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
