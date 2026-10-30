@@ -178,13 +178,16 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 if (list[i] is not RequirementCriterion criterion)
                     continue;
 
+                // AODB criteria are postfix: leaves, then the And / Or / Not rows that link them. Leaves carry no
+                // ChildOperator, so ItemTemplate.MeetsRequirements reads them as that expression ("Level > 1, Cash > 999,
+                // Or" is either, not both).
                 result.Add(
                     new ItemRequirement
                     {
                         StatNumber = criterion.Stat,
                         Operator = (int)criterion.Operator,
                         Value = unchecked((int)criterion.Value),
-                        ChildOperator = (int)AodbOperator.And,
+                        ChildOperator = 0,
                         Target = 0
                     });
             }

@@ -853,9 +853,9 @@
 
         /// <summary>
         /// A portal's teleport function carries criteria (a dungeon's level cap, Borealis Backyard's "level 2 or 1000
-        /// credits"). When they fail the character stays and is told the portal's Text functions whose own criteria pass,
-        /// as plain system text (FormatFeedback 110/707, the form the client shows); a portal with no criteria on its
-        /// teleport always lets the character through.
+        /// credits"). When they fail the character stays; the client runs the portal's walk-in itself and shows its Text
+        /// functions, so the server sends nothing. A portal with no criteria on its teleport always lets the character
+        /// through.
         /// </summary>
         bool MayWalkThrough(Player player, ZoneTriggerVolume trigger)
         {
@@ -866,19 +866,7 @@
             if (teleport == null || Passes(player, teleport))
                 return true;
 
-            int told = 0;
-            foreach (Inventory.ItemSpell spell in spells)
-            {
-                if (!spell.Is(AORebirth.Enums.FunctionType.Text) && !spell.Is(AORebirth.Enums.FunctionType.SystemText))
-                    continue;
-                if (!Passes(player, spell) || !spell.TryReadString(0, out string text) || text.Length == 0)
-                    continue;
-
-                Inventory.RequirementFeedback.SendText(player, text);
-                told++;
-            }
-
-            _logger.Info($"Portal refused character={player.Identity.Instance} door={trigger.DynelInstance} texts={told}");
+            _logger.Info($"Portal refused character={player.Identity.Instance} door={trigger.DynelInstance}");
             return false;
         }
 
