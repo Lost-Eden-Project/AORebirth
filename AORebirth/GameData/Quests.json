@@ -20,5 +20,1433 @@
       "Credits": 0,
       "Xp": 300
     }
+  },
+  {
+    "Hash": "070Y",
+    "Name": "Tag island boss",
+    "Title": "Find the leaders 2/5",
+    "Description": "Find the leaders 2/5<BR><BR>The ICC Bio-Inspector asked you to travel around the island and mark the location of the leaders of the packs of animals. You should travel the length of the beach and find them in the order you have been given in the briefing details.<BR><BR><font color=\"#909090\">Find the snake leader</font><BR><font color=\"#FFFFFF\">Find the leet leader</font><BR><font color=\"#006699\">Find the salamander leader</font><BR><font color=\"#006699\">Find the malle leader</font><BR><font color=\"#006699\">Find the rollerrat leader</font>",
+    "IconId": 11335,
+    "QasInstance": 102381,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BEML",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "87A3",
+    "Reward": null
+  },
+  {
+    "Hash": "0NEC",
+    "Name": "Kill Island Reet",
+    "Title": "Kill an Island Reet",
+    "Description": "Kill an Island Reet<BR><BR>Brandon Thorn advised you to practice your fighting skills by attacking some of the local wildlife.<BR><BR><font color=\"#909090\">Kill a Beach Leet.</font><BR><font color=\"#FFFFFF\">Kill an Island Reet</font><BR><font color=\"#006699\">Kill a Surf Lizard.</font><BR><font color=\"#006699\">Kill a Shore Snake.</font><BR><font color=\"#006699\">Return to Brandon Thorn for your reward</font><BR><BR><font color=\"#D60000\">Attack a creature by targeting it and pressing the q key on the keyboard.<BR>Clicking on the corpse of a defeated creature will open the loot window. If it contains no loot the window will close again automatically. If it has items you can take you can click on them to move them to your inventory.</font><BR><BR><font color=\"#33FF66\">Final reward:</font> Blackmane's Belt",
+    "IconId": 11330,
+    "QasInstance": 100670,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "ISRE",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "GFM9",
+    "Reward": null
+  },
+  {
+    "Hash": "14VI",
+    "Name": "Give Adri 5 items",
+    "Title": "Bring weapon components to Adri",
+    "Description": "Bring weapon components to Adri<BR><BR>Adri Afeli dabbles with weapons technology and has found a way to increase the output of some simple weapons. He has uploaded a list of five items he's looking for. As a reward for your hard work, he will give you a better weapon of your choice.<BR><BR>The list he gave you is:<BR><BR>- Power Supply (Cargo Droid)<BR>- Compression Chamber (Waste Collector)<BR>- Bone Plates (Cliff Malle)<BR>- Stalker Limbs (Tropical Stalker)<BR>- Rollerrat Intestines (Rollerrat)<BR>- A basic weapon<BR><BR>If you don't have a weapon, you can buy one from Antonio Stacklund.",
+    "IconId": 158429,
+    "QasInstance": 102393,
+    "Scope": "Solo",
+    "Action": "FindItem2",
+    "Summary": "trade the spec item",
+    "Objective": {
+      "Count": null,
+      "Npc": "ADAF",
+      "SpecItem": "PRSY",
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 231,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "3PPY",
+      "Credits": 400,
+      "Xp": 400
+    }
+  },
+  {
+    "Hash": "2SQ4",
+    "Name": "B-2",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101238,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SORL",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "G8VA",
+    "Reward": null
+  },
+  {
+    "Hash": "360X",
+    "Name": "Status report",
+    "Title": "Return to Travis Molen",
+    "Description": "Return to Travis Molen<BR><BR>Return with the status report to Travis Molen.<BR><BR>The Shuttleport Manager, Travis Molen, wants you to make sure the Unicorn Commander has everything he needs to finish his operation and leave the shuttle port. Return to him with a status report of the Unicorn operation.",
+    "IconId": 158429,
+    "QasInstance": 100657,
+    "Scope": "Solo",
+    "Action": "FindItem2",
+    "Summary": "trade the spec item",
+    "Objective": {
+      "Count": null,
+      "Npc": "SHMG",
+      "SpecItem": "CMSU",
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "W88E",
+      "Credits": 300,
+      "Xp": 300
+    }
+  },
+  {
+    "Hash": "37A1",
+    "Name": "Find Shore Snake",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100654,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SRSK",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "C8MH",
+    "Reward": null
+  },
+  {
+    "Hash": "4UM8",
+    "Name": "The cull",
+    "Title": "Kill 3 Reef Salamanders",
+    "Description": "Kill 3 Reef Salamanders<BR><BR>The ICC Bio-Inspector needs help to cull some of the local wildlife before they hurt the eco-system of the island by overpopulating it.<BR><BR><font color=\"#FFFFFF\">Kill 3 Reef Salamanders</font><BR><font color=\"#006699\">Kill 3 Tropical Stalkers</font><BR><font color=\"#006699\">Kill 3 Cliff Malle</font>",
+    "IconId": 11330,
+    "QasInstance": 102376,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "RFSL",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "DQOD",
+    "Reward": null
+  },
+  {
+    "Hash": "5BVT",
+    "Name": "C-1a Giant Snakes",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101240,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "GISK",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "VE45",
+    "Reward": null
+  },
+  {
+    "Hash": "5NCC",
+    "Name": "Return to the Inspector",
+    "Title": "Return to the Inspector",
+    "Description": "Return to the Inspector<BR><BR>Now that you have cleared some of the wildlife on the western side of the beach, you should return to the ICC Bio-Inspector and tell him you're done.",
+    "IconId": 244818,
+    "QasInstance": 102379,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 229,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "U55J",
+      "Credits": 350,
+      "Xp": 350
+    }
+  },
+  {
+    "Hash": "76A9",
+    "Name": "Talk to the Unicorn Commander",
+    "Title": "Talk to the Unicorn Squadleader",
+    "Description": "Talk to the Unicorn Squadleader<BR><BR>The Shuttleport Manager, Travis Molen, wants you to make sure Unicorn Squadleader Fixx has everything he needs to finish his operation and leave the Shuttleport. You should try to return with a status report of the Unicorn operation.",
+    "IconId": 244818,
+    "QasInstance": 100656,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "OMUI",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": null
+  },
+  {
+    "Hash": "7N06",
+    "Name": "Trouble with robots",
+    "Title": "Disable the android leader",
+    "Description": "Disable the android leader<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#909090\">Kill 3 Cargo Droids</font><BR><font color=\"#909090\">Kill 3 Waste Collectors</font><BR><font color=\"#FFFFFF\">Kill the android leader</font><BR><font color=\"#006699\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102391,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BDMO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "X56X",
+    "Reward": null
+  },
+  {
+    "Hash": "7ORV",
+    "Name": "D",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101244,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CBSN",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "G509",
+    "Reward": null
+  },
+  {
+    "Hash": "83X3",
+    "Name": "E - Shuttle Saboteur",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101249,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "LPAK",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "IF9E",
+    "Reward": null
+  },
+  {
+    "Hash": "87A3",
+    "Name": "Tag island boss",
+    "Title": "Find the leaders 3/5",
+    "Description": "Find the leaders 3/5<BR><BR>The ICC Bio-Inspector asked you to travel around the island and mark the location of the leaders of the packs of animals. You should travel the island and find them in the order you have been given in the briefing details.<BR><BR><font color=\"#909090\">Find the snake leader</font><BR><font color=\"#909090\">Find the leet leader</font><BR><font color=\"#FFFFFF\">Find the salamander leader</font><BR><font color=\"#006699\">Find the malle leader</font><BR><font color=\"#006699\">Find the rollerrat leader</font>",
+    "IconId": 11335,
+    "QasInstance": 102382,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BDML",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "CRTP",
+    "Reward": null
+  },
+  {
+    "Hash": "8N0N",
+    "Name": "A - end",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101254,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoCash",
+    "MissionBit": 135,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "3IMK",
+      "Credits": 0,
+      "Xp": 300
+    }
+  },
+  {
+    "Hash": "8SAT",
+    "Name": "C-end",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101252,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoCash",
+    "MissionBit": 137,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "8WAA",
+      "Credits": 0,
+      "Xp": 500
+    }
+  },
+  {
+    "Hash": "91S8",
+    "Name": "Kill Beach Leet",
+    "Title": "Kill a Beach Leet",
+    "Description": "Kill a Beach Leet<BR><BR>Brandon Thorn advised you to practice your fighting skills by attacking some of the local wildlife.<BR><BR><font color=\"#FFFFFF\">Kill a Beach Leet.</font><BR><font color=\"#006699\">Kill an Island Reet</font><BR><font color=\"#006699\">Kill a Surf Lizard.</font><BR><font color=\"#006699\">Kill a Shore Snake.</font><BR><font color=\"#006699\">Return to Brandon Thorn for your reward</font><BR><BR><font color=\"#D60000\">Attack a creature by targeting it and pressing the q key on the keyboard.<BR>Clicking on the corpse of a defeated creature will open the loot window. If it contains no loot the window will close again automatically. If it has items you can take you can click on them to move them to your inventory.</font><BR><BR><font color=\"#33FF66\">Final reward:</font> Blackmane's Belt",
+    "IconId": 11330,
+    "QasInstance": 100658,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "FDQO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "0NEC",
+    "Reward": null
+  },
+  {
+    "Hash": "97YJ",
+    "Name": "Find Island Reet",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100652,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "ISRE",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "QAP2",
+    "Reward": null
+  },
+  {
+    "Hash": "9BBO",
+    "Name": "Return to the Inspector",
+    "Title": "Return to the Inspector",
+    "Description": "Return to the Inspector<BR><BR>Now that you have found all five animal leaders, you should return to the ICC bio-inspector and tell him you're done.",
+    "IconId": 244818,
+    "QasInstance": 102398,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 230,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "W5QB",
+      "Credits": 350,
+      "Xp": 350
+    }
+  },
+  {
+    "Hash": "9CLH",
+    "Name": "Talk to the Shuttleport Manager",
+    "Title": "Talk to the Shuttleport Manager",
+    "Description": "Talk to the Shuttleport Manager<BR><BR>Shuttleport Manager Travis Molen can be found at the shuttleport control building, north of where Brandon Thorn is located. ",
+    "IconId": 244818,
+    "QasInstance": 100675,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SHMG",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": [
+      {
+        "Playfield": 4582,
+        "X": 930,
+        "Y": 0,
+        "Z": 890
+      }
+    ],
+    "Flags": "NoCash",
+    "MissionBit": 233,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "ZOJK",
+      "Credits": 0,
+      "Xp": 50
+    }
+  },
+  {
+    "Hash": "AIOJ",
+    "Name": "Talk to Adri",
+    "Title": "Talk to Adri Afeli",
+    "Description": "Talk to Adri Afeli<BR><BR>The ICC Bio-Inspector sent you to find a guy called Adri Afeli. He supposedly hangs around the docks, to the left of the tunnel exit.",
+    "IconId": 244818,
+    "QasInstance": 102400,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "PVV5",
+      "Credits": 50,
+      "Xp": 50
+    }
+  },
+  {
+    "Hash": "AXSB",
+    "Name": "B-1 Stowaway Rollerrats",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101237,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SORL",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "2SQ4",
+    "Reward": null
+  },
+  {
+    "Hash": "C8MH",
+    "Name": "Talk to Brandon Thorn",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100655,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BNTO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 129,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "H0A3",
+      "Credits": 400,
+      "Xp": 400
+    }
+  },
+  {
+    "Hash": "CRTP",
+    "Name": "Tag island boss",
+    "Title": "Find the leaders 4/5",
+    "Description": "Find the leaders 4/5<BR><BR>The ICC Bio-Inspector asked you to travel around the island and mark the location of the leaders of the packs of animals and the robots. You should travel the island and find them in the order You have been given in the briefing details.<BR><BR><font color=\"#909090\">Find the snake leader</font><BR><font color=\"#909090\">Find the leet leader</font><BR><font color=\"#909090\">Find the salamander leader</font><BR><font color=\"#FFFFFF\">Find the malle leader</font><BR><font color=\"#006699\">Find the rollerrat leader</font>",
+    "IconId": 11335,
+    "QasInstance": 102383,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BLMM",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "ZKO6",
+    "Reward": null
+  },
+  {
+    "Hash": "DQOD",
+    "Name": "The cull",
+    "Title": "Kill 3 Tropical Stalkers",
+    "Description": "Kill 3 Tropical Stalkers<BR><BR>The ICC Bio-Inspector needs help to cull some of the local wildlife before they hurt the eco-system of the island by overpopulating it.<BR><BR><font color=\"#909090\">Kill 3 Reef Salamanders</font><BR><font color=\"#FFFFFF\">Kill 3 Tropical Stalkers</font><BR><font color=\"#006699\">Kill 3 Cliff Malle</font>",
+    "IconId": 11330,
+    "QasInstance": 102377,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "TPSA",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "SN7R",
+    "Reward": null
+  },
+  {
+    "Hash": "EWOX",
+    "Name": "B-end",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101253,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoCash",
+    "MissionBit": 136,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "VYTC",
+      "Credits": 0,
+      "Xp": 300
+    }
+  },
+  {
+    "Hash": "G509",
+    "Name": "D",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101245,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CBSN",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "Q7UP",
+    "Reward": null
+  },
+  {
+    "Hash": "G8VA",
+    "Name": "B-3",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101247,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SORL",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "EWOX",
+    "Reward": null
+  },
+  {
+    "Hash": "GFM9",
+    "Name": "Kill Surf Lizard",
+    "Title": "Kill a Surf Lizard.",
+    "Description": "Kill a Surf Lizard.<BR><BR>Brandon Thorn advised you to practice your fighting skills by attacking some of the local wildlife.<BR><BR><font color=\"#909090\">Kill a Beach Leet.</font><BR><font color=\"#909090\">Kill an Island Reet</font><BR><font color=\"#FFFFFF\">Kill a Surf Lizard.</font><BR><font color=\"#006699\">Kill a Shore Snake.</font><BR><font color=\"#006699\">Return to Brandon Thorn for your reward</font><BR><BR><font color=\"#D60000\">Attack a creature by targeting it and pressing the q key on the keyboard.<BR>Clicking on the corpse of a defeated creature will open the loot window. If it contains no loot the window will close again automatically. If it has items you can take you can click on them to move them to your inventory.</font><BR><BR><font color=\"#33FF66\">Final reward:</font> Blackmane's Belt",
+    "IconId": 11330,
+    "QasInstance": 100671,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SRLZ",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "R1FQ",
+    "Reward": null
+  },
+  {
+    "Hash": "H38F",
+    "Name": "Give startup-items",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101587,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": 199,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "8439",
+      "Credits": 0,
+      "Xp": 0
+    }
+  },
+  {
+    "Hash": "HHDQ",
+    "Name": "C-1c",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101255,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "GISK",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "8SAT",
+    "Reward": null
+  },
+  {
+    "Hash": "HYIY",
+    "Name": "Talk to the ICC Bio-Inspector",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100775,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "ICBI",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 132,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "AP9Y",
+      "Credits": 50,
+      "Xp": 50
+    }
+  },
+  {
+    "Hash": "I07G",
+    "Name": "D - Climbing Salamanders",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101243,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CBSN",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "7ORV",
+    "Reward": null
+  },
+  {
+    "Hash": "IF9E",
+    "Name": "E-end",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101241,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoCash",
+    "MissionBit": 139,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "Z38P",
+      "Credits": 0,
+      "Xp": 300
+    }
+  },
+  {
+    "Hash": "IIG3",
+    "Name": "Return to the medic",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100668,
+    "Scope": "Solo",
+    "Action": "FindItem2",
+    "Summary": "trade the spec item",
+    "Objective": {
+      "Count": null,
+      "Npc": "CLFI",
+      "SpecItem": "MERO",
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "21NT",
+      "Credits": 0,
+      "Xp": 0
+    }
+  },
+  {
+    "Hash": "L5G4",
+    "Name": "Find a Beach Leet.",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100651,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "FDQO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "97YJ",
+    "Reward": null
+  },
+  {
+    "Hash": "M78S",
+    "Name": "Return the injury report",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100669,
+    "Scope": "Solo",
+    "Action": "FindItem2",
+    "Summary": "trade the spec item",
+    "Objective": {
+      "Count": null,
+      "Npc": "SHMG",
+      "SpecItem": "IJRE",
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "I8CV",
+      "Credits": 300,
+      "Xp": 300
+    }
+  },
+  {
+    "Hash": "MFCN",
+    "Name": "Trouble with robots",
+    "Title": "Disable 3 Cargo Droids",
+    "Description": "Disable 3 Cargo Droids<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#FFFFFF\">Kill 3 Cargo Droids</font><BR><font color=\"#006699\">Kill 3 Waste Collectors</font><BR><font color=\"#006699\">Kill the android leader</font><BR><font color=\"#006699\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102387,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "CADR",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "NP3L",
+    "Reward": null
+  },
+  {
+    "Hash": "MWTD",
+    "Name": "Talk to the Equipment Vendor Antonio Stacklund",
+    "Title": "Take belt to Antonio Stacklund",
+    "Description": "Take belt to Antonio Stacklund<BR><BR>Equipment Vendor Antonio Stacklund can be found at the Shuttleport control building, north of where Brandon Thorn is located. Take the belt you got from Brandon Thorn, and trade it to Mr. Stacklund, he'll help you find out what use it may have.<BR><BR><font color=\"#D60000\">Click the \"Map\" button on the menu in the lower right corner, then select the new \"Map\" button that shows up to open the local map for easier navigation. You may also toggle this map by pressing CTRL+6 key on the keyboard.</font>",
+    "IconId": 158429,
+    "QasInstance": 100776,
+    "Scope": "Solo",
+    "Action": "FindItem2",
+    "Summary": "trade the spec item",
+    "Objective": {
+      "Count": null,
+      "Npc": "EQVE",
+      "SpecItem": "BCBT",
+      "WorldItem": null
+    },
+    "Waypoints": [
+      {
+        "Playfield": 4582,
+        "X": 934,
+        "Y": 0,
+        "Z": 874
+      }
+    ],
+    "Flags": "None",
+    "MissionBit": 131,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "W2BI",
+      "Credits": 50,
+      "Xp": 50
+    }
+  },
+  {
+    "Hash": "N8KF",
+    "Name": "A-1 Junkbots",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101234,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CRJU",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "ZLU2",
+    "Reward": null
+  },
+  {
+    "Hash": "NP3L",
+    "Name": "Trouble with robots",
+    "Title": "Disable 3 Waste Collectors",
+    "Description": "Disable 3 Waste Collectors<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#909090\">Kill 3 Cargo Droids</font><BR><font color=\"#FFFFFF\">Kill 3 Waste Collectors</font><BR><font color=\"#006699\">Kill the android leader</font><BR><font color=\"#006699\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102390,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "WTCO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "7N06",
+    "Reward": null
+  },
+  {
+    "Hash": "OLJO",
+    "Name": "Return to Adri",
+    "Title": "Return to Adri",
+    "Description": "Return to Adri<BR><BR>Now that you have cleared some of the droids on the docks, you should return to Adri for your reward.",
+    "IconId": 244818,
+    "QasInstance": 102394,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 232,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "FFVN",
+      "Credits": 450,
+      "Xp": 450
+    }
+  },
+  {
+    "Hash": "P8S1",
+    "Name": "Debriefing",
+    "Title": "The Unicorns - 0 spiders left",
+    "Description": "The Unicorns - 0 spiders left<BR><BR>The Unicorn Squadleader wants you to help the soldiers up north by exterminating some alien spiders.<BR><BR><font color=\"#909090\">Kill the first Alien Spider - Zix</font><BR><font color=\"#909090\">Kill the second Alien Spider - Zix</font><BR><font color=\"#909090\">Kill the third Alien Spider - Zix</font><BR><font color=\"#FFFFFF\">Return to the Unicorn Squadleader for a debriefing.</font>",
+    "IconId": 244818,
+    "QasInstance": 100662,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "OMUI",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "QVL0",
+      "Credits": 0,
+      "Xp": 0
+    }
+  },
+  {
+    "Hash": "PPK6",
+    "Name": "Talk to the Medic",
+    "Title": "Talk to the Clan Field Surge...",
+    "Description": "Talk to the Clan Field Surgeon Elsa Oosta.<BR><BR>The Shuttleport Manager, Travis Molen, wants you to make sure the Field Surgeon has everything she needs to to help the injured soldiers. You should return with an injury report from the Field Surgeon.",
+    "IconId": 244818,
+    "QasInstance": 100667,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CLFI",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": null
+  },
+  {
+    "Hash": "PRIF",
+    "Name": "Tag island boss",
+    "Title": "Find the leaders 1/5",
+    "Description": "Find the leaders 1/5<BR><BR>The ICC Bio-Inspector asked you to travel around the island and mark the location of the leaders of the packs of animals. You should travel the beach and find them in the order you have been given in the briefing details. He said he only knew where the snake lead is; on the eastern shores.<BR><BR><font color=\"#FFFFFF\">Find the snake leader</font><BR><font color=\"#006699\">Find the leet leader</font><BR><font color=\"#006699\">Find the salamander leader</font><BR><font color=\"#006699\">Find the malle leader</font><BR><font color=\"#006699\">Find the rollerrat leader</font>",
+    "IconId": 11335,
+    "QasInstance": 102380,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BSMG",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "070Y",
+    "Reward": null
+  },
+  {
+    "Hash": "Q5V8",
+    "Name": "Talk to Brandon Thorn",
+    "Title": "Talk to Brandon Thorn.",
+    "Description": "Talk to Brandon Thorn.<BR><BR>Brandon Thorn advised you to practice your fighting skills by attacking some of the local wildlife.<BR><BR><font color=\"#909090\">Kill a Beach Leet</font><BR><font color=\"#909090\">Kill an Island Reet</font><BR><font color=\"#909090\">Kill a Surf Lizard</font><BR><font color=\"#909090\">Kill a Shore Snake</font><BR><font color=\"#FFFFFF\">Return to Brandon Thorn for your reward</font>",
+    "IconId": 244818,
+    "QasInstance": 100673,
+    "Scope": "Solo",
+    "Action": "TalkTo",
+    "Summary": "talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BNTO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "None",
+    "MissionBit": 130,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "6BNZ",
+      "Credits": 600,
+      "Xp": 600
+    }
+  },
+  {
+    "Hash": "Q7UP",
+    "Name": "D-end",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101246,
+    "Scope": "Solo",
+    "Action": "ReturnToQuestGiver",
+    "Summary": "return to / talk to the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": null,
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoCash",
+    "MissionBit": 138,
+    "NextStep": null,
+    "Reward": {
+      "Hash": "GDE6",
+      "Credits": 0,
+      "Xp": 500
+    }
+  },
+  {
+    "Hash": "Q9I7",
+    "Name": "Trouble with robots",
+    "Title": "Disable 3 Cargo Droids",
+    "Description": "Disable 3 Cargo Droids<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#FFFFFF\">Kill 3 Cargo Droids</font><BR><font color=\"#006699\">Kill 3 Waste Collectors</font><BR><font color=\"#006699\">Kill the android leader</font><BR><font color=\"#006699\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102387,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "CADR",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "NP3L",
+    "Reward": null
+  },
+  {
+    "Hash": "QAP2",
+    "Name": "Find Surf Lizard",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 100653,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SRLZ",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "37A1",
+    "Reward": null
+  },
+  {
+    "Hash": "R1FQ",
+    "Name": "Kill Shore Snake",
+    "Title": "Kill a Shore Snake.",
+    "Description": "Kill a Shore Snake.<BR><BR>Brandon Thorn advised you to practice your fighting skills by attacking some of the local wildlife.<BR><BR><font color=\"#909090\">Kill a Beach Leet.</font><BR><font color=\"#909090\">Kill an Island Reet</font><BR><font color=\"#909090\">Kill a Surf Lizard.</font><BR><font color=\"#FFFFFF\">Kill a Shore Snake.</font><BR><font color=\"#006699\">Return to Brandon Thorn for your reward</font><BR><BR><font color=\"#D60000\">Attack a creature by targeting it and pressing the q key on the keyboard.<BR>Clicking on the corpse of a defeated creature will open the loot window. If it contains no loot the window will close again automatically. If it has items you can take you can click on them to move them to your inventory.</font><BR><BR><font color=\"#33FF66\">Final reward:</font> Blackmane's Belt",
+    "IconId": 11330,
+    "QasInstance": 100672,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "SRSK",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "Q5V8",
+    "Reward": null
+  },
+  {
+    "Hash": "S4WX",
+    "Name": "-Scan an alien spider.",
+    "Title": "Compare lifeforms - Alien Sp...",
+    "Description": "Compare lifeforms - Alien Spider<BR><BR>Field Surgeon Elsa Oosta asked you to compare one of the aliens with normal Rubi-Ka lifeforms. She gave you a scanner to use. When you locate the creature she asked you to look for, the information will automatically be updated to the scanner.<BR><BR><font color=\"#FFFFFF\">Scan the Alien spider - Zix</font><BR><font color=\"#006699\">Scan the Reef Salamander</font><BR><font color=\"#006699\">Return to Elsa Oosta with the scanner</font><BR><BR><font color=\"#D60000\">You can target a creature by clicking on it or by pressing the TAB key on the keyboard to cycle through creatures in the vicinity.</font>",
+    "IconId": 11335,
+    "QasInstance": 100663,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "ZIXI",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": [
+      {
+        "Playfield": 4582,
+        "X": 900,
+        "Y": 0,
+        "Z": 945
+      }
+    ],
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "6PMI",
+    "Reward": null
+  },
+  {
+    "Hash": "SIXG",
+    "Name": "Trouble with robots",
+    "Title": "Disable the junkbot leader",
+    "Description": "Disable the junkbot leader<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#909090\">Kill 3 Cargo Droids</font><BR><font color=\"#909090\">Kill 3 Waste Collectors</font><BR><font color=\"#909090\">Kill the android leader</font><BR><font color=\"#FFFFFF\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102392,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BJMR",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "OLJO",
+    "Reward": null
+  },
+  {
+    "Hash": "SN7R",
+    "Name": "The cull",
+    "Title": "Kill 3 Cliff Malle",
+    "Description": "Kill 3 Cliff Malle<BR><BR>The ICC Bio-Inspector needs help to cull some of the local wildlife before they hurt the eco-system of the island by overpopulating it.<BR><BR><font color=\"#909090\">Kill 3 Reef Salamanders</font><BR><font color=\"#909090\">Kill 3 Tropical Stalkers</font><BR><font color=\"#FFFFFF\">Kill 3 Cliff Malle</font>",
+    "IconId": 11330,
+    "QasInstance": 102378,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "CIMA",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "5NCC",
+    "Reward": null
+  },
+  {
+    "Hash": "TC8J",
+    "Name": "A-3",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101236,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CRJU",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "8N0N",
+    "Reward": null
+  },
+  {
+    "Hash": "VE45",
+    "Name": "C-1b",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101239,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "GISK",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "HHDQ",
+    "Reward": null
+  },
+  {
+    "Hash": "VXZ0",
+    "Name": "The Unicorn Squadleader",
+    "Title": "The Unicorns - 3 spiders left",
+    "Description": "The Unicorns - 3 spiders left<BR><BR>The Unicorn Squadleader wants you to help the soldiers up north by exterminating some alien spiders.<BR><BR><font color=\"#FFFFFF\">Kill the first Alien Spider - Zix</font><BR><font color=\"#006699\">Kill the second Alien Spider - Zix</font><BR><font color=\"#006699\">Kill the third Alien Spider - Zix</font><BR><font color=\"#006699\">Return to the Unicorn Squadleader for a debriefing.</font>",
+    "IconId": 11330,
+    "QasInstance": 100659,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "ZIXI",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": [
+      {
+        "Playfield": 4582,
+        "X": 900,
+        "Y": 0,
+        "Z": 945
+      }
+    ],
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "0A9M",
+    "Reward": null
+  },
+  {
+    "Hash": "X56X",
+    "Name": "Trouble with robots",
+    "Title": "Disable the junkbot leader",
+    "Description": "Disable the junkbot leader<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#909090\">Kill 3 Cargo Droids</font><BR><font color=\"#909090\">Kill 3 Waste Collectors</font><BR><font color=\"#909090\">Kill the android leader</font><BR><font color=\"#FFFFFF\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102392,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BJMR",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "OLJO",
+    "Reward": null
+  },
+  {
+    "Hash": "XBRX",
+    "Name": "Trouble with robots",
+    "Title": "Disable 3 Waste Collectors",
+    "Description": "Disable 3 Waste Collectors<BR><BR>Adri Afeli, the freelancer you met close to the tunnel asked you to decommission some of the robots roaming the docks plus two of the robot leaders that have put down territory on the piers.<BR><BR><font color=\"#909090\">Kill 3 Cargo Droids</font><BR><font color=\"#FFFFFF\">Kill 3 Waste Collectors</font><BR><font color=\"#006699\">Kill the android leader</font><BR><font color=\"#006699\">Kill the junkbot leader</font>",
+    "IconId": 11330,
+    "QasInstance": 102390,
+    "Scope": "Solo",
+    "Action": "KillMultiple",
+    "Summary": "kill N of the target NPC",
+    "Objective": {
+      "Count": 3,
+      "Npc": "WTCO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "7N06",
+    "Reward": null
+  },
+  {
+    "Hash": "ZKO6",
+    "Name": "Tag island boss",
+    "Title": "Find the leaders 5/5",
+    "Description": "Find the leaders 5/5<BR><BR>The ICC Bio-Inspector asked you to travel around the island and mark the location of the leaders of the packs of animals. You should travel the island and find them in the order you have been given in the briefing details.<BR><BR><font color=\"#909090\">Find the snake leader</font><BR><font color=\"#909090\">Find the leet leader</font><BR><font color=\"#909090\">Find the salamander leader</font><BR><font color=\"#909090\">Find the malle leader</font><BR><font color=\"#FFFFFF\">Find the rollerrat leader</font>",
+    "IconId": 11335,
+    "QasInstance": 102389,
+    "Scope": "Solo",
+    "Action": "TargetNpc",
+    "Summary": "target the NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "BTMO",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "9BBO",
+    "Reward": null
+  },
+  {
+    "Hash": "ZLU2",
+    "Name": "A-2",
+    "Title": null,
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 101235,
+    "Scope": "Solo",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "CRJU",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": "TC8J",
+    "Reward": null
   }
 ]

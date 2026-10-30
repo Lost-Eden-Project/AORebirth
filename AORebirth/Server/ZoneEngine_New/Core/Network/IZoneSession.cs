@@ -20,10 +20,17 @@ namespace ZoneEngine_New.Core.Network
         /// <summary>Clears session→player without world teardown (used after LinkDead / steal / despawn).</summary>
         void UnbindPlayer();
 
-        void TransferToPlayfield(Playfield destination, Vector3 landing);
+        /// <summary>
+        /// A move is on its way, or the session is not in play. Checked by every mover before it starts a move, so two
+        /// systems (a door used and walked into in the same tick) cannot both move the character.
+        /// </summary>
+        bool IsTransferring => State != SessionState.InPlay;
+
+        /// <summary>Schedules the move. False when a move is already on its way: the first move stands.</summary>
+        bool TransferToPlayfield(Playfield destination, Vector3 landing);
 
         /// <summary>Transfers with an explicit destination heading; implementations must not silently discard it.</summary>
-        void TransferToPlayfield(Playfield destination, Vector3 landing, AORebirth.Core.Vector.Quaternion heading)
+        bool TransferToPlayfield(Playfield destination, Vector3 landing, AORebirth.Core.Vector.Quaternion heading)
             => throw new System.NotSupportedException("This session does not support an explicit transfer heading.");
         /// <summary>
         /// In-zone death respawn: N3Teleport with ChangePlayfield set to the current playfield.

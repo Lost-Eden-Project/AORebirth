@@ -950,7 +950,7 @@ namespace ZoneEngine_New.Core.Inventory
             // An unloaded destination builds in the background; the move completes on this player's tick.
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(playfieldId, player, destination =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 session.TransferToPlayfield(destination, destination.SnapFeetToFloor(new Vector3(x, y, z)));
             }, new ZoneEngine_New.Core.World.RemoteArrival(new Vector3(x, y, z), Kind: AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
@@ -1014,7 +1014,7 @@ namespace ZoneEngine_New.Core.Inventory
             player.Rotation = heading;
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(playfieldId, player, destPlayfield =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 session.TransferToPlayfield(destPlayfield, landing, heading);
             }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
@@ -1176,7 +1176,7 @@ namespace ZoneEngine_New.Core.Inventory
             source.GetService<WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(targetPlayfield, player, arrival =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 if (!landsOnLine && arrival is ACGPlayfield acg)
                     acg.World?.RegisterExitProxyDoor(destDoor);
@@ -1234,7 +1234,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             return source.GetRequiredService<PlayfieldManager>().WithPlayfield(destination.PlayfieldId, player, destPlayfield =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { } session)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
                     return;
                 session.TransferToPlayfield(destPlayfield, landing, heading);
             }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));

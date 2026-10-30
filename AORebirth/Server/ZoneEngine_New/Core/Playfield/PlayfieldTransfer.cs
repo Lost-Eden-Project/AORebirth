@@ -182,7 +182,7 @@ namespace ZoneEngine_New.Core.Playfield
             {
                 Source.ForgetOutgoingTransfer(this);
                 Destination.ForgetIncomingTransfer(this);
-                Session.FinishTransfer(this);
+                Session.FinishTransfer(this, playerStays: phase is Phase.Abandoned or Phase.Returned);
             }
             finally
             {

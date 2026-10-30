@@ -2082,7 +2082,9 @@ namespace ZoneEngine_New.Core.Entities
             Playfield destination = destinationAdmission.Playfield;
             if (Session != null)
             {
-                Session.TransferToPlayfield(destination, landing);
+                // A move already on its way (a zone crossing as the character died) carries them; the respawn stands down.
+                if (!Session.IsTransferring)
+                    Session.TransferToPlayfield(destination, landing);
                 return;
             }
 

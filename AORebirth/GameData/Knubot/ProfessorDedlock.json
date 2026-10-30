@@ -1,0 +1,494 @@
+{
+  "Notes": "Professor Dedlock (PFDD). *Contains Generated Dialog*",
+  "Npcs": [
+    "PFDD"
+  ],
+  "Openers": [
+    {
+      "Say": "1"
+    }
+  ],
+  "Replies": {
+    "i_have_something_to": {
+      "Text": "I have something to give you.",
+      "Goto": "2"
+    }
+  },
+  "Lines": {
+    "1": {
+      "Text": "{delay 1}{emote}This person seems to have been studying you for a while before you entered conversation with him. A large badge on his chest reads: \"Professor Jo Dedlock, JAME\"{/emote}Yes, yes - you can help me, and I will give you a generous reward.\\nThat is what you want, right?\\nYes, fine - I assure you we will both greatly benefit from this... deal.",
+      "Replies": [
+        "i_have_something_to"
+      ]
+    },
+    "2": {
+      "Text": [
+        "You have?! For me? Who would have thought...",
+        "{delay 2}\\nLet's have a look.",
+        "{opentrade}"
+      ],
+      "Replies": [
+        "i_have_something_to"
+      ]
+    },
+    "spec1": {
+      "Text": [
+        "{useitem 229611}",
+        "The Mariner's Father! Yes... yes, this is exactly what I needed.",
+        "{delay 2}\\n{emote}He leafs through the pages, then fixes you with a long stare. Something in your mind settles into a new shape.{/emote}",
+        "{delay 2}\\nThere. Your first specialization. Bring me the next book when you find it."
+      ],
+      "Replies": [
+        "i_have_something_to"
+      ]
+    },
+    "spec2": {
+      "Text": [
+        "{useitem 229614}",
+        "The Girl that Saw it All. You do find the most interesting things.",
+        "{delay 2}\\n{emote}He reads a few lines aloud under his breath, and you feel the words take hold.{/emote}",
+        "{delay 2}\\nYour second specialization. Keep looking - there is more to learn."
+      ],
+      "Replies": [
+        "i_have_something_to"
+      ]
+    },
+    "spec3": {
+      "Text": [
+        "{useitem 229612}",
+        "Kanel's Story, complete! I had almost given up on seeing it whole.",
+        "{delay 2}\\n{emote}He closes the book slowly. The room seems to tilt, then steady.{/emote}",
+        "{delay 2}\\nYour third specialization. Only one book remains."
+      ],
+      "Replies": [
+        "i_have_something_to"
+      ]
+    },
+    "spec4": {
+      "Text": [
+        "{useitem 229613}",
+        "Afirce's World Catalogue... every volume. Remarkable.",
+        "{delay 2}\\n{emote}He clutches the catalogue to his chest and nods at you, almost respectfully.{/emote}",
+        "{delay 2}\\nYour fourth and final specialization. Our deal is done - and I believe we have both benefited."
+      ]
+    },
+    "refused": {
+      "Text": "No, no - not this. I need the books in their proper order, and only the one you have not already brought me. Come back when you have it."
+    }
+  },
+  "Trades": {
+    "spec1_book": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 1
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TIMF",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec1"
+    },
+    "spec1_chapters": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 1
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TIMR",
+          "Count": 1
+        },
+        {
+          "Hash": "TIMI",
+          "Count": 1
+        },
+        {
+          "Hash": "TMMN",
+          "Count": 1
+        },
+        {
+          "Hash": "TIMS",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec1"
+    },
+    "spec1_chapters_12": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 1
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TRME",
+          "Count": 1
+        },
+        {
+          "Hash": "TMMN",
+          "Count": 1
+        },
+        {
+          "Hash": "TIMS",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec1"
+    },
+    "spec1_chapters_13": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 1
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TNMR",
+          "Count": 1
+        },
+        {
+          "Hash": "TIMS",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec1"
+    },
+    "spec2_book": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 1
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 2
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TIGH",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec2"
+    },
+    "spec2_chapters": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 1
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 2
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "THGI",
+          "Count": 1
+        },
+        {
+          "Hash": "TEGI",
+          "Count": 1
+        },
+        {
+          "Hash": "THGL",
+          "Count": 1
+        },
+        {
+          "Hash": "THGT",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec2"
+    },
+    "spec2_chapters_12": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 1
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 2
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TEGT",
+          "Count": 1
+        },
+        {
+          "Hash": "THGL",
+          "Count": 1
+        },
+        {
+          "Hash": "THGT",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec2"
+    },
+    "spec2_chapters_13": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 1
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 2
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "TGGL",
+          "Count": 1
+        },
+        {
+          "Hash": "THGT",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec2"
+    },
+    "spec3_book": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 2
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 4
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "ARFIBZ",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec3"
+    },
+    "spec3_chapters": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 2
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 4
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "KAST",
+          "Count": 1
+        },
+        {
+          "Hash": "KASO",
+          "Count": 1
+        },
+        {
+          "Hash": "KNST",
+          "Count": 1
+        },
+        {
+          "Hash": "KEST",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec3"
+    },
+    "spec3_chapters_12": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 2
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 4
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "ARSMME",
+          "Count": 1
+        },
+        {
+          "Hash": "KNST",
+          "Count": 1
+        },
+        {
+          "Hash": "KEST",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec3"
+    },
+    "spec3_chapters_13": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 2
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 4
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "ARIZKG",
+          "Count": 1
+        },
+        {
+          "Hash": "KEST",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec3"
+    },
+    "spec4_book": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 4
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 8
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "ARPKXU",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec4"
+    },
+    "spec4_chapters": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 4
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 8
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "AFWO",
+          "Count": 1
+        },
+        {
+          "Hash": "AIWO",
+          "Count": 1
+        },
+        {
+          "Hash": "AIWR",
+          "Count": 1
+        },
+        {
+          "Hash": "ARWR",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec4"
+    },
+    "spec4_chapters_12": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 4
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 8
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "ARBHWC",
+          "Count": 1
+        },
+        {
+          "Hash": "AIWR",
+          "Count": 1
+        },
+        {
+          "Hash": "ARWR",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec4"
+    },
+    "spec4_chapters_13": {
+      "Requirements": [
+        {
+          "Stat": "Specialization",
+          "Operator": "BitAnd",
+          "Value": 4
+        },
+        {
+          "Stat": "Specialization",
+          "Operator": "NotBitAnd",
+          "Value": 8
+        }
+      ],
+      "Items": [
+        {
+          "Hash": "ARPZSC",
+          "Count": 1
+        },
+        {
+          "Hash": "ARWR",
+          "Count": 1
+        }
+      ],
+      "Goto": "spec4"
+    }
+  },
+  "TradeRefused": "refused"
+}

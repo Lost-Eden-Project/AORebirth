@@ -3976,6 +3976,14 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         static bool TryResolveMeshPosition(int slot, ItemSpell spell, out int position)
         {
+            // A hood or helmet sits on the head whichever slot carries it: Reverend Robe (monster wear) 161729 is worn
+            // in the body slot 19 and its HeadMesh 161719 is the hood. Hands stay excluded.
+            if (slot is not (6 or 8 or 56 or 58) && (spell.Is(FunctionType.HeadMesh) || spell.Is(FunctionType.AttractorMesh)))
+            {
+                position = 0;
+                return true;
+            }
+
             switch (slot)
             {
                 case 18:
@@ -4011,12 +4019,6 @@ namespace ZoneEngine_New.Core.Entities
                     if (spell.Is(FunctionType.Shouldermesh))
                     {
                         position = 3;
-                        return true;
-                    }
-
-                    if (spell.Is(FunctionType.HeadMesh) || spell.Is(FunctionType.AttractorMesh))
-                    {
-                        position = 0;
                         return true;
                     }
 

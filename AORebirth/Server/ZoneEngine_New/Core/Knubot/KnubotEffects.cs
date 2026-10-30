@@ -189,6 +189,26 @@ public sealed record KnubotGiveBuff(int NanoId) : KnubotEffect
     }
 }
 
+/// <summary>
+/// <c>{useitem ITEMID}</c>: the item's OnUse runs on the player, nothing goes to the inventory. For live's virtual
+/// items (Null flag) that apply a service: Specialization Item - First..Fourth Spec 229611-229613/229614 set
+/// Specialization for Professor Dedlock.
+/// </summary>
+public sealed record KnubotUseItem(int ItemId) : KnubotEffect
+{
+    public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
+        => !context.Player.IsDead && context.Player.Playfield != null;
+
+    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    {
+        Playfield.Playfield playfield = context.Player.Playfield!;
+        IItemBuilder items = playfield.GetRequiredService<IItemBuilder>();
+        Item item = items.Create(ItemId, ItemId, 1, ItemSource.Quest);
+        item.Definition.ExecuteOnUseSpells(context.Player, playfield.GetRequiredService<Data.IInventoryRepository>(), items, source: context.Player);
+        context.Player.FlushDirtyStats();
+    }
+}
+
 /// <summary>Main-inventory item helpers shared by conditions and effects.</summary>
 public static class KnubotItems
 {

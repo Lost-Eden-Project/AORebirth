@@ -401,28 +401,37 @@
 
                 _triggers.ClearOverlapOutside(x, y, z, state.Overlapping);
 
-                if (TryResolveZoneCrossing(
-                        fromX,
-                        fromZ,
-                        player.Position,
-                        state.Overlapping,
-                        ReadProxyReturn(player),
-                        out ZoneCrossing crossing))
+                // One character's failed crossing is that character's problem, not the playfield's tick.
+                try
                 {
-                    // A crossing can transfer the player synchronously (destination already loaded): the watchdog
-                    // names it rather than the whole soft-trigger pass.
-                    Metrics.TickStallWatch.Stage("world.crossing", id);
-                    if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity)
-                        FireTargetVicinity(playfield, player, crossing.Trigger);
-                    else if (crossing.Trigger.Kind == ZoneTriggerKind.MissionEntrance)
-                        EnterMissionEntrance(playfield, player, crossing.Trigger);
-                    else if (crossing.Trigger.Kind == ZoneTriggerKind.ExitDoor && crossing.DestPlayfieldId == 0)
-                        TellExitDestinationUnknown(player, crossing.Trigger);
-                    else if (crossing.Trigger.Kind == ZoneTriggerKind.WaterExit
-                             && crossing.DestPlayfieldId == WaterExit.ToSavePoint)
-                        SendToSavePoint(playfield, player, crossing, now);
-                    else if (MayWalkThrough(player, crossing.Trigger))
-                        TryTransfer(playfield, player, crossing, now);
+                    if (TryResolveZoneCrossing(
+                            fromX,
+                            fromZ,
+                            player.Position,
+                            state.Overlapping,
+                            ReadProxyReturn(player),
+                            out ZoneCrossing crossing))
+                    {
+                        // A crossing can transfer the player synchronously (destination already loaded): the watchdog
+                        // names it rather than the whole soft-trigger pass.
+                        Metrics.TickStallWatch.Stage("world.crossing", id);
+                        if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity)
+                            FireTargetVicinity(playfield, player, crossing.Trigger);
+                        else if (crossing.Trigger.Kind == ZoneTriggerKind.MissionEntrance)
+                            EnterMissionEntrance(playfield, player, crossing.Trigger);
+                        else if (crossing.Trigger.Kind == ZoneTriggerKind.ExitDoor && crossing.DestPlayfieldId == 0)
+                            TellExitDestinationUnknown(player, crossing.Trigger);
+                        else if (crossing.Trigger.Kind == ZoneTriggerKind.WaterExit
+                                 && crossing.DestPlayfieldId == WaterExit.ToSavePoint)
+                            SendToSavePoint(playfield, player, crossing, now);
+                        else if (MayWalkThrough(player, crossing.Trigger))
+                            TryTransfer(playfield, player, crossing, now);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
+                        "Zone trigger crossing failed for character {0} on playfield {1}; skipped this tick", id, _playfieldId));
                 }
             }
         }
@@ -790,7 +799,8 @@
                     _gameData, source.ResourceId, crossing.Trigger.DynelInstance, destPlayfieldId);
 
             IZoneSession? session = player.Session;
-            if (session == null)
+            // A move already on its way (the door used and walked into in the same tick) carries the character.
+            if (session == null || session.IsTransferring)
                 return;
 
             int id = player.Identity.Instance;
@@ -804,7 +814,7 @@
             // once it is ready, and only if they are still here with a session.
             source.GetRequiredService<PlayfieldManager>().WithPlayfield(destPlayfieldId, player, destination =>
             {
-                if (!ReferenceEquals(player.Playfield, source) || player.Session is not IZoneSession current)
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not IZoneSession { IsTransferring: false } current)
                     return;
 
                 WriteProxyReturn(player, source.Identity.Instance, crossing.Trigger);
@@ -1021,6 +1031,9 @@
         /// entrance/exit doors and starts a zone change on contact). The destination is not in the data, so it comes
         /// from the teleports table: a routed door becomes an ordinary door-to-door portal; an unrouted one becomes an
         /// <see cref="ZoneTriggerKind.ExitDoor"/>. Doors that already zone by their own events are left alone.
+        /// A plain door (no events, no ExitInstance) that has a teleports route is an entrance into an interior: it
+        /// becomes a door-to-door portal that records the way back, so it opens its own copy of the interior (4531's
+        /// C00611B3 into 4575, live capture 2026-10-30).
         /// </summary>
         void BakeExitDoorTriggers(PlayfieldDynels? dynels, int playfieldId)
         {
@@ -1032,8 +1045,11 @@
                 // Only the door's own events count: a dynel instance is unique per identity type, and a Terminal
                 // (4313's lift pad) can share this door's number.
                 if (d.IdentityType != (int)IdentityType.Door
-                    || PortalDoorLandingResolver.TryReadPortal(d, out _)
-                    || ExitInstanceOf(d) <= 0)
+                    || PortalDoorLandingResolver.TryReadPortal(d, out _))
+                    continue;
+
+                bool exit = ExitInstanceOf(d) > 0;
+                if (!exit && !_gameData.TryGetTeleportRoute(_playfieldId, (int)IdentityType.Door, unchecked((uint)d.IdentityInstance), out _, out _, out _))
                     continue;
 
                 float x = d.Position.X;
@@ -1059,7 +1075,15 @@
                 };
 
                 ApplyClientSphere(volume, d, x, y, z, DoorRotation(d));
-                TryApplyDoorRoute(volume, d.IdentityInstance);
+                bool routed = TryApplyDoorRoute(volume, d.IdentityInstance);
+                if (!exit)
+                {
+                    // A routed entrance; an unusable route leaves the plain door as it was.
+                    if (!routed)
+                        continue;
+                    volume.RecordsReturn = true;
+                }
+
                 _triggers.Add(volume);
             }
         }
