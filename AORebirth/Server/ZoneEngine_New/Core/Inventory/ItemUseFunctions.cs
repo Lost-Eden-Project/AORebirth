@@ -855,8 +855,6 @@ namespace ZoneEngine_New.Core.Inventory
             return true;
         }
 
-        /// <summary>Sends a Text or SystemText function's message to the player, as an item use does.</summary>
-        internal static bool SendText(Player player, ItemSpell spell) => SystemText(player, spell);
 
         static bool SystemText(Player player, ItemSpell spell)
         {

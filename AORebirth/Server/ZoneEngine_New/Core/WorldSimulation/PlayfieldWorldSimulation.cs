@@ -852,11 +852,12 @@
         }
 
         /// <summary>
-        /// A portal's teleport function carries criteria (a dungeon's level cap). When they fail the character stays
-        /// and hears the portal's Text functions whose own criteria pass, as the client's walk-in does; a portal with no
-        /// criteria on its teleport always lets the character through.
+        /// A portal's teleport function carries criteria (a dungeon's level cap, Borealis Backyard's "level 2 or 1000
+        /// credits"). When they fail the character stays and is told the portal's Text functions whose own criteria pass,
+        /// as plain system text (FormatFeedback 110/707, the form the client shows); a portal with no criteria on its
+        /// teleport always lets the character through.
         /// </summary>
-        static bool MayWalkThrough(Player player, ZoneTriggerVolume trigger)
+        bool MayWalkThrough(Player player, ZoneTriggerVolume trigger)
         {
             if (trigger.Kind != ZoneTriggerKind.PortalDynel || trigger.WalkIn is not { Count: > 0 } spells)
                 return true;
@@ -865,12 +866,19 @@
             if (teleport == null || Passes(player, teleport))
                 return true;
 
+            int told = 0;
             foreach (Inventory.ItemSpell spell in spells)
             {
-                if ((spell.Is(AORebirth.Enums.FunctionType.Text) || spell.Is(AORebirth.Enums.FunctionType.SystemText)) && Passes(player, spell))
-                    Inventory.ItemUseFunctions.SendText(player, spell);
+                if (!spell.Is(AORebirth.Enums.FunctionType.Text) && !spell.Is(AORebirth.Enums.FunctionType.SystemText))
+                    continue;
+                if (!Passes(player, spell) || !spell.TryReadString(0, out string text) || text.Length == 0)
+                    continue;
+
+                Inventory.RequirementFeedback.SendText(player, text);
+                told++;
             }
 
+            _logger.Info($"Portal refused character={player.Identity.Instance} door={trigger.DynelInstance} texts={told}");
             return false;
         }
 
