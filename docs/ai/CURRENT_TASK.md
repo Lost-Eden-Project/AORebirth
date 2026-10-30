@@ -8,7 +8,7 @@ integrate it into public master. All requested combat, world-object, developer
 build and quest updates, including PR #46 and its follow-ups, are already
 ancestors of that public tip. Preserve those changes and the Daily Rewards
 account ownership, atomic grants, per-character progress and quiet callback
-behavior. Update the Daily test adapter to the upstream boolean transfer API.
+behavior. Update the Daily test adapters to the upstream boolean transfer API.
 Private local configuration, character repairs, content and client artifacts
 remain outside public commits. This source integration does not authorize
 Linux work, publishing, deployment or release acceptance of the combined inputs.

@@ -478,7 +478,7 @@ namespace ZoneEngine_New.Tests
 
         public void UnbindPlayer() => Player = null;
 
-        public void TransferToPlayfield(Playfield destination, Vector3 landing)
+        public bool TransferToPlayfield(Playfield destination, Vector3 landing)
             => throw new NotSupportedException();
 
         public void SendSamePlayfieldRespawnTeleport(Vector3 landing)
