@@ -43,12 +43,15 @@ view URL, thread, callback ownership and arguments fail closed.
 Local client routing preserves original HTTP request bytes; production routing
 remains unchanged. The existing native package checks pass.
 
-This is FEATURE_VALIDATION only, not Windows release acceptance. Development AO
-client verification (including immediate inventory visibility, native browser
-identity/action delivery, relog and UTC rollover) remains unverified. Anonymous
-or ambiguous legacy requests fail closed and remain available for review.
-No production data, deployment or client operation occurred; no Linux work was
-performed. Engines remain stopped.
+This is FEATURE_VALIDATION only, not Windows release acceptance. OBSERVED local
+client verification (2026-10-29): Mike confirmed the reward arrived and Taken
+appeared while the Daily window stayed open. PROVEN server-side evidence records
+the registered native callback, action-263 request and matching committed receipt
+in both configured claim roots. Relog and uninterrupted client UTC rollover remain
+unverified. Anonymous or ambiguous legacy requests still fail closed.
+All four local engines remain running for Mike's testing. The approved local
+migration and client patch installation occurred; no production data, deployment
+or Linux work was involved, and the agent did not launch or control the AO client.
 
 ## Prior task context
 

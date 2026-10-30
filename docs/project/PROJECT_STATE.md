@@ -4,12 +4,17 @@ PROVEN DEVELOPMENT VALIDATION (2026-10-29, Daily Login repair): the development
 branch restores the recovered reward processor through current inventory and
 DAO owners, with one atomic account/UTC-day claim ledger, preserved legacy
 progress and pending evidence, replay recovery and committed-only browser Taken
-state. Focused checks pass: 42 C#, 12 browser-state and 11 actual PHP HTTP cases;
+state. Prior runtime validation retains 42 C# passes; current focused checks pass
+19 browser-state and 13 actual PHP HTTP cases, plus the native package checks;
 disposable real-MySQL migration, concurrency, rollback and restart/commit-ack
 recovery checks also pass. Days 19/21 remain empty and block calendar completion;
-historically fixed day-13/14 item quality bounds are preserved. This does not
-establish live AO client or release acceptance. No production database,
-deployment, Linux change or client operation occurred. Details are in CURRENT_TASK.
+historically fixed day-13/14 item quality bounds are preserved. OBSERVED local
+client verification (2026-10-29): Mike confirmed the reward arrived and Taken
+appeared without closing Daily Rewards. The registered native callback and
+committed server receipt were verified. Relog and uninterrupted client UTC
+rollover remain unverified; this is not release acceptance. Local engines remain
+running. No production database, deployment or Linux change occurred. Details
+are in CURRENT_TASK.
 
 PROVEN DEVELOPMENT VALIDATION (2026-10-26, ordinary RK mission chests): the
 reviewed positive policy and independent seasonal/special vetoes constrain new
