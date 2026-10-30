@@ -35,6 +35,8 @@ namespace ChatEngine.Channels
 
     using AORebirth.Database.Dao;
 
+    using Utility;
+
     #endregion
 
     /// <summary>
@@ -67,8 +69,14 @@ namespace ChatEngine.Channels
                 ChannelFlags.NoInternational | ChannelFlags.GroupOnName,
                 ChannelType.Organization,
                 (uint)orgId,
-                OrganizationDao.Instance.Get(orgId).Name)
+                ResolveOrganizationName(orgId))
         {
+        }
+
+        private static string ResolveOrganizationName(int orgId)
+        {
+            var org = OrganizationDao.Instance.Get(orgId);
+            return org == null ? string.Empty : org.Name;
         }
 
         #endregion

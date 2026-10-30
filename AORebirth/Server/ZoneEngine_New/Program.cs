@@ -261,6 +261,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IResearchRepository, MySqlResearchRepository>();
             services.AddSingleton<INanoLineLockRepository, MySqlNanoLineLockRepository>();
             services.AddSingleton<IPetNameRepository, MySqlPetNameRepository>();
+            services.AddSingleton<IOrganizationRepository, MySqlOrganizationRepository>();
             services.AddSingleton<ICharacterCoalesceCommit, MySqlCharacterCoalesceCommit>();
             services.AddSingleton<IItemInstanceIdAllocator, ItemInstanceIdAllocator>();
             services.AddSingleton<IItemTemplateCatalog, ItemTemplateCatalog>();
@@ -436,6 +437,7 @@ namespace ZoneEngine_New
             AddMessageHandler<KnuBotTradeMessageHandler>(services);
             AddMessageHandler<KnuBotFinishTradeMessageHandler>(services);
             AddMessageHandler<RaidCmdMessageHandler>(services);
+            AddMessageHandler<OrgClientMessageHandler>(services);
             AddMessageHandler<TeamChatMessageHandler>(services);
             AddMessageHandler<QuestAlternativeMessageHandler>(services);
             AddMessageHandler<CreateQuestMessageHandler>(services);
