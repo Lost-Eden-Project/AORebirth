@@ -745,11 +745,22 @@ def validate_private_catalog_adoptions(bundle, value, actual, portable=False):
                 raise ValueError("Private catalog adoption would overwrite unexplained private content")
             if not portable:
                 placeholder = read_json(load_descriptor(bundle, row["CANONICAL_BEFORE"]))
-                if not isinstance(placeholder, dict) or placeholder.get("Entries") != []:
+                if path != "QuestRewards.json" and (not isinstance(placeholder, dict) or placeholder.get("Entries") != []):
                     raise ValueError("Only an empty public placeholder may be replaced by private adoption")
         if not portable:
             content = read_json(load_descriptor(bundle, row["CANONICAL_AFTER"]))
-            if not isinstance(content, dict) or not isinstance(content.get("Entries"), list) or not content["Entries"]:
+            if path == "QuestRewards.json":
+                if (not isinstance(content, dict) or not content
+                        or any(not isinstance(table, dict) or not isinstance(table.get("Entries"), list)
+                               or not table["Entries"] for table in content.values())):
+                    raise ValueError("Private quest rewards must contain nonempty reward tables")
+                if before is not None:
+                    existing = read_json(load_descriptor(bundle, row["CANONICAL_BEFORE"]))
+                    if (not isinstance(existing, dict)
+                            or any(value_hash(content.get(key, MISSING)) != value_hash(table)
+                                   for key, table in existing.items())):
+                        raise ValueError("Private quest reward adoption must preserve every existing reward table")
+            elif not isinstance(content, dict) or not isinstance(content.get("Entries"), list) or not content["Entries"]:
                 raise ValueError("Private policy adoption cannot install an empty public placeholder")
         actual[path] = after
 
