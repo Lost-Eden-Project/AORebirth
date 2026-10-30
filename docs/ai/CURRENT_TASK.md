@@ -1,7 +1,9 @@
 # Current Task
 
-Active task (2026-10-29): make Daily Login Rewards once per UTC day per character,
-with independent calendars for characters on the same account, on
+Active follow-up (2026-10-29): keep native Daily Login callbacks quiet when no
+request is waiting, and avoid contradictory daily-limit chat after a successful
+grant from the same queued batch. Preserve one claim per UTC day per character
+and independent calendars for characters on the same account, on
 `codex/repair-daily-login-rewards`, based on public master
 `465e7ff882d71a2669dfbb56f08ec9bd3d950e1e`.
 
@@ -20,7 +22,7 @@ earned progress and pending requests, commit reward rows and the character
 receipt atomically, and require committed confirmation before displaying Taken.
 Mike explicitly approved the scoped development ledger migration and focused
 success, concurrency, persistence, rollback, UTC progression and web tests.
-Development validation passes 65 focused C# checks, 22 browser-state checks and
+Development validation passes 68 focused C# checks, 22 browser-state checks and
 17 PHP HTTP checks. Disposable real-MySQL checks pass for migration reruns,
 account ownership, concurrent sibling characters, UTC-character-day uniqueness, four partial-write
 rollback points, lost commit acknowledgements and restart replay. Empty schema
@@ -59,8 +61,16 @@ appeared while the Daily window stayed open. PROVEN server-side evidence records
 the registered native callback, action-263 request and matching committed receipt
 in both configured claim roots. That check predates the per-character revision,
 whose local four-engine build and approved character-scope migration passed.
-All four engine listeners and the local Daily page are ready; per-character
-client verification is pending. Relog and
+Mike confirmed per-character claiming works locally. He then reported redundant
+empty-queue and success-followed-by-daily-limit messages. Existing requests and
+receipts prove an older queued intent granted before the fresh intent correctly
+hit the same-character daily limit in one batch. The follow-up changes feedback
+only: empty callbacks and successful receipt replays stay quiet; a fresh grant
+suppresses only later, explicitly typed daily-limit feedback in the same batch.
+Every token still receives its normal durable result, standalone refusals and
+other errors remain visible, and no schema or inventory semantics changed.
+The 68 focused checks and updated four-engine build passed; Mike's verification
+of the message follow-up is pending. Relog and
 uninterrupted client UTC rollover remain unverified. Anonymous or ambiguous legacy requests still fail closed.
 All four rebuilt local engines remain running for Mike's testing. The approved local
 migration and client patch installation occurred; no production data, deployment

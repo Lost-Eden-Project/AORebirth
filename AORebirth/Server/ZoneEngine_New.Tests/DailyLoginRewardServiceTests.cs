@@ -265,7 +265,7 @@ public sealed class DailyLoginRewardServiceTests
         Assert.ThrowsExactly<InvalidDataException>(() => new DailyLoginAccountState { Taken = [1] }.Normalize(Today));
     }
 
-    sealed class World : IDisposable
+    internal sealed class World : IDisposable
     {
         public Player Player;
         public RecordingSession Session = new();
@@ -311,7 +311,7 @@ public sealed class DailyLoginRewardServiceTests
         public ItemTemplate Require(int aoid) => aoid == 100 ? _item : throw new KeyNotFoundException();
     }
     sealed class Ids : IItemInstanceIdAllocator { int _next = 9000; public int Allocate() => ++_next; }
-    sealed class Coalesce : ICharacterCoalesceCommit
+    internal sealed class Coalesce : ICharacterCoalesceCommit
     {
         public int Calls;
         public Exception? Failure;
@@ -320,7 +320,7 @@ public sealed class DailyLoginRewardServiceTests
             IReadOnlyList<SkillLockRecord>? skillLocks)
         { Calls++; if (Failure is not null) throw Failure; }
     }
-    sealed class Dao : IDailyLoginClaimDao
+    internal sealed class Dao : IDailyLoginClaimDao
     {
         public DailyLoginClaimSnapshotData? Current;
         public readonly List<PersistedItemData> Rows = [];
@@ -382,7 +382,7 @@ public sealed class DailyLoginRewardServiceTests
             return new() { Status = DailyLoginClaimCommitStatus.Applied, Snapshot = Current };
         }
     }
-    sealed class RecordingSession : IZoneSession
+    internal sealed class RecordingSession : IZoneSession
     {
         public readonly List<MessageBody> Messages = [];
         public SessionState State { get; set; } = SessionState.InPlay;

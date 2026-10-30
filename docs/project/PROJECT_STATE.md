@@ -4,7 +4,7 @@ PROVEN DEVELOPMENT VALIDATION (2026-10-29, Daily Login repair): the development
 branch restores the recovered reward processor through current inventory and
 DAO owners, with one atomic character/UTC-day claim ledger, preserved legacy
 progress and pending evidence, replay recovery and committed-only browser Taken
-state. Current focused checks pass 65 C#, 22 browser-state and 17 actual PHP HTTP
+state. Current focused checks pass 68 C#, 22 browser-state and 17 actual PHP HTTP
 cases, plus the unchanged native package checks;
 disposable real-MySQL migration, concurrency, rollback and restart/commit-ack
 recovery checks also pass. Days 19/21 remain empty and block calendar completion;
@@ -14,8 +14,12 @@ appeared without closing Daily Rewards. The registered native callback and
 committed server receipt were verified before the per-character revision. Its
 local four-engine build and explicitly approved character-scope migration passed,
 after a fresh database backup. Schema validation passed and all three existing
-claim rows retained identical fingerprints. Per-character client verification
-is pending; existing earned
+claim rows retained identical fingerprints. Mike confirmed per-character claims
+work locally. The scoped feedback follow-up passed 68 focused checks and the
+four-engine build: empty callbacks and successful replays stay quiet, and only
+later daily-limit chat following a fresh same-batch grant is suppressed. Every
+token retains its durable result; standalone refusals and genuine failures stay
+visible. Client verification of the feedback follow-up remains pending. Existing earned
 progress is retained. Relog and uninterrupted client UTC
 rollover remain unverified; this is not release acceptance. All four rebuilt local
 engines and the local Daily page are ready for testing. No production database,

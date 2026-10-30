@@ -27,6 +27,7 @@ public sealed class DailyLoginClaimResult
     [JsonPropertyName("lastGrantedUtc")] public string LastGrantedUtc { get; set; } = string.Empty;
     [JsonPropertyName("cycleCompletedOn")] public string CycleCompletedOn { get; set; } = string.Empty;
     [JsonPropertyName("claimedToday")] public bool ClaimedToday { get; set; }
+    [JsonPropertyName("alreadyClaimedToday")] public bool AlreadyClaimedToday { get; set; }
 
     public string ToJson() => JsonSerializer.Serialize(this);
 

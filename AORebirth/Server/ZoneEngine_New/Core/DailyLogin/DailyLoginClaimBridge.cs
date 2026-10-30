@@ -23,10 +23,8 @@ public sealed class DailyLoginClaimBridge(DailyLoginRewardService rewards, IDail
             PublishCurrentBoard(account, player.Identity.Instance, utcNow);
             var pending = files.Pending(account, player.Identity.Instance);
             if (pending.Count == 0)
-            {
-                Feedback("No Daily Login request is waiting for this character. Retry Daily Login from this character.");
                 return;
-            }
+            bool freshCommittedGrant = false;
             foreach (DailyLoginPendingClaim request in pending)
             {
                 if (request.RequiresLegacyReplay && dao.FindDailyLoginClaim(account, player.Identity.Instance, request.ClaimToken) is null)
@@ -40,7 +38,10 @@ public sealed class DailyLoginClaimBridge(DailyLoginRewardService rewards, IDail
                 // Publish the durable board before exposing a committed result to a browser that immediately syncs it.
                 PublishCurrentBoard(account, player.Identity.Instance, utcNow);
                 files.WriteResult(result);
-                Feedback(result.Message);
+                if (!(result.Ok && result.Replayed) && !(freshCommittedGrant && result.AlreadyClaimedToday))
+                    Feedback(result.Message);
+                if (result.Ok && result.Committed && !result.Replayed)
+                    freshCommittedGrant = true;
                 if (player.IsPersistenceQuarantined)
                     break;
             }

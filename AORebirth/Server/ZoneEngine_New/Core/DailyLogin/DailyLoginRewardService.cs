@@ -52,7 +52,7 @@ public sealed class DailyLoginRewardService(
             DailyLoginAccountState state = DailyLoginAccountState.Parse(snapshot.StateJson).Normalize(utcNow);
             BindOwner(state, account, characterId);
             if (state.HasClaimedOn(utcNow))
-                return Failure("You already claimed today's daily reward on this character.", state, true);
+                return Failure("You already claimed today's daily reward on this character.", state, true, alreadyClaimedToday: true);
             int day = state.NextDay;
             if (day == 0)
                 return Failure("All 28 daily rewards are claimed. Board resets tomorrow.", state, true);
@@ -115,7 +115,8 @@ public sealed class DailyLoginRewardService(
                     : result.Status == DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount
                     ? "This Daily Login claim token belongs to a different character or account."
                     : "Daily reward state changed. Reopen daily rewards and try again.", current,
-                    result.Status is DailyLoginClaimCommitStatus.AlreadyClaimedToday or DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount);
+                    result.Status is DailyLoginClaimCommitStatus.AlreadyClaimedToday or DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount,
+                    alreadyClaimedToday: result.Status == DailyLoginClaimCommitStatus.AlreadyClaimedToday);
             }
             catch (Exception exception)
             {
@@ -130,10 +131,11 @@ public sealed class DailyLoginRewardService(
             }
         }
 
-        DailyLoginClaimResult Failure(string message, DailyLoginAccountState state, bool terminal = false)
+        DailyLoginClaimResult Failure(string message, DailyLoginAccountState state, bool terminal = false, bool alreadyClaimedToday = false)
         {
             DailyLoginClaimResult result = DailyLoginClaimResult.ForState(account, characterId, token, state, utcNow, message);
             result.Terminal = terminal;
+            result.AlreadyClaimedToday = alreadyClaimedToday;
             return result;
         }
     }
