@@ -710,8 +710,8 @@ def required_catalogs(value):
 
 def validate_private_catalog_adoptions(bundle, value, actual, portable=False):
     rows = value.get("PRIVATE_CATALOG_ADOPTIONS", [])
-    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows) or (rows and {row.get("PATH") for row in rows} != PRIVATE_CHEST_CATALOGS):
-        raise ValueError("Private chest catalog adoption must bind exactly the three approved policies")
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows) or (rows and {row.get("PATH") for row in rows} not in (PRIVATE_CHEST_CATALOGS, PRIVATE_CHEST_CATALOGS | {"QuestRewards.json"})):
+        raise ValueError("Private catalog adoption must bind all three approved chest policies and optionally QuestRewards.json")
     seen = set()
     for row in rows:
         if set(row) != {"PATH", "SHA256", "APPROVAL", "APPROVAL_INSTRUCTION", "CANONICAL_BEFORE", "CANONICAL_AFTER"}:
@@ -904,8 +904,8 @@ def reconcile_plan(root, profile, bundle, public_sha, dump_sha, baseline, before
         projected[path] = incoming
     private_adoptions = []
     mappings = profile.get("PRIVATE_CATALOG_ADOPTIONS", [])
-    if not isinstance(mappings, list) or any(not isinstance(row, dict) for row in mappings) or (mappings and {row.get("PATH") for row in mappings} != PRIVATE_CHEST_CATALOGS):
-        raise ValueError("Private chest catalog adoption requires exactly the three policy mappings")
+    if not isinstance(mappings, list) or any(not isinstance(row, dict) for row in mappings) or (mappings and {row.get("PATH") for row in mappings} not in (PRIVATE_CHEST_CATALOGS, PRIVATE_CHEST_CATALOGS | {"QuestRewards.json"})):
+        raise ValueError("Private catalog adoption requires all three chest policy mappings and optionally QuestRewards.json")
     for mapping in sorted(mappings, key=lambda row: row["PATH"]):
         if set(mapping) != {"PATH", "STAGED_PATH", "SHA256", "APPROVAL"}:
             raise ValueError("Private policy profile mapping schema differs")
