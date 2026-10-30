@@ -1,6 +1,6 @@
 # Current Task
 
-Active integration (2026-10-30): combine Mike's locally accepted Daily Login
+Completed source integration (2026-10-30): combine Mike's locally accepted Daily Login
 Rewards feature at `c8fed6c026f3110043b8a0a18c19460485c62c9d` with freshly
 fetched public master `132459c1d3f732a88abffca4750150446933f57b` on
 `codex/daily-rewards-master-integration`, validate the combined source, and
@@ -12,6 +12,13 @@ behavior. Update the Daily test adapters to the upstream boolean transfer API.
 Private local configuration, character repairs, content and client artifacts
 remain outside public commits. This source integration does not authorize
 Linux work, publishing, deployment or release acceptance of the combined inputs.
+
+Integration candidate `60b5ae335` includes both histories, with both transfer
+test adapters aligned to the upstream interface. All four engines compiled
+through the existing feature-validation helper into isolated output folders;
+68 focused Daily Login checks passed. The running local engines retain the
+previously tested build. The combined source still needs its normal content
+reconciliation and Windows acceptance before any Linux release work.
 
 ## Accepted Daily Login feature
 

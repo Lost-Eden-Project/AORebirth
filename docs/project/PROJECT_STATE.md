@@ -1,5 +1,14 @@
 # AORebirth Project State
 
+PROVEN SOURCE INTEGRATION (2026-10-30): the locally accepted Daily Login feature
+is combined with public master `132459c1d3f732a88abffca4750150446933f57b`, including
+all listed combat, world-object, developer-build and quest updates and PR #46
+follow-ups. The two Daily test session adapters match the upstream boolean
+transfer interface. All four engines compile through existing feature validation
+into isolated outputs; 68 focused Daily Login checks pass. This is source
+integration evidence, not release acceptance of the combined inputs. Running
+local engines retain the earlier tested build; no Linux or live update occurred.
+
 PROVEN DEVELOPMENT VALIDATION (2026-10-29, Daily Login repair): the development
 branch restores the recovered reward processor through current inventory and
 DAO owners, with one atomic character/UTC-day claim ledger, preserved legacy
