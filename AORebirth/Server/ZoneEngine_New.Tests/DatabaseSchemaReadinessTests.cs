@@ -72,6 +72,18 @@ public sealed class DatabaseSchemaReadinessTests
     }
 
     [TestMethod]
+    public void SurvivingAccountWideDailyKeyIsIncompatibleEvenWhenRenamed()
+    {
+        var snapshot = Current();
+        foreach (string columns in new[] { "AccountId,ClaimDateUtc", "ClaimDateUtc,AccountId" })
+        {
+            var oldKey = new SchemaIndex("dailyloginclaims", "renamed_account_day", true, columns);
+            Assert.AreEqual(SchemaState.SCHEMA_INCOMPATIBLE,
+                DatabaseSchemaReadiness.Evaluate(snapshot with { Indexes = snapshot.Indexes.Append(oldKey).ToArray() }).State);
+        }
+    }
+
+    [TestMethod]
     public void NonTransactionalInventoryTableIsIncompatible()
     {
         var engines = new Dictionary<string, string>(Current().TableEngines) { ["item_instances"] = "MyISAM" };

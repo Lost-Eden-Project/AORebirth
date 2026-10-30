@@ -39,6 +39,7 @@ function browser(seed, identity, withoutNative, options) {
   const intervals = [];
   const stored = new Map(Object.entries(seed || {}));
   const nativeCalls = [];
+  let boundCharacter = identity || 101;
   const effects = [];
   const localStorage = {
     getItem: key => stored.has(key) ? stored.get(key) : null,
@@ -57,7 +58,7 @@ function browser(seed, identity, withoutNative, options) {
         effects.push("queue-post");
         this.status = 200;
         const request = JSON.parse(body);
-        this.responseText = JSON.stringify(options.queueResponse ? options.queueResponse(request) : { ok: true, armed: true, claimToken: request.claimToken });
+        this.responseText = JSON.stringify(options.queueResponse ? options.queueResponse(request) : { ok: true, armed: true, claimToken: request.claimToken, characterId: request.characterId });
         this.readyState = 4;
         effects.push("queue-reply");
       }
@@ -100,11 +101,13 @@ function browser(seed, identity, withoutNative, options) {
   }
   function state(payload) {
     const request = requests.filter(item => item.method === "GET" && item.url.startsWith("claim.php?month=") && item.readyState !== 4).pop();
-    response(request, Object.assign({ ok: true, hasIdentity: true, accountKey: "first", taken: [], lastGrantedUtc: "", lastClaimUtc: "", claimedCount: 0 }, payload));
+    if (payload && payload.nativeCharacterHint === true) boundCharacter = payload.characterId;
+    else if (context.window.AnarchyOnline) boundCharacter = native.CharacterID;
+    response(request, Object.assign({ ok: true, hasIdentity: true, characterId: boundCharacter, accountKey: "first", taken: [], lastGrantedUtc: "", lastClaimUtc: "", claimedCount: 0 }, payload));
   }
   function poll(payload) {
     const request = requests.filter(item => item.method === "GET" && item.url.startsWith("claim.php?token=") && item.readyState !== 4).pop();
-    response(request, payload);
+    response(request, Object.assign({ characterId: boundCharacter }, payload));
   }
   const slots = () => elements.grid.children.flatMap(row => row.children.map(cell => cell.children[0]));
   const taken = () => slots().filter(slot => slot.className === "slot taken").length;
@@ -233,20 +236,19 @@ test("Reopening requeues the original saved token before immediate native submis
   assert.equal(page.taken(), 0);
 });
 
-test("A legacy successful receipt resolves saved pending without replaying native or asserting a new grant", () => {
+test("An unattributed account receipt cannot paint Taken or clear a character pending token", () => {
   const page = browser({ "aorebirth.daily.pending.v1.c101": "clegacy" });
   page.state();
   page.timeouts.find(timer => timer.delay === 1000).fn();
-  page.poll({ ok: true, day: 1, taken: [1], lastGrantedUtc: today });
-  assert.equal(page.nativeCalls.length, 0, "An old successful receipt must never re-trigger the native grant");
-  assert.equal(page.taken(), 0, "The legacy receipt does not prove a new committed grant");
-  assert.equal([...page.stored.keys()].filter(key => key.startsWith("aorebirth.daily.pending.")).length, 0);
-  assert.match(page.elements.claimStatus.innerHTML, /prior claim/);
-  page.state({ taken: [1], lastGrantedUtc: today, lastClaimUtc: today });
-  assert.equal(page.taken(), 1, "Only the preserved authoritative board restores the old Taken state");
-  const firstSlot = page.elements.grid.children[0].children[0].children[0];
-  const labels = firstSlot.getElementsByTagName("span");
-  assert.equal(labels[0].children[0].textContent, "Taken", "Taken text must exist independently of its missing image");
+  page.poll({ ok: true, characterId: 0, day: 1, taken: [1], lastGrantedUtc: today });
+  assert.equal(page.nativeCalls.length, 0, "An unattributed response cannot dispatch another grant");
+  assert.equal(page.taken(), 0);
+  assert.equal(page.stored.get("aorebirth.daily.pending.v1.c101"), "clegacy", "The unresolved original token remains preserved");
+  assert.match(page.elements.claimStatus.innerHTML, /retained.*native character verification/);
+  page.elements.claimBtn.onclick();
+  page.poll({ ok: true, committed: true, characterId: 101, hasIdentity: true, accountKey: "first", taken: [1], lastGrantedUtc: today, lastClaimUtc: today });
+  assert.equal(page.taken(), 1, "Only an owned committed receipt can restore Taken");
+  assert.equal(page.stored.has("aorebirth.daily.pending.v1.c101"), false);
 });
 
 test("A character switch clears the old board and ignores its in-flight state response", () => {
@@ -332,7 +334,8 @@ test("Rejected, unarmed, or mismatched queue acknowledgements never dispatch nat
   const replies = [
     () => ({ ok: false, message: "Queue rejected." }),
     () => ({ ok: true, armed: false }),
-    () => ({ ok: true, armed: true, claimToken: "different-token" })
+    () => ({ ok: true, armed: true, claimToken: "different-token" }),
+    request => ({ ok: true, armed: true, claimToken: request.claimToken, characterId: 202 })
   ];
   for (const queueResponse of replies) {
     const page = browser({}, null, false, { queueResponse });
@@ -380,6 +383,49 @@ test("A committed saved result is consumed without another queue or native dispa
   assert.equal(page.nativeCalls.length, 0);
   assert.equal(page.taken(), 1);
   assert.equal(page.stored.has("aorebirth.daily.pending.v1.c101"), false);
+});
+
+test("Sibling characters on one account have independent progress, daily availability and caches", () => {
+  const first = browser();
+  first.state({ accountKey: "shared", taken: [1], lastGrantedUtc: today, lastClaimUtc: today });
+  assert.equal(first.elements.claimBtn.style.display, "none");
+  const month = today.slice(0, 7);
+  const firstKey = "aorebirth.daily.char.v2." + month + ".c101.taken";
+  assert.equal(first.stored.get(firstKey), "[1]");
+  const second = browser(Object.fromEntries(first.stored), 202);
+  second.state({ accountKey: "shared", taken: [], lastGrantedUtc: "", lastClaimUtc: "" });
+  assert.equal(second.taken(), 0);
+  assert.equal(second.elements.claimBtn.style.display, "inline-block", "One character's UTC lock cannot hide a sibling's Claim button");
+  second.elements.claimBtn.onclick();
+  const queued = JSON.parse(second.requests.find(item => item.method === "POST").body);
+  assert.equal(queued.characterId, 202);
+  assert.equal(queued.accountKey, "shared");
+  assert.deepEqual(second.nativeCalls, ["Claim"]);
+  assert.equal(second.stored.get(firstKey), "[1]", "Sibling caching cannot overwrite earned progress");
+  assert.equal(second.stored.get("aorebirth.daily.char.v2." + month + ".c202.taken"), "[]");
+});
+
+test("An unowned or sibling board cannot establish this character's daily lock", () => {
+  for (const characterId of [0, 202]) {
+    const page = browser();
+    page.state({ characterId, accountKey: "first", taken: [1], lastGrantedUtc: today });
+    assert.equal(page.taken(), 0);
+    assert.equal(page.elements.claimBtn.style.display, "none");
+    page.elements.claimBtn.onclick();
+    assert.equal(page.nativeCalls.length, 0);
+    assert.match(page.elements.claimStatus.innerHTML, /character/);
+  }
+});
+
+test("A sibling committed receipt cannot paint Taken or discard this character's intent", () => {
+  const page = browser();
+  page.state();
+  page.elements.claimBtn.onclick();
+  const token = page.stored.get("aorebirth.daily.pending.v1.c101");
+  page.poll({ ok: true, committed: true, terminal: true, characterId: 202, accountKey: "first", taken: [1], lastGrantedUtc: today });
+  assert.equal(page.taken(), 0);
+  assert.equal(page.stored.get("aorebirth.daily.pending.v1.c101"), token);
+  assert.match(page.elements.claimStatus.innerHTML, /not verified for this character/);
 });
 
 test("Both entry pages contain the same repaired claim logic", () => {

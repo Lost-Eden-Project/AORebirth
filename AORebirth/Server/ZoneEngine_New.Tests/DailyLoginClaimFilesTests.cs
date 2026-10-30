@@ -14,7 +14,7 @@ public sealed class DailyLoginClaimFilesTests
     static readonly DateTime Today = new(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc);
 
     [TestMethod]
-    public void PendingRequiresMatchingAuthenticatedAccountOrCharacterAndRejectsConflictingHints()
+    public void PendingRequiresMatchingCharacterAndRejectsConflictingAccountHints()
     {
         using var files = new Files();
         files.Write(0, "request-account.json", Pending("account_only", 0, "dailyA"));
@@ -27,7 +27,8 @@ public sealed class DailyLoginClaimFilesTests
         files.Write(0, "last-active-account.json", "{\"accountKey\":\"dailyA\",\"characterId\":101}");
 
         string[] tokens = files.Bridge().Pending("dailyA", 101).Select(request => request.ClaimToken).Order().ToArray();
-        CollectionAssert.AreEqual(new[] { "account_only", "both", "character_only" }, tokens);
+        CollectionAssert.AreEqual(new[] { "both", "character_only" }, tokens);
+        Assert.IsTrue(File.Exists(files.Path(0, "request-account.json")), "Ambiguous account-only requests remain evidence, never another character's queue.");
         Assert.AreEqual(0, files.Bridge().Pending("dailyC", 103).Count,
             "A global last-active file and anonymous pending requests cannot route another account's claim.");
     }
@@ -75,7 +76,14 @@ public sealed class DailyLoginClaimFilesTests
             Taken = Enumerable.Range(1, 20).ToArray(), LastGrantedUtc = "2026-10-27"
         }.ToJson());
 
-        DailyLoginAccountState state = files.Bridge().ReadLegacyProgress("dailyA", Today);
+        foreach (int root in new[] { 0, 1, 2 })
+        {
+            var owned = DailyLoginAccountState.Parse(File.ReadAllText(files.Path(root, "account-dailya.json")));
+            owned.CharacterId = 101;
+            owned.AccountKey = "dailyA";
+            files.Write(root, "character-101.json", owned.ToJson());
+        }
+        DailyLoginAccountState state = files.Bridge().ReadLegacyProgress("dailyA", 101, Today);
         CollectionAssert.AreEqual(new[] { 1, 2, 3 }, state.Taken);
         Assert.AreEqual(3, state.ClaimedCount);
         Assert.AreEqual("2026-10-28", state.LastGrantedUtc);
@@ -86,12 +94,13 @@ public sealed class DailyLoginClaimFilesTests
     public void CompletedLegacyCycleIsPreservedForImportBeforeNormalNextDayReset()
     {
         using var files = new Files();
-        files.Write(0, "account-dailya.json", new DailyLoginAccountState
+        files.Write(0, "character-101.json", new DailyLoginAccountState
         {
+            CharacterId = 101, AccountKey = "dailyA",
             Taken = Enumerable.Range(1, 28).ToArray(), ClaimedCount = 28,
             LastGrantedUtc = "2026-10-27", LastClaimUtc = "2026-10-27", CycleCompletedOn = "2026-10-27"
         }.ToJson());
-        DailyLoginAccountState retained = files.Bridge().ReadLegacyProgress("dailyA", Today);
+        DailyLoginAccountState retained = files.Bridge().ReadLegacyProgress("dailyA", 101, Today);
         Assert.AreEqual(28, retained.Taken.Length);
         Assert.AreEqual("2026-10-27", retained.LastGrantedUtc);
         Assert.AreEqual("2026-10-27", retained.CycleCompletedOn);
@@ -105,41 +114,55 @@ public sealed class DailyLoginClaimFilesTests
         using var files = new Files();
         const string corrupt = "{\"Taken\":[";
         files.Write(0, "account-dailya.json", corrupt);
-        Assert.ThrowsException<JsonException>(() => files.Bridge().ReadLegacyProgress("dailyA", Today));
+        Assert.ThrowsException<JsonException>(() => files.Bridge().ReadLegacyProgress("dailyA", 101, Today));
         Assert.AreEqual(corrupt, File.ReadAllText(files.Path(0, "account-dailya.json")));
         files.Write(0, "account-dailya.json", "{\"Taken\":[1],\"LastGrantedUtc\":\"not-a-date\"}");
-        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().ReadLegacyProgress("dailyA", Today));
+        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().ReadLegacyProgress("dailyA", 101, Today));
         files.Write(0, "pending-101.json", "not JSON");
         Assert.ThrowsException<JsonException>(() => files.Bridge().Pending("dailyA", 101));
         Assert.AreEqual("not JSON", File.ReadAllText(files.Path(0, "pending-101.json")));
     }
 
     [TestMethod]
-    public void BoardMirrorsRetainExactOriginalProgressOnceAndPersistAccountAndCharacterProjections()
+    public void CharacterBoardsRemainIndependentAndRetainOriginalAccountFilesUnchanged()
     {
         using var files = new Files();
         const string original = "{\r\n \"Taken\": [1], \"LastGrantedUtc\": \"2026-10-28\", \"HistoricalExtra\": \"retain these bytes\"\r\n}\r\n";
         files.Write(0, "account-dailya.json", original);
-        var first = new DailyLoginAccountState { Taken = [1, 2], ClaimedCount = 2, LastGrantedUtc = "2026-10-29" };
+        files.Write(0, "board-account-dailya.json", original);
+        var first = new DailyLoginAccountState { CharacterId = 101, AccountKey = "dailyA", Taken = [1, 2], ClaimedCount = 2, LastGrantedUtc = "2026-10-29" };
         files.Bridge().PublishBoard("dailyA", 101, first, Today);
-        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(original),
-            File.ReadAllBytes(files.Path(0, "legacy-progress/account-dailya.json")));
-        Assert.AreEqual(first.ToJson(), File.ReadAllText(files.Path(0, "account-dailya.json")));
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(original), File.ReadAllBytes(files.Path(0, "account-dailya.json")));
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(original), File.ReadAllBytes(files.Path(0, "board-account-dailya.json")));
+        files.Bridge().PublishBoard("dailyA", 102, new DailyLoginAccountState { CharacterId = 102, AccountKey = "dailyA" }, Today);
         foreach (int root in new[] { 0, 1 })
         {
-            DailyLoginClaimResult account = DailyLoginClaimResult.Parse(File.ReadAllText(files.Path(root, "board-account-dailya.json")));
             DailyLoginClaimResult character = DailyLoginClaimResult.Parse(File.ReadAllText(files.Path(root, "board-character-101.json")));
-            Assert.AreEqual("dailyA", account.AccountKey);
-            Assert.IsTrue(account.Ok && account.ClaimedToday && account.HasIdentity);
-            CollectionAssert.AreEqual(new[] { 1, 2 }, account.Taken);
-            Assert.AreEqual(account.ToJson(), character.ToJson());
+            Assert.AreEqual("dailyA", character.AccountKey);
+            Assert.AreEqual(101, character.CharacterId);
+            Assert.IsTrue(character.Ok && character.ClaimedToday && character.HasIdentity);
+            CollectionAssert.AreEqual(new[] { 1, 2 }, character.Taken);
+            var sibling = DailyLoginClaimResult.Parse(File.ReadAllText(files.Path(root, "board-character-102.json")));
+            Assert.AreEqual(102, sibling.CharacterId);
+            Assert.AreEqual(0, sibling.Taken.Length);
         }
-        var second = new DailyLoginAccountState { Taken = [1, 2, 3], ClaimedCount = 3, LastGrantedUtc = "2026-10-30" };
+        var second = new DailyLoginAccountState { CharacterId = 101, AccountKey = "dailyA", Taken = [1, 2, 3], ClaimedCount = 3, LastGrantedUtc = "2026-10-30" };
         files.Bridge().PublishBoard("dailyA", 101, second, Today.AddDays(1));
-        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(original),
-            File.ReadAllBytes(files.Path(0, "legacy-progress/account-dailya.json")));
-        Assert.AreEqual(3, files.Bridge().ReadLegacyProgress("dailyA", Today.AddDays(1)).Taken.Length);
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(original), File.ReadAllBytes(files.Path(0, "account-dailya.json")));
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(original), File.ReadAllBytes(files.Path(0, "board-account-dailya.json")));
+        Assert.AreEqual(3, files.Bridge().ReadLegacyProgress("dailyA", 101, Today.AddDays(1)).Taken.Length);
+        Assert.AreEqual(0, files.Bridge().ReadLegacyProgress("dailyA", 102, Today.AddDays(1)).Taken.Length);
         Assert.AreEqual(0, Directory.EnumerateFiles(files.Roots[0], ".daily-*.tmp").Count());
+    }
+
+    [TestMethod]
+    public void ProjectionCannotQualifyAnUnattributedAccountCalendarByFilename()
+    {
+        using var files = new Files();
+        var unknown = new DailyLoginAccountState { Taken = [1], LastGrantedUtc = "2026-10-28", LastCharacterId = 101 };
+        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().PublishBoard("dailyA", 101, unknown, Today));
+        Assert.IsFalse(File.Exists(files.Path(0, "character-101.json")));
+        Assert.IsFalse(File.Exists(files.Path(0, "board-character-101.json")));
     }
 
     [TestMethod]
@@ -150,34 +173,79 @@ public sealed class DailyLoginClaimFilesTests
         files.Write(0, "pending-101.json", pending);
         files.Bridge().WriteResult(new DailyLoginClaimResult
         {
-            ClaimToken = "receipt_token", AccountKey = "dailyA", Message = "No room", Terminal = false
+            ClaimToken = "receipt_token", CharacterId = 101, AccountKey = "dailyA", Message = "No room", Terminal = false
         });
         Assert.AreEqual(1, files.Bridge().Pending("dailyA", 101).Count, "Retryable failures must retain their pending request.");
         var receipt = new DailyLoginClaimResult
         {
-            ClaimToken = "receipt_token", AccountKey = "dailyA", Ok = true, Committed = true, Terminal = true,
+            ClaimToken = "receipt_token", CharacterId = 101, AccountKey = "dailyA", Ok = true, Committed = true, Terminal = true,
             Day = 1, Amount = 25, Taken = [1], ClaimedCount = 1, NextDay = 2
         };
         files.Bridge().WriteResult(receipt);
         foreach (int root in new[] { 0, 1 })
-            Assert.AreEqual(receipt.ToJson(), File.ReadAllText(files.Path(root, "result-receipt_token.json")));
+            Assert.AreEqual(receipt.ToJson(), File.ReadAllText(files.Path(root, "result-character-101-receipt_token.json")));
         Assert.AreEqual(0, files.Bridge().Pending("dailyA", 101).Count);
         Assert.AreEqual(pending, File.ReadAllText(files.Path(0, "pending-101.json")), "Completion does not delete historical request evidence.");
         files.Write(0, "request-terminal.json", Pending("terminal_refusal", 101, "dailyA"));
-        files.Bridge().WriteResult(new DailyLoginClaimResult { ClaimToken = "terminal_refusal", AccountKey = "dailyA", Terminal = true });
+        files.Bridge().WriteResult(new DailyLoginClaimResult { ClaimToken = "terminal_refusal", CharacterId = 101, AccountKey = "dailyA", Terminal = true });
         Assert.AreEqual(0, files.Bridge().Pending("dailyA", 101).Count);
     }
 
     [TestMethod]
-    public void HistoricalSuccessReceiptPreservesProgressWhenItsAccountMirrorWasLostAndCannotBeRegranted()
+    public void UnattributedHistoricalReceiptRequiresLedgerOwnerReplayAndIsNeverGuessedFromAccountProgress()
     {
         using var files = new Files();
         files.Write(0, "result-old_token.json", """{"ok":true,"accountKey":"dailyA","day":3,"taken":[1,2,3],"claimedCount":3,"lastGrantedUtc":"2026-10-28"}""");
         files.Write(0, "pending-101.json", Pending("old_token", 101, "dailyA"));
-        DailyLoginAccountState imported = files.Bridge().ReadLegacyProgress("dailyA", Today);
-        CollectionAssert.AreEqual(new[] { 1, 2, 3 }, imported.Taken);
-        Assert.AreEqual("2026-10-28", imported.LastGrantedUtc);
-        Assert.AreEqual(0, files.Bridge().Pending("dailyA", 101).Count);
+        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().ReadLegacyProgress("dailyA", 101, Today));
+        DailyLoginPendingClaim pending = files.Bridge().Pending("dailyA", 101).Single();
+        Assert.IsTrue(pending.RequiresLegacyReplay);
+        Assert.IsTrue(File.Exists(files.Path(0, "result-old_token.json")));
+    }
+
+    [TestMethod]
+    public void TypedHistoricalAccountReceiptCannotAssignAnotherCharactersTakenDays()
+    {
+        using var files = new Files();
+        const string old = """{"ok":true,"committed":true,"characterId":102,"accountKey":"dailyA","claimToken":"old_b","day":2,"taken":[1,2],"lastGrantedUtc":"2026-10-28"}""";
+        files.Write(0, "result-old_b.json", old);
+        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().ReadLegacyProgress("dailyA", 102, Today));
+        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().ReadLegacyProgress("dailyA", 102, Today, accountHasHistory: true));
+        Assert.AreEqual(old, File.ReadAllText(files.Path(0, "result-old_b.json")));
+    }
+
+    [TestMethod]
+    public void IngestedAccountHistoryCannotBecomeANewCharactersCalendar()
+    {
+        using var files = new Files();
+        string old = new DailyLoginAccountState { Taken = [1, 2], LastCharacterId = 101, LastGrantedUtc = "2026-10-29" }.ToJson();
+        files.Write(0, "account-dailya.json", old);
+        Assert.ThrowsException<InvalidDataException>(() => files.Bridge().ReadLegacyProgress("dailyA", 102, Today));
+        DailyLoginAccountState fresh = files.Bridge().ReadLegacyProgress("dailyA", 102, Today, accountHasHistory: true);
+        Assert.AreEqual(102, fresh.CharacterId);
+        Assert.AreEqual(1, fresh.NextDay);
+        Assert.IsFalse(fresh.HasClaimedOn(Today));
+        Assert.AreEqual(old, File.ReadAllText(files.Path(0, "account-dailya.json")));
+    }
+
+    [TestMethod]
+    public void VerifiedCharacterReceiptUsesScopedProjectionWithoutMutatingLegacyReceiptBytes()
+    {
+        using var files = new Files();
+        const string old = """{"ok":true,"committed":true,"accountKey":"dailyA","claimToken":"old_token","day":1,"taken":[1]}""";
+        files.Write(0, "result-old_token.json", old);
+        files.Bridge().WriteResult(new DailyLoginClaimResult
+        {
+            ClaimToken = "old_token", CharacterId = 101, AccountKey = "dailyA", Ok = true,
+            Committed = true, Terminal = true, Replayed = true, Day = 1, Taken = [1]
+        });
+        Assert.AreEqual(old, File.ReadAllText(files.Path(0, "result-old_token.json")));
+        foreach (int root in new[] { 0, 1 })
+        {
+            var owned = DailyLoginClaimResult.Parse(File.ReadAllText(files.Path(root, "result-character-101-old_token.json")));
+            Assert.AreEqual(101, owned.CharacterId);
+            Assert.IsTrue(owned.Committed && owned.Replayed);
+        }
     }
 
     [TestMethod]
@@ -185,7 +253,7 @@ public sealed class DailyLoginClaimFilesTests
     {
         using var files = new Files();
         files.Write(0, "pending-101.json", Pending("conflict", 101, "dailyA"));
-        files.Write(1, "pending-account-dailya.json", Pending("conflict", 0, "dailyA"));
+        files.Write(1, "pending-account-dailya.json", Pending("conflict", 101, "character:101"));
         Assert.ThrowsException<InvalidDataException>(() => files.Bridge().Pending("dailyA", 101));
     }
 

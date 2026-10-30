@@ -122,6 +122,8 @@ public static class DatabaseSchemaReadiness
         foreach (var required in SchemaContract.UniqueKeys)
             if (!Unique(required.Item1, required.Item2))
                 return Failure(SchemaState.SCHEMA_INCOMPATIBLE, "Required unique key is absent: " + required.Item1 + "(" + required.Item2 + ").");
+        if (Unique("dailyloginclaims", "AccountId,ClaimDateUtc") || Unique("dailyloginclaims", "ClaimDateUtc,AccountId"))
+            return Failure(SchemaState.SCHEMA_INCOMPATIBLE, "The retired account-wide daily-login unique key still blocks character-scoped rewards.");
         if (snapshot.NextInstanceId is null or <= 0 || snapshot.NextInstanceId <= snapshot.MaximumInstanceId || snapshot.NextInstanceId > int.MaxValue - 10000)
             return Failure(SchemaState.SCHEMA_INCOMPATIBLE, "Item instance sequence is missing, behind stored items, or exhausted; an operator must reconcile it while engines are stopped.");
         return new(SchemaState.SCHEMA_CURRENT, "Required schema, migration ledger and item-instance allocation state are current; no schema writes were performed.", Array.Empty<string>());

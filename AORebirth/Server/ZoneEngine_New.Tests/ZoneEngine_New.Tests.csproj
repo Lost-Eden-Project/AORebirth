@@ -48,6 +48,7 @@
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />
     <Compile Include="DailyLogin*.cs" />
+    <Compile Include="DatabaseSchemaReadinessTests.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(MissionDestinationFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />

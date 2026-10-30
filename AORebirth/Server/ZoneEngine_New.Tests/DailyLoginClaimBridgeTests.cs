@@ -28,19 +28,52 @@ public sealed class DailyLoginClaimBridgeTests
     public void LostFileProjectionsAreRebuiltFromCommittedReceiptWithoutGrantingAgain()
     {
         using var world = new World();
-        string board = Path.Combine(world.Root, "board-account-account.json");
+        string board = Path.Combine(world.Root, "board-character-101.json");
         Directory.CreateDirectory(board); // A real projection write failure after the DB commit.
         world.Bridge.HandleClaim(world.Player, "account", Today);
         Assert.IsTrue(File.Exists(Path.Combine(world.Root, "request-recovery.json")));
-        Assert.IsFalse(File.Exists(Path.Combine(world.Root, "result-recovery.json")));
+        Assert.IsFalse(File.Exists(Path.Combine(world.Root, "result-character-101-recovery.json")));
         Directory.Delete(board);
         world.Bridge.HandleClaim(world.Player, "account", Today);
         world.AssertCurrentBoard();
-        DailyLoginClaimResult restored = DailyLoginClaimResult.Parse(File.ReadAllText(Path.Combine(world.Root, "result-recovery.json")));
+        DailyLoginClaimResult restored = DailyLoginClaimResult.Parse(File.ReadAllText(Path.Combine(world.Root, "result-character-101-recovery.json")));
         Assert.IsTrue(restored.Committed && restored.Replayed);
         Assert.AreEqual(0, world.Dao.Commits);
         Assert.AreEqual(0, world.Player.Inventory.Inventory.Content.Count);
         Assert.AreEqual(0, world.Session.Sent.OfType<SmokeLounge.AOtomation.Messaging.Messages.N3Messages.AddTemplateMessage>().Count());
+    }
+
+    [TestMethod]
+    public void VerifiedLegacyReplayPublishesCharacterReceiptWithoutMutatingItsOriginal()
+    {
+        using var world = new World();
+        const string original = """{"ok":true,"committed":true,"terminal":true,"accountKey":"account","claimToken":"recovery","day":2,"taken":[1,2],"lastGrantedUtc":"2026-10-29"}""";
+        string path = Path.Combine(world.Root, "result-recovery.json");
+        File.WriteAllText(path, original);
+        world.Bridge.HandleClaim(world.Player, "account", Today);
+        world.AssertCurrentBoard();
+        Assert.AreEqual(original, File.ReadAllText(path));
+        var qualified = DailyLoginClaimResult.Parse(File.ReadAllText(Path.Combine(world.Root, "result-character-101-recovery.json")));
+        Assert.AreEqual(101, qualified.CharacterId);
+        Assert.IsTrue(qualified.Committed && qualified.Replayed);
+        Assert.AreEqual(0, world.Dao.Commits);
+    }
+
+    [TestMethod]
+    public void AnotherCharacterCannotTurnUnattributedHistoryIntoANewGrant()
+    {
+        using var world = new World();
+        const string original = """{"ok":true,"committed":true,"accountKey":"account","claimToken":"recovery","day":2,"taken":[1,2]}""";
+        File.WriteAllText(Path.Combine(world.Root, "result-recovery.json"), original);
+        File.WriteAllText(Path.Combine(world.Root, "request-recovery.json"), """{"CharacterId":102,"AccountKey":"account","ClaimToken":"recovery"}""");
+        world.Player = TestWorld.CreatePlayer(102);
+        world.Player.Session = world.Session;
+        world.Session.BindPlayer(world.Player);
+        world.Bridge.HandleClaim(world.Player, "account", Today);
+        Assert.AreEqual(0, world.Dao.Commits);
+        Assert.AreEqual(0, world.Player.Inventory.Inventory.Content.Count);
+        Assert.AreEqual(original, File.ReadAllText(Path.Combine(world.Root, "result-recovery.json")));
+        Assert.IsFalse(File.Exists(Path.Combine(world.Root, "result-character-102-recovery.json")));
     }
 
     sealed class World : IDisposable
@@ -58,7 +91,7 @@ public sealed class DailyLoginClaimBridgeTests
             Player.Session = Session;
             Session.BindPlayer(Player);
             var state = new DailyLoginAccountState { Taken = [1, 2], ClaimedCount = 2, LastClaimUtc = "2026-10-29", LastGrantedUtc = "2026-10-29" };
-            Result = DailyLoginClaimResult.ForState("account", "recovery", state, Today);
+            Result = DailyLoginClaimResult.ForState("account", 101, "recovery", state, Today);
             Result.Ok = Result.Committed = Result.Terminal = true;
             Result.Day = 2;
             Dao = new Dao(new DailyLoginClaimSnapshotData
@@ -74,7 +107,8 @@ public sealed class DailyLoginClaimBridgeTests
         }
         public void AssertCurrentBoard()
         {
-            var board = DailyLoginClaimResult.Parse(File.ReadAllText(Path.Combine(Root, "board-account-account.json")));
+            var board = DailyLoginClaimResult.Parse(File.ReadAllText(Path.Combine(Root, "board-character-101.json")));
+            Assert.AreEqual(101, board.CharacterId);
             CollectionAssert.AreEqual(new[] { 1, 2 }, board.Taken);
             Assert.IsTrue(board.ClaimedToday);
         }
@@ -89,8 +123,11 @@ public sealed class DailyLoginClaimBridgeTests
     sealed class Dao(DailyLoginClaimSnapshotData snapshot) : IDailyLoginClaimDao
     {
         public int Commits;
-        public DailyLoginClaimSnapshotData LoadDailyLoginState(string accountUsername) => snapshot;
-        public DailyLoginClaimSnapshotData FindDailyLoginClaim(string accountUsername, string claimToken) => snapshot;
+        public DailyLoginClaimSnapshotData LoadDailyLoginState(string accountUsername, int characterId)
+            => snapshot.AccountUsername == accountUsername && snapshot.CharacterId == characterId ? snapshot : null!;
+        public DailyLoginClaimSnapshotData FindDailyLoginClaim(string accountUsername, int characterId, string claimToken)
+            => snapshot.AccountUsername == accountUsername && snapshot.CharacterId == characterId && snapshot.ClaimToken == claimToken ? snapshot : null!;
+        public bool HasDailyLoginHistory(string accountUsername) => snapshot.AccountUsername == accountUsername;
         public DailyLoginClaimSnapshotData ImportDailyLoginState(string accountUsername, int characterId, string stateJson, DateTime? lastGrantedDateUtc, long nowUtcTicks)
             => throw new InvalidOperationException("Committed progress must never be imported again.");
         public DailyLoginClaimCommitResultData CommitDailyLoginClaim(DailyLoginClaimCommitData request)

@@ -33,8 +33,32 @@ static class DailyLoginPersistenceSmoke
             "daily-empty-schema-rollback-scoped");
         FixtureSql.Execute(connection, migration);
         FixtureSql.Execute(connection, "INSERT INTO schema_migrations VALUES ('20261029_daily_login_claims.sql')");
-        FixtureSql.Execute(connection, "INSERT INTO login (Id,Username) VALUES (12001,'dailyA'),(12002,'dailyB'); "
-            + "INSERT INTO characters (Id,Username,Online) VALUES (12101,'dailyA',1),(12102,'dailyA',1),(12201,'dailyB',1),(12202,'dailyB',0)");
+        string characterMigration = MigrationCommand.ReadScript("20261030_daily_login_character_scope.sql");
+        FixtureSql.Execute(connection, "INSERT INTO dailyloginclaims (AccountId,ClaimToken,CharacterId,ClaimDateUtc,StateJson,ResultJson,IsLegacyImport,CreatedAtUtcTicks) VALUES "
+            + "(12999,'old_bad_legacy',12999,NULL,'{\"Taken\":[1]}','{}',1,1)");
+        string badLegacy = ReceiptBytes();
+        RequireMigrationRefused();
+        Require(ReceiptBytes() == badLegacy && AccountDayIndex(), "daily-character-migration-retains-ambiguous-legacy");
+        FixtureSql.Execute(connection, "DELETE FROM dailyloginclaims WHERE ClaimToken='old_bad_legacy'");
+        FixtureSql.Execute(connection, "INSERT INTO dailyloginclaims (AccountId,ClaimToken,CharacterId,ClaimDateUtc,StateJson,ResultJson,IsLegacyImport,CreatedAtUtcTicks) VALUES "
+            + "(12999,'old_mixed_one',12998,'2026-10-27','{\"Taken\":[1]}','{}',0,1),"
+            + "(12999,'old_mixed_two',12999,'2026-10-28','{\"Taken\":[1,2]}','{}',0,2)");
+        string mixed = ReceiptBytes();
+        RequireMigrationRefused();
+        Require(ReceiptBytes() == mixed && AccountDayIndex(), "daily-character-migration-retains-mixed-character-history");
+        FixtureSql.Execute(connection, "DELETE FROM dailyloginclaims WHERE ClaimToken IN ('old_mixed_one','old_mixed_two')");
+        FixtureSql.Execute(connection, "INSERT INTO dailyloginclaims (AccountId,ClaimToken,CharacterId,ClaimDateUtc,StateJson,ResultJson,IsLegacyImport,CreatedAtUtcTicks) VALUES "
+            + "(12999,'old_preserved',12999,'2026-10-28','{\"Taken\":[1]}','{\"ok\":true,\"committed\":true,\"day\":1}',0,3)");
+        string preserved = ReceiptBytes();
+        FixtureSql.Execute(connection, characterMigration);
+        Require(ReceiptBytes() == preserved && !AccountDayIndex(), "daily-character-migration-preserves-original-receipt-bytes");
+        string characterMigrated = Fingerprint();
+        FixtureSql.Execute(connection, characterMigration);
+        Require(Fingerprint() == characterMigrated, "daily-character-migration-repeat-no-change");
+        Require(FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dailyloginclaims' AND NON_UNIQUE=0 AND INDEX_NAME='UX_dailyloginclaims_character_day'") == 2,
+            "daily-character-day-unique-index");
+        FixtureSql.Execute(connection, "INSERT INTO login (Id,Username) VALUES (12001,'dailyA'),(12002,'dailyB'),(12999,'dailyOld'); "
+            + "INSERT INTO characters (Id,Username,Online) VALUES (12101,'dailyA',1),(12102,'dailyA',1),(12201,'dailyB',1),(12202,'dailyB',0),(12999,'dailyOld',0)");
 
         DateTime day = new(2026, 10, 29, 0, 0, 0, DateTimeKind.Utc);
         var dao = new MySqlCharacterPersistenceDao(() => fixture.Open());
@@ -42,9 +66,14 @@ static class DailyLoginPersistenceSmoke
         var imported = dao.ImportDailyLoginState("DAILYA", 12101, legacy, day.AddDays(-1), day.Ticks);
         Require(imported.IsLegacyImport && imported.AccountId == 12001 && imported.StateJson == legacy
             && imported.ClaimDateUtc == day.AddDays(-1), "daily-legacy-progress-imported");
-        Require(dao.ImportDailyLoginState("dailyA", 12102, "{\"Taken\":[]}", null, day.Ticks).StateJson == legacy
-            && FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM dailyloginclaims WHERE AccountId=12001") == 1,
-            "daily-stale-file-cannot-reset-import");
+        Require(dao.ImportDailyLoginState("dailyA", 12101, "{\"Taken\":[]}", null, day.Ticks).StateJson == legacy,
+            "daily-stale-file-cannot-reset-character-import");
+        var alternateImport = dao.ImportDailyLoginState("dailyA", 12102, "{\"Taken\":[]}", null, day.Ticks);
+        Require(alternateImport.CharacterId == 12102 && alternateImport.StateJson == "{\"Taken\":[]}"
+            && alternateImport.ClaimToken != imported.ClaimToken
+            && FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM dailyloginclaims WHERE AccountId=12001") == 2,
+            "daily-character-imports-are-independent");
+        Require(dao.HasDailyLoginHistory("dailyA") && !dao.HasDailyLoginHistory("dailyB"), "daily-history-includes-existing-character-imports");
         Require(FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM item_instances") == 0, "daily-import-never-regrants");
         string beforeWrongOwner = Fingerprint();
         RequireThrows<InvalidOperationException>(() => dao.ImportDailyLoginState("dailyA", 12201, "{}", null, day.Ticks));
@@ -56,13 +85,21 @@ static class DailyLoginPersistenceSmoke
         Require(applied.Status == DailyLoginClaimCommitStatus.Applied && applied.Snapshot.StateJson == grant.StateJson
             && applied.Snapshot.ResultJson == grant.ResultJson && Rows(15001, 15002) == 2, "daily-complete-grant-and-receipt");
         string afterGrant = Fingerprint();
-        var oldToken = Request("dailyA", 12102, grant.ClaimToken, "stale", day.AddDays(1), 15003, 64);
+        var oldToken = Request("dailyA", 12101, grant.ClaimToken, "stale", day.AddDays(1), 15003, 66);
         Require(dao.CommitDailyLoginClaim(oldToken).Status == DailyLoginClaimCommitStatus.AlreadyApplied
-            && dao.FindDailyLoginClaim("dailyA", grant.ClaimToken).ResultJson == grant.ResultJson
-            && dao.FindDailyLoginClaim("dailyB", grant.ClaimToken) == null && Fingerprint() == afterGrant,
+            && dao.FindDailyLoginClaim("dailyA", 12101, grant.ClaimToken).ResultJson == grant.ResultJson
+            && dao.FindDailyLoginClaim("dailyA", 12102, grant.ClaimToken) == null
+            && dao.FindDailyLoginClaim("dailyB", 12201, grant.ClaimToken) == null && Fingerprint() == afterGrant,
             "daily-token-replay-before-date-gate-no-duplicate");
-        Require(dao.CommitDailyLoginClaim(Request("dailyA", 12102, "claim_a_alt", grant.ClaimToken, day, 15003, 64)).Status
-            == DailyLoginClaimCommitStatus.AlreadyClaimedToday && Fingerprint() == afterGrant, "daily-alternate-character-same-day");
+        var siblingReplay = dao.CommitDailyLoginClaim(Request("dailyA", 12102, grant.ClaimToken, alternateImport.ClaimToken, day, 15004, 60));
+        Require(siblingReplay.Status == DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount && siblingReplay.Snapshot == null
+            && Fingerprint() == afterGrant, "daily-sibling-cannot-replay-another-character-token");
+        var alternateGrant = Request("dailyA", 12102, "claim_a_alt", alternateImport.ClaimToken, day, 15004, 60);
+        Require(dao.CommitDailyLoginClaim(alternateGrant).Status == DailyLoginClaimCommitStatus.Applied && Rows(15001,15002,15004) == 3,
+            "daily-two-characters-same-account-same-utc-day");
+        afterGrant = Fingerprint();
+        Require(dao.CommitDailyLoginClaim(Request("dailyA", 12101, "claim_a_duplicate", grant.ClaimToken, day, 15003, 66)).Status
+            == DailyLoginClaimCommitStatus.AlreadyClaimedToday && Fingerprint() == afterGrant, "daily-same-character-same-day-refused");
         Require(dao.CommitDailyLoginClaim(Request("dailyA", 12101, "claim_a_stale", imported.ClaimToken, day.AddDays(1), 15003, 66)).Status
             == DailyLoginClaimCommitStatus.StateChanged && Fingerprint() == afterGrant, "daily-stale-state-cas-no-write");
         RequireThrows<InvalidOperationException>(() => dao.CommitDailyLoginClaim(Request("dailyA", 12201, "wrong_owner", grant.ClaimToken, day.AddDays(1), 15003, 64)));
@@ -83,15 +120,15 @@ static class DailyLoginPersistenceSmoke
             {
                 Require(barrier.SignalAndWait(TimeSpan.FromSeconds(15)), "daily-concurrent-barrier-timeout");
                 return new MySqlCharacterPersistenceDao(() => fixture.Open()).CommitDailyLoginClaim(
-                    Request("dailyA", character, "concurrent_" + i, grant.ClaimToken, day.AddDays(1), 15100 + i, character == 12101 ? 66 : 64));
+                    Request("dailyA", character, "concurrent_" + i, character == 12101 ? grant.ClaimToken : alternateGrant.ClaimToken,
+                        day.AddDays(1), 15100 + i, character == 12101 ? 66 : 64));
             })).ToArray();
             Require(Task.WaitAll(concurrent, TimeSpan.FromSeconds(30)), "daily-concurrent-transaction-timeout");
-            Require(concurrent.Count(t => t.Result.Status == DailyLoginClaimCommitStatus.Applied) == 1
-                && concurrent.Count(t => t.Result.Status == DailyLoginClaimCommitStatus.AlreadyClaimedToday) == 1
-                && Rows(15100, 15101) == 1, "daily-concurrent-account-grants-once");
+            Require(concurrent.Count(t => t.Result.Status == DailyLoginClaimCommitStatus.Applied) == 2
+                && Rows(15100, 15101) == 2, "daily-concurrent-characters-grant-independently");
         }
 
-        var current = dao.LoadDailyLoginState("dailyA");
+        var current = dao.LoadDailyLoginState("dailyA", 12101);
         var rollbackRequest = Request("dailyA", 12101, "rollback_grant", current.ClaimToken, day.AddDays(2), 15200, 68);
         rollbackRequest.Inserts.Add(Row(12101, 15201, 69));
         string beforeRollback = Fingerprint();
@@ -110,25 +147,27 @@ static class DailyLoginPersistenceSmoke
         RequireThrows<CharacterPersistenceCommitOutcomeUnknownException>(() =>
             new MySqlCharacterPersistenceDao(() => new FaultConnection(fixture.Open(), commitBefore)).CommitDailyLoginClaim(rollbackRequest));
         Require(Fingerprint() == beforeRollback && commitBefore.RollbackCalls == 0
-            && dao.FindDailyLoginClaim("dailyA", rollbackRequest.ClaimToken) == null, "daily-before-commit-unknown-old-state");
+            && dao.FindDailyLoginClaim("dailyA", 12101, rollbackRequest.ClaimToken) == null, "daily-before-commit-unknown-old-state");
         var commitAfter = new PersistenceFault { CommitFault = CommitFault.After };
         RequireThrows<CharacterPersistenceCommitOutcomeUnknownException>(() =>
             new MySqlCharacterPersistenceDao(() => new FaultConnection(fixture.Open(), commitAfter)).CommitDailyLoginClaim(rollbackRequest));
         var reopened = new MySqlCharacterPersistenceDao(() => fixture.Open());
         Require(Rows(15200, 15201) == 2 && commitAfter.RollbackCalls == 0
-            && reopened.FindDailyLoginClaim("dailyA", rollbackRequest.ClaimToken).ResultJson == rollbackRequest.ResultJson,
+            && reopened.FindDailyLoginClaim("dailyA", 12101, rollbackRequest.ClaimToken).ResultJson == rollbackRequest.ResultJson,
             "daily-lost-ack-reopen-has-whole-grant-and-receipt");
         string afterLostAck = Fingerprint();
         Require(reopened.CommitDailyLoginClaim(rollbackRequest).Status == DailyLoginClaimCommitStatus.AlreadyApplied
             && Fingerprint() == afterLostAck, "daily-restart-retry-no-regrant");
-        Require(reopened.ImportDailyLoginState("dailyA", 12102, "{\"Taken\":[]}", null, day.AddDays(3).Ticks).StateJson == rollbackRequest.StateJson,
+        Require(reopened.ImportDailyLoginState("dailyA", 12101, "{\"Taken\":[]}", null, day.AddDays(3).Ticks).StateJson == rollbackRequest.StateJson,
             "daily-legacy-reconciliation-never-overwrites-new-state");
         string populated = Fingerprint();
+        FixtureSql.Execute(connection, characterMigration);
+        Require(Fingerprint() == populated, "daily-character-migration-rerun-preserves-legitimate-sibling-history");
         bool rollbackRefused = false;
         try { RunRollback(); }
         catch (MySqlException exception) when (exception.SqlState == "45000") { rollbackRefused = true; }
         Require(rollbackRefused && Fingerprint() == populated, "daily-populated-schema-rollback-refused-with-data-preserved");
-        Console.WriteLine("DAILY_LOGIN_REAL_MYSQL=PASS MIGRATION_RERUN=PASS EMPTY_SCHEMA_ROLLBACK=PASS POPULATED_ROLLBACK=REFUSED_PRESERVED LEGACY_IMPORT_ONCE=PASS ACCOUNT_OWNER=PASS UTC_ACCOUNT_DAY_UNIQUE=PASS CONCURRENT_CHARACTERS=PASS PARTIAL_WRITE_ROLLBACKS=4 LOST_ACK_RECOVERY=PASS RESTART_REPLAY=PASS");
+        Console.WriteLine("DAILY_LOGIN_REAL_MYSQL=PASS MIGRATION_RERUN=PASS HISTORY_BYTES_PRESERVED=PASS AMBIGUOUS_HISTORY_REFUSED=PASS EMPTY_SCHEMA_ROLLBACK=PASS POPULATED_ROLLBACK=REFUSED_PRESERVED CHARACTER_IMPORT_ONCE=PASS ACCOUNT_OWNER=PASS UTC_CHARACTER_DAY_UNIQUE=PASS CONCURRENT_CHARACTERS=PASS PARTIAL_WRITE_ROLLBACKS=4 LOST_ACK_RECOVERY=PASS RESTART_REPLAY=PASS");
 
         long Rows(params int[] ids) => FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM item_instances WHERE InstanceId IN ("
             + string.Join(',', ids.Select(id => id.ToString(CultureInfo.InvariantCulture))) + ")");
@@ -136,6 +175,19 @@ static class DailyLoginPersistenceSmoke
         {
             using var reopenedConnection = fixture.Open();
             return FixtureSql.Fingerprint(reopenedConnection, includeAutoIncrementCounters: false);
+        }
+        bool AccountDayIndex() => FixtureSql.Scalar(connection, "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dailyloginclaims' AND INDEX_NAME='UX_dailyloginclaims_account_day'") > 0;
+        string ReceiptBytes()
+        {
+            using var command = new MySqlCommand("SELECT GROUP_CONCAT(CONCAT(Id,':',AccountId,':',CharacterId,':',HEX(ClaimToken),':',COALESCE(ClaimDateUtc,''),':',HEX(StateJson),':',HEX(ResultJson),':',IsLegacyImport,':',CreatedAtUtcTicks) ORDER BY Id SEPARATOR ';') FROM dailyloginclaims", connection);
+            return Convert.ToString(command.ExecuteScalar(), CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+        void RequireMigrationRefused()
+        {
+            bool refused = false;
+            try { FixtureSql.Execute(connection, characterMigration); }
+            catch (MySqlException exception) when (exception.SqlState == "45000") { refused = true; }
+            Require(refused, "daily-character-migration-must-refuse-ambiguous-history");
         }
         void RunRollback()
         {

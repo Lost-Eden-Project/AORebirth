@@ -41,29 +41,20 @@ public sealed class DailyLoginClaimFiles
                 bool legacyCharacterAlias = pending.CharacterId == characterId
                     && string.Equals(pending.AccountKey, "character:" + characterId, StringComparison.OrdinalIgnoreCase);
                 // Browser identities are routing hints only. The authenticated game connection selects its own queue.
-                if (pending.CharacterId > 0 && pending.CharacterId != characterId
-                    || !legacyCharacterAlias && !string.IsNullOrWhiteSpace(pending.AccountKey) && !string.Equals(pending.AccountKey.Trim(), account, StringComparison.OrdinalIgnoreCase)
-                    || pending.CharacterId <= 0 && string.IsNullOrWhiteSpace(pending.AccountKey))
+                if (pending.CharacterId <= 0 || pending.CharacterId != characterId
+                    || !legacyCharacterAlias && !string.IsNullOrWhiteSpace(pending.AccountKey) && !string.Equals(pending.AccountKey.Trim(), account, StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (string.IsNullOrEmpty(pending.ClaimToken))
                     pending.ClaimToken = "legacy-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(account.Trim().ToLowerInvariant() + "\n" + json)))[..48].ToLowerInvariant();
                 if (!DailyLoginRewardService.IsValidToken(pending.ClaimToken))
                     throw new InvalidDataException("Daily Login pending claim has an invalid token.");
+                if (ResolvedReceipt(pending, account, characterId)) continue;
                 if (requests.TryGetValue(pending.ClaimToken, out DailyLoginPendingClaim? prior))
                 {
                     if (prior.CharacterId != pending.CharacterId || !string.Equals(prior.AccountKey, pending.AccountKey, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException("Daily Login pending token has conflicting owners.");
+                    prior.RequiresLegacyReplay |= pending.RequiresLegacyReplay;
                     continue;
-                }
-                string receiptPath = Path.Combine(root, "result-" + SafeKey(pending.ClaimToken) + ".json");
-                if (File.Exists(receiptPath))
-                {
-                    RejectLink(receiptPath);
-                    DailyLoginClaimResult receipt = DailyLoginClaimResult.Parse(File.ReadAllText(receiptPath));
-                    // Historical server receipts predate the atomic ledger. A completed old token must never
-                    // become a fresh next-day grant merely because its pending file survived a crash.
-                    if (receipt.Committed || receipt.Terminal || receipt.Ok && receipt.Day > 0)
-                        continue;
                 }
                 requests.Add(pending.ClaimToken, pending);
             }
@@ -71,20 +62,51 @@ public sealed class DailyLoginClaimFiles
         return requests.Values.OrderBy(value => value.RequestedUtc, StringComparer.Ordinal).ThenBy(value => value.ClaimToken, StringComparer.Ordinal).ToArray();
     }
 
-    public DailyLoginAccountState ReadLegacyProgress(string account, DateTime utcNow)
+    bool ResolvedReceipt(DailyLoginPendingClaim pending, string account, int characterId)
     {
-        var states = new List<DailyLoginAccountState>();
+        bool resolved = false;
         foreach (string root in _roots)
         {
-            string path = Path.Combine(root, "account-" + SafeKey(account) + ".json");
+            string scoped = Path.Combine(root, "result-character-" + characterId + "-" + SafeKey(pending.ClaimToken) + ".json");
+            string original = Path.Combine(root, "result-" + SafeKey(pending.ClaimToken) + ".json");
+            if (File.Exists(scoped))
+            {
+                RejectLink(scoped);
+                DailyLoginClaimResult receipt = DailyLoginClaimResult.Parse(File.ReadAllText(scoped));
+                if (receipt.CharacterId != characterId || receipt.ClaimToken != pending.ClaimToken ||
+                    !string.Equals(receipt.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Daily Login character receipt ownership conflicts. Existing files were retained.");
+                if (receipt.Committed || receipt.Terminal || receipt.Ok && receipt.Day > 0) resolved = true;
+            }
+            if (File.Exists(original))
+            {
+                RejectLink(original);
+                DailyLoginClaimResult old = DailyLoginClaimResult.Parse(File.ReadAllText(original));
+                // Even historical typed receipts contain an account-wide Taken array.
+                if (old.Committed || old.Ok && old.Day > 0) pending.RequiresLegacyReplay = true;
+            }
+        }
+        return resolved;
+    }
+
+    public DailyLoginAccountState ReadLegacyProgress(string account, int characterId, DateTime utcNow, bool accountHasHistory = false)
+    {
+        if (characterId <= 0) throw new InvalidDataException("Daily Login character identity is missing.");
+        var states = new List<DailyLoginAccountState>();
+        bool unattributed = false;
+        bool ownedLegacyReceipt = false;
+        foreach (string root in _roots)
+        {
+            string path = Path.Combine(root, "character-" + characterId + ".json");
             if (!Directory.Exists(root))
                 continue;
             if (File.Exists(path))
             {
                 RejectLink(path);
-                if (!string.Equals(SafeKey(account), account.Trim().ToLowerInvariant(), StringComparison.Ordinal))
-                    throw new InvalidDataException("Legacy Daily Login filename ownership is ambiguous for this account; existing progress was retained for review.");
-                Add(DailyLoginAccountState.Parse(File.ReadAllText(path)));
+                DailyLoginAccountState state = DailyLoginAccountState.Parse(File.ReadAllText(path));
+                if (state.CharacterId != characterId || !string.Equals(state.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Daily Login character progress has a different or unknown owner. Existing files were retained.");
+                Add(state);
             }
             // A historical successful grant receipt can be newer than an interrupted account-file mirror.
             // Reconcile that existing evidence too, so losing a mirror cannot award an old reward again.
@@ -92,18 +114,49 @@ public sealed class DailyLoginClaimFiles
             {
                 RejectLink(receiptPath);
                 DailyLoginClaimResult receipt = DailyLoginClaimResult.Parse(File.ReadAllText(receiptPath));
-                if (!receipt.Ok || !string.Equals(receipt.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+                if (!receipt.Ok || receipt.Day <= 0)
                     continue;
+                bool scoped = receipt.CharacterId > 0 && DailyLoginRewardService.IsValidToken(receipt.ClaimToken)
+                    && Path.GetFileName(receiptPath) == "result-character-" + receipt.CharacterId + "-" + SafeKey(receipt.ClaimToken) + ".json";
+                if (!scoped)
+                {
+                    if (receipt.CharacterId == characterId) ownedLegacyReceipt = true;
+                    if (receipt.CharacterId <= 0 && string.Equals(receipt.AccountKey, account, StringComparison.OrdinalIgnoreCase)) unattributed = true;
+                    continue;
+                }
+                if (receipt.CharacterId != characterId) continue;
+                if (!string.Equals(receipt.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Daily Login character receipt belongs to a different account. Existing files were retained.");
+                if (!receipt.Committed) continue;
                 Add(new DailyLoginAccountState
                 {
-                    Taken = receipt.Taken, ClaimedCount = receipt.ClaimedCount,
+                    CharacterId = characterId, AccountKey = account,
+                    Taken = receipt.Taken.Length > 0 ? receipt.Taken : [receipt.Day], ClaimedCount = receipt.ClaimedCount,
                     LastGrantedUtc = receipt.LastGrantedUtc, LastClaimUtc = receipt.LastClaimUtc,
                     CycleCompletedOn = receipt.CycleCompletedOn
                 });
             }
         }
+        if (states.Count == 0 && ownedLegacyReceipt)
+            throw new InvalidDataException("Historical Daily Login receipts contain account-wide progress for this character without a verified character calendar. Existing receipts were retained for review.");
+        if (states.Count == 0 && !accountHasHistory)
+        {
+            foreach (string root in _roots)
+            {
+                string path = Path.Combine(root, "account-" + SafeKey(account) + ".json");
+                if (!File.Exists(path)) continue;
+                RejectLink(path);
+                DailyLoginAccountState old = DailyLoginAccountState.Parse(File.ReadAllText(path));
+                old.Normalize(utcNow);
+                unattributed |= (old.Taken?.Length ?? 0) > 0 || old.ClaimedCount > 0 ||
+                    !string.IsNullOrEmpty(old.LastGrantedUtc) || !string.IsNullOrEmpty(old.LastClaimUtc) ||
+                    !string.IsNullOrEmpty(old.CycleCompletedOn);
+            }
+            if (unattributed)
+                throw new InvalidDataException("Legacy Daily Login account progress has no verified character owner. Existing progress was retained for review.");
+        }
         if (states.Count == 0)
-            return new DailyLoginAccountState();
+            return new DailyLoginAccountState { CharacterId = characterId, AccountKey = account };
         DateTime? newest = states.Max(state => state.LastGrantedDateUtc);
         DailyLoginAccountState[] current = states.Where(state => state.LastGrantedDateUtc == newest).ToArray();
         // Mirrors from the same grant date can differ after an interrupted historical write. Never unlock a taken day.
@@ -123,33 +176,37 @@ public sealed class DailyLoginClaimFiles
 
     public void WriteResult(DailyLoginClaimResult result)
     {
-        if (!DailyLoginRewardService.IsValidToken(result.ClaimToken))
-            throw new InvalidDataException("Daily Login receipt token is invalid.");
+        if (!DailyLoginRewardService.IsValidToken(result.ClaimToken) || result.CharacterId <= 0 || string.IsNullOrWhiteSpace(result.AccountKey))
+            throw new InvalidDataException("Daily Login receipt token or character owner is invalid.");
+        // This namespace is exclusively the character-scoped publisher. All old result-token files are immutable.
+        string name = "result-character-" + result.CharacterId + "-" + SafeKey(result.ClaimToken) + ".json";
         foreach (string root in _roots)
-            AtomicWrite(root, "result-" + SafeKey(result.ClaimToken) + ".json", result.ToJson());
+        {
+            string target = Path.Combine(root, name);
+            if (!File.Exists(target)) continue;
+            RejectLink(target);
+            DailyLoginClaimResult existing = DailyLoginClaimResult.Parse(File.ReadAllText(target));
+            if (existing.CharacterId != result.CharacterId || existing.ClaimToken != result.ClaimToken ||
+                !string.Equals(existing.AccountKey, result.AccountKey, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Daily Login receipt ownership conflicts. Existing receipts were retained.");
+        }
+        foreach (string root in _roots)
+            AtomicWrite(root, name, result.ToJson());
     }
 
     public void PublishBoard(string account, int characterId, DailyLoginAccountState state, DateTime utcNow)
     {
         DailyLoginAccountState current = state.Normalize(utcNow);
-        DailyLoginClaimResult board = DailyLoginClaimResult.ForState(account, string.Empty, current, utcNow);
+        if (characterId <= 0 || current.CharacterId != characterId ||
+            !string.Equals(current.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Daily Login board owner does not match this character.");
+        current.CharacterId = characterId;
+        current.AccountKey = account;
+        DailyLoginClaimResult board = DailyLoginClaimResult.ForState(account, characterId, string.Empty, current, utcNow);
         board.Ok = true;
         foreach (string root in _roots)
         {
-            string name = "account-" + SafeKey(account) + ".json";
-            string original = Path.Combine(root, name);
-            if (File.Exists(original))
-            {
-                RejectLink(original);
-                string archive = Path.Combine(root, "legacy-progress");
-                Directory.CreateDirectory(archive);
-                RejectLink(archive);
-                string retained = Path.Combine(archive, name);
-                if (!File.Exists(retained))
-                    File.Copy(original, retained, overwrite: false);
-            }
-            AtomicWrite(root, name, state.ToJson());
-            AtomicWrite(root, "board-account-" + SafeKey(account) + ".json", board.ToJson());
+            AtomicWrite(root, "character-" + characterId + ".json", current.ToJson());
             AtomicWrite(root, "board-character-" + characterId + ".json", board.ToJson());
         }
     }
@@ -203,6 +260,8 @@ public sealed class DailyLoginClaimFiles
 
 public sealed class DailyLoginPendingClaim
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool RequiresLegacyReplay { get; set; }
     public int CharacterId { get; set; }
     public string AccountKey { get; set; } = string.Empty;
     public string ClaimToken { get; set; } = string.Empty;

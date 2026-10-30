@@ -37,7 +37,7 @@ public sealed class DailyLoginRewardServiceTests
             Assert.AreEqual(0, world.Session.Messages.Count);
             Assert.AreEqual(1, request.Inserts.Count);
             Assert.AreEqual(25, request.Inserts[0].StackCount);
-            Assert.AreEqual("legacy-import:1", request.ExpectedStateToken);
+            Assert.AreEqual("character-import:1:111", request.ExpectedStateToken);
         };
         DailyLoginClaimResult result = world.Claim("token_1");
         Assert.IsTrue(result.Ok && result.Committed && result.Terminal);
@@ -65,17 +65,39 @@ public sealed class DailyLoginRewardServiceTests
     }
 
     [TestMethod]
-    public void AccountWideDailyLockPreventsAnotherCharactersClaim()
+    public void CharactersOnTheSameAccountHaveIndependentDailyLocksAndCalendars()
     {
         using var first = new World();
         Assert.IsTrue(first.Claim("first").Ok);
         using var second = new World(first.Dao, characterId: 112);
         DailyLoginClaimResult result = second.Claim("second");
-        Assert.IsFalse(result.Ok);
-        Assert.IsTrue(result.Terminal && result.ClaimedToday);
-        Assert.AreEqual(1, first.Dao.Rows.Count);
+        Assert.IsTrue(result.Ok && result.Committed && result.ClaimedToday);
+        Assert.AreEqual(1, result.Day);
+        Assert.AreEqual(112, result.CharacterId);
+        Assert.AreEqual(2, first.Dao.Rows.Count);
+        Assert.AreEqual(1, second.Player.Inventory.Inventory.Content.Count);
+        Assert.AreEqual(1, second.Session.Messages.Count);
+        Assert.IsFalse(first.Claim("first_again").Ok, "The same character remains locked for this UTC day.");
+        Assert.AreEqual(2, first.Claim("first_tomorrow", Today.AddDays(1)).Day);
+        CollectionAssert.AreEqual(new[] { 1, 2 }, DailyLoginAccountState.Parse(first.Dao.LoadDailyLoginState("account", 111).StateJson).Taken);
+        CollectionAssert.AreEqual(new[] { 1 }, DailyLoginAccountState.Parse(first.Dao.LoadDailyLoginState("account", 112).StateJson).Taken);
+    }
+
+    [TestMethod]
+    public void AnotherCharactersTokenCannotReplayItsGrantOrExposeItsCalendar()
+    {
+        using var first = new World();
+        Assert.IsTrue(first.Claim("owned_token").Committed);
+        using var second = new World(first.Dao, characterId: 112);
+        DailyLoginClaimResult refused = second.Claim("owned_token");
+        Assert.IsFalse(refused.Ok || refused.Committed);
+        Assert.IsTrue(refused.Terminal);
+        Assert.AreEqual(112, refused.CharacterId);
+        Assert.AreEqual(0, refused.Taken.Length);
         Assert.AreEqual(0, second.Player.Inventory.Inventory.Content.Count);
-        Assert.AreEqual(0, second.Session.Messages.Count);
+        Assert.AreEqual(1, first.Dao.Rows.Count);
+        StringAssert.Contains(refused.Message, "different character or account");
+        Assert.AreEqual(111, first.Claim("owned_token").CharacterId);
     }
 
     [TestMethod]
@@ -115,10 +137,10 @@ public sealed class DailyLoginRewardServiceTests
     }
 
     [TestMethod]
-    public void ReservedDayDoesNotSkipOrAdvanceTheAccountQueue()
+    public void ReservedDayDoesNotSkipOrAdvanceTheCharacterQueue()
     {
         using var world = new World();
-        DailyLoginAccountState legacy = new() { Taken = Enumerable.Range(1, 18).ToArray(), LastClaimUtc = "2026-10-28" };
+        DailyLoginAccountState legacy = new() { CharacterId = 111, AccountKey = "account", Taken = Enumerable.Range(1, 18).ToArray(), LastClaimUtc = "2026-10-28" };
         DailyLoginClaimResult result = world.Service.Claim(world.Player, "account", "reserved", legacy, Today);
         Assert.IsFalse(result.Ok || result.Committed);
         Assert.IsTrue(result.Terminal);
@@ -184,12 +206,23 @@ public sealed class DailyLoginRewardServiceTests
         using var world = new World();
         var legacy = new DailyLoginAccountState
         {
+            CharacterId = 111, AccountKey = "account",
             Taken = Enumerable.Range(1, 28).ToArray(), ClaimedCount = 28,
             LastClaimUtc = "2026-10-28", LastGrantedUtc = "2026-10-28", CycleCompletedOn = "2026-10-28"
         };
         Assert.IsTrue(world.Service.Claim(world.Player, "account", "newcycle", legacy, Today).Ok);
         Assert.AreEqual(28, DailyLoginAccountState.Parse(world.Dao.ImportJson!).Taken.Length);
         CollectionAssert.AreEqual(new[] { 1 }, DailyLoginAccountState.Parse(world.Dao.Current!.StateJson).Taken);
+    }
+
+    [TestMethod]
+    public void NonemptyUnattributedAccountStateCannotBeStampedOntoACharacterImport()
+    {
+        using var world = new World();
+        var unknown = new DailyLoginAccountState { Taken = [1], LastGrantedUtc = "2026-10-28", LastCharacterId = 111 };
+        Assert.ThrowsExactly<InvalidDataException>(() => world.Service.Claim(world.Player, "account", "unowned", unknown, Today));
+        Assert.IsNull(world.Dao.Current);
+        Assert.AreEqual(0, world.Dao.Rows.Count);
     }
 
     [TestMethod]
@@ -292,6 +325,7 @@ public sealed class DailyLoginRewardServiceTests
         public DailyLoginClaimSnapshotData? Current;
         public readonly List<PersistedItemData> Rows = [];
         readonly Dictionary<string, DailyLoginClaimSnapshotData> _claims = new();
+        readonly Dictionary<int, DailyLoginClaimSnapshotData> _states = new();
         public int Calls;
         public Exception? Failure;
         public bool UnknownAfterCommit;
@@ -299,19 +333,23 @@ public sealed class DailyLoginRewardServiceTests
         public string? ImportJson;
         public Action<DailyLoginClaimCommitData>? BeforeCommit;
         public DailyLoginClaimCommitStatus? ForcedStatus;
-        public DailyLoginClaimSnapshotData LoadDailyLoginState(string account) => Current!;
-        public DailyLoginClaimSnapshotData FindDailyLoginClaim(string account, string token)
-            => _claims.GetValueOrDefault(token)!;
+        public DailyLoginClaimSnapshotData LoadDailyLoginState(string account, int character)
+            => _states.TryGetValue(character, out var state) && state.AccountUsername == account ? state : null!;
+        public DailyLoginClaimSnapshotData FindDailyLoginClaim(string account, int character, string token)
+            => _claims.TryGetValue(token, out var claim) && claim.AccountUsername == account && claim.CharacterId == character ? claim : null!;
+        public bool HasDailyLoginHistory(string account) => _states.Values.Any(state => state.AccountUsername == account);
         public DailyLoginClaimSnapshotData ImportDailyLoginState(string account, int character, string state,
             DateTime? lastDate, long now)
         {
-            if (Current is not null) return Current;
+            if (LoadDailyLoginState(account, character) is { } existing) return existing;
             ImportJson = state;
-            return Current = new DailyLoginClaimSnapshotData
+            Current = new DailyLoginClaimSnapshotData
             {
-                AccountId = 1, AccountUsername = account, CharacterId = character, ClaimToken = "legacy-import:1",
+                AccountId = 1, AccountUsername = account, CharacterId = character, ClaimToken = "character-import:1:" + character,
                 StateJson = state, ResultJson = "{}", IsLegacyImport = true, ClaimDateUtc = lastDate
             };
+            _states[character] = Current;
+            return Current;
         }
         public DailyLoginClaimCommitResultData CommitDailyLoginClaim(DailyLoginClaimCommitData request)
         {
@@ -320,7 +358,9 @@ public sealed class DailyLoginRewardServiceTests
             if (Failure is not null) throw Failure;
             if (ForcedStatus.HasValue) return new() { Status = ForcedStatus.Value, Snapshot = Current! };
             if (_claims.TryGetValue(request.ClaimToken, out var previous))
-                return new() { Status = DailyLoginClaimCommitStatus.AlreadyApplied, Snapshot = previous };
+                return new() { Status = previous.AccountUsername == request.AccountUsername && previous.CharacterId == request.CharacterId
+                    ? DailyLoginClaimCommitStatus.AlreadyApplied : DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount, Snapshot = previous };
+            Current = LoadDailyLoginState(request.AccountUsername, request.CharacterId);
             if (Current!.ClaimDateUtc == request.ClaimDateUtc)
                 return new() { Status = DailyLoginClaimCommitStatus.AlreadyClaimedToday, Snapshot = Current };
             if (Current.ClaimToken != request.ExpectedStateToken)
@@ -333,6 +373,7 @@ public sealed class DailyLoginRewardServiceTests
             };
             Rows.AddRange(request.Inserts);
             _claims[request.ClaimToken] = Current;
+            _states[request.CharacterId] = Current;
             if (UnknownAfterCommit)
             {
                 if (DirectDaoException) throw new CharacterPersistenceCommitOutcomeUnknownException(new IOException("lost commit acknowledgement"));

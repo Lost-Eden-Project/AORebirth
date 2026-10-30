@@ -8,14 +8,15 @@ if (!mkdir($temporaryRoot, 0700)) throw new RuntimeException('Could not create i
 $roots = array($temporaryRoot . DIRECTORY_SEPARATOR . 'one', $temporaryRoot . DIRECTORY_SEPARATOR . 'two');
 foreach ($roots as $root) mkdir($root, 0700);
 $fixtureAccount = 'fixture-' . bin2hex(random_bytes(12));
-foreach ($roots as $root) file_put_contents($root . DIRECTORY_SEPARATOR . 'board-account-' . $fixtureAccount . '.json', json_encode(array('accountKey' => $fixtureAccount, 'taken' => array(), 'lastGrantedUtc' => '', 'lastClaimUtc' => '')));
+$fixtureCharacter = 2147483001;
+foreach ($roots as $root) file_put_contents($root . DIRECTORY_SEPARATOR . 'board-character-' . $fixtureCharacter . '.json', json_encode(array('characterId' => $fixtureCharacter, 'accountKey' => $fixtureAccount, 'taken' => array(), 'lastGrantedUtc' => '', 'lastClaimUtc' => '')));
 
 function check($condition, $message) {
     if (!$condition) throw new RuntimeException($message);
 }
 
 function invoke_endpoint($method, $query = array(), $body = array(), $selectedRoots = null, $headers = array()) {
-    global $endpoint, $roots, $fixtureAccount;
+    global $endpoint, $roots, $fixtureAccount, $fixtureCharacter;
     $payload = $method === 'POST' ? json_encode($body) : '';
     $claimsRoots = implode(PATH_SEPARATOR, $selectedRoots === null ? $roots : $selectedRoots);
     $reservation = stream_socket_server('tcp://127.0.0.1:0', $socketError, $socketMessage);
@@ -50,9 +51,9 @@ function invoke_endpoint($method, $query = array(), $body = array(), $selectedRo
         if ($method === 'POST') {
             // Prove the configured temporary root reached the real endpoint
             // before any POST can write. Never fall back to actual claim data.
-            $proof = @file_get_contents('http://' . $address . '/claim.php?accountKey=' . $fixtureAccount);
+            $proof = @file_get_contents('http://' . $address . '/claim.php?characterId=' . $fixtureCharacter);
             $proof = $proof === false ? null : json_decode($proof, true);
-            check(is_array($proof) && isset($proof['accountKey']) && $proof['accountKey'] === $fixtureAccount, 'HTTP fixture did not select the isolated claim roots; POST was not sent.');
+            check(is_array($proof) && isset($proof['accountKey'], $proof['characterId']) && $proof['accountKey'] === $fixtureAccount && $proof['characterId'] === $fixtureCharacter, 'HTTP fixture did not select the isolated claim roots; POST was not sent.');
         }
         $context = stream_context_create(array('http' => array(
             'method' => $method, 'header' => "Content-Type: application/json\r\nConnection: close\r\n" . implode("\r\n", $headers) . "\r\n",
@@ -145,115 +146,150 @@ test_case('POST only queues an immutable token request and never writes progress
     check(file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'request-ctest-first.json') === $original, 'Conflict discarded the original request.');
 });
 
-test_case('GET distinguishes an absent request, a durable pending request, and a committed server result', function () {
+test_case('Character-owned GET distinguishes missing, pending and committed receipts', function () {
     global $roots;
-    $missing = invoke_endpoint('GET', array('token' => 'ctest-absent'));
+    $missing = invoke_endpoint('GET', array('token' => 'ctest-absent', 'characterId' => 101));
     check($missing['pending'] === true && $missing['armed'] === false, 'Absent token was reported as armed.');
-    $pending = invoke_endpoint('GET', array('token' => 'ctest-first'));
+    $pending = invoke_endpoint('GET', array('token' => 'ctest-first', 'characterId' => 101));
     check($pending['pending'] === true && $pending['armed'] === true && $pending['ok'] === null, 'Queued request was reported as delivered.');
-    $receipt = array('ok' => true, 'committed' => true, 'claimToken' => 'ctest-first', 'accountKey' => 'first', 'taken' => array(1));
-    foreach ($roots as $root) save_fixture($root, 'result-ctest-first.json', $receipt);
-    check(invoke_endpoint('GET', array('token' => 'ctest-first')) === $receipt, 'GET did not return the authoritative committed result.');
+    $receipt = array('ok' => true, 'committed' => true, 'characterId' => 101, 'claimToken' => 'ctest-first', 'accountKey' => 'first', 'taken' => array(1));
+    foreach ($roots as $root) save_fixture($root, 'result-character-101-ctest-first.json', $receipt);
+    check(invoke_endpoint('GET', array('token' => 'ctest-first', 'characterId' => 101)) === $receipt, 'GET did not return the owned committed result.');
+    check(invoke_endpoint('GET', array('token' => 'ctest-first'))['ok'] === false, 'An anonymous result read was attributed to a character.');
 });
 
-test_case('A historical successful result resolves without inventing atomic commitment or rewriting its original', function () {
+test_case('Historical account receipts stay immutable even with a character ID until a scoped result exists', function () {
     global $roots;
-    $legacy = array('ok' => true, 'day' => 1, 'accountKey' => 'first', 'taken' => array(1));
+    $legacy = array('ok' => true, 'committed' => true, 'characterId' => 101, 'day' => 2, 'accountKey' => 'first', 'taken' => array(1, 2));
     foreach ($roots as $root) save_fixture($root, 'result-ctest-legacy.json', $legacy);
     $original = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'result-ctest-legacy.json');
-    $result = invoke_endpoint('GET', array('token' => 'ctest-legacy'));
-    check($result['legacyResolved'] === true && $result['terminal'] === true && $result['committed'] === false, 'Historical success was not distinguished from a new atomic grant.');
-    foreach ($roots as $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'result-ctest-legacy.json') === $original, 'Historical result was rewritten.');
+    $result = invoke_endpoint('GET', array('token' => 'ctest-legacy', 'characterId' => 101));
+    check($result['pending'] === true && $result['legacyVerificationRequired'] === true && !isset($result['taken']), 'Historical account progress became character progress.');
+    $owned = array('ok' => true, 'committed' => true, 'characterId' => 101, 'accountKey' => 'first', 'claimToken' => 'ctest-legacy', 'taken' => array(1, 2));
+    foreach ($roots as $root) save_fixture($root, 'result-character-101-ctest-legacy.json', $owned);
+    check(invoke_endpoint('GET', array('token' => 'ctest-legacy', 'characterId' => 101)) === $owned, 'Owned replay sidecar was not preferred.');
+    $sibling = invoke_endpoint('GET', array('token' => 'ctest-legacy', 'characterId' => 102));
+    check($sibling['pending'] === true && !isset($sibling['taken']), 'A sibling received another character sidecar.');
+    foreach ($roots as $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'result-ctest-legacy.json') === $original, 'Original historical receipt was rewritten.');
 });
 
-test_case('Existing progress remains byte-identical and board reads do not reset cycles or dates', function () {
+test_case('Account-only history and old account-copy character boards never supply Taken', function () {
     global $roots;
-    $progress = array('Taken' => array(1, 2), 'LastClaimUtc' => '2020-01-01', 'LastGrantedUtc' => '2020-01-01', 'CycleCompletedOn' => '2020-01-01');
-    foreach ($roots as $root) save_fixture($root, 'account-progress.json', $progress);
+    $history = array('Taken' => array(1, 2), 'LastGrantedUtc' => gmdate('Y-m-d'));
+    $oldBoard = array('accountKey' => 'progress', 'taken' => array(1, 2), 'lastGrantedUtc' => gmdate('Y-m-d'));
+    foreach ($roots as $root) { save_fixture($root, 'account-progress.json', $history); save_fixture($root, 'board-character-707.json', $oldBoard); }
     $original = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'account-progress.json');
-    $result = invoke_endpoint('GET', array('accountKey' => 'progress'));
-    check($result['taken'] === array(1, 2) && $result['lastGrantedUtc'] === '2020-01-01', 'Read-only historical progress was reset or altered.');
-    check(file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'account-progress.json') === $original, 'GET modified original progress.');
+    $old = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'board-character-707.json');
+    $result = invoke_endpoint('GET', array('characterId' => 707, 'accountKey' => 'progress'));
+    check($result['hasIdentity'] === true && $result['progressVerified'] === false && $result['taken'] === array(), 'Unowned account copy established character progress.');
+    check(invoke_endpoint('GET', array('accountKey' => 'progress'))['hasIdentity'] === false, 'An account hint established a character identity.');
+    foreach ($roots as $root) { check(file_get_contents($root . DIRECTORY_SEPARATOR . 'account-progress.json') === $original, 'Account history changed.'); check(file_get_contents($root . DIRECTORY_SEPARATOR . 'board-character-707.json') === $old, 'Old character projection changed.'); }
 });
 
-test_case('Completed cycles unlock tomorrow UTC through a read-only board projection', function () {
+test_case('Divergent unattributed account-copy boards do not block native character bootstrap', function () {
+    global $roots;
+    save_fixture($roots[0], 'board-character-708.json', array('accountKey' => 'old', 'taken' => array(1)));
+    save_fixture($roots[1], 'board-character-708.json', array('accountKey' => 'old', 'taken' => array(1, 2)));
+    $before = array_map(function ($root) { return file_get_contents($root . DIRECTORY_SEPARATOR . 'board-character-708.json'); }, $roots);
+    $result = invoke_endpoint('GET', array(), array(), null, array('X-Anarchy-CharacterID: 708'));
+    check($result['hasIdentity'] === true && $result['progressVerified'] === false && $result['taken'] === array(), 'Old account projections blocked native verification or supplied Taken.');
+    foreach ($roots as $index => $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'board-character-708.json') === $before[$index], 'An old projection was overwritten.');
+});
+
+test_case('Two characters on the same account retain separate daily boards and availability', function () {
+    global $roots;
+    $first = array('characterId' => 801, 'accountKey' => 'shared', 'taken' => array(1, 2), 'lastGrantedUtc' => gmdate('Y-m-d'), 'lastClaimUtc' => gmdate('Y-m-d'));
+    $second = array('characterId' => 802, 'accountKey' => 'shared', 'taken' => array(), 'lastGrantedUtc' => '', 'lastClaimUtc' => '');
+    foreach ($roots as $root) { save_fixture($root, 'board-character-801.json', $first); save_fixture($root, 'board-character-802.json', $second); }
+    $firstBoard = invoke_endpoint('GET', array('characterId' => 801));
+    $secondBoard = invoke_endpoint('GET', array('characterId' => 802));
+    check($firstBoard['claimedToday'] === true && $firstBoard['taken'] === array(1, 2), 'First character lost its legitimate progress.');
+    check($secondBoard['claimedToday'] === false && $secondBoard['taken'] === array() && $secondBoard['nextDay'] === 1, 'Sibling inherited the account daily lock.');
+    check(invoke_endpoint('POST', array(), array('characterId' => 802, 'accountKey' => 'shared', 'claimToken' => 'ctest-sibling'))['armed'] === true, 'Sibling could not queue independently.');
+    check(invoke_endpoint('GET', array('characterId' => 801))['taken'] === array(1, 2), 'Sibling queue changed the first character board.');
+});
+
+test_case('Cross-character requests, boards and result sidecars fail without rewriting evidence', function () {
+    global $roots;
+    foreach ($roots as $root) {
+        save_fixture($root, 'board-character-803.json', array('characterId' => 804, 'accountKey' => 'shared', 'taken' => array(1)));
+        save_fixture($root, 'result-character-803-ctest-wrong-sidecar.json', array('characterId' => 804, 'ok' => true, 'committed' => true, 'taken' => array(1)));
+    }
+    check(invoke_endpoint('GET', array('characterId' => 803))['ok'] === false, 'Mismatched board owner was accepted.');
+    check(invoke_endpoint('GET', array('characterId' => 803, 'token' => 'ctest-wrong-sidecar'))['ok'] === false, 'Mismatched sidecar owner was accepted.');
+    check(invoke_endpoint('GET', array('characterId' => 202, 'token' => 'ctest-first'))['ok'] === false, 'Another character receipt was accepted.');
+    check(invoke_endpoint('GET', array('characterId' => 202, 'token' => 'ctest-native-header'))['ok'] === false, 'Another character pending request was exposed.');
+});
+
+test_case('Scoped receipt token payload must match its filename and requested token', function () {
+    global $roots;
+    $collision = array('ok' => true, 'committed' => true, 'characterId' => 805, 'accountKey' => 'shared', 'claimToken' => 'character-805-ctest-collision', 'taken' => array(1, 2));
+    foreach ($roots as $root) save_fixture($root, 'result-character-805-ctest-collision.json', $collision);
+    $before = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'result-character-805-ctest-collision.json');
+    $result = invoke_endpoint('GET', array('characterId' => 805, 'token' => 'ctest-collision'));
+    check($result['ok'] === false, 'A raw legacy token-name collision was promoted to a new scoped receipt.');
+    foreach ($roots as $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'result-character-805-ctest-collision.json') === $before, 'Collision evidence was rewritten.');
+});
+
+test_case('Completed character cycles unlock tomorrow UTC through a read-only projection', function () {
     global $roots;
     $yesterday = gmdate('Y-m-d', time() - 86400);
-    $board = array('accountKey' => 'completed', 'taken' => range(1, 28), 'lastGrantedUtc' => $yesterday, 'lastClaimUtc' => $yesterday, 'cycleCompletedOn' => $yesterday, 'claimedToday' => true);
-    $legacy = array('Taken' => range(1, 28), 'LastClaimUtc' => $yesterday, 'LastGrantedUtc' => '', 'CycleCompletedOn' => '');
-    foreach ($roots as $root) {
-        save_fixture($root, 'board-account-completed.json', $board);
-        save_fixture($root, 'account-legacy-completed.json', $legacy);
-    }
-    $boardOriginal = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'board-account-completed.json');
-    $legacyOriginal = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'account-legacy-completed.json');
-    foreach (array('completed', 'legacy-completed') as $account) {
-        $result = invoke_endpoint('GET', array('accountKey' => $account));
-        check($result['taken'] === array() && $result['nextDay'] === 1 && $result['claimedCount'] === 0, 'A completed prior-day cycle did not unlock day one.');
-        check($result['lastGrantedUtc'] === '' && $result['lastClaimUtc'] === '' && $result['cycleCompletedOn'] === '' && $result['claimedToday'] === false, 'Completed-cycle projection retained a stale daily lock.');
-    }
-    foreach ($roots as $root) {
-        check(file_get_contents($root . DIRECTORY_SEPARATOR . 'board-account-completed.json') === $boardOriginal, 'Projection rewrote the published board.');
-        check(file_get_contents($root . DIRECTORY_SEPARATOR . 'account-legacy-completed.json') === $legacyOriginal, 'Projection rewrote historical progress.');
-    }
+    $board = array('characterId' => 810, 'accountKey' => 'completed', 'taken' => range(1, 28), 'lastGrantedUtc' => $yesterday, 'lastClaimUtc' => $yesterday, 'cycleCompletedOn' => $yesterday, 'claimedToday' => true);
+    foreach ($roots as $root) save_fixture($root, 'board-character-810.json', $board);
+    $original = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'board-character-810.json');
+    $result = invoke_endpoint('GET', array('characterId' => 810));
+    check($result['taken'] === array() && $result['nextDay'] === 1 && $result['claimedCount'] === 0, 'Completed cycle did not unlock day one.');
+    check($result['lastGrantedUtc'] === '' && $result['cycleCompletedOn'] === '' && $result['claimedToday'] === false, 'Completed cycle retained an old daily lock.');
+    foreach ($roots as $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'board-character-810.json') === $original, 'Projection rewrote durable progress.');
 });
 
-test_case('Incomplete cycles carry across months and daily availability derives from the UTC grant date', function () {
+test_case('Incomplete character cycles survive month changes and retain their own UTC daily lock', function () {
     global $roots;
-    $board = array('accountKey' => 'month-carry', 'month' => '2020-01', 'taken' => array(1, 2), 'lastGrantedUtc' => '2020-01-31', 'lastClaimUtc' => '2020-01-31', 'cycleCompletedOn' => '', 'claimedToday' => true);
-    $today = array('accountKey' => 'today', 'taken' => array(1), 'lastGrantedUtc' => gmdate('Y-m-d'), 'lastClaimUtc' => gmdate('Y-m-d'), 'claimedToday' => false);
-    foreach ($roots as $root) {
-        save_fixture($root, 'board-account-month-carry.json', $board);
-        save_fixture($root, 'board-account-today.json', $today);
-    }
-    $original = file_get_contents($roots[0] . DIRECTORY_SEPARATOR . 'board-account-month-carry.json');
-    $result = invoke_endpoint('GET', array('accountKey' => 'month-carry'));
-    check($result['taken'] === array(1, 2) && $result['nextDay'] === 3 && $result['claimedCount'] === 2, 'Month change discarded an incomplete cycle.');
-    check($result['claimedToday'] === false && $result['month'] === gmdate('Y-m'), 'Daily availability used stale board metadata.');
-    check(invoke_endpoint('GET', array('accountKey' => 'today'))['claimedToday'] === true, 'A current UTC grant did not retain its daily lock.');
-    foreach ($roots as $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'board-account-month-carry.json') === $original, 'Month projection rewrote account progress.');
+    $board = array('characterId' => 811, 'accountKey' => 'shared-month', 'month' => '2020-01', 'taken' => array(1, 2), 'lastGrantedUtc' => '2020-01-31', 'lastClaimUtc' => '2020-01-31');
+    $today = array('characterId' => 812, 'accountKey' => 'shared-month', 'taken' => array(1), 'lastGrantedUtc' => gmdate('Y-m-d'), 'lastClaimUtc' => gmdate('Y-m-d'));
+    foreach ($roots as $root) { save_fixture($root, 'board-character-811.json', $board); save_fixture($root, 'board-character-812.json', $today); }
+    $result = invoke_endpoint('GET', array('characterId' => 811));
+    check($result['taken'] === array(1, 2) && $result['nextDay'] === 3 && $result['month'] === gmdate('Y-m'), 'Month change discarded an incomplete cycle.');
+    check($result['claimedToday'] === false, 'A different character daily lock was inherited.');
+    check(invoke_endpoint('GET', array('characterId' => 812))['claimedToday'] === true, 'The matching UTC grant lost its daily lock.');
 });
 
-test_case('Divergent progress roots fail closed without rewriting either original', function () {
+test_case('Conflicting character projections fail closed while unrelated account history stays read-only', function () {
     global $roots;
-    save_fixture($roots[0], 'account-conflict.json', array('Taken' => array(1)));
-    save_fixture($roots[1], 'account-conflict.json', array('Taken' => array(1, 2)));
-    $before = array_map(function ($root) { return file_get_contents($root . DIRECTORY_SEPARATOR . 'account-conflict.json'); }, $roots);
-    $result = invoke_endpoint('GET', array('accountKey' => 'conflict'));
-    check($result['ok'] === false, 'Different progress roots were silently selected.');
-    foreach ($roots as $index => $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'account-conflict.json') === $before[$index], 'A conflict rewrote original progress.');
+    save_fixture($roots[0], 'board-character-813.json', array('characterId' => 813, 'accountKey' => 'conflict', 'taken' => array(1)));
+    save_fixture($roots[1], 'board-character-813.json', array('characterId' => 813, 'accountKey' => 'conflict', 'taken' => array(1, 2)));
+    $before = array_map(function ($root) { return file_get_contents($root . DIRECTORY_SEPARATOR . 'board-character-813.json'); }, $roots);
+    check(invoke_endpoint('GET', array('characterId' => 813))['ok'] === false, 'Different character mirrors were silently selected.');
+    foreach ($roots as $index => $root) check(file_get_contents($root . DIRECTORY_SEPARATOR . 'board-character-813.json') === $before[$index], 'A conflict overwrote progress.');
 });
 
-test_case('Explicit unknown character hints can queue, but anonymous POST cannot use last-active fallback', function () {
+test_case('Explicit characters can queue but anonymous or account-only requests cannot inherit progress', function () {
     global $roots;
     $board = invoke_endpoint('GET', array('characterId' => 303));
-    check($board['hasIdentity'] === true && $board['taken'] === array(), 'A routing hint was treated as existing progress.');
-    $missing = invoke_endpoint('POST', array(), array('claimToken' => 'ctest-unbound'));
-    check($missing['ok'] === false && $missing['armed'] === false, 'Anonymous request inherited the last-active account.');
-    foreach ($roots as $root) check(!is_file($root . DIRECTORY_SEPARATOR . 'request-ctest-unbound.json'), 'Anonymous queue file was created.');
+    check($board['hasIdentity'] === true && $board['taken'] === array(), 'A route hint was treated as existing progress.');
+    foreach (array(array('claimToken' => 'ctest-unbound'), array('claimToken' => 'ctest-account-only', 'accountKey' => 'shared')) as $request) {
+        $result = invoke_endpoint('POST', array(), $request);
+        check($result['ok'] === false && $result['armed'] === false, 'A character-less request was queued.');
+        foreach ($roots as $root) check(!is_file($root . DIRECTORY_SEPARATOR . 'request-' . $request['claimToken'] . '.json'), 'An ambiguous request was written.');
+    }
 });
 
-test_case('Published empty account boards remain empty and invalid tokens cannot traverse directories', function () {
+test_case('Owned empty boards stay empty and invalid tokens cannot traverse directories', function () {
     global $roots;
-    $board = array('accountKey' => 'empty', 'taken' => array(), 'lastGrantedUtc' => '', 'lastClaimUtc' => '', 'claimedCount' => 0);
+    $board = array('characterId' => 404, 'accountKey' => 'empty', 'taken' => array(), 'lastGrantedUtc' => '', 'lastClaimUtc' => '');
     foreach ($roots as $root) save_fixture($root, 'board-character-404.json', $board);
     $result = invoke_endpoint('GET', array('characterId' => 404, 'accountKey' => 'unrelated'));
-    check($result['accountKey'] === 'empty' && $result['taken'] === array() && $result['lastGrantedUtc'] === '', 'Empty or character-scoped board was replaced by a hint.');
-    check(invoke_endpoint('GET', array('token' => '../account-empty'))['ok'] === false, 'Traversal token was accepted.');
+    check($result['accountKey'] === 'empty' && $result['taken'] === array(), 'An explicit owner was replaced by a route hint.');
+    check(invoke_endpoint('GET', array('characterId' => 404, 'token' => '../account-empty'))['ok'] === false, 'Traversal token was accepted.');
 });
 
-test_case('Tokens match the native 64-character limit and account hints use portable filenames', function () {
+test_case('Native token length and portable account metadata remain unchanged for character requests', function () {
     global $roots;
     $tooLong = str_repeat('x', 65);
-    $invalid = invoke_endpoint('POST', array(), array('claimToken' => $tooLong, 'characterId' => 505));
-    check($invalid['ok'] === false && $invalid['armed'] === false, 'A token too long for the native ledger was queued.');
-    foreach ($roots as $root) check(!is_file($root . DIRECTORY_SEPARATOR . 'request-' . $tooLong . '.json'), 'An unreadable native request was published.');
-    $normalized = invoke_endpoint('POST', array(), array('claimToken' => 'ctest-portable', 'accountKey' => '  Route:Hint  '));
-    check($normalized['armed'] === true && $normalized['accountKey'] === 'route_hint', 'Account routing hint was not trimmed and normalized to the native filename rules.');
-    foreach ($roots as $root) {
-        $request = json_decode(file_get_contents($root . DIRECTORY_SEPARATOR . 'request-ctest-portable.json'), true);
-        check($request['AccountKey'] === 'route_hint', 'Queue account hint differs from the native safe key.');
-    }
+    check(invoke_endpoint('POST', array(), array('claimToken' => $tooLong, 'characterId' => 505))['ok'] === false, 'An overlong token was queued.');
+    $result = invoke_endpoint('POST', array(), array('claimToken' => 'ctest-portable', 'characterId' => 505, 'accountKey' => '  Route:Hint  '));
+    check($result['armed'] === true && $result['accountKey'] === 'route_hint', 'Account metadata normalization changed.');
+    foreach ($roots as $root) check(!is_file($root . DIRECTORY_SEPARATOR . 'request-' . $tooLong . '.json'), 'An unreadable request was published.');
 });
 
 // All files here were created by this test under its exclusive random directory.

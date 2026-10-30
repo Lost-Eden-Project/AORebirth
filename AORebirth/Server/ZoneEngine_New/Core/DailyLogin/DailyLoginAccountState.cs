@@ -6,10 +6,12 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-/// <summary>The existing account board shape, preserved when importing file-backed progress.</summary>
+/// <summary>The existing calendar shape, now owned by one authenticated character.</summary>
 public sealed class DailyLoginAccountState
 {
     public const int TotalDays = 28;
+    public int CharacterId { get; set; }
+    public string AccountKey { get; set; } = string.Empty;
     public string Month { get; set; } = string.Empty;
     public int ClaimedCount { get; set; }
     public string LastClaimUtc { get; set; } = string.Empty;
@@ -28,7 +30,7 @@ public sealed class DailyLoginAccountState
     public static DailyLoginAccountState Parse(string json)
         => JsonSerializer.Deserialize<DailyLoginAccountState>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-            ?? throw new InvalidDataException("Daily Login account state is empty.");
+            ?? throw new InvalidDataException("Daily Login character state is empty.");
 
     public string ToJson() => JsonSerializer.Serialize(this);
 
@@ -60,6 +62,8 @@ public sealed class DailyLoginAccountState
         }
         return new DailyLoginAccountState
         {
+            CharacterId = CharacterId,
+            AccountKey = AccountKey,
             Month = Utc(utcNow).ToString("yyyy-MM", CultureInfo.InvariantCulture),
             Taken = taken,
             ClaimedCount = taken.Length,
@@ -82,6 +86,7 @@ public sealed class DailyLoginAccountState
         next.ClaimedCount = next.Taken.Length;
         next.LastClaimUtc = next.LastGrantedUtc = Date(utcNow);
         next.CycleCompletedOn = next.Taken.Length == TotalDays ? Date(utcNow) : string.Empty;
+        next.CharacterId = characterId;
         next.LastCharacterId = characterId;
         return next;
     }

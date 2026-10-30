@@ -14,6 +14,7 @@ public sealed class DailyLoginClaimResult
     [JsonPropertyName("message")] public string Message { get; set; } = string.Empty;
     [JsonPropertyName("claimToken")] public string ClaimToken { get; set; } = string.Empty;
     [JsonPropertyName("accountKey")] public string AccountKey { get; set; } = string.Empty;
+    [JsonPropertyName("characterId")] public int CharacterId { get; set; }
     [JsonPropertyName("hasIdentity")] public bool HasIdentity { get; set; }
     [JsonPropertyName("day")] public int Day { get; set; }
     [JsonPropertyName("itemId")] public int ItemId { get; set; }
@@ -33,11 +34,12 @@ public sealed class DailyLoginClaimResult
         => JsonSerializer.Deserialize<DailyLoginClaimResult>(json)
             ?? throw new InvalidDataException("Daily Login claim receipt is empty.");
 
-    public static DailyLoginClaimResult ForState(string account, string token, DailyLoginAccountState state,
+    public static DailyLoginClaimResult ForState(string account, int characterId, string token, DailyLoginAccountState state,
         DateTime utcNow, string message = "")
         => new()
         {
-            AccountKey = account, ClaimToken = token, HasIdentity = !string.IsNullOrWhiteSpace(account),
+            AccountKey = account, CharacterId = characterId, ClaimToken = token,
+            HasIdentity = characterId > 0 && !string.IsNullOrWhiteSpace(account),
             Taken = state.Taken, ClaimedCount = state.ClaimedCount, NextDay = state.NextDay,
             LastClaimUtc = state.LastClaimUtc, LastGrantedUtc = state.LastGrantedUtc,
             CycleCompletedOn = state.CycleCompletedOn, ClaimedToday = state.HasClaimedOn(utcNow), Message = message

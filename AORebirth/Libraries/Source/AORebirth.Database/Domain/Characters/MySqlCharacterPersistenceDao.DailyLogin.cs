@@ -11,21 +11,37 @@ namespace AORebirth.Database.Domain.Characters
     {
         const string DailyLoginColumns = "d.AccountId,l.Username,d.ClaimToken,d.CharacterId,d.ClaimDateUtc,d.StateJson,d.ResultJson,d.IsLegacyImport";
 
-        public DailyLoginClaimSnapshotData LoadDailyLoginState(string accountUsername)
+        public DailyLoginClaimSnapshotData LoadDailyLoginState(string accountUsername, int characterId)
         {
             ValidateDailyLoginAccount(accountUsername);
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
             return Read(c => ReadDailyLoginRow(c, callerTransaction,
                 "SELECT " + DailyLoginColumns + " FROM dailyloginclaims d JOIN login l ON l.Id=d.AccountId "
-                + "WHERE l.Username=@Account ORDER BY d.Id DESC LIMIT 1", "@Account", accountUsername));
+                + "WHERE l.Username=@Account AND d.CharacterId=@Character ORDER BY d.Id DESC LIMIT 1",
+                "@Account", accountUsername, "@Character", characterId));
         }
 
-        public DailyLoginClaimSnapshotData FindDailyLoginClaim(string accountUsername, string claimToken)
+        public DailyLoginClaimSnapshotData FindDailyLoginClaim(string accountUsername, int characterId, string claimToken)
         {
             ValidateDailyLoginAccount(accountUsername);
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
             ValidateDailyLoginToken(claimToken);
             return Read(c => ReadDailyLoginRow(c, callerTransaction,
                 "SELECT " + DailyLoginColumns + " FROM dailyloginclaims d JOIN login l ON l.Id=d.AccountId "
-                + "WHERE l.Username=@Account AND d.ClaimToken=@Token LIMIT 1", "@Account", accountUsername, "@Token", claimToken));
+                + "WHERE l.Username=@Account AND d.CharacterId=@Character AND d.ClaimToken=@Token LIMIT 1",
+                "@Account", accountUsername, "@Character", characterId, "@Token", claimToken));
+        }
+
+        public bool HasDailyLoginHistory(string accountUsername)
+        {
+            ValidateDailyLoginAccount(accountUsername);
+            return Read(c =>
+            {
+                using (var command = Command(c, callerTransaction,
+                    "SELECT EXISTS(SELECT 1 FROM dailyloginclaims d JOIN login l ON l.Id=d.AccountId WHERE l.Username=@Account)",
+                    "@Account", accountUsername))
+                    return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) != 0;
+            });
         }
 
         public DailyLoginClaimSnapshotData ImportDailyLoginState(string accountUsername, int characterId,
@@ -41,13 +57,14 @@ namespace AORebirth.Database.Domain.Characters
             return Transaction((c, t) =>
             {
                 var account = LockDailyLoginAccount(c, t, accountUsername, characterId);
-                var current = ReadLatestDailyLogin(c, t, account.AccountId);
+                var current = ReadLatestDailyLogin(c, t, account.AccountId, characterId);
                 // The original files seed a new ledger once. A stale file can never replace durable progress.
                 if (current != null) return current;
                 var imported = new DailyLoginClaimSnapshotData
                 {
                     AccountId = account.AccountId, AccountUsername = account.AccountUsername,
-                    ClaimToken = "legacy-import:" + account.AccountId.ToString(CultureInfo.InvariantCulture),
+                    ClaimToken = "character-import:" + account.AccountId.ToString(CultureInfo.InvariantCulture)
+                        + ":" + characterId.ToString(CultureInfo.InvariantCulture),
                     CharacterId = characterId, ClaimDateUtc = lastGrantedDateUtc,
                     StateJson = stateJson, ResultJson = "{}", IsLegacyImport = true
                 };
@@ -67,11 +84,11 @@ namespace AORebirth.Database.Domain.Characters
                     "SELECT " + DailyLoginColumns + " FROM dailyloginclaims d JOIN login l ON l.Id=d.AccountId "
                     + "WHERE d.ClaimToken=@Token LIMIT 1", "@Token", request.ClaimToken);
                 if (prior != null)
-                    return DailyLoginResult(prior.AccountId == account.AccountId
+                    return DailyLoginResult(prior.AccountId == account.AccountId && prior.CharacterId == request.CharacterId
                         ? DailyLoginClaimCommitStatus.AlreadyApplied : DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount,
-                        prior.AccountId == account.AccountId ? prior : null);
+                        prior.AccountId == account.AccountId && prior.CharacterId == request.CharacterId ? prior : null);
 
-                var current = ReadLatestDailyLogin(c, t, account.AccountId);
+                var current = ReadLatestDailyLogin(c, t, account.AccountId, request.CharacterId);
                 if (current != null && current.ClaimDateUtc.HasValue && current.ClaimDateUtc.Value.Date >= request.ClaimDateUtc.Date)
                     return DailyLoginResult(DailyLoginClaimCommitStatus.AlreadyClaimedToday, current);
                 if (!string.Equals(current == null ? null : current.ClaimToken, request.ExpectedStateToken, StringComparison.Ordinal))
@@ -110,10 +127,11 @@ namespace AORebirth.Database.Domain.Characters
             return account;
         }
 
-        static DailyLoginClaimSnapshotData ReadLatestDailyLogin(IDbConnection c, IDbTransaction t, int accountId)
+        static DailyLoginClaimSnapshotData ReadLatestDailyLogin(IDbConnection c, IDbTransaction t, int accountId, int characterId)
             => ReadDailyLoginRow(c, t,
                 "SELECT " + DailyLoginColumns + " FROM dailyloginclaims d JOIN login l ON l.Id=d.AccountId "
-                + "WHERE d.AccountId=@Account ORDER BY d.Id DESC LIMIT 1 FOR UPDATE", "@Account", accountId);
+                + "WHERE d.AccountId=@Account AND d.CharacterId=@Character ORDER BY d.Id DESC LIMIT 1 FOR UPDATE",
+                "@Account", accountId, "@Character", characterId);
 
         static DailyLoginClaimSnapshotData ReadDailyLoginRow(IDbConnection c, IDbTransaction t, string sql, params object[] parameters)
         {

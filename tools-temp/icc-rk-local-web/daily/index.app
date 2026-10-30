@@ -158,7 +158,7 @@
   <script type="text/javascript">
   (function () {
     // Cell naming: day{N}-{itemId}-{amount}.png
-    // Production: account-wide sequential queue, one claim per UTC day.
+    // Production: each character has a sequential queue and one claim per UTC day.
     // freeTestMode from rewards.json (must stay false for live).
     var TOTAL = 28;
     var COLS = 7;
@@ -311,13 +311,13 @@
       if (idn.name) return "n" + String(idn.name).toLowerCase();
       return "";
     }
-    function accountStoragePrefix() {
+    function characterStoragePrefix() {
       var m = utcMonth();
-      var ak = knownAccountKey || "pending";
-      return "aorebirth.daily.acct.v1." + m + "." + ak;
+      var idn = resolveIdentity();
+      return idn.id ? "aorebirth.daily.char.v2." + m + ".c" + String(idn.id) : "";
     }
     function storageKeys() {
-      var p = accountStoragePrefix();
+      var p = characterStoragePrefix();
       return {
         count: p + ".claimedCount",
         last: p + ".lastClaimUtc",
@@ -397,7 +397,7 @@
     }
     function saveLocal() {
       try {
-        if (!window.localStorage) return;
+        if (!window.localStorage || !resolveIdentity().id) return;
         var k = storageKeys();
         if (knownAccountKey && k.account) {
           localStorage.setItem(k.account, knownAccountKey);
@@ -520,7 +520,7 @@
         body = "Reward not configured yet.";
       }
       if (isTaken(day)) {
-        body += " Already claimed on this account.";
+        body += " Already claimed on this character.";
       } else if (day === nextDay() && !claimedToday()) {
         body += " Available to claim today.";
       } else if (day === nextDay() && claimedToday()) {
@@ -570,7 +570,7 @@
         body = "Reward not configured yet.";
       }
       if (isTaken(day)) {
-        hint = "Already claimed on this account.";
+        hint = "Already claimed on this character.";
       } else if (day === nextDay() && !claimedToday()) {
         hint = "Press CLAIM REWARD below.";
       } else if (day === nextDay() && claimedToday()) {
@@ -712,22 +712,22 @@
         if (claimMessage) {
           status.innerHTML = claimMessage;
         } else if (!serverStateLoaded) {
-          status.innerHTML = "Waiting for the game server to identify this account.";
+          status.innerHTML = "Waiting for the game server to identify this character.";
         } else if (claimedToday()) {
-          status.innerHTML = "Daily reward already claimed today on this account. Come back tomorrow.";
+          status.innerHTML = "Daily reward already claimed today on this character. Come back tomorrow.";
         } else if (next < 1) {
           status.innerHTML = "All 28 rewards claimed. Board resets tomorrow.";
         } else if (claimedCount <= 0) {
           status.innerHTML = "Next reward: day " + next + ".";
         } else {
           status.innerHTML = claimedCount + " reward" + (claimedCount === 1 ? "" : "s")
-            + " claimed on this account. Next: day " + next + ".";
+            + " claimed on this character. Next: day " + next + ".";
         }
       }
     }
 
     function applyClaimResult(j) {
-      if (!j || j.ok !== true || j.committed !== true) return false;
+      if (!j || j.ok !== true || j.committed !== true || !sameCharacter(j)) return false;
       applyServerState(j);
       return true;
     }
@@ -744,6 +744,13 @@
 
     function nativeClaimUnavailable() {
       return "Daily Rewards claim control is unavailable. Update the AORebirth client patch, then retry.";
+    }
+
+    function sameCharacter(j) {
+      var idn = resolveIdentity();
+      var owner = j && String(j.characterId || "");
+      return !!idn.id && /^[1-9][0-9]{0,9}$/.test(owner) && Number(owner) <= 2147483647
+        && owner === String(idn.id);
     }
 
     function queueClaim(token) {
@@ -784,29 +791,44 @@
       }
       try {
         var x = new XMLHttpRequest();
-        x.open("GET", "claim.php?token=" + encodeURIComponent(token) + "&t=" + new Date().getTime(), true);
+        var route = resolveIdentity();
+        x.open("GET", "claim.php?token=" + encodeURIComponent(token)
+          + "&characterId=" + encodeURIComponent(nativeCharacterHint ? "" : (route.id || ""))
+          + "&t=" + new Date().getTime(), true);
         x.onreadystatechange = function () {
           if (x.readyState !== 4) return;
           if (token !== pendingClaimToken) return;
           try {
             var j = eval("(" + x.responseText + ")");
             if (j && j.ok === true && j.committed === true) {
+              if (!sameCharacter(j)) {
+                done("This receipt is not verified for this character. The saved request is unchanged.", false, false);
+                return;
+              }
               applyClaimResult(j);
               done(j.message || "Reward delivered.", true, true);
               return;
             }
             if (j && j.ok === true && (j.legacyResolved === true || (typeof j.committed === "undefined" && j.day > 0))) {
               // A pre-repair success is resolved history, not a new atomic grant.
-              // Only the published account board can restore its Taken state.
-              done("A prior claim is already recorded. Refreshing the saved account board.", false, true);
+              // An old account receipt without an explicit owner is not this character's progress.
+              if (!sameCharacter(j)) {
+                done("The original receipt is retained for native character verification.", false, false);
+                return;
+              }
+              done("A prior claim is already recorded. Refreshing this character's board.", false, true);
               return;
             }
             if (j && j.ok === false) {
-              done(j.message || "The game server could not grant this reward.", false, j.terminal === true);
+              done(j.message || "The game server could not grant this reward.", false, j.terminal === true && sameCharacter(j));
               return;
             }
             if (j && j.pending === true && rearm === true) {
               rearm = false;
+              if (!sameCharacter(j)) {
+                done("This pending request is not verified for this character.", false, false);
+                return;
+              }
               if (!nativeClaimAvailable()) {
                 done(nativeClaimUnavailable(), false, false);
                 return;
@@ -818,7 +840,7 @@
                   done("The saved request could not be queued. Retry to check the same claim.", false, false);
                   return;
                 }
-                if (!acknowledgement || acknowledgement.ok !== true || acknowledgement.armed !== true || (acknowledgement.claimToken && acknowledgement.claimToken !== token)) {
+                if (!acknowledgement || acknowledgement.ok !== true || acknowledgement.armed !== true || !sameCharacter(acknowledgement) || (acknowledgement.claimToken && acknowledgement.claimToken !== token)) {
                   done((acknowledgement && acknowledgement.message) || "The saved request could not be queued. Retry to check it again.", false, false);
                   return;
                 }
@@ -847,12 +869,12 @@
     function doClaim() {
       if (claiming) return false;
       if (!serverStateLoaded) {
-        claimMessage = "Wait for the game server to identify this account before claiming.";
+        claimMessage = "Wait for the game server to identify this character before claiming.";
         paint();
         return false;
       }
       if (claimedToday()) {
-        if (status) status.innerHTML = "Daily reward already claimed today on this account.";
+        if (status) status.innerHTML = "Daily reward already claimed today on this character.";
         paint();
         return false;
       }
@@ -897,7 +919,7 @@
             done(j.message || "Claim failed.", false, j.terminal === true);
             return false;
           }
-          if (!j || j.ok !== true || j.armed !== true) {
+          if (!j || j.ok !== true || j.armed !== true || !sameCharacter(j)) {
             done("The claim was not acknowledged. The request is saved for retry.", false, false);
             return false;
           }
@@ -957,7 +979,7 @@
       if (!j) return;
       if (j.ok !== true) {
         serverStateLoaded = false;
-        claimMessage = j.message || "The account board could not be verified. The saved request is unchanged.";
+        claimMessage = j.message || "The character board could not be verified. The saved request is unchanged.";
         return;
       }
       if (j.nativeCharacterHint === true) {
@@ -971,9 +993,13 @@
         nativeCharacterId = route;
         refreshIdentity();
       }
+      if (j.hasIdentity !== false && !sameCharacter(j)) {
+        serverStateLoaded = false;
+        claimMessage = "This board is not verified for this character. The saved request is unchanged.";
+        return;
+      }
       if (typeof j.freeTestMode === "boolean") freeTestMode = j.freeTestMode;
       if (j.accountKey) setKnownAccountKey(j.accountKey);
-      else if (j.boardAccount) setKnownAccountKey(j.boardAccount);
       else knownAccountKey = "";
       serverStateLoaded = j.hasIdentity === true || (j.hasIdentity !== false && !!knownAccountKey);
       if (!serverStateLoaded) {
@@ -1059,7 +1085,7 @@
 
     function onClaimClick() {
       if (claimedToday()) {
-        if (status) status.innerHTML = "Daily reward already claimed today on this account.";
+        if (status) status.innerHTML = "Daily reward already claimed today on this character.";
         paint();
         return false;
       }

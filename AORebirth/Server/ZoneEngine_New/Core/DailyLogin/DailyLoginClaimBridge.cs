@@ -24,14 +24,17 @@ public sealed class DailyLoginClaimBridge(DailyLoginRewardService rewards, IDail
             var pending = files.Pending(account, player.Identity.Instance);
             if (pending.Count == 0)
             {
-                Feedback("No Daily Login request is waiting for this character or account. Reopen Daily Login and try again.");
+                Feedback("No Daily Login request is waiting for this character. Retry Daily Login from this character.");
                 return;
             }
             foreach (DailyLoginPendingClaim request in pending)
             {
-                DailyLoginClaimSnapshotData? before = dao.LoadDailyLoginState(account);
+                if (request.RequiresLegacyReplay && dao.FindDailyLoginClaim(account, player.Identity.Instance, request.ClaimToken) is null)
+                    throw new InvalidDataException("A historical Daily Login receipt has no verified ledger owner for this character. Its original request and receipt were retained.");
+                DailyLoginClaimSnapshotData? before = dao.LoadDailyLoginState(account, player.Identity.Instance);
                 DailyLoginAccountState imported = before is null
-                    ? files.ReadLegacyProgress(account, utcNow) : DailyLoginAccountState.Parse(before.StateJson);
+                    ? files.ReadLegacyProgress(account, player.Identity.Instance, utcNow, dao.HasDailyLoginHistory(account))
+                    : DailyLoginAccountState.Parse(before.StateJson);
                 DailyLoginClaimResult result = rewards.Claim(player, account, request.ClaimToken, imported, utcNow);
                 // Receipts are durable projections only. A file failure is recovered by replaying the DB token.
                 // Publish the durable board before exposing a committed result to a browser that immediately syncs it.
@@ -58,10 +61,19 @@ public sealed class DailyLoginClaimBridge(DailyLoginRewardService rewards, IDail
 
     public bool PublishCurrentBoard(string account, int characterId, DateTime utcNow)
     {
-        DailyLoginClaimSnapshotData? committed = dao.LoadDailyLoginState(account);
+        DailyLoginClaimSnapshotData? committed = dao.LoadDailyLoginState(account, characterId);
         if (committed is null)
             return false;
-        files.PublishBoard(account, characterId, DailyLoginAccountState.Parse(committed.StateJson), utcNow);
+        if (committed.CharacterId != characterId || !string.Equals(committed.AccountUsername, account, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Daily Login board ownership does not match this character.");
+        DailyLoginAccountState state = DailyLoginAccountState.Parse(committed.StateJson);
+        if (state.CharacterId > 0 && state.CharacterId != characterId ||
+            !string.IsNullOrWhiteSpace(state.AccountKey) && !string.Equals(state.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Daily Login calendar ownership conflicts with its verified ledger owner.");
+        // The index migration qualifies old sole-owner ledger state; a filename alone never does.
+        state.CharacterId = committed.CharacterId;
+        state.AccountKey = account;
+        files.PublishBoard(account, characterId, state, utcNow);
         return true;
     }
 }

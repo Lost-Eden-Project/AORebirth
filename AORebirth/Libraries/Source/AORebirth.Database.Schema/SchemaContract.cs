@@ -34,7 +34,8 @@ public static class SchemaContract
         "20261013_character_research.sql",
         "20261016_character_nano_line_locks.sql",
         "20261025_character_pet_names.sql",
-        "20261029_daily_login_claims.sql"
+        "20261029_daily_login_claims.sql",
+        "20261030_daily_login_character_scope.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -77,7 +78,7 @@ public static class SchemaContract
         ("characterresearch", "CharacterId,ResearchId"),
         ("characternanolinelocks", "CharacterId,NanoStrain"),
         ("characterpetnames", "CharacterId,PetType"),
-        ("dailyloginclaims", "Id"), ("dailyloginclaims", "ClaimToken"), ("dailyloginclaims", "AccountId,ClaimDateUtc")
+        ("dailyloginclaims", "Id"), ("dailyloginclaims", "ClaimToken"), ("dailyloginclaims", "CharacterId,ClaimDateUtc")
     });
 
     private static IReadOnlyList<ColumnRequirement> BuildColumns()

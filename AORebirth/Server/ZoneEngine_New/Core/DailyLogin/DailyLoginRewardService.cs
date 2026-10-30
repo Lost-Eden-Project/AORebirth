@@ -3,6 +3,7 @@ namespace ZoneEngine_New.Core.DailyLogin;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using AORebirth.Enums;
 using AORebirth.Interfaces.Persistence.Characters;
 using SmokeLounge.AOtomation.Messaging.GameData;
@@ -19,28 +20,39 @@ public sealed class DailyLoginRewardService(
     {
         ArgumentNullException.ThrowIfNull(player);
         string account = (authenticatedAccount ?? string.Empty).Trim().ToLowerInvariant();
-        if (string.IsNullOrEmpty(account) || !IsValidToken(token))
+        int characterId = player.Identity.Instance;
+        if (string.IsNullOrEmpty(account) || characterId <= 0 || !IsValidToken(token))
             return new DailyLoginClaimResult { Message = "Daily Login claim authentication is invalid.", Terminal = true };
         utcNow = DailyLoginAccountState.Utc(utcNow);
         lock (player.PersistenceGate)
         {
             if (player.IsPersistenceQuarantined || !player.Inventory.IsHydrated)
                 return Failure("Character inventory is not ready.", new DailyLoginAccountState());
-            DailyLoginClaimSnapshotData? prior = dao.FindDailyLoginClaim(account, token);
+            DailyLoginClaimSnapshotData? prior = dao.FindDailyLoginClaim(account, characterId, token);
             if (prior is not null)
-                return Replay(prior);
+                return Replay(prior, account, characterId);
 
-            DailyLoginClaimSnapshotData? snapshot = dao.LoadDailyLoginState(account);
+            DailyLoginClaimSnapshotData? snapshot = dao.LoadDailyLoginState(account, characterId);
             if (snapshot is null)
             {
                 // Validate without changing the retained import baseline, including a completed old cycle.
-                importedState.Normalize(utcNow);
-                snapshot = dao.ImportDailyLoginState(account, player.Identity.Instance,
-                    importedState.ToJson(), importedState.LastGrantedDateUtc, utcNow.Ticks);
+                DailyLoginAccountState import = DailyLoginAccountState.Parse(importedState.ToJson());
+                bool hasImportedProgress = (import.Taken?.Length ?? 0) > 0 || import.ClaimedCount > 0 ||
+                    !string.IsNullOrEmpty(import.LastGrantedUtc) || !string.IsNullOrEmpty(import.LastClaimUtc) ||
+                    !string.IsNullOrEmpty(import.CycleCompletedOn);
+                if (hasImportedProgress && (import.CharacterId != characterId ||
+                    !string.Equals(import.AccountKey, account, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidDataException("Daily Login progress cannot be imported without a verified character owner.");
+                BindOwner(import, account, characterId);
+                import.Normalize(utcNow);
+                snapshot = dao.ImportDailyLoginState(account, characterId,
+                    import.ToJson(), import.LastGrantedDateUtc, utcNow.Ticks);
             }
+            RequireOwner(snapshot, account, characterId);
             DailyLoginAccountState state = DailyLoginAccountState.Parse(snapshot.StateJson).Normalize(utcNow);
+            BindOwner(state, account, characterId);
             if (state.HasClaimedOn(utcNow))
-                return Failure("You already claimed today's daily reward on this account.", state, true);
+                return Failure("You already claimed today's daily reward on this character.", state, true);
             int day = state.NextDay;
             if (day == 0)
                 return Failure("All 28 daily rewards are claimed. Board resets tomorrow.", state, true);
@@ -65,7 +77,7 @@ public sealed class DailyLoginRewardService(
                 return Failure("There is not enough inventory space for the complete daily reward.", state);
 
             DailyLoginAccountState next = state.RecordGrant(day, player.Identity.Instance, utcNow);
-            DailyLoginClaimResult success = DailyLoginClaimResult.ForState(account, token, next, utcNow,
+            DailyLoginClaimResult success = DailyLoginClaimResult.ForState(account, characterId, token, next, utcNow,
                 "You received " + selection.ItemName + " x" + selection.Amount + ".");
             success.Ok = success.Committed = true;
             success.Terminal = true;
@@ -90,11 +102,18 @@ public sealed class DailyLoginRewardService(
                     return success;
                 }
                 if (result.Status == DailyLoginClaimCommitStatus.AlreadyApplied && result.Snapshot is not null)
-                    return Replay(result.Snapshot);
-                DailyLoginAccountState current = result.Snapshot is null ? state
-                    : DailyLoginAccountState.Parse(result.Snapshot.StateJson).Normalize(utcNow);
+                    return Replay(result.Snapshot, account, characterId);
+                DailyLoginAccountState current = state;
+                if (result.Snapshot is not null && result.Snapshot.CharacterId == characterId &&
+                    string.Equals(result.Snapshot.AccountUsername, account, StringComparison.OrdinalIgnoreCase))
+                {
+                    current = DailyLoginAccountState.Parse(result.Snapshot.StateJson).Normalize(utcNow);
+                    BindOwner(current, account, characterId);
+                }
                 return Failure(result.Status == DailyLoginClaimCommitStatus.AlreadyClaimedToday
-                    ? "You already claimed today's daily reward on this account."
+                    ? "You already claimed today's daily reward on this character."
+                    : result.Status == DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount
+                    ? "This Daily Login claim token belongs to a different character or account."
                     : "Daily reward state changed. Reopen daily rewards and try again.", current,
                     result.Status is DailyLoginClaimCommitStatus.AlreadyClaimedToday or DailyLoginClaimCommitStatus.TokenOwnedByAnotherAccount);
             }
@@ -113,7 +132,7 @@ public sealed class DailyLoginRewardService(
 
         DailyLoginClaimResult Failure(string message, DailyLoginAccountState state, bool terminal = false)
         {
-            DailyLoginClaimResult result = DailyLoginClaimResult.ForState(account, token, state, utcNow, message);
+            DailyLoginClaimResult result = DailyLoginClaimResult.ForState(account, characterId, token, state, utcNow, message);
             result.Terminal = terminal;
             return result;
         }
@@ -122,9 +141,32 @@ public sealed class DailyLoginRewardService(
     public static bool IsValidToken(string? token)
         => token is { Length: > 0 and <= 64 } && token.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-');
 
-    static DailyLoginClaimResult Replay(DailyLoginClaimSnapshotData snapshot)
+    static void RequireOwner(DailyLoginClaimSnapshotData snapshot, string account, int characterId)
     {
+        if (snapshot.CharacterId != characterId || !string.Equals(snapshot.AccountUsername, account, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Daily Login state belongs to a different character or account.");
+    }
+
+    static void BindOwner(DailyLoginAccountState state, string account, int characterId)
+    {
+        if (state.CharacterId > 0 && state.CharacterId != characterId ||
+            !string.IsNullOrWhiteSpace(state.AccountKey) && !string.Equals(state.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Daily Login progress belongs to a different character or account.");
+        state.CharacterId = characterId;
+        state.AccountKey = account;
+    }
+
+    static DailyLoginClaimResult Replay(DailyLoginClaimSnapshotData snapshot, string account, int characterId)
+    {
+        RequireOwner(snapshot, account, characterId);
         DailyLoginClaimResult result = DailyLoginClaimResult.Parse(snapshot.ResultJson);
+        if (result.CharacterId > 0 && result.CharacterId != characterId ||
+            !string.IsNullOrWhiteSpace(result.AccountKey) && !string.Equals(result.AccountKey, account, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Daily Login receipt belongs to a different character or account.");
+        // A validated ledger owner can qualify an old receipt without changing its retained file.
+        result.CharacterId = characterId;
+        result.AccountKey = account;
+        result.HasIdentity = true;
         result.Replayed = true;
         return result;
     }

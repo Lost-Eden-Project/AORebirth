@@ -38,7 +38,7 @@ function daily_claim_roots() {
     return $roots;
 }
 
-function daily_read_consistent($relativeName) {
+function daily_read_consistent($relativeName, $characterId = 0, $ignoreUnattributed = false) {
     $found = null;
     foreach (daily_claim_roots() as $root) {
         $path = $root . DIRECTORY_SEPARATOR . $relativeName;
@@ -49,6 +49,13 @@ function daily_read_consistent($relativeName) {
         $value = $raw === false ? null : json_decode($raw, true);
         if (!is_array($value)) {
             throw new RuntimeException('Daily reward state could not be read. Existing files were preserved.');
+        }
+        if ($characterId > 0) {
+            $owner = daily_result_character($value);
+            if ($owner === 0 && $ignoreUnattributed) continue;
+            if ($owner !== $characterId) {
+                throw new RuntimeException('Daily reward projection belongs to a different character. Existing files were preserved.');
+            }
         }
         if ($found !== null && $found != $value) {
             throw new RuntimeException('Daily reward state differs between claim roots. Existing files were preserved.');
@@ -68,6 +75,29 @@ function daily_token($value) {
 
 function daily_pending_name($token) {
     return 'request-' . daily_safe_key($token) . '.json';
+}
+
+function daily_result_character($result) {
+    return isset($result['characterId']) ? daily_character_hint($result['characterId'], true) : 0;
+}
+
+function daily_character_result($token, $characterId, $accountKey) {
+    $result = daily_read_consistent('result-character-' . $characterId . '-' . daily_safe_key($token) . '.json', $characterId);
+    if ($result !== null) {
+        if (!isset($result['claimToken']) || $result['claimToken'] !== $token ||
+            ($accountKey !== '' && (!isset($result['accountKey']) || daily_safe_key($result['accountKey']) !== $accountKey))) {
+            throw new RuntimeException('Daily reward receipt ownership does not match this request. The original receipt was preserved.');
+        }
+        return $result;
+    }
+    return null;
+}
+
+function daily_legacy_result_exists($token) {
+    foreach (daily_claim_roots() as $root) {
+        if (is_file($root . DIRECTORY_SEPARATOR . 'result-' . daily_safe_key($token) . '.json')) return true;
+    }
+    return false;
 }
 
 function daily_same_request($first, $second) {
@@ -194,38 +224,28 @@ function daily_project_board($board) {
 }
 
 function daily_board($characterId, $accountKey) {
-    $board = null;
-    if ($characterId > 0) {
-        $board = daily_read_consistent('board-character-' . $characterId . '.json');
-    } else if ($accountKey !== '') {
-        $board = daily_read_consistent('board-account-' . daily_safe_key($accountKey) . '.json');
-    }
-    if ($board === null && $characterId <= 0 && $accountKey !== '') {
-        $progress = daily_read_consistent('account-' . daily_safe_key($accountKey) . '.json');
-        if ($progress !== null) {
-            $taken = isset($progress['Taken']) && is_array($progress['Taken']) ? $progress['Taken'] : array();
-            $board = array(
-                'accountKey' => $accountKey, 'taken' => $taken, 'claimedCount' => count($taken),
-                'lastClaimUtc' => isset($progress['LastClaimUtc']) ? strval($progress['LastClaimUtc']) : '',
-                'lastGrantedUtc' => isset($progress['LastGrantedUtc']) ? strval($progress['LastGrantedUtc']) : '',
-                'cycleCompletedOn' => isset($progress['CycleCompletedOn']) ? strval($progress['CycleCompletedOn']) : ''
-            );
+    $board = $characterId > 0 ? daily_read_consistent('board-character-' . $characterId . '.json', $characterId, true) : null;
+    // Old files under this name were account projections. Retain them as history,
+    // but only an explicitly character-owned server projection may supply Taken.
+    if ($board !== null) {
+        $owner = daily_result_character($board);
+        if ($owner > 0 && $owner !== $characterId) {
+            throw new RuntimeException('Daily reward board belongs to a different character. Existing progress was preserved.');
         }
+        if ($owner === 0) $board = null;
     }
     if ($board === null || empty($board['accountKey'])) {
-        $hasHint = $characterId > 0 || $accountKey !== '';
+        $hasHint = $characterId > 0;
         return array(
             'ok' => true, 'hasIdentity' => $hasHint, 'characterId' => $characterId,
-            'accountKey' => $characterId > 0 ? '' : $accountKey,
+            'accountKey' => '', 'progressVerified' => false,
             'taken' => array(), 'claimedCount' => 0, 'lastClaimUtc' => '', 'lastGrantedUtc' => '',
-            'message' => $hasHint ? 'The game server will validate the routing hint when the native claim action arrives.' : 'This browser has no character or account routing hint. Open Daily Rewards from the logged-in character.'
+            'message' => $hasHint ? 'The game server will verify this character when the native claim action arrives.' : 'This browser has no character routing hint. Open Daily Rewards from the logged-in character.'
         );
     }
-    // Never select one of two different historical account progress files.
-    daily_read_consistent('account-' . daily_safe_key($board['accountKey']) . '.json');
     $board['ok'] = true;
     $board['hasIdentity'] = true;
-    $board['characterId'] = $characterId;
+    $board['progressVerified'] = true;
     return daily_project_board($board);
 }
 
@@ -261,8 +281,12 @@ try {
     if ($method === 'GET') {
         $token = isset($_GET['token']) ? daily_token($_GET['token']) : '';
         if ($token !== '') {
-            $result = daily_read_consistent('result-' . daily_safe_key($token) . '.json');
-            if ($result !== null) {
+            if ($characterId <= 0) {
+                throw new InvalidArgumentException('A character routing hint is required to read a daily reward receipt.');
+            }
+            $result = daily_character_result($token, $characterId, $accountKey);
+            $unattributed = $result === null && daily_legacy_result_exists($token);
+            if ($result !== null && !$unattributed) {
                 if (!empty($result['ok']) && !array_key_exists('committed', $result) && isset($result['day']) && intval($result['day']) > 0) {
                     // Preserve the original receipt file. Its earlier success must
                     // never be replayed as a new request or atomic-commit proof.
@@ -274,9 +298,14 @@ try {
                 exit;
             }
             $request = daily_read_consistent(daily_pending_name($token));
+            if ($request !== null && (!isset($request['CharacterId']) || intval($request['CharacterId']) !== $characterId)) {
+                throw new RuntimeException('Daily reward request belongs to a different character. The original request was preserved.');
+            }
             echo json_encode(array(
                 'ok' => null, 'pending' => true, 'armed' => $request !== null,
-                'claimToken' => $token, 'message' => 'Waiting for the game server to confirm this claim.'
+                'claimToken' => $token, 'characterId' => $characterId,
+                'legacyVerificationRequired' => $unattributed,
+                'message' => $unattributed ? 'The original receipt is retained. Waiting for native character verification.' : 'Waiting for the game server to confirm this claim.'
             ));
             exit;
         }
@@ -290,15 +319,12 @@ try {
     if ($token === '') {
         $token = 'c' . bin2hex(random_bytes(24));
     }
-    if ($characterId <= 0 && $accountKey === '') {
+    if ($characterId <= 0) {
         echo json_encode(array(
             'ok' => false, 'armed' => false, 'claimToken' => $token,
-            'message' => 'This browser has no character or account routing hint. Reopen Daily Rewards from the logged-in character.'
+            'message' => 'This browser has no character routing hint. Reopen Daily Rewards from the logged-in character.'
         ));
         exit;
-    }
-    if ($accountKey !== '') {
-        daily_read_consistent('account-' . $accountKey . '.json');
     }
     $request = daily_write_request(array(
         'Day' => 1, 'ItemId' => 1, 'Amount' => 1, 'Quality' => 1,

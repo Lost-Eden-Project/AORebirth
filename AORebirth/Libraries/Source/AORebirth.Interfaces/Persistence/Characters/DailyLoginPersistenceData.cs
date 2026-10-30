@@ -3,11 +3,12 @@ namespace AORebirth.Interfaces.Persistence.Characters
     using System;
     using System.Collections.Generic;
 
-    /// <summary>Account-owned daily-login receipts and inventory share the character DAO's transaction.</summary>
+    /// <summary>Character-scoped receipts retain authenticated account ownership and the inventory transaction.</summary>
     public interface IDailyLoginClaimDao
     {
-        DailyLoginClaimSnapshotData LoadDailyLoginState(string accountUsername);
-        DailyLoginClaimSnapshotData FindDailyLoginClaim(string accountUsername, string claimToken);
+        DailyLoginClaimSnapshotData LoadDailyLoginState(string accountUsername, int characterId);
+        DailyLoginClaimSnapshotData FindDailyLoginClaim(string accountUsername, int characterId, string claimToken);
+        bool HasDailyLoginHistory(string accountUsername);
         DailyLoginClaimSnapshotData ImportDailyLoginState(string accountUsername, int characterId,
             string stateJson, DateTime? lastGrantedDateUtc, long nowUtcTicks);
         DailyLoginClaimCommitResultData CommitDailyLoginClaim(DailyLoginClaimCommitData request);
