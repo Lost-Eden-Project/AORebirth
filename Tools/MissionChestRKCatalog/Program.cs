@@ -88,7 +88,7 @@ using (var writer = new StreamWriter(partial, false, new UTF8Encoding(false)))
             FunctionIds = functions, FunctionNames = functions.Select(value => Enum.GetName((FunctionType)value) ?? value.ToString()),
             UploadNanoIds = uploads, FunctionDetails = functionDetails,
             ShopInventory = (item.Rdb?.ShopInventory ?? []).Select(line => new { line.Hash,
-                line.MinQl, line.MaxQl, line.Amount, line.Cost, line.Extra, line.Regen, line.Interval }) }));
+                line.MinQl, line.MaxQl, line.Amount, line.Chance, line.Extra, line.Regen, line.Interval }) }));
     }
 }
 File.Move(partial, destination, true);

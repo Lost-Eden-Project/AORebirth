@@ -354,15 +354,33 @@ namespace ZoneEngine_New.Core.Playfield
 
             ItemTemplate template = _items.CreateTemplate(lowId, highId, quality);
             string hash = string.IsNullOrEmpty(logHash) ? instance.Hash : logHash;
-            Identity identity = _registry.AllocateStaticDynelIdentity();
-            var dynel = new WorldItem(identity, template, lowId, highId, quality)
+
+            // A shop item spawned from a hash is a standing shop, as a Dynels.dat one is: a plain world item would let
+            // the client open its pane with no stock behind it.
+            StaticDynel dynel;
+            if (IsShopItem(template))
             {
-                Playfield = _playfield,
-                Position = position,
-                Rotation = heading ?? new Quaternion(),
-                SpawnSource = spawnSource,
-                ExpiresAtUtc = lifetime is TimeSpan life ? DateTime.UtcNow + life : null
-            };
+                dynel = new VendingMachine(_registry.AllocateVendingMachineIdentity(), template)
+                {
+                    Playfield = _playfield,
+                    Position = position,
+                    Rotation = heading ?? new Quaternion(),
+                    SpawnSource = spawnSource
+                };
+            }
+            else
+            {
+                dynel = new WorldItem(_registry.AllocateStaticDynelIdentity(), template, lowId, highId, quality)
+                {
+                    Playfield = _playfield,
+                    Position = position,
+                    Rotation = heading ?? new Quaternion(),
+                    SpawnSource = spawnSource,
+                    ExpiresAtUtc = lifetime is TimeSpan life ? DateTime.UtcNow + life : null
+                };
+            }
+
+            Identity identity = dynel.Identity;
 
             _registry.Register(dynel);
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(dynel);

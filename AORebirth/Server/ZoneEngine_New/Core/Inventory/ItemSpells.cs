@@ -201,9 +201,9 @@ namespace ZoneEngine_New.Core.Inventory
 
     /// <summary>
     /// One line of a shop item's stock list (items.dat ShopInventory, from the client's RDB record): <see cref="Amount"/>
-    /// rolls of item hash <see cref="Hash"/> between <see cref="MinQl"/> and <see cref="MaxQl"/>, priced at
-    /// <see cref="Cost"/> percent of the item's normal shop price. Regen and Interval are carried as the record has
-    /// them; the shop stock does not use them yet.
+    /// rolls for each child of item hash <see cref="Hash"/> between <see cref="MinQl"/> and <see cref="MaxQl"/>, a roll
+    /// kept when random(0, 100) &lt; <see cref="Chance"/>. Regen and Interval are carried as the record has them; the
+    /// shop stock does not use them.
     /// </summary>
     public sealed class ShopInventoryEntry
     {
@@ -219,7 +219,7 @@ namespace ZoneEngine_New.Core.Inventory
 
         public int Interval { get; init; }
 
-        public uint Cost { get; init; }
+        public uint Chance { get; init; }
     }
 
     public sealed class ItemAction

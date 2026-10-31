@@ -56,7 +56,7 @@ namespace ZoneEngine_New.Core.Inventory.Dat
                     Amount = line.Amount,
                     Regen = line.Regen,
                     Interval = line.Interval,
-                    Cost = line.Cost
+                    Chance = line.Chance
                 });
             }
 

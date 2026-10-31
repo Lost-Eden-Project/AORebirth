@@ -272,7 +272,7 @@ namespace ZoneEngine_New.Core.Inventory.Dat
         public int Unknown2;
 
         [MessagePackMember(9)]
-        public uint Cost;
+        public uint Chance;
     }
 
     [Serializable]

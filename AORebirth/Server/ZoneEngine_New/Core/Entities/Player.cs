@@ -25,6 +25,7 @@ namespace ZoneEngine_New.Core.Entities
     using ZoneEngine_New.Core.Playfield.Locality;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
+    using Quaternion = AORebirth.Core.Vector.Quaternion;
     using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
     using ModuleClock = ZoneEngine_New.Core.Modules.ModuleClock;
     using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
@@ -2154,18 +2155,81 @@ namespace ZoneEngine_New.Core.Entities
             Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
             Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
 
-            using PlayfieldAdmission destinationAdmission = manager.AcquirePlayfield(respawnPlayfield);
+            PlayfieldAdmission destinationAdmission = manager.AcquirePlayfield(respawnPlayfield);
             Playfield destination = destinationAdmission.Playfield;
             if (Session != null)
             {
-                // A move already on its way (a zone crossing as the character died) carries them; the respawn stands down.
-                if (!Session.IsTransferring)
-                    Session.TransferToPlayfield(destination, landing);
+                using (destinationAdmission)
+                {
+                    // A move already on its way (a zone crossing as the character died) carries them; the respawn stands down.
+                    if (!Session.IsTransferring)
+                        Session.TransferToPlayfield(destination, landing);
+                }
+
                 return;
             }
 
+            // No client (link-dead): leave on this tick, arrive on the destination's own tick. The destination's
+            // admission is held until the arrival has run, so it cannot retire with the character in transit.
+            Vector3 origin = new Vector3(Position.x, Position.y, Position.z);
+            Quaternion originHeading = new Quaternion(Rotation.x, Rotation.y, Rotation.z, Rotation.w);
             playfield.LeaveTransferredPlayer(this);
-            destination.ArriveTransferredPlayer(this, landing);
+            bool arrivalQueued;
+            try
+            {
+                arrivalQueued = destination.Dispatch(() =>
+                {
+                    using (destinationAdmission)
+                        ArriveAfterSessionlessRespawn(playfield, destination, landing, origin, originHeading);
+                });
+            }
+            catch
+            {
+                destinationAdmission.Dispose();
+                throw;
+            }
+
+            if (!arrivalQueued)
+            {
+                destinationAdmission.Dispose();
+                ReturnAfterSessionlessRespawn(playfield, origin, originHeading);
+            }
+        }
+
+        /// <summary>Destination tick: the link-dead character arrives where it respawned, or goes back where it died.</summary>
+        void ArriveAfterSessionlessRespawn(Playfield source, Playfield destination, Vector3 landing, Vector3 origin, Quaternion originHeading)
+        {
+            if (Playfield != null)
+                return;
+
+            if (!destination.IsDisposed && destination.IsAuthoritativePlayer(this))
+            {
+                try
+                {
+                    destination.ArriveTransferredPlayer(this, landing);
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    destination.RemovePartialTransferArrival(this);
+                    destination.ReportTransferFailure(this, exception);
+                }
+            }
+
+            if (!source.Dispatch(() => ReturnAfterSessionlessRespawn(source, origin, originHeading)))
+                source.ReportTransferFailure(this, new InvalidOperationException("Respawn source no longer accepts the returning character."));
+        }
+
+        /// <summary>Source tick: puts a link-dead character whose respawn could not arrive back where it died, alive.</summary>
+        void ReturnAfterSessionlessRespawn(Playfield source, Vector3 origin, Quaternion originHeading)
+        {
+            lock (PersistenceGate)
+            {
+                if (Playfield != null || !source.CanRestoreTransfer(this))
+                    return;
+
+                source.RestoreTransfer(this, origin, originHeading);
+            }
         }
 
         void AnnounceDeathCleared() => SendDeathRespawnAction();

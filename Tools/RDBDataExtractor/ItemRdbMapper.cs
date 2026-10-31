@@ -364,7 +364,7 @@ namespace AORebirth.Tools.RDBDataExtractor
                     Interval = line.Interval,
                     Unknown1 = line.Unknown1,
                     Unknown2 = line.Unknown2,
-                    Cost = line.Cost,
+                    Chance = line.Cost,
                 });
             }
 

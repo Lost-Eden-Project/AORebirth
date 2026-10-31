@@ -135,7 +135,7 @@ namespace ZoneEngine_New.Core.Trade
             {
                 // The shop's own stock list (items.dat ShopInventory): the primary source. A database vendor row
                 // overrides it only while Gameplay.json shops.preferDatabaseStock holds (NpcContentActivationService).
-                machine.Stock.EnsureFreshFromShopInventory(machine.Template.ShopInventory, _minter, Random.Shared);
+                machine.Stock.EnsureFreshFromShopInventory(machine.Template.ShopInventory, _minter, Random.Shared, HasTemplate);
             }
             else
             {
@@ -146,7 +146,7 @@ namespace ZoneEngine_New.Core.Trade
                         "Vending machine {0} has no ShopInventory and no VendingMachines.json entry", templateId));
                     return false;
                 }
-                machine.Stock.EnsureFresh(definition, _minter, Random.Shared);
+                machine.Stock.EnsureFresh(definition, _minter, Random.Shared, HasTemplate);
             }
 
             machine.Stock.EnsureSorted(slot => _catalog.TryGet(slot.LowId, out ItemTemplate template) ? template.Name : string.Empty);
@@ -173,6 +173,9 @@ namespace ZoneEngine_New.Core.Trade
 
             return true;
         }
+
+        /// <summary>Stock generation skips items the server has no template for: they could be neither priced nor delivered.</summary>
+        bool HasTemplate(int lowId, int highId) => _catalog.TryGet(lowId, out _) && _catalog.TryGet(highId, out _);
 
         bool TryOpenPlayerTrade(Player initiator, Identity targetIdentity)
         {
@@ -1035,7 +1038,7 @@ namespace ZoneEngine_New.Core.Trade
                     TradeRules.ItemValue(_catalog, stock.LowId, stock.HighId, stock.Quality),
                     machine.SellModifier,
                     buySkillSteps);
-                // A stock line's own price percentage (items.dat ShopInventory Cost; the client applies the same line).
+                // A stock line's own price percentage (vending machine stock entry; 100 = normal).
                 price = (int)Math.Min(int.MaxValue, Math.Max(0, (long)price * stock.PricePercent / 100));
                 purchases.Add(new Purchase(stock, price));
                 buyTotal += price;

@@ -22,7 +22,7 @@ namespace ZoneEngine_New.Core.Trade
             PricePercent = pricePercent > 0 ? pricePercent : 100;
         }
 
-        /// <summary>The line's price as a percentage of the item's normal shop price (items.dat ShopInventory Cost; 100 = normal).</summary>
+        /// <summary>The line's price as a percentage of the item's normal shop price (vending machine stock entry; 100 = normal).</summary>
         public int PricePercent { get; }
 
         public int LowId { get; }
@@ -147,7 +147,8 @@ namespace ZoneEngine_New.Core.Trade
         public void EnsureFresh(
             VendingMachineDefinition definition,
             HashItemMinter minter,
-            Random random)
+            Random random,
+            Func<int, int, bool>? hasTemplate = null)
         {
             ArgumentNullException.ThrowIfNull(definition);
             ArgumentNullException.ThrowIfNull(minter);
@@ -156,19 +157,23 @@ namespace ZoneEngine_New.Core.Trade
             if (IsConfiguredSnapshot || (IsGenerated && !IsIdleExpired()))
                 return;
 
-            Generate(definition, minter, random);
+            Generate(definition, minter, random, hasTemplate);
         }
 
         /// <summary>
         /// Stock from the shop item's own list (items.dat ShopInventory), as the stock engine expands it: each line's
-        /// hash fans out one level, one roll per child category (a leaf hash is its own single group); each group rolls
-        /// one QL in the line's band and then picks <see cref="Inventory.ShopInventoryEntry.Amount"/> random leaves under it
-        /// that can be made at that QL. Lines stay in list order, up to <see cref="VendingMachineDefinition.MaxSlots"/>.
+        /// hash fans out one level (a leaf hash is its own single child), and each child is rolled
+        /// <see cref="Inventory.ShopInventoryEntry.Amount"/> times. A roll picks a QL in the line's band and a leaf under
+        /// the child that can be made at it, and is kept when random(0, 100) &lt; <see cref="Inventory.ShopInventoryEntry.Chance"/>;
+        /// a roll identical to one already stocked adds no row. Items <paramref name="hasTemplate"/> rejects
+        /// (no server template for the low/high ids) are skipped. Lines stay in list order, up to
+        /// <see cref="VendingMachineDefinition.MaxSlots"/>.
         /// </summary>
         public void EnsureFreshFromShopInventory(
             IReadOnlyList<Inventory.ShopInventoryEntry> lines,
             HashItemMinter minter,
-            Random random)
+            Random random,
+            Func<int, int, bool>? hasTemplate = null)
         {
             ArgumentNullException.ThrowIfNull(lines);
             ArgumentNullException.ThrowIfNull(minter);
@@ -181,40 +186,49 @@ namespace ZoneEngine_New.Core.Trade
             _sorted = false;
             List<HashInstance> leaves = new();
             List<HashInstance> usable = new();
+            HashSet<(int LowId, int HighId, int Quality)> stocked = new();
             foreach (Inventory.ShopInventoryEntry line in lines)
             {
                 if (_slots.Count >= VendingMachineDefinition.MaxSlots)
                     break;
-                if (string.IsNullOrEmpty(line.Hash) || line.Amount <= 0)
+                if (string.IsNullOrEmpty(line.Hash))
                     continue;
 
                 int minQuality = Math.Max(1, Math.Min(line.MinQl, line.MaxQl));
                 int maxQuality = Math.Max(1, Math.Max(line.MinQl, line.MaxQl));
-                int pricePercent = line.Cost > 0 ? (int)Math.Min(line.Cost, int.MaxValue) : 100;
+                int chance = (int)Math.Min(line.Chance, 100u);
                 IReadOnlyList<string> groups = minter.TryGetChildHashes(line.Hash, out IReadOnlyList<string> children)
                     ? children
                     : new[] { line.Hash };
 
-                for (int g = 0; g < groups.Count && _slots.Count < VendingMachineDefinition.MaxSlots; g++)
+                // Count rounds over every child, as retail lists them (all children, then all children again).
+                for (int round = 0; round < line.Amount && _slots.Count < VendingMachineDefinition.MaxSlots; round++)
                 {
-                    int quality = random.Next(minQuality, maxQuality + 1);
-                    leaves.Clear();
-                    minter.CollectLeafInstances(groups[g], leaves);
-                    usable.Clear();
-                    for (int i = 0; i < leaves.Count; i++)
+                    for (int g = 0; g < groups.Count && _slots.Count < VendingMachineDefinition.MaxSlots; g++)
                     {
-                        if (minter.LeafCoversQuality(leaves[i], quality))
-                            usable.Add(leaves[i]);
-                    }
+                        int quality = random.Next(minQuality, maxQuality + 1);
+                        if (random.Next(100) >= chance)
+                            continue;
 
-                    if (usable.Count == 0)
-                        continue;
+                        leaves.Clear();
+                        minter.CollectLeafInstances(groups[g], leaves);
+                        usable.Clear();
+                        for (int i = 0; i < leaves.Count; i++)
+                        {
+                            if (minter.LeafCoversQuality(leaves[i], quality))
+                                usable.Add(leaves[i]);
+                        }
 
-                    for (int roll = 0; roll < line.Amount && _slots.Count < VendingMachineDefinition.MaxSlots; roll++)
-                    {
+                        if (usable.Count == 0)
+                            continue;
+
+                        // A roll matching one already stocked adds no row: retail Antonio Stacklund (GMUE, Count 5,
+                        // fixed-QL items) lists each item once, while a QL band yields one row per distinct QL.
                         HashInstance leaf = usable[random.Next(usable.Count)];
-                        if (minter.TryRollIdsFor(leaf, quality, out int lowId, out int highId, out int rolledQuality))
-                            _slots.Add(new ShopStockSlot(lowId, highId, rolledQuality, pricePercent: pricePercent));
+                        if (minter.TryRollIdsFor(leaf, quality, out int lowId, out int highId, out int rolledQuality)
+                            && (hasTemplate == null || hasTemplate(lowId, highId))
+                            && stocked.Add((lowId, highId, rolledQuality)))
+                            _slots.Add(new ShopStockSlot(lowId, highId, rolledQuality));
                     }
                 }
             }
@@ -309,7 +323,7 @@ namespace ZoneEngine_New.Core.Trade
             };
         }
 
-        void Generate(VendingMachineDefinition definition, HashItemMinter minter, Random random)
+        void Generate(VendingMachineDefinition definition, HashItemMinter minter, Random random, Func<int, int, bool>? hasTemplate)
         {
             _slots.Clear();
             _sorted = false;
@@ -331,7 +345,7 @@ namespace ZoneEngine_New.Core.Trade
                         if (_slots.Count >= VendingMachineDefinition.MaxSlots)
                             break;
 
-                        AddLeafSlot(minter, leaves[i], random.Next(minQuality, maxQuality + 1), entry.PricePercent);
+                        AddLeafSlot(minter, leaves[i], random.Next(minQuality, maxQuality + 1), entry.PricePercent, hasTemplate);
                     }
 
                     continue;
@@ -346,7 +360,8 @@ namespace ZoneEngine_New.Core.Trade
                         continue;
 
                     int quality = random.Next(minQuality, maxQuality + 1);
-                    if (minter.TryRollIds(entry.Hash, quality, out int lowId, out int highId, out int rolledQuality))
+                    if (minter.TryRollIds(entry.Hash, quality, out int lowId, out int highId, out int rolledQuality)
+                        && (hasTemplate == null || hasTemplate(lowId, highId)))
                         _slots.Add(new ShopStockSlot(lowId, highId, rolledQuality, pricePercent: entry.PricePercent));
                 }
             }
@@ -370,9 +385,10 @@ namespace ZoneEngine_New.Core.Trade
             _idleSinceMs = Environment.TickCount64;
         }
 
-        void AddLeafSlot(HashItemMinter minter, HashInstance leaf, int desiredQuality, int pricePercent)
+        void AddLeafSlot(HashItemMinter minter, HashInstance leaf, int desiredQuality, int pricePercent, Func<int, int, bool>? hasTemplate)
         {
-            if (minter.TryRollIdsFor(leaf, desiredQuality, out int lowId, out int highId, out int quality))
+            if (minter.TryRollIdsFor(leaf, desiredQuality, out int lowId, out int highId, out int quality)
+                && (hasTemplate == null || hasTemplate(lowId, highId)))
                 _slots.Add(new ShopStockSlot(lowId, highId, quality, pricePercent: pricePercent));
         }
     }
