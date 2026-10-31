@@ -220,6 +220,24 @@ namespace ZoneEngine_New.Core.GameData
             destinationInstance = 0;
             return false;
         }
+
+        /// <summary>
+        /// TeleportRoutes.json route that lands a placed statel's user on coordinates of another playfield, and whether
+        /// the landing also becomes their save point. False when it has none.
+        /// </summary>
+        bool TryGetTeleportLanding(
+            int playfield,
+            int statelType,
+            uint statelInstance,
+            out int destinationPlayfield,
+            out AORebirth.Core.Vector.Vector3 landing,
+            out bool setsSavePoint)
+        {
+            destinationPlayfield = 0;
+            landing = default!;
+            setsSavePoint = false;
+            return false;
+        }
     }
 }
 

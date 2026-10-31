@@ -1,5 +1,5 @@
 {
-  "Notes": "Neutral Observer (NERE), ICC Shuttleport (4582) at (937.5, 47.0, 870.7). Rebuilt from 6 QuestDialogCapture dumps (Neutral_Observer_NERE, 2026-10-20, character Soldmen, unsigned/neutral). Hands out the access card and maps to anyone; those items are not given yet (item hashes not in the captures). Signed Omni/Clan players were never captured here.",
+  "Notes": "Neutral Observer (NERE), ICC Shuttleport (4582) at (937.5, 47.0, 870.7). Rebuilt from 6 QuestDialogCapture dumps (Neutral_Observer_NERE, 2026-10-20, character Soldmen, unsigned/neutral). Hands out the access card (AREBKJ QL 1) and the Startup Maps (SAMP QL 1) to anyone. Signed Omni/Clan players were never captured here.",
   "Npcs": [
     "NERE"
   ],
@@ -152,9 +152,9 @@
     },
     "card": {
       "Text": [
-        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.",
+        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.{spawn AREBKJ 1}",
         "{delay 4}But remember, once you leave here and go to the mainland, you will be unable to return to here, so do keep that in mind. ",
-        "{delay 2}Oh, and you might find it useful to have these maps! "
+        "{delay 2}Oh, and you might find it useful to have these maps! {spawn SAMP 1}"
       ],
       "Replies": [
         "thank_you",

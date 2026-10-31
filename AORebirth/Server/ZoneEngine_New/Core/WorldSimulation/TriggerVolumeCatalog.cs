@@ -112,8 +112,14 @@ namespace ZoneEngine_New.Core.WorldSimulation
         public float PlaneNz;
         public float PlaneD;
 
-        /// <summary>Fixed landing for a <see cref="ZoneTriggerKind.DungeonExit"/>.</summary>
+        /// <summary>
+        /// Fixed landing for a <see cref="ZoneTriggerKind.DungeonExit"/>, or a <see cref="ZoneTriggerKind.TargetVicinity"/>
+        /// pad with a teleports coordinate route.
+        /// </summary>
         public Vector3? Landing;
+
+        /// <summary>A coordinate-routed pad that also saves the character at <see cref="Landing"/> (TeleportRoutes.json SetSavePoint).</summary>
+        public bool SetsSavePoint;
 
         public AORebirth.Core.Vector.Quaternion? LandingHeading;
 
@@ -539,8 +545,14 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
             for (int i = 0; i < list.Count; i++)
             {
-                if (Contains(list[i], x, y, z))
-                    overlappingIds.Add(list[i].Id);
+                ZoneTriggerVolume volume = list[i];
+                // A one-way coordinate pad (Grid exit beam) is the destination, not a door you just
+                // came through: appearing on it should fire, not wait for a walk-off and walk-on.
+                if (volume.Kind == ZoneTriggerKind.TargetVicinity && volume.DestPlayfieldId != 0)
+                    continue;
+
+                if (Contains(volume, x, y, z))
+                    overlappingIds.Add(volume.Id);
             }
         }
 

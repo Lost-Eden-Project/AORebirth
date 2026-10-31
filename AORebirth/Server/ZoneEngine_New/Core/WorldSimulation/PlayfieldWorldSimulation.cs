@@ -415,7 +415,7 @@
                         // A crossing can transfer the player synchronously (destination already loaded): the watchdog
                         // names it rather than the whole soft-trigger pass.
                         Metrics.TickStallWatch.Stage("world.crossing", id);
-                        if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity)
+                        if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity && crossing.DestPlayfieldId == 0)
                             FireTargetVicinity(playfield, player, crossing.Trigger);
                         else if (crossing.Trigger.Kind == ZoneTriggerKind.MissionEntrance)
                             EnterMissionEntrance(playfield, player, crossing.Trigger);
@@ -500,6 +500,14 @@
                     + hit.Volume.DestIndex
                     + "; Destinations.dat for that playfield is missing or short.");
                 return false;
+            }
+
+            // A teleports route with coordinates replaces the pad's own spells (4833's Grid exit beams run a function
+            // the server does not implement).
+            if (hit.Volume.Kind == ZoneTriggerKind.TargetVicinity && hit.Volume.Landing is AoVector3 routed)
+            {
+                crossing = new ZoneCrossing(hit.Volume.DestPlayfieldId, routed, hit.Volume);
+                return true;
             }
 
             if (hit.Volume.Kind is ZoneTriggerKind.TargetVicinity or ZoneTriggerKind.MissionEntrance)
@@ -818,6 +826,7 @@
                     return;
 
                 WriteProxyReturn(player, source.Identity.Instance, crossing.Trigger);
+                StoreRouteSavePoint(player, destPlayfieldId, crossing);
                 if (crossing.Trigger.RecordsReturn
                     && destination is ACGPlayfield acg
                     && acg.World != null)
@@ -847,8 +856,20 @@
                 {
                     // The destination runs on another zone instance: record the way back before the transfer save.
                     WriteProxyReturn(player, source.Identity.Instance, crossing.Trigger);
+                    StoreRouteSavePoint(player, destPlayfieldId, crossing);
                     return true;
                 }));
+        }
+
+        /// <summary>
+        /// A Grid exit beam (TeleportRoutes.json SetSavePoint) saves the character at its landing, as retail's beam does:
+        /// only the location, not an insurance terminal's fee or XP save. Stored before the transfer, so the transfer
+        /// save carries it.
+        /// </summary>
+        static void StoreRouteSavePoint(Player player, int destPlayfieldId, ZoneCrossing crossing)
+        {
+            if (crossing.Trigger.Kind == ZoneTriggerKind.TargetVicinity && crossing.Trigger.SetsSavePoint)
+                player.StoreSavePoint(destPlayfieldId, crossing.Landing);
         }
 
         /// <summary>
@@ -1025,7 +1046,7 @@
         /// <summary>
         /// Doors the client treats as exits: their placement blob sets ExitInstance (the client then registers them as
         /// entrance/exit doors and starts a zone change on contact). The destination is not in the data, so it comes
-        /// from the teleports table: a routed door becomes an ordinary door-to-door portal; an unrouted one becomes an
+        /// from TeleportRoutes.json: a routed door becomes an ordinary door-to-door portal; an unrouted one becomes an
         /// <see cref="ZoneTriggerKind.ExitDoor"/>. Doors that already zone by their own events are left alone.
         /// A plain door (no events, no ExitInstance) that has a teleports route is an entrance into an interior: it
         /// becomes a door-to-door portal that records the way back, so it opens its own copy of the interior (4531's
@@ -1367,7 +1388,35 @@
                     continue;
 
                 PlacedLook(d, out int mesh, out int scale);
-                AddVicinityPad(d.IdentityInstance, d.TemplateId, events, d.Position.X, d.Position.Y, d.Position.Z, mesh, scale);
+                bool routed = _gameData.TryGetTeleportLanding(
+                    _playfieldId,
+                    d.IdentityType,
+                    unchecked((uint)d.IdentityInstance),
+                    out int routedPlayfield,
+                    out AoVector3 landing,
+                    out bool setsSavePoint)
+                    && routedPlayfield > 0
+                    && routedPlayfield != _playfieldId;
+                // UseOn / TeleportProxy2 lands 2.5 m from the beam; the 1 m default misses that spot.
+                float minRadius = routed
+                    ? PortalDoorLandingResolver.Proxy2EntryDoorClearance
+                    : 0f;
+                ZoneTriggerVolume pad = AddVicinityPad(
+                    d.IdentityInstance,
+                    d.TemplateId,
+                    events,
+                    d.Position.X,
+                    d.Position.Y,
+                    d.Position.Z,
+                    mesh,
+                    scale,
+                    minRadius);
+                if (routed)
+                {
+                    pad.DestPlayfieldId = routedPlayfield;
+                    pad.Landing = landing;
+                    pad.SetsSavePoint = setsSavePoint;
+                }
             }
         }
 
@@ -1390,12 +1439,23 @@
         public void UnregisterVicinityDynel(int dynelInstance)
             => _triggers.RemoveDynel(ZoneTriggerKind.TargetVicinity, dynelInstance);
 
-        void AddVicinityPad(int dynelInstance, int templateId, ItemTemplate events, float x, float y, float z, int placedMesh, int placedScale)
+        ZoneTriggerVolume AddVicinityPad(
+            int dynelInstance,
+            int templateId,
+            ItemTemplate events,
+            float x,
+            float y,
+            float z,
+            int placedMesh,
+            int placedScale,
+            float minRadius = 0f)
         {
             float r = TriggerVolumeCatalog.TargetVicinityRadius;
             bool explicitRange = events.Stats.TryGetValue(CharacterStat.VicinityRange, out int vicinityRange) && vicinityRange > 0;
             if (explicitRange)
                 r = vicinityRange;
+            if (minRadius > r)
+                r = minRadius;
             var pad = new ZoneTriggerVolume
             {
                 Kind = ZoneTriggerKind.TargetVicinity,
@@ -1418,7 +1478,17 @@
             // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
             if (!explicitRange)
                 ApplyClientSphere(pad, templateId, x, y, z, placedMesh: placedMesh, placedScale: placedScale);
+            if (minRadius > pad.Radius)
+            {
+                pad.Radius = minRadius;
+                pad.MinX = x - minRadius;
+                pad.MaxX = x + minRadius;
+                pad.MinZ = z - minRadius;
+                pad.MaxZ = z + minRadius;
+            }
+
             _triggers.Add(pad);
+            return pad;
         }
 
         /// <summary>Doors as sight blockers: the playfield's static doors, plus quest dungeon doors as they spawn.</summary>

@@ -1,5 +1,5 @@
 {
-  "Notes": "Clan Recruiter (CCRI), ICC Shuttleport (4582) at (918.9, 47.1, 862.3). Rebuilt from 14 QuestDialogCapture dumps (Clan_Recruiter_CCRI, 2026-10-20, characters Soldmen, Complicado). State is the player's Side, not quests: Side 2 (Omni, signed) gets the 'regret' line, Side 1 (signed clanner) gets the signed menu and the access card. Not expressible yet: handing out the Clan Application Form, the access card and the maps (item hashes not in the captures), and the 'already holding an unsigned form' opener menu (needs a 'has FORMHASH' check).",
+  "Notes": "Clan Recruiter (CCRI), ICC Shuttleport (4582) at (918.9, 47.1, 862.3). Rebuilt from 14 QuestDialogCapture dumps (Clan_Recruiter_CCRI, 2026-10-20, characters Soldmen, Complicado). State is the player's Side, not quests: Side 2 (Omni, signed) gets the 'regret' line, Side 1 (signed clanner) gets the signed menu and the access card. Gives the Clan Application Form (ARCVMH QL 6) and the access card (ARNQPH QL 1). and the Startup Maps (STMP QL 1). Not expressible yet: the 'already holding an unsigned form' opener menu (needs a 'has FORMHASH' check).",
   "Npcs": [
     "CCRI"
   ],
@@ -139,7 +139,7 @@
     },
     "form_given": {
       "Text": [
-        "Good to hear, my friend! Here's the application form, let me know when you've signed it.",
+        "Good to hear, my friend! Here's the application form, let me know when you've signed it.{spawn ARCVMH 6}",
         "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, left click the application form and read it's description.{/emote}"
       ],
       "Replies": [
@@ -149,7 +149,7 @@
     },
     "form_given_fair": {
       "Text": [
-        "Good to hear, my friend! Here's the application form, let me know when you've signed it.",
+        "Good to hear, my friend! Here's the application form, let me know when you've signed it.{spawn ARCVMH 6}",
         "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, left click the application form and read it's description.{/emote}"
       ],
       "Replies": [
@@ -297,9 +297,9 @@
     },
     "card": {
       "Text": [
-        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.",
+        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.{spawn ARNQPH 1}",
         "{delay 4}But remember, once you leave here and go to the mainland, you will be unable to return to here, so do keep that in mind. ",
-        "{delay 2}Oh, and you might find it useful to have these maps! "
+        "{delay 2}Oh, and you might find it useful to have these maps! {spawn STMP 1}"
       ],
       "Replies": [
         "thank_you",

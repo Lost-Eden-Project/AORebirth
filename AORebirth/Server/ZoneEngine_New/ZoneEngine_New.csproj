@@ -65,7 +65,6 @@
     <!-- Shared evidence-only placement validation, not legacy runtime ownership. -->
     <!-- Only the offline stale-online recovery tool path in MySqlCharacterDao still fences with it. -->
     <Compile Include="../../Libraries/Source/AORebirth.Database/Dao/CharacterOnlineOwnershipGuard.cs" Link="Shared/CharacterOnlineOwnershipGuard.cs" />
-    <Compile Include="../../Libraries/Source/AORebirth.Database/Dao/TeleportRoutingDao.cs" Link="Shared/TeleportRoutingDao.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Stats/SpecialStats/XPTable.cs" Link="SharedGameplay/Progression/XPTable.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Missions/MySqlMissionDao.cs" Link="SharedGameplay/Missions/MySqlMissionDao.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Characters/MySqlCharacterDao.cs" Link="Shared/Characters/MySqlCharacterDao.cs" />

@@ -4,7 +4,6 @@ namespace ZoneEngine_New.Tests
     using System.IO;
     using System.Linq;
     using AODB.Common.RDBObjects;
-    using AORebirth.Database.Dao;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.WorldSimulation;

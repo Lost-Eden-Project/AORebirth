@@ -149,6 +149,11 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
 
                 if (flags.HasFlag(SimpleCharFullUpdateFlags.HasOrgName))
                 {
+                    if (message.Version > 0x39)
+                    {
+                        pc.OrgId = streamReader.ReadInt32();
+                    }
+
                     pc.OrgName = streamReader.ReadString(streamReader.ReadInt16());
                 }
 
@@ -213,6 +218,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 message.Meshes = tail.Meshes;
                 message.AttackWeapons = tail.AttackWeapons;
                 message.Flags2 = tail.Flags2;
+                message.OwnerInstance = tail.OwnerInstance;
                 message.Unknown2 = tail.Unknown2;
                 message.Unknown4 = tail.Unknown4;
                 message.TailFullyDecoded = true;
@@ -367,23 +373,25 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 streamWriter.WriteInt16(spc.SenseBase);
                 streamWriter.WriteInt16(spc.PsychicBase);
 
+                // Client order (Gamecode.dll 0x10078f4b): first/last name when HasVisibleName, then the org id
+                // (version 58+) and org name when HasOrgName. Each string is an Int16 length and its bytes, no NUL
+                // (0x10038a9e).
+                if (scfu.CharacterFlags.HasFlag(CharacterFlags.HasVisibleName))
+                {
+                    WriteInt16LengthString(streamWriter, spc.FirstName ?? string.Empty);
+                    WriteInt16LengthString(streamWriter, spc.LastName ?? string.Empty);
+                }
+
                 bool hasOrgName = string.IsNullOrWhiteSpace(spc.OrgName) == false || spc.OrgId != 0;
                 if (hasOrgName)
                 {
                     flags |= SimpleCharFullUpdateFlags.HasOrgName;
-                    streamWriter.WriteInt32(spc.OrgId);
-                    streamWriter.WriteByte(spc.OrgIdPadding);
-                }
+                    if (scfu.Version > 0x39)
+                    {
+                        streamWriter.WriteInt32(spc.OrgId);
+                    }
 
-                if (scfu.CharacterFlags.HasFlag(CharacterFlags.HasVisibleName))
-                {
-                    WriteLengthPrefixedByteString(streamWriter, spc.FirstName ?? string.Empty);
-                    WriteLengthPrefixedByteString(streamWriter, spc.LastName ?? string.Empty);
-                }
-
-                if (hasOrgName)
-                {
-                    WriteLengthPrefixedByteString(streamWriter, spc.OrgName ?? string.Empty);
+                    WriteInt16LengthString(streamWriter, spc.OrgName ?? string.Empty);
                 }
             }
 
@@ -538,27 +546,21 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 }
             }
 
+            // Client order (Gamecode.dll 0x10078f4b): Flags2, a byte when 0x2, the owner instance when 0x4 (HasOwner),
+            // then the final byte. The client reads nothing for 0x40.
             streamWriter.WriteInt32(scfu.Flags2);
 
-            // ScfuFlags2.HasOwner = 0x4
+            if ((scfu.Flags2 & 0x2) != 0)
+            {
+                streamWriter.WriteByte(scfu.Unknown4);
+            }
+
             if ((scfu.Flags2 & 0x4) != 0)
             {
                 streamWriter.WriteInt32(scfu.OwnerInstance ?? 0);
             }
 
             streamWriter.WriteByte(scfu.Unknown2);
-
-            // ScfuFlags2.Unknown3 = 0x40 — special-attack list (empty count when none supplied).
-            if ((scfu.Flags2 & 0x40) != 0)
-            {
-                streamWriter.WriteByte(0);
-            }
-
-            // ScfuFlags2.Unknown1 = 0x2 — AOSharp has this commented; captures (Infector) require it.
-            if ((scfu.Flags2 & 0x2) != 0)
-            {
-                streamWriter.WriteByte(scfu.Unknown4);
-            }
 
             flags |= scfu.AdditionalFlags;
             flags &= ~scfu.SuppressedFlags;
@@ -665,6 +667,16 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
 
             streamWriter.WriteByte((byte)length);
             streamWriter.WriteString(value, length);
+        }
+
+        private static void WriteInt16LengthString(StreamWriter streamWriter, string value)
+        {
+            int length = Math.Min(value.Length, short.MaxValue);
+            streamWriter.WriteInt16((short)length);
+            if (length > 0)
+            {
+                streamWriter.WriteString(value, length);
+            }
         }
 
         public Expression SerializerExpression(
@@ -864,14 +876,15 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                     }
 
                     int flags2 = reader.ReadInt32();
-                    int trailingByteCount = (flags2 & 0x2) != 0 ? 2 : 1;
+                    int trailingByteCount = 1 + ((flags2 & 0x2) != 0 ? 1 : 0) + ((flags2 & 0x4) != 0 ? 4 : 0);
                     if (reader.Length - reader.Position != trailingByteCount)
                     {
                         return false;
                     }
 
-                    byte unknown2 = reader.ReadByte();
                     byte unknown4 = (flags2 & 0x2) != 0 ? reader.ReadByte() : (byte)0;
+                    int? ownerInstance = (flags2 & 0x4) != 0 ? reader.ReadInt32() : (int?)null;
+                    byte unknown2 = reader.ReadByte();
 
                     result = new ScfuTail
                     {
@@ -881,6 +894,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                         Meshes = meshes.ToArray(),
                         AttackWeapons = attackWeapons.ToArray(),
                         Flags2 = flags2,
+                        OwnerInstance = ownerInstance,
                         Unknown2 = unknown2,
                         Unknown4 = unknown4
                     };
@@ -926,6 +940,8 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             public SpecialAttack[] AttackWeapons { get; set; }
 
             public int Flags2 { get; set; }
+
+            public int? OwnerInstance { get; set; }
 
             public byte Unknown2 { get; set; }
 

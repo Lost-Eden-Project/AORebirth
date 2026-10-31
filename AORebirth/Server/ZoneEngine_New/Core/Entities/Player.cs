@@ -1909,13 +1909,22 @@ namespace ZoneEngine_New.Core.Entities
             if (Playfield == null)
                 return;
 
-            Stats.Set(CharacterStat.ResurrectDest, Playfield.Identity.Instance, StatDetail.Base);
-            Stats.Set(CharacterStat.SavePointX, ToCentimetres(Position.x), StatDetail.Base);
-            Stats.Set(CharacterStat.SavePointY, ToCentimetres(Position.y), StatDetail.Base);
-            Stats.Set(CharacterStat.SavePointZ, ToCentimetres(Position.z), StatDetail.Base);
+            StoreSavePoint(Playfield.Identity.Instance, Position);
+        }
+
+        /// <summary>Remembers <paramref name="position"/> on <paramref name="playfieldId"/> as the save point.</summary>
+        public void StoreSavePoint(int playfieldId, Vector3 position)
+        {
+            if (playfieldId <= 0)
+                return;
+
+            Stats.Set(CharacterStat.ResurrectDest, playfieldId, StatDetail.Base);
+            Stats.Set(CharacterStat.SavePointX, ToCentimetres(position.x), StatDetail.Base);
+            Stats.Set(CharacterStat.SavePointY, ToCentimetres(position.y), StatDetail.Base);
+            Stats.Set(CharacterStat.SavePointZ, ToCentimetres(position.z), StatDetail.Base);
             SaveState.MarkDirty();
             Logger.Info(string.Format(CultureInfo.InvariantCulture, "Save point character={0} pf={1} at ({2},{3},{4})",
-                Identity.Instance, Playfield.Identity.Instance, Position.xf, Position.yf, Position.zf));
+                Identity.Instance, playfieldId, position.xf, position.yf, position.zf));
         }
 
         /// <summary>

@@ -1,5 +1,5 @@
 {
-  "Notes": "Omni-Tek Recruitment Officer (ONRE), ICC Shuttleport (4582) at (935.5, 47.0, 859.0). Rebuilt from 11 QuestDialogCapture dumps (Omni-Tek_Recruitment_Officer_ONRE, 2026-10-20, character Soldmen). State is the player's Side, not quests: Side 2 (signed employee) gets the signed menu and the access card. Retail answers 'Who's in charge of Omni-Tek?' with the same text as 'What can you tell me about Omni-Tek?'. Not expressible yet: handing out the Omni-Tek Application Form, the access card and the maps (item hashes not in the captures), the 'already holding an unsigned form' opener menu, and a Side 1 (clanner) opener (never captured).",
+  "Notes": "Omni-Tek Recruitment Officer (ONRE), ICC Shuttleport (4582) at (935.5, 47.0, 859.0). Rebuilt from 11 QuestDialogCapture dumps (Omni-Tek_Recruitment_Officer_ONRE, 2026-10-20, character Soldmen). State is the player's Side, not quests: Side 2 (signed employee) gets the signed menu and the access card. Retail answers 'Who's in charge of Omni-Tek?' with the same text as 'What can you tell me about Omni-Tek?'. Gives the Omni-Tek Application Form (ARJPCY QL 6) and the access card (ARJVJS QL 1). and the Startup Maps (SAMA QL 1). Not expressible yet: the 'already holding an unsigned form' opener menu, and a Side 1 (clanner) opener (never captured).",
   "Npcs": [
     "ONRE"
   ],
@@ -134,7 +134,7 @@
     },
     "form_given": {
       "Text": [
-        "Good to hear, citizen! Here's the application form, let me know when you've signed it.",
+        "Good to hear, citizen! Here's the application form, let me know when you've signed it.{spawn ARJPCY 6}",
         "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, Shift + left click the application form and read its description.{/emote}"
       ],
       "Replies": [
@@ -144,7 +144,7 @@
     },
     "form_given_fair": {
       "Text": [
-        "Excellent choice, citizen! Here's the application form, let me know when you've signed it.",
+        "Excellent choice, citizen! Here's the application form, let me know when you've signed it.{spawn ARJPCY 6}",
         "{delay 1}\\n{emote}To \"sign\" the application form, right click on the application form located in your inventory. For more info, left click the application form and read it's description.{/emote}"
       ],
       "Replies": [
@@ -316,9 +316,9 @@
     },
     "card": {
       "Text": [
-        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.",
+        "When you're ready to leave here and go to the mainland of Rubi-Ka, you can use this access card to activate the teleporter.{spawn ARJVJS 1}",
         "{delay 4}But remember, once you leave here and go to the mainland, you will be unable to return to here, so do keep that in mind. ",
-        "{delay 2}Oh, and you might find it useful to have these maps! "
+        "{delay 2}Oh, and you might find it useful to have these maps! {spawn SAMA 1}"
       ],
       "Replies": [
         "thank_you",

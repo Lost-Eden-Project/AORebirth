@@ -385,6 +385,24 @@ namespace ZoneEngine_New.Core.GameData
                 : [];
         }
 
+        public bool TryGetTeleportLanding(
+            int playfield,
+            int statelType,
+            uint statelInstance,
+            out int destinationPlayfield,
+            out AORebirth.Core.Vector.Vector3 landing,
+            out bool setsSavePoint)
+        {
+            if (_teleportDestinations != null
+                && _teleportDestinations.TryGetLanding(playfield, statelType, statelInstance, out destinationPlayfield, out landing, out setsSavePoint))
+                return true;
+
+            destinationPlayfield = 0;
+            landing = default!;
+            setsSavePoint = false;
+            return false;
+        }
+
         public bool TryGetTeleportRoute(
             int playfield,
             int statelType,

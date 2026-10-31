@@ -149,7 +149,7 @@ namespace ZoneEngine_New.Tests
         [TestMethod]
         public void DaoRouteReplacesRecoveredDestinationLine()
         {
-            var route = new AORebirth.Database.Dao.TeleportRoute
+            var route = new ZoneEngine_New.Core.WorldSimulation.TeleportRoute
             {
                 Playfield = 540,
                 StatelType = (int)IdentityType.Door,

@@ -75,7 +75,7 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
-        /// A teleports-table route on a door replaces its portal's destination, when it names a door of the routed
+        /// A TeleportRoutes.json route on a door replaces its portal's destination, when it names a door of the routed
         /// playfield (0xC0nnPPPP, PPPP the playfield). The same rule as the door-use path.
         /// </summary>
         public static bool TryApplyRoute(IGameData gameData, int sourcePlayfieldId, int sourceDoorInstance, ref int destinationPlayfieldId, ref int destinationDoorInstance)

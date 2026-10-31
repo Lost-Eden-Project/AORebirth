@@ -114,9 +114,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         }
 
         /// <summary>
-        /// Withdraws every source currently visible to a departing player before forgetting the
-        /// recipient. Zone transfers reuse static dynel identities when the player returns, so the
-        /// old client-side objects must be explicitly removed before those identities are replayed.
+        /// Forgets every source currently visible to a departing player, then the recipient. Every caller follows
+        /// this with an N3Teleport, on which the client drops all its dynels itself, so no Despawn is sent (retail
+        /// sends none on a playfield change, capture 2026-10-23T19:14:22Z).
         /// </summary>
         internal void DeactivatePlayerVisibility(Player player)
         {
@@ -128,14 +128,13 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 Playfield? observe = Observed();
                 foreach (ulong sourceKey in new List<ulong>(visibleSources))
                 {
-                    if (_byIdentity.TryGetValue(sourceKey, out Dynel? source) && !NeverDespawns(source))
+                    if (observe != null && player.Session != null
+                        && _byIdentity.TryGetValue(sourceKey, out Dynel? source) && !NeverDespawns(source))
                     {
-                        LeaveVisibility(player, source, observe, VisibilityReason.PlayerLeft);
+                        ModuleHooks.Visibility(observe, player, source, false, VisibilityReason.PlayerLeft);
                     }
-                    else
-                    {
-                        RemoveVisibleEntry(recipientKey, sourceKey);
-                    }
+
+                    RemoveVisibleEntry(recipientKey, sourceKey);
                 }
             }
 

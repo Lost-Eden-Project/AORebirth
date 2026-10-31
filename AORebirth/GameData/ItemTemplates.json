@@ -8957,5 +8957,35 @@
     },
     "ZYEK": {
         "Templates": [103340, 103341]
+    },
+    "ARCVMH": {
+        "Templates": [81757, 81756, 81755]
+    },
+    "AREBKJ": {
+        "Templates": [249721]
+    },
+    "ARJPCY": {
+        "Templates": [81753, 99727, 81758]
+    },
+    "ARJVJS": {
+        "Templates": [249718]
+    },
+    "ARNQPH": {
+        "Templates": [249699]
+    },
+    "BSNR": {
+        "Templates": [25820, 25821, 160278]
+    },
+    "SAMA": {
+        "Templates": [116693]
+    },
+    "SAMP": {
+        "Templates": [116697]
+    },
+    "STMP": {
+        "Templates": [116696]
+    },
+    "TALA": {
+        "Templates": [25812, 25811, 160277]
     }
 }
