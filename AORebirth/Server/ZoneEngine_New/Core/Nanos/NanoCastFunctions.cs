@@ -316,7 +316,8 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <param name="area">
         /// An AreaCastNano spread: a hostile child catches only what its caster could attack
-        /// (<see cref="IsCaughtByHostileArea"/>); a friendly one reaches all.
+        /// (<see cref="IsCaughtByHostileArea"/>); a friendly one only the caster's own side
+        /// (<see cref="IsCaughtByFriendlyArea"/>).
         /// </param>
         internal static bool AcceptsRecipient(Character source, Character candidate, NanoSpell child, bool area = false)
         {
@@ -328,7 +329,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (child.IsHostile && !self && IsSparedByNpcArea(source, candidate))
                 return false;
             if (area)
-                return !child.IsHostile || IsCaughtByHostileArea(source, candidate);
+                return child.IsHostile ? IsCaughtByHostileArea(source, candidate) : IsCaughtByFriendlyArea(source, candidate);
             if ((can & (CanFlags.ApplyOnSelf | CanFlags.ApplyOnFriendly | CanFlags.ApplyOnHostile)) == 0)
             {
                 // Area nukes such as Volcanic Eruption store Can as 0 and IsHostile on the child.
@@ -364,6 +365,26 @@ namespace ZoneEngine_New.Core.Nanos
                 && !IsFriendlyPet(source, candidate)
                 && !IsSparedByNpcArea(source, candidate)
                 && CombatRules.CanAttack(source, candidate);
+
+        /// <summary>
+        /// A friendly area effect (Bio Rejuvenation 215578's area heals) reaches only the source's side, a pet counting as
+        /// its owner: a player's reaches players and their pets it could not attack (never mobs, nor PvP enemies), an
+        /// NPC's reaches NPCs and their pets (never players or players' pets).
+        /// </summary>
+        internal static bool IsCaughtByFriendlyArea(Character source, Character candidate)
+        {
+            if (ReferenceEquals(source, candidate))
+                return true;
+
+            Character sourceSide = source is NpcCharacter { PetOwner: Character sourceOwner } ? sourceOwner : source;
+            Character candidateSide = candidate is NpcCharacter { PetOwner: Character candidateOwner } ? candidateOwner : candidate;
+            if (sourceSide.IsPlayer != candidateSide.IsPlayer)
+                return false;
+            if (!sourceSide.IsPlayer || ReferenceEquals(sourceSide, candidateSide))
+                return true;
+
+            return !CombatRules.CanAttack(sourceSide, candidateSide);
+        }
 
         /// <summary>Pet affiliation follows its owner; a raid uses the existing team membership rules.</summary>
         internal static bool IsFriendlyPet(Character source, Character candidate)
