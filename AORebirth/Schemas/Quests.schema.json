@@ -204,6 +204,96 @@
           },
           "additionalProperties": false
         }
+      },
+      "Dungeon": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "Floors": {
+            "type": "string"
+          },
+          "Quality": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "Style": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "Playfield": {
+            "type": "integer"
+          },
+          "Entrance": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "MobLevelPercent": {
+            "type": "integer"
+          },
+          "ObjectiveLevelPercent": {
+            "type": "integer"
+          },
+          "Npcs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "AwardsTokens": {
+            "type": "boolean"
+          },
+          "ChestLoot": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "Hash": {
+                  "type": "string"
+                },
+                "Repeats": {
+                  "type": "integer"
+                },
+                "Chance": {
+                  "type": "integer"
+                },
+                "LevelMod": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "MobLoot": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/items/properties/Dungeon/properties/ChestLoot/items"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TemplateHash": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

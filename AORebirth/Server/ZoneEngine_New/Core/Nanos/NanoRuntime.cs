@@ -571,7 +571,8 @@ namespace ZoneEngine_New.Core.Nanos
             }
 
             AnnounceImmediateLand(source, target, spell.Id);
-            AnnounceCastFinished(source, spell.Id, landed: true);
+            // The finish closes the cast record CastNanoSpell opened on the recipient, so it names the recipient too.
+            AnnounceCastFinished(target, spell.Id, landed: true);
 
             if (!spell.IsBuff)
             {
@@ -720,6 +721,7 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 ClientFeedback.Send(caster, ClientFeedback.NanoExecutedSuccessfully);
                 ExecuteOnUseEffects(caster, recipient!, spell, skipPassiveModifiers: false);
+                (caster as NpcCharacter)?.Scripts?.OnCastLanded(spell.Id, recipient!);
                 CastResolved(caster, cast, PlayerActionOutcome.Executed);
                 return;
             }
@@ -763,6 +765,8 @@ namespace ZoneEngine_New.Core.Nanos
             ExecuteOnUseEffects(caster, recipient, spell, skipPassiveModifiers: true);
             if (spell.IsHostile)
                 OnDebuffLanded(caster, recipient, applied, addThreat: false);
+            // An NPC script's CastNano may act on the landing (a summon's warp comes after its buff is on).
+            (caster as NpcCharacter)?.Scripts?.OnCastLanded(spell.Id, recipient);
             CastResolved(caster, cast, PlayerActionOutcome.Executed);
             LogUtil.Debug(
                 DebugInfoDetail.Engine,
@@ -1273,8 +1277,9 @@ namespace ZoneEngine_New.Core.Nanos
         /// The effect of a nano an item or perk function lands with no cast (CastNano / AreaCastNano...): live sends
         /// CastNanoSpell addressed to the recipient, Target = recipient, Unknown1 = 1, Caster = the user, then
         /// SetNanoDuration for a buff (captures 2026-10-02T03:54:58Z Impale on a mob, 15:12:44Z Dance of Fools on
-        /// self). FinishNanoCasting(1, nano) follows (live 2026-10-02T15:28:59Z): client case 0x1d (Gamecode.dll
-        /// 0x1004f322) closes the pending cast entry CastNanoSpell opened and records the success result.
+        /// self). FinishNanoCasting(1, nano) follows (live 2026-10-02T15:28:59Z), addressed to the same recipient:
+        /// client case 0x1d (Gamecode.dll 0x1004f322) closes the pending cast entry CastNanoSpell opened on that
+        /// character and records the success result.
         /// </summary>
         static void AnnounceImmediateLand(Character source, Character target, int nanoId)
             => Announce(

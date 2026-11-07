@@ -163,10 +163,11 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
+            // A quest dungeon has no GameData folder; the one the issuer stands in is still a valid destination.
             string playfieldDir = Path.Combine(
                 _gameData.RootPath,
                 GameDataPaths.PlayfieldRelativeDirectory(playfieldId));
-            if (!Directory.Exists(playfieldDir))
+            if (!Directory.Exists(playfieldDir) && context.Player.Playfield?.Identity.Instance != playfieldId)
             {
                 GmCommandFeedback.Send(
                     context.Session,

@@ -141,7 +141,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization
         public string ReadString(int length)
         {
             var bytes = this.ReadBytes(length);
-            return Encoding.ASCII.GetString(bytes).TrimEnd(char.MinValue);
+            return Encoding.Latin1.GetString(bytes).TrimEnd(char.MinValue);
         }
 
         public ushort ReadUInt16()

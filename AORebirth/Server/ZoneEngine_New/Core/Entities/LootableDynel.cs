@@ -171,6 +171,7 @@ namespace ZoneEngine_New.Core.Entities
                     return true;
                 }
 
+                OnOpenRefusedInUse(player);
                 return false;
             }
 
@@ -193,6 +194,11 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Called when a player newly opens this lootable (not on close toggle).</summary>
         protected virtual void OnOpened(Player player)
+        {
+        }
+
+        /// <summary>Called when <paramref name="player"/> tries to open this lootable while another player has it open.</summary>
+        protected virtual void OnOpenRefusedInUse(Player player)
         {
         }
 

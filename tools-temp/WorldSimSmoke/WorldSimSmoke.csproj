@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EngineGameData>$(MSBuildThisFileDirectory)..\..\AORebirth\Built\Debug\ZoneEngine_New\GameData</EngineGameData>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\AORebirth\Server\ZoneEngine_New\ZoneEngine_New.csproj" />
+  </ItemGroup>
+  <!-- GameData is large; junction the engine tree instead of copying it. -->
+  <Target Name="LinkGameData" AfterTargets="Build" Condition="!Exists('$(OutputPath)GameData')">
+    <Exec Command="mklink /J &quot;$(OutputPath)GameData&quot; &quot;$(EngineGameData)&quot;" />
+  </Target>
+</Project>

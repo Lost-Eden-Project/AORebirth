@@ -147,7 +147,13 @@
           "690": 0,
           "768": 1
         },
-        "Level": 1
+        "Level": 1,
+        "LootTable": [
+          { "Hash": "ARTHMP", "Repeats": 1, "Chance": 1, "LevelMod": 0 },
+          { "Hash": "ARBJWS", "Repeats": 1, "Chance": 1, "LevelMod": 0 },
+          { "Hash": "ARDLSQ", "Repeats": 1, "Chance": 1, "LevelMod": 0 },
+          { "Hash": "ARABXZ", "Repeats": 1, "Chance": 1, "LevelMod": 0 }
+        ]
       }
     ]
   }

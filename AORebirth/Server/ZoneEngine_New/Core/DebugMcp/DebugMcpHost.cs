@@ -12,7 +12,6 @@ namespace ZoneEngine_New.Core.DebugMcp
 
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Metrics;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Playfield;
 
     public sealed class DebugMcpHost : IAsyncDisposable
@@ -70,7 +69,6 @@ namespace ZoneEngine_New.Core.DebugMcp
                 + endpoint.Port.ToString(CultureInfo.InvariantCulture));
             builder.Services.AddSingleton(zoneServices.GetRequiredService<PlayfieldManager>());
             builder.Services.AddSingleton<IPlayfieldMetricsRegistry>(zoneServices.GetRequiredService<IPlayfieldMetricsRegistry>());
-            builder.Services.AddSingleton(zoneServices.GetRequiredService<GeneratedMissionService>());
             builder.Services.AddSingleton(endpoint);
             builder.Services.AddSingleton(zoneServices.GetRequiredService<Quests.Dungeons.QuestDungeonService>());
             builder.Services.AddSingleton(zoneServices.GetRequiredService<Knubot.KnubotCatalog>());

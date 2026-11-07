@@ -54,12 +54,14 @@ namespace ZoneEngine_New.Core.Entities
         public bool Attackable { get; set; } = true;
 
         /// <summary>
-        /// The NPC's body cannot move: its MonsterData Features (stat 224, copied on at spawn) lack
-        /// <see cref="GameData.MonsterBodyFeatures.CanMove"/>. It never paths, wanders or chases, and fights from where it
-        /// stands. Unknown Features count as mobile.
+        /// The NPC never paths, wanders or chases, and fights from where it stands: its MonsterData Features (stat 224,
+        /// copied on at spawn) lack <see cref="GameData.MonsterBodyFeatures.CanMove"/>, or its hash's rules list
+        /// <see cref="Mobs.NpcFeature.NoMove"/> (MonsterCombatRules.json) for a body that could move. Unknown Features
+        /// count as mobile.
         /// </summary>
         public bool IsImmobile
-            => Stats.TryGetValue(CharacterStat.Features, out int features) && !StatCollection.IsUnset(features)
+            => MobTemplate?.Has(Mobs.NpcFeature.NoMove) == true
+                || Stats.TryGetValue(CharacterStat.Features, out int features) && !StatCollection.IsUnset(features)
                 && GameData.MonsterBodyFeatures.IsImmobile(features);
 
         /// <summary>
@@ -73,12 +75,27 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>The NpcScripts program this NPC runs; null for the (vast) majority that run none.</summary>
         public NpcScripts.NpcScriptRunner? Scripts { get; private set; }
 
+        /// <summary>Adds a program: the first becomes <see cref="Scripts"/>, later ones (feature overlays) chain after it.</summary>
         public void AttachScript(NpcScripts.NpcScriptRunner runner)
         {
             ArgumentNullException.ThrowIfNull(runner);
-            Scripts?.OnDespawn();
-            Scripts = runner;
+            if (Scripts == null)
+                Scripts = runner;
+            else
+                Scripts.Append(runner);
         }
+
+        /// <summary>The scripted NPC whose SpawnNpc made this one; null for every other NPC.</summary>
+        public NpcCharacter? ScriptOwner { get; set; }
+
+        /// <summary>SpawnNpc generations behind this NPC: 0 for a placed or hash-spawned NPC, 1 for its adds, and so on.</summary>
+        public int ScriptSpawnDepth { get; set; }
+
+        /// <summary>Milliseconds this NPC outlives its <see cref="ScriptOwner"/>'s death, reset or despawn; -1 when independent of it.</summary>
+        public int OwnerDespawnDelayMs { get; set; } = -1;
+
+        /// <summary>Tick clock (<see cref="Environment.TickCount64"/>) at which this NPC leaves the world as a despawn; 0 for never.</summary>
+        public long DespawnAtMs { get; set; }
 
         /// <summary>The pet state when this NPC is someone's summoned pet; null for ordinary NPCs.</summary>
         public Pets.PetController? Pet { get; private set; }
@@ -342,6 +359,14 @@ namespace ZoneEngine_New.Core.Entities
 
         public override void Tick(double deltaTime)
         {
+            // A scripted add past its time leaves as a GM despawn would; one compare for everyone else.
+            if (DespawnAtMs != 0 && !IsDead && Environment.TickCount64 >= DespawnAtMs)
+            {
+                DespawnAtMs = 0;
+                DespawnAsDeath();
+                return;
+            }
+
             // Before the brain, so a walk the program asks for this tick is seen by this tick's think. A waiting
             // runner is one compare; a dead NPC still runs its Death handler until the corpse swap takes it.
             if (Scripts != null)
@@ -366,7 +391,7 @@ namespace ZoneEngine_New.Core.Entities
                 Brain?.AddThreatFrom(attacker, hpRemoved, fromDamage: true);
 
             // The percent is only computed when the program listens for health thresholds.
-            if (Scripts is { } scripts && scripts.Program.Subscribes(NpcScripts.NpcScriptTrigger.HealthBelow))
+            if (Scripts is { } scripts && scripts.Subscribes(NpcScripts.NpcScriptTrigger.HealthBelow))
             {
                 int max = Stats.GetOrZero(CharacterStat.MaxHealth);
                 if (max > 0)

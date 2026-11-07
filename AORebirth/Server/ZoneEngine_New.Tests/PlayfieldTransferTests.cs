@@ -481,7 +481,6 @@ public sealed class PlayfieldTransferTests
                 .AddSingleton(Manager.Teams).AddSingleton(new WorldSimulationAccess())
                 .AddSingleton(new InventoryMoveService(logger, _flush, Blank<InventoryActionService>()))
                 .AddSingleton(_trades)
-                .AddSingleton(new QuestPropService(world, registry, locality, new StubCatalog(), null!))
                 .AddSingleton(accepted)
                 .BuildServiceProvider();
             Set(world, "_serviceProvider", services);

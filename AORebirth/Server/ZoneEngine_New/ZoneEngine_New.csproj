@@ -84,7 +84,6 @@
     <Compile Include="../../Libraries/Source/AORebirth.Interfaces/Persistence/Shops/IShopDao.cs" Link="Shared/Shops/IShopDao.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Interfaces/Persistence/Shops/ShopStockData.cs" Link="Shared/Shops/ShopStockData.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Interfaces/Persistence/Shops/ShopVendorData.cs" Link="Shared/Shops/ShopVendorData.cs" />
-    <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Missions/MySqlMissionDao.Generated.cs" Link="SharedGameplay/Missions/MySqlMissionDao.Generated.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Missions/MySqlMissionDao.Inventory.cs" Link="SharedGameplay/Missions/MySqlMissionDao.Inventory.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Missions/MySqlMissionDao.Chests.cs" Link="SharedGameplay/Missions/MySqlMissionDao.Chests.cs" />
     <Compile Include="../../Libraries/Source/AORebirth.Database/Domain/Missions/MySqlMissionDao.CharacterQuests.cs" Link="SharedGameplay/Missions/MySqlMissionDao.CharacterQuests.cs" />
@@ -132,11 +131,6 @@
     </Content>
     <Content Include="../../GameData/Missions/**/*.json">
       <Link>GameData/Missions/%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="../../GameData/Missions/Source/MissionLevels.csv">
-      <Link>GameData/Missions/Source/MissionLevels.csv</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
@@ -204,11 +198,6 @@
     </Content>
     <Content Include="Content/Doja/nascense-chip/**/*">
       <Link>Content/Doja/nascense-chip/%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="XML Data/MissionRewards/ItemDb_Clusters.json;XML Data/MissionRewards/ItemDB_Implants.json;XML Data/MissionRewards/ItemDb_Nanos.json;XML Data/MissionRewards/ItemDb_Refined.json;XML Data/MissionRewards/ItemDb_Rest.json">
-      <Link>XML Data/MissionRewards/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

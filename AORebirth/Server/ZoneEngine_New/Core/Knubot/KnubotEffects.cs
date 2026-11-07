@@ -2,6 +2,7 @@ namespace ZoneEngine_New.Core.Knubot;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 using AORebirth.Enums;
@@ -38,7 +39,7 @@ public sealed class KnubotPlan
         if (Quests.TryGetValue(hash, out QuestState? planned))
             return planned;
 
-        return context.Quests.GetLog(context.Player).Quests.TryGetValue(hash, out PlayerQuest? quest) ? quest.State : null;
+        return context.Quests.GetLog(context.Player).TryFind(hash, out PlayerQuest? quest) ? quest.State : null;
     }
 }
 
@@ -84,10 +85,40 @@ public abstract record KnubotEffect
 }
 
 /// <summary>
-/// <c>{givequest HASH}</c>: gives a Quests.json quest. A quest the player already holds active is skipped,
-/// so the rest of the line still plays.
+/// A dungeon quest's mission quality as a dialog names it: a fixed level, or the player's level moved by a percent
+/// (<c>150</c>, <c>level</c>, <c>level+12%</c>, <c>level-25%</c>).
 /// </summary>
-public sealed record KnubotAcceptQuest(string Hash) : KnubotEffect
+public sealed record KnubotQuestQuality(int? Fixed, int Percent)
+{
+    public static bool TryParse(string word, out KnubotQuestQuality? quality)
+    {
+        quality = null;
+        if (KnubotCondition.TryPositive(word, out int fixedLevel))
+        {
+            quality = new KnubotQuestQuality(fixedLevel, 0);
+            return true;
+        }
+
+        if (!word.StartsWith("level", StringComparison.OrdinalIgnoreCase))
+            return false;
+        string rest = word["level".Length..];
+        int percent = 0;
+        if (rest.Length > 0 && (rest[0] != '+' && rest[0] != '-' || !rest.EndsWith('%')
+            || !int.TryParse(rest[..^1], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out percent)))
+            return false;
+        quality = new KnubotQuestQuality(null, percent);
+        return true;
+    }
+
+    public int Resolve(Player player)
+        => Fixed ?? Math.Max(1, (int)Math.Round(player.Stats.GetOrZero(CharacterStat.Level) * (100 + Percent) / 100.0, MidpointRounding.AwayFromZero));
+}
+
+/// <summary>
+/// <c>{givequest HASH [QL]}</c>: gives a Quests.json quest. A quest the player already holds active is skipped,
+/// so the rest of the line still plays. The optional quality is the mission quality of a dungeon quest.
+/// </summary>
+public sealed record KnubotAcceptQuest(string Hash, KnubotQuestQuality? Quality = null) : KnubotEffect
 {
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
     {
@@ -97,10 +128,10 @@ public sealed record KnubotAcceptQuest(string Hash) : KnubotEffect
 
     public override void Apply(KnubotContext context, KnubotEffectServices services)
     {
-        if (context.Quests.GetLog(context.Player).Quests.TryGetValue(Hash, out PlayerQuest? quest) && quest.State == QuestState.Active)
+        if (context.Quests.GetLog(context.Player).TryFind(Hash, out PlayerQuest? quest) && quest.State == QuestState.Active)
             return;
 
-        services.Quests.TryAssignTemplate(context.Player, Hash, out _);
+        services.Quests.TryAssignTemplate(context.Player, Hash, out _, Quality?.Resolve(context.Player));
     }
 }
 

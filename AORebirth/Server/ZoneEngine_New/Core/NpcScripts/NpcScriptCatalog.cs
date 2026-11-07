@@ -10,6 +10,7 @@ using ZoneEngine_New.Core.Ai;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Logging;
+using ZoneEngine_New.Core.Mobs;
 
 using Vector3 = AORebirth.Core.Vector.Vector3;
 
@@ -60,8 +61,9 @@ public static class SpawnPointKey
 
 /// <summary>
 /// <c>GameData/NpcScripts/*.json</c>: programs and their bindings, compiled at load and indexed by hash, by
-/// (playfield, spawn point key) and by (playfield, NPC key). A program or binding with a problem is logged and left
-/// out; the rest load. Resolution at spawn, most specific first: spawn point, NPC key, hash on this playfield, hash.
+/// (playfield, spawn point key), by (playfield, NPC key) and by template feature. A program or binding with a problem
+/// is logged and left out; the rest load. Resolution at spawn, most specific first: spawn point, NPC key, hash on this
+/// playfield, hash. Feature bindings are overlays: each one the NPC's template has runs beside that primary program.
 /// A file in the GameData override folder (AO_REBIRTH_GAMEDATA_OVERRIDE_PATH/NpcScripts) replaces the shipped file at
 /// the same relative path, and one only there is added. <see cref="Reload"/> compiles everything again and swaps it in
 /// whole; NPCs already running a program keep it until they respawn.
@@ -269,6 +271,10 @@ public sealed class NpcScriptCatalog
             if (ReferenceEquals(binding.Program, program)) return true;
         foreach (NpcScriptBinding binding in snapshot.ByNpcKey.Values)
             if (ReferenceEquals(binding.Program, program)) return true;
+        foreach (NpcScriptBinding binding in snapshot.ByFeature.Values)
+            if (ReferenceEquals(binding.Program, program)) return true;
+        foreach (NpcScriptBinding binding in snapshot.ByFeatureOnPlayfield.Values)
+            if (ReferenceEquals(binding.Program, program)) return true;
         return false;
     }
 
@@ -299,6 +305,23 @@ public sealed class NpcScriptCatalog
                     added = snapshot.ByNpcKey.TryAdd((binding.PlayfieldId!.Value, binding.Key), binding);
                     where = "NPC " + binding.Key + " on playfield " + binding.PlayfieldId;
                     break;
+                case ScriptBindingTarget.Feature:
+                {
+                    NpcFeature feature = Enum.Parse<NpcFeature>(binding.Key);
+                    if (binding.PlayfieldId is int featurePf)
+                    {
+                        added = snapshot.ByFeatureOnPlayfield.TryAdd((featurePf, feature), binding);
+                        where = "feature " + binding.Key + " on playfield " + featurePf;
+                    }
+                    else
+                    {
+                        added = snapshot.ByFeature.TryAdd(feature, binding);
+                        where = "feature " + binding.Key;
+                    }
+
+                    break;
+                }
+
                 default:
                     if (binding.PlayfieldId is int pf)
                     {
@@ -335,6 +358,14 @@ public sealed class NpcScriptCatalog
         return current.ByHash.TryGetValue(hash, out binding) ? binding : null;
     }
 
+    /// <summary>The overlay binding for a template feature: this playfield's first, else the global one; null for none.</summary>
+    NpcScriptBinding? ResolveFeature(Snapshot current, NpcFeature feature, int playfieldId)
+    {
+        if (current.ByFeatureOnPlayfield.TryGetValue((playfieldId, feature), out NpcScriptBinding? binding))
+            return binding;
+        return current.ByFeature.TryGetValue(feature, out binding) ? binding : null;
+    }
+
     /// <summary>
     /// True when a spawn point of <paramref name="hash"/> binds a script program (not plain patrol or wander). Resolves
     /// exactly as <see cref="TryAttach"/> does for a hash spawn, which passes the point's hash as the NPC's SpawnHash.
@@ -343,8 +374,9 @@ public sealed class NpcScriptCatalog
         => BindingCount > 0 && Resolve(hash, playfieldId, spawnPointKey, npcKey: null)?.Program != null;
 
     /// <summary>
-    /// Resolves and applies the binding for a freshly built NPC: plain movement onto its brain, the program as a
-    /// runner, then <see cref="NpcScriptTrigger.Spawned"/>. Returns false when nothing is bound.
+    /// Resolves and applies the bindings for a freshly built NPC: plain movement onto its brain, the primary program
+    /// as a runner, one overlay runner per bound template feature, then <see cref="NpcScriptTrigger.Spawned"/> on each.
+    /// Returns false when nothing is bound.
     /// </summary>
     public bool TryAttach(NpcCharacter npc, int playfieldId, string? spawnPointKey, string? npcKey)
     {
@@ -352,10 +384,34 @@ public sealed class NpcScriptCatalog
         if (BindingCount == 0)
             return false;
 
+        Snapshot current = _current;
         NpcScriptBinding? binding = Resolve(npc.SpawnHash ?? npc.MobTemplate?.Hash, playfieldId, spawnPointKey, npcKey);
-        if (binding == null)
-            return false;
+        bool attached = false;
+        if (binding != null)
+            attached = AttachPrimary(npc, binding);
 
+        // Feature overlays: a template lists a handful of features at most, and the lookups only run when a feature
+        // binding exists at all.
+        if (current.FeatureBindingCount > 0 && npc.MobTemplate?.Features is { Count: > 0 } features)
+        {
+            foreach (NpcFeature feature in features)
+            {
+                NpcScriptBinding? overlay = ResolveFeature(current, feature, playfieldId);
+                if (overlay?.Program == null)
+                    continue;
+
+                var runner = new NpcScriptRunner(overlay.Program, overlay.Args, npc);
+                npc.AttachScript(runner);
+                runner.Raise(NpcScriptTrigger.Spawned);
+                attached = true;
+            }
+        }
+
+        return attached;
+    }
+
+    bool AttachPrimary(NpcCharacter npc, NpcScriptBinding binding)
+    {
         // A NoCombat NPC spawns without a brain, and scripted walks (and plain patrol / wander) move through one. Such an
         // NPC gets a brain for movement only: a brain never aggros or fights for an NPC that is not attackable
         // (NpcBrain.CanAggro / CombatRules.CanAttack), so the Borealis Careless Citizen walks instead of emoting in place.
@@ -418,9 +474,13 @@ public sealed class NpcScriptCatalog
         public readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> ByHashOnPlayfield = new();
         public readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> BySpawnPoint = new();
         public readonly Dictionary<(int Playfield, string Key), NpcScriptBinding> ByNpcKey = new();
+        public readonly Dictionary<NpcFeature, NpcScriptBinding> ByFeature = new();
+        public readonly Dictionary<(int Playfield, NpcFeature Feature), NpcScriptBinding> ByFeatureOnPlayfield = new();
 
         public NpcScriptLoadResult Result { get; set; } = new(0, 0, []);
 
-        public int BindingCount => ByHash.Count + ByHashOnPlayfield.Count + BySpawnPoint.Count + ByNpcKey.Count;
+        public int FeatureBindingCount => ByFeature.Count + ByFeatureOnPlayfield.Count;
+
+        public int BindingCount => ByHash.Count + ByHashOnPlayfield.Count + BySpawnPoint.Count + ByNpcKey.Count + FeatureBindingCount;
     }
 }

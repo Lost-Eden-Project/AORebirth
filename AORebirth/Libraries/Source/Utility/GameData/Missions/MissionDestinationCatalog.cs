@@ -11,44 +11,31 @@ namespace Utility.GameData.Missions
     using System.Xml;
 
     /// <summary>
-    /// Immutable entrance placements and destination pools loaded from editable runtime data.
-    /// A cohort may reference the same placement repeatedly.
+    /// The mission entrance placements (GameData/Missions/Destinations/MissionEntrancePlacements.json): where each ACG
+    /// entrance stands on its playfield, and for entrances a terminal offer was ever captured at, the world offsets the
+    /// journal waypoint carries. Immutable after load.
     /// </summary>
     public sealed class MissionDestinationCatalog
     {
         private const string PlacementFile = "MissionEntrancePlacements.json";
-        private const string DestinationFile = "MissionDestinations.json";
 
         private static readonly IReadOnlyList<MissionEntrancePlacement> EmptyPlacements =
             new ReadOnlyCollection<MissionEntrancePlacement>(new MissionEntrancePlacement[0]);
         private readonly Dictionary<MissionPlacementIdentity, MissionEntrancePlacement> identities =
             new Dictionary<MissionPlacementIdentity, MissionEntrancePlacement>();
-        private readonly Dictionary<CoordinateKey, MissionEntrancePlacement> coordinates =
-            new Dictionary<CoordinateKey, MissionEntrancePlacement>();
         private readonly Dictionary<int, IReadOnlyList<MissionEntrancePlacement>> playfields;
-        private readonly Dictionary<TerminalQlKey, IReadOnlyList<MissionEntrancePlacement>> terminalPools =
-            new Dictionary<TerminalQlKey, IReadOnlyList<MissionEntrancePlacement>>();
-        private readonly Dictionary<int, IReadOnlyList<MissionEntrancePlacement>> expectedMissionQls =
-            new Dictionary<int, IReadOnlyList<MissionEntrancePlacement>>();
         private readonly Dictionary<MissionPlacementIdentity, MissionDestinationWorldPosition> worldPositions =
             new Dictionary<MissionPlacementIdentity, MissionDestinationWorldPosition>();
-        private readonly HashSet<MissionPlacementIdentity> pooledIdentities = new HashSet<MissionPlacementIdentity>();
-        private readonly bool allowNearestTerminalQlFallback;
 
-        private MissionDestinationCatalog(PlacementData[] placementRows, MissionDestinationPoolData[] poolRows,
-            bool allowNearestTerminalQlFallback)
+        private MissionDestinationCatalog(PlacementData[] placementRows)
         {
-            this.allowNearestTerminalQlFallback = allowNearestTerminalQlFallback;
             var placementList = new List<MissionEntrancePlacement>();
             foreach (PlacementData row in placementRows)
             {
                 ValidatePlacement(row);
                 var placement = new MissionEntrancePlacement(row);
-                var coordinate = new CoordinateKey(row.PlayfieldId, row.LocalXBits, row.LocalYBits, row.LocalZBits);
-                Require(!identities.ContainsKey(placement.Identity), "Duplicate complete placement identity: " + placement.Identity);
-                Require(!coordinates.ContainsKey(coordinate), "Ambiguous exact coordinate key for placement: " + placement.Identity);
+                Require(!identities.ContainsKey(placement.Identity), "Duplicate placement identity: " + placement.Identity);
                 identities.Add(placement.Identity, placement);
-                coordinates.Add(coordinate, placement);
                 placementList.Add(placement);
                 if (row.WorldPos != null)
                 {
@@ -58,155 +45,26 @@ namespace Utility.GameData.Missions
                 }
             }
 
-            foreach (MissionDestinationPoolData row in poolRows)
-            {
-                Require(row != null && row.TerminalPlayfieldId > 0 && row.ExpectedMissionQl > 0,
-                    "Invalid destination pool terminal playfield or expected QL.");
-                var key = new TerminalQlKey(row.TerminalPlayfieldId, row.ExpectedMissionQl);
-                Require(!terminalPools.ContainsKey(key), "Duplicate terminal playfield and expected QL pool.");
-                Require(row.DestinationIdentities != null && row.DestinationIdentities.Length > 0,
-                    "Empty destination pool.");
-                var pool = new List<MissionEntrancePlacement>();
-                var unique = new HashSet<MissionPlacementIdentity>();
-                foreach (MissionIdentityData destination in row.DestinationIdentities)
-                {
-                    Require(destination != null, "Null destination pool identity.");
-                    var identity = new MissionPlacementIdentity(destination.IdentityType, destination.IdentityInstance);
-                    MissionEntrancePlacement placement;
-                    Require(identities.TryGetValue(identity, out placement), "Destination identity absent from placements: " + identity);
-                    Require(worldPositions.ContainsKey(identity), "Destination identity has no WorldPos: " + identity);
-                    Require(unique.Add(identity), "Duplicate destination identity in pool: " + identity);
-                    pool.Add(placement);
-                    pooledIdentities.Add(identity);
-                }
-                terminalPools.Add(key, pool.AsReadOnly());
-            }
-
-            foreach (var group in terminalPools.GroupBy(x => x.Key.ExpectedMissionQl))
-            {
-                var pool = group.SelectMany(x => x.Value).Select(x => x.Identity).Distinct()
-                    .OrderBy(x => x.IdentityType).ThenBy(x => x.IdentityInstance)
-                    .Select(x => identities[x]).ToList().AsReadOnly();
-                expectedMissionQls.Add(group.Key, pool);
-            }
-
             Placements = placementList.AsReadOnly();
-            ObservedDestinations = pooledIdentities.OrderBy(x => x.IdentityType).ThenBy(x => x.IdentityInstance)
-                .Select(x => identities[x]).ToList().AsReadOnly();
-            ExpectedMissionQls = expectedMissionQls.Keys.OrderBy(x => x).ToList().AsReadOnly();
             playfields = placementList.GroupBy(x => x.PlayfieldId).ToDictionary(
                 x => x.Key, x => (IReadOnlyList<MissionEntrancePlacement>)x.ToList().AsReadOnly());
         }
 
         public int Count { get { return Placements.Count; } }
         public IReadOnlyList<MissionEntrancePlacement> Placements { get; }
-        public IReadOnlyList<MissionEntrancePlacement> ObservedDestinations { get; }
-        public IReadOnlyList<int> ExpectedMissionQls { get; }
-        public int TerminalPoolCount { get { return terminalPools.Count; } }
-        public int ObservedWorldPositionCount { get { return worldPositions.Count; } }
-        public bool DestinationUniquenessWithinCohortRequired { get { return false; } }
-        public bool AllowNearestTerminalQlFallback { get { return allowNearestTerminalQlFallback; } }
 
-        public bool HasTerminalPools(int terminalPlayfield)
-        {
-            return terminalPools.Keys.Any(key => key.TerminalPlayfield == terminalPlayfield);
-        }
-
-        /// <summary>
-        /// Loads the two runtime catalogs from the caller's selected GameData root.
-        /// Captures, analysis artifacts and source manifests are not runtime dependencies.
-        /// </summary>
+        /// <summary>Loads the placements from the caller's selected GameData root.</summary>
         public static MissionDestinationCatalog Load(string gameDataRoot)
         {
             if (string.IsNullOrWhiteSpace(gameDataRoot))
                 throw new ArgumentException("A GameData root is required.", nameof(gameDataRoot));
 
-            string directory = Path.Combine(gameDataRoot, "Missions", "Destinations");
-            var placements = Read<PlacementCatalogData>(File.ReadAllBytes(Path.Combine(directory, PlacementFile)), PlacementFile);
-            var destinations = Read<MissionDestinationData>(File.ReadAllBytes(Path.Combine(directory, DestinationFile)), DestinationFile);
+            string path = Path.Combine(gameDataRoot, "Missions", "Destinations", PlacementFile);
+            var placements = Read<PlacementCatalogData>(File.ReadAllBytes(path), PlacementFile);
             Require(placements != null && placements.SchemaVersion == 2 && placements.CatalogKind == "MISSION_ENTRANCE_PLACEMENTS",
                 "Unsupported placement schema or catalog kind.");
-            Require(destinations != null && destinations.SchemaVersion == 1 && destinations.CatalogKind == "MISSION_DESTINATIONS",
-                "Unsupported destination schema or catalog kind.");
             Require(placements.Placements != null && placements.Placements.Length > 0, "Placement catalog is empty.");
-            Require(destinations.Pools != null && destinations.Pools.Length > 0, "Destination catalog is empty.");
-            return new MissionDestinationCatalog(placements.Placements, destinations.Pools,
-                destinations.AllowNearestTerminalQlFallback);
-        }
-
-        /// <summary>
-        /// Uses the terminal playfield's exact-QL pool when present, otherwise the union at that same QL.
-        /// An explicit gameplay policy may reuse the nearest observed QL pool from the same terminal playfield.
-        /// For a terminal without recorded pools, that policy uses the nearest QL-wide observed pool instead.
-        /// This does not establish observed eligibility at the requested QL.
-        /// </summary>
-        public bool TryGetDestinations(int terminalPlayfield, int expectedQl,
-            out IReadOnlyList<MissionEntrancePlacement> destinations, out bool usedQlFallback)
-        {
-            return TryGetDestinations(terminalPlayfield, expectedQl, out destinations, out usedQlFallback, out _);
-        }
-
-        public bool TryGetDestinations(int terminalPlayfield, int expectedQl,
-            out IReadOnlyList<MissionEntrancePlacement> destinations, out bool usedQlFallback, out int selectedPoolQl)
-        {
-            usedQlFallback = false;
-            selectedPoolQl = expectedQl;
-            if (terminalPools.TryGetValue(new TerminalQlKey(terminalPlayfield, expectedQl), out destinations))
-                return true;
-            if (expectedMissionQls.TryGetValue(expectedQl, out destinations))
-            {
-                usedQlFallback = true;
-                return true;
-            }
-            selectedPoolQl = 0;
-            if (allowNearestTerminalQlFallback && expectedQl > 0)
-            {
-                long nearestDistance = long.MaxValue;
-                foreach (var pool in terminalPools)
-                {
-                    if (pool.Key.TerminalPlayfield != terminalPlayfield)
-                        continue;
-                    long distance = Math.Abs((long)pool.Key.ExpectedMissionQl - expectedQl);
-                    if (distance > nearestDistance
-                        || (distance == nearestDistance && pool.Key.ExpectedMissionQl >= selectedPoolQl))
-                        continue;
-                    nearestDistance = distance;
-                    selectedPoolQl = pool.Key.ExpectedMissionQl;
-                    destinations = pool.Value;
-                }
-                if (selectedPoolQl > 0)
-                {
-                    usedQlFallback = true;
-                    return true;
-                }
-                // No pools were recorded for this terminal. Reuse the QL-wide observations
-                // provisionally; never invent origin observations or change the requested QL.
-                foreach (var pool in expectedMissionQls)
-                {
-                    long distance = Math.Abs((long)pool.Key - expectedQl);
-                    if (distance > nearestDistance
-                        || (distance == nearestDistance && pool.Key >= selectedPoolQl))
-                        continue;
-                    nearestDistance = distance;
-                    selectedPoolQl = pool.Key;
-                    destinations = pool.Value;
-                }
-                if (selectedPoolQl > 0)
-                {
-                    usedQlFallback = true;
-                    return true;
-                }
-            }
-            destinations = EmptyPlacements;
-            return false;
-        }
-
-        public bool TryGetObservedDestinations(int expectedMissionQl, out IReadOnlyList<MissionEntrancePlacement> destinations)
-        {
-            if (expectedMissionQls.TryGetValue(expectedMissionQl, out destinations))
-                return true;
-            destinations = EmptyPlacements;
-            return false;
+            return new MissionDestinationCatalog(placements.Placements);
         }
 
         public bool TryGetWorldPosition(MissionPlacementIdentity identity, out MissionDestinationWorldPosition worldPosition)
@@ -214,30 +72,15 @@ namespace Utility.GameData.Missions
             return worldPositions.TryGetValue(identity, out worldPosition);
         }
 
-        public MissionEntrancePlacement GetByIdentity(uint identityType, uint identityInstance)
-        {
-            return identities[new MissionPlacementIdentity(identityType, identityInstance)];
-        }
-
         public bool TryGetByIdentity(uint identityType, uint identityInstance, out MissionEntrancePlacement placement)
         {
             return identities.TryGetValue(new MissionPlacementIdentity(identityType, identityInstance), out placement);
-        }
-
-        public bool TryGetByExactWorldPos(int playfieldId, uint xBits, uint yBits, uint zBits, out MissionEntrancePlacement placement)
-        {
-            return coordinates.TryGetValue(new CoordinateKey(playfieldId, xBits, yBits, zBits), out placement);
         }
 
         public IReadOnlyList<MissionEntrancePlacement> GetPlacementsForPlayfield(int playfieldId)
         {
             IReadOnlyList<MissionEntrancePlacement> result;
             return playfields.TryGetValue(playfieldId, out result) ? result : EmptyPlacements;
-        }
-
-        public bool IsObservedRandomMissionDestination(MissionPlacementIdentity identity)
-        {
-            return pooledIdentities.Contains(identity);
         }
 
         private static void ValidatePlacement(PlacementData row)
@@ -263,35 +106,6 @@ namespace Utility.GameData.Missions
             Require(new string(characters) == row.DisplayName, "Display name differs from byte-preserving raw name.");
         }
 
-        private readonly struct TerminalQlKey : IEquatable<TerminalQlKey>
-        {
-            private readonly int terminalPlayfield;
-
-            public TerminalQlKey(int terminalPlayfield, int expectedMissionQl)
-            {
-                this.terminalPlayfield = terminalPlayfield;
-                ExpectedMissionQl = expectedMissionQl;
-            }
-
-            public int ExpectedMissionQl { get; }
-            public int TerminalPlayfield { get { return terminalPlayfield; } }
-
-            public bool Equals(TerminalQlKey other)
-            {
-                return terminalPlayfield == other.terminalPlayfield && ExpectedMissionQl == other.ExpectedMissionQl;
-            }
-
-            public override bool Equals(object obj)
-            {
-                return obj is TerminalQlKey && Equals((TerminalQlKey)obj);
-            }
-
-            public override int GetHashCode()
-            {
-                unchecked { return (terminalPlayfield * 397) ^ ExpectedMissionQl; }
-            }
-        }
-
         private static void ValidateCoordinate(double value, uint bits, string axis)
         {
             float decoded = BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
@@ -310,19 +124,12 @@ namespace Utility.GameData.Missions
 
         private static T Read<T>(byte[] bytes, string label)
         {
-            RequireSingleDocument(bytes, label);
             try
             {
                 using (XmlDictionaryReader reader = JsonReaderWriterFactory.CreateJsonReader(bytes, XmlDictionaryReaderQuotas.Max))
                 {
                     var settings = new DataContractJsonSerializerSettings { MaxItemsInObjectGraph = 1000000 };
-                    T result = (T)new DataContractJsonSerializer(typeof(T), settings).ReadObject(reader);
-                    while (reader.Read())
-                    {
-                        Require(reader.NodeType == XmlNodeType.Whitespace || reader.NodeType == XmlNodeType.SignificantWhitespace,
-                            "Unexpected content after catalog JSON: " + label);
-                    }
-                    return result;
+                    return (T)new DataContractJsonSerializer(typeof(T), settings).ReadObject(reader);
                 }
             }
             catch (SerializationException ex)
@@ -335,68 +142,6 @@ namespace Utility.GameData.Missions
             }
         }
 
-        private static void RequireSingleDocument(byte[] bytes, string label)
-        {
-            // The BCL JSON reader stops at the first document. Check its boundary here;
-            // DataContractJsonSerializer remains responsible for JSON grammar and member types.
-            int start = bytes.Length >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf ? 3 : 0;
-            while (start < bytes.Length && IsJsonWhitespace(bytes[start]))
-            {
-                start++;
-            }
-            Require(start < bytes.Length && bytes[start] == '{', "Expected one JSON catalog object: " + label);
-            int depth = 0;
-            bool quoted = false;
-            bool escaped = false;
-            for (int index = start; index < bytes.Length; index++)
-            {
-                byte current = bytes[index];
-                if (quoted)
-                {
-                    if (escaped)
-                    {
-                        escaped = false;
-                    }
-                    else if (current == '\\')
-                    {
-                        escaped = true;
-                    }
-                    else if (current == '"')
-                    {
-                        quoted = false;
-                    }
-                    continue;
-                }
-                if (current == '"')
-                {
-                    quoted = true;
-                }
-                else if (current == '{' || current == '[')
-                {
-                    depth++;
-                    Require(depth <= 128, "Excessive catalog JSON nesting: " + label);
-                }
-                else if (current == '}' || current == ']')
-                {
-                    depth--;
-                    if (depth != 0)
-                        continue;
-                    Require(current == '}', "Expected catalog object closing delimiter: " + label);
-                    for (int trailing = index + 1; trailing < bytes.Length; trailing++)
-                    {
-                        Require(IsJsonWhitespace(bytes[trailing]), "Unexpected content after catalog JSON: " + label);
-                    }
-                    return;
-                }
-            }
-            throw new InvalidDataException("Incomplete catalog JSON object or string: " + label);
-        }
-
-        private static bool IsJsonWhitespace(byte value)
-        {
-            return value == ' ' || value == '\t' || value == '\r' || value == '\n';
-        }
-
         private static bool IsHex(string value, int length)
         {
             return value != null && value.Length == length && value.All(
@@ -407,37 +152,6 @@ namespace Utility.GameData.Missions
         {
             if (!condition)
                 throw new InvalidDataException(message);
-        }
-
-        private readonly struct CoordinateKey : IEquatable<CoordinateKey>
-        {
-            private readonly int playfield;
-            private readonly uint x;
-            private readonly uint y;
-            private readonly uint z;
-
-            public CoordinateKey(int playfield, uint x, uint y, uint z)
-            {
-                this.playfield = playfield;
-                this.x = x;
-                this.y = y;
-                this.z = z;
-            }
-
-            public bool Equals(CoordinateKey other)
-            {
-                return playfield == other.playfield && x == other.x && y == other.y && z == other.z;
-            }
-
-            public override bool Equals(object obj)
-            {
-                return obj is CoordinateKey && Equals((CoordinateKey)obj);
-            }
-
-            public override int GetHashCode()
-            {
-                unchecked { return (((playfield * 397) ^ (int)x) * 397 ^ (int)y) * 397 ^ (int)z; }
-            }
         }
     }
 }

@@ -138,9 +138,16 @@ Exactly one of:
 | `SpawnPoint` | the NPC that comes out of one `Spawns.json` point | yes |
 | `NpcKey` | one placed NPC, by its `Key` in `PlayfieldContent/<pf>/Npcs.json` | yes |
 
-Resolution at spawn, most specific wins: `SpawnPoint` > `NpcKey` > `Hash` with `Playfield` > `Hash`. One program per
-NPC. Where two behaviours must coexist they are two handlers of one program, which is what keeps movement ownership
+Resolution at spawn, most specific wins: `SpawnPoint` > `NpcKey` > `Hash` with `Playfield` > `Hash`. One primary program
+per NPC. Where two behaviours must coexist they are two handlers of one program, which is what keeps movement ownership
 unambiguous.
+
+**Feature overlays.** A fourth target, `Feature` (an `NpcFeature` name from `MonsterCombatRules.json` `Features`,
+optionally with `Playfield`), binds a program to every NPC whose template has that feature. Overlays run *beside* the
+primary program: each is its own runner chained after the primary one (`NpcScriptRunner.Next`), and every hook
+(`Tick`, `Raise`, despawn, cast landed) walks the chain. So a boss with its own scene script still gets the shared
+`Summoner` program. To keep movement ownership single, an overlay program may not contain `WalkTo`/`RunTo`/`SetHome`/
+`ReleaseMovement` and its binding carries no `Movement`; the loader rejects either.
 
 **Spawn point key**: `<hashText>@<x>,<y>,<z>` with the position rounded to 0.1 m, derived by the server at load from
 fields `Spawns.json` already has (`hashText`, `position`). Stacked points at one position get `#2`, `#3` in RDB
@@ -258,10 +265,10 @@ Instant unless marked blocking. Operands are constants or `$Param` slots.
 | `Emote` SocialAction | the player emote message from the NPC (below); blocking for the anim's duration | 1..71 |
 | `Say` text, `Type` | `VicinityChatRelay.Speak` | rate limit 1/s per NPC |
 | `SpawnWorldItem` item, offset (in the NPC's frame: x right, y up, z ahead), lifetime, `Count` | mint via `HashItemMinter`, `SpawnDroppedItem` with no owner | lifetime mandatory, per-runner live cap (8) |
-| `SpawnNpc` hash, offset, `DespawnWithOwner` | `SpawnMob` with `SpawnSource.Script`; tracked by the runner | cap (4) |
+| `SpawnNpc` hash, `At`/`Offset`, `Count`+`Radius`, `LifetimeSeconds`, `DespawnWithOwner`, `Level`, `JoinFight` | `SpawnMob` with `SpawnSource.Script`; one NPC, or `Count` evenly on a circle of `Radius` from a random start angle; the adds are owned by the runner: a per-runner live cap (16), two generations at most (an add's adds may not spawn), `LifetimeSeconds` as a hard cap, and `DespawnWithOwner` (true: at once; seconds: that long after; false: never) once the owner dies, resets or despawns, which is the only way to despawn another NPC from data. `JoinFight` (default) puts the owner's current target on the add's hate list. The add's own `Hash` binding attaches, so adds of varying hashes run their own programs. Random add types: a `Random` block with one `SpawnNpc` per option | |
 | `Despawn` | `SpawnService.DespawnNpc(self)`, ends the program | |
 | `Gfx` id, `On` / `At` / `From`+`To` | `GfxTriggerMessage` (below) to the NPC's observers | |
-| `CastNano` id, `Self` / `Target` | existing nano runtime entry | |
+| `CastNano` id, `Target` `Self` / `Target` / `RandomHostile`, `MinDistance`, `Warp` | `NanoRuntime.TryStartCast` (requirements, cost, recharge, legality as for any caster); blocks while the cast bar runs (polled at 4 Hz). `RandomHostile` is a reservoir pick over the brain's hate list of players the NPC may attack and that stand at least `MinDistance` m away (edge to edge); pets are never picked. `Warp: "ToSelf"` moves the recipient to the NPC's feet (1.5 m from its centre, on the side it came from) when the nano lands, after the buff is on: a player through `Player.TeleportWithinPlayfield` with its living pets warped alongside (the Abmouth capture of 2026-07-20: nano 286237, then N3Teleport for the player and SetPos for both pets), an NPC through `NpcBrain.WarpTo`. Nano 286237 ("Summoned") itself carries only a RestrictAction function, no teleport, so the warp has to be the script's | |
 | `SetStat` stat, value | `Stats.Set(..., dirty: true)` for pose / flags style spawn states | stat by `CharacterStat` name only |
 | `SetVar` / `AddVar` / `If` var op value, `Goto` | 8 int slots, compiled predicates | `If` also supports `Health <`, `HasTarget`, `PlayersNear r`, `Chance p` |
 | `Random` [blocks] | jump to one block, equal or weighted | compiled to jump table |
@@ -422,14 +429,21 @@ project and `SharedBuild/source-inventory`.
 
 In: triggers `Spawned`, `Arrived`, `Stuck`, `HealthBelow`, `Death`, `Reset`, `CombatStart`, `CombatEnd`,
 `NanoEnded`, `Timer` (`EveryMs`), `Used`; verbs `Wait`, `WalkTo`/`RunTo` (object form `To` + `Direct` for a straight-line step off the navmesh), `Emote` (optional `DurationMs`), `Say`,
-`SpawnWorldItem`, `Gfx` (anchors `On: Self`, `At`, `Offset`, `From`/`To`), `Despawn`, `SetStat`, `SetVar`/`AddVar`,
+`SpawnWorldItem`, `SpawnNpc` (2026-11-06: circle spawns, lifetimes, owner-bound despawn, `$NpcHash` params), `Gfx` (anchors `On: Self`, `At`, `Offset`, `From`/`To`),
+`CastNano` (2026-11-06: `Self`/`Target`/`RandomHostile` with `MinDistance`, `Warp: "ToSelf"` on landing), `Despawn`, `SetStat`, `SetVar`/`AddVar`,
 `If` (jumps to its `Goto` label when the condition holds), `Goto`/`Label`, `Random`, `Restart`, `ReleaseMovement`, `SetHome`,
-`End`; bindings by `Hash` (optionally per `Playfield`), `SpawnPoint`, `NpcKey`; `Movement` shorthand (`Patrol`,
+`End`; bindings by `Hash` (optionally per `Playfield`), `SpawnPoint`, `NpcKey`, `Feature` (overlay, 2026-11-06); `Movement` shorthand (`Patrol`,
 `Wander`). Timer handlers re-arm themselves and never queue up. An interrupting handler suspends the running one,
-which resumes where it was (a cut-short walk is re-issued).
+which resumes where it was (a cut-short walk is re-issued). `NanoRuntime` tells the caster's runners when one of its
+casts lands (`NpcScriptRunner.OnCastLanded`), which is what a `Warp` waits for. `NpcCharacter` carries the add
+bookkeeping (`ScriptOwner`, `ScriptSpawnDepth`, `OwnerDespawnDelayMs`, `DespawnAtMs`: one compare in its tick).
 
-Not yet: `Face`, `CastNano`, `SpawnNpc`, `Signal`, `PlayerNear`, `DialogueOpened`/`Closed`, `NanoLanded`, the gfx
-category table, debug-MCP exposure of runner state, hot reload.
+The shipped `Summoner.json` binds `Feature: "Summoner"`: in a fight, every 20 to 30 s it casts 286237 on a random
+hostile player more than 10 m away and warps them to its feet. Listing `Summoner` under a hash's `Features` in
+`MonsterCombatRules.json` is all a monster needs.
+
+Not yet: `Face`, `Signal`, `PlayerNear`, `DialogueOpened`/`Closed`, `NanoLanded`, the gfx category table, hot reload
+of a running NPC's program (the catalog reloads; NPCs pick the new program up when they respawn).
 
 Adjustments from the design above: the runner holds a walk while the brain is busy and re-requests it when free,
 so `Interrupts` is only about handler preemption; the `Emote` duration is per op (default 2000 ms) rather than a

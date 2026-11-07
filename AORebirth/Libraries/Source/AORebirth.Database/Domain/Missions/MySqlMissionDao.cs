@@ -26,7 +26,6 @@ namespace AORebirth.Database.Domain.Missions
     using MissionObjectiveKey = AORebirth.Interfaces.Persistence.Missions.MissionObjectiveKeyData;
     using MissionObjectiveObservationRecord = AORebirth.Interfaces.Persistence.Missions.MissionObjectiveObservationData;
     using MissionObjectiveProgressRecord = AORebirth.Interfaces.Persistence.Missions.MissionObjectiveProgressData;
-    using MissionRewardClaimResult = AORebirth.Interfaces.Persistence.Missions.MissionRewardClaimResultData;
     using MissionRewardKey = AORebirth.Interfaces.Persistence.Missions.MissionRewardKeyData;
     using MissionRewardStageRecord = AORebirth.Interfaces.Persistence.Missions.MissionRewardStageData;
     using MissionStateRecord = AORebirth.Interfaces.Persistence.Missions.MissionStateData;
@@ -41,8 +40,6 @@ namespace AORebirth.Database.Domain.Missions
     {
         private const string StartAreaQuestId = "system.new_character_start_area";
         private const string StartAreaFlagKey = "selection";
-        private const string RollFeeRewardKey = "roll-fee";
-        private const string RollFeeRewardType = "GeneratedMissionRollFee";
 
         private readonly Func<IDbConnection> connectionFactory;
 
@@ -144,15 +141,6 @@ namespace AORebirth.Database.Domain.Missions
             }
         }
 
-        public IList<MissionAccountFlagRecord> GetAccountFlags(string accountKey)
-        {
-            accountKey = NormalizeAccountKey(accountKey);
-            using (IDbConnection connection = this.OpenConnection())
-            {
-                return QueryAccountFlags(connection, null, accountKey);
-            }
-        }
-
         public T Execute<T>(int characterId, Func<IMissionDaoTransaction, T> operation)
         {
             return this.Execute(characterId, null, operation);
@@ -216,146 +204,6 @@ namespace AORebirth.Database.Domain.Missions
                 }
                 scope.Complete(true);
                 return result;
-            }
-        }
-
-        public MissionRollFeeResult TryChargeRollFee(MissionRollFeeRequest request)
-        {
-            if (request == null
-                || request.CharacterType <= 0
-                || request.CharacterId <= 0
-                || string.IsNullOrWhiteSpace(request.BatchIdentity)
-                || request.BatchIdentity.Length > 96
-                || request.BatchIdentity.IndexOf(';') >= 0
-                || request.Fee <= 0
-                || request.AppliedAtUtcTicks <= 0)
-            {
-                return RollFeeConflict("Roll-fee claim identity or amount is invalid.");
-            }
-
-            string questId = "generated-offer:" + request.BatchIdentity;
-            using (IDbConnection connection = this.OpenConnection())
-            using (IDbTransaction transaction = connection.BeginTransaction())
-            {
-                try
-                {
-                    int cashBefore = ReadCash(
-                        connection,
-                        transaction,
-                        request.CharacterType,
-                        request.CharacterId);
-                    MissionRollFeeLedgerRow existing =
-                        connection.Query<MissionRollFeeLedgerRow>(
-                            "SELECT RewardType, Status, EffectReference FROM missionrewardledger "
-                            + "WHERE CharacterId=@CharacterId AND QuestId=@QuestId "
-                            + "AND RewardKey=@RewardKey FOR UPDATE",
-                            new
-                            {
-                                CharacterId = request.CharacterId,
-                                QuestId = questId,
-                                RewardKey = RollFeeRewardKey
-                            },
-                            transaction).FirstOrDefault();
-                    if (existing != null)
-                    {
-                        int recordedFee;
-                        int recordedBefore;
-                        int recordedAfter;
-                        if (!string.Equals(existing.RewardType, RollFeeRewardType, StringComparison.Ordinal)
-                            || existing.Status != (int)MissionRewardStatus.Applied
-                            || !TryParseRollFeeEffectReference(
-                                existing.EffectReference,
-                                request.BatchIdentity,
-                                out recordedFee,
-                                out recordedBefore,
-                                out recordedAfter)
-                            || recordedFee != request.Fee)
-                        {
-                            transaction.Rollback();
-                            return RollFeeConflict(
-                                "Existing durable roll-fee claim conflicts with this batch.");
-                        }
-
-                        transaction.Commit();
-                        return new MissionRollFeeResult
-                               {
-                                   Status = MissionRollFeeStatus.AlreadyApplied,
-                                   CashBefore = recordedBefore,
-                                   CashAfter = cashBefore,
-                                   Failure = string.Empty
-                               };
-                    }
-
-                    if (cashBefore < request.Fee)
-                    {
-                        transaction.Rollback();
-                        return new MissionRollFeeResult
-                               {
-                                   Status = MissionRollFeeStatus.InsufficientCredits,
-                                   CashBefore = cashBefore,
-                                   CashAfter = cashBefore,
-                                   Failure = "Insufficient credits for generated mission roll fee."
-                               };
-                    }
-
-                    int cashAfter = cashBefore - request.Fee;
-                    connection.Execute(
-                        "INSERT INTO stats (Instance, Type, StatId, StatValue) "
-                        + "VALUES (@Instance, @Type, @StatId, @StatValue) "
-                        + "ON DUPLICATE KEY UPDATE StatValue=@StatValue",
-                        new
-                        {
-                            Instance = request.CharacterId,
-                            Type = request.CharacterType,
-                            StatId = (int)StatIds.cash,
-                            StatValue = cashAfter
-                        },
-                        transaction);
-
-                    string effectReference = CreateRollFeeEffectReference(
-                        request.BatchIdentity,
-                        request.Fee,
-                        cashBefore,
-                        cashAfter);
-                    int inserted = connection.Execute(
-                        "INSERT INTO missionrewardledger "
-                        + "(CharacterId, QuestId, RewardKey, RewardType, Status, Attempts, LastError, "
-                        + "EffectReference, ClaimToken, ClaimedAtUtcTicks, ClaimExpiresAtUtcTicks, "
-                        + "AppliedAtUtcTicks, CreatedAtUtcTicks, UpdatedAtUtcTicks, Version) VALUES "
-                        + "(@CharacterId, @QuestId, @RewardKey, @RewardType, @Status, 1, NULL, "
-                        + "@EffectReference, NULL, @AppliedAtUtcTicks, 0, @AppliedAtUtcTicks, "
-                        + "@AppliedAtUtcTicks, @AppliedAtUtcTicks, 1)",
-                        new
-                        {
-                            CharacterId = request.CharacterId,
-                            QuestId = questId,
-                            RewardKey = RollFeeRewardKey,
-                            RewardType = RollFeeRewardType,
-                            Status = (int)MissionRewardStatus.Applied,
-                            EffectReference = effectReference,
-                            request.AppliedAtUtcTicks
-                        },
-                        transaction);
-                    if (inserted != 1)
-                    {
-                        throw new InvalidOperationException(
-                            "Durable generated mission roll-fee claim was not inserted exactly once.");
-                    }
-
-                    transaction.Commit();
-                    return new MissionRollFeeResult
-                           {
-                               Status = MissionRollFeeStatus.Applied,
-                               CashBefore = cashBefore,
-                               CashAfter = cashAfter,
-                               Failure = string.Empty
-                           };
-                }
-                catch (Exception operationFailure)
-                {
-                    RollbackAfterFailure(transaction, operationFailure);
-                    throw;
-                }
             }
         }
 
@@ -477,93 +325,11 @@ namespace AORebirth.Database.Domain.Missions
             }
         }
 
-        private static int ReadCash(
-            IDbConnection connection,
-            IDbTransaction transaction,
-            int characterType,
-            int characterId)
-        {
-            int? persisted = connection.Query<int?>(
-                    "SELECT StatValue FROM stats WHERE Instance=@Instance AND Type=@Type "
-                    + "AND StatId=@StatId FOR UPDATE",
-                    new
-                    {
-                        Instance = characterId,
-                        Type = characterType,
-                        StatId = (int)StatIds.cash
-                    },
-                    transaction)
-                .FirstOrDefault();
-            return ClampCash(persisted.GetValueOrDefault());
-        }
-
         /// <summary>Most credits a character may hold; the zone engine sets it from Gameplay.json at startup.</summary>
         public static int MaxCash { get; set; } = 1000000000;
 
         private static int ClampCash(long cash)
             => cash < 0 ? 0 : cash > MaxCash ? MaxCash : (int)cash;
-
-        private static string CreateRollFeeEffectReference(
-            string batchIdentity,
-            int fee,
-            int cashBefore,
-            int cashAfter)
-        {
-            return string.Format(
-                CultureInfo.InvariantCulture,
-                "batch={0};fee={1};before={2};after={3}",
-                batchIdentity,
-                fee,
-                cashBefore,
-                cashAfter);
-        }
-
-        private static bool TryParseRollFeeEffectReference(
-            string effectReference,
-            string expectedBatchIdentity,
-            out int fee,
-            out int cashBefore,
-            out int cashAfter)
-        {
-            fee = 0;
-            cashBefore = 0;
-            cashAfter = 0;
-            if (string.IsNullOrEmpty(effectReference))
-            {
-                return false;
-            }
-
-            string[] parts = effectReference.Split(';');
-            return parts.Length == 4
-                   && string.Equals(parts[0], "batch=" + expectedBatchIdentity, StringComparison.Ordinal)
-                   && TryParseRollFeePart(parts[1], "fee=", out fee)
-                   && TryParseRollFeePart(parts[2], "before=", out cashBefore)
-                   && TryParseRollFeePart(parts[3], "after=", out cashAfter)
-                   && fee > 0
-                   && cashBefore >= fee
-                   && cashAfter == cashBefore - fee;
-        }
-
-        private static bool TryParseRollFeePart(string value, string prefix, out int parsed)
-        {
-            parsed = 0;
-            return value != null
-                   && value.StartsWith(prefix, StringComparison.Ordinal)
-                   && int.TryParse(
-                       value.Substring(prefix.Length),
-                       NumberStyles.Integer,
-                       CultureInfo.InvariantCulture,
-                       out parsed);
-        }
-
-        private static MissionRollFeeResult RollFeeConflict(string failure)
-        {
-            return new MissionRollFeeResult
-                   {
-                       Status = MissionRollFeeStatus.Conflict,
-                       Failure = failure ?? "Durable generated mission roll-fee claim conflict."
-                   };
-        }
 
         private static bool IsCompletedStartAreaState(string state)
         {
@@ -805,15 +571,6 @@ namespace AORebirth.Database.Domain.Missions
                     parameterName,
                     parameterName + " exceeds the persisted maximum length of " + maximumLength + ".");
             }
-        }
-
-        private sealed class MissionRollFeeLedgerRow
-        {
-            public string RewardType { get; set; }
-
-            public int Status { get; set; }
-
-            public string EffectReference { get; set; }
         }
 
         private sealed partial class MySqlMissionDaoTransaction : IMissionDaoTransaction
@@ -1227,241 +984,6 @@ namespace AORebirth.Database.Domain.Missions
                 return QueryReward(this.connection, this.transaction, key, true);
             }
 
-            public MissionRewardClaimResult TryClaimReward(
-                MissionRewardKey key,
-                string rewardType,
-                string claimToken,
-                long claimedAtUtcTicks,
-                long claimExpiresAtUtcTicks)
-            {
-                this.ValidateCharacterScope(key.Mission.CharacterId);
-                ValidateRewardKey(key);
-                ValidateText(rewardType, "rewardType", 64, false);
-                ValidateText(claimToken, "claimToken", 64, false);
-                MissionStateRecord mission = QueryMission(
-                    this.connection,
-                    this.transaction,
-                    key.Mission,
-                    true);
-                if (mission == null || mission.State != MissionLifecycleState.Completed)
-                {
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.Rejected,
-                        null,
-                        "Reward claims require a completed authoritative mission.");
-                }
-
-                if (claimedAtUtcTicks <= 0 || claimExpiresAtUtcTicks <= claimedAtUtcTicks)
-                {
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.Rejected,
-                        null,
-                        "Reward claim expiry must be later than the claim time.");
-                }
-
-                MissionRewardStageRecord existing = QueryReward(this.connection, this.transaction, key, true);
-                if (existing == null)
-                {
-                    const string InsertSql =
-                        "INSERT INTO missionrewardledger "
-                        + "(CharacterId, QuestId, RewardKey, RewardType, Status, Attempts, LastError, "
-                        + "EffectReference, ClaimToken, ClaimedAtUtcTicks, ClaimExpiresAtUtcTicks, "
-                        + "AppliedAtUtcTicks, CreatedAtUtcTicks, UpdatedAtUtcTicks, Version) VALUES "
-                        + "(@CharacterId, @QuestId, @RewardKey, @RewardType, @Status, 1, NULL, NULL, "
-                        + "@ClaimToken, @ClaimedAtUtcTicks, @ClaimExpiresAtUtcTicks, 0, "
-                        + "@ClaimedAtUtcTicks, @ClaimedAtUtcTicks, 1)";
-
-                    int inserted = this.ExecuteWrite(
-                        InsertSql,
-                        new
-                        {
-                            CharacterId = key.Mission.CharacterId,
-                            QuestId = key.Mission.QuestId,
-                            key.RewardKey,
-                            RewardType = rewardType,
-                            Status = MissionRewardStatus.InProgress,
-                            ClaimToken = claimToken,
-                            ClaimedAtUtcTicks = claimedAtUtcTicks,
-                            ClaimExpiresAtUtcTicks = claimExpiresAtUtcTicks
-                        },
-                        this.transaction);
-                    this.RequireSingleWrite(inserted, "reward claim insert", key.ToString(), 0);
-
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.Claimed,
-                        QueryReward(this.connection, this.transaction, key, true),
-                        "Reward stage claimed.");
-                }
-
-                if (!string.Equals(existing.RewardType, rewardType, StringComparison.OrdinalIgnoreCase))
-                {
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.Rejected,
-                        existing,
-                        "Reward type does not match the durable reward stage.");
-                }
-
-                if (existing.Status == MissionRewardStatus.Applied)
-                {
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.AlreadyApplied,
-                        existing,
-                        "Reward stage is already applied.");
-                }
-
-                if (existing.Status == MissionRewardStatus.InProgress
-                    && existing.ClaimExpiresAtUtcTicks > claimedAtUtcTicks)
-                {
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.Busy,
-                        existing,
-                        "Reward stage has an active claim.");
-                }
-
-                const string ReclaimSql =
-                    "UPDATE missionrewardledger SET Status=@Status, Attempts=Attempts+1, LastError=NULL, "
-                    + "ClaimToken=@ClaimToken, ClaimedAtUtcTicks=@ClaimedAtUtcTicks, "
-                    + "ClaimExpiresAtUtcTicks=@ClaimExpiresAtUtcTicks, UpdatedAtUtcTicks=@ClaimedAtUtcTicks, "
-                    + "Version=Version+1 WHERE CharacterId=@CharacterId AND QuestId=@QuestId "
-                    + "AND RewardKey=@RewardKey AND Version=@ExpectedVersion";
-
-                int reclaimed = this.ExecuteWrite(
-                    ReclaimSql,
-                    new
-                    {
-                        Status = MissionRewardStatus.InProgress,
-                        ClaimToken = claimToken,
-                        ClaimedAtUtcTicks = claimedAtUtcTicks,
-                        ClaimExpiresAtUtcTicks = claimExpiresAtUtcTicks,
-                        CharacterId = key.Mission.CharacterId,
-                        QuestId = key.Mission.QuestId,
-                        key.RewardKey,
-                        ExpectedVersion = existing.Version
-                    },
-                    this.transaction);
-
-                if (reclaimed != 1)
-                {
-                    return CreateClaimResult(
-                        MissionRewardClaimStatus.Rejected,
-                        QueryReward(this.connection, this.transaction, key, true),
-                        "Reward claim lost an optimistic concurrency race.");
-                }
-
-                return CreateClaimResult(
-                    MissionRewardClaimStatus.Claimed,
-                    QueryReward(this.connection, this.transaction, key, true),
-                    "Reward stage claimed for retry.");
-            }
-
-            public bool TryMarkRewardApplied(
-                MissionRewardKey key,
-                string claimToken,
-                long expectedVersion,
-                string effectReference,
-                long appliedAtUtcTicks,
-                out MissionRewardStageRecord stage)
-            {
-                this.ValidateCharacterScope(key.Mission.CharacterId);
-                ValidateRewardKey(key);
-                ValidateText(claimToken, "claimToken", 64, false);
-                ValidateText(effectReference, "effectReference", 255, true);
-                if (appliedAtUtcTicks <= 0)
-                {
-                    stage = QueryReward(this.connection, this.transaction, key, true);
-                    return false;
-                }
-
-                const string Sql =
-                    "UPDATE missionrewardledger SET Status=@Status, EffectReference=@EffectReference, "
-                    + "LastError=NULL, AppliedAtUtcTicks=@AppliedAtUtcTicks, "
-                    + "ClaimExpiresAtUtcTicks=0, UpdatedAtUtcTicks=@AppliedAtUtcTicks, Version=Version+1 "
-                    + "WHERE CharacterId=@CharacterId AND QuestId=@QuestId AND RewardKey=@RewardKey "
-                    + "AND Status=@ExpectedStatus AND ClaimToken=@ClaimToken AND Version=@ExpectedVersion";
-
-                int updated = this.ExecuteWrite(
-                    Sql,
-                    new
-                    {
-                        Status = MissionRewardStatus.Applied,
-                        EffectReference = effectReference,
-                        AppliedAtUtcTicks = appliedAtUtcTicks,
-                        CharacterId = key.Mission.CharacterId,
-                        QuestId = key.Mission.QuestId,
-                        key.RewardKey,
-                        ExpectedStatus = MissionRewardStatus.InProgress,
-                        ClaimToken = claimToken,
-                        ExpectedVersion = expectedVersion
-                    },
-                    this.transaction);
-
-                stage = QueryReward(this.connection, this.transaction, key, true);
-                return updated == 1;
-            }
-
-            public bool TryMarkRewardFailed(
-                MissionRewardKey key,
-                string claimToken,
-                long expectedVersion,
-                string error,
-                long failedAtUtcTicks,
-                out MissionRewardStageRecord stage)
-            {
-                this.ValidateCharacterScope(key.Mission.CharacterId);
-                ValidateRewardKey(key);
-                ValidateText(claimToken, "claimToken", 64, false);
-                ValidateText(error, "error", 1024, true);
-                if (failedAtUtcTicks <= 0)
-                {
-                    stage = QueryReward(this.connection, this.transaction, key, true);
-                    return false;
-                }
-
-                const string Sql =
-                    "UPDATE missionrewardledger SET Status=@Status, LastError=@LastError, "
-                    + "ClaimExpiresAtUtcTicks=0, UpdatedAtUtcTicks=@FailedAtUtcTicks, Version=Version+1 "
-                    + "WHERE CharacterId=@CharacterId AND QuestId=@QuestId AND RewardKey=@RewardKey "
-                    + "AND Status=@ExpectedStatus AND ClaimToken=@ClaimToken AND Version=@ExpectedVersion";
-
-                int updated = this.ExecuteWrite(
-                    Sql,
-                    new
-                    {
-                        Status = MissionRewardStatus.Failed,
-                        LastError = error,
-                        FailedAtUtcTicks = failedAtUtcTicks,
-                        CharacterId = key.Mission.CharacterId,
-                        QuestId = key.Mission.QuestId,
-                        key.RewardKey,
-                        ExpectedStatus = MissionRewardStatus.InProgress,
-                        ClaimToken = claimToken,
-                        ExpectedVersion = expectedVersion
-                    },
-                    this.transaction);
-
-                stage = QueryReward(this.connection, this.transaction, key, true);
-                return updated == 1;
-            }
-
-            public MissionAtomicStatRewardResult TryApplyCharacterStatReward(
-                MissionRewardKey key,
-                string rewardType,
-                IList<MissionCharacterStatMutation> mutations,
-                string effectReference,
-                long appliedAtUtcTicks)
-            {
-                this.EnsureActive();
-                try
-                {
-                    return this.ApplyCharacterStatReward(key, rewardType, mutations, effectReference, appliedAtUtcTicks);
-                }
-                catch
-                {
-                    this.failed = true;
-                    throw;
-                }
-            }
-
             private MissionAtomicStatRewardResult ApplyCharacterStatReward(
                 MissionRewardKey key,
                 string rewardType,
@@ -1778,19 +1300,6 @@ namespace AORebirth.Database.Domain.Missions
             private static long Clamp(long value, long minimum, long maximum)
             {
                 return value < minimum ? minimum : value > maximum ? maximum : value;
-            }
-
-            private static MissionRewardClaimResult CreateClaimResult(
-                MissionRewardClaimStatus status,
-                MissionRewardStageRecord stage,
-                string message)
-            {
-                return new MissionRewardClaimResult
-                {
-                    Status = status,
-                    Stage = stage == null ? null : stage.Clone(),
-                    Message = message
-                };
             }
 
             private static MissionAtomicStatRewardResult CreateAtomicResult(

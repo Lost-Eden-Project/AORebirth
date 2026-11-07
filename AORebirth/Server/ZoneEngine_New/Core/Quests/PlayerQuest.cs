@@ -72,5 +72,36 @@ namespace ZoneEngine_New.Core.Quests
     public sealed class QuestLog
     {
         public Dictionary<string, PlayerQuest> Quests { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The quest a Quests.json hash (or any quest id) names. A dungeon quest is held as a generated copy that
+        /// carries the hash in <see cref="QuestTemplate.TemplateHash"/>: an active copy wins, then the entry under
+        /// the id itself, then the latest copy.
+        /// </summary>
+        public bool TryFind(string? hash, out PlayerQuest quest)
+        {
+            quest = null!;
+            if (string.IsNullOrEmpty(hash))
+                return false;
+
+            Quests.TryGetValue(hash, out PlayerQuest? direct);
+            PlayerQuest? latestCopy = null;
+            foreach (PlayerQuest held in Quests.Values)
+            {
+                if (!string.Equals(held.Template.TemplateHash, hash, StringComparison.Ordinal))
+                    continue;
+                if (held.IsActive)
+                {
+                    quest = held;
+                    return true;
+                }
+
+                if (latestCopy == null || held.AssignedAtUtc > latestCopy.AssignedAtUtc)
+                    latestCopy = held;
+            }
+
+            quest = direct ?? latestCopy!;
+            return quest != null;
+        }
     }
 }

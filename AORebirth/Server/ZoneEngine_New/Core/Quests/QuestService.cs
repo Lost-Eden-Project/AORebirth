@@ -82,6 +82,60 @@ namespace ZoneEngine_New.Core.Quests
         /// </summary>
         public event Action<Player, PlayerQuest>? QuestEnded;
 
+        /// <summary>
+        /// Gives a Quests.json quest that has a <see cref="QuestTemplate.Dungeon"/> as a generated copy with its own
+        /// dungeon and key (the quest dungeon service), at the mission quality the giver asked for (null: the quest's
+        /// own). Returns null on success, else the reason. Unset: refused.
+        /// </summary>
+        internal Func<Player, QuestTemplate, int?, string?>? DungeonAssigner { get; set; }
+
+        /// <summary>
+        /// A generated copy of a Quests.json dungeon quest ended: its state is also stored under the Quests.json hash,
+        /// so dialog conditions keep seeing the quest as done after the copy is purged. A newer or active entry stays.
+        /// </summary>
+        void RecordTemplateOutcome(Player player, PlayerQuest quest)
+        {
+            if (quest.Source != QuestSource.Generated || quest.IsActive
+                || quest.Template.TemplateHash is not { Length: > 0 } hash || !_catalog.TryGet(hash, out QuestTemplate template))
+                return;
+
+            QuestLog log = GetLogWithoutExpiry(player);
+            if (log.Quests.TryGetValue(hash, out PlayerQuest? existing)
+                && (existing.IsActive || existing.AssignedAtUtc > quest.AssignedAtUtc
+                    || (existing.AssignedAtUtc == quest.AssignedAtUtc && existing.State == quest.State)))
+                return;
+
+            var outcome = new PlayerQuest
+            {
+                QuestId = hash,
+                Source = QuestSource.Template,
+                Template = template,
+                State = quest.State,
+                Progress = quest.Progress,
+                RequiredCount = quest.RequiredCount,
+                AssignedAtUtc = quest.AssignedAtUtc
+            };
+            log.Quests[hash] = outcome;
+            Save(player, outcome);
+        }
+
+        /// <summary>The quest left the active state: records a dungeon copy's outcome, then raises <see cref="QuestEnded"/>.</summary>
+        void Ended(Player player, PlayerQuest quest)
+        {
+            try
+            {
+                RecordTemplateOutcome(player, quest);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Recording quest " + quest.QuestId + " under its Quests.json hash failed");
+            }
+
+            QuestEnded?.Invoke(player, quest);
+        }
+
+        QuestLog GetLogWithoutExpiry(Player player) => player.QuestLog ??= Load(player);
+
         /// <summary>The player's quests, loaded on first use. Expired quests are closed here.</summary>
         public QuestLog GetLog(Player player)
         {
@@ -109,7 +163,7 @@ namespace ZoneEngine_New.Core.Quests
             QuestJournal.Delete(player, quest);
             _logger.Info(string.Format(CultureInfo.InvariantCulture, "Quest failed char={0} quest={1} ({2})",
                 player.Identity.Instance, quest.QuestId, quest.Template.Name));
-            QuestEnded?.Invoke(player, quest);
+            Ended(player, quest);
             return true;
         }
 
@@ -139,7 +193,7 @@ namespace ZoneEngine_New.Core.Quests
                 QuestJournal.Delete(player, quest);
                 _logger.Info(string.Format(CultureInfo.InvariantCulture, "Quest abandoned char={0} quest={1} ({2})",
                     player.Identity.Instance, quest.QuestId, quest.Template.Name));
-                QuestEnded?.Invoke(player, quest);
+                Ended(player, quest);
                 return true;
             }
 
@@ -179,7 +233,7 @@ namespace ZoneEngine_New.Core.Quests
             if (wasActive)
             {
                 QuestJournal.Delete(player, quest);
-                QuestEnded?.Invoke(player, quest);
+                Ended(player, quest);
             }
 
             _logger.Info(string.Format(CultureInfo.InvariantCulture, "Quest dropped by GM char={0} quest={1} ({2}) was={3}",
@@ -193,13 +247,14 @@ namespace ZoneEngine_New.Core.Quests
         {
             ArgumentNullException.ThrowIfNull(player);
             RetryPendingRewards(player, force: true);
-            foreach (PlayerQuest quest in GetLog(player).Quests.Values)
+            // Ending a dungeon copy records it under its Quests.json hash, which adds to the log.
+            foreach (PlayerQuest quest in new List<PlayerQuest>(GetLog(player).Quests.Values))
             {
                 if (quest.IsActive)
                     QuestJournal.Send(player, quest, announce: false);
                 else if (quest.Source == QuestSource.Generated)
                     // A crash/uncertain commit may have paid the quest before its keys were retired.
-                    QuestEnded?.Invoke(player, quest);
+                    Ended(player, quest);
             }
         }
 
@@ -207,7 +262,7 @@ namespace ZoneEngine_New.Core.Quests
         /// Gives a Quests.json quest. A completed or closed one is started over; an active one is refused. One with
         /// <see cref="QuestTemplate.ExpiresAfterHours"/> starts its timer now.
         /// </summary>
-        public bool TryAssignTemplate(Player player, string hash, out string result)
+        public bool TryAssignTemplate(Player player, string hash, out string result, int? quality = null)
         {
             ArgumentNullException.ThrowIfNull(player);
             if (!_catalog.TryGet(hash, out QuestTemplate template))
@@ -217,10 +272,26 @@ namespace ZoneEngine_New.Core.Quests
             }
 
             QuestLog log = GetLog(player);
-            if (log.Quests.TryGetValue(template.Hash, out PlayerQuest? held) && held.IsActive)
+            if (log.TryFind(template.Hash, out PlayerQuest? held) && held.IsActive)
             {
                 result = string.Format(CultureInfo.InvariantCulture, "{0} already has quest {1} ({2}).", player.Name, template.Hash, template.Name);
                 return false;
+            }
+
+            if (template.Dungeon != null)
+            {
+                string? refused = template.Dungeon.Problem(template.Action)
+                    ?? (DungeonAssigner == null ? "Mission dungeons are unavailable." : DungeonAssigner(player, template, quality));
+                if (refused != null)
+                {
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Dungeon quest {0} not given char={1}: {2}",
+                        template.Hash, player.Identity.Instance, refused));
+                    result = string.Format(CultureInfo.InvariantCulture, "Quest {0} ({1}) not given: {2}", template.Hash, template.Name, refused);
+                    return false;
+                }
+
+                result = string.Format(CultureInfo.InvariantCulture, "Gave dungeon quest {0} ({1}) to {2}.", template.Hash, template.Name, player.Name);
+                return true;
             }
 
             Assign(player, log, template.Hash, QuestSource.Template, template, expiresAtUtc: null, acgJson: null);
@@ -235,7 +306,7 @@ namespace ZoneEngine_New.Core.Quests
         public bool TryComplete(Player player, string questId, out string result)
         {
             ArgumentNullException.ThrowIfNull(player);
-            if (!GetLog(player).Quests.TryGetValue(questId ?? string.Empty, out PlayerQuest? quest) || !quest.IsActive)
+            if (!GetLog(player).TryFind(questId, out PlayerQuest? quest) || !quest.IsActive)
             {
                 result = string.Format(CultureInfo.InvariantCulture, "{0} has no active quest {1}.", player.Name, questId);
                 return false;
@@ -351,6 +422,7 @@ namespace ZoneEngine_New.Core.Quests
 
             GetLog(player).Quests[questId] = quest;
             QuestJournal.Send(player, quest, announce: true);
+            GrantStartItems(player, quest);
             return quest;
         }
 
@@ -363,10 +435,9 @@ namespace ZoneEngine_New.Core.Quests
             ArgumentNullException.ThrowIfNull(npc);
             ArgumentNullException.ThrowIfNull(players);
 
-            // Objective kills contribute before their exact objective transaction freezes the reward chance.
-            if (npc.Playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon
-                && dungeon.TokenProgress?.RecordKill(npc, players) == false)
-                return;
+            // A kill in a mission dungeon counts toward its token chance and keeps that slot dead across an unload.
+            if (npc.Playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon)
+                RecordDungeonKill(dungeon, npc, players);
 
             for (int p = 0; p < players.Count; p++)
             {
@@ -564,16 +635,22 @@ namespace ZoneEngine_New.Core.Quests
         void ExpireDue(Player player, QuestLog log)
         {
             DateTime now = _now();
+            // Collected first (no allocation on the usual nothing-due call): ending a dungeon copy adds to the log.
+            List<PlayerQuest>? due = null;
             foreach (PlayerQuest quest in log.Quests.Values)
             {
-                if (!quest.IsActive || quest.IsRewardPending || quest.ExpiresAtUtc is not DateTime expires || now < expires)
-                    continue;
+                if (quest.IsActive && !quest.IsRewardPending && quest.ExpiresAtUtc is DateTime expires && now >= expires)
+                    (due ??= new List<PlayerQuest>()).Add(quest);
+            }
 
+            for (int i = 0; due != null && i < due.Count; i++)
+            {
+                PlayerQuest quest = due[i];
                 quest.State = QuestState.Expired;
                 Save(player, quest);
                 QuestJournal.SendEnded(player, quest, CharacterActionType.QuestExpired);
                 QuestJournal.Delete(player, quest);
-                QuestEnded?.Invoke(player, quest);
+                Ended(player, quest);
             }
         }
 
@@ -621,16 +698,6 @@ namespace ZoneEngine_New.Core.Quests
                     AcgBuildingGeneratorJson = definition?.AcgBuildingGeneratorJson
                 };
                 PlayerQuest loaded = log.Quests[row.QuestId];
-                // Recover the crash gap between a durable target death and earning its exact objective.
-                if (_completionDao != null && loaded.IsActive && !loaded.IsRewardPending && loaded.Template.IsKill
-                    && Dungeons.QuestDungeonParameters.TryParse(loaded.AcgBuildingGeneratorJson, out var parameters)
-                    && parameters.MissionType == 0 && parameters.TokenReward != null
-                    && parameters.ObjectiveNpc is { IsValid: true } objective
-                    && objective.OwnerId == characterId && objective.QuestId == loaded.QuestId)
-                {
-                    loaded.NpcObjectiveCommitPending = _completionDao.Execute(characterId, null!, tx =>
-                        Dungeons.MissionTokenProgress.IsObjectiveKilled(tx, loaded.QuestId, loaded.AssignedAtUtc.Ticks));
-                }
             }
 
             return log;

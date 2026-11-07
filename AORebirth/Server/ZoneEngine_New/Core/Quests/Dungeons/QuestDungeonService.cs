@@ -22,7 +22,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Logging;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Mobs;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
@@ -88,7 +87,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly QuestService _quests;
         readonly MissionDestinationCatalog _entrances;
         readonly DungeonLayoutGenerator _layouts;
-        readonly IGeneratedMissionDao _offers;
         readonly IItemBuilder _items;
         readonly IItemInstanceIdAllocator _ids;
         readonly InventoryFlushService _flush;
@@ -106,11 +104,13 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly ConcurrentDictionary<string, CachedDungeon> _dungeons = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<int, long> _lastRequest = new();
         readonly ConcurrentDictionary<int, string> _pendingRelease = new();
+        /// <summary>Dungeon builds in flight, by dungeon playfield: every entrant waits on the one build.</summary>
+        readonly ConcurrentDictionary<int, Lazy<System.Threading.Tasks.Task<bool>>> _pendingBuilds = new();
         readonly Timer _sweep;
         int _sweeping;
 
         public QuestDungeonService(ICharacterQuestStore store, QuestService quests, MissionDestinationCatalog entrances,
-            DungeonLayoutGenerator layouts, IGeneratedMissionDao offers, IItemBuilder items, IItemInstanceIdAllocator ids,
+            DungeonLayoutGenerator layouts, IItemBuilder items, IItemInstanceIdAllocator ids,
             InventoryFlushService flush, InventoryActionService inventoryActions, Lazy<PlayfieldManager> playfields,
             IGameData gameData, IZoneLogger logger, HashItemMinter? hashItems = null,
             ZoneEngine_New.Core.World.WorldLink? world = null, ZoneEngine_New.Core.World.WorldCommands? commands = null)
@@ -122,7 +122,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _entrances = entrances ?? throw new ArgumentNullException(nameof(entrances));
             _layouts = layouts ?? throw new ArgumentNullException(nameof(layouts));
-            _offers = offers ?? throw new ArgumentNullException(nameof(offers));
             _items = items ?? throw new ArgumentNullException(nameof(items));
             _ids = ids ?? throw new ArgumentNullException(nameof(ids));
             _flush = flush ?? throw new ArgumentNullException(nameof(flush));
@@ -133,12 +132,14 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             _hashItems = hashItems;
 
             _quests.QuestEnded += OnQuestEnded;
+            _quests.DungeonAssigner = AssignTemplate;
             _sweep = new Timer(_ => Sweep(), null, SweepInterval, SweepInterval);
         }
 
         public void Dispose()
         {
             _quests.QuestEnded -= OnQuestEnded;
+            _quests.DungeonAssigner = null;
             _sweep.Dispose();
         }
 
@@ -147,36 +148,35 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// reason to show. The offer is claimed in the same transaction as the quest and key, so a repeated or raced
         /// accept finds it taken and writes nothing.
         /// </summary>
-        public string? AcceptOffer(Player player, Identity offerIdentity)
+        /// <summary>
+        /// Gives a Quests.json quest with a <see cref="QuestTemplate.Dungeon"/>: the quest is copied into a generated
+        /// quest and its dungeon inputs (floor mode, quality, style, entrance, population, mob and boss levels) are
+        /// frozen into the copy's dungeon, with a mission key, in one transaction. Every give rolls a new dungeon.
+        /// <paramref name="requestedQuality"/> is the mission quality the giving dialog named, if any. Returns null on
+        /// success, else the reason.
+        /// </summary>
+        string? AssignTemplate(Player player, QuestTemplate source, int? requestedQuality)
         {
             ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(source);
+            QuestDungeonTemplate input = source.Dungeon ?? throw new ArgumentException("The quest has no dungeon.", nameof(source));
+            if (input.Problem(source.Action) is string problem)
+                return problem;
+
             lock (player.PersistenceGate)
             {
                 if (player.IsPersistenceQuarantined || player.Session == null || player.Playfield == null || !player.Inventory.IsHydrated)
                     return "Mission acceptance is unavailable right now.";
                 if (!_layouts.IsAvailable)
                     return "Mission dungeons are unavailable.";
-
-                DateTime now = DateTime.UtcNow;
-                GeneratedMissionOffer? offer;
-                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.read-offers", player.Identity.Instance))
-                    offer = _offers.ReadOffers(player.Identity.Instance).FirstOrDefault(value =>
-                        value.OfferType == (int)offerIdentity.Type && value.OfferInstance == offerIdentity.Instance
-                        && value.State == GeneratedMissionState.Offered && value.ExpiresAtUtcTicks > now.Ticks);
-                if (offer == null)
-                    return "That mission is no longer offered.";
-
-                if (!TryResolveOfferEntrance(_entrances, offer, out MissionEntrancePlacement entrance))
-                {
-                    _logger.Warn(string.Format(CultureInfo.InvariantCulture,
-                        "Mission offer {0}:{1} has an unavailable or mismatched entrance {2:X8}:{3:X8} at pf={4}",
-                        offer.OfferType, offer.OfferInstance, offer.EntranceType, offer.EntranceInstance, offer.DestinationPlayfield));
-                    return "That mission's location is unavailable.";
-                }
-
+                if (!TryPickEntrance(input, out MissionEntrancePlacement entrance, out MissionDestinationWorldPosition? worldPosition))
+                    return "The quest's dungeon entrance is unavailable.";
                 if (!QuestDungeonIds.TryCreate(_ids.Allocate(), out string questId, out int dungeonPlayfield))
                     return "Mission acceptance is unavailable right now.";
 
+                int missionType = QuestDungeonTemplate.MissionTypeFor(source.Action)!.Value;
+                int quality = input.QualityFor(requestedQuality, player.Stats.GetOrZero(CharacterStat.Level));
+                string[]? population = ResolvePopulation(source.Hash, input.Npcs);
                 var parameters = new QuestDungeonParameters
                 {
                     Seed = RandomNumberGenerator.GetInt32(int.MaxValue),
@@ -189,161 +189,216 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     EntranceX = entrance.LocalX,
                     EntranceY = entrance.LocalY,
                     EntranceZ = entrance.LocalZ,
-                    DestinationType = offer.DestinationType,
-                    BuildingLowId = offer.EntranceLow,
-                    BuildingHighId = offer.EntranceHigh,
-                    MissionType = offer.MissionType,
-                    Quality = offer.Quality,
-                    MissionIconId = MissionRollPolicy.Current.Icon((MissionRollType)offer.MissionType)
+                    // An entrance no terminal offer was ever captured at has no WorldPos; the journal then gets the
+                    // playfield and offsets ordinary quest waypoints carry.
+                    DestinationType = worldPosition == null ? QuestJournal.WaypointPlayfieldType : unchecked((int)worldPosition.PlayfieldIdentityType),
+                    BuildingLowId = worldPosition?.WorldOffsetX ?? QuestJournal.WaypointUnknown,
+                    BuildingHighId = worldPosition?.WorldOffsetZ ?? QuestJournal.WaypointUnknown,
+                    MissionType = missionType,
+                    Quality = quality,
+                    MissionIconId = source.IconId is int icon and > 0 ? icon : _layouts.Icon((MissionRollType)missionType)
                 };
-                if (!FreezeOriginTerminal(offer, parameters))
-                    return "That mission's issuing terminal is unavailable; this offer was not accepted.";
-                DungeonLayout acceptedLayout;
-                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.layout", player.Identity.Instance))
-                {
-                    // Current offers are solo. Team mode must be carried from the roll request and accepted roster
-                    // in the encounter milestone; party membership alone must never change an offered mission's mode.
-                    if (!_layouts.ConfigureNewDungeon(parameters, team: false) || !_layouts.TryGenerate(parameters, out acceptedLayout))
-                        return "Mission dungeons are unavailable.";
-                }
 
-                QuestTemplate template = BuildTemplate(questId, offer);
-                if (template.IsFindItem || template.IsReturnItem)
-                {
-                    DungeonFindItemPolicy? policy = template.IsReturnItem ? _layouts.ReturnItemPolicy : _layouts.FindItemPolicy;
-                    if (!TryPrepareObjective(player, questId, acceptedLayout, policy, offer.MissionType, false,
-                            out var objective, out string objectiveHash))
-                        return "Mission item objective data is unavailable; this offer was not accepted.";
-                    parameters.ObjectiveItem = objective;
-                    template.Objective.WorldItem = objectiveHash;
-                }
-                else if (template.IsRepair)
-                {
-                    if (!TryPrepareObjective(player, questId, acceptedLayout, _layouts.RepairMachinePolicy?.Target, 3, false,
-                            out var objective, out string objectiveHash)
-                        || !TryPrepareObjective(player, questId, acceptedLayout, _layouts.RepairMachinePolicy?.Source, 3, true,
-                            out var tool, out string toolHash))
-                        return "Mission repair objective data is unavailable; this offer was not accepted.";
-                    parameters.ObjectiveItem = objective;
-                    parameters.ObjectiveTool = tool;
-                    template.Objective.WorldItem = objectiveHash;
-                    template.Objective.SpecItem = toolHash;
-                }
-                else if (offer.MissionType is 0 or 1)
-                {
-                    if (!TryPrepareNpc(player, questId, acceptedLayout, offer.MissionType, offer.Quality, out var objective))
-                        return "Mission NPC objective data is unavailable; this offer was not accepted.";
-                    parameters.ObjectiveNpc = objective;
-                    template.Objective.Npc = objective.NpcHash;
-                }
-                else
-                    return "That mission objective is unavailable; this offer was not accepted.";
-                DateTime expires = now.AddSeconds(MissionRollPolicy.Current.AcceptedLifetimeSeconds);
-                string parametersJson = parameters.ToJson();
-
-                try
-                {
-                    using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.flush", player.Identity.Instance))
-                        _flush.HardFlush(player);
-                    Item key = CreateKey();
-                    MissionItemObjectiveBinding? sourceBinding = parameters.ObjectiveTool;
-                    Item? sourceItem = sourceBinding == null ? null : _items.Create(sourceBinding.LowId,
-                        sourceBinding.HighId, sourceBinding.Quality, ItemSource.Quest, 1, sourceBinding.Instance, sourceBinding.Identity);
-                    Item[] grants = sourceItem == null ? [key] : [key, sourceItem];
-                    if (!InventoryGrantPlan.TryCreate(player, grants, out InventoryGrantPlan plan))
-                        return "Your inventory is full.";
-
-                    var quest = new GeneratedQuestRow
-                    {
-                        QuestId = questId,
-                        OwnerType = (int)QuestOwnerType.Character,
-                        OwnerId = player.Identity.Instance,
-                        DefinitionJson = System.Text.Json.JsonSerializer.Serialize(template, QuestTemplate.JsonOptions),
-                        AcgBuildingGeneratorJson = parametersJson,
-                        CreatedAtUtcTicks = now.Ticks,
-                        ExpiresAtUtcTicks = expires.Ticks,
-                        UpdatedAtUtcTicks = now.Ticks
-                    };
-                    var characterRow = new CharacterQuestRow
-                    {
-                        CharacterId = player.Identity.Instance,
-                        QuestId = questId,
-                        Source = (int)QuestSource.Generated,
-                        State = (int)QuestState.Active,
-                        Progress = 0,
-                        RequiredCount = template.RequiredCount,
-                        AssignedAtUtcTicks = now.Ticks,
-                        UpdatedAtUtcTicks = now.Ticks
-                    };
-
-                    bool accepted;
-                    using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.commit", player.Identity.Instance))
-                        accepted = _store.TryAcceptOfferQuest(player.Identity.Instance, offer.OfferType, offer.OfferInstance, quest,
-                            characterRow, KeyRow(plan.Rows[0], now), sourceItem == null ? null : KeyRow(plan.Rows[1], now), now.Ticks);
-                    if (!accepted)
-                        return "That mission is no longer offered.";
-
-                    _dungeons[questId] = new CachedDungeon(parameters, expires.Ticks,
-                        parameters.ObjectiveNpc == null ? KillTarget(template) : null,
-                        OwnerId: player.Identity.Instance, AssignedAtUtcTicks: now.Ticks, FrozenJson: parametersJson);
-                    plan.PublishAfterCommit(notify: false);
-                    SendKey(player, key, plan.Rows[0].ContainerPlacement, parameters.EntranceName);
-                    if (sourceItem != null)
-                        SendGrantedMissionItem(player, sourceItem, plan.Rows[1].ContainerPlacement, sourceItem.Name);
-                    using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.adopt", player.Identity.Instance))
-                        _quests.AdoptGenerated(player, questId, template, now, expires, parametersJson);
-                    _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                        "Dungeon quest accepted char={0} quest={1} offer={2}:{3} entrance={4} ({5}) dungeon={6}",
-                        player.Identity.Instance, questId, offer.OfferType, offer.OfferInstance, parameters.EntranceInstance, entrance.DisplayName, dungeonPlayfield));
-                    return null;
-                }
-                catch (DatabaseCommitOutcomeUnknownException exception)
-                {
-                    Quarantine(player, exception);
-                    return "Mission acceptance needs to be reconciled; please reconnect.";
-                }
+                DateTime now = DateTime.UtcNow;
+                DateTime expires = source.ExpiresAfterHours is int hours and > 0
+                    ? now.AddHours(hours)
+                    : now.AddSeconds(_layouts.AcceptedLifetimeSeconds);
+                return Establish(player, questId, parameters, CopyTemplate(source, questId), input.IsMultiFloor, input.Style,
+                    source.Objective, input.ObjectiveLevelFor(quality), input.AwardsTokens, population, input.MobLevelPercent,
+                    // The quest's own tables; a quest naming none gets no chests and no extra NPC drops.
+                    input.ChestLoot ?? [], input.MobLoot ?? [], now, expires, (quest, characterRow, key, sourceItem) =>
+                        _store.TryAssignDungeonQuest(player.Identity.Instance, quest, characterRow, key, sourceItem),
+                    "Mission acceptance is unavailable right now.", "template=" + source.Hash, entrance.DisplayName);
             }
         }
 
-        /// <summary>Resolves only the selected placement identity and verifies its exact offered WorldPos.</summary>
-        internal static bool TryResolveOfferEntrance(MissionDestinationCatalog catalog, GeneratedMissionOffer offer,
-            out MissionEntrancePlacement entrance)
+        /// <summary>
+        /// One of the template's entrances: the named one, or any on its playfield, with its captured world position
+        /// when a terminal offer was ever captured at it (null otherwise).
+        /// </summary>
+        bool TryPickEntrance(QuestDungeonTemplate input, out MissionEntrancePlacement entrance, out MissionDestinationWorldPosition? worldPosition)
         {
             entrance = null!;
-            if (offer.EntranceType != (int)IdentityType.MissionEntrance
-                || !catalog.TryGetByIdentity(unchecked((uint)offer.EntranceType), unchecked((uint)offer.EntranceInstance), out MissionEntrancePlacement selected)
-                || !catalog.TryGetWorldPosition(selected.Identity, out MissionDestinationWorldPosition worldPosition)
-                || unchecked((uint)offer.DestinationType) != worldPosition.PlayfieldIdentityType
-                || offer.DestinationPlayfield != selected.PlayfieldId || offer.DestinationInstance != selected.PlayfieldId
-                || offer.EntranceLow != worldPosition.WorldOffsetX || offer.EntranceHigh != worldPosition.WorldOffsetZ
-                || BitConverter.SingleToUInt32Bits(offer.DestinationX) != selected.LocalXBits
-                || BitConverter.SingleToUInt32Bits(offer.DestinationY) != selected.LocalYBits
-                || BitConverter.SingleToUInt32Bits(offer.DestinationZ) != selected.LocalZBits)
-                return false;
+            worldPosition = null;
+            var candidates = new List<MissionEntrancePlacement>();
+            foreach (MissionEntrancePlacement placement in _entrances.GetPlacementsForPlayfield(input.Playfield))
+            {
+                if (placement.IdentityType == (uint)IdentityType.MissionEntrance
+                    && (input.Entrance == null || placement.IdentityInstance == input.Entrance))
+                    candidates.Add(placement);
+            }
 
-            entrance = selected;
+            if (candidates.Count == 0)
+                return false;
+            entrance = candidates[RandomNumberGenerator.GetInt32(candidates.Count)];
+            if (_entrances.TryGetWorldPosition(entrance.Identity, out MissionDestinationWorldPosition position))
+                worldPosition = position;
             return true;
         }
 
-        bool FreezeOriginTerminal(GeneratedMissionOffer offer, QuestDungeonParameters parameters)
+        /// <summary>
+        /// The quest's own ordinary population: the hashes with an NPC template, in order, each once. Null when the quest
+        /// names none (the generation policy's population); empty when none of the named ones resolve, so the dungeon
+        /// gets no stand-in population from another setting.
+        /// </summary>
+        string[]? ResolvePopulation(string questHash, string[]? authored)
         {
-            parameters.OriginTerminalType = offer.IssuingTerminalType;
-            parameters.OriginTerminalInstance = offer.IssuingTerminalInstance;
-            parameters.OriginPlayfield = offer.IssuingTerminalPlayfield;
-            bool valid = offer.IssuingTerminalType == MissionTerminal.LiveIdentityType
-                && offer.IssuingTerminalInstance != 0 && offer.IssuingTerminalPlayfield > 0;
-            if (!valid)
-                return offer.MissionType != 4;
-            if (_playfields.Value.TryGet(offer.IssuingTerminalPlayfield, out Playfield? origin)
-                && origin!.GetRequiredService<DynelRegistry>().TryGet(parameters.OriginTerminal, out var dynel))
+            if (authored is not { Length: > 0 })
+                return null;
+            var resolved = new List<string>(authored.Length);
+            var missing = new List<string>();
+            foreach (string hash in authored.Distinct(StringComparer.Ordinal))
+                (_gameData.HasMobTemplate(hash) ? resolved : missing).Add(hash);
+            if (missing.Count > 0)
+                _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                    "Quest {0} Dungeon.Npcs without an NPC template, left out: {1}{2}", questHash, string.Join(", ", missing),
+                    resolved.Count == 0 ? " (no ordinary population will spawn)" : string.Empty));
+            return resolved.ToArray();
+        }
+
+        /// <summary>
+        /// The Quests.json quest as its generated copy: the copy's own id, the source hash, and no dungeon inputs, waypoint
+        /// or objective of its own (the dungeon's entrance and bound objective replace them).
+        /// </summary>
+        static QuestTemplate CopyTemplate(QuestTemplate source, string questId)
+        {
+            QuestTemplate copy = System.Text.Json.JsonSerializer.Deserialize<QuestTemplate>(
+                System.Text.Json.JsonSerializer.Serialize(source, QuestTemplate.JsonOptions), QuestTemplate.JsonOptions)
+                ?? throw new InvalidOperationException("Quest template could not be copied.");
+            copy.Hash = questId;
+            copy.TemplateHash = source.Hash;
+            copy.Dungeon = null;
+            copy.Waypoint = null;
+            copy.Waypoints = null;
+            copy.Objective = new QuestObjective();
+            return copy;
+        }
+
+        /// <summary>A copy of <paramref name="policy"/> limited to <paramref name="hash"/>, when a Quests.json quest names one.</summary>
+        static DungeonFindItemPolicy? WithItem(DungeonFindItemPolicy? policy, string? hash)
+            => policy == null || string.IsNullOrWhiteSpace(hash) ? policy : new DungeonFindItemPolicy
             {
-                if (dynel is not MissionTerminal terminal)
-                    return false;
-                parameters.OriginX = terminal.Position.xf;
-                parameters.OriginY = terminal.Position.yf;
-                parameters.OriginZ = terminal.Position.zf;
+                ItemHashes = [hash], Quality = policy.Quality, QuestInstanceStat = policy.QuestInstanceStat,
+                WorldFlags = policy.WorldFlags, WorldScalePercent = policy.WorldScalePercent
+            };
+
+        /// <summary>
+        /// Shared by terminal offers and Quests.json dungeon quests: freezes the layout, binds the exact objective
+        /// (<paramref name="authored"/> names its NPC or item hashes, else the generation policy pools do; an NPC
+        /// objective is resolved at <paramref name="objectiveQuality"/>), then commits quest, owner row, key and any
+        /// mission tool through <paramref name="commit"/> and publishes them.
+        /// </summary>
+        string? Establish(Player player, string questId, QuestDungeonParameters parameters, QuestTemplate template, bool team, int? style,
+            QuestObjective? authored, int objectiveQuality, bool tokenReward, string[]? population, int populationLevelSpreadPercent,
+            IReadOnlyList<MobItemTableEntry>? chestLoot, IReadOnlyList<MobItemTableEntry>? mobLoot,
+            DateTime now, DateTime expires,
+            Func<GeneratedQuestRow, CharacterQuestRow, QuestDungeonKeyItemRow, QuestDungeonKeyItemRow?, bool> commit,
+            string notCommitted, string source, string entranceName)
+        {
+            // Acceptance freezes only the seed and the generation choices. The layout, the geometry and the objective's
+            // room all derive from that seed when the dungeon builds on first entry.
+            using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.layout", player.Identity.Instance))
+            {
+                if (!_layouts.ConfigureNewDungeon(parameters, team, style, tokenReward, population, populationLevelSpreadPercent, chestLoot, mobLoot))
+                    return "Mission dungeons are unavailable.";
             }
-            return true;
+
+            int missionType = parameters.MissionType;
+            if (template.IsFindItem || template.IsReturnItem)
+            {
+                DungeonFindItemPolicy? policy = WithItem(template.IsReturnItem ? _layouts.ReturnItemPolicy : _layouts.FindItemPolicy,
+                    authored?.WorldItem);
+                if (!TryPrepareObjective(player, questId, policy, missionType, false,
+                        out var objective, out string objectiveHash))
+                    return "Mission item objective data is unavailable; this offer was not accepted.";
+                parameters.ObjectiveItem = objective;
+                template.Objective.WorldItem = objectiveHash;
+            }
+            else if (template.IsRepair)
+            {
+                if (!TryPrepareObjective(player, questId, WithItem(_layouts.RepairMachinePolicy?.Target, authored?.WorldItem), 3, false,
+                        out var objective, out string objectiveHash)
+                    || !TryPrepareObjective(player, questId, WithItem(_layouts.RepairMachinePolicy?.Source, authored?.SpecItem), 3, true,
+                        out var tool, out string toolHash))
+                    return "Mission repair objective data is unavailable; this offer was not accepted.";
+                parameters.ObjectiveItem = objective;
+                parameters.ObjectiveTool = tool;
+                template.Objective.WorldItem = objectiveHash;
+                template.Objective.SpecItem = toolHash;
+            }
+            else if (missionType is 0 or 1)
+            {
+                if (!TryPrepareNpc(player, questId, missionType, objectiveQuality, authored?.Npc, out var objective))
+                    return "Mission NPC objective data is unavailable; this offer was not accepted.";
+                parameters.ObjectiveNpc = objective;
+                template.Objective.Npc = objective.NpcHash;
+            }
+            else
+                return "That mission objective is unavailable; this offer was not accepted.";
+            string parametersJson = parameters.ToJson();
+
+            try
+            {
+                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.flush", player.Identity.Instance))
+                    _flush.HardFlush(player);
+                Item key = CreateKey();
+                MissionItemObjectiveBinding? sourceBinding = parameters.ObjectiveTool;
+                Item? sourceItem = sourceBinding == null ? null : _items.Create(sourceBinding.LowId,
+                    sourceBinding.HighId, sourceBinding.Quality, ItemSource.Quest, 1, sourceBinding.Instance, sourceBinding.Identity);
+                Item[] grants = sourceItem == null ? [key] : [key, sourceItem];
+                if (!InventoryGrantPlan.TryCreate(player, grants, out InventoryGrantPlan plan))
+                    return "Your inventory is full.";
+
+                var quest = new GeneratedQuestRow
+                {
+                    QuestId = questId,
+                    OwnerType = (int)QuestOwnerType.Character,
+                    OwnerId = player.Identity.Instance,
+                    DefinitionJson = System.Text.Json.JsonSerializer.Serialize(template, QuestTemplate.JsonOptions),
+                    AcgBuildingGeneratorJson = parametersJson,
+                    CreatedAtUtcTicks = now.Ticks,
+                    ExpiresAtUtcTicks = expires.Ticks,
+                    UpdatedAtUtcTicks = now.Ticks
+                };
+                var characterRow = new CharacterQuestRow
+                {
+                    CharacterId = player.Identity.Instance,
+                    QuestId = questId,
+                    Source = (int)QuestSource.Generated,
+                    State = (int)QuestState.Active,
+                    Progress = 0,
+                    RequiredCount = template.RequiredCount,
+                    AssignedAtUtcTicks = now.Ticks,
+                    UpdatedAtUtcTicks = now.Ticks
+                };
+
+                bool accepted;
+                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.commit", player.Identity.Instance))
+                    accepted = commit(quest, characterRow, KeyRow(plan.Rows[0], now), sourceItem == null ? null : KeyRow(plan.Rows[1], now));
+                if (!accepted)
+                    return notCommitted;
+
+                _dungeons[questId] = new CachedDungeon(parameters, expires.Ticks,
+                    parameters.ObjectiveNpc == null ? KillTarget(template) : null,
+                    OwnerId: player.Identity.Instance, AssignedAtUtcTicks: now.Ticks, FrozenJson: parametersJson);
+                plan.PublishAfterCommit(notify: false);
+                SendKey(player, key, plan.Rows[0].ContainerPlacement, parameters.EntranceName);
+                if (sourceItem != null)
+                    SendGrantedMissionItem(player, sourceItem, plan.Rows[1].ContainerPlacement, sourceItem.Name);
+                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.adopt", player.Identity.Instance))
+                    _quests.AdoptGenerated(player, questId, template, now, expires, parametersJson);
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Dungeon quest accepted char={0} quest={1} {2} entrance={3} ({4}) dungeon={5} floors={6} style={7} ql={8} mobSpread={9}% objectiveQl={10}",
+                    player.Identity.Instance, questId, source, parameters.EntranceInstance, entranceName, parameters.DungeonPlayfield,
+                    parameters.LayoutPlan?.FloorCount, parameters.LayoutPlan?.StyleId, parameters.Quality,
+                    parameters.PopulationLevelSpreadPercent, objectiveQuality));
+                return null;
+            }
+            catch (DatabaseCommitOutcomeUnknownException exception)
+            {
+                Quarantine(player, exception);
+                return "Mission acceptance needs to be reconciled; please reconnect.";
+            }
         }
 
         /// <summary>
@@ -384,14 +439,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     if (!_layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
                         return false;
 
-                    if (_playfields.Value.TryGetQuestDungeon(dungeon.Parameters.DungeonPlayfield, out QuestDungeonPlayfield previous)
-                        && previous.TokenProgress?.RequiresReconstruction == true
-                        && !_playfields.Value.TryReleaseQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId))
-                    {
-                        SendText(player, "The mission dungeon is recovering. Everyone inside must leave before you can re-enter.");
-                        return false;
-                    }
-
                     // World has not said where this dungeon runs: ask off the tick, then try the entrance again.
                     int dungeonPlayfield = dungeon.Parameters.DungeonPlayfield;
                     ZoneEngine_New.Core.World.WorldLink? link = _playfields.Value.World;
@@ -407,7 +454,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                             here.DispatchPlayerProjection(player, () =>
                             {
                                 if (!ReferenceEquals(player.Playfield, here) || player.Session == null) return;
-                                if (local) TryEnter(player, target);
+                                if (local) Reenter(player, target);
                                 else _playfields.Value.CrossInstance?.Start(player, dungeonPlayfield, spawn, player.Rotation,
                                     AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon);
                             });
@@ -415,15 +462,38 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         return true;
                     }
 
-                    MissionTokenProgress? tokenProgress = CreateTokenProgress(questId, dungeon);
+                    DungeonKills kills = _quests.LoadDungeonKills(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters);
                     MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
+                    MissionChestPopulation? chests = CreateChestPopulation(questId, dungeon);
+
+                    // Building a dungeon (room geometry, collision world, spawns, chests) costs several tick budgets:
+                    // do it on the thread pool, then try the entrance again once the dungeon is live. Everyone who
+                    // uses the entrance meanwhile waits on that same build.
+                    if (!_playfields.Value.TryGetQuestDungeon(dungeonPlayfield, out _) && player.Playfield is Playfield source)
+                    {
+                        System.Threading.Tasks.Task<bool> build = _pendingBuilds.GetOrAdd(dungeonPlayfield,
+                            _ => new Lazy<System.Threading.Tasks.Task<bool>>(() => System.Threading.Tasks.Task.Run(() =>
+                                BuildDungeonOffTick(dungeonPlayfield, questId, layout, entrance, dungeon, unfinishedNpc, kills, chests)))).Value;
+                        build.ContinueWith(done =>
+                        {
+                            if (!done.IsCompletedSuccessfully || !done.Result) return;
+                            source.DispatchPlayerProjection(player, () =>
+                            {
+                                if (!ReferenceEquals(player.Playfield, source) || player.Session == null) return;
+                                Reenter(player, target);
+                            });
+                        }, System.Threading.Tasks.TaskScheduler.Default);
+                        return true;
+                    }
+
                     QuestDungeonPlayfield world;
                     try
                     {
-                        world = _playfields.Value.GetOrCreateQuestDungeon(dungeon.Parameters.DungeonPlayfield, questId, layout, entrance,
+                        world = _playfields.Value.GetOrCreateQuestDungeon(dungeonPlayfield, questId, layout, entrance,
                             dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                            tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
-                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: CreateChestPopulation(questId, dungeon));
+                            unfinishedNpc, kills,
+                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: chests);
+                        world.KillsCheckpoint ??= _quests.SaveDungeonKills;
                     }
                     catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
                     {
@@ -437,6 +507,46 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Creates and builds the dungeon off any playfield tick. True when the entrance should be tried again: the
+        /// dungeon is live here, or World placed it on another instance (the retry hands the player over). False
+        /// when the build failed; that is logged and the player's next use of the entrance tries again.
+        /// </summary>
+        bool BuildDungeonOffTick(int dungeonPlayfield, string questId, DungeonLayout layout, MissionEntrancePlacement entrance,
+            CachedDungeon dungeon, MissionNpcObjectiveBinding? unfinishedNpc, DungeonKills kills, MissionChestPopulation? chests)
+        {
+            try
+            {
+                QuestDungeonPlayfield world = _playfields.Value.GetOrCreateQuestDungeon(dungeonPlayfield, questId, layout, entrance,
+                    dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
+                    unfinishedNpc, kills,
+                    spawnNpcObjective: unfinishedNpc != null, chestPopulation: chests);
+                world.KillsCheckpoint ??= _quests.SaveDungeonKills;
+                return true;
+            }
+            catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
+            {
+                return true;
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, string.Format(CultureInfo.InvariantCulture, "Quest dungeon build failed playfield={0} quest={1}",
+                    dungeonPlayfield, questId));
+                return false;
+            }
+            finally
+            {
+                _pendingBuilds.TryRemove(dungeonPlayfield, out _);
+            }
+        }
+
+        /// <summary>Tries the entrance again after off-tick work finished for it, without the use cooldown in the way.</summary>
+        void Reenter(Player player, Identity target)
+        {
+            _lastRequest.TryRemove(player.Identity.Instance, out _);
+            TryEnter(player, target);
         }
 
         /// <summary>
@@ -512,14 +622,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
             if (playfields.TryGetQuestDungeon(storedPlayfield, out QuestDungeonPlayfield live))
             {
-                if (live.TokenProgress?.RequiresReconstruction != true)
-                    return (live, null, null);
-                if (!playfields.TryReleaseQuestDungeon(storedPlayfield, questId))
-                {
-                    var outsideAt = new Vector3(live.Entrance.LocalX, live.Entrance.LocalY, live.Entrance.LocalZ);
-                    PlayfieldAdmission outside = AcquireForLogin(playfields, live.Entrance.PlayfieldId, outsideAt);
-                    return (outside.Playfield, outsideAt, outside);
-                }
+                return (live, null, null);
             }
 
             if (TryGetDungeon(questId, out CachedDungeon dungeon)
@@ -528,14 +631,16 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (!dungeon.Ended && dungeon.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks && dungeon.Parameters.DungeonPlayfield == storedPlayfield
                     && _layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
                 {
-                    MissionTokenProgress? tokenProgress = CreateTokenProgress(questId, dungeon);
+                    DungeonKills kills = _quests.LoadDungeonKills(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters);
                     MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
                     try
                     {
-                        return (playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
+                        QuestDungeonPlayfield created = playfields.GetOrCreateQuestDungeon(storedPlayfield, questId, layout, entrance, dungeon.TargetHash,
                             dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                            tokenProgress == null ? unfinishedNpc : dungeon.Parameters.ObjectiveNpc, tokenProgress,
-                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: CreateChestPopulation(questId, dungeon)), layout.Spawn, null);
+                            unfinishedNpc, kills,
+                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: CreateChestPopulation(questId, dungeon));
+                        created.KillsCheckpoint ??= _quests.SaveDungeonKills;
+                        return (created, layout.Spawn, null);
                     }
                     catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
                     {
@@ -932,18 +1037,18 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             return true;
         }
 
-        MissionTokenProgress? CreateTokenProgress(string questId, CachedDungeon dungeon)
-            => _quests.CreateTokenProgress(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters.TokenReward);
-
         MissionChestPopulation? CreateChestPopulation(string questId, CachedDungeon dungeon)
-            => _quests.CreateChestPopulation(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks,
-                dungeon.FrozenJson, dungeon.Parameters, _layouts.ChestPolicy);
+            => _quests.CreateChestPopulation(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters, _layouts.ChestPolicy);
 
         /// <summary>The NPC hash a kill quest wants, or null for other quests.</summary>
         static string? KillTarget(QuestTemplate? template)
             => template != null && template.IsKill && !string.IsNullOrWhiteSpace(template.Objective?.Npc) ? template.Objective.Npc : null;
 
-        bool TryPrepareObjective(Player player, string questId, DungeonLayout layout, DungeonFindItemPolicy? policy,
+        /// <summary>
+        /// Fixes the item's identity and catalog choice. Its room and position are not chosen here: the dungeon derives
+        /// them from its seed when it builds.
+        /// </summary>
+        bool TryPrepareObjective(Player player, string questId, DungeonFindItemPolicy? policy,
             int missionType, bool sourceItem,
             out MissionItemObjectiveBinding objective, out string objectiveHash)
         {
@@ -951,10 +1056,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             objectiveHash = string.Empty;
             if (_hashItems == null || policy?.ItemHashes is not { Length: > 0 } || policy.Quality <= 0
                 || policy.QuestInstanceStat < 0 || policy.WorldScalePercent <= 0 || policy.ItemHashes.Any(string.IsNullOrWhiteSpace))
-                return false;
-            int room = 0;
-            Vector3 point = new();
-            if (!sourceItem && !DungeonObjectivePlacement.TrySelect(_gameData.RootPath, layout, _logger, out room, out point))
                 return false;
             var candidates = new List<(string Hash, int Low, int High, int Quality)>();
             foreach (string hash in policy.ItemHashes.Distinct(StringComparer.Ordinal))
@@ -972,7 +1073,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 QuestId = questId, OwnerId = player.Identity.Instance,
                 IdentityType = (int)IdentityType.Terminal,
                 Instance = _ids.Allocate(), LowId = selected.Low, HighId = selected.High, Quality = selected.Quality,
-                RoomIndex = room, X = point.xf, Y = point.yf, Z = point.zf,
                 QuestInstanceStat = policy.QuestInstanceStat, WorldFlags = policy.WorldFlags,
                 WorldScalePercent = policy.WorldScalePercent,
                 MissionType = missionType, IsSourceItem = sourceItem
@@ -980,16 +1080,22 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             return objective.IsValid;
         }
 
-        bool TryPrepareNpc(Player player, string questId, DungeonLayout layout, int missionType, int quality,
+        /// <summary>
+        /// Fixes the objective NPC's hash and identity. Its room and position are not chosen here: the dungeon derives
+        /// them from its seed when it builds.
+        /// </summary>
+        bool TryPrepareNpc(Player player, string questId, int missionType, int quality, string? npcHash,
             out MissionNpcObjectiveBinding objective)
         {
             objective = null!;
             DungeonNpcObjectivePolicy? policy = _layouts.NpcObjectivePolicy;
-            string[]? hashes = missionType == (int)MissionRollType.FindPerson ? policy?.FindPersonNpcHashes : policy?.NpcHashes;
-            int? scalePercent = missionType == (int)MissionRollType.KillPerson ? policy?.KillPersonScalePercent : null;
+            string[]? hashes = !string.IsNullOrWhiteSpace(npcHash) ? [npcHash]
+                : missionType == (int)MissionRollType.FindPerson ? policy?.FindPersonNpcHashes : policy?.NpcHashes;
+            // The objective policy (hash pool and kill-target enlargement) is for rolled missions. An authored quest names
+            // its own NPC and keeps that NPC's catalog size.
+            int? scalePercent = npcHash == null && missionType == (int)MissionRollType.KillPerson ? policy?.KillPersonScalePercent : null;
             if (quality <= 0 || scalePercent is <= 0 || hashes is not { Length: > 0 }
-                || hashes.Any(string.IsNullOrWhiteSpace)
-                || !DungeonObjectivePlacement.TrySelect(_gameData.RootPath, layout, _logger, out int room, out Vector3 point))
+                || hashes.Any(string.IsNullOrWhiteSpace))
                 return false;
             var candidates = new List<MobTemplate>();
             foreach (string hash in hashes.Distinct(StringComparer.Ordinal))
@@ -1004,8 +1110,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             objective = new MissionNpcObjectiveBinding
             {
                 QuestId = questId, OwnerId = player.Identity.Instance, Instance = _ids.Allocate(),
-                NpcHash = selected.Hash, Quality = quality, ScalePercent = scalePercent, RoomIndex = room,
-                X = point.xf, Y = point.yf, Z = point.zf, MissionType = missionType
+                NpcHash = selected.Hash, Quality = quality, ScalePercent = scalePercent, MissionType = missionType
             };
             return objective.IsValid;
         }
@@ -1275,40 +1380,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 ],
                 Name = name + '\0'
             });
-        }
-
-        /// <summary>The offer's type, text and reward in Quests.json form; a kill-target mission names its target hash.</summary>
-        static QuestTemplate BuildTemplate(string questId, GeneratedMissionOffer offer)
-        {
-            List<List<QuestRewardItem>>? records = offer.RewardCount > 0 && offer.RewardLowId > 0
-                ? [[new QuestRewardItem { Id = offer.RewardLowId, HighId = offer.RewardHighId, Quality = Math.Max(1, offer.RewardQuality) }]]
-                : null;
-
-            return new QuestTemplate
-            {
-                Hash = questId,
-                Name = offer.Title ?? string.Empty,
-                Summary = offer.Description ?? string.Empty,
-                Scope = "Solo",
-                Action = offer.MissionType switch
-                {
-                    0 => QuestTemplate.KillOneAction,
-                    1 => QuestTemplate.TargetNpcAction,
-                    2 => QuestTemplate.FindItemAction,
-                    3 => QuestTemplate.RepairAction,
-                    4 => QuestTemplate.ReturnItemAction,
-                    _ => string.Empty
-                },
-                Objective = new QuestObjective(),
-                Flags = "None",
-                Reward = new QuestReward
-                {
-                    Hash = string.Empty,
-                    Credits = Math.Max(0, offer.CashReward),
-                    Xp = Math.Max(0, offer.ExperienceReward),
-                    Records = records
-                }
-            };
         }
 
         static void SendText(Player player, string text)

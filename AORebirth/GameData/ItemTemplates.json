@@ -9014,5 +9014,23 @@
     },
     "TALA": {
         "Templates": [25812, 25811, 160277]
+    },
+    "ARTHMP": {
+        "Templates": [155198]
+    },
+    "ARBJWS": {
+        "Templates": [155200]
+    },
+    "ARDLSQ": {
+        "Templates": [155199]
+    },
+    "ARABXZ": {
+        "Templates": [155201]
+    },
+    "MSTO": {
+        "Templates": [96350]
+    },
+    "MSTK": {
+        "Templates": [96349]
     }
 }

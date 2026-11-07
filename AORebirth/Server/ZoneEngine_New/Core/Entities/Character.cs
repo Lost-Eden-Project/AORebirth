@@ -3355,6 +3355,7 @@ namespace ZoneEngine_New.Core.Entities
             // would otherwise keep running on the last held input while its client already stands still.
             if (IsRooted)
                 StopInPlace();
+            SyncClientFrozenMode();
             MarkRebaseDirty();
             SnapshotActiveNanosForPersistence();
         }
@@ -3503,6 +3504,7 @@ namespace ZoneEngine_New.Core.Entities
             // Every buff change rebases, so a root landing stops the character here.
             if (IsRooted)
                 StopForRoot();
+            SyncClientFrozenMode();
         }
 
         protected void ApplyBuffStatBonuses(StatCollection stats)
@@ -3547,6 +3549,41 @@ namespace ZoneEngine_New.Core.Entities
                     AuxB = 0
                 },
                 this);
+        }
+
+        /// <summary>Whether the player's own client was last told to hold still (<see cref="SyncClientFrozenMode"/>).</summary>
+        bool _clientFrozen;
+
+        /// <summary>
+        /// Tells a player's own client to hold still while rooted or stunned, and to move again after. The client has no
+        /// handling of the Stun (53122) or root functions itself: it applies a server CharDCMove to its own character
+        /// only when the N3 header byte after the identity is 1 (n3InfoItemRemote_t::ToBePassedOn, N3.dll Construct;
+        /// 0 is for observers) and then runs the action through its movement controller (Gamecode.dll 0x1006bb71 ->
+        /// 0x1006c935): SwitchToFrozen (0x17) enters Frozen mode (vehicle halted, body stationary, movement input
+        /// ignored), LeaveFrozen (0x26) returns to the mode it was in. The coordinates in a self-directed move are
+        /// replaced by the client's own, so this never snaps it. Without this the client walked freely through every
+        /// stun and only got pulled back by <see cref="Movement.CharacterMotor"/>'s root correction.
+        /// </summary>
+        void SyncClientFrozenMode()
+        {
+            if (this is not Player { Session: { } session })
+                return;
+            bool rooted = IsRooted;
+            if (rooted == _clientFrozen)
+                return;
+            _clientFrozen = rooted;
+            session.Send(
+                new CharDCMoveMessage
+                {
+                    Identity = Identity,
+                    Unknown = 0x01,
+                    MoveType = (byte)(rooted ? MovementAction.SwitchToFrozen : MovementAction.LeaveFrozen),
+                    Heading = new MsgQuaternion { X = Rotation.xf, Y = Rotation.yf, Z = Rotation.zf, W = Rotation.wf },
+                    Coordinates = new MsgVector3 { X = Position.xf, Y = Position.yf, Z = Position.zf },
+                    Unknown1 = 0,
+                    AuxA = 0,
+                    AuxB = 0
+                });
         }
 
         /// <summary>

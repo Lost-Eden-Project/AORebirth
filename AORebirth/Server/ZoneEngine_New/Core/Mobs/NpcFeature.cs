@@ -8,6 +8,10 @@ namespace ZoneEngine_New.Core.Mobs
         /// <summary>Cannot be attacked and gets no combat brain (never aggroes or fights back).</summary>
         NoCombat,
 
+        /// <summary>
+        /// Stands where it spawned: never paths, wanders or chases, and fights from there (NpcCharacter.IsImmobile),
+        /// even though its MonsterData body can move. For stationary bosses whose body record is a mobile one.
+        /// </summary>
         NoMove,
 
         Wander,
@@ -30,5 +34,13 @@ namespace ZoneEngine_New.Core.Mobs
         /// (BreedHostility 0). Without it, only aggressive NPCs and guards join a fight they were not part of.
         /// </summary>
         Social,
+
+        /// <summary>
+        /// Pulls players to it in a fight: runs the NpcScripts program bound to this feature
+        /// (<c>GameData/NpcScripts/Summoner.json</c>, a CastNano on a random hostile beyond its minimum distance with
+        /// a warp to the NPC's feet) beside whatever program the NPC's own binding gives it. The feature only names
+        /// the NPC; the nano, cadence and distance are the script's.
+        /// </summary>
+        Summoner,
     }
 }

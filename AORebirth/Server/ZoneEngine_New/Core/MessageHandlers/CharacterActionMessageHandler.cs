@@ -16,7 +16,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Teams;
     using ZoneEngine_New.Core.Nanos;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Movement;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;

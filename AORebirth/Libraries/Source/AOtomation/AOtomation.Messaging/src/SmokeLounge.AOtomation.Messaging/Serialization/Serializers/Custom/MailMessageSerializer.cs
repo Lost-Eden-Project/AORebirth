@@ -334,7 +334,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
         private static void WriteLengthPrefixedString(StreamWriter streamWriter, string value)
         {
             string safe = value ?? string.Empty;
-            byte[] bytes = Encoding.ASCII.GetBytes(safe);
+            byte[] bytes = Encoding.Latin1.GetBytes(safe);
             streamWriter.WriteInt16((short)bytes.Length);
             streamWriter.WriteBytes(bytes);
         }

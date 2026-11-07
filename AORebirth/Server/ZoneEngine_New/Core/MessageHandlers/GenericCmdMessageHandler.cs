@@ -16,7 +16,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
 
@@ -24,12 +23,11 @@ namespace ZoneEngine_New.Core.MessageHandlers
     {
         private readonly IInventoryRepository _inventoryRepository;
         private readonly IItemBuilder _items;
-        private readonly AuthoredQuestService _quests;
         private readonly Quests.Dungeons.QuestDungeonService? _dungeons;
         private readonly Tradeskills.TradeskillService? _tradeskills;
 
         public GenericCmdMessageHandler(IInventoryRepository inventoryRepository, IItemBuilder items,
-            AuthoredQuestService quests, Quests.Dungeons.QuestDungeonService? dungeons = null,
+            Quests.Dungeons.QuestDungeonService? dungeons = null,
             Tradeskills.TradeskillService? tradeskills = null)
         {
             _dungeons = dungeons;
@@ -38,7 +36,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
             ArgumentNullException.ThrowIfNull(items);
             _inventoryRepository = inventoryRepository;
             _items = items;
-            _quests = quests ?? throw new ArgumentNullException(nameof(quests));
         }
 
         public Type MessageBodyType => typeof(GenericCmdMessage);
@@ -139,13 +136,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                             break;
                         }
                     }
-                    if (message.Target is { Length: >= 2 } && playfield.GetRequiredService<QuestPropService>().ClaimsItemTarget(message.Target[1]))
-                    {
-                        if (!playfield.GetRequiredService<QuestPropService>().TryUseItemOnProp(session, message.Target[0], message.Target[1],
-                            () => Acknowledge(session, message, message.Target[1])))
-                            Deny(session, message, player, "accepted Strongbox item/target is not eligible");
-                    }
-                    else if (message.Target is { Length: >= 2 }
+                    if (message.Target is { Length: >= 2 }
                         && TryGetBreakAndEnter(player, playfield, message.Target[0], message.Target[1], out IBreakAndEnterTarget lockable,
                             out Item pick))
                     {
@@ -309,31 +300,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
             }
 
-            if (_quests.IsAuthoredItem(item))
-            {
-                // Module API 1.6: an authored quest item runs at once, outside ItemUseService.
-                bool used;
-                using (Modules.ModuleCooldowns.During(AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId))
-                    used = _quests.TryUseItem(player, target, item);
-                if (used)
-                {
-                    Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
-                        AORebirth.Modules.Events.PlayerActionOutcome.Started, item: item);
-                    Modules.ModuleHooks.ActionResolved(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
-                        AORebirth.Modules.Events.PlayerActionOutcome.Executed, item: item);
-                    Acknowledge(session, message, target);
-                }
-                else
-                {
-                    Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.ItemUse, item.LowId,
-                        AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.Other, item,
-                        detail: "authored item use not committed");
-                    if (!player.IsPersistenceQuarantined && session.State == SessionState.InPlay)
-                        Deny(session, message, player, "authored item use was not committed");
-                }
-                return;
-            }
-
             ItemUseService uses = playfield.GetRequiredService<ItemUseService>();
             ItemUseStart start = uses.TryBegin(player, target, item);
             if (start == ItemUseStart.Rejected)
@@ -367,14 +333,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (target.Instance == 0)
             {
                 Deny(session, message, player, "use target instance=0");
-                return;
-            }
-
-            if (playfield.GetRequiredService<QuestPropService>().ClaimsUseTarget(target))
-            {
-                if (!playfield.GetRequiredService<QuestPropService>().TryUseProp(session, target,
-                    () => Acknowledge(session, message, target)))
-                    Deny(session, message, player, "accepted thief-remains target is not eligible");
                 return;
             }
 

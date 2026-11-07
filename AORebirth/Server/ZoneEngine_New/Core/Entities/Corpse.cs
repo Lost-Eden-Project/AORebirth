@@ -71,7 +71,7 @@ namespace ZoneEngine_New.Core.Entities
             LootLevel = dead.Stats.GetOrOne(CharacterStat.Level);
             if (dead is NpcCharacter npc)
             {
-                ItemTable = npc.MobTemplate?.ItemTable;
+                ItemTable = WithPlayfieldLoot(npc.MobTemplate?.ItemTable, dead.Playfield);
                 CarriedItems = npc.TakeCarriedLoot();
                 LootEquipment = new List<Inventory.Item>(npc.Equipment.Content.Values);
                 CorpseFullUpdateTemplate = CopyCorpseFullUpdateTemplate(npc.MobTemplate?.CorpseFullUpdateTemplate);
@@ -94,6 +94,19 @@ namespace ZoneEngine_New.Core.Entities
         public override double GetCollisionRadius() => _collisionRadius;
 
         public Identity LootWinner { get; set; } = Identity.None;
+
+        /// <summary>
+        /// The NPC's own table plus the rows its playfield adds to every corpse (a quest dungeon's Dungeon.MobLoot);
+        /// the template's list itself when the playfield adds none.
+        /// </summary>
+        static List<MobItemTableEntry>? WithPlayfieldLoot(List<MobItemTableEntry>? own, ZoneEngine_New.Core.Playfield.Playfield? playfield)
+        {
+            if (playfield is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield { Layout.MobLoot: { Count: > 0 } extra })
+                return own;
+            var table = own == null ? new List<MobItemTableEntry>(extra.Count) : new List<MobItemTableEntry>(own);
+            table.AddRange(extra);
+            return table;
+        }
 
         /// <summary>
         /// NPCs did the killing: no item table or equipment roll and no credits. Items the NPC was explicitly given to
@@ -120,6 +133,9 @@ namespace ZoneEngine_New.Core.Entities
             TeamSnapshot? team = Playfield?.GetService<TeamService>()?.GetTeam(player);
             return team != null && team.MemberIds.Contains(LootWinner.Instance);
         }
+
+        protected override void OnOpenRefusedInUse(Player player)
+            => Helpers.ClientFeedback.Send(player, Helpers.ClientFeedback.SomebodyAlreadyLootingRemains);
 
         /// <summary>
         /// First opener receives any cash on the corpse, up to the credit cap (the rest is lost); later openers get none.

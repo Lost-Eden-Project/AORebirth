@@ -306,7 +306,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
         private static void WriteLengthPrefixedString(StreamWriter writer, string value)
         {
             string safe = value ?? string.Empty;
-            writer.WriteInt32(Encoding.ASCII.GetByteCount(safe) + 1);
+            writer.WriteInt32(Encoding.Latin1.GetByteCount(safe) + 1);
             writer.WriteString(safe);
             writer.WriteByte(0);
         }
@@ -320,7 +320,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 bytes.Add(next);
             }
 
-            return Encoding.ASCII.GetString(bytes.ToArray());
+            return Encoding.Latin1.GetString(bytes.ToArray());
         }
 
         private static void WriteNullTerminatedString(StreamWriter writer, string value)

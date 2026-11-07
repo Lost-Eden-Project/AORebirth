@@ -6,29 +6,31 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json.Serialization;
 using ZoneEngine_New.Core.Entities;
+using ZoneEngine_New.Core.Mobs;
 
-/// <summary>Editable AORebirth chest policy; rarity labels/weights are user-defined, not retail frequency claims.</summary>
+/// <summary>
+/// Editable AORebirth chest placement policy. What a chest holds is an NPC-style item table: a Quests.json dungeon
+/// quest's Dungeon.ChestLoot, or for terminal-rolled missions this policy's LootTable. A dungeon whose effective chest
+/// item table is empty gets no chests.
+/// </summary>
 public sealed class MissionChestPolicy
 {
-    public const string MissingRarity = "Missing";
+    /// <summary>False: generated dungeons get no chest population at all (no placement, loot or stored-chest work).</summary>
+    public bool Enabled { get; set; } = true;
 
     public double RoomDensity { get; set; }
     public double CountVariationFraction { get; set; }
-    public int MinItems { get; set; }
-    public int MaxItems { get; set; }
-    public Dictionary<string, double> RarityWeights { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Chest item table for missions rolled at a terminal (a Quests.json quest brings its own ChestLoot).</summary>
+    public List<MobItemTableEntry> LootTable { get; set; } = [];
+
     public ChestSpawnDefinition? SpawnDefinition { get; set; }
     public MissionChestPlacementPolicy? Placement { get; set; }
 
     [JsonIgnore]
     public bool IsValid => double.IsFinite(RoomDensity) && RoomDensity is >= 0 and <= 1
         && double.IsFinite(CountVariationFraction) && CountVariationFraction is >= 0 and <= 1
-        && MinItems >= 1 && MaxItems >= MinItems && MaxItems <= 3
-        && RarityWeights != null && RarityWeights.Count == 6
-        && RarityWeights.ContainsKey(MissingRarity)
-        && Enumerable.Range(1, 5).All(value => RarityWeights.ContainsKey(value.ToString(CultureInfo.InvariantCulture)))
-        && RarityWeights.Values.All(weight => double.IsFinite(weight) && weight >= 0)
-        && RarityWeights.Values.Sum() is > 0 and < double.PositiveInfinity
+        && LootTable != null && LootTable.All(MobItemTableEntry.IsWellFormed)
         && (Placement == null || Placement.IsValid) && AppearanceValid();
 
     bool AppearanceValid()
@@ -61,10 +63,10 @@ public sealed class MissionChestPolicy
 
     internal MissionChestPolicy Clone() => new()
     {
+        Enabled = Enabled,
         RoomDensity = RoomDensity,
         CountVariationFraction = CountVariationFraction,
-        MinItems = MinItems,
-        MaxItems = MaxItems,
+        LootTable = MobItemTableEntry.Clone(LootTable),
         SpawnDefinition = SpawnDefinition == null ? null : new ChestSpawnDefinition
         {
             StateMachineType = SpawnDefinition.StateMachineType,
@@ -73,51 +75,17 @@ public sealed class MissionChestPolicy
             LockableValue = SpawnDefinition.LockableValue,
             Stats = SpawnDefinition.Stats.Select(stat => new ChestSpawnStat { StatId = stat.StatId, Value = stat.Value }).ToArray()
         },
-        Placement = Placement?.Clone(),
-        RarityWeights = new Dictionary<string, double>(RarityWeights, StringComparer.Ordinal)
+        Placement = Placement?.Clone()
     };
 }
 
-/// <summary>Bounded placement checks over existing collision geometry; these are configurable AORebirth margins.</summary>
+/// <summary>Which rooms chests avoid, by a part of the room template's name (hallways, stairs, vents and the like).</summary>
 public sealed class MissionChestPlacementPolicy
 {
     public string[] ExcludedRoomNameParts { get; set; } = [];
-    public int CandidateAttemptsPerRoom { get; set; }
-    public int CandidatesPerRoom { get; set; }
-    public float FloorProbeLift { get; set; }
-    public float MaxFloorDrop { get; set; }
-    public float WalkSampleSpacing { get; set; }
-    public float MaxWalkStep { get; set; }
-    public float CollisionPadding { get; set; }
-    public float DoorClearance { get; set; }
-    public float ObjectiveClearance { get; set; }
-    public float ChestClearance { get; set; }
-    public float EntryClearance { get; set; }
 
     [JsonIgnore]
-    public bool IsValid => ExcludedRoomNameParts != null && ExcludedRoomNameParts.All(part => !string.IsNullOrWhiteSpace(part))
-        && CandidateAttemptsPerRoom is >= 1 and <= 256
-        && CandidatesPerRoom is >= 1 and <= 32 && CandidateAttemptsPerRoom >= CandidatesPerRoom
-        && Positive(FloorProbeLift) && Positive(MaxFloorDrop) && Positive(WalkSampleSpacing) && Positive(MaxWalkStep)
-        && Nonnegative(CollisionPadding) && Positive(DoorClearance) && Positive(ObjectiveClearance)
-        && Positive(ChestClearance) && Positive(EntryClearance);
+    public bool IsValid => ExcludedRoomNameParts != null && ExcludedRoomNameParts.All(part => !string.IsNullOrWhiteSpace(part));
 
-    static bool Positive(float value) => float.IsFinite(value) && value > 0;
-    static bool Nonnegative(float value) => float.IsFinite(value) && value >= 0;
-
-    internal MissionChestPlacementPolicy Clone() => new()
-    {
-        ExcludedRoomNameParts = (string[])ExcludedRoomNameParts.Clone(),
-        CandidateAttemptsPerRoom = CandidateAttemptsPerRoom,
-        CandidatesPerRoom = CandidatesPerRoom,
-        FloorProbeLift = FloorProbeLift,
-        MaxFloorDrop = MaxFloorDrop,
-        WalkSampleSpacing = WalkSampleSpacing,
-        MaxWalkStep = MaxWalkStep,
-        CollisionPadding = CollisionPadding,
-        DoorClearance = DoorClearance,
-        ObjectiveClearance = ObjectiveClearance,
-        ChestClearance = ChestClearance,
-        EntryClearance = EntryClearance
-    };
+    internal MissionChestPlacementPolicy Clone() => new() { ExcludedRoomNameParts = (string[])ExcludedRoomNameParts.Clone() };
 }

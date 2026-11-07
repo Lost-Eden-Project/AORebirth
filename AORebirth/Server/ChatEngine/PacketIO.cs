@@ -145,13 +145,13 @@ namespace ChatEngine
             }
             else
             {
-                int byteCount = Encoding.UTF8.GetByteCount(input);
+                int byteCount = Encoding.Latin1.GetByteCount(input);
                 if (byteCount > ushort.MaxValue)
                     throw new ArgumentOutOfRangeException(nameof(input), "Encoded chat string exceeds its unsigned 16-bit length field.");
 
                 short length = IPAddress.HostToNetworkOrder((Int16)byteCount);
                 this._data.AddRange(BitConverter.GetBytes((UInt16)length));
-                this._data.AddRange(Encoding.UTF8.GetBytes(input));
+                this._data.AddRange(Encoding.Latin1.GetBytes(input));
             }
         }
 
@@ -273,7 +273,7 @@ namespace ChatEngine
         public string ReadString()
         {
             ushort strlen = this.ReadUInt16();
-            return Encoding.UTF8.GetString(this.ReadBytes(strlen));
+            return Encoding.Latin1.GetString(this.ReadBytes(strlen));
         }
 
         /// <summary>

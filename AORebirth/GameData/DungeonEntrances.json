@@ -1,5 +1,5 @@
 {
-  "_comment": "Entrance rooms per ACG style and the door of each that is the dungeon's way in (index into the room's Rooms.json doorConnections). Nothing in the client or style data marks it: the client treats whichever door is left unpaired as the exit, and the entrance room is modelled with a plug filling that doorway, so it must face outside; placed any other way, the plug seals the way into the dungeon. Only rooms listed here are used as generated dungeon entrances. MainHalls: the style's main hall rooms (the *_mh* rooms); the first room past the entrance is always one of them. Source: 'geometry' = the only doorway the room's collision surfaces plug; 'live' = the unpaired door in a captured live layout. Not yet mapped (no single plug and no live layout): 320, 322, 362, 382, 386, 331 tarm_entrance1, and the other 341/351 entrances.",
+  "_comment": "Entrance rooms per ACG style and the door of each that is the dungeon's way in (index into the room's Rooms.json doorConnections). Nothing in the client or style data marks it: the client treats whichever door is left unpaired as the exit, and the entrance room is modelled with a plug filling that doorway, so it must face outside; placed any other way, the plug seals the way into the dungeon. Only rooms listed here are used as generated dungeon entrances. MainHalls: the style's main hall rooms (the *_mh* rooms); the first room past the entrance is always one of them. Source: 'geometry' = the only doorway the room's collision surfaces plug; 'live' = the unpaired door in a captured live layout. Not yet mapped (no single plug and no live layout): 320, 322, 362, 382, 331 tarm_entrance1, and the other 341/351 entrances.",
   "Styles": [
     {
       "Style": 320,
@@ -116,8 +116,40 @@
     },
     {
       "Style": 386,
-      "Entrances": [],
-      "MainHalls": [0, 1, 2, 3, 4, 5, 6, 7]
+      "Entrances": [
+        {"Room": 13, "Name": "Mothership_entrance", "ExitDoor": 0, "Source": "live (door 0 is the one left unpaired in all 56 captured dungeons)"}
+      ],
+      "MainHalls": [0, 1, 2, 3, 4, 5, 6, 7],
+      "FloorTransitions": {
+        "_comment": "Alien Mothership lifts: a floor is left from a dead end (58% of captures) or a feature room, arrived at in a hall (Button (down)), and the top floor is the boss room alone. ao-acg data/mothership_dataset.json: 56 LiveCapture Alien Mothership dungeons; room-local tile (lx, lz) of the captured Button objects, as 2*lx - 2*cx - 1, 0.01, 2*lz - 2*cz - 1 with (cx, cz) the room's Rooms.json center.",
+        "DescendingFloors": false,
+        "ArrivalRooms": [
+          {"Room": 7, "Position": [-0.8, 0.01, -4.0], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863},
+          {"Room": 0, "Position": [-1.0, 0.01, 0.0], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863},
+          {"Room": 6, "Position": [-11.2, 0.01, 1.8], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863},
+          {"Room": 4, "Position": [-0.6, 0.01, -1.0], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863},
+          {"Room": 5, "Position": [-0.8, 0.01, -4.0], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863},
+          {"Room": 3, "Position": [-1.2, 0.01, -1.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863},
+          {"Room": 1, "Position": [-1.2, 0.01, 1.8], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863}
+        ],
+        "DepartureRooms": [
+          {"Room": 8, "Position": [-1.0, 0.01, -0.6], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 25, "Position": [-11.6, 0.01, 10.6], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 22, "Position": [4.0, 0.01, -7.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 26, "Position": [14.8, 0.01, 26.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 24, "Position": [-8.6, 0.01, -2.0], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 18, "Position": [-1.8, 0.01, 30.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 19, "Position": [-1.6, 0.01, 19.2], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 27, "Position": [-24.8, 0.01, -14.8], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 16, "Position": [0.1, 0.01, 4.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 20, "Position": [-27.8, 0.01, -14.8], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 23, "Position": [-18.2, 0.01, 9.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864},
+          {"Room": 17, "Position": [-1.4, 0.01, 3.2], "PlatformTemplateId": 254285, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864}
+        ],
+        "BossRooms": [
+          {"Room": 14, "Position": [0.8, 0.01, -33.4], "PlatformTemplateId": 254285, "ButtonTemplateId": 159863}
+        ]
+      }
     }
   ]
 }

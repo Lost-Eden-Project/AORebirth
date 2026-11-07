@@ -208,7 +208,6 @@ namespace ZoneEngine_New.Core.Playfield
 
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.activate", Identity.Instance);
             GetRequiredService<NpcContentActivationService>().Activate();
-            GetRequiredService<ZoneEngine_New.Core.Missions.QuestPropService>().Activate();
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.heartbeat", Identity.Instance);
             _heartBeat = new PlayfieldHeartbeat(Identity, Tick);
         }
@@ -696,7 +695,6 @@ namespace ZoneEngine_New.Core.Playfield
                 foreach (PlayfieldTransfer transfer in _incomingTransfers.Keys) transfer.RequestReturn();
                 foreach (PlayfieldTransfer transfer in _outgoingTransfers.Keys) transfer.SourceShutdown();
                 _playfieldManager.Knubot?.Shutdown(this);
-                GetRequiredService<ZoneEngine_New.Core.Missions.QuestPropService>().Shutdown();
                 GetRequiredService<AreaTriggerService>().Dispose();
                 Player[] remaining = [.. _dynelRegistry.PlayerEntities()];
                 foreach (Player player in remaining)
@@ -910,7 +908,6 @@ namespace ZoneEngine_New.Core.Playfield
             services.AddSingleton(_logger);
             services.AddSingleton(_playfieldManager);
             services.AddSingleton(_playfieldManager.Teams);
-            services.AddSingleton(_playfieldManager.AuthoredQuests);
             if (_playfieldManager.Vicinity != null)
                 services.AddSingleton(_playfieldManager.Vicinity);
             if (_playfieldManager.Quests != null)
@@ -974,7 +971,6 @@ namespace ZoneEngine_New.Core.Playfield
             services.AddSingleton(provider => new Pets.PetService(this, _gameData, _logger));
             services.AddSingleton(_shopDao);
             services.AddSingleton<NpcContentActivationService>();
-            services.AddSingleton<ZoneEngine_New.Core.Missions.QuestPropService>();
             services.AddSingleton<HashSpawnSystem>();
             services.AddSingleton<ItemUseService>();
             return services;

@@ -9,6 +9,7 @@ using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
 using ZoneEngine_New.Core.GameData;
+using ZoneEngine_New.Core.Mobs;
 
 using Vector3 = AORebirth.Core.Vector.Vector3;
 
@@ -25,6 +26,10 @@ public sealed class NpcScriptCompiler
     public const int MinSocialAnim = 1;
     public const int MaxSocialAnim = 71;
     public const int MaxWorldItemLifetimeSeconds = 3600;
+    public const int MaxNpcLifetimeSeconds = 3600;
+    public const int MaxSpawnCount = 12;
+    public const float MaxSpawnRadius = 30f;
+    public const int MaxCastDistance = 40;
 
     readonly IGameData _gameData;
 
@@ -90,7 +95,8 @@ public sealed class NpcScriptCompiler
             ctx.Ops.ToArray(),
             ctx.Strings.ToArray(),
             ctx.Vectors.ToArray(),
-            ctx.Jumps.ToArray());
+            ctx.Jumps.ToArray(),
+            ctx.Spawns.ToArray());
     }
 
     static ScriptParam[] ParseParams(JsonElement root, List<string> errors)
@@ -136,6 +142,7 @@ public sealed class NpcScriptCompiler
             case "Int": type = ScriptParamType.Int; return true;
             case "Gfx": type = ScriptParamType.Gfx; return true;
             case "Text": type = ScriptParamType.Text; return true;
+            case "NpcHash": type = ScriptParamType.NpcHash; return true;
             default: type = default; return false;
         }
     }
@@ -159,6 +166,8 @@ public sealed class NpcScriptCompiler
         public List<Vector3> Vectors { get; } = new();
 
         public List<int> Jumps { get; } = new();
+
+        public List<SpawnNpcSpec> Spawns { get; } = new();
 
         public string Where { get; set; } = string.Empty;
 
@@ -357,6 +366,14 @@ public sealed class NpcScriptCompiler
 
             case "Gfx":
                 CompileGfx(value, ctx);
+                return;
+
+            case "SpawnNpc":
+                CompileSpawnNpc(value, ctx);
+                return;
+
+            case "CastNano":
+                CompileCastNano(value, ctx);
                 return;
 
             case "Despawn":
@@ -673,6 +690,191 @@ public sealed class NpcScriptCompiler
         ctx.Ops.Add(new ScriptOp(ScriptOpCode.SpawnWorldItem, itemRef, offsetRef, quality, lifetime));
     }
 
+    /// <summary>
+    /// <c>{ "Hash", "At" | "Offset"?, "Count"?, "Radius"?, "LifetimeSeconds"?, "DespawnWithOwner"?, "Level"?, "JoinFight"? }</c>.
+    /// The hash is a constant or a $NpcHash param. DespawnWithOwner is true (at once), false (independent) or the
+    /// seconds the spawn outlives its owner's death, reset or despawn; default true.
+    /// </summary>
+    void CompileSpawnNpc(JsonElement value, ProgramContext ctx)
+    {
+        if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty("Hash", out JsonElement hash) || hash.ValueKind != JsonValueKind.String)
+        {
+            ctx.Error("SpawnNpc: needs { Hash, At? | Offset?, Count?, Radius?, LifetimeSeconds?, DespawnWithOwner?, Level?, JoinFight? }");
+            return;
+        }
+
+        string hashText = (hash.GetString() ?? string.Empty).Trim();
+        int hashRef;
+        if (hashText.StartsWith('$'))
+        {
+            int slot = ctx.ParamSlot(hashText.Substring(1), ScriptParamType.NpcHash, out _);
+            if (slot < 0)
+                return;
+            hashRef = ScriptOp.ParamRef(slot);
+        }
+        else
+        {
+            if (!_gameData.HasMobTemplate(hashText))
+            {
+                ctx.Error("SpawnNpc: no NPC template for hash '" + hashText + "'");
+                return;
+            }
+
+            hashRef = ctx.String(hashText);
+        }
+
+        bool at = value.TryGetProperty("At", out JsonElement atElement);
+        bool offset = value.TryGetProperty("Offset", out JsonElement offsetElement);
+        if (at && offset)
+        {
+            ctx.Error("SpawnNpc: At or Offset, not both");
+            return;
+        }
+
+        int centreRef = ScriptOp.None;
+        if (at || offset)
+        {
+            if (!TryParseVector(at ? atElement : offsetElement, out Vector3 centre))
+            {
+                ctx.Error("SpawnNpc: " + (at ? "At" : "Offset") + " is [x, y, z]");
+                return;
+            }
+
+            centreRef = ctx.Vector(centre);
+        }
+
+        int count = GetInt(value, "Count", 1);
+        if (count < 1 || count > MaxSpawnCount)
+        {
+            ctx.Error("SpawnNpc: Count must be 1.." + MaxSpawnCount);
+            return;
+        }
+
+        float radius = (float)GetDouble(value, "Radius", 0);
+        if (radius < 0 || radius > MaxSpawnRadius)
+        {
+            ctx.Error("SpawnNpc: Radius must be 0.." + MaxSpawnRadius.ToString(CultureInfo.InvariantCulture));
+            return;
+        }
+
+        if (count > 1 && radius <= 0)
+        {
+            ctx.Error("SpawnNpc: a Count above 1 needs a Radius (the spawns stand on that circle)");
+            return;
+        }
+
+        int lifetime = GetInt(value, "LifetimeSeconds", 0);
+        if (lifetime < 0 || lifetime > MaxNpcLifetimeSeconds)
+        {
+            ctx.Error("SpawnNpc: LifetimeSeconds must be 1.." + MaxNpcLifetimeSeconds);
+            return;
+        }
+
+        int ownerDelay = 0;
+        if (value.TryGetProperty("DespawnWithOwner", out JsonElement withOwner))
+        {
+            switch (withOwner.ValueKind)
+            {
+                case JsonValueKind.True:
+                    break;
+                case JsonValueKind.False:
+                    ownerDelay = -1;
+                    break;
+                case JsonValueKind.Number when withOwner.TryGetInt32(out ownerDelay) && ownerDelay >= 0 && ownerDelay <= MaxNpcLifetimeSeconds:
+                    break;
+                default:
+                    ctx.Error("SpawnNpc: DespawnWithOwner is true, false or seconds 0.." + MaxNpcLifetimeSeconds);
+                    return;
+            }
+        }
+
+        int level = GetInt(value, "Level", 0);
+        if (level < 0)
+        {
+            ctx.Error("SpawnNpc: Level must be positive");
+            return;
+        }
+
+        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true));
+        ctx.Spawns.Add(spec);
+        ctx.Ops.Add(new ScriptOp(ScriptOpCode.SpawnNpc, hashRef, centreRef, ctx.Spawns.Count - 1));
+    }
+
+    /// <summary>
+    /// <c>{ "Nano", "Target"?, "MinDistance"?, "Warp"? }</c>. Target is Self (default), Target (the current fighting
+    /// target) or RandomHostile; MinDistance (metres) only narrows RandomHostile; Warp "ToSelf" moves the recipient to
+    /// the NPC's feet once the nano has landed.
+    /// </summary>
+    void CompileCastNano(JsonElement value, ProgramContext ctx)
+    {
+        JsonElement nanoElement = value;
+        NpcScriptTarget target = NpcScriptTarget.Self;
+        int minDistance = 0;
+        int flags = 0;
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            if (!value.TryGetProperty("Nano", out nanoElement))
+            {
+                ctx.Error("CastNano: object form needs Nano");
+                return;
+            }
+
+            string targetName = GetString(value, "Target") ?? "Self";
+            if (!Enum.TryParse(targetName, ignoreCase: true, out target) || !Enum.IsDefined(target))
+            {
+                ctx.Error("CastNano: Target is Self, Target or RandomHostile");
+                return;
+            }
+
+            minDistance = GetInt(value, "MinDistance", 0);
+            if (minDistance < 0 || minDistance > MaxCastDistance)
+            {
+                ctx.Error("CastNano: MinDistance must be 0.." + MaxCastDistance);
+                return;
+            }
+
+            if (minDistance > 0 && target != NpcScriptTarget.RandomHostile)
+            {
+                ctx.Error("CastNano: MinDistance only applies to Target RandomHostile");
+                return;
+            }
+
+            if (value.TryGetProperty("Warp", out JsonElement warp))
+            {
+                if (warp.ValueKind != JsonValueKind.String || !string.Equals(warp.GetString(), "ToSelf", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Error("CastNano: Warp is \"ToSelf\"");
+                    return;
+                }
+
+                if (target == NpcScriptTarget.Self)
+                {
+                    ctx.Error("CastNano: Warp needs a Target other than Self");
+                    return;
+                }
+
+                flags |= CastWarpToSelf;
+            }
+        }
+
+        if (!TryValueRef(nanoElement, ScriptParamType.Int, ctx, out int nanoRef, ParseNanoId))
+        {
+            ctx.Error("CastNano: a positive nano id or an $Int param");
+            return;
+        }
+
+        ctx.Ops.Add(new ScriptOp(ScriptOpCode.CastNano, nanoRef, (int)target, minDistance, flags));
+    }
+
+    /// <summary><see cref="ScriptOpCode.CastNano"/> D flag: warp the recipient to the NPC's feet when the nano lands.</summary>
+    public const int CastWarpToSelf = 1;
+
+    static bool ParseNanoId(JsonElement element, out int id)
+    {
+        id = 0;
+        return element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out id) && id > 0;
+    }
+
     void CompileGfx(JsonElement value, ProgramContext ctx)
     {
         JsonElement idElement = value;
@@ -895,10 +1097,11 @@ public sealed class NpcScriptCompiler
         string? hash = GetString(element, "Hash");
         string? spawnPoint = GetString(element, "SpawnPoint");
         string? npcKey = GetString(element, "NpcKey");
-        int targets = (hash != null ? 1 : 0) + (spawnPoint != null ? 1 : 0) + (npcKey != null ? 1 : 0);
+        string? feature = GetString(element, "Feature");
+        int targets = (hash != null ? 1 : 0) + (spawnPoint != null ? 1 : 0) + (npcKey != null ? 1 : 0) + (feature != null ? 1 : 0);
         if (targets != 1)
         {
-            problems.Add(where + "exactly one of Hash, SpawnPoint, NpcKey");
+            problems.Add(where + "exactly one of Hash, SpawnPoint, NpcKey, Feature");
             return null;
         }
 
@@ -933,13 +1136,43 @@ public sealed class NpcScriptCompiler
                 return null;
             }
         }
-        else
+        else if (npcKey != null)
         {
             target = ScriptBindingTarget.NpcKey;
-            key = npcKey!.Trim();
+            key = npcKey.Trim();
             if (playfield == null)
             {
                 problems.Add(where + "NpcKey needs Playfield");
+                return null;
+            }
+        }
+        else
+        {
+            // A feature overlay runs beside the NPC's own program, so it may not take the movement lease or carry
+            // plain movement: that stays with the primary binding.
+            target = ScriptBindingTarget.Feature;
+            if (!Enum.TryParse(feature!.Trim(), ignoreCase: false, out NpcFeature parsed) || !Enum.IsDefined(parsed))
+            {
+                problems.Add(where + "unknown Feature '" + feature + "' (an NpcFeature name from MonsterCombatRules.json)");
+                return null;
+            }
+
+            key = parsed.ToString();
+            if (program == null)
+            {
+                problems.Add(where + "Feature needs a program");
+                return null;
+            }
+
+            if (program.HasMovement)
+            {
+                problems.Add(where + "Feature overlay program '" + program.Id + "' moves the NPC (WalkTo/RunTo/SetHome/ReleaseMovement); only the NPC's own binding may");
+                return null;
+            }
+
+            if (element.TryGetProperty("Movement", out _))
+            {
+                problems.Add(where + "Feature binding cannot carry Movement");
                 return null;
             }
         }
@@ -1063,6 +1296,16 @@ public sealed class NpcScriptCompiler
                         Fail("text of 1.." + MaxSayLength + " characters");
                     else
                         strings[i] = text;
+                    break;
+                }
+
+                case ScriptParamType.NpcHash:
+                {
+                    string hash = value.ValueKind == JsonValueKind.String ? (value.GetString() ?? string.Empty).Trim() : string.Empty;
+                    if (!_gameData.HasMobTemplate(hash))
+                        Fail("an NPC template hash");
+                    else
+                        strings[i] = hash;
                     break;
                 }
             }

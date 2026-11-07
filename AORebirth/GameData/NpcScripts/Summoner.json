@@ -1,0 +1,19 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Summoner",
+  "Handlers": [
+    {
+      "On": "Timer",
+      "EveryMs": [20000, 30000],
+      "ChancePercent": 50,
+      "Do": [
+        { "If": { "HasTarget": false, "Goto": "idle" } },
+        { "CastNano": { "Nano": 286237, "Target": "RandomHostile", "MinDistance": 10, "Warp": "ToSelf" } },
+        { "Label": "idle" }
+      ]
+    }
+  ],
+  "Bindings": [
+    { "Feature": "Summoner" }
+  ]
+}

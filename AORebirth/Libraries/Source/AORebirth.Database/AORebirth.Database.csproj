@@ -119,7 +119,6 @@
     <Compile Include="Domain\Characters\MySqlCharacterPersistenceDao.Legacy.cs" />
     <Compile Include="Domain\Characters\MySqlCharacterDao.Legacy.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.cs" />
-    <Compile Include="Domain\Missions\MySqlMissionDao.Generated.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.Inventory.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.Chests.cs" />
     <Compile Include="Domain\Missions\MySqlMissionDao.CharacterQuests.cs" />

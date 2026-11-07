@@ -16,9 +16,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Data;
-    using ZoneEngine.Core.Missions;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
 
@@ -27,7 +25,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
         private readonly ICharacterHydrationService _hydration;
         private readonly PlayfieldManager _playfieldManager;
         private readonly IZoneLogger _logger;
-        private readonly IGeneratedMissionDao _retiredMissions;
         private readonly IZoneAdmissionGate _admission;
         private readonly ZoneEngine_New.Core.World.ZoneRedirects _redirects;
         private readonly ZoneEngine_New.Core.World.WorldLink? _world;
@@ -39,7 +36,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
             ICharacterHydrationService hydration,
             PlayfieldManager playfieldManager,
             IZoneLogger logger,
-            IGeneratedMissionDao retiredMissions,
             IZoneAdmissionGate admission,
             ZoneEngine_New.Core.World.ZoneRedirects redirects,
             Quests.Dungeons.QuestDungeonService? dungeons = null,
@@ -59,7 +55,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
             _hydration = hydration;
             _playfieldManager = playfieldManager;
             _logger = logger;
-            _retiredMissions = retiredMissions ?? throw new ArgumentNullException(nameof(retiredMissions));
             _admission = admission ?? throw new ArgumentNullException(nameof(admission));
         }
 
@@ -168,32 +163,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     // Vector3 overloads != with v1.Equals, which throws for a null left operand.
                     if (landing is not null)
                         hydration = WithLoginPosition(hydration, dungeonOrExterior.Identity.Instance, landing);
-                }
-                else if (storedPlayfield >= GeneratedMissionIdentitySpace.MinimumLivePlayfield2
-                    && storedPlayfield <= GeneratedMissionIdentitySpace.MaximumLivePlayfield2)
-                {
-                    // The old mission worlds are gone: a character saved inside one returns to where that mission was
-                    // accepted (its offer's destination).
-                    GeneratedMissionBinding? binding = _retiredMissions.ReadAccepted(characterId)
-                        .FirstOrDefault(value => value.LivePlayfield == storedPlayfield);
-                    if (binding?.Offer == null || binding.Offer.DestinationPlayfield <= 0)
-                    {
-                        FailLogin(session, characterId, "Saved inside a retired mission world with no way out.");
-                        return;
-                    }
-
-                    var offerAt = new AORebirth.Core.Vector.Vector3(binding.Offer.DestinationX, binding.Offer.DestinationY, binding.Offer.DestinationZ);
-                    try
-                    {
-                        playfieldAdmission = _playfieldManager.AcquirePlayfield(binding.Offer.DestinationPlayfield);
-                    }
-                    catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
-                    {
-                        throw new ZoneEngine_New.Core.World.LoginRelocationException(binding.Offer.DestinationPlayfield, offerAt);
-                    }
-
-                    playfield = playfieldAdmission.Playfield;
-                    hydration = WithLoginPosition(hydration, binding.Offer.DestinationPlayfield, offerAt);
                 }
                 else
                 {

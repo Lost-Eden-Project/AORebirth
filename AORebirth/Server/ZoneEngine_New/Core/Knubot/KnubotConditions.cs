@@ -292,7 +292,7 @@ public sealed record KnubotQuestCondition(bool Negated, string Hash, QuestState?
 {
     protected override bool Test(KnubotContext context)
     {
-        bool held = context.Quests.GetLog(context.Player).Quests.TryGetValue(Hash, out PlayerQuest? quest);
+        bool held = context.Quests.GetLog(context.Player).TryFind(Hash, out PlayerQuest? quest);
         return State == null ? !held : held && quest!.State == State;
     }
 }
@@ -302,10 +302,10 @@ public sealed record KnubotAnyQuestCondition(bool Negated, string[] Hashes) : Kn
 {
     protected override bool Test(KnubotContext context)
     {
-        IReadOnlyDictionary<string, PlayerQuest> quests = context.Quests.GetLog(context.Player).Quests;
+        QuestLog quests = context.Quests.GetLog(context.Player);
         foreach (string hash in Hashes)
         {
-            if (quests.TryGetValue(hash, out PlayerQuest? quest) && quest.State == QuestState.Active)
+            if (quests.TryFind(hash, out PlayerQuest? quest) && quest.State == QuestState.Active)
                 return true;
         }
 

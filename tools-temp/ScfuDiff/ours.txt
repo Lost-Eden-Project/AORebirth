@@ -1,0 +1,44 @@
+Version = 58
+Flags = IsNpc, UnknownFlag, HasPlayfieldId, HasHeadMesh, HasHeading, HasSmallHealth, HasSmallHealthDamage, HasSmallNpcFamily, HasSmallNpcLosHeight, UnknownDataFlag (0x20A4AC3)
+PlayfieldId = 127
+FightingTarget = null
+Coordinates = {X=113.60872 Y=77.015 Z=127.55991}
+Heading = {X=0 Y=0.8721061 Z=0 W=0.48931685}
+Appearance = {Value=1643 Breed=Nanomage Fatness=Normal Gender=Male Race=1 Side=Monster}
+Name = Fragmented Soul
+CharacterFlags = None (0x0)
+AccountFlags = 0
+Expansions = 3
+CharacterInfo = {Family=148 LosHeight=0 UnknownData=0 UnknownData2=0 UnknownData3=0}
+Level = 20
+Health = 447
+HealthDamage = 0
+MonsterData = 203729
+MonsterScale = 98
+VisualFlags = 31
+VisibleTitle = 0
+Unknown1 = 00000000000000000000000003010001000100010001000000030000
+MovementStatus = {}
+HeadMesh = 29706
+RunSpeedBase = 69
+AdditionalFlags = None (0x0)
+SuppressedFlags = None (0x0)
+TextureOverrides = []
+RawBody = 271B3A6B0000C350000F42C5003A020A4AC30000007F42E337AA429A07AE42FF1EAD000000003F5F4258000000003EFA87BD0000066B10467261676D656E74656420536F756C00000000000000000394000000001401BF0000031BD10062001F000000001C000000000000000000000000030100010001000100010000000300000000740A45000003F1000017A600000000000024BA0000000000000001000024BC0000000000000002000024BF0000000000000003000024BD0000000000000004000024B90000000000000BD3000000740A00000000040100001E9A00000000040000000000
+TailFullyDecoded = True
+UndecodedTail = 
+Waypoints = []
+ActiveNanos = []
+Textures = [{Place=0 Id=9402 Unknown=0}, {Place=1 Id=9404 Unknown=0}, {Place=2 Id=9407 Unknown=0}, {Place=3 Id=9405 Unknown=0}, {Place=4 Id=9401 Unknown=0}]
+Meshes = [{Position=0 OverrideTextureId=0 Id=29706 Layer=4}, {Position=1 OverrideTextureId=0 Id=7834 Layer=4}]
+Flags2 = 0
+OwnerInstance = null
+Unknown2 = 0
+Unknown4 = 0
+ScfuTowerUnk = 0
+IsImmunePadding = 0
+UnknownFlag3Padding = 0
+N3MessageType = SimpleCharFullUpdate (0x271B3A6B)
+Identity = {Type=CanbeAffected Instance=1000133}
+Unknown = 0
+PacketType = N3Message (0xA)

@@ -107,6 +107,18 @@ namespace ZoneEngine_New.Core.Quests
         /// </summary>
         public List<QuestDumpWaypoint>? Waypoints { get; set; }
 
+        /// <summary>
+        /// Quests.json only: the quest runs in its own ACG mission dungeon. Each time it is given, the quest is copied
+        /// into a generated quest and these inputs are frozen into that copy's dungeon (with a mission key).
+        /// </summary>
+        public QuestDungeonTemplate? Dungeon { get; set; }
+
+        /// <summary>
+        /// On a generated quest copied from a Quests.json quest (<see cref="Dungeon"/>): that quest's hash. Knubot and
+        /// <c>{givequest}</c> find the copy by it. Null on terminal missions.
+        /// </summary>
+        public string? TemplateHash { get; set; }
+
         /// <summary>What did not resolve when Quests.json loaded (an item hash); null when nothing. The quest still runs.</summary>
         [JsonIgnore]
         public string? LoadProblem { get; set; }
@@ -176,6 +188,118 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>[x, y, z]; live sends y as 0. The point itself, or the fallback for <see cref="Target"/>.</summary>
         public float[] Position { get; set; } = [];
 
+    }
+
+    /// <summary>
+    /// A Quests.json quest's dungeon inputs (<see cref="QuestTemplate.Dungeon"/>). The mission type follows the quest's
+    /// Action; the floor count and floor size come from the DungeonGeneration.json profile for the floor mode and quality.
+    /// </summary>
+    public sealed class QuestDungeonTemplate
+    {
+        public const string SingleFloor = "Single";
+        public const string MultiFloor = "Multi";
+
+        /// <summary>"Single" (one floor) or "Multi" (several floors ending in a boss floor).</summary>
+        public string Floors { get; set; } = SingleFloor;
+
+        /// <summary>
+        /// Fixed mission quality level (generation band, lock difficulty, the base of the mob and boss levels). The
+        /// dialog that gives the quest may set it instead (<c>{givequest HASH 150}</c>, <c>{givequest HASH level+12%}</c>);
+        /// with neither, the player's level.
+        /// </summary>
+        public int? Quality { get; set; }
+
+        /// <summary>ACG building style; null picks one of the profile's styles.</summary>
+        public int? Style { get; set; }
+
+        /// <summary>Playfield of the entrance the dungeon is reached through.</summary>
+        public int Playfield { get; set; }
+
+        /// <summary>MissionEntrance instance on <see cref="Playfield"/>; null picks one of its entrances at random.</summary>
+        public uint? Entrance { get; set; }
+
+        /// <summary>
+        /// The ordinary population's level spread: each spawn rolls its level anywhere from that many percent under the
+        /// mission quality to that many over (the captured Alien Mothership spread is about 10). 0: all at the quality.
+        /// </summary>
+        public int MobLevelPercent { get; set; }
+
+        /// <summary>Percent added to the dungeon quality for the objective NPC's level: 25 puts the boss a quarter above its dungeon.</summary>
+        public int ObjectiveLevelPercent { get; set; }
+
+        /// <summary>
+        /// NPC hashes for the ordinary population instead of DungeonGeneration.json's. A hash with no NpcTemplates.json
+        /// entry is left out with a warning; when none is left the dungeon has only its objective.
+        /// </summary>
+        public string[]? Npcs { get; set; }
+
+        /// <summary>Whether the dungeon pays DungeonGeneration.json's sided mission token reward on its kills.</summary>
+        public bool AwardsTokens { get; set; } = true;
+
+        /// <summary>
+        /// What the dungeon's chests hold, as an NPC loot table (Hash, Repeats, Chance, LevelMod) rolled at the mission
+        /// quality. Null or empty: the dungeon has no chests.
+        /// </summary>
+        public List<Mobs.MobItemTableEntry>? ChestLoot { get; set; }
+
+        /// <summary>
+        /// Loot table rows added to every NPC that dies in the dungeon, on top of its own NpcTemplates.json table:
+        /// the mission's own drops. Null or empty: none.
+        /// </summary>
+        public List<Mobs.MobItemTableEntry>? MobLoot { get; set; }
+
+        /// <summary>Lowest and highest level modifier accepted, as a percent.</summary>
+        const int MinPercent = -90;
+        const int MaxPercent = 400;
+
+        /// <summary>Widest population spread accepted (the low end never goes under 10% of the quality).</summary>
+        public const int MaxSpreadPercent = 90;
+
+        [JsonIgnore]
+        public bool IsMultiFloor => string.Equals(Floors, MultiFloor, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The mission quality: what the giving dialog <paramref name="requested"/>, else the fixed <see cref="Quality"/>,
+        /// else the player's level.
+        /// </summary>
+        public int QualityFor(int? requested, int playerLevel)
+            => Math.Max(1, requested ?? Quality ?? playerLevel);
+
+        /// <summary>The objective NPC's level for a mission of <paramref name="quality"/>.</summary>
+        public int ObjectiveLevelFor(int quality) => Scale(quality, ObjectiveLevelPercent);
+
+        static int Scale(int quality, int percent)
+            => Math.Max(1, (int)Math.Round(quality * (100 + percent) / 100.0, MidpointRounding.AwayFromZero));
+
+        /// <summary>The terminal mission type for an Action a dungeon can run, else null.</summary>
+        public static int? MissionTypeFor(string? action) => action switch
+        {
+            QuestTemplate.KillOneAction => 0,
+            QuestTemplate.TargetNpcAction => 1,
+            QuestTemplate.FindItemAction => 2,
+            QuestTemplate.RepairAction => 3,
+            _ => null
+        };
+
+        /// <summary>Why these inputs cannot make a dungeon for <paramref name="action"/>, or null when they can.</summary>
+        public string? Problem(string? action)
+        {
+            if (MissionTypeFor(action) == null)
+                return "Dungeon needs Action KillOne, TargetNpc, FindItem or UseItemOnItem, not " + (action ?? "(none)");
+            if (!string.Equals(Floors, SingleFloor, StringComparison.OrdinalIgnoreCase) && !IsMultiFloor)
+                return "Dungeon.Floors must be Single or Multi, not " + Floors;
+            if (Playfield <= 0)
+                return "Dungeon.Playfield is required";
+            if (Quality is <= 0 || Style is <= 0)
+                return "Dungeon.Quality and Dungeon.Style must be positive";
+            if (MobLevelPercent is < 0 or > MaxSpreadPercent)
+                return "Dungeon.MobLevelPercent must be between 0 and " + MaxSpreadPercent;
+            if (ObjectiveLevelPercent is < MinPercent or > MaxPercent)
+                return "Dungeon.ObjectiveLevelPercent must be between " + MinPercent + " and " + MaxPercent;
+            if (Npcs != null && (Npcs.Length == 0 || Array.Exists(Npcs, string.IsNullOrWhiteSpace)))
+                return "Dungeon.Npcs must name at least one NPC hash";
+            return null;
+        }
     }
 
     /// <summary>One dumped compass point (<see cref="QuestTemplate.Waypoints"/>).</summary>

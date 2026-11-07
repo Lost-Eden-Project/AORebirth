@@ -10,8 +10,8 @@ namespace ZoneEngine_New.Core.Quests
     using AORebirth.Core.GameData;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.GameData;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Playfield;
+    using ZoneEngine_New.Core.Quests.Dungeons;
 
     /// <summary>
     /// Client journal entries for Quests.json quests, laid out like the retail Rubi-Ka tutorial chain
@@ -66,8 +66,8 @@ namespace ZoneEngine_New.Core.Quests
         /// Live's waypoint identity type and the two values it sends beside every Quests.json waypoint (captured
         /// Arete Landing journals, 2026-09-29: PlayfieldId Playfield2:6553, Unknown10 = Unknown11 = 100000).
         /// </summary>
-        const int WaypointPlayfieldType = 0x9C50;
-        const int WaypointUnknown = 100000;
+        internal const int WaypointPlayfieldType = 0x9C50;
+        internal const int WaypointUnknown = 100000;
 
         static readonly Dictionary<string, ActionLayout> Layouts = new(StringComparer.Ordinal)
         {
@@ -174,7 +174,7 @@ namespace ZoneEngine_New.Core.Quests
             // because the action carries the waypoint to the dungeon entrance.
             bool isDungeon = Dungeons.QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out Dungeons.QuestDungeonParameters dungeon);
             if (isDungeon)
-                layout = new ActionLayout(MissionRollPolicy.Current.Action((MissionRollType)dungeon.MissionType),
+                layout = new ActionLayout(DungeonMissionTypes.Action((MissionRollType)dungeon.MissionType),
                     DefaultIconId, dungeon.MissionType == (int)MissionRollType.FindPerson ? 0xD2F1 : 0xD2FC, TargetInSlot3: false);
 
             // Retail's per-quest slot pair: the action's UnknownId7 instance and UnknownArray1's entry share their low

@@ -148,9 +148,7 @@ deployment-tooling access and publication rules remain in force.
    source provenance without publishing protected content.
 
 Approved authored runtime catalogs use the existing reconciliation helper's
-private `PRIVATE_CATALOG_ADOPTIONS` profile mapping. The three chest runtime paths
-`Loot/MissionChestRKAllowlist.json`, `Loot/MissionChestSeasonalExclusions.json` and
-`Loot/MissionChestSpecialExclusions.json` remain eligible together;
+private `PRIVATE_CATALOG_ADOPTIONS` profile mapping.
 `QuestRewards.json`, `ObjectStateMachines.json` and runtime-consumed
 `Playfields/{numeric-id}/Spawns.json` are independently eligible. Each row binds
 `PATH`, an owning-checkout ignored `STAGED_PATH`, its approved `SHA256`, and

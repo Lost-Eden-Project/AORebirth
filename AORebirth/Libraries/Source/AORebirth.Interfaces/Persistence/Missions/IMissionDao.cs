@@ -21,14 +21,6 @@ namespace AORebirth.Interfaces.Persistence.Missions
         Failed = 4
     }
 
-    public enum MissionRewardClaimStatus
-    {
-        Claimed = 1,
-        AlreadyApplied = 2,
-        Busy = 3,
-        Rejected = 4
-    }
-
     public enum MissionAtomicRewardStatus
     {
         Applied = 1,
@@ -40,14 +32,6 @@ namespace AORebirth.Interfaces.Persistence.Missions
     {
         AddClamped = 1,
         Set = 2
-    }
-
-    public enum MissionRollFeeStatus
-    {
-        Applied = 1,
-        AlreadyApplied = 2,
-        InsufficientCredits = 3,
-        Conflict = 4
     }
 
     public struct MissionKeyData : IEquatable<MissionKeyData>
@@ -321,36 +305,12 @@ namespace AORebirth.Interfaces.Persistence.Missions
         public IList<MissionRewardStageData> Rewards { get; private set; }
     }
 
-    public sealed class MissionRewardClaimResultData
-    {
-        public MissionRewardClaimStatus Status { get; set; }
-        public MissionRewardStageData Stage { get; set; }
-        public string Message { get; set; }
-    }
-
     public sealed class MissionAtomicStatRewardResultData
     {
         public MissionAtomicRewardStatus Status { get; set; }
         public MissionRewardStageData Stage { get; set; }
         public IList<MissionStatValueData> StatValues { get; set; }
         public string Message { get; set; }
-    }
-
-    public sealed class MissionRollFeeRequest
-    {
-        public int CharacterType { get; set; }
-        public int CharacterId { get; set; }
-        public string BatchIdentity { get; set; }
-        public int Fee { get; set; }
-        public long AppliedAtUtcTicks { get; set; }
-    }
-
-    public sealed class MissionRollFeeResult
-    {
-        public MissionRollFeeStatus Status { get; set; }
-        public int CashBefore { get; set; }
-        public int CashAfter { get; set; }
-        public string Failure { get; set; }
     }
 
     public static class MissionStartAreaSelectionStates
@@ -378,14 +338,6 @@ namespace AORebirth.Interfaces.Persistence.Missions
         MissionCharacterSnapshotData ReadCharacter(int characterId);
         string ResolveCharacterAccountKey(int characterId);
         MissionAccountFlagData GetAccountFlag(string accountKey, string flagKey);
-        IList<MissionAccountFlagData> GetAccountFlags(string accountKey);
-        /// <summary>
-        /// Atomically records the supplied fee and debit; does not calculate gameplay costs.
-        /// Business conflicts return a status; provider failures propagate. A secondary
-        /// rollback failure is attached as Data["MissionDao.RollbackFailure"].
-        /// Reconcile an uncertain commit from durable state before retrying.
-        /// </summary>
-        MissionRollFeeResult TryChargeRollFee(MissionRollFeeRequest request);
         bool MarkStartAreaSelectionPending(int characterId);
         string GetStartAreaSelectionState(int characterId);
         bool TryCompleteStartAreaSelection(int characterId, string selectedState);
@@ -427,31 +379,5 @@ namespace AORebirth.Interfaces.Persistence.Missions
         MissionAccountFlagData GetAccountFlag(string accountKey, string flagKey);
         void SaveAccountFlag(string accountKey, MissionAccountFlagData flag);
         MissionRewardStageData GetReward(MissionRewardKeyData key);
-        MissionRewardClaimResultData TryClaimReward(
-            MissionRewardKeyData key,
-            string rewardType,
-            string claimToken,
-            long claimedAtUtcTicks,
-            long claimExpiresAtUtcTicks);
-        bool TryMarkRewardApplied(
-            MissionRewardKeyData key,
-            string claimToken,
-            long expectedVersion,
-            string effectReference,
-            long appliedAtUtcTicks,
-            out MissionRewardStageData stage);
-        bool TryMarkRewardFailed(
-            MissionRewardKeyData key,
-            string claimToken,
-            long expectedVersion,
-            string error,
-            long failedAtUtcTicks,
-            out MissionRewardStageData stage);
-        MissionAtomicStatRewardResultData TryApplyCharacterStatReward(
-            MissionRewardKeyData key,
-            string rewardType,
-            IList<MissionStatMutationData> mutations,
-            string effectReference,
-            long appliedAtUtcTicks);
     }
 }

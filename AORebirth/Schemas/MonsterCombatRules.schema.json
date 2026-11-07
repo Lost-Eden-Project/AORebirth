@@ -36,7 +36,9 @@
             "NoMove",
             "Wander",
             "Guard",
-            "Boss"
+            "Boss",
+            "Social",
+            "Summoner"
           ]
         }
       },

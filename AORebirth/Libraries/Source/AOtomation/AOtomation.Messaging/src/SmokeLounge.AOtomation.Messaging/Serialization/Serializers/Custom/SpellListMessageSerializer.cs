@@ -103,7 +103,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 short nameLen = streamReader.ReadInt16();
                 if (nameLen > 0 && streamReader.Position + nameLen <= streamReader.Length)
                 {
-                    message.NanoName = Encoding.ASCII.GetString(streamReader.ReadBytes(nameLen));
+                    message.NanoName = Encoding.Latin1.GetString(streamReader.ReadBytes(nameLen));
                 }
             }
 
@@ -166,7 +166,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
 
             if (named)
             {
-                byte[] nameBytes = Encoding.ASCII.GetBytes(message.NanoName);
+                byte[] nameBytes = Encoding.Latin1.GetBytes(message.NanoName);
                 streamWriter.WriteInt16((short)nameBytes.Length);
                 streamWriter.WriteBytes(nameBytes);
                 streamWriter.WriteBytes(new byte[6]);

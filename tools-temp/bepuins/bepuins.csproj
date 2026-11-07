@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>disable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="BepuPhysics"><HintPath>C:\Users\tyler\AppData\Local\Temp\cursor-sandbox-cache\d35a7f5605fbccd52726bb1f090c4866\nuget\bepuphysics\2.5.0-beta.25\lib\net8.0\BepuPhysics.dll</HintPath></Reference>
+    <Reference Include="BepuUtilities"><HintPath>C:\Users\tyler\AppData\Local\Temp\cursor-sandbox-cache\d35a7f5605fbccd52726bb1f090c4866\nuget\bepuutilities\2.5.0-beta.25\lib\net8.0\BepuUtilities.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

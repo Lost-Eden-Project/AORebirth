@@ -1,0 +1,1291 @@
+namespace ZoneEngine_New.Core.GameData
+{
+    using System;
+    using System.Collections.Generic;
+    using System.Globalization;
+    using System.IO;
+    using System.Text.Json;
+    using System.Threading;
+
+    using AODB.Common.RDBObjects;
+
+    using AORebirth.Core.GameData;
+
+    using Utility;
+
+    using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Mobs;
+    using ZoneEngine_New.Core.WorldSimulation;
+
+    /// <summary>
+    /// Loads and caches the GameData tree from {BaseDirectory}\GameData.
+    /// There is no path search. Missing root files log and degrade gracefully.
+    /// </summary>
+    public sealed class GameDataStore : IGameData
+    {
+        private static readonly JsonSerializerOptions CatalogJsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        private static readonly JsonSerializerOptions MetaDataJsonOptions = new()
+        {
+            IncludeFields = true,
+            PropertyNameCaseInsensitive = true
+        };
+
+        private static readonly JsonSerializerOptions SpawnsJsonOptions = new()
+        {
+            IncludeFields = true,
+            PropertyNameCaseInsensitive = true
+        };
+
+        private readonly Lock _playfieldSync = new();
+        private readonly IZoneLogger _logger;
+        private readonly Dictionary<string, MobTemplate> _mobTemplates =
+            new(StringComparer.Ordinal);
+        private NpcTemplateCatalog _npcTemplates = new(
+            new Dictionary<string, string[]>(StringComparer.Ordinal),
+            new Dictionary<string, NpcLeaf>(StringComparer.Ordinal));
+        private readonly Dictionary<string, int[]> _monsterWeapons =
+            new(StringComparer.Ordinal);
+        private NpcFamilyStatCatalog _npcFamilies = NpcFamilyStatCatalog.Empty;
+        private NpcStatTemplateCatalog _npcStatTemplates = NpcStatTemplateCatalog.Empty;
+        private HashItemCatalog _hashItems = new(
+            new Dictionary<string, string[]>(StringComparer.Ordinal),
+            new Dictionary<string, HashInstance>(StringComparer.Ordinal));
+        private readonly Dictionary<int, VendingMachineDefinition> _vendingMachines = new();
+        private readonly Dictionary<int, int> _catMeshByMonsterData = new();
+        private readonly Dictionary<int, XpLevelEntry> _xpLevels = new();
+        private readonly Dictionary<int, PlayfieldMetaData?> _playfieldMetaData = new();
+        private readonly Dictionary<int, PlayfieldSpawnsData> _playfieldSpawns = new();
+        private readonly Dictionary<int, PlayfieldGeometryData> _playfieldGeometry = new();
+        private readonly Lock _exitProxySync = new();
+        private Dictionary<int, int[]>? _exitProxyDoorsByPlayfield;
+
+        public GameDataStore(IZoneLogger logger)
+        {
+            ArgumentNullException.ThrowIfNull(logger);
+            _logger = logger;
+
+            RootPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                GameDataPaths.RootFolderName);
+            PlayfieldsPath = Path.Combine(RootPath, GameDataPaths.PlayfieldsFolderName);
+
+            EnsureRootExists();
+            LoadNpcFamilyStatTemplates();
+            LoadNpcStatTemplates();
+            LoadMobTemplates();
+            LoadNpcTemplates();
+            LoadMonsterWeapons();
+            LoadHashItems();
+            LoadVendingMachines();
+            LoadMonsterData();
+            LoadXpLevels();
+        }
+
+        public string RootPath { get; }
+
+        public string PlayfieldsPath { get; }
+
+        public int MobTemplateCount => _mobTemplates.Count + _npcTemplates.LeafCount;
+
+        public int NpcFamilyStatTemplateCount => _npcFamilies.Count;
+
+        public int NpcStatTemplateCount => _npcStatTemplates.Count;
+
+        public int HashTemplateCount => _hashItems.CategoryCount;
+
+        public int HashInstanceCount => _hashItems.InstanceCount;
+
+        public int VendingMachineCount => _vendingMachines.Count;
+
+        public int MonsterDataCount => _catMeshByMonsterData.Count;
+
+        public int XpLevelCount => _xpLevels.Count;
+
+        public bool TryGetXpLevel(int level, out XpLevelEntry entry)
+        {
+            if (level <= 0)
+            {
+                entry = null!;
+                return false;
+            }
+
+            return _xpLevels.TryGetValue(level, out entry!);
+        }
+
+        public bool CanResolveMobHash(string hash)
+            => _npcTemplates.CanResolve(hash)
+                || (!string.IsNullOrEmpty(hash) && _mobTemplates.ContainsKey(hash));
+
+        public bool TryGetMobTemplate(string hash, out MobTemplate template)
+        {
+            template = null!;
+            if (string.IsNullOrEmpty(hash))
+                return false;
+
+            if (_npcTemplates.TryGetLeaf(hash, out NpcLeaf leaf))
+            {
+                template = NpcTemplateCatalog.Materialize(leaf, leaf.MinLevel);
+                return true;
+            }
+
+            return _mobTemplates.TryGetValue(hash, out template!);
+        }
+
+        public bool TryResolveMobTemplate(string hash, int? level, out MobTemplate template)
+        {
+            if (_npcTemplates.CanResolve(hash))
+                return _npcTemplates.TryResolve(hash, level, out template);
+
+            if (string.IsNullOrEmpty(hash) || !_mobTemplates.TryGetValue(hash, out template!))
+            {
+                template = null!;
+                return false;
+            }
+
+            return true;
+        }
+
+        public MobTemplate RequireMobTemplate(string hash)
+        {
+            if (TryResolveMobTemplate(hash, null, out MobTemplate template))
+                return template;
+
+            throw new KeyNotFoundException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Mob template hash '{0}' not found",
+                    hash));
+        }
+
+        public bool TryGetNpcFamilyStatTemplate(int family, out NpcFamilyStatTemplate template)
+            => _npcFamilies.TryGet(family, out template);
+
+        public bool TryResolveNpcFamilyStatTemplate(int family, out NpcFamilyStatTemplate template)
+            => _npcFamilies.TryResolve(family, out template);
+
+        public bool TryGetNpcStatTemplate(int id, out NpcStatTemplate template)
+            => _npcStatTemplates.TryGet(id, out template);
+
+        public bool TryGetMonsterWeapon(string hash, out int[] ids)
+        {
+            if (string.IsNullOrEmpty(hash) || !_monsterWeapons.TryGetValue(hash, out int[]? found))
+            {
+                ids = [];
+                return false;
+            }
+
+            ids = found;
+            return ids.Length > 0;
+        }
+
+        public bool TryGetHashTemplate(string hash, out IReadOnlyList<string> childHashes)
+            => _hashItems.TryGetCategory(hash, out childHashes);
+
+        public bool TryGetHashInstance(string hash, out HashInstance instance)
+            => _hashItems.TryGetInstance(hash, out instance);
+
+        public bool TryResolveHashInstance(string hash, out HashInstance instance)
+            => _hashItems.TryResolveInstance(hash, out instance);
+
+        public void CollectHashLeafInstances(string hash, List<HashInstance> into)
+            => _hashItems.CollectLeafInstances(hash, into);
+
+        public bool TryGetVendingMachine(int templateId, out VendingMachineDefinition definition)
+        {
+            if (templateId <= 0)
+            {
+                definition = null!;
+                return false;
+            }
+
+            return _vendingMachines.TryGetValue(templateId, out definition!);
+        }
+
+        public bool TryGetCatMesh(int monsterData, out int catMesh)
+        {
+            if (monsterData <= 0)
+            {
+                catMesh = 0;
+                return false;
+            }
+
+            return _catMeshByMonsterData.TryGetValue(monsterData, out catMesh);
+        }
+
+        public PlayfieldMetaData? GetPlayfieldMetaData(int playfieldId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
+
+            lock (_playfieldSync)
+            {
+                if (_playfieldMetaData.TryGetValue(playfieldId, out PlayfieldMetaData? cached))
+                    return cached;
+
+                PlayfieldMetaData? loaded = ReadPlayfieldMetaData(playfieldId);
+                _playfieldMetaData[playfieldId] = loaded;
+                return loaded;
+            }
+        }
+
+        public PlayfieldSpawnsData GetPlayfieldSpawns(int playfieldId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
+
+            lock (_playfieldSync)
+            {
+                if (_playfieldSpawns.TryGetValue(playfieldId, out PlayfieldSpawnsData? cached))
+                    return cached;
+
+                PlayfieldSpawnsData loaded = ReadPlayfieldSpawns(playfieldId);
+                _playfieldSpawns[playfieldId] = loaded;
+                return loaded;
+            }
+        }
+
+        public PlayfieldGeometryData GetPlayfieldGeometry(int playfieldId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
+
+            lock (_playfieldSync)
+            {
+                if (_playfieldGeometry.TryGetValue(playfieldId, out PlayfieldGeometryData? cached))
+                    return cached;
+
+                PlayfieldGeometryData loaded = ReadPlayfieldGeometry(playfieldId);
+                _playfieldGeometry[playfieldId] = loaded;
+                return loaded;
+            }
+        }
+
+        public IReadOnlyList<int> GetExitProxyDoorInstances(int playfieldId)
+        {
+            if (playfieldId <= 0)
+                return [];
+
+            EnsureExitProxyIndex();
+            return _exitProxyDoorsByPlayfield!.TryGetValue(playfieldId, out int[]? doors)
+                ? doors
+                : [];
+        }
+
+        private void EnsureExitProxyIndex()
+        {
+            lock (_exitProxySync)
+            {
+                if (_exitProxyDoorsByPlayfield != null)
+                    return;
+
+                Dictionary<int, HashSet<int>> collected = new();
+                if (!Directory.Exists(PlayfieldsPath))
+                {
+                    _exitProxyDoorsByPlayfield = new Dictionary<int, int[]>();
+                    return;
+                }
+
+                foreach (string directory in Directory.EnumerateDirectories(PlayfieldsPath))
+                {
+                    string name = Path.GetFileName(directory);
+                    if (!int.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sourcePlayfieldId)
+                        || sourcePlayfieldId <= 0)
+                        continue;
+
+                    string dynelsPath = Path.Combine(
+                        RootPath,
+                        GameDataPaths.PlayfieldDynelsRelativePath(sourcePlayfieldId));
+                    PlayfieldDynels? dynels = TryDeserializeRdbObject<PlayfieldDynels>(dynelsPath);
+                    ExitProxyDoorCatalog.CollectFromDynels(dynels, collected);
+                }
+
+                Dictionary<int, int[]> index = new(collected.Count);
+                int doorTotal = 0;
+                foreach (KeyValuePair<int, HashSet<int>> pair in collected)
+                {
+                    int[] doors = new int[pair.Value.Count];
+                    pair.Value.CopyTo(doors);
+                    Array.Sort(doors);
+                    index[pair.Key] = doors;
+                    doorTotal += doors.Length;
+                }
+
+                _exitProxyDoorsByPlayfield = index;
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData exit-proxy destinations playfields={0} doors={1}",
+                        index.Count,
+                        doorTotal));
+            }
+        }
+
+        private void EnsureRootExists()
+        {
+            if (Directory.Exists(RootPath) && Directory.Exists(PlayfieldsPath))
+                return;
+
+            string message =
+                "GameData playfield metadata is unavailable; locality will use the safe indoor fallback. Root="
+                + RootPath;
+            _logger.Warn(message);
+            LogUtil.Debug(DebugInfoDetail.Engine, message);
+        }
+
+        #region Catalog loads
+
+        private void LoadNpcFamilyStatTemplates()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.NpcFamilyStatTemplatesFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "NpcFamilyStatTemplates.json not found at {0}; NPC family stat templates unavailable",
+                        path));
+                return;
+            }
+
+            try
+            {
+                Dictionary<int, NpcFamilyStatTemplateData>? loaded =
+                    JsonSerializer.Deserialize<Dictionary<int, NpcFamilyStatTemplateData>>(
+                        File.ReadAllText(path),
+                        CatalogJsonOptions);
+
+                _npcFamilies = NpcFamilyStatCatalog.Build(loaded, _logger.Warn);
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData NPC family stat templates={0} from {1}",
+                        _npcFamilies.Count,
+                        path));
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load NpcFamilyStatTemplates.json from {0}; NPC family stat templates unavailable",
+                        path));
+            }
+        }
+
+        private void LoadNpcStatTemplates()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.NpcStatTemplatesFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "NpcStatTemplateOverlays.json not found at {0}; NPC stat template overlays unavailable",
+                        path));
+                return;
+            }
+
+            try
+            {
+                Dictionary<int, NpcStatTemplateData>? loaded =
+                    JsonSerializer.Deserialize<Dictionary<int, NpcStatTemplateData>>(
+                        File.ReadAllText(path),
+                        CatalogJsonOptions);
+
+                _npcStatTemplates = NpcStatTemplateCatalog.Build(loaded, _logger.Warn);
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData NPC stat templates={0} from {1}",
+                        _npcStatTemplates.Count,
+                        path));
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load NpcStatTemplateOverlays.json from {0}; NPC stat template overlays unavailable",
+                        path));
+            }
+        }
+
+        private void LoadMobTemplates()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.NpcTemplateFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "NpcTemplate.json not found at {0}; catalog empty",
+                        path));
+                return;
+            }
+
+            try
+            {
+                List<MobTemplate>? loaded =
+                    JsonSerializer.Deserialize<List<MobTemplate>>(File.ReadAllText(path), CatalogJsonOptions);
+                if (loaded == null)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "NpcTemplate.json was empty: {0}",
+                            path));
+                    return;
+                }
+
+                int skipped = 0;
+                foreach (MobTemplate template in loaded)
+                {
+                    if (string.IsNullOrEmpty(template.Hash))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (!_mobTemplates.TryAdd(template.Hash, template))
+                    {
+                        _logger.Warn(
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "Duplicate mob template hash '{0}' skipped",
+                                template.Hash));
+                        skipped++;
+                        continue;
+                    }
+
+                    ValidateNpcStatRefs(template);
+                }
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData mob templates={0} from {1}",
+                        _mobTemplates.Count,
+                        path));
+
+                if (skipped > 0)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "GameData skipped {0} mob templates (empty or duplicate hash)",
+                            skipped));
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load NpcTemplate.json from {0}; catalog empty",
+                        path));
+            }
+        }
+
+        private void LoadNpcTemplates()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.NpcTemplatesFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "NpcTemplates.json not found at {0}; catalog empty",
+                        path));
+                return;
+            }
+
+            try
+            {
+                _npcTemplates = NpcTemplateCatalog.Parse(File.ReadAllText(path));
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData npc templates leaves={0} families={1} from {2}",
+                        _npcTemplates.LeafCount,
+                        _npcTemplates.FamilyCount,
+                        path));
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load NpcTemplates.json from {0}; catalog empty",
+                        path));
+            }
+        }
+
+        private void LoadMonsterWeapons()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.MonsterWeaponsFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "MonsterWeapons.json not found at {0}; catalog empty",
+                        path));
+                return;
+            }
+
+            try
+            {
+                Dictionary<string, int[]>? loaded =
+                    JsonSerializer.Deserialize<Dictionary<string, int[]>>(File.ReadAllText(path), CatalogJsonOptions);
+                if (loaded == null)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "MonsterWeapons.json was empty: {0}",
+                            path));
+                    return;
+                }
+
+                foreach (KeyValuePair<string, int[]> pair in loaded)
+                {
+                    if (string.IsNullOrEmpty(pair.Key) || pair.Value == null || pair.Value.Length == 0)
+                        continue;
+                    _monsterWeapons[pair.Key] = pair.Value;
+                }
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData monster weapons={0} from {1}",
+                        _monsterWeapons.Count,
+                        path));
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load MonsterWeapons.json from {0}; catalog empty",
+                        path));
+            }
+        }
+
+        /// <summary>
+        /// Surfaces mistakes a template can make about its family / overlay refs: naming one that
+        /// does not exist, and spawning outside the levels its curves actually cover.
+        /// </summary>
+        private void ValidateNpcStatRefs(MobTemplate template)
+        {
+            int requestedFamily = template.NpcFamily;
+            if (!_npcFamilies.TryResolve(requestedFamily, out NpcFamilyStatTemplate family))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Mob template '{0}' references unknown NpcFamily {1} and default {2} is also missing; family curves will be skipped",
+                        template.Hash,
+                        requestedFamily,
+                        MobTemplate.DefaultNpcFamilyId));
+            }
+            else
+            {
+                if (family.Family != requestedFamily)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Mob template '{0}' references unknown NpcFamily {1}; using default {2}",
+                            template.Hash,
+                            requestedFamily,
+                            family.Family));
+                }
+
+                _npcFamilies.ValidateCoverage(
+                    family.Family,
+                    template.MinLevel,
+                    template.MaxLevel,
+                    template.Hash,
+                    _logger.Warn);
+            }
+
+            if (template.NpcStatTemplate == 0)
+                return;
+
+            if (!_npcStatTemplates.TryGet(template.NpcStatTemplate, out _))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Mob template '{0}' references unknown NpcStatTemplate {1}; overlay curves will be skipped",
+                        template.Hash,
+                        template.NpcStatTemplate));
+                return;
+            }
+
+            _npcStatTemplates.ValidateCoverage(
+                template.NpcStatTemplate,
+                template.MinLevel,
+                template.MaxLevel,
+                template.Hash,
+                _logger.Warn);
+        }
+
+        private void LoadHashItems()
+        {
+            string templatesPath = Path.Combine(RootPath, GameDataPaths.ItemTemplatesFileName);
+            string instancesPath = Path.Combine(RootPath, GameDataPaths.HashInstancesFileName);
+
+            if (!File.Exists(templatesPath))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "ItemTemplates.json not found at {0}; hash categories empty",
+                        templatesPath));
+            }
+
+            if (!File.Exists(instancesPath))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "HashInstances.json not found at {0}; hash instances empty",
+                        instancesPath));
+            }
+
+            try
+            {
+                string? templatesJson = File.Exists(templatesPath) ? File.ReadAllText(templatesPath) : null;
+                string? instancesJson = File.Exists(instancesPath) ? File.ReadAllText(instancesPath) : null;
+                _hashItems = HashItemCatalog.Parse(templatesJson, instancesJson);
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData hash templates={0} hash instances={1}",
+                        _hashItems.CategoryCount,
+                        _hashItems.InstanceCount));
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    "Failed to load ItemTemplates.json / HashInstances.json; hash catalogs empty");
+            }
+        }
+
+        private void LoadVendingMachines()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.VendingMachinesFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "VendingMachines.json not found at {0}; shops will stock nothing",
+                        path));
+                return;
+            }
+
+            try
+            {
+                Dictionary<string, VendingMachineDefinition>? loaded =
+                    JsonSerializer.Deserialize<Dictionary<string, VendingMachineDefinition>>(
+                        File.ReadAllText(path),
+                        CatalogJsonOptions);
+                if (loaded == null)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "VendingMachines.json was empty: {0}",
+                            path));
+                    return;
+                }
+
+                int skipped = 0;
+                foreach (KeyValuePair<string, VendingMachineDefinition> pair in loaded)
+                {
+                    if (!int.TryParse(
+                            pair.Key,
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out int templateId)
+                        || templateId <= 0
+                        || pair.Value == null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (!_vendingMachines.TryAdd(templateId, pair.Value))
+                        skipped++;
+                }
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData vending machines={0} skipped={1}",
+                        _vendingMachines.Count,
+                        skipped));
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load VendingMachines.json from {0}; shops will stock nothing",
+                        path));
+            }
+        }
+
+        private void LoadMonsterData()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.MonsterDataFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "MonsterData.json not found at {0}; catalog empty",
+                        path));
+                return;
+            }
+
+            try
+            {
+                List<MonsterDataCatMeshPairing>? loaded =
+                    JsonSerializer.Deserialize<List<MonsterDataCatMeshPairing>>(
+                        File.ReadAllText(path),
+                        CatalogJsonOptions);
+                if (loaded == null)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "MonsterData.json was empty: {0}",
+                            path));
+                    return;
+                }
+
+                int skipped = 0;
+                foreach (MonsterDataCatMeshPairing pairing in loaded)
+                {
+                    if (pairing.MonsterData <= 0 || pairing.CatMesh <= 0)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (!_catMeshByMonsterData.TryAdd(pairing.MonsterData, pairing.CatMesh))
+                    {
+                        _logger.Warn(
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "Duplicate MonsterData {0} skipped",
+                                pairing.MonsterData));
+                        skipped++;
+                    }
+                }
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData MonsterData pairings={0} from {1}",
+                        _catMeshByMonsterData.Count,
+                        path));
+
+                if (skipped > 0)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "GameData skipped {0} MonsterData entries (invalid or duplicate)",
+                            skipped));
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load MonsterData.json from {0}; catalog empty",
+                        path));
+            }
+        }
+
+        private void LoadXpLevels()
+        {
+            string path = Path.Combine(RootPath, GameDataPaths.XpFileName);
+            if (!File.Exists(path))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Xp.json not found at {0}; catalog empty",
+                        path));
+                return;
+            }
+
+            try
+            {
+                Dictionary<string, XpLevelRow>? loaded =
+                    JsonSerializer.Deserialize<Dictionary<string, XpLevelRow>>(
+                        File.ReadAllText(path),
+                        CatalogJsonOptions);
+                if (loaded == null)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Xp.json was empty: {0}",
+                            path));
+                    return;
+                }
+
+                var parsed = new List<(int Level, XpLevelRow Row)>();
+                int skipped = 0;
+                foreach (KeyValuePair<string, XpLevelRow> pair in loaded)
+                {
+                    if (!int.TryParse(pair.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int level)
+                        || level <= 0
+                        || pair.Value == null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    parsed.Add((level, pair.Value));
+                }
+
+                parsed.Sort((left, right) => left.Level.CompareTo(right.Level));
+                int floorXp = 0;
+                foreach ((int level, XpLevelRow row) in parsed)
+                {
+                    if (!_xpLevels.TryAdd(
+                            level,
+                            new XpLevelEntry
+                            {
+                                Level = level,
+                                KillAward = row.KillAward,
+                                LevelDelta = row.LevelDelta,
+                                NextLevelXp = row.NextLevelXp,
+                                FloorXp = floorXp
+                            }))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (row.NextLevelXp > 0)
+                        floorXp += row.NextLevelXp;
+                }
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData xp levels={0} from {1}",
+                        _xpLevels.Count,
+                        path));
+
+                if (skipped > 0)
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "GameData skipped {0} xp level rows (invalid or duplicate)",
+                            skipped));
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(
+                    exception,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Failed to load Xp.json from {0}; catalog empty",
+                        path));
+            }
+        }
+
+        #endregion
+
+        #region Playfield loads
+
+        private PlayfieldSpawnsData ReadPlayfieldSpawns(int playfieldId)
+        {
+            string spawnsPath = Path.Combine(
+                RootPath,
+                GameDataPaths.PlayfieldSpawnsRelativePath(playfieldId));
+
+            if (!File.Exists(spawnsPath))
+            {
+                return new PlayfieldSpawnsData
+                {
+                    SchemaVersion = PlayfieldSpawnsData.SupportedSchemaVersion,
+                    PlayfieldId = playfieldId,
+                    Spawns = []
+                };
+            }
+
+            PlayfieldSpawnsData? data;
+            try
+            {
+                data = JsonSerializer.Deserialize<PlayfieldSpawnsData>(
+                    File.ReadAllText(spawnsPath),
+                    SpawnsJsonOptions);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException(
+                    "Playfield spawns could not be read: "
+                    + spawnsPath
+                    + " ("
+                    + exception.GetType().Name
+                    + ": "
+                    + exception.Message
+                    + ")",
+                    exception);
+            }
+
+            if (data == null)
+                throw new InvalidDataException("Playfield spawns was empty: " + spawnsPath);
+
+            data.Spawns ??= [];
+            if (data.PlayfieldId == 0)
+                data.PlayfieldId = playfieldId;
+
+            return data;
+        }
+
+        private PlayfieldMetaData? ReadPlayfieldMetaData(int playfieldId)
+        {
+            string metadataPath = Path.Combine(
+                RootPath,
+                GameDataPaths.PlayfieldMetadataRelativePath(playfieldId));
+
+            if (!File.Exists(metadataPath))
+                return null;
+
+            PlayfieldMetaData? metaData;
+            try
+            {
+                metaData = JsonSerializer.Deserialize<PlayfieldMetaData>(
+                    File.ReadAllText(metadataPath),
+                    MetaDataJsonOptions);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException(
+                    "Playfield metadata could not be read: "
+                    + metadataPath
+                    + " ("
+                    + exception.GetType().Name
+                    + ": "
+                    + exception.Message
+                    + ")",
+                    exception);
+            }
+
+            if (metaData == null)
+                throw new InvalidDataException("Playfield metadata was empty: " + metadataPath);
+
+            if (!metaData.IsValid(out string error))
+            {
+                throw new InvalidDataException(
+                    "Playfield metadata is invalid: " + metadataPath + " (" + error + ")");
+            }
+
+            if (metaData.TilemapResource != playfieldId)
+            {
+                LogUtil.Debug(
+                    DebugInfoDetail.Engine,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "GameData tilemapResource {0} does not match playfield {1} path={2}",
+                        metaData.TilemapResource,
+                        playfieldId,
+                        metadataPath));
+            }
+
+            return metaData;
+        }
+
+        private PlayfieldGeometryData ReadPlayfieldGeometry(int playfieldId)
+        {
+            PlayfieldWalls? walls = TryDeserializeRdbObject<PlayfieldWalls>(
+                Path.Combine(RootPath, GameDataPaths.PlayfieldWallsRelativePath(playfieldId)));
+            PlayfieldDynels? dynels = TryDeserializeRdbObject<PlayfieldDynels>(
+                Path.Combine(RootPath, GameDataPaths.PlayfieldDynelsRelativePath(playfieldId)));
+            PlayfieldDoors? doors = TryDeserializeRdbObject<PlayfieldDoors>(
+                Path.Combine(RootPath, GameDataPaths.PlayfieldDoorsRelativePath(playfieldId)));
+
+            Tilemap? tilemap = null;
+            SurfaceResource? surface = null;
+            string collisionPath = Path.Combine(
+                RootPath,
+                GameDataPaths.PlayfieldCollisionRelativePath(playfieldId));
+            if (File.Exists(collisionPath))
+            {
+                byte[] framed;
+                try
+                {
+                    framed = File.ReadAllBytes(collisionPath);
+                }
+                catch (Exception exception)
+                {
+                    throw new InvalidDataException(
+                        "Playfield Collision.dat could not be read: "
+                        + collisionPath
+                        + " ("
+                        + exception.GetType().Name
+                        + ": "
+                        + exception.Message
+                        + ")",
+                        exception);
+                }
+
+                byte[] tilemapPayload;
+                byte[] surfacePayload;
+                try
+                {
+                    PlayfieldCollisionDat.Parse(framed, out tilemapPayload, out surfacePayload);
+                }
+                catch (Exception exception)
+                {
+                    throw new InvalidDataException(
+                        "Playfield Collision.dat framing is invalid: "
+                        + collisionPath
+                        + " ("
+                        + exception.GetType().Name
+                        + ": "
+                        + exception.Message
+                        + ")",
+                        exception);
+                }
+
+                if (tilemapPayload.Length > 0)
+                    tilemap = DeserializeRdbObject<Tilemap>(tilemapPayload, collisionPath + "#tilemap");
+
+                if (surfacePayload.Length > 0)
+                {
+                    surface = DeserializeRdbObject<SurfaceResource>(
+                        surfacePayload,
+                        collisionPath + "#surface");
+                }
+            }
+
+            return new PlayfieldGeometryData
+            {
+                Walls = walls,
+                Dynels = dynels,
+                Doors = doors,
+                Tilemap = tilemap,
+                Surface = surface,
+                CellSurfaces = ReadCellSurfaces(playfieldId)
+            };
+        }
+
+        /// <summary>
+        /// Loads Surfaces.dat, the per-locality-cell SurfaceResource records. A cell whose payload
+        /// fails to deserialize is skipped so one bad record cannot cost the whole playfield its
+        /// static geometry.
+        /// </summary>
+        private IReadOnlyList<SurfaceResource> ReadCellSurfaces(int playfieldId)
+        {
+            string surfacesPath = Path.Combine(
+                RootPath,
+                GameDataPaths.PlayfieldSurfacesRelativePath(playfieldId));
+            if (!File.Exists(surfacesPath))
+                return [];
+
+            List<PlayfieldSurfaceEntry> entries;
+            try
+            {
+                entries = PlayfieldSurfacesDat.Parse(File.ReadAllBytes(surfacesPath));
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException(
+                    "Playfield Surfaces.dat framing is invalid: "
+                    + surfacesPath
+                    + " ("
+                    + exception.GetType().Name
+                    + ": "
+                    + exception.Message
+                    + ")",
+                    exception);
+            }
+
+            List<SurfaceResource> surfaces = new(entries.Count);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                if (entries[i].Payload == null || entries[i].Payload.Length == 0)
+                    continue;
+
+                try
+                {
+                    surfaces.Add(DeserializeRdbObject<SurfaceResource>(
+                        entries[i].Payload,
+                        surfacesPath + "#cell" + entries[i].CellId.ToString(CultureInfo.InvariantCulture)));
+                }
+                catch (Exception exception)
+                {
+                    LogUtil.Debug(
+                        DebugInfoDetail.Engine,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "GameData skipped unreadable surface playfield={0} cell={1}: {2}",
+                            playfieldId,
+                            entries[i].CellId,
+                            exception.Message));
+                }
+            }
+
+            return surfaces;
+        }
+
+        private static T? TryDeserializeRdbObject<T>(string path)
+            where T : RDBObject, new()
+        {
+            if (!File.Exists(path))
+                return null;
+
+            byte[] payload;
+            try
+            {
+                payload = File.ReadAllBytes(path);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException(
+                    "Playfield geometry could not be read: "
+                    + path
+                    + " ("
+                    + exception.GetType().Name
+                    + ": "
+                    + exception.Message
+                    + ")",
+                    exception);
+            }
+
+            if (payload.Length == 0)
+                return null;
+
+            try
+            {
+                return DeserializeRdbObject<T>(payload, path);
+            }
+            catch (Exception exception)
+            {
+                // Optional geometry: prefer null over aborting playfield load.
+                // Callers that need hard failure use DeserializeRdbObject directly (Collision.dat).
+                System.Diagnostics.Debug.WriteLine(
+                    "GameData skipped unreadable geometry file "
+                    + path
+                    + ": "
+                    + exception.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// RDBDataExtractor writes GetRaw payloads that begin with type+id+version (12 bytes).
+        /// Prefer a parse that consumes the stream; partial "success" at wrong offsets is common.
+        /// </summary>
+        private static T DeserializeRdbObject<T>(byte[] payload, string sourcePath)
+            where T : RDBObject, new()
+        {
+            Exception? lastFailure = null;
+            T? best = null;
+            long bestRemaining = long.MaxValue;
+            int[] offsets = ResolveDeserializeOffsets(payload);
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                int offset = offsets[i];
+                if (offset < 0 || offset >= payload.Length)
+                    continue;
+
+                try
+                {
+                    T record = new();
+                    using MemoryStream stream = new(payload, offset, payload.Length - offset, writable: false);
+                    using BinaryReader reader = new(stream);
+                    record.Deserialize(reader);
+                    long remaining = stream.Length - stream.Position;
+                    if (remaining < bestRemaining)
+                    {
+                        best = record;
+                        bestRemaining = remaining;
+                        if (remaining == 0)
+                            return record;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    lastFailure = exception;
+                }
+            }
+
+            if (best != null)
+                return best;
+
+            throw new InvalidDataException(
+                "Playfield geometry could not be deserialized: "
+                + sourcePath
+                + " ("
+                + (lastFailure?.GetType().Name ?? "Error")
+                + ": "
+                + (lastFailure?.Message ?? "no viable offset")
+                + ")",
+                lastFailure);
+        }
+
+        private static int[] ResolveDeserializeOffsets(byte[] payload)
+        {
+            if (payload.Length < 8)
+                return new[] { 0 };
+
+            uint typeId = unchecked((uint)BitConverter.ToInt32(payload, 0));
+            // AODB ResourceTypeId values used for playfield geometry (e.g. PlayfieldWall = 0xF4255).
+            bool looksLikeRdbHeader =
+                typeId is >= 0x000F4200 and <= 0x000F42FF
+                or >= 0x000F6900 and <= 0x000F69FF
+                or 0x000FDE97;
+
+            if (!looksLikeRdbHeader)
+                return new[] { 0 };
+
+            // type(4)+id(4)+version(4) is the common GetRaw prefix for these records.
+            return new[] { 12, 8, 0 };
+        }
+
+        #endregion
+
+        private sealed class MonsterDataCatMeshPairing
+        {
+            public int MonsterData { get; set; }
+
+            public int CatMesh { get; set; }
+        }
+
+        private sealed class XpLevelRow
+        {
+            public int KillAward { get; set; }
+
+            public int LevelDelta { get; set; }
+
+            public int NextLevelXp { get; set; }
+        }
+    }
+}

@@ -22,7 +22,7 @@
       "description": "Parameters every binding must supply in Args, by name. Ops refer to them as $Name; Vector3[] params as $Name[i] or $Name[next].",
       "additionalProperties": {
         "type": "string",
-        "enum": ["Vector3[]", "Vector3", "ItemHash", "SocialAction", "Int", "Gfx", "Text"]
+        "enum": ["Vector3[]", "Vector3", "ItemHash", "NpcHash", "SocialAction", "Int", "Gfx", "Text"]
       }
     },
     "Handlers": {
@@ -178,6 +178,43 @@
             }
           ]
         },
+        "SpawnNpc": {
+          "type": "object",
+          "description": "Spawns NPCs the program owns: one at the centre, or Count of them evenly on a circle of Radius around it. The centre is the NPC's position, Offset in its frame (x right, y up, z ahead) or a world position At. Random add types: a Random block with one SpawnNpc per option. The spawned NPC's own Hash bindings attach as usual, so an add can run its own program.",
+          "additionalProperties": false,
+          "required": ["Hash"],
+          "properties": {
+            "Hash": { "type": "string", "minLength": 1, "description": "An NPC template hash or a $NpcHash param." },
+            "At": { "$ref": "#/$defs/vector3", "description": "World position of the centre." },
+            "Offset": { "$ref": "#/$defs/vector3", "description": "Centre relative to the NPC, in its frame." },
+            "Count": { "type": "integer", "minimum": 1, "maximum": 12, "default": 1, "description": "Above 1 needs Radius: the spawns stand evenly on that circle, from a random start angle." },
+            "Radius": { "type": "number", "minimum": 0, "maximum": 30, "description": "Circle radius in metres." },
+            "LifetimeSeconds": { "type": "integer", "minimum": 1, "maximum": 3600, "description": "The spawn despawns after this long, whatever its owner does." },
+            "DespawnWithOwner": {
+              "description": "true (default): the spawn despawns as soon as its owner dies, resets or despawns; a number: that many seconds afterwards; false: it stays on its own.",
+              "oneOf": [ { "type": "boolean" }, { "type": "integer", "minimum": 0, "maximum": 3600 } ]
+            },
+            "Level": { "type": "integer", "minimum": 1, "description": "Spawn level; omit for the template's own." },
+            "JoinFight": { "type": "boolean", "default": true, "description": "The spawn takes the owner's current target as its first hate." }
+          }
+        },
+        "CastNano": {
+          "description": "Casts a nano from the NPC through the normal nano runtime (requirements, cost, recharge, target legality); blocks while the cast bar runs. A bare id casts on the NPC itself. Warp \"ToSelf\" moves the recipient to the NPC's feet once the nano has landed (a summon); a refused or resisted cast moves nobody.",
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["Nano"],
+              "properties": {
+                "Nano": { "description": "A nano id or a $Int param.", "oneOf": [ { "type": "integer", "minimum": 1 }, { "$ref": "#/$defs/paramRef" } ] },
+                "Target": { "type": "string", "enum": ["Self", "Target", "RandomHostile"], "default": "Self", "description": "Self; Target: the current fighting target; RandomHostile: a random player on the hate list the NPC may attack (never a pet)." },
+                "MinDistance": { "type": "integer", "minimum": 0, "maximum": 40, "default": 0, "description": "RandomHostile only: players closer than this (edge to edge, metres) are not picked." },
+                "Warp": { "type": "string", "enum": ["ToSelf"], "description": "Move the recipient to the NPC's feet (and a player's living pets with it) when the nano lands. Needs a Target other than Self." }
+              }
+            }
+          ]
+        },
         "Despawn": { "type": "boolean", "description": "The NPC leaves the world as a GM despawn would." },
         "SetStat": {
           "type": "object",
@@ -255,11 +292,12 @@
     },
     "binding": {
       "type": "object",
-      "description": "Exactly one target: Hash (every NPC of that template, optionally on one Playfield), SpawnPoint (HASH@x,y,z[#n], needs Playfield) or NpcKey (a PlayfieldContent Npcs.json Key, needs Playfield).",
+      "description": "Exactly one target: Hash (every NPC of that template, optionally on one Playfield), SpawnPoint (HASH@x,y,z[#n], needs Playfield), NpcKey (a PlayfieldContent Npcs.json Key, needs Playfield) or Feature (every NPC whose MonsterCombatRules.json Features list it, optionally on one Playfield; an overlay that runs beside the NPC's own program, so its program may not move the NPC and the binding carries no Movement).",
       "additionalProperties": false,
       "properties": {
         "Playfield": { "type": "integer" },
         "Hash": { "type": "string", "minLength": 1 },
+        "Feature": { "type": "string", "enum": ["NoCombat", "NoMove", "Wander", "Guard", "Boss", "Social", "Summoner"] },
         "SpawnPoint": { "type": "string", "pattern": "^[^@\\s]+@-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?(#[0-9]+)?$" },
         "NpcKey": { "type": "string", "minLength": 1 },
         "Args": {
@@ -300,7 +338,8 @@
       "oneOf": [
         { "required": ["Hash"] },
         { "required": ["SpawnPoint", "Playfield"] },
-        { "required": ["NpcKey", "Playfield"] }
+        { "required": ["NpcKey", "Playfield"] },
+        { "required": ["Feature"] }
       ]
     }
   }

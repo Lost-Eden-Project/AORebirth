@@ -82,8 +82,58 @@ public enum ScriptOpCode : byte
     /// Re-posts the NPC: its home for leash and return becomes the point. A, B, D as <see cref="MoveTo"/>; D = 4 is
     /// the NPC's current position ("Here").
     /// </summary>
-    SetHome
+    SetHome,
+
+    /// <summary>
+    /// Spawns NPCs owned by this runner. A = NPC hash (string table index or NpcHash param ref), B = centre vector ref
+    /// or <see cref="ScriptOp.None"/> (the NPC's position), C = index into <see cref="NpcScriptProgram.Spawns"/>.
+    /// </summary>
+    SpawnNpc,
+
+    /// <summary>
+    /// Casts a nano from the NPC. A = nano id value ref, B = <see cref="NpcScriptTarget"/>, C = minimum distance in
+    /// metres for a hostile picker, D = flags: 1 warp the recipient to the NPC's feet when the nano lands. Blocks
+    /// while the cast bar runs.
+    /// </summary>
+    CastNano
 }
+
+/// <summary>Who a <see cref="ScriptOpCode.CastNano"/> lands on.</summary>
+public enum NpcScriptTarget
+{
+    /// <summary>The NPC itself.</summary>
+    Self = 0,
+
+    /// <summary>The NPC's current fighting target.</summary>
+    Target = 1,
+
+    /// <summary>
+    /// A random player on the NPC's hate list that it may attack, at least the op's minimum distance away. Pets are
+    /// never picked.
+    /// </summary>
+    RandomHostile = 2
+}
+
+/// <summary>
+/// One <see cref="ScriptOpCode.SpawnNpc"/>'s shape, kept in a program table because an op has four operands.
+/// </summary>
+/// <param name="Absolute">The centre vector is a world position; otherwise an offset in the NPC's frame.</param>
+/// <param name="Count">NPCs to spawn; above one they stand evenly on a circle of <paramref name="Radius"/>.</param>
+/// <param name="Radius">Circle radius in metres (0 with a count of one).</param>
+/// <param name="LifetimeSeconds">Despawn after this long; 0 for no cap.</param>
+/// <param name="OwnerDespawnDelaySeconds">
+/// Despawn this long after the owner dies, resets or despawns (0 = at once); -1 leaves the spawn independent.
+/// </param>
+/// <param name="Level">Spawn level; 0 for the template's own.</param>
+/// <param name="JoinFight">The spawn takes the owner's current target as its first hate.</param>
+public readonly record struct SpawnNpcSpec(
+    bool Absolute,
+    int Count,
+    float Radius,
+    int LifetimeSeconds,
+    int OwnerDespawnDelaySeconds,
+    int Level,
+    bool JoinFight);
 
 public enum GfxAnchor
 {
@@ -149,7 +199,8 @@ public enum ScriptParamType
     SocialAction,
     Int,
     Gfx,
-    Text
+    Text,
+    NpcHash
 }
 
 public readonly record struct ScriptParam(string Name, ScriptParamType Type);
@@ -165,7 +216,8 @@ public sealed class NpcScriptProgram
         ScriptOp[] ops,
         string[] strings,
         Vector3[] vectors,
-        int[] jumps)
+        int[] jumps,
+        SpawnNpcSpec[] spawns)
     {
         Id = id;
         File = file;
@@ -175,9 +227,11 @@ public sealed class NpcScriptProgram
         Strings = strings;
         Vectors = vectors;
         Jumps = jumps;
+        Spawns = spawns;
         uint mask = 0;
         bool timers = false;
         bool cooldowns = false;
+        bool moves = false;
         int vars = 0;
         foreach (ScriptHandler handler in handlers)
         {
@@ -192,11 +246,14 @@ public sealed class NpcScriptProgram
                 vars = Math.Max(vars, op.A + 1);
             else if (op.Code == ScriptOpCode.If && op.A <= (int)ScriptPredicate.VarGreaterThan)
                 vars = Math.Max(vars, op.B + 1);
+            else if (op.Code is ScriptOpCode.MoveTo or ScriptOpCode.SetHome or ScriptOpCode.ReleaseMovement)
+                moves = true;
         }
 
         TriggerMask = mask;
         HasTimers = timers;
         HasCooldowns = cooldowns;
+        HasMovement = moves;
         VarCount = vars;
     }
 
@@ -218,11 +275,17 @@ public sealed class NpcScriptProgram
     /// <summary>Jump tables for <see cref="ScriptOpCode.Random"/>.</summary>
     public int[] Jumps { get; }
 
+    /// <summary>Shapes of the program's <see cref="ScriptOpCode.SpawnNpc"/> ops.</summary>
+    public SpawnNpcSpec[] Spawns { get; }
+
     public uint TriggerMask { get; }
 
     public bool HasTimers { get; }
 
     public bool HasCooldowns { get; }
+
+    /// <summary>The program moves or re-posts its NPC, so it cannot be a feature overlay on another program.</summary>
+    public bool HasMovement { get; }
 
     public int VarCount { get; }
 
@@ -260,7 +323,7 @@ public sealed class ScriptArgs
     /// <summary>SocialAction, Int and Gfx parameters.</summary>
     public int[] Ints { get; }
 
-    /// <summary>ItemHash and Text parameters.</summary>
+    /// <summary>ItemHash, NpcHash and Text parameters.</summary>
     public string?[] Strings { get; }
 }
 
@@ -297,7 +360,13 @@ public enum ScriptBindingTarget
 {
     Hash,
     SpawnPoint,
-    NpcKey
+    NpcKey,
+
+    /// <summary>
+    /// Every NPC whose template has the <see cref="Mobs.NpcFeature"/> (MonsterCombatRules.json "Features"). Runs on
+    /// top of the NPC's own program, so it may not move the NPC.
+    /// </summary>
+    Feature
 }
 
 /// <summary>Which NPCs run a program, with what arguments and optional plain movement.</summary>
@@ -330,7 +399,7 @@ public sealed class NpcScriptBinding
 
     public ScriptBindingTarget Target { get; }
 
-    /// <summary>The hash, spawn point key or NPC key.</summary>
+    /// <summary>The hash, spawn point key, NPC key or feature name.</summary>
     public string Key { get; }
 
     public int? PlayfieldId { get; }

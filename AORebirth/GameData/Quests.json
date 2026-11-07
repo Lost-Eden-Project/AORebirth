@@ -1448,5 +1448,39 @@
     "MissionBit": null,
     "NextStep": "TC8J",
     "Reward": null
+  },
+  {
+    "Hash": "829N",
+    "Name": "Infiltrate the Alien Mothership",
+    "Title": "Infiltrate the Alien Mothership",
+    "Description": null,
+    "IconId": null,
+    "QasInstance": 102307,
+    "Scope": "Team",
+    "Action": "KillOne",
+    "Summary": "kill the target NPC",
+    "Objective": {
+      "Count": null,
+      "Npc": "MJ9O",
+      "SpecItem": null,
+      "WorldItem": null
+    },
+    "Waypoints": null,
+    "Flags": "NoXp, NoCash",
+    "MissionBit": null,
+    "NextStep": null,
+    "Reward": null,
+    "Dungeon": {
+      "Floors": "Multi",
+      "Style": 386,
+      "Playfield": 4364,
+      "Entrance": 3221229836,
+      "MobLevelPercent": 10,
+      "ObjectiveLevelPercent": 5,
+      "AwardsTokens": true,
+      "Npcs": [
+        "ARZWEH"
+      ]
+    }
   }
 ]

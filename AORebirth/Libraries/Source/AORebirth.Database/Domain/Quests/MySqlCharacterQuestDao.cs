@@ -268,6 +268,38 @@ namespace AORebirth.Database.Domain.Quests
         }
 
         /// <summary>
+        /// Gives a Quests.json dungeon quest as a generated quest, in one transaction: stores the quest and the owner's
+        /// quest row and gives the mission key with its dungeon link (and the mission tool, when present). There is no
+        /// terminal offer to claim; the quest id is freshly allocated, so a repeat can not collide.
+        /// </summary>
+        public bool TryAssignDungeonQuest(int ownerId, GeneratedQuestRow quest, CharacterQuestRow characterRow,
+            QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow sourceItem)
+        {
+            if (quest == null) throw new ArgumentNullException(nameof(quest));
+            if (characterRow == null) throw new ArgumentNullException(nameof(characterRow));
+            if (key == null) throw new ArgumentNullException(nameof(key));
+            if (quest.OwnerId != ownerId || characterRow.CharacterId != ownerId || characterRow.QuestId != quest.QuestId)
+                throw new ArgumentException("The dungeon quest rows must belong to the owner.");
+            if (sourceItem != null)
+            {
+                ValidateAcceptedQuestItem(key, ownerId);
+                ValidateAcceptedQuestItem(sourceItem, ownerId);
+                if (key.InstanceId == sourceItem.InstanceId || key.ContainerPlacement == sourceItem.ContainerPlacement)
+                    throw new ArgumentException("The mission key and source item must have distinct identities and inventory slots.");
+            }
+
+            return Transaction((c, t) =>
+            {
+                InsertGenerated(c, t, quest);
+                InsertCharacterQuest(c, t, characterRow);
+                InsertKey(c, t, key, quest.QuestId);
+                if (sourceItem != null)
+                    InsertQuestItem(c, t, sourceItem);
+                return true;
+            });
+        }
+
+        /// <summary>
         /// Adds a copy of <paramref name="sourceKeyInstanceId"/> for the same quest: only while that key is still
         /// linked, its quest is unexpired and the quest has fewer than <paramref name="maxKeys"/> keys. The source
         /// link and the quest's key count are locked for the check. Returns the quest id, or null when refused.
@@ -560,11 +592,12 @@ namespace AORebirth.Database.Domain.Quests
             // Older quests cannot carry this capability's strictly positive accepted-run keys.
             if (assigned <= 0)
                 return;
-            string prefix = MissionChestPopulationFlags.Prefix(assigned);
+            // One flag lists the run's chest containers in placement order; its rows and the flag go together.
+            string flagKey = MissionChestPopulationFlags.Key(assigned);
             var flags = new List<ChestCleanupFlag>();
             using (IDbCommand command = Prepare(c, t,
-                "SELECT Id,FlagKey,`Value` FROM missionflags WHERE CharacterId=@Owner AND QuestId=@Quest AND FlagKey LIKE @Prefix FOR UPDATE",
-                new object[] { "@Owner", owner, "@Quest", questId, "@Prefix", prefix + "%" }))
+                "SELECT Id,FlagKey,`Value` FROM missionflags WHERE CharacterId=@Owner AND QuestId=@Quest AND FlagKey=@Key FOR UPDATE",
+                new object[] { "@Owner", owner, "@Quest", questId, "@Key", flagKey }))
             using (IDataReader reader = command.ExecuteReader())
             {
                 while (reader.Read())
@@ -572,16 +605,11 @@ namespace AORebirth.Database.Domain.Quests
             }
             if (flags.Count == 0)
                 return;
-            ChestCleanupFlag seal = flags.Find(flag => flag.Key == MissionChestPopulationFlags.Seal(assigned));
-            int count;
-            if (seal == null || !int.TryParse(seal.Value, NumberStyles.None, CultureInfo.InvariantCulture, out count)
-                || count < 0 || flags.Count - 1 != count)
-                throw new InvalidOperationException("The chest population cannot be purged without its complete durable seal.");
             var containers = new HashSet<int>();
-            for (int index = 0; index < count; index++)
+            foreach (string part in (flags[0].Value ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                ChestCleanupFlag snapshot = flags.Find(flag => flag.Key == MissionChestPopulationFlags.Chest(assigned, index));
-                if (snapshot == null || !containers.Add(MySqlMissionDao.ReadChestSnapshotContainer(snapshot.Value)))
+                int container;
+                if (!int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out container) || container <= 0 || !containers.Add(container))
                     throw new InvalidOperationException("The chest population has missing or duplicate durable identities.");
             }
             foreach (int container in containers)

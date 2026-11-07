@@ -25,7 +25,10 @@ namespace ZoneEngine_New.Core.Entities
         Corpse = 4,
         StaticDynel = 5,
         ContentPlacement = 6,
-        Summoned = 7
+        Summoned = 7,
+
+        /// <summary>An NPC script's SpawnNpc (its adds). Hash bindings still attach to it; it dies and despawns like any NPC.</summary>
+        Script = 8
     }
 
     /// <summary>

@@ -30,6 +30,11 @@ namespace ZoneEngine_New.Core.Data
                 ? TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, nowUtcTicks)
                 : throw new NotSupportedException("The quest store does not support atomic mission source-item acceptance.");
 
+        /// <summary>A Quests.json dungeon quest's generated copy, owner row, key and any mission tool, in one transaction.</summary>
+        bool TryAssignDungeonQuest(int ownerId, GeneratedQuestRow quest, CharacterQuestRow characterRow,
+            QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow? sourceItem)
+            => throw new NotSupportedException("The quest store does not support Quests.json dungeon quests.");
+
         string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks);
 
         IDictionary<int, string> LoadKeyQuests(IReadOnlyCollection<int> keyInstanceIds);
@@ -81,6 +86,10 @@ namespace ZoneEngine_New.Core.Data
         public bool TryAcceptOfferQuest(int ownerId, int offerType, int offerInstance, GeneratedQuestRow quest,
             CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow? sourceItem, long nowUtcTicks)
             => Run(() => _dao.TryAcceptOfferQuest(ownerId, offerType, offerInstance, quest, characterRow, key, sourceItem, nowUtcTicks), _logger);
+
+        public bool TryAssignDungeonQuest(int ownerId, GeneratedQuestRow quest, CharacterQuestRow characterRow,
+            QuestDungeonKeyItemRow key, QuestDungeonKeyItemRow? sourceItem)
+            => Run(() => _dao.TryAssignDungeonQuest(ownerId, quest, characterRow, key, sourceItem), _logger);
 
         public string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks)
             => Run(() => _dao.TryAddDuplicateKey(sourceKeyInstanceId, copy, maxKeys, nowUtcTicks), _logger);

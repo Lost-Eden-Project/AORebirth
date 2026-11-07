@@ -796,13 +796,11 @@ public sealed class QuestDungeonDestinationTests
                 policy.GetType().GetProperty("Chests")!.SetValue(policy, null);
             }
             var minter = new HashItemMinter(RuntimeData.Value, _templates, _items);
-            var authored = new AuthoredQuestService(null!, _flush, _items, _templates, _ids,
-                new AuthoredQuestCatalog(new InteractionContent()), _logger);
             Manager = new PlayfieldManager(_logger, new MessageRouter([], _logger), new PlayerHydrator(_items, RuntimeData.Value),
                 RuntimeData.Value, _items, minter, inventory ?? new StubInventoryRepository(), _ids,
                 new InventoryMoveService(_logger, _flush, _actions), _flush,
                 new TradeService(_logger, RuntimeData.Value, _templates, minter, _ids, _flush, Persistence),
-                Blank<CharacterSnapshotService>(), new PlayfieldMetricsRegistry(), new TeamService(), authored, _templates, new Shops(), _quests);
+                Blank<CharacterSnapshotService>(), new PlayfieldMetricsRegistry(), new TeamService(), _templates, new Shops(), _quests);
             SetExteriorIdentity(Entrance.PlayfieldId);
             Player.Playfield = _exterior;
             Player.Position = new Vector3(Entrance.LocalX, Entrance.LocalY, Entrance.LocalZ);
@@ -905,7 +903,7 @@ public sealed class QuestDungeonDestinationTests
         internal void RestartService()
         {
             Service?.Dispose();
-            Service = new QuestDungeonService(Store, _quests, Catalog.Value, Layouts, Offers, _items, _ids,
+            Service = new QuestDungeonService(Store, _quests, Catalog.Value, Layouts, _items, _ids,
                 _flush, _actions, new Lazy<PlayfieldManager>(() => Manager), RuntimeData.Value, _logger,
                 new HashItemMinter(RuntimeData.Value, _templates, _items));
         }

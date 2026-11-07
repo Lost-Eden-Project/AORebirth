@@ -28,7 +28,7 @@ public sealed class MissionItemObjectiveBinding
     public bool IsValid => !string.IsNullOrWhiteSpace(QuestId) && OwnerId > 0
         && MissionType is 2 or 3 or 4 && (!IsSourceItem || MissionType == 3)
         && IdentityType == (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.Terminal
-        && Instance > 0 && LowId > 0 && HighId > 0 && Quality > 0 && (IsSourceItem ? RoomIndex == 0 : RoomIndex > 0)
+        && Instance > 0 && LowId > 0 && HighId > 0 && Quality > 0 && RoomIndex >= 0
         && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z) && QuestInstanceStat >= 0
         && (WorldScalePercent == null || WorldScalePercent > 0);
 
@@ -69,7 +69,7 @@ public sealed class MissionNpcObjectiveBinding
     [JsonIgnore]
     public bool IsValid => !string.IsNullOrWhiteSpace(QuestId) && OwnerId > 0
         && IdentityType == (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.CanbeAffected
-        && Instance > 0 && !string.IsNullOrWhiteSpace(NpcHash) && Quality > 0 && RoomIndex > 0
+        && Instance > 0 && !string.IsNullOrWhiteSpace(NpcHash) && Quality > 0 && RoomIndex >= 0
         && MissionType is 0 or 1 && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z)
         && (ScalePercent == null || ScalePercent > 0);
 

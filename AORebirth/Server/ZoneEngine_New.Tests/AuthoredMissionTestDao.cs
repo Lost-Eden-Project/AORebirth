@@ -55,7 +55,6 @@ internal sealed partial class AuthoredMissionTestDao : IMissionDao, IMissionDaoT
     public MissionCharacterSnapshotData ReadCharacter(int characterId) => new(characterId, GetMissions(characterId), Objectives.Values, Flags.Values, Rewards.Values);
     public string ResolveCharacterAccountKey(int characterId) => characterId == 111 ? "account" : throw new InvalidOperationException();
     public MissionAccountFlagData GetAccountFlag(string accountKey, string flagKey) => AccountFlags.GetValueOrDefault(accountKey + "|" + flagKey)?.Clone()!;
-    public IList<MissionAccountFlagData> GetAccountFlags(string accountKey) => AccountFlags.Values.Where(value => value.AccountKey == accountKey).Select(value => value.Clone()).ToArray();
     public void SaveMission(MissionKeyData key, MissionStateData record)
     { CheckVersion(Missions.GetValueOrDefault(key)?.Version ?? 0, record.Version); record.Version++; Missions[key] = record.Clone(); }
     public MissionObjectiveProgressData GetObjective(MissionObjectiveKeyData key) => Objectives.GetValueOrDefault(key)?.Clone()!;
@@ -68,22 +67,6 @@ internal sealed partial class AuthoredMissionTestDao : IMissionDao, IMissionDaoT
     public void SaveAccountFlag(string accountKey, MissionAccountFlagData record)
     { var index = accountKey + "|" + record.FlagKey; CheckVersion(AccountFlags.GetValueOrDefault(index)?.Version ?? 0, record.Version); record.Version++; AccountFlags[index] = record.Clone(); }
     public MissionRewardStageData GetReward(MissionRewardKeyData key) => Rewards.GetValueOrDefault(key)?.Clone()!;
-
-    public MissionAtomicStatRewardResultData TryApplyCharacterStatReward(MissionRewardKeyData key, string rewardType, IList<MissionStatMutationData> mutations, string effectReference, long now)
-    {
-        if (Missions.GetValueOrDefault(key.Mission)?.State != MissionLifecycleState.Completed) return new() { Status = MissionAtomicRewardStatus.Rejected };
-        bool duplicate = Rewards.ContainsKey(key);
-        if (!duplicate)
-        {
-            foreach (var mutation in mutations)
-                Stats[mutation.StatId] = Math.Clamp(mutation.Kind == MissionStatMutationKind.Set ? mutation.Value : Stats.GetValueOrDefault(mutation.StatId) + mutation.Value,
-                    mutation.MinimumValue, mutation.MaximumValue);
-            Rewards.Add(key, new() { CharacterId = CharacterId, QuestId = key.Mission.QuestId, RewardKey = key.RewardKey,
-                RewardType = rewardType, Status = MissionRewardStatus.Applied, EffectReference = effectReference, AppliedAtUtcTicks = now, Version = 1 });
-        }
-        return new() { Status = duplicate ? MissionAtomicRewardStatus.AlreadyApplied : MissionAtomicRewardStatus.Applied,
-            StatValues = mutations.Select(value => new MissionStatValueData { StatIdentityType = value.StatIdentityType, StatId = value.StatId, Value = Stats[value.StatId] }).ToArray() };
-    }
 
     public void ApplyInventoryMutation(IReadOnlyList<MissionItemInstanceData> grants, IReadOnlyList<MissionItemInstanceData> consumed)
     {
@@ -117,10 +100,6 @@ internal sealed partial class AuthoredMissionTestDao : IMissionDao, IMissionDaoT
         && a.ContainerInstance == b.ContainerInstance && a.ContainerPlacement == b.ContainerPlacement && a.ItemType == b.ItemType && a.LowId == b.LowId
         && a.HighId == b.HighId && a.Quality == b.Quality && a.StackCount == b.StackCount && a.Source == b.Source;
     static void CheckVersion(long actual, long expected) { if (actual != expected) throw new InvalidOperationException("Stale mission version."); }
-    public MissionRewardClaimResultData TryClaimReward(MissionRewardKeyData key, string type, string token, long now, long expires) => throw new NotSupportedException("External reward effects forbidden in this test.");
-    public bool TryMarkRewardApplied(MissionRewardKeyData key, string token, long version, string effect, long now, out MissionRewardStageData stage) => throw new NotSupportedException();
-    public bool TryMarkRewardFailed(MissionRewardKeyData key, string token, long version, string error, long now, out MissionRewardStageData stage) => throw new NotSupportedException();
-    public MissionRollFeeResult TryChargeRollFee(MissionRollFeeRequest request) => throw new NotSupportedException();
     public bool MarkStartAreaSelectionPending(int id) => throw new NotSupportedException();
     public string GetStartAreaSelectionState(int id) => throw new NotSupportedException();
     public bool TryCompleteStartAreaSelection(int id, string state) => throw new NotSupportedException();

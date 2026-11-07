@@ -1,0 +1,159 @@
+{
+  "Notes": "Unicorn Recruiter. Captured by LiveCapture in Unicorn Outpost (4364) at (151.7, 100.9, 164.4). Nearest HashSpawnPoint UIRC at (151.7, 101.3, 164.4), 0.4m away. Rolls the Alien Mothership mission 829N (a Quests.json dungeon quest in ACG style 386 behind the outpost's Alien Mothership entrance) at the mission quality the line names, from the captured live multipliers of the top monster level: take it easy = level+2% (easy), handle our business = level+12% (medium), too chicken = level+53% (hard). The quest puts ordinary mobs 5% under that and the MJ9O boss at it. Each give rolls a fresh dungeon. Replies that give the mission are hidden while it is active; the captured no-give line 7 shows instead.",
+  "Npcs": [
+    "UIRC"
+  ],
+  "Openers": [
+    {
+      "Say": "10"
+    },
+    {
+      "Say": "6"
+    },
+    {
+      "Say": "1"
+    },
+    {
+      "Say": "8"
+    },
+    {
+      "Say": "9"
+    },
+    {
+      "Say": "11"
+    },
+    {
+      "Say": "12"
+    }
+  ],
+  "Replies": {
+    "i_want_to_visit": {
+      "Text": "I want to visit the alien mothership!",
+      "Goto": "2"
+    },
+    "take_it_easy_on": {
+      "Text": "Take it easy on us.  We want to come back in one piece.",
+      "Goto": "3",
+      "If": [
+        "!HasQuest 829N"
+      ]
+    },
+    "we_can_handle_our": {
+      "Text": "We can handle our business.",
+      "Goto": "4",
+      "If": [
+        "!HasQuest 829N"
+      ]
+    },
+    "i_want_the_mission": {
+      "Text": "I want the mission Unicorns are too chicken to take.",
+      "Goto": "5",
+      "If": [
+        "!HasQuest 829N"
+      ]
+    },
+    "i_want_the_mission_2": {
+      "Text": "I want the mission Unicorns are too chicken to take.",
+      "Goto": "7",
+      "If": [
+        "HasQuest 829N"
+      ]
+    }
+  },
+  "Lines": {
+    "1": {
+      "Text": [
+        "{delay 10}{emote}The Unicorn soldier turns to you and nods slowly.{/emote}",
+        "{delay 1}Hello."
+      ],
+      "Replies": [
+        "i_want_to_visit"
+      ]
+    },
+    "2": {
+      "Text": [
+        "{delay 1}And you're sure that's such a good idea?",
+        "{delay 1}{emote}He looks you up and down as if to assess your potential.{/emote}Fine, you can go. Most people come down from these operations alive. Perhaps you and your team will be fortunate.",
+        "{delay 2}{emote}He runs a scanner over you and waits for it to sound off a loud beep.{/emote}\\nWhat kind of assignment is your team up for?"
+      ],
+      "Replies": [
+        "take_it_easy_on",
+        "we_can_handle_our",
+        "i_want_the_mission",
+        "i_want_the_mission_2"
+      ]
+    },
+    "3": {
+      "Text": [
+        "{delay 1.5}{givequest 829N level+2%}",
+        "Good luck. ",
+        "{delay 1} Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. Good luck!"
+      ],
+      "Replies": []
+    },
+    "4": {
+      "Text": [
+        "{delay 2}{givequest 829N level+12%}",
+        "Confidence is good.  Take care not to have too much of it.Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. Good luck!"
+      ],
+      "Replies": []
+    },
+    "5": {
+      "Text": [
+        "{delay 1.5}{givequest 829N level+53%}",
+        "I have something special for you suicidal types.",
+        "{delay 2}{emote}You think you can see the Unicorn grinning in his helmet...but it might have been a trick of the light..{/emote}",
+        "{delay 1}Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. ",
+        "{delay 1}Good luck!You are going to need it."
+      ],
+      "Replies": []
+    },
+    "6": {
+      "Text": [
+        "You are going to need it.",
+        "{close}"
+      ]
+    },
+    "7": {
+      "Text": [
+        "{delay 1}I have something special for you suicidal types.",
+        "{delay 2}{emote}You think you can see the Unicorn grinning in his helmet...but it might have been a trick of the light..{/emote}",
+        "{delay 1}Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. ",
+        "{delay 1.5}Good luck!You are going to need it."
+      ],
+      "Replies": []
+    },
+    "8": {
+      "Text": "Good luck!",
+      "Replies": []
+    },
+    "9": {
+      "Text": [
+        "Good luck!",
+        "{close}"
+      ]
+    },
+    "10": {
+      "Text": "{delay 0.5}Hello.",
+      "Replies": [
+        "i_want_to_visit"
+      ]
+    },
+    "11": {
+      "Text": [
+        "Good luck.  Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. ",
+        "{delay 1}Good luck!"
+      ],
+      "Replies": []
+    },
+    "12": {
+      "Text": "{delay 1.5}{emote}He runs a scanner over you and waits for it to sound off a loud beep.{/emote}\\nWhat kind of assignment is your team up for?",
+      "Replies": [
+        "take_it_easy_on",
+        "we_can_handle_our",
+        "i_want_the_mission",
+        "i_want_the_mission_2"
+      ]
+    }
+  }
+}

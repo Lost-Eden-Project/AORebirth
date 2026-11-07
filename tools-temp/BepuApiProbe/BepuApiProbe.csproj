@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>disable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="AODB"><HintPath>C:\Users\tyler\AppData\Local\Temp\cursor-sandbox-cache\d35a7f5605fbccd52726bb1f090c4866\nuget\aodb\1.0.6\lib\net10.0\AODB.dll</HintPath></Reference>
+    <Reference Include="AODB.Common"><HintPath>C:\Users\tyler\AppData\Local\Temp\cursor-sandbox-cache\d35a7f5605fbccd52726bb1f090c4866\nuget\aodb\1.0.6\lib\net10.0\AODB.Common.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

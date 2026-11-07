@@ -20,6 +20,27 @@ public sealed class DungeonFloorTransitionDynel : StaticDynel
 
     protected override bool DelaysUse => false;
 
+    /// <summary>
+    /// The retail lift spawn carries only these six stats (capture_mangohip_lifts, Platform 1 and Button packets):
+    /// the template's flags and identity, not its mesh/placement/animation stats.
+    /// </summary>
+    protected override GameTuple<CharacterStat, uint>[] BuildStats()
+    {
+        int flags = Template.Stats.TryGetValue(CharacterStat.Flags, out int templateFlags) ? templateFlags : 0;
+        return
+        [
+            Stat(CharacterStat.Flags, flags),
+            Stat(CharacterStat.StaticInstance, Template.Id),
+            Stat(CharacterStat.ACGItemLevel, Stats.Get(CharacterStat.ACGItemLevel)),
+            Stat(CharacterStat.ACGItemTemplateID, Template.Id),
+            Stat(CharacterStat.ACGItemTemplateID2, Template.Id),
+            Stat(CharacterStat.MultipleCount, Stats.Get(CharacterStat.MultipleCount))
+        ];
+    }
+
+    static GameTuple<CharacterStat, uint> Stat(CharacterStat stat, int value)
+        => new() { Value1 = stat, Value2 = (uint)value };
+
     protected override bool OnUse(Player player)
     {
         if (player.IsDead || player.IsPersistenceQuarantined || player.Session == null

@@ -70,6 +70,8 @@ namespace ZoneEngine_New.Core.Teams
         private readonly Dictionary<int, long> _projectionEpochs = new();
         private readonly Dictionary<int, PublishedRoster> _publishedRosters = new();
         private readonly Dictionary<int, IZoneSession> _rosterResetSessions = new();
+        // What the viewer's last FullCharacter listed, until the roster publish after it continues from those rows.
+        private readonly Dictionary<int, FullCharacterRoster> _fullCharacterRosters = new();
         // A character has exactly one membership entry; Team.Members is its ordered projection.
         private readonly Dictionary<int, Team> _membership = new();
         private readonly Dictionary<int, Invitation> _invitations = new();
@@ -119,6 +121,7 @@ namespace ZoneEngine_New.Core.Teams
                 _players[player.Identity.Instance] = player;
                 _publishedRosters.Remove(player.Identity.Instance);
                 _rosterResetSessions.Remove(player.Identity.Instance);
+                _fullCharacterRosters.Remove(player.Identity.Instance);
                 _projectionEpochs[player.Identity.Instance] = _projectionEpochs.GetValueOrDefault(player.Identity.Instance) + 1;
                 CaptureData(player);
                 Action<CharacterStat, int, int, bool> observer = (stat, _, _, _) =>
@@ -295,6 +298,7 @@ namespace ZoneEngine_New.Core.Teams
             _projectionEpochs.Remove(id);
             _publishedRosters.Remove(id);
             _rosterResetSessions.Remove(id);
+            _fullCharacterRosters.Remove(id);
             _declinedUntil.Remove(id);
             _lftLocations.Remove(id);
         }
@@ -314,6 +318,7 @@ namespace ZoneEngine_New.Core.Teams
                 _projectionEpochs.Clear();
                 _publishedRosters.Clear();
                 _rosterResetSessions.Clear();
+                _fullCharacterRosters.Clear();
                 _invitations.Clear();
                 _declinedUntil.Clear();
                 _lftLocations.Clear();
@@ -779,6 +784,17 @@ namespace ZoneEngine_New.Core.Teams
                     && p.Value.TeamId == 0).Select(p => p.Key).ToArray())
                     _invitations[id] = _invitations[id] with { TeamId = team.Id };
             }
+            if (team.IsRaid)
+            {
+                // A joiner lands in the raid group it has room in, not in group zero regardless.
+                int group = FirstRaidGroupWithRoom(team);
+                if (group < 0)
+                {
+                    Error(inviter, "The raid is full.");
+                    return Error(invitee, "The raid is full.");
+                }
+                team.RaidTeamIndex[invitee.Identity.Instance] = group;
+            }
             team.Members.Add(invitee.Identity.Instance);
             _membership.Add(invitee.Identity.Instance, team);
             // Any outstanding invite sent/received under pre-join ownership is now stale.
@@ -914,6 +930,13 @@ namespace ZoneEngine_New.Core.Teams
             }
 
             bool initialRoster = published == null;
+            if (initialRoster && TakeFullCharacterRoster(viewer, team) is { } listed)
+            {
+                // This session's FullCharacter already listed these rows: the handshake still runs, but only the
+                // rows it did not carry are announced, since the original client adds duplicates (Gamecode 1006624f).
+                published = listed;
+                _publishedRosters[viewerId] = listed;
+            }
             bool membershipChanged = published == null || published.Members.Count != team.Members.Count
                 || team.Members.Any(id => !published.Members.ContainsKey(id));
             bool leadershipChanged = published == null || published.Leader != team.Leader

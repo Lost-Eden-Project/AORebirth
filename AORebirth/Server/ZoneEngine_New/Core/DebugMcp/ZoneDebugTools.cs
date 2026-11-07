@@ -15,7 +15,6 @@ namespace ZoneEngine_New.Core.DebugMcp
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Metrics;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Nanos;
     using ZoneEngine_New.Core.Playfield;
 
@@ -29,25 +28,21 @@ namespace ZoneEngine_New.Core.DebugMcp
 
         readonly PlayfieldManager _playfields;
         readonly IPlayfieldMetricsRegistry _metrics;
-        readonly GeneratedMissionService _missions;
         readonly DebugMcpEndpoint _endpoint;
         readonly Quests.Dungeons.QuestDungeonService? _dungeons;
 
         public ZoneDebugTools(
             PlayfieldManager playfields,
             IPlayfieldMetricsRegistry metrics,
-            GeneratedMissionService missions,
             DebugMcpEndpoint endpoint,
             Quests.Dungeons.QuestDungeonService? dungeons = null)
         {
             _dungeons = dungeons;
             ArgumentNullException.ThrowIfNull(playfields);
             ArgumentNullException.ThrowIfNull(metrics);
-            ArgumentNullException.ThrowIfNull(missions);
             ArgumentNullException.ThrowIfNull(endpoint);
             _playfields = playfields;
             _metrics = metrics;
-            _missions = missions;
             _endpoint = endpoint;
         }
 
@@ -122,7 +117,6 @@ namespace ZoneEngine_New.Core.DebugMcp
             if (!TryFindPlayer(characterId, name, out Player? player, out string? error))
                 return Error(error!);
             PlayerView view = ZoneDebugSnapshots.ProjectPlayer(player!);
-            object missions = ReadMissions(player!);
             var nanos = new List<object>();
             foreach (Buff buff in player!.Buffs)
             {
@@ -131,7 +125,7 @@ namespace ZoneEngine_New.Core.DebugMcp
                 nanos.Add(new { id = buff.Id, name = buff.Name });
             }
 
-            return Json(new { player = view, activeNanos = nanos, missions });
+            return Json(new { player = view, activeNanos = nanos });
         }
 
         [McpServerTool(Name = "get_stats")]
@@ -314,6 +308,7 @@ namespace ZoneEngine_New.Core.DebugMcp
                     ? new
                     {
                         program = scripts.Program.Id,
+                        overlays = scripts.Next?.ProgramIds,
                         handler = scripts.CurrentTrigger,
                         pc = scripts.ProgramCounter,
                         waiting = scripts.WaitState,
@@ -362,15 +357,6 @@ namespace ZoneEngine_New.Core.DebugMcp
                 count = slots.Count,
                 slots
             });
-        }
-
-        [McpServerTool(Name = "list_missions")]
-        [System.ComponentModel.Description("One online player's open mission terminal offers (accepted missions are quests: see get_quests). Read-only. Capped.")]
-        public string ListMissions(int characterId = 0, string name = "")
-        {
-            if (!TryFindPlayer(characterId, name, out Player? player, out string? error))
-                return Error(error!);
-            return Json(ReadMissions(player!));
         }
 
         [McpServerTool(Name = "get_quests")]
@@ -615,50 +601,6 @@ namespace ZoneEngine_New.Core.DebugMcp
             }
 
             return true;
-        }
-
-        object ReadMissions(Player player)
-        {
-            try
-            {
-                IReadOnlyList<GeneratedMissionOffer> offers = _missions.ReadOffers(player);
-                var offerRows = new List<object>();
-                bool truncated = offers.Count > ZoneDebugSnapshots.MaxMissions;
-                int offerCount = Math.Min(offers.Count, ZoneDebugSnapshots.MaxMissions);
-                for (int i = 0; i < offerCount; i++)
-                    offerRows.Add(ProjectOffer(offers[i]));
-                return new
-                {
-                    characterId = player.Identity.Instance,
-                    name = ZoneDebugSnapshots.DisplayName(player),
-                    offers = offerRows,
-                    truncated
-                };
-            }
-            catch (Exception exception)
-            {
-                return new
-                {
-                    characterId = player.Identity.Instance,
-                    error = "Mission read failed: " + exception.GetType().Name
-                };
-            }
-        }
-
-        static object ProjectOffer(GeneratedMissionOffer offer)
-        {
-            return new
-            {
-                offer.Title,
-                description = Trim(offer.Description, 180),
-                state = offer.State.ToString(),
-                offer.Quality,
-                offer.MissionType,
-                offer.OfferType,
-                offer.OfferInstance,
-                offer.DestinationPlayfield,
-                expiresUtc = Utc(offer.ExpiresAtUtcTicks)
-            };
         }
 
         static void AddPage(List<object> slots, ref bool truncated, string page, Container container)

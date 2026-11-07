@@ -53,18 +53,6 @@ namespace ZoneEngine_New.Core.Entities
             return (can & CanFlags.Carry) != 0 && (Owner.Instance == 0 || Owner == player.Identity);
         }
 
-        /// <summary>
-        /// The owner fields must be 0:0; the codec only writes Coordinate/Heading for an ownerless item,
-        /// and the client has no Dynels.dat position for a runtime instance.
-        /// </summary>
-        public override MessageBody BuildSpawnMessage()
-        {
-            var message = (SimpleItemFullUpdateMessage)base.BuildSpawnMessage();
-            message.Identitytype = 0;
-            message.Instance = 0;
-            return message;
-        }
-
         protected override GameTuple<CharacterStat, uint>[] BuildStats()
         {
             int flags = Template.Stats.TryGetValue(CharacterStat.Flags, out int templateFlags) ? templateFlags : 0;

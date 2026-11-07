@@ -8,17 +8,36 @@ using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Playfield;
 using Vector3 = AORebirth.Core.Vector.Vector3;
 
-/// <summary>Chooses a reproducible objective point from the original district positions in connected placed rooms.</summary>
+/// <summary>
+/// Chooses a reproducible objective point from the original district positions in connected placed rooms: the boss
+/// room when the layout reserves one (a multi-floor dungeon's top floor), else the room farthest from the entrance.
+/// </summary>
 internal static class DungeonObjectivePlacement
 {
     internal static bool TrySelect(string gameDataRoot, DungeonLayout layout, IZoneLogger logger,
         out int roomIndex, out Vector3 position)
     {
+        var dungeon = DungeonPlayfieldBinder.TryBuild(gameDataRoot, 0, layout.Generator, logger);
+        if (dungeon == null)
+        {
+            roomIndex = -1;
+            position = new Vector3();
+            return false;
+        }
+        return TrySelect(dungeon, gameDataRoot, layout, logger, out roomIndex, out position);
+    }
+
+    /// <summary>
+    /// The same choice on geometry the caller already built: it depends only on the layout's seed and the style's
+    /// districts, so a dungeon derives its objective point when it builds instead of freezing it at acceptance.
+    /// </summary>
+    internal static bool TrySelect(DungeonWorldLayout dungeon, string gameDataRoot, DungeonLayout layout, IZoneLogger logger,
+        out int roomIndex, out Vector3 position)
+    {
         roomIndex = -1;
         position = new Vector3();
-        var dungeon = DungeonPlayfieldBinder.TryBuild(gameDataRoot, 0, layout.Generator, logger);
         var districts = QuestDungeonPlayfield.LoadStyleDistricts(gameDataRoot, layout.Generator.Style, logger);
-        if (dungeon == null || districts?.Districts == null)
+        if (districts?.Districts == null)
             return false;
 
         int[] distance = RoomDistances(dungeon, layout);
@@ -46,8 +65,18 @@ internal static class DungeonObjectivePlacement
         }
         if (candidates.Count == 0)
             return false;
-        int farthest = candidates.Max(row => row.Distance);
-        var choices = candidates.Where(row => row.Distance == farthest).ToArray();
+        // The boss room is one lift past its floor's departure room, so a long wing on a lower floor can be more hops
+        // from the entrance; the objective still belongs on the boss floor.
+        (int Room, int Distance, System.Numerics.Vector3 Position)[] choices;
+        if (layout.BossRoomIndex is int bossRoom && candidates.Any(row => row.Room == bossRoom))
+            choices = candidates.Where(row => row.Room == bossRoom).ToArray();
+        else
+        {
+            if (layout.BossRoomIndex is int unreachable)
+                logger.Warn("Dungeon boss room " + unreachable + " has no reachable spawn point; objective falls back to the farthest room");
+            int farthest = candidates.Max(row => row.Distance);
+            choices = candidates.Where(row => row.Distance == farthest).ToArray();
+        }
         var selected = choices[new Random(unchecked(layout.Seed * 15485863)).Next(choices.Length)];
         roomIndex = selected.Room;
         position = new Vector3(selected.Position.X, selected.Position.Y, selected.Position.Z);

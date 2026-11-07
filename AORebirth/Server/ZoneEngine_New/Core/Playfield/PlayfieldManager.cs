@@ -22,9 +22,7 @@ namespace ZoneEngine_New.Core.Playfield
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Trade;
     using ZoneEngine_New.Core.Teams;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.WorldSimulation;
-    using ZoneEngine.Core.Missions;
     using AORebirth.Interfaces.Persistence.Missions;
     using AORebirth.Interfaces.Persistence.Shops;
 
@@ -79,7 +77,6 @@ namespace ZoneEngine_New.Core.Playfield
             CharacterSnapshotService characterSnapshot,
             IPlayfieldMetricsRegistry metricsRegistry,
             TeamService teams,
-            AuthoredQuestService authoredQuests,
             IItemTemplateCatalog itemTemplates,
             IShopDao shopDao,
             Quests.QuestService? quests = null,
@@ -131,7 +128,6 @@ namespace ZoneEngine_New.Core.Playfield
             _metricsRegistry = metricsRegistry;
             _shopDao = shopDao;
             Teams = teams ?? throw new ArgumentNullException(nameof(teams));
-            AuthoredQuests = authoredQuests ?? throw new ArgumentNullException(nameof(authoredQuests));
             ItemTemplates = itemTemplates ?? throw new ArgumentNullException(nameof(itemTemplates));
             Quests = quests;
             // A reload that gives a visible NPC a script, or takes it away, is told to its observers on each tick.
@@ -145,7 +141,6 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         public TeamService Teams { get; }
-        public AuthoredQuestService AuthoredQuests { get; }
 
         /// <summary>This instance's World link; null in tools and tests that run one isolated engine.</summary>
         public ZoneEngine_New.Core.World.WorldLink? World { get; }
@@ -393,11 +388,6 @@ namespace ZoneEngine_New.Core.Playfield
         private Playfield GetOrCreateCore(int playfieldId)
         {
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
-
-            // Retired mission world ids (the old SQL-leased instances) must never become ordinary empty RDB playfields.
-            if (playfieldId >= GeneratedMissionIdentitySpace.MinimumLivePlayfield2
-                && playfieldId <= GeneratedMissionIdentitySpace.MaximumLivePlayfield2)
-                throw new InvalidOperationException("A retired mission world id cannot become an ordinary playfield.");
 
             // A quest dungeon id must never become an ordinary empty playfield (login, teleport or a crafted route).
             if (ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(playfieldId))
@@ -662,7 +652,7 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.Quests.Dungeons.MissionItemObjectiveBinding? objectiveItem = null,
             Func<Player, MissionObjectiveItem, bool>? collectObjective = null,
             ZoneEngine_New.Core.Quests.Dungeons.MissionNpcObjectiveBinding? npcObjective = null,
-            ZoneEngine_New.Core.Quests.Dungeons.MissionTokenProgress? tokenProgress = null, bool spawnNpcObjective = true,
+            ZoneEngine_New.Core.Quests.Dungeons.DungeonKills? kills = null, bool spawnNpcObjective = true,
             ZoneEngine_New.Core.Quests.Dungeons.MissionChestPopulation? chestPopulation = null)
         {
             ArgumentNullException.ThrowIfNull(questId);
@@ -685,9 +675,10 @@ namespace ZoneEngine_New.Core.Playfield
             QuestDungeonPlayfield created = new(playfieldId, questId, layout, entrance, targetHash, quality, _logger.CreateForPlayfield(playfieldId),
                 _router, this, _playerHydrator, _gameData, _items, _hashItems, _inventoryRepository, _instanceIds,
                 _inventoryMoves, _inventoryFlush, _trades, _characterSnapshot, _metricsRegistry, _shopDao, objectiveItem, collectObjective, npcObjective,
-                tokenProgress, spawnNpcObjective, chestPopulation);
+                kills, spawnNpcObjective, chestPopulation);
             try
             {
+                ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.build", playfieldId);
                 created.Build();
                 lock (_sync)
                 {
@@ -817,8 +808,6 @@ namespace ZoneEngine_New.Core.Playfield
         {
             if (candidate is not QuestDungeonPlayfield dungeon || !string.Equals(dungeon.QuestId, questId, StringComparison.Ordinal))
                 throw new InvalidOperationException("Quest dungeon id is held by a different playfield.");
-            if (dungeon.TokenProgress?.RequiresReconstruction == true)
-                throw new InvalidOperationException("Quest dungeon requires reconstruction after an uncertain population update.");
             return dungeon;
         }
 

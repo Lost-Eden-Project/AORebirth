@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.NpcScripts;
 
 using System;
+using System.Collections.Generic;
 
 using AORebirth.Enums;
 
@@ -10,7 +11,11 @@ using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using ZoneEngine_New.Core.Ai;
 using ZoneEngine_New.Core.Chat;
 using ZoneEngine_New.Core.Entities;
+using ZoneEngine_New.Core.GameData;
+using ZoneEngine_New.Core.Helpers;
 using ZoneEngine_New.Core.Inventory;
+using ZoneEngine_New.Core.Mobs;
+using ZoneEngine_New.Core.Nanos;
 using ZoneEngine_New.Core.Playfield;
 
 using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
@@ -20,16 +25,28 @@ using Vector3 = AORebirth.Core.Vector.Vector3;
 /// One NPC's execution of a <see cref="NpcScriptProgram"/>. Advanced from <see cref="NpcCharacter.Tick"/>, so it
 /// only runs while the NPC's cell ticks; a waiting runner costs one compare per tick. Triggers arrive through
 /// <see cref="Raise"/> from the engine's existing hooks and start their handler on the next tick, never inside the
-/// hook. Everything runs on the playfield thread.
+/// hook. Everything runs on the playfield thread. An NPC may run more than one program: the first runner is its own
+/// binding's, the <see cref="Next"/> ones are feature overlays (<see cref="ScriptBindingTarget.Feature"/>); every
+/// entry point forwards along that chain.
 /// </summary>
 public sealed class NpcScriptRunner
 {
     /// <summary>Instant ops one tick may run before yielding, so a bad loop in data costs a bounded slice.</summary>
     public const int OpBudget = 32;
 
+    /// <summary>Live NPCs one runner may own at once (<see cref="ScriptOpCode.SpawnNpc"/>).</summary>
+    public const int MaxOwnedNpcs = 16;
+
+    /// <summary>SpawnNpc generations: a spawn point's NPC may spawn adds (depth 1) that spawn adds (depth 2), no further.</summary>
+    public const int MaxSpawnDepth = 2;
+
     const int ArrivePollMs = 250;
     const int BusyPollMs = 500;
+    const int CastPollMs = 250;
     const int SayMinIntervalMs = 1000;
+
+    /// <summary>Where a warped recipient lands: this far from the NPC's centre, on the side it came from.</summary>
+    const double FeetOffsetMeters = 1.5;
 
     readonly NpcScriptProgram _program;
     readonly ScriptArgs _args;
@@ -59,13 +76,22 @@ public sealed class NpcScriptRunner
     readonly long[]? _timerDueMs;
     readonly int[]? _vars;
     bool _budgetWarned;
+    bool _spawnWarned;
     bool _detached;
+
+    // SpawnNpc: the live NPCs this runner owns, for the cap and for despawning them with the owner.
+    List<NpcCharacter>? _owned;
+
+    // CastNano with Warp: the cast whose landing moves its recipient to the NPC's feet.
+    int _pendingWarpNano;
+    Identity _pendingWarpTarget;
 
     enum WaitKind : byte
     {
         None,
         Delay,
-        Arrive
+        Arrive,
+        Cast
     }
 
     public NpcScriptRunner(NpcScriptProgram program, ScriptArgs args, NpcCharacter npc)
@@ -100,8 +126,45 @@ public sealed class NpcScriptRunner
 
     public NpcScriptProgram Program => _program;
 
+    /// <summary>The next program this NPC runs (a feature overlay), or null.</summary>
+    public NpcScriptRunner? Next { get; private set; }
+
+    /// <summary>Links <paramref name="runner"/> after the last runner of this chain.</summary>
+    public void Append(NpcScriptRunner runner)
+    {
+        ArgumentNullException.ThrowIfNull(runner);
+        NpcScriptRunner last = this;
+        while (last.Next != null)
+            last = last.Next;
+        last.Next = runner;
+    }
+
+    /// <summary>True when any program in the chain has a handler for <paramref name="trigger"/>.</summary>
+    public bool Subscribes(NpcScriptTrigger trigger)
+    {
+        for (NpcScriptRunner? runner = this; runner != null; runner = runner.Next)
+        {
+            if (runner._program.Subscribes(trigger))
+                return true;
+        }
+
+        return false;
+    }
+
     // Diagnostics (debug MCP).
     public string? CurrentTrigger => _handler >= 0 ? _program.Handlers[_handler].Trigger.ToString() : null;
+
+    /// <summary>Program ids along the chain, comma separated.</summary>
+    public string ProgramIds
+    {
+        get
+        {
+            string ids = _program.Id;
+            for (NpcScriptRunner? overlay = Next; overlay != null; overlay = overlay.Next)
+                ids += ", " + overlay._program.Id;
+            return ids;
+        }
+    }
 
     public int ProgramCounter => _pc;
 
@@ -116,12 +179,25 @@ public sealed class NpcScriptRunner
     // ----------------------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// A trigger from a hook. One mask test when the program has no handler for it. The chosen handler starts on
-    /// the NPC's next tick.
+    /// A trigger from a hook, to every program in the chain. One mask test when a program has no handler for it. The
+    /// chosen handler starts on the NPC's next tick.
     /// </summary>
     public void Raise(NpcScriptTrigger trigger, int arg = 0)
     {
-        if (_detached || !_program.Subscribes(trigger))
+        for (NpcScriptRunner? runner = this; runner != null; runner = runner.Next)
+            runner.RaiseOwn(trigger, arg);
+    }
+
+    void RaiseOwn(NpcScriptTrigger trigger, int arg)
+    {
+        if (_detached)
+            return;
+
+        // The owner is gone for its adds whether or not a handler listens.
+        if (trigger is NpcScriptTrigger.Death or NpcScriptTrigger.Reset)
+            ReleaseOwned(Now());
+
+        if (!_program.Subscribes(trigger))
             return;
 
         long now = Now();
@@ -260,10 +336,21 @@ public sealed class NpcScriptRunner
         }
     }
 
-    /// <summary>The NPC left the world: drop the movement lease and go quiet.</summary>
+    /// <summary>The NPC left the world: drop the movement lease, let the adds go and go quiet, along the chain.</summary>
     public void OnDespawn()
     {
+        for (NpcScriptRunner? runner = this; runner != null; runner = runner.Next)
+            runner.OnDespawnOwn();
+    }
+
+    void OnDespawnOwn()
+    {
+        if (_detached)
+            return;
+
         _detached = true;
+        ReleaseOwned(Now());
+        ClearPendingWarp();
         _handler = -1;
         _suspendedHandler = -1;
         _waiting = WaitKind.None;
@@ -271,11 +358,33 @@ public sealed class NpcScriptRunner
         _npc.Brain?.ScriptReleaseMovement();
     }
 
+    /// <summary>
+    /// A nano the NPC cast has landed on <paramref name="recipient"/> (<see cref="NanoRuntime"/>). A CastNano that
+    /// asked for a warp moves the recipient to the NPC's feet now, after the buff is on it.
+    /// </summary>
+    public void OnCastLanded(int nanoId, Character recipient)
+    {
+        ArgumentNullException.ThrowIfNull(recipient);
+        for (NpcScriptRunner? runner = this; runner != null; runner = runner.Next)
+        {
+            if (runner._detached || runner._pendingWarpNano != nanoId || !runner._pendingWarpTarget.Equals(recipient.Identity))
+                continue;
+            runner.ClearPendingWarp();
+            runner.WarpToFeet(recipient);
+        }
+    }
+
     // ----------------------------------------------------------------------------------------------------------------
     // Tick
     // ----------------------------------------------------------------------------------------------------------------
 
     public void Tick(long nowMs)
+    {
+        for (NpcScriptRunner? runner = this; runner != null; runner = runner.Next)
+            runner.TickOwn(nowMs);
+    }
+
+    void TickOwn(long nowMs)
     {
         if (nowMs < _wakeAtMs || _detached)
             return;
@@ -297,6 +406,18 @@ public sealed class NpcScriptRunner
 
         if (_waiting == WaitKind.Arrive && !PollArrival(nowMs))
             return;
+
+        if (_waiting == WaitKind.Cast)
+        {
+            if (_npc.IsCastingNano && !_npc.IsDead)
+            {
+                _wakeAtMs = nowMs + CastPollMs;
+                return;
+            }
+
+            // The cast is over; a landing already warped, anything else (resisted, interrupted) warps nobody.
+            ClearPendingWarp();
+        }
 
         _waiting = WaitKind.None;
         Execute(nowMs);
@@ -414,6 +535,15 @@ public sealed class NpcScriptRunner
 
                 case ScriptOpCode.Gfx:
                     DoGfx(op);
+                    break;
+
+                case ScriptOpCode.SpawnNpc:
+                    DoSpawnNpc(op, now);
+                    break;
+
+                case ScriptOpCode.CastNano:
+                    if (BeginCast(op, now))
+                        return;
                     break;
 
                 case ScriptOpCode.Despawn:
@@ -729,6 +859,283 @@ public sealed class NpcScriptRunner
     }
 
     static MsgVector3 ToMsg(Vector3 v) => new((float)v.x, (float)v.y, (float)v.z);
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // SpawnNpc
+    // ----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Spawns the op's NPCs around the centre (the NPC's position, an offset in its frame, or a world position): one,
+    /// or Count of them evenly on a circle of Radius. Each is owned by this runner: capped at
+    /// <see cref="MaxOwnedNpcs"/> live, given the spec's lifetime, and despawned after the owner's death, reset or
+    /// despawn unless the spec leaves it independent. With JoinFight the add starts on the owner's current target.
+    /// </summary>
+    void DoSpawnNpc(ScriptOp op, long now)
+    {
+        Playfield? playfield = _npc.Playfield;
+        if (playfield == null || _npc.IsDead)
+            return;
+
+        if (_npc.ScriptSpawnDepth >= MaxSpawnDepth)
+        {
+            WarnSpawnOnce("is " + MaxSpawnDepth + " SpawnNpc generations deep; its SpawnNpc is ignored");
+            return;
+        }
+
+        string? hash = StringValue(op.A);
+        if (string.IsNullOrEmpty(hash) || op.C < 0 || op.C >= _program.Spawns.Length)
+            return;
+
+        SpawnNpcSpec spec = _program.Spawns[op.C];
+        PruneOwned();
+        int wanted = Math.Min(spec.Count, MaxOwnedNpcs - (_owned?.Count ?? 0));
+        if (wanted <= 0)
+        {
+            WarnSpawnOnce("owns " + MaxOwnedNpcs + " live NPCs; its SpawnNpc is ignored until some die");
+            return;
+        }
+
+        SpawnService? spawns = playfield.GetService<SpawnService>();
+        int? level = spec.Level > 0 ? spec.Level : null;
+        if (spawns == null
+            || !playfield.GetRequiredService<IGameData>().TryResolveMobTemplate(hash, level, out MobTemplate template)
+            || !NpcTemplateValidation.CanSpawn(template))
+            return;
+
+        Vector3 centre = _npc.Position;
+        if (VectorValue(op.B) is Vector3 vector)
+        {
+            if (spec.Absolute)
+            {
+                centre = vector;
+            }
+            else
+            {
+                var turned = (Vector3)_npc.Rotation.RotateVector3(vector);
+                centre = new Vector3(centre.x + turned.x, centre.y + turned.y, centre.z + turned.z);
+            }
+        }
+
+        Character? enemy = spec.JoinFight ? _npc.Brain?.ResolveCurrentTarget() : null;
+        // A random start angle, so two circles from the same op do not stack their adds on the same spots.
+        double phase = NextInt(0, 359) * Math.PI / 180.0;
+        for (int i = 0; i < wanted; i++)
+        {
+            Vector3 at = centre;
+            if (spec.Count > 1)
+            {
+                double angle = phase + (Math.PI * 2.0 * i / spec.Count);
+                at = new Vector3(centre.x + (spec.Radius * Math.Cos(angle)), centre.y, centre.z + (spec.Radius * Math.Sin(angle)));
+            }
+
+            NpcCharacter add;
+            try
+            {
+                add = spawns.SpawnMob(template, at, _npc.Rotation, level, SpawnSource.Script, spawnHash: hash);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+            {
+                WarnSpawnOnce("cannot spawn '" + hash + "': " + exception.Message);
+                return;
+            }
+
+            add.ScriptOwner = _npc;
+            add.ScriptSpawnDepth = _npc.ScriptSpawnDepth + 1;
+            if (spec.LifetimeSeconds > 0)
+                add.DespawnAtMs = now + (spec.LifetimeSeconds * 1000L);
+            if (spec.OwnerDespawnDelaySeconds >= 0)
+            {
+                add.OwnerDespawnDelayMs = spec.OwnerDespawnDelaySeconds * 1000;
+                (_owned ??= new List<NpcCharacter>()).Add(add);
+            }
+
+            if (enemy != null)
+                add.Brain?.AddThreat(enemy.Identity, NpcAiRules.ProximityHate);
+        }
+    }
+
+    /// <summary>Drops owned NPCs that have died or left the world.</summary>
+    void PruneOwned()
+    {
+        if (_owned == null)
+            return;
+        for (int i = _owned.Count - 1; i >= 0; i--)
+        {
+            NpcCharacter owned = _owned[i];
+            if (owned.IsDead || owned.Playfield == null)
+                _owned.RemoveAt(i);
+        }
+    }
+
+    /// <summary>The owner died, reset or despawned: each live add despawns after its own delay (0 = next tick).</summary>
+    void ReleaseOwned(long now)
+    {
+        if (_owned == null || _owned.Count == 0)
+            return;
+        for (int i = 0; i < _owned.Count; i++)
+        {
+            NpcCharacter owned = _owned[i];
+            if (owned.IsDead || owned.Playfield == null || owned.OwnerDespawnDelayMs < 0)
+                continue;
+            long at = now + owned.OwnerDespawnDelayMs;
+            if (owned.DespawnAtMs == 0 || at < owned.DespawnAtMs)
+                owned.DespawnAtMs = at;
+        }
+
+        _owned.Clear();
+    }
+
+    void WarnSpawnOnce(string what)
+    {
+        if (_spawnWarned)
+            return;
+        _spawnWarned = true;
+        _npc.Playfield?.GetService<Logging.IZoneLogger>()?.Warn(
+            "NpcScripts: program '" + _program.Id + "' on " + _npc.Name + " " + what);
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // CastNano
+    // ----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Starts the op's cast through <see cref="NanoRuntime.TryStartCast"/> (requirements, cost, recharge and target
+    /// legality as for any caster). True when the op blocks for the cast bar; false when nothing was started, or the
+    /// nano was instant and has already resolved, so ops go on.
+    /// </summary>
+    bool BeginCast(ScriptOp op, long now)
+    {
+        if (_npc.IsDead || _npc.Playfield == null)
+            return false;
+
+        int nanoId = IntValue(op.A);
+        Character? recipient = PickTarget((NpcScriptTarget)op.B, op.C);
+        if (nanoId <= 0 || recipient == null)
+            return false;
+
+        // Armed before the cast: an instant nano lands inside TryStartCast and warps from there.
+        if ((op.D & NpcScriptCompiler.CastWarpToSelf) != 0)
+        {
+            _pendingWarpNano = nanoId;
+            _pendingWarpTarget = recipient.Identity;
+        }
+
+        NanoCastRefusal refusal = NanoRuntime.TryStartCast(_npc, nanoId, recipient.Identity, DateTime.UtcNow);
+        if (refusal != NanoCastRefusal.None)
+        {
+            ClearPendingWarp();
+            Utility.LogUtil.Debug(
+                Utility.DebugInfoDetail.Engine,
+                "NpcScripts: program '" + _program.Id + "' on " + _npc.Name + " could not cast " + nanoId + ": " + refusal);
+            return false;
+        }
+
+        if (!_npc.IsCastingNano)
+        {
+            ClearPendingWarp();
+            return false;
+        }
+
+        _waiting = WaitKind.Cast;
+        _wakeAtMs = now + CastPollMs;
+        return true;
+    }
+
+    Character? PickTarget(NpcScriptTarget picker, int minDistance)
+    {
+        switch (picker)
+        {
+            case NpcScriptTarget.Self:
+                return _npc;
+            case NpcScriptTarget.Target:
+                return _npc.Brain?.ResolveCurrentTarget();
+            default:
+                return PickRandomHostile(minDistance);
+        }
+    }
+
+    /// <summary>
+    /// A random player on the hate list that the NPC may attack, at least <paramref name="minDistance"/> metres
+    /// away (edge to edge). Reservoir pick over the list, no allocation. Pets and other NPCs are never picked.
+    /// </summary>
+    Character? PickRandomHostile(int minDistance)
+    {
+        NpcBrain? brain = _npc.Brain;
+        Playfield? playfield = _npc.Playfield;
+        if (brain == null || playfield == null || brain.Hate.IsEmpty)
+            return null;
+
+        DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
+        Character? chosen = null;
+        int eligible = 0;
+        foreach (HateEntry entry in brain.Hate.Entries)
+        {
+            if (!registry.TryGet(entry.Identity, out Dynel? dynel) || dynel is not Player player || player.IsDead)
+                continue;
+            if (!ReferenceEquals(player.Playfield, playfield) || !CombatRules.CanAttack(_npc, player))
+                continue;
+            if (minDistance > 0 && _npc.GetEdgeDistanceTo(player) < minDistance)
+                continue;
+
+            eligible++;
+            if (NextInt(0, eligible - 1) == 0)
+                chosen = player;
+        }
+
+        return chosen;
+    }
+
+    void ClearPendingWarp()
+    {
+        _pendingWarpNano = 0;
+        _pendingWarpTarget = Identity.None;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="recipient"/> to the NPC's feet: <see cref="FeetOffsetMeters"/> from its centre on the side
+    /// the recipient came from (ahead of the NPC when they overlap). A player goes as a lift lands it
+    /// (<see cref="Player.TeleportWithinPlayfield"/>) and its living pets are set down with it, as the Abmouth capture
+    /// of 2026-07-20 shows (N3Teleport for the player, SetPos for both pets); an NPC recipient is warped on the floor.
+    /// </summary>
+    void WarpToFeet(Character recipient)
+    {
+        Playfield? playfield = _npc.Playfield;
+        if (playfield == null || _npc.IsDead || recipient.IsDead || ReferenceEquals(recipient, _npc)
+            || !ReferenceEquals(recipient.Playfield, playfield))
+            return;
+
+        Vector3 at = _npc.Position;
+        Vector3 from = recipient.Position;
+        double dx = from.x - at.x;
+        double dz = from.z - at.z;
+        double length = Math.Sqrt((dx * dx) + (dz * dz));
+        Vector3 landing;
+        if (length > 0.01)
+        {
+            landing = new Vector3(at.x + (dx / length * FeetOffsetMeters), at.y, at.z + (dz / length * FeetOffsetMeters));
+        }
+        else
+        {
+            var ahead = (Vector3)_npc.Rotation.RotateVector3(new Vector3(0, 0, FeetOffsetMeters));
+            landing = new Vector3(at.x + ahead.x, at.y, at.z + ahead.z);
+        }
+
+        switch (recipient)
+        {
+            case Player player:
+                player.TeleportWithinPlayfield(landing);
+                foreach (NpcCharacter pet in player.OwnedPets.All)
+                {
+                    if (!pet.IsDead && ReferenceEquals(pet.Playfield, playfield))
+                        pet.Brain?.WarpTo(landing);
+                }
+
+                break;
+            case NpcCharacter npc:
+                npc.Brain?.WarpTo(landing);
+                break;
+        }
+    }
 
     // ----------------------------------------------------------------------------------------------------------------
     // Random

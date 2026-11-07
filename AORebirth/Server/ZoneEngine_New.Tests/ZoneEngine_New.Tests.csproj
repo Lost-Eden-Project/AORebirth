@@ -29,8 +29,6 @@
     <Compile Include="../../../Tests/Fixtures/Gameplay/Combat/*.cs" Link="Fixtures/Combat/%(Filename)%(Extension)" />
     <Compile Include="../../../Tests/Fixtures/Gameplay/Playfields/CapturedEnemyCombatProfileCatalog.g.cs" Link="Fixtures/CapturedEnemyCombatProfileCatalog.g.cs" />
     <Compile Include="../../../Tests/Fixtures/Gameplay/Packets/MorphCaptureWireCatalog.cs" Link="Fixtures/MorphCaptureWireCatalog.cs" />
-    <Compile Include="../../../Tests/Fixtures/Gameplay/Doja/DojaChipInteractionRules.cs" Link="Fixtures/DojaChipInteractionRules.cs" />
-    <Compile Include="../../../Tests/Fixtures/Gameplay/Doja/DojaChipPacketSender.Data.cs" Link="Fixtures/DojaChipPacketSender.Data.cs" />
     <Compile Include="../../../Tests/Fixtures/Gameplay/Playfields/CapturedSubwayVendorContentProvider.cs" Link="Fixtures/CapturedSubwayVendorContentProvider.cs" />
     <Compile Include="../../../Tests/Fixtures/Gameplay/Playfields/CapturedBucketheadTechnodealerContentProvider.cs" Link="Fixtures/CapturedBucketheadTechnodealerContentProvider.cs" />
     <Compile Include="../../../Tests/Fixtures/Gameplay/Playfields/CapturedThrakGardenVendorContentProvider.cs" Link="Fixtures/CapturedThrakGardenVendorContentProvider.cs" />
@@ -75,7 +73,6 @@
     <Compile Include="TestDoubles.cs" />
     <Compile Include="MissionDestinationIntegrationTests.cs" />
     <Compile Include="QuestDungeonDestinationTests.cs" />
-    <Compile Include="FindItemRewardTests.cs" />
     <Compile Include="ProceduralDungeonFoundationTests.cs" />
     <Compile Include="../../Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging.Tests/MissionLevelGraphTests.cs" Link="Missions/MissionLevelGraphTests.cs" />
   </ItemGroup>
@@ -145,19 +142,12 @@
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />
     <Compile Include="InventoryActionTests.cs" />
-    <Compile Include="MissionChestLootTests.cs" />
-    <Compile Include="MissionChestRKPolicyTests.cs" />
-    <Compile Include="ChestCommandTests.cs" />
-    <Compile Include="MissionChestPlacementTests.cs" />
     <Compile Include="MissionChestPersistenceTests.cs" />
     <Compile Include="MissionChestProtocolTests.cs" />
-    <Compile Include="MissionChestPopulationTests.cs" />
-    <Compile Include="MissionChestObjectiveIntegrationTests.cs" />
     <Compile Include="AuthoredMissionTestDao.cs" />
     <Compile Include="PlayerInventoryOverflowTests.cs" />
     <Compile Include="ReconnectVisibilityTests.cs" />
     <Compile Include="ExactSpawnVisibilityTests.cs" />
-    <Compile Include="FindItemRewardTests.cs" />
     <Compile Include="QuestDungeonDestinationTests.cs" />
     <Compile Include="ProceduralDungeonFoundationTests.cs" />
     <Compile Include="MissionDestinationIntegrationTests.cs" />

@@ -118,6 +118,14 @@ namespace ZoneEngine_New.Core.Quests
                     template.Reward.Records = null;
                 }
 
+                // A dungeon quest with bad inputs still loads; giving it is refused with this reason.
+                if (template.Dungeon?.Problem(template.Action) is string dungeonProblem)
+                {
+                    template.LoadProblem = dungeonProblem;
+                    warnings.Add("Quest " + template.Hash + ": " + dungeonProblem);
+                    logger.Warn(string.Format(CultureInfo.InvariantCulture, "Quest {0}: {1}", template.Hash, dungeonProblem));
+                }
+
                 // A hash that does not resolve keeps the quest (its chain still runs); the item is left out when it
                 // would be given, and the problem shows in the log and in .quests info.
                 if (UnresolvedItem(template) is string unresolved)

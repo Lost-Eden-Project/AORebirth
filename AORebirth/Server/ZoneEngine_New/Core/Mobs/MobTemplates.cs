@@ -14,6 +14,21 @@ namespace ZoneEngine_New.Core.Mobs
         public int Chance { get; set; }
 
         public int LevelMod { get; set; }
+
+        /// <summary>A row a loot roll can use: a hash, at least one repeat, a chance from 1 to 100 and no negative level window.</summary>
+        public static bool IsWellFormed(MobItemTableEntry? entry)
+            => entry != null && !string.IsNullOrWhiteSpace(entry.Hash) && entry.Repeats > 0
+                && entry.Chance is > 0 and <= 100 && entry.LevelMod >= 0;
+
+        public static List<MobItemTableEntry> Clone(IEnumerable<MobItemTableEntry>? source)
+        {
+            var copy = new List<MobItemTableEntry>();
+            if (source == null)
+                return copy;
+            foreach (MobItemTableEntry entry in source)
+                copy.Add(new MobItemTableEntry { Hash = entry.Hash, Repeats = entry.Repeats, Chance = entry.Chance, LevelMod = entry.LevelMod });
+            return copy;
+        }
     }
 
     /// <summary>

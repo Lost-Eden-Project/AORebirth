@@ -999,8 +999,7 @@ namespace ZoneEngine_New.Core.Inventory
             bool samePlayfield = playfieldId == 0 || playfieldId == source.Identity.Instance;
             if (!samePlayfield)
             {
-                if (playfieldId < 0
-                    || playfieldId >= ZoneEngine.Core.Missions.GeneratedMissionIdentitySpace.MinimumLivePlayfield2)
+                if (playfieldId < 0)
                     return false;
 
                 IGameData gameData = source.GetRequiredService<IGameData>();
@@ -1046,8 +1045,7 @@ namespace ZoneEngine_New.Core.Inventory
             int playfieldId = destination.PlayfieldId == 0
                 ? source.Identity.Instance
                 : destination.PlayfieldId;
-            if (playfieldId <= 0
-                || playfieldId >= ZoneEngine.Core.Missions.GeneratedMissionIdentitySpace.MinimumLivePlayfield2)
+            if (playfieldId <= 0)
                 return false;
 
             IGameData gameData = source.GetRequiredService<IGameData>();

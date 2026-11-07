@@ -156,7 +156,6 @@ public sealed class MissionChestProtocolTests
         var registry = new DynelRegistry();
         using ServiceProvider services = new ServiceCollection().AddSingleton(registry)
             .AddSingleton(new PlayfieldLocality(4582, null))
-            .AddSingleton((QuestPropService)RuntimeHelpers.GetUninitializedObject(typeof(QuestPropService)))
             .BuildServiceProvider();
         typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(world.Player.Playfield, services);
@@ -174,8 +173,7 @@ public sealed class MissionChestProtocolTests
         registry.Register(chest);
         request.Identity = request.User = world.Player.Identity;
         contents.Identity = success.Identity = success.User = world.Player.Identity;
-        var handler = new GenericCmdMessageHandler(new StubInventoryRepository(), new StubItemBuilder(),
-            (AuthoredQuestService)RuntimeHelpers.GetUninitializedObject(typeof(AuthoredQuestService)));
+        var handler = new GenericCmdMessageHandler(new StubInventoryRepository(), new StubItemBuilder());
 
         handler.Handle(request, world.Session);
 

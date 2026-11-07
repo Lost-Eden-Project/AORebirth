@@ -1,0 +1,44 @@
+Version = 58
+Flags = IsNpc, UnknownFlag, UnknownFlag6, HasPlayfieldId, HasHeadMesh, HasHeading, HasSmallHealth, HasSmallHealthDamage, HasSmallNpcFamily, HasSmallNpcLosHeight, UnknownDataFlag (0x20A4ACB)
+PlayfieldId = 2152861
+FightingTarget = null
+Coordinates = {X=98.97159 Y=73.01481 Z=112.27634}
+Heading = {X=0 Y=-0.5757349 Z=0 W=0.81763643}
+Appearance = {Value=1643 Breed=Nanomage Fatness=Normal Gender=Male Race=1 Side=Monster}
+Name = Fragmented Soul
+CharacterFlags = 268964353 (0x10081201)
+AccountFlags = 0
+Expansions = 0
+CharacterInfo = {Family=148 LosHeight=0 UnknownData=0 UnknownData2=0 UnknownData3=0}
+Level = 19
+Health = 421
+HealthDamage = 0
+MonsterData = 203729
+MonsterScale = 98
+VisualFlags = 31
+VisibleTitle = 0
+Unknown1 = 80000000000000000000000003010001000100010001000000030000
+MovementStatus = {}
+HeadMesh = 29706
+RunSpeedBase = 66
+AdditionalFlags = None (0x0)
+SuppressedFlags = None (0x0)
+TextureOverrides = []
+RawBody = 271B3A6B0000C3507B00D927003A020A4ACB0020D99D42C5F1744292079542E08D7C00000000BF13635D000000003F51509F0000066B10467261676D656E74656420536F756C00100812010000000094000000001301A50000031BD10062001F000000001C800000000000000000000000030100010001000100010000000300000000740A4200000BD30000CF1B0001D9F8000000000000465000002A860000CF1B000174D7000000000015F90000155032000017A600000000000024BA0000000000000001000024BC0000000000000002000024BF0000000000000003000024BD0000000000000004000024B90000000000000BD3000000740A00000000040100001E9A00000000020000000000
+TailFullyDecoded = True
+UndecodedTail = 
+Waypoints = []
+ActiveNanos = [{NanoIdentity=NanoProgram:121336 NanoInstance=0 Time1=18000 Time2=10886}, {NanoIdentity=NanoProgram:95447 NanoInstance=0 Time1=1440000 Time2=1396786}]
+Textures = [{Place=0 Id=9402 Unknown=0}, {Place=1 Id=9404 Unknown=0}, {Place=2 Id=9407 Unknown=0}, {Place=3 Id=9405 Unknown=0}, {Place=4 Id=9401 Unknown=0}]
+Meshes = [{Position=0 OverrideTextureId=0 Id=29706 Layer=4}, {Position=1 OverrideTextureId=0 Id=7834 Layer=2}]
+Flags2 = 0
+OwnerInstance = null
+Unknown2 = 0
+Unknown4 = 0
+ScfuTowerUnk = 0
+IsImmunePadding = 0
+UnknownFlag3Padding = 0
+N3MessageType = SimpleCharFullUpdate (0x271B3A6B)
+Identity = {Type=CanbeAffected Instance=2063653159}
+Unknown = 0
+PacketType = N3Message (0xA)

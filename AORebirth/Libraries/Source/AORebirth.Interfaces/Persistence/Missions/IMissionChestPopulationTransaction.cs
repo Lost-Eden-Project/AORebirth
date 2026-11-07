@@ -7,7 +7,10 @@ namespace AORebirth.Interfaces.Persistence.Missions
     /// <summary>Optional capability of the existing owner-locked mission transaction; never commits independently.</summary>
     public interface IMissionChestPopulationTransaction
     {
-        /// <summary>False means an earlier population committed. Reload its flags and current container rows; never reroll it.</summary>
+        /// <summary>
+        /// Stores a mission run's chests: their item rows and one flag listing the container identities in placement
+        /// order. False means an earlier population committed for this run; read its flag and rows and never reroll.
+        /// </summary>
         bool TryInitializeChestPopulation(MissionChestPopulationRequest request);
     }
 
@@ -15,7 +18,6 @@ namespace AORebirth.Interfaces.Persistence.Missions
     {
         public string QuestId { get; set; }
         public long AssignedAtUtcTicks { get; set; }
-        public string ExpectedAcgBuildingGeneratorJson { get; set; }
         public long NowUtcTicks { get; set; }
         public IReadOnlyList<MissionChestInitialData> Chests { get; set; }
     }
@@ -23,26 +25,19 @@ namespace AORebirth.Interfaces.Persistence.Missions
     public sealed class MissionChestInitialData
     {
         public int ContainerInstance { get; set; }
-        /// <summary>Frozen placement/appearance metadata. Existing mission flags permit at most 1024 characters per chest.</summary>
-        public string SnapshotJson { get; set; }
         public IReadOnlyList<MissionItemInstanceData> Items { get; set; }
     }
 
     public static class MissionChestPopulationFlags
     {
-        public static string Prefix(long assignedAtUtcTicks)
+        /// <summary>Most items one chest may hold; the chest dynel's loot capacity.</summary>
+        public const int MaxItemsPerChest = 20;
+
+        /// <summary>The flag whose value is the run's chest container identities, comma separated, in placement order.</summary>
+        public static string Key(long assignedAtUtcTicks)
         {
             if (assignedAtUtcTicks <= 0) throw new ArgumentOutOfRangeException(nameof(assignedAtUtcTicks));
-            return "mission-chest:1:" + assignedAtUtcTicks.ToString(CultureInfo.InvariantCulture) + ":";
-        }
-
-        /// <summary>The seal value is the invariant decimal chest count; zero also seals an intentionally empty population.</summary>
-        public static string Seal(long assignedAtUtcTicks) => Prefix(assignedAtUtcTicks) + "sealed";
-
-        public static string Chest(long assignedAtUtcTicks, int index)
-        {
-            if (index < 0) throw new ArgumentOutOfRangeException(nameof(index));
-            return Prefix(assignedAtUtcTicks) + "chest:" + index.ToString(CultureInfo.InvariantCulture);
+            return "chests:" + assignedAtUtcTicks.ToString(CultureInfo.InvariantCulture);
         }
     }
 }

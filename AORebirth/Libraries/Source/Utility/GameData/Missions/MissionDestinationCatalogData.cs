@@ -39,28 +39,4 @@ namespace Utility.GameData.Missions
         [DataMember(IsRequired = true)] public int WorldOffsetX { get; set; }
         [DataMember(IsRequired = true)] public int WorldOffsetZ { get; set; }
     }
-
-    [DataContract]
-    internal sealed class MissionDestinationData
-    {
-        [DataMember(IsRequired = true)] public int SchemaVersion { get; set; }
-        [DataMember(IsRequired = true)] public string CatalogKind { get; set; }
-        [DataMember] public bool AllowNearestTerminalQlFallback { get; set; }
-        [DataMember(IsRequired = true)] public MissionDestinationPoolData[] Pools { get; set; }
-    }
-
-    [DataContract]
-    internal sealed class MissionDestinationPoolData
-    {
-        [DataMember(IsRequired = true)] public int TerminalPlayfieldId { get; set; }
-        [DataMember(IsRequired = true)] public int ExpectedMissionQl { get; set; }
-        [DataMember(IsRequired = true)] public MissionIdentityData[] DestinationIdentities { get; set; }
-    }
-
-    [DataContract]
-    internal sealed class MissionIdentityData
-    {
-        [DataMember(IsRequired = true)] public uint IdentityType { get; set; }
-        [DataMember(IsRequired = true)] public uint IdentityInstance { get; set; }
-    }
 }

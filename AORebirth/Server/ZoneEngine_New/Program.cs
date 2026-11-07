@@ -27,7 +27,6 @@ namespace ZoneEngine_New
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.MessageHandlers;
     using ZoneEngine_New.Core.Metrics;
-    using ZoneEngine_New.Core.Missions;
     using ZoneEngine_New.Core.Mobs;
     using ZoneEngine_New.Core.Nanos;
     using ZoneEngine_New.Core.Network;
@@ -341,10 +340,6 @@ namespace ZoneEngine_New
                 catch { connection.Dispose(); throw; }
             }));
             services.AddSingleton<IMissionDao>(provider => provider.GetRequiredService<MySqlMissionDao>());
-            services.AddSingleton<IGeneratedMissionDao>(provider => provider.GetRequiredService<MySqlMissionDao>());
-            services.AddSingleton<GeneratedMissionService>();
-            services.AddSingleton(_ => AuthoredQuestCatalog.Load(Path.Combine(AppContext.BaseDirectory, "Content")));
-            services.AddSingleton<AuthoredQuestService>();
             services.AddSingleton<InventoryMoveService>();
             services.AddSingleton<ITradePersistence, MySqlTradePersistence>();
             services.AddSingleton<TradeService>();
@@ -399,7 +394,6 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Commands.Setups.GiveSetupService>();
             services.AddSingleton<IGmCommand, GiveCommand>();
             services.AddSingleton<IGmCommand, NpcCommand>();
-            services.AddSingleton<IGmCommand, ChestCommand>();
             services.AddSingleton<IGmCommand, ServerStatsCommand>();
             services.AddSingleton<IGmCommand, QuestsCommand>();
             services.AddSingleton<IGmCommand, DiagCommand>();
@@ -444,7 +438,6 @@ namespace ZoneEngine_New
             AddMessageHandler<OrgClientMessageHandler>(services);
             AddMessageHandler<TeamChatMessageHandler>(services);
             AddMessageHandler<QuestAlternativeMessageHandler>(services);
-            AddMessageHandler<CreateQuestMessageHandler>(services);
             AddMessageHandler<QuestMessageHandler>(services);
             AddMessageHandler<PetCommandMessageHandler>(services);
             AddMessageHandler<TextMessageHandler>(services);

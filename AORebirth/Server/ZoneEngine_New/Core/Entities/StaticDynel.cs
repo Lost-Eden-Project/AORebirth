@@ -109,13 +109,16 @@ namespace ZoneEngine_New.Core.Entities
             MsgVector3 coordinate = Position;
             MsgQuaternion heading = Rotation;
 
+            // A world static has no owner. The owner fields must be 0:0: the codec writes Coordinate/Heading only for
+            // an ownerless item, and the client has no Dynels.dat position for a runtime instance (retail
+            // capture_mangohip_lifts, lift platform/button SimpleItemFullUpdate).
             var message = new SimpleItemFullUpdateMessage
             {
                 Identity = Identity,
                 Unknown = 0,
                 MsgVersion = SimpleItemFullUpdateMsgVersion,
-                Identitytype = (int)Identity.Type,
-                Instance = Identity.Instance,
+                Identitytype = 0,
+                Instance = 0,
                 Coordinate = coordinate,
                 Heading = heading,
                 Playfield = Playfield != null ? Playfield.ClientPlayfieldId : 0,

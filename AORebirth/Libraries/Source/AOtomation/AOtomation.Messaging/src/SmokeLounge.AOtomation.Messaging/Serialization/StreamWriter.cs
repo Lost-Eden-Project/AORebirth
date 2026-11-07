@@ -107,7 +107,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization
         {
             var bytes = new byte[padToLength ?? str.Length];
             var length = str.Length > bytes.Length ? bytes.Length : str.Length;
-            Encoding.ASCII.GetBytes(str, 0, length, bytes, 0);
+            Encoding.Latin1.GetBytes(str, 0, length, bytes, 0);
             this.writer.Write(bytes);
         }
 

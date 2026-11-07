@@ -22,6 +22,7 @@ namespace WorldEngine.Teams
     {
         const int FirstTeamId = 0x02800000;
         const int RaidTeamIdentityCount = 6;
+        const int RaidGroupSize = 6;
         static readonly TimeSpan DeclineCooldown = TimeSpan.FromSeconds(30);
         static readonly TimeSpan InvitationLifetime = TimeSpan.FromMinutes(2);
 
@@ -277,6 +278,13 @@ namespace WorldEngine.Teams
                     _invitations[id] = _invitations[id] with { TeamId = team.Id };
             }
 
+            if (team.IsRaid)
+            {
+                // A joiner lands in the raid group it has room in, not in group zero regardless.
+                int group = FirstRaidGroupWithRoom(team);
+                if (group < 0) return Refused("The raid is full.");
+                team.RaidTeamIndex[inviteeId] = group;
+            }
             team.Members.Add(inviteeId);
             _membership[inviteeId] = team;
             // Any outstanding invite sent/received under pre-join ownership is now stale.
@@ -343,6 +351,25 @@ namespace WorldEngine.Teams
             team.RaidTeamIndex[targetId] = raidTeam;
             Publish(team, new TeamUpdate());
             return Ok();
+        }
+
+        /// <summary>
+        /// The first raid group with room for a joiner (groups fill in order), or -1 when all six are full. A member
+        /// without an index sits in group zero, as the zone lists it.
+        /// </summary>
+        static int FirstRaidGroupWithRoom(Team team)
+        {
+            Span<int> counts = stackalloc int[RaidTeamIdentityCount];
+            foreach (int id in team.Members)
+            {
+                int index = team.RaidTeamIndex.GetValueOrDefault(id, -1);
+                counts[index >= 0 && index < RaidTeamIdentityCount ? index : 0]++;
+            }
+            for (int i = 0; i < counts.Length; i++)
+            {
+                if (counts[i] < RaidGroupSize) return i;
+            }
+            return -1;
         }
 
         /// <summary>The member arrived on another instance: that instance mirrors its team now.</summary>

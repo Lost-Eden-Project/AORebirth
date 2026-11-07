@@ -393,6 +393,12 @@ namespace Utility
 #endif
         }
 
+        /// <summary>Size at which an engine log file is rolled over to an archive.</summary>
+        public const long LogFileArchiveAboveBytes = 50L * 1024 * 1024;
+
+        /// <summary>Archived log files kept per engine log; older archives are deleted on rollover.</summary>
+        public const int LogFileMaxArchiveFiles = 5;
+
         /// <summary>
         /// </summary>
         /// <param name="fileName">
@@ -404,6 +410,11 @@ namespace Utility
             LoggingConfiguration config = LogManager.Configuration ?? new LoggingConfiguration();
             var fileTarget = new FileTarget();
             fileTarget.FileName = fileName;
+            // Trace-level engine logs grow without bound otherwise (a zone log reached 8.7 GB).
+            // Roll the file once it passes the size limit and keep only the newest archives, so each
+            // engine's log footprint stays under (MaxArchiveFiles + 1) * LogFileArchiveAboveBytes.
+            fileTarget.ArchiveAboveSize = LogFileArchiveAboveBytes;
+            fileTarget.MaxArchiveFiles = LogFileMaxArchiveFiles;
             config.AddTarget("logfile", fileTarget);
             config.LoggingRules.Add(new LoggingRule("*", logLevel, fileTarget));
             LogManager.Configuration = config;

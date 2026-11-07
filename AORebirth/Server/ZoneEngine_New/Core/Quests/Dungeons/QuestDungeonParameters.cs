@@ -25,8 +25,23 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public MissionNpcObjectiveBinding? ObjectiveNpc { get; set; }
 
-        /// <summary>Absent on missions accepted before token rewards were enabled.</summary>
+        /// <summary>Absent on missions accepted before token rewards were enabled, and on quests that pay none.</summary>
         public MissionTokenRewardPolicy? TokenReward { get; set; }
+
+        /// <summary>
+        /// A Quests.json dungeon quest's ordinary population (its Dungeon.Npcs that resolved when it was given), frozen so
+        /// the dungeon rebuilds the same; empty when none resolved. Null: DungeonGeneration.json's population.
+        /// </summary>
+        public string[]? PopulationNpcHashes { get; set; }
+
+        /// <summary>The ordinary population's level spread around <see cref="Quality"/>, in percent (a quest's Dungeon.MobLevelPercent); 0: none.</summary>
+        public int PopulationLevelSpreadPercent { get; set; }
+
+        /// <summary>The chests' item table (a quest's Dungeon.ChestLoot, else the generation policy's LootTable), frozen at acceptance. Null or empty: no chests.</summary>
+        public System.Collections.Generic.List<Mobs.MobItemTableEntry>? ChestLoot { get; set; }
+
+        /// <summary>Rows every dungeon NPC's corpse rolls besides its own table (a quest's Dungeon.MobLoot), frozen at acceptance.</summary>
+        public System.Collections.Generic.List<Mobs.MobItemTableEntry>? MobLoot { get; set; }
 
         public int OriginTerminalType { get; set; }
         public int OriginTerminalInstance { get; set; }
@@ -93,6 +108,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     || (parsed.ObjectiveTool != null && (!parsed.ObjectiveTool.IsValid || !parsed.ObjectiveTool.IsSourceItem))
                     || (parsed.ObjectiveNpc != null && !parsed.ObjectiveNpc.IsValid)
                     || (parsed.TokenReward != null && !parsed.TokenReward.IsValid)
+                    || (parsed.PopulationNpcHashes != null && System.Array.Exists(parsed.PopulationNpcHashes, string.IsNullOrWhiteSpace))
+                    || parsed.PopulationLevelSpreadPercent is < 0 or > QuestDungeonTemplate.MaxSpreadPercent
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
                     || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
                     || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType)

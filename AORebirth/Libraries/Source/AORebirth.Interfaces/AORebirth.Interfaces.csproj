@@ -73,7 +73,7 @@
     <Compile Include="Persistence\Accounts\NewGameAccountData.cs" />
     <Compile Include="Persistence\Accounts\GameAccountLookupResult.cs" />
     <Compile Include="Persistence\Missions\IMissionDao.cs" />
-    <Compile Include="Persistence\Missions\IGeneratedMissionDao.cs" />
+    <Compile Include="Persistence\Missions\MissionPersistenceData.cs" />
     <Compile Include="Persistence\Missions\IMissionInventoryMutationTransaction.cs" />
     <Compile Include="Persistence\Missions\IMissionChestPopulationTransaction.cs" />
     <Compile Include="Persistence\Missions\ICharacterQuestCompletionTransaction.cs" />

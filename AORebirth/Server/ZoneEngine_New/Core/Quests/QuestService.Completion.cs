@@ -15,7 +15,6 @@ using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Helpers;
 using ZoneEngine_New.Core.Inventory;
-using ZoneEngine_New.Core.Missions;
 using ZoneEngine_New.Core.Modules;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Quests.Dungeons;
@@ -103,9 +102,7 @@ public sealed partial class QuestService
                         || player.GetEdgeDistanceTo(machine) > LootableDynel.OpenRange)
                         return false;
                 }
-                else if (quest.Progress != 1 || parameters.OriginPlayfield != world.Identity.Instance
-                    || parameters.OriginTerminal != target || destination is not MissionTerminal terminal
-                    || player.GetEdgeDistanceTo(terminal) > LootableDynel.OpenRange)
+                else
                     return false;
 
                 if (sourceSlot.Type != IdentityType.Inventory)
@@ -295,7 +292,7 @@ public sealed partial class QuestService
             {
                 _flush.HardFlush(player);
                 // Earning is durable even when capacity, content availability or delivery fails later.
-                FrozenMissionTokenReward? tokenReward = null;
+                TokenRoll? tokenReward = null;
                 var earned = _completionDao.Execute(player.Identity.Instance, null!, tx =>
                 {
                     var completion = RequireCompletion(tx);
@@ -376,10 +373,10 @@ public sealed partial class QuestService
                     NotifyPending(player, quest);
                     return;
                 }
-                var xp = DirectXpRewardPlan.CreateQuestReward(player, Math.Max(0, reward?.Xp ?? 0));
-                // Runtime vitals are published by the full XP plan; only durable stats belong in the reward transaction.
-                var values = xp.Stats.Where(pair => !StatCollection.IsRuntimeOnly(pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                // XP is awarded after the commit through the ordinary XP path (caps, research share, level-ups) and
+                // persists with the next save; only cash and mission bits are durable parts of the reward transaction.
+                int xpReward = Math.Max(0, reward?.Xp ?? 0);
+                var values = new Dictionary<CharacterStat, int>();
                 if (reward?.Credits > 0)
                     values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
                         (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + reward.Credits);
@@ -432,12 +429,13 @@ public sealed partial class QuestService
                 finally
                 {
                     // Durable lifecycle cleanup must still run if reward publication fails.
-                    QuestEnded?.Invoke(player, quest);
+                    Ended(player, quest);
                 }
-                xp.PublishAfterCommit(player);
-                foreach (var pair in values.Where(pair => !xp.Stats.ContainsKey(pair.Key)))
+                foreach (var pair in values)
                     player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
                 player.FlushDirtyStats();
+                if (xpReward > 0)
+                    player.AwardXp(xpReward, XpSource.Quest);
                 if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
                     foreach (Item item in used)
                         item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
@@ -480,7 +478,8 @@ public sealed partial class QuestService
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(quest);
         reward ??= quest.Template.Reward;
-        if (quest.Source == QuestSource.Generated)
+        // A copy of a Quests.json dungeon quest pays like that quest: by its QuestRewards.json hash.
+        if (quest.Source == QuestSource.Generated && string.IsNullOrEmpty(quest.Template.TemplateHash))
             return SelectRewardRecord(quest, reward);
 
         return _rewards != null && _rewards.TryResolve(reward?.Hash, player, quest, out IReadOnlyList<QuestRewardItem> mapped)

@@ -1105,25 +1105,11 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
-        /// Puts the active quests, authored missions and mission key names back in the client. Every playfield load
-        /// on the client drops its quest journal, so this runs after zone entry and after an in-zone reload.
+        /// Puts the active quests and mission key names back in the client. Every playfield load on the client drops
+        /// its quest journal, so this runs after zone entry and after an in-zone reload.
         /// </summary>
         void TryRestoreJournal(Player player)
         {
-            try
-            {
-                _playfieldManager.AuthoredQuests.Restore(player);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(
-                    ex,
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Authored quest restore failed character={0}; continuing with world visibility",
-                        player.Identity.Instance));
-            }
-
             try
             {
                 _playfield.GetService<Quests.QuestService>()?.Restore(player);

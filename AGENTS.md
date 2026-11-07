@@ -282,17 +282,14 @@ and evidence. The release contract above governs
 acceptance, authorization, verification and rollback; these references add no
 alternate build or deployment path.
 
-Generated mission chest content is private, editable GameData:
-`Loot/MissionChestRKAllowlist.json`, `Loot/MissionChestSeasonalExclusions.json`
-and `Loot/MissionChestSpecialExclusions.json`. Approvals describe positively
-reviewed ordinary Rubi-Ka identities, families and QL ranges; exact historical
-chest-drop evidence is not required. Missing expansion requirements alone are
-not approval. Seasonal and special-purpose exclusions always override approval,
-independent of event enablement. Apply these policies only to generated mission
-chests; preserve designated seasonal/NPC loot sources and player-owned items.
-Never publish private policy records or replace them with public placeholders
-when building or deploying. The complete accepted policies belong in the same
-Windows/Linux/live content manifest chain.
+Generated mission loot is modeled as NPC-style loot tables (Hash, Repeats,
+Chance, LevelMod) in editable GameData: a Quests.json dungeon quest's
+`Dungeon.ChestLoot` and `Dungeon.MobLoot`, with `DungeonGeneration.json`
+`Chests.LootTable` for missions rolled at a terminal. Rare drops are ordinary
+`NpcTemplates.json` loot-table rows. There is no separate chest allowlist,
+exclusion list or rare-loot catalog. Private
+loot tables stay private and belong in the same Windows/Linux/live content
+manifest chain.
 
 If CMD cannot resolve installed build tools, inspect the existing SDK/tool
 locations and inherited PATH before declaring an installation missing. Correct
