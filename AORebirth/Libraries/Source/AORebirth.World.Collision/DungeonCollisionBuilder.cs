@@ -166,6 +166,12 @@ namespace AORebirth.World.Collision
         const float DoorMatchDistance = 0.3f;
 
         /// <summary>
+        /// Two connections more than this (units) apart vertically are on different floors. A floor's rooms share one
+        /// placed height; generated floors are stacked at least a floor height (64) apart.
+        /// </summary>
+        const float DoorMatchHeight = 16f;
+
+        /// <summary>
         /// Live doors sit this far (units) off the shared room edge along their heading, just inside the room that owns
         /// them (e.g. 10.001, 19.999, 60.001). Exactly on the edge the client's Door_t::LinkDoorToRooms may find no room
         /// for the door and remove it.
@@ -199,8 +205,10 @@ namespace AORebirth.World.Collision
 
             public int Yaw { get; }
 
+            // Same floor too: stacked floors put rooms with identical footprints directly above each other.
             public bool Meets(in DoorPoint other)
-                => MathF.Abs(X - other.X) < DoorMatchDistance && MathF.Abs(Z - other.Z) < DoorMatchDistance;
+                => MathF.Abs(X - other.X) < DoorMatchDistance && MathF.Abs(Z - other.Z) < DoorMatchDistance
+                    && MathF.Abs(Y - other.Y) < DoorMatchHeight;
         }
 
         /// <summary>
