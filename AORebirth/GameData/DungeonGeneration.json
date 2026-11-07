@@ -85,6 +85,10 @@
     { "Team": true, "MinQuality": 1, "MaxQuality": 24, "Styles": [324, 341], "Floors": 2, "MinFloorSize": 8, "MaxFloorSize": 12 },
     { "Team": true, "MinQuality": 25, "MaxQuality": 99, "Styles": [341], "Floors": 3, "MinFloorSize": 9, "MaxFloorSize": 14 },
     { "Team": true, "MinQuality": 100, "MaxQuality": 179, "Styles": [341], "Floors": 4, "MinFloorSize": 9, "MaxFloorSize": 14 },
-    { "Team": true, "MinQuality": 180, "MaxQuality": 250, "Styles": [341], "Floors": 5, "MinFloorSize": 10, "MaxFloorSize": 14 }
+    { "Team": true, "MinQuality": 180, "MaxQuality": 250, "Styles": [341], "Floors": 5, "MinFloorSize": 10, "MaxFloorSize": 14 },
+    { "Team": true, "Style": 386, "MinQuality": 1, "MaxQuality": 24, "Styles": [386], "Floors": 2, "MinFloorSize": 8, "MaxFloorSize": 12, "FloorHeight": 128 },
+    { "Team": true, "Style": 386, "MinQuality": 25, "MaxQuality": 99, "Styles": [386], "Floors": 3, "MinFloorSize": 9, "MaxFloorSize": 14, "FloorHeight": 128 },
+    { "Team": true, "Style": 386, "MinQuality": 100, "MaxQuality": 179, "Styles": [386], "Floors": 4, "MinFloorSize": 9, "MaxFloorSize": 14, "FloorHeight": 128 },
+    { "Team": true, "Style": 386, "MinQuality": 180, "MaxQuality": 250, "Styles": [386], "Floors": 5, "MinFloorSize": 10, "MaxFloorSize": 14, "FloorHeight": 128 }
   ]
 }
