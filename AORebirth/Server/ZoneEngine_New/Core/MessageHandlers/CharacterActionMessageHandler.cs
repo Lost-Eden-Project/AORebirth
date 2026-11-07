@@ -335,6 +335,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     if (player.IsInCombat)
                     {
                         ClientFeedback.Send(player, ClientFeedback.CantLogoutInFight);
+                        // The client already started its 30 s camp timer and marked itself logging out (it checks
+                        // IsFightingMe, stat 410, which is not sent). CharacterAction 0x7A is the camp cancel the
+                        // original client handles (Gamecode 1005e02f, GUI 1002a75a); without it every later /camp
+                        // finds the client still logging out and does nothing.
+                        session.Send(new CharacterActionMessage
+                        {
+                            Identity = player.Identity,
+                            Action = CharacterActionType.StopLogout,
+                            Target = Identity.None
+                        });
                         break;
                     }
 
