@@ -55,6 +55,18 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public bool IsTeam { get; set; }
 
+        /// <summary>
+        /// A team mission's roller (its owner) and the team (their own group in a raid) as it was when they rolled it:
+        /// only these characters can be given it, at the roll or later through "Update team members". Absent (0, null)
+        /// on every other quest.
+        /// </summary>
+        public int TeamOwnerId { get; set; }
+
+        public int[]? TeamRoster { get; set; }
+
+        /// <summary>The character holds this mission as a teammate's copy (journal flag 0x200), not as its roller.</summary>
+        public bool IsTeamCopyFor(int characterId) => TeamOwnerId > 0 && TeamOwnerId != characterId;
+
         /// <summary>Playfield2 id of this quest's dungeon (<see cref="QuestDungeonIds"/>).</summary>
         public int DungeonPlayfield { get; set; }
 

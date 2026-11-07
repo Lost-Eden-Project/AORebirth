@@ -300,6 +300,88 @@ namespace AORebirth.Database.Domain.Quests
         }
 
         /// <summary>
+        /// Adds a teammate to a team-owned (OwnerType 1) dungeon quest, in one transaction: their quest row and their own
+        /// mission key with its dungeon link. A member who deleted it (state 5, abandoned) is given it again as a new
+        /// run. Refused (false) when the quest is not team-owned, has expired, the character holds it in any other
+        /// state, or the quest already has <paramref name="maxKeys"/> keys.
+        /// </summary>
+        public bool TryJoinTeamDungeonQuest(CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, int maxKeys, long nowUtcTicks)
+        {
+            if (characterRow == null) throw new ArgumentNullException(nameof(characterRow));
+            if (key == null) throw new ArgumentNullException(nameof(key));
+            if (characterRow.Source != 1 || characterRow.State != 1 || string.IsNullOrEmpty(characterRow.QuestId))
+                throw new ArgumentException("A team member joins an active generated quest.");
+            ValidateAcceptedQuestItem(key, characterRow.CharacterId);
+
+            return Transaction((c, t) =>
+            {
+                object ownerType;
+                using (IDbCommand command = Prepare(c, t,
+                    "SELECT OwnerType FROM generatedquests WHERE QuestId=@Quest AND ExpiresAtUtcTicks>@Now FOR UPDATE",
+                    new object[] { "@Quest", characterRow.QuestId, "@Now", nowUtcTicks }))
+                    ownerType = command.ExecuteScalar();
+                if (ownerType == null || ownerType is DBNull
+                    || Convert.ToInt32(ownerType, System.Globalization.CultureInfo.InvariantCulture) != 1)
+                    return false;
+
+                // A copy deleted before its objective was earned (abandoned, Progress short of RequiredCount) may run
+                // again; anything else (active, completed, earned, or a completed run a GM dropped) is refused, so a run
+                // can never pay twice.
+                object heldState;
+                using (IDbCommand command = Prepare(c, t,
+                    "SELECT CASE WHEN State=5 AND Progress<RequiredCount THEN 5 ELSE 0 END FROM characterquests "
+                    + "WHERE CharacterId=@Character AND QuestId=@Quest FOR UPDATE",
+                    new object[] { "@Character", characterRow.CharacterId, "@Quest", characterRow.QuestId }))
+                    heldState = command.ExecuteScalar();
+                bool rejoin = heldState != null && !(heldState is DBNull);
+                if (rejoin && Convert.ToInt32(heldState, System.Globalization.CultureInfo.InvariantCulture) != 5)
+                    return false;
+
+                long keys;
+                using (IDbCommand command = Prepare(c, t, "SELECT COUNT(*) FROM questdungeonkeys WHERE QuestId=@Quest FOR UPDATE",
+                    new object[] { "@Quest", characterRow.QuestId }))
+                    keys = Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+                if (keys >= maxKeys)
+                    return false;
+
+                if (rejoin)
+                    Execute(c, t, "UPDATE characterquests SET State=@State,Progress=@Progress,RequiredCount=@Required,"
+                        + "AssignedAtUtcTicks=@Assigned,UpdatedAtUtcTicks=@Updated WHERE CharacterId=@Character AND QuestId=@Quest AND State=5 AND Progress<RequiredCount",
+                        "@State", characterRow.State, "@Progress", characterRow.Progress, "@Required", characterRow.RequiredCount,
+                        "@Assigned", characterRow.AssignedAtUtcTicks, "@Updated", characterRow.UpdatedAtUtcTicks,
+                        "@Character", characterRow.CharacterId, "@Quest", characterRow.QuestId);
+                else
+                    InsertCharacterQuest(c, t, characterRow);
+                InsertKey(c, t, key, characterRow.QuestId);
+                return true;
+            });
+        }
+
+        /// <summary>
+        /// Whether a character other than <paramref name="characterId"/> has earned <paramref name="questId"/>'s objective
+        /// (its run active with the objective earned, or completed).
+        /// </summary>
+        public bool HasOtherHolderEarned(string questId, int characterId)
+        {
+            if (string.IsNullOrEmpty(questId))
+                return false;
+
+            return Query("SELECT 1 FROM characterquests WHERE QuestId=@Quest AND CharacterId<>@Character "
+                + "AND State IN (1,2) AND RequiredCount>0 AND Progress>=RequiredCount LIMIT 1",
+                r => r.GetInt32(0), "@Quest", questId, "@Character", characterId).Count > 0;
+        }
+
+        /// <summary>The characters still holding <paramref name="questId"/> active.</summary>
+        public IList<int> LoadActiveQuestHolders(string questId)
+        {
+            if (string.IsNullOrEmpty(questId))
+                return new List<int>();
+
+            return Query("SELECT CharacterId FROM characterquests WHERE QuestId=@Quest AND State=1",
+                r => r.GetInt32(0), "@Quest", questId);
+        }
+
+        /// <summary>
         /// Adds a copy of <paramref name="sourceKeyInstanceId"/> for the same quest: only while that key is still
         /// linked, its quest is unexpired and the quest has fewer than <paramref name="maxKeys"/> keys. The source
         /// link and the quest's key count are locked for the check. Returns the quest id, or null when refused.

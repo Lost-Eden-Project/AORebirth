@@ -24,7 +24,7 @@ namespace AORebirth.Database.Domain.Missions
                     || request.NowUtcTicks <= 0 || request.Chests == null)
                     throw new ArgumentException("A chest population requires the exact accepted mission run.");
                 CharacterQuestCompletionSnapshotData quest = this.ReadCharacterQuest(request.QuestId);
-                if (quest == null || quest.CharacterId != this.CharacterId || quest.Source != 1 || quest.OwnerType != 0
+                if (quest == null || quest.CharacterId != this.CharacterId || quest.Source != 1 || (quest.OwnerType != 0 && quest.OwnerType != 1)
                     || quest.OwnerId != this.CharacterId || quest.AssignedAtUtcTicks != request.AssignedAtUtcTicks)
                     throw new InvalidOperationException("The accepted mission ownership or run changed.");
                 if (quest.State != 1 || quest.ExpiresAtUtcTicks <= request.NowUtcTicks)

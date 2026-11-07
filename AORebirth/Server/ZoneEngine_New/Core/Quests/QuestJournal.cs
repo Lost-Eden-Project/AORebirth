@@ -34,6 +34,9 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>Quest flags bit for a team mission (Quest_t +0xa4).</summary>
         const int TeamMissionFlag = 0x100;
 
+        /// <summary>Quest flags bit for a teammate's copy of a team mission (Quest_t +0xa4 bit 9, N3Msg_IsTeamMissionCopy).</summary>
+        const int TeamMissionCopyFlag = 0x200;
+
         /// <summary>
         /// Quest flags bit that makes the client refuse deletion: N3Msg_RemoveQuest shows client text 0x66 instead of
         /// sending the delete request when it is set.
@@ -184,8 +187,11 @@ namespace ZoneEngine_New.Core.Quests
             int flags = 2;
             if (template.IsNoDelete)
                 flags |= NoDeleteFlag;
-            if (string.Equals(template.Scope, "Team", StringComparison.OrdinalIgnoreCase))
+            if (template.IsTeamScope)
                 flags |= TeamMissionFlag;
+            // A teammate's copy of a team mission: the client offers "Update team members" only on the roller's entry.
+            if (isDungeon && dungeon.IsTeamCopyFor(player.Identity.Instance))
+                flags |= TeamMissionCopyFlag;
 
             var entry = new Quest
             {

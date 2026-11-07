@@ -65,6 +65,15 @@ namespace ZoneEngine_New.Core.Quests
         // A validated server-side death is one-shot; retry its transaction while this actor remains loaded.
         internal bool NpcObjectiveCommitPending { get; set; }
 
+        /// <summary>
+        /// A teammate earned this team mission's objective while this player could not take it (dead, zoning): retry it
+        /// with the team's reward chance (<see cref="SharedRewardChance"/>) while this actor remains loaded.
+        /// </summary>
+        internal bool SharedEarnPending { get; set; }
+
+        /// <summary>The team dungeon's kill chance when a teammate earned the objective; null when it was not known.</summary>
+        internal (int Killed, int Total)? SharedRewardChance { get; set; }
+
         public int Remaining => Math.Max(0, RequiredCount - Progress);
     }
 

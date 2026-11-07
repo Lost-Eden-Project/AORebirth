@@ -210,6 +210,7 @@
     <Compile Include="Messages\N3Messages\ChestItemFullUpdateMessage.cs" />
     <Compile Include="Messages\N3Messages\CorpseFullUpdateMessage.cs" />
     <Compile Include="Messages\N3Messages\CreateQuestMessage.cs" />
+    <Compile Include="Messages\N3Messages\GiveQuestToMemberMessage.cs" />
     <Compile Include="Messages\N3Messages\DoorFullUpdateMessage.cs" />
     <Compile Include="Messages\N3Messages\DoorStatusUpdateMessage.cs" />
     <Compile Include="Messages\N3Messages\SetNameMessage.cs" />

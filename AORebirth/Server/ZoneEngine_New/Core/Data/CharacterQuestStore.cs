@@ -37,6 +37,16 @@ namespace ZoneEngine_New.Core.Data
 
         string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks);
 
+        /// <summary>A teammate's row and own key for a team-owned dungeon quest, in one transaction.</summary>
+        bool TryJoinTeamDungeonQuest(CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, int maxKeys, long nowUtcTicks)
+            => throw new NotSupportedException("The quest store does not support team dungeon quests.");
+
+        /// <summary>The characters still holding the quest active.</summary>
+        IList<int> LoadActiveQuestHolders(string questId) => Array.Empty<int>();
+
+        /// <summary>Whether another character has earned the quest's objective (earned and pending, or completed).</summary>
+        bool HasOtherHolderEarned(string questId, int characterId) => false;
+
         IDictionary<int, string> LoadKeyQuests(IReadOnlyCollection<int> keyInstanceIds);
 
         IList<RetiredDungeonKey> EndQuestKeys(string questId);
@@ -93,6 +103,14 @@ namespace ZoneEngine_New.Core.Data
 
         public string? TryAddDuplicateKey(int sourceKeyInstanceId, QuestDungeonKeyItemRow copy, int maxKeys, long nowUtcTicks)
             => Run(() => _dao.TryAddDuplicateKey(sourceKeyInstanceId, copy, maxKeys, nowUtcTicks), _logger);
+
+        public bool TryJoinTeamDungeonQuest(CharacterQuestRow characterRow, QuestDungeonKeyItemRow key, int maxKeys, long nowUtcTicks)
+            => Run(() => _dao.TryJoinTeamDungeonQuest(characterRow, key, maxKeys, nowUtcTicks), _logger);
+
+        public IList<int> LoadActiveQuestHolders(string questId) => Run(() => _dao.LoadActiveQuestHolders(questId), _logger);
+
+        public bool HasOtherHolderEarned(string questId, int characterId)
+            => Run(() => _dao.HasOtherHolderEarned(questId, characterId), _logger);
 
         public IDictionary<int, string> LoadKeyQuests(IReadOnlyCollection<int> keyInstanceIds)
             => Run(() => _dao.LoadKeyQuests(keyInstanceIds), _logger);

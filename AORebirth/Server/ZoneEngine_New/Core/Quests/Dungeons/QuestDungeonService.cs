@@ -132,6 +132,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             _hashItems = hashItems;
 
             _quests.QuestEnded += OnQuestEnded;
+            _quests.TeamObjectiveEarned += OnTeamObjectiveEarned;
             _quests.DungeonAssigner = AssignTemplate;
             _sweep = new Timer(_ => Sweep(), null, SweepInterval, SweepInterval);
         }
@@ -139,6 +140,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public void Dispose()
         {
             _quests.QuestEnded -= OnQuestEnded;
+            _quests.TeamObjectiveEarned -= OnTeamObjectiveEarned;
             _quests.DungeonAssigner = null;
             _sweep.Dispose();
         }
@@ -159,6 +161,207 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(source);
+
+            // A Team quest rolled by a player in a team is one mission for every teammate on the same playfield: the
+            // roller owns it (OwnerType Team) and each teammate joins it with their own row and key.
+            // The roster is frozen with the mission: only these can be given it, now or by "Update team members".
+            int[]? roster = source.IsTeamScope && player.Playfield?.GetService<Teams.TeamService>()?.GetImmediateTeam(player) is { } team
+                && team.MemberIds.Count > 1 ? team.MemberIds.ToArray() : null;
+            string? refused = AssignTemplateLocked(player, source, requestedQuality, roster, out string questId);
+            if (refused != null)
+                return refused;
+
+            if (roster != null)
+                GiveToTeammatesHere(player, questId, roster);
+            return null;
+        }
+
+        /// <summary>
+        /// Gives the team mission to the roller's current teammates on the roller's playfield who were on its roster.
+        /// Each joins on their own projection, outside the roller's gate. Returns how many were asked to join.
+        /// </summary>
+        int GiveToTeammatesHere(Player roller, string questId, int[] roster)
+        {
+            if (roller.Playfield is not Playfield here
+                || here.GetService<Teams.TeamService>()?.GetImmediateTeam(roller) is not { } team)
+                return 0;
+
+            int asked = 0;
+            int rollerLevel = roller.Stats.GetOrOne(CharacterStat.Level);
+            string rollerName = roller.Name;
+            PlayfieldManager playfields = _playfields.Value;
+            foreach (int id in team.MemberIds)
+            {
+                if (id == roller.Identity.Instance || Array.IndexOf(roster, id) < 0
+                    || !playfields.FindPlayer(id, out Player member) || !ReferenceEquals(member.Playfield, here))
+                    continue;
+                // The team XP range (LevelEligibility): a member too low to share the roller's XP does not get the mission.
+                if (Teams.TeamLevelEligibility.Current.IsTooLowForMember(rollerLevel, member.Stats.GetOrOne(CharacterStat.Level)))
+                {
+                    here.DispatchPlayerProjection(member, () => SendText(member, "You are too low level to receive this quest."));
+                    continue;
+                }
+                here.DispatchPlayerProjection(member, () => JoinTeamQuest(member, questId, rollerName));
+                asked++;
+            }
+            return asked;
+        }
+
+        /// <summary>
+        /// "Update team members" on a team mission in the roller's journal: gives it to their teammates on the same
+        /// playfield who were in the team when it was rolled and do not hold it now. Refused for a teammate's copy, a
+        /// mission that is over, or anyone not on its roster.
+        /// </summary>
+        public void UpdateTeamMembers(Player player, int journalInstance)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            PlayerQuest? quest = null;
+            foreach (PlayerQuest held in _quests.GetLog(player).Quests.Values)
+            {
+                if (held.IsActive && held.Source == QuestSource.Generated && QuestJournal.JournalInstance(held.QuestId) == journalInstance)
+                {
+                    quest = held;
+                    break;
+                }
+            }
+
+            if (quest == null || !quest.Template.IsTeamScope || !TryBeginRequest(player)
+                || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out QuestDungeonParameters parameters)
+                || parameters.TeamOwnerId != player.Identity.Instance || parameters.TeamRoster is not { Length: > 1 } roster
+                || !TryGetDungeon(quest.QuestId, out CachedDungeon dungeon) || dungeon.Ended)
+                return;
+
+            int asked = GiveToTeammatesHere(player, quest.QuestId, roster);
+            _logger.Info(string.Format(CultureInfo.InvariantCulture, "Team mission update char={0} quest={1} asked={2}",
+                player.Identity.Instance, quest.QuestId, asked));
+        }
+
+        /// <summary>
+        /// A teammate joins the team mission <paramref name="questId"/> another member just rolled: their quest row and own
+        /// mission key in one transaction, then the key and the journal entry. Skipped when they already hold this quest
+        /// (another copy of the same Quests.json quest), their inventory has no room for the key, or the mission is over.
+        /// </summary>
+        void JoinTeamQuest(Player member, string questId, string rollerName)
+        {
+            lock (member.PersistenceGate)
+            {
+                if (member.IsPersistenceQuarantined || member.Session == null || member.Playfield == null || !member.Inventory.IsHydrated)
+                    return;
+
+                GeneratedQuestRow? row = _store.LoadGenerated(questId);
+                QuestTemplate? template = row == null ? null
+                    : System.Text.Json.JsonSerializer.Deserialize<QuestTemplate>(row.DefinitionJson, QuestTemplate.JsonOptions);
+                if (row == null || template == null || !TryGetDungeon(questId, out CachedDungeon dungeon) || dungeon.Ended
+                    || row.OwnerType != (int)QuestOwnerType.Team
+                    || !QuestDungeonParameters.TryParse(row.AcgBuildingGeneratorJson, out QuestDungeonParameters frozen)
+                    || frozen.TeamRoster is not { } roster || Array.IndexOf(roster, member.Identity.Instance) < 0)
+                    return;
+
+                QuestLog log = _quests.GetLog(member);
+                if ((log.Quests.TryGetValue(questId, out PlayerQuest? same) && same.IsActive)
+                    || (template.TemplateHash is { Length: > 0 } hash && log.TryFind(hash, out PlayerQuest? held) && held.IsActive))
+                {
+                    SendText(member, "You already have this mission, so you were not given " + rollerName + "'s.");
+                    return;
+                }
+
+                try
+                {
+                    _flush.HardFlush(member);
+                    Item key = CreateKey();
+                    if (!InventoryGrantPlan.TryCreate(member, [key], out InventoryGrantPlan plan))
+                    {
+                        SendText(member, "Your inventory is full, so you were not given " + rollerName + "'s team mission.");
+                        return;
+                    }
+
+                    DateTime now = DateTime.UtcNow;
+                    var characterRow = new CharacterQuestRow
+                    {
+                        CharacterId = member.Identity.Instance,
+                        QuestId = questId,
+                        Source = (int)QuestSource.Generated,
+                        State = (int)QuestState.Active,
+                        Progress = 0,
+                        RequiredCount = template.RequiredCount,
+                        AssignedAtUtcTicks = now.Ticks,
+                        UpdatedAtUtcTicks = now.Ticks
+                    };
+                    if (!_store.TryJoinTeamDungeonQuest(characterRow, KeyRow(plan.Rows[0], now), MaxKeysPerQuest, now.Ticks))
+                    {
+                        _logger.Info(string.Format(CultureInfo.InvariantCulture, "Team mission join refused char={0} quest={1}",
+                            member.Identity.Instance, questId));
+                        return;
+                    }
+
+                    plan.PublishAfterCommit(notify: false);
+                    SendKey(member, key, plan.Rows[0].ContainerPlacement, dungeon.Parameters.EntranceName);
+                    _quests.AdoptGenerated(member, questId, template, now, new DateTime(row.ExpiresAtUtcTicks, DateTimeKind.Utc),
+                        row.AcgBuildingGeneratorJson);
+                    _logger.Info(string.Format(CultureInfo.InvariantCulture, "Team mission joined char={0} quest={1} owner={2}",
+                        member.Identity.Instance, questId, row.OwnerId));
+                }
+                catch (DatabaseCommitOutcomeUnknownException exception)
+                {
+                    Quarantine(member, exception);
+                }
+                catch (Exception exception)
+                {
+                    // Nothing was published unless the join committed; a later "Update team members" can retry it.
+                    _logger.Error(exception, string.Format(CultureInfo.InvariantCulture, "Team mission join failed char={0} quest={1}",
+                        member.Identity.Instance, questId));
+                }
+            }
+        }
+
+        /// <summary>
+        /// World entry: a team mission whose objective another holder earned while this player was offline or on another
+        /// zone instance is earned now, with the team dungeon's kill chance (live here, else its owner's checkpoint).
+        /// </summary>
+        void CatchUpTeamMissions(Player player)
+        {
+            foreach (PlayerQuest quest in _quests.GetLog(player).Quests.Values.ToArray())
+            {
+                if (!quest.IsActive || quest.IsRewardPending || quest.Source != QuestSource.Generated || !quest.Template.IsTeamScope
+                    || !TryGetDungeon(quest.QuestId, out CachedDungeon dungeon)
+                    || !_store.HasOtherHolderEarned(quest.QuestId, player.Identity.Instance))
+                    continue;
+
+                (int Killed, int Total) chance = _playfields.Value.TryGetQuestDungeon(dungeon.Parameters.DungeonPlayfield, out QuestDungeonPlayfield live)
+                    && live.Kills is { } kills
+                    ? kills.Chance()
+                    : _quests.LoadDungeonKills(dungeon.OwnerId, quest.QuestId, dungeon.AssignedAtUtcTicks, dungeon.Parameters).Chance();
+                _logger.Info(string.Format(CultureInfo.InvariantCulture, "Team mission catch-up char={0} quest={1} chance={2}/{3}",
+                    player.Identity.Instance, quest.QuestId, chance.Killed, chance.Total));
+                _quests.EarnShared(player, quest.QuestId, chance);
+            }
+        }
+
+        /// <summary>
+        /// A team mission's objective was earned by one holder: every other holder online on this zone instance earns it
+        /// on their own playfield, with the team dungeon's kill chance as the earner saw it.
+        /// </summary>
+        void OnTeamObjectiveEarned(Player earner, PlayerQuest quest)
+        {
+            (int Killed, int Total)? chance = earner.Playfield is QuestDungeonPlayfield dungeon
+                && string.Equals(dungeon.QuestId, quest.QuestId, StringComparison.Ordinal) && dungeon.Kills is { } kills
+                ? kills.Chance() : null;
+
+            PlayfieldManager playfields = _playfields.Value;
+            string questId = quest.QuestId;
+            foreach (int holder in _store.LoadActiveQuestHolders(questId))
+            {
+                if (holder == earner.Identity.Instance || !playfields.FindPlayer(holder, out Player member)
+                    || member.Playfield is not Playfield at)
+                    continue;
+                at.DispatchPlayerProjection(member, () => _quests.EarnShared(member, questId, chance));
+            }
+        }
+
+        string? AssignTemplateLocked(Player player, QuestTemplate source, int? requestedQuality, int[]? teamRoster, out string questId)
+        {
+            QuestOwnerType ownerType = teamRoster != null ? QuestOwnerType.Team : QuestOwnerType.Character;
+            questId = string.Empty;
             QuestDungeonTemplate input = source.Dungeon ?? throw new ArgumentException("The quest has no dungeon.", nameof(source));
             if (input.Problem(source.Action) is string problem)
                 return problem;
@@ -171,7 +374,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     return "Mission dungeons are unavailable.";
                 if (!TryPickEntrance(input, out MissionEntrancePlacement entrance, out MissionDestinationWorldPosition? worldPosition))
                     return "The quest's dungeon entrance is unavailable.";
-                if (!QuestDungeonIds.TryCreate(_ids.Allocate(), out string questId, out int dungeonPlayfield))
+                if (!QuestDungeonIds.TryCreate(_ids.Allocate(), out questId, out int dungeonPlayfield))
                     return "Mission acceptance is unavailable right now.";
 
                 int missionType = QuestDungeonTemplate.MissionTypeFor(source.Action)!.Value;
@@ -196,14 +399,16 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     BuildingHighId = worldPosition?.WorldOffsetZ ?? QuestJournal.WaypointUnknown,
                     MissionType = missionType,
                     Quality = quality,
-                    MissionIconId = source.IconId is int icon and > 0 ? icon : _layouts.Icon((MissionRollType)missionType)
+                    MissionIconId = source.IconId is int icon and > 0 ? icon : _layouts.Icon((MissionRollType)missionType),
+                    TeamOwnerId = teamRoster != null ? player.Identity.Instance : 0,
+                    TeamRoster = teamRoster
                 };
 
                 DateTime now = DateTime.UtcNow;
                 DateTime expires = source.ExpiresAfterHours is int hours and > 0
                     ? now.AddHours(hours)
                     : now.AddSeconds(_layouts.AcceptedLifetimeSeconds);
-                return Establish(player, questId, parameters, CopyTemplate(source, questId), input.IsMultiFloor, input.Style,
+                return Establish(player, questId, ownerType, parameters, CopyTemplate(source, questId), input.IsMultiFloor, input.Style,
                     source.Objective, input.ObjectiveLevelFor(quality), input.AwardsTokens, population, input.MobLevelPercent,
                     // The quest's own tables; a quest naming none gets no chests and no extra NPC drops.
                     input.ChestLoot ?? [], input.MobLoot ?? [], now, expires, (quest, characterRow, key, sourceItem) =>
@@ -288,7 +493,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// objective is resolved at <paramref name="objectiveQuality"/>), then commits quest, owner row, key and any
         /// mission tool through <paramref name="commit"/> and publishes them.
         /// </summary>
-        string? Establish(Player player, string questId, QuestDungeonParameters parameters, QuestTemplate template, bool team, int? style,
+        string? Establish(Player player, string questId, QuestOwnerType ownerType, QuestDungeonParameters parameters, QuestTemplate template, bool team, int? style,
             QuestObjective? authored, int objectiveQuality, bool tokenReward, string[]? population, int populationLevelSpreadPercent,
             IReadOnlyList<MobItemTableEntry>? chestLoot, IReadOnlyList<MobItemTableEntry>? mobLoot,
             DateTime now, DateTime expires,
@@ -352,7 +557,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 var quest = new GeneratedQuestRow
                 {
                     QuestId = questId,
-                    OwnerType = (int)QuestOwnerType.Character,
+                    OwnerType = (int)ownerType,
                     OwnerId = player.Identity.Instance,
                     DefinitionJson = System.Text.Json.JsonSerializer.Serialize(template, QuestTemplate.JsonOptions),
                     AcgBuildingGeneratorJson = parametersJson,
@@ -678,7 +883,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         /// <summary>
         /// World entry (login or zoning): re-sends each carried mission key with its dungeon's name, and retires
-        /// any whose dungeon is gone. One indexed read for all of the player's keys.
+        /// any whose dungeon is gone. One indexed read for all of the player's keys. Also catches up team missions a
+        /// teammate finished meanwhile.
         /// </summary>
         public void RestoreKeys(Player player)
         {
@@ -687,6 +893,15 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 if (player.IsPersistenceQuarantined || player.Session == null || !player.Inventory.IsHydrated)
                     return;
+
+                try
+                {
+                    CatchUpTeamMissions(player);
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, "Team mission catch-up failed char=" + player.Identity.Instance);
+                }
 
                 List<Item> keys = CarriedKeys(player);
                 if (keys.Count == 0)
@@ -810,6 +1025,16 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
             try
             {
+                // A team mission stays open while any member still holds it: one member finishing, leaving or deleting
+                // it ends only their part. The last holder's end (or expiry, through the sweep) ends the dungeon.
+                if (quest.Template.IsTeamScope && _store.LoadActiveQuestHolders(quest.QuestId).Count > 0)
+                {
+                    _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                        "Team mission part ended char={0} quest={1} state={2}; other members still hold it",
+                        player.Identity.Instance, quest.QuestId, quest.State));
+                    return;
+                }
+
                 // Completing the quest lets whoever is inside stay (and leave by the exit); expiry and abandoning empty it.
                 EndDungeon(quest.QuestId, parameters, evict: quest.State != QuestState.Completed);
             }

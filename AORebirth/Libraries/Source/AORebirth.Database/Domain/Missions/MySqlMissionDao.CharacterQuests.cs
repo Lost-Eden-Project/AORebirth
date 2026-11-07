@@ -180,7 +180,9 @@ namespace AORebirth.Database.Domain.Missions
                 if (quest == null || quest.CharacterId != this.CharacterId || assigned <= 0 || now <= 0
                     || quest.AssignedAtUtcTicks != assigned || quest.RequiredCount <= 0 || (quest.Source != 0 && quest.Source != 1))
                     return false;
-                return quest.Source == 0 || (quest.OwnerType == 0 && quest.OwnerId == this.CharacterId && quest.ExpiresAtUtcTicks > 0
+                // A team-owned quest (OwnerType 1) binds every character holding a row for it, not only its owner.
+                return quest.Source == 0 || (((quest.OwnerType == 0 && quest.OwnerId == this.CharacterId) || (quest.OwnerType == 1 && quest.OwnerId > 0))
+                    && quest.ExpiresAtUtcTicks > 0
                     && !string.IsNullOrEmpty(definition) && string.Equals(quest.DefinitionJson, definition, StringComparison.Ordinal)
                     && string.Equals(quest.AcgBuildingGeneratorJson, acg, StringComparison.Ordinal));
             }

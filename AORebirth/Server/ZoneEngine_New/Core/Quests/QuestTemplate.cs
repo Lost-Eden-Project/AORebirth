@@ -60,6 +60,13 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>"Solo" or "Team".</summary>
         public string Scope { get; set; } = "Solo";
 
+        /// <summary>
+        /// Scope "Team": a dungeon quest given to a player in a team goes to their teammates on the same playfield too,
+        /// as one shared mission (one dungeon, a key each, the objective and its reward chance shared).
+        /// </summary>
+        [JsonIgnore]
+        public bool IsTeamScope => string.Equals(Scope, "Team", StringComparison.OrdinalIgnoreCase);
+
         public string Action { get; set; } = string.Empty;
 
         public string Summary { get; set; } = string.Empty;

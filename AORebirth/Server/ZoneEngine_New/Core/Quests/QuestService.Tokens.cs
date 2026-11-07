@@ -118,11 +118,22 @@ public sealed partial class QuestService
             return;
         }
 
+        // The owner, or on a team mission any member inside still holding it (the owner may be outside or done).
         Player? owner = null;
+        PlayerQuest? quest = null;
         foreach (Player player in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities())
+        {
+            if (!GetLog(player).Quests.TryGetValue(kills.QuestId, out PlayerQuest? held))
+                continue;
             if (player.Identity.Instance == kills.OwnerId)
-                owner = player;
-        if (owner == null || !GetLog(owner).Quests.TryGetValue(kills.QuestId, out PlayerQuest? quest))
+            {
+                (owner, quest) = (player, held);
+                break;
+            }
+            if (owner == null && held.IsActive && held.Template.IsTeamScope)
+                (owner, quest) = (player, held);
+        }
+        if (owner == null || quest == null)
         {
             LogRewardChance(dungeon, npc, kills, "owner-or-quest-missing");
             return;
@@ -181,16 +192,22 @@ public sealed partial class QuestService
     }
 
     CharacterQuestCompletionResult EarnWithToken(IMissionDaoTransaction transaction,
-        ICharacterQuestCompletionTransaction completion, Player player, PlayerQuest quest, CharacterQuestEarnRequest request)
+        ICharacterQuestCompletionTransaction completion, Player player, PlayerQuest quest, CharacterQuestEarnRequest request,
+        (int Killed, int Total)? sharedChance = null)
     {
         var result = completion.TryEarnCharacterQuest(request);
         if (result.Status == CharacterQuestCompletionStatus.Earned)
-            RollToken(transaction, player, quest, result.Quest);
+            RollToken(transaction, player, quest, result.Quest, sharedChance);
         return result;
     }
 
-    /// <summary>One draw at earning, in the earning transaction, with the final kill checkpoint beside it.</summary>
-    void RollToken(IMissionDaoTransaction transaction, Player player, PlayerQuest quest, CharacterQuestCompletionSnapshotData stored)
+    /// <summary>
+    /// One draw at earning, in the earning transaction, with the final kill checkpoint beside it. A team mission's
+    /// holders share the chance: in the dungeon its one kill ledger decides; away from it, the chance a teammate earned
+    /// the objective with (<paramref name="sharedChance"/>). Each holder still draws once for themselves.
+    /// </summary>
+    void RollToken(IMissionDaoTransaction transaction, Player player, PlayerQuest quest, CharacterQuestCompletionSnapshotData stored,
+        (int Killed, int Total)? sharedChance = null)
     {
         if (quest.Source != QuestSource.Generated
             || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var parameters)
@@ -207,8 +224,16 @@ public sealed partial class QuestService
         if (kills != null)
         {
             (killed, total) = kills.Chance();
-            UpsertFlag(transaction, key, KillsFlag(stored.AssignedAtUtcTicks), kills.Checkpoint(), now);
-            kills.MarkSaved();
+            // The ledger's checkpoint lives under its owner (the dungeon reloads it from there); a teammate only reads it.
+            if (kills.OwnerId == player.Identity.Instance)
+            {
+                UpsertFlag(transaction, key, KillsFlag(stored.AssignedAtUtcTicks), kills.Checkpoint(), now);
+                kills.MarkSaved();
+            }
+        }
+        else if (sharedChance is { } shared)
+        {
+            (killed, total) = shared;
         }
         else
         {

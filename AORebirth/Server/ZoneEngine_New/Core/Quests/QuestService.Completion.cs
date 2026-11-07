@@ -41,7 +41,9 @@ public sealed partial class QuestService
             if (!CanDeliver(player) || _completionDao == null || !quest.IsActive || quest.IsRewardPending
                 || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
                 || parameters.ObjectiveNpc is not { IsValid: true } binding
-                || binding.MissionType != (inspected ? 1 : 0) || binding.OwnerId != player.Identity.Instance
+                || binding.MissionType != (inspected ? 1 : 0)
+                // A team mission's target counts for every member holding it; the database binds the holder's own row.
+                || (binding.OwnerId != player.Identity.Instance && !quest.Template.IsTeamScope)
                 || binding.QuestId != quest.QuestId || npc.Identity != binding.Identity
                 || npc.Playfield is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield world
                 || !ReferenceEquals(player.Playfield, world) || world.Identity.Instance != parameters.DungeonPlayfield
@@ -142,7 +144,41 @@ public sealed partial class QuestService
         }
     }
 
-    bool TryEarnBoundObjective(Player player, PlayerQuest quest, QuestDungeonParameters parameters, MissionItemInstanceData? removal)
+    /// <summary>
+    /// A team mission's objective was earned by one holder: the dungeon service passes it on to the other holders
+    /// online on this zone instance (<see cref="EarnShared"/>). Raised on the earner's playfield, inside their gate.
+    /// </summary>
+    internal event Action<Player, PlayerQuest>? TeamObjectiveEarned;
+
+    /// <summary>
+    /// A teammate earned this team mission's objective: this holder earns it too, rolling the reward with the team
+    /// dungeon's kill chance (<paramref name="chance"/>; null: their own dungeon or last checkpoint decides). A holder
+    /// who cannot take it now (dead, zoning) retries on later ticks while loaded.
+    /// </summary>
+    internal void EarnShared(Player player, string questId, (int Killed, int Total)? chance)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        lock (player.PersistenceGate)
+        {
+            if (_completionDao == null || player.IsPersistenceQuarantined
+                || !GetLog(player).Quests.TryGetValue(questId, out PlayerQuest? quest)
+                || !quest.IsActive || quest.IsRewardPending || !quest.Template.IsTeamScope
+                || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters))
+                return;
+
+            quest.SharedRewardChance = chance ?? quest.SharedRewardChance;
+            if (!CanDeliver(player) || !TryEarnBoundObjective(player, quest, parameters, null, quest.SharedRewardChance, share: false))
+            {
+                if (player.IsPersistenceQuarantined)
+                    return;
+                quest.SharedEarnPending = true;
+                quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
+            }
+        }
+    }
+
+    bool TryEarnBoundObjective(Player player, PlayerQuest quest, QuestDungeonParameters parameters, MissionItemInstanceData? removal,
+        (int Killed, int Total)? sharedChance = null, bool share = true)
     {
         bool committed = false;
         try
@@ -164,20 +200,38 @@ public sealed partial class QuestService
                     ExpectedDefinitionJson = stored.DefinitionJson,
                     ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson,
                     NowUtcTicks = _now().Ticks, Removals = removal == null ? [] : [removal]
-                });
+                }, sharedChance);
             });
             if (result.Status != CharacterQuestCompletionStatus.Earned)
                 return false;
             committed = true;
             quest.Progress = quest.RequiredCount;
             quest.NpcObjectiveCommitPending = false;
+            quest.SharedEarnPending = false;
             quest.NextRewardRetryUtcTicks = 0;
+            if (share)
+                ShareObjective(player, quest);
             return true;
         }
         catch (Exception exception)
         {
             CompletionFailure(player, exception, committed);
             return false;
+        }
+    }
+
+    /// <summary>Passes a team mission's earned objective on to its other holders; a failing listener never undoes the earn.</summary>
+    void ShareObjective(Player player, PlayerQuest quest)
+    {
+        if (!quest.Template.IsTeamScope || TeamObjectiveEarned == null)
+            return;
+        try
+        {
+            TeamObjectiveEarned(player, quest);
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Sharing team mission objective failed quest=" + quest.QuestId);
         }
     }
 
@@ -217,6 +271,7 @@ public sealed partial class QuestService
                     var completion = RequireCompletion(tx);
                     var stored = completion.ReadCharacterQuest(quest.QuestId);
                     RequireCurrent(stored, quest, player);
+                    // The world item is bound to the mission's owner: only they pick it up; teammates earn by sharing.
                     if (stored.Source != (int)QuestSource.Generated || stored.OwnerId != player.Identity.Instance
                         || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var durable)
                         || durable.ObjectiveItem?.SameAs(objective.Binding) != true
@@ -242,6 +297,8 @@ public sealed partial class QuestService
                     from: ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.World, objective.Identity));
                 quest.Progress = quest.Template.IsReturnItem ? 1 : quest.RequiredCount;
                 quest.NextRewardRetryUtcTicks = 0;
+                if (!quest.Template.IsReturnItem)
+                    ShareObjective(player, quest);
                 // The objective dynel publishes the captured pickup acknowledgement first.
                 // The player's next tick then delivers the independent terminal rewards.
                 return true;
@@ -260,14 +317,18 @@ public sealed partial class QuestService
             return;
         var log = player.QuestLog ??= Load(player);
         long now = _now().Ticks;
-        foreach (var quest in log.Quests.Values.Where(q => q.IsActive && q.NpcObjectiveCommitPending
+        foreach (var quest in log.Quests.Values.Where(q => q.IsActive && !q.IsRewardPending
+            && (q.NpcObjectiveCommitPending || q.SharedEarnPending)
             && (force || q.NextRewardRetryUtcTicks <= now)).ToArray())
         {
             lock (player.PersistenceGate)
             {
                 quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
-                if (QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
-                    && parameters.ObjectiveNpc is { IsValid: true, MissionType: 0 })
+                if (!QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters))
+                    continue;
+                if (quest.SharedEarnPending)
+                    TryEarnBoundObjective(player, quest, parameters, null, quest.SharedRewardChance, share: false);
+                else if (parameters.ObjectiveNpc is { IsValid: true, MissionType: 0 })
                     TryEarnBoundObjective(player, quest, parameters, null);
             }
         }
@@ -526,8 +587,13 @@ public sealed partial class QuestService
     {
         if (stored == null || stored.CharacterId != player.Identity.Instance || stored.Source != (int)quest.Source
             || stored.AssignedAtUtcTicks != quest.AssignedAtUtc.Ticks
-            || (quest.Source == QuestSource.Generated && (stored.OwnerType != (int)QuestOwnerType.Character
-                || stored.OwnerId != player.Identity.Instance || stored.AcgBuildingGeneratorJson != quest.AcgBuildingGeneratorJson)))
+            // A team-owned quest binds each member through their own characterquests row (read for this character).
+            || (quest.Source == QuestSource.Generated && (stored.OwnerType switch
+                {
+                    (int)QuestOwnerType.Character => stored.OwnerId != player.Identity.Instance,
+                    (int)QuestOwnerType.Team => stored.OwnerId <= 0,
+                    _ => true
+                } || stored.AcgBuildingGeneratorJson != quest.AcgBuildingGeneratorJson)))
             throw new InvalidOperationException("Accepted quest authority changed.");
     }
 
