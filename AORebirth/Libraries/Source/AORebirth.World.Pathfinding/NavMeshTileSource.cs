@@ -12,12 +12,14 @@ namespace AORebirth.World.Pathfinding
     internal sealed class NavMeshTileSource : IDisposable
     {
         readonly SafeFileHandle? _file;
+        readonly string? _path;
         readonly byte[]? _bytes;
         bool _disposed;
 
-        NavMeshTileSource(SafeFileHandle? file, byte[]? bytes, long length)
+        NavMeshTileSource(SafeFileHandle? file, string? path, byte[]? bytes, long length)
         {
             _file = file;
+            _path = path;
             _bytes = bytes;
             Length = length;
         }
@@ -30,7 +32,7 @@ namespace AORebirth.World.Pathfinding
             SafeFileHandle file = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
             try
             {
-                return new NavMeshTileSource(file, null, RandomAccess.GetLength(file));
+                return new NavMeshTileSource(file, path, null, RandomAccess.GetLength(file));
             }
             catch
             {
@@ -42,16 +44,19 @@ namespace AORebirth.World.Pathfinding
         public static NavMeshTileSource FromBytes(byte[] bytes)
         {
             ArgumentNullException.ThrowIfNull(bytes);
-            return new NavMeshTileSource(null, bytes, bytes.Length);
+            return new NavMeshTileSource(null, null, bytes, bytes.Length);
         }
 
-        /// <summary>A sequential view from the start, for indexing.</summary>
+        /// <summary>
+        /// A sequential view from the start, for indexing; the caller disposes it. A file gets its own handle: a
+        /// FileStream over the source's handle would own it and close it on dispose, failing every later tile read.
+        /// </summary>
         public Stream OpenSequential()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_bytes != null)
                 return new MemoryStream(_bytes, writable: false);
-            return new FileStream(_file!, FileAccess.Read, 1 << 20, isAsync: false);
+            return new FileStream(_path!, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.SequentialScan);
         }
 
         /// <summary>Fills <paramref name="destination"/> from <paramref name="offset"/>; throws when the source ends first.</summary>
