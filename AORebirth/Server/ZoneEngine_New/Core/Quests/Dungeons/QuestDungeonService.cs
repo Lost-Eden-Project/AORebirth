@@ -381,6 +381,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 _dungeons[questId] = new CachedDungeon(parameters, expires.Ticks,
                     parameters.ObjectiveNpc == null ? KillTarget(template) : null,
                     OwnerId: player.Identity.Instance, AssignedAtUtcTicks: now.Ticks, FrozenJson: parametersJson);
+                // The dungeon's navmesh bakes now, off the tick, so it is ready by the time the player reaches the entrance.
+                _playfields.Value.DungeonNavMeshes.Prewarm(parameters, _layouts);
                 plan.PublishAfterCommit(notify: false);
                 SendKey(player, key, plan.Rows[0].ContainerPlacement, parameters.EntranceName);
                 if (sourceItem != null)
@@ -1033,7 +1035,13 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 parameters.ObjectiveNpc == null ? KillTarget(template) : null, ended, row.OwnerId, assignedAtUtcTicks,
                 row.AcgBuildingGeneratorJson ?? string.Empty);
             if (row.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks)
+            {
                 _dungeons[questId] = dungeon;
+                // A dungeon first seen after a restart: start its bake as the accept would have.
+                if (!ended && _playfields.IsValueCreated)
+                    _playfields.Value.DungeonNavMeshes.Prewarm(parameters, _layouts);
+            }
+
             return true;
         }
 

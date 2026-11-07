@@ -3,7 +3,6 @@ namespace AORebirth.World.Pathfinding
     using System;
     using System.Buffers.Binary;
     using System.Collections.Generic;
-    using Microsoft.Win32.SafeHandles;
 
     using DotRecast.Detour;
 
@@ -45,10 +44,10 @@ namespace AORebirth.World.Pathfinding
         /// Null when the mesh carries off-mesh connections: those link polygons by position, which this pass
         /// does not resolve, and a missed link could split an island, so the pre-check is disabled instead.
         /// </summary>
-        public static NavMeshIslands? Build(NavMeshTileIndex index, SafeFileHandle file)
+        public static NavMeshIslands? Build(NavMeshTileIndex index, NavMeshTileSource source)
         {
             ArgumentNullException.ThrowIfNull(index);
-            ArgumentNullException.ThrowIfNull(file);
+            ArgumentNullException.ThrowIfNull(source);
             if (index.HasOffMeshConnections)
                 return null;
 
@@ -85,7 +84,7 @@ namespace AORebirth.World.Pathfinding
                         continue;
                     }
 
-                    index.ReadTileBytes(file, entry, ref buffer);
+                    index.ReadTileBytes(source, entry, ref buffer);
                     ReadOnlySpan<byte> tile = buffer;
                     int polyCount = BinaryPrimitives.ReadInt32LittleEndian(tile.Slice(PolyCountOffset));
                     int vertCount = BinaryPrimitives.ReadInt32LittleEndian(tile.Slice(VertCountOffset));

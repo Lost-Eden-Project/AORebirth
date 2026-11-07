@@ -29,6 +29,7 @@ public sealed class NpcScriptCompiler
     public const int MaxNpcLifetimeSeconds = 3600;
     public const int MaxSpawnCount = 12;
     public const float MaxSpawnRadius = 30f;
+    public const int MaxSpawnLevelPercent = 200;
     public const int MaxCastDistance = 40;
 
     readonly IGameData _gameData;
@@ -691,7 +692,7 @@ public sealed class NpcScriptCompiler
     }
 
     /// <summary>
-    /// <c>{ "Hash", "At" | "Offset"?, "Count"?, "Radius"?, "LifetimeSeconds"?, "DespawnWithOwner"?, "Level"?, "JoinFight"? }</c>.
+    /// <c>{ "Hash", "At" | "Offset"?, "Count"?, "Radius"?, "LifetimeSeconds"?, "DespawnWithOwner"?, "Level" | "LevelPercent"?, "JoinFight"? }</c>.
     /// The hash is a constant or a $NpcHash param. DespawnWithOwner is true (at once), false (independent) or the
     /// seconds the spawn outlives its owner's death, reset or despawn; default true.
     /// </summary>
@@ -795,7 +796,20 @@ public sealed class NpcScriptCompiler
             return;
         }
 
-        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true));
+        int levelPercent = GetInt(value, "LevelPercent", 0);
+        if (levelPercent < 0 || levelPercent > MaxSpawnLevelPercent)
+        {
+            ctx.Error("SpawnNpc: LevelPercent must be 1.." + MaxSpawnLevelPercent);
+            return;
+        }
+
+        if (level > 0 && levelPercent > 0)
+        {
+            ctx.Error("SpawnNpc: Level or LevelPercent, not both");
+            return;
+        }
+
+        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true), levelPercent);
         ctx.Spawns.Add(spec);
         ctx.Ops.Add(new ScriptOp(ScriptOpCode.SpawnNpc, hashRef, centreRef, ctx.Spawns.Count - 1));
     }

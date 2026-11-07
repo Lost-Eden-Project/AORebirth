@@ -388,3 +388,20 @@ target, not whether it could then hit it.
 
 Consequences: such a target has no chance; after the 2 s per-target grace the NPC switches to another enemy it
 can hit, or leashes home when there is none.
+
+## Generated Dungeons Bake Their Navmesh Off The Tick; Room-Tile Reassembly Is Deferred
+
+Decision (2026-11-07): a quest dungeon's navmesh is baked with Recast from its generated collision on the thread
+pool and held in memory by generator payload (`DungeonNavMeshCache`), starting when the mission is accepted. The
+dungeon's build, already off the tick, attaches it through `NavMeshPathfinder.FromBytes`. Measured bakes: 0.2-0.5 s
+for a solo dungeon, about 2 s for a five-floor team dungeon, on one desktop core; Recast's thread option gains little.
+
+Reason: generated dungeons had no pathfinder at all (NPCs could not wander or plan routes), and a synchronous bake at
+zone-in would stall the tick.
+
+Alternative kept for later (option C): bake each style room template once per facing and reassemble its Detour tiles
+per layout by translating them into place, which is milliseconds with no runtime Recast. Rooms sit on the 10-unit
+block grid and floors stack as tile layers, so it fits. Prerequisites before swapping it in: a dungeon tile size that
+divides 10 units, separate from the outdoor NavAgent.json; doorway floor stubs during each room bake so agent-radius
+erosion does not close doors, with neighbouring floor heights within the climb tolerance so tiles link; and a per-style
+room tile set admitted as generated runtime GameData through the manifest chain. It replaces only the cache's bake step.

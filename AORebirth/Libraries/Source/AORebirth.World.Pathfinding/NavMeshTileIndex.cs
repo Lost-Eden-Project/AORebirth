@@ -2,7 +2,6 @@ namespace AORebirth.World.Pathfinding
 {
     using System;
     using System.IO;
-    using Microsoft.Win32.SafeHandles;
 
     using DotRecast.Core;
     using DotRecast.Core.Numerics;
@@ -103,39 +102,30 @@ namespace AORebirth.World.Pathfinding
         }
 
         /// <summary>Reads one tile's raw record into <paramref name="scratch"/> (grown to the largest tile) and returns its size.</summary>
-        public int ReadTileBytes(SafeFileHandle file, int entry, ref byte[] scratch)
+        public int ReadTileBytes(NavMeshTileSource source, int entry, ref byte[] scratch)
         {
             int size = _size[entry];
             if (scratch.Length < size)
                 scratch = new byte[Math.Max(size, LargestTileBytes)];
 
-            long offset = _offset[entry];
-            int read = 0;
-            while (read < size)
-            {
-                int n = RandomAccess.Read(file, scratch.AsSpan(read, size - read), offset + read);
-                if (n <= 0)
-                    throw new EndOfStreamException("Navmesh.dat ended inside tile " + entry + ".");
-                read += n;
-            }
-
+            source.ReadExactly(scratch.AsSpan(0, size), _offset[entry]);
             return size;
         }
 
         /// <summary>Reads and parses one tile into Detour's layout.</summary>
-        public DtMeshData ReadTile(SafeFileHandle file, int entry, ref byte[] scratch, DtMeshDataReader reader)
+        public DtMeshData ReadTile(NavMeshTileSource source, int entry, ref byte[] scratch, DtMeshDataReader reader)
         {
-            ReadTileBytes(file, entry, ref scratch);
+            ReadTileBytes(source, entry, ref scratch);
             // The reader consumes exactly the tile's fields; bytes past them in the scratch array are ignored.
             return reader.Read(new RcByteBuffer(scratch), MaxVertsPerPoly, false);
         }
 
-        public static NavMeshTileIndex Build(string path)
+        public static NavMeshTileIndex Build(NavMeshTileSource source)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(path);
-            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.SequentialScan);
+            ArgumentNullException.ThrowIfNull(source);
+            using Stream stream = source.OpenSequential();
             using var reader = new BinaryReader(stream);
-            long fileLength = stream.Length;
+            long fileLength = source.Length;
             if (fileLength > int.MaxValue)
                 throw new InvalidDataException("Navmesh.dat is larger than 2 GB.");
             NavMeshFile.ReadHeader(reader);

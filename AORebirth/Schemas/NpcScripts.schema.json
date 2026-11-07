@@ -194,7 +194,8 @@
               "description": "true (default): the spawn despawns as soon as its owner dies, resets or despawns; a number: that many seconds afterwards; false: it stays on its own.",
               "oneOf": [ { "type": "boolean" }, { "type": "integer", "minimum": 0, "maximum": 3600 } ]
             },
-            "Level": { "type": "integer", "minimum": 1, "description": "Spawn level; omit for the template's own." },
+            "Level": { "type": "integer", "minimum": 1, "description": "Spawn level; omit for the template's own. Not with LevelPercent." },
+            "LevelPercent": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Spawn level as a percent of the owner's level, rounded, at least 1. Not with Level." },
             "JoinFight": { "type": "boolean", "default": true, "description": "The spawn takes the owner's current target as its first hate." }
           }
         },

@@ -21,9 +21,25 @@ namespace AORebirth.World.Pathfinding
                 Directory.CreateDirectory(directory);
 
             using FileStream stream = new(path, FileMode.Create, FileAccess.Write, FileShare.None);
-            using var writer = new BinaryWriter(stream);
+            Write(stream, result);
+        }
+
+        /// <summary>Writes the <c>Navmesh.dat</c> layout to <paramref name="stream"/>, which stays open.</summary>
+        public static void Write(Stream stream, NavMeshBakeResult result)
+        {
+            ArgumentNullException.ThrowIfNull(stream);
+            ArgumentNullException.ThrowIfNull(result);
+            using var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true);
             WriteHeader(writer, result);
             new DtMeshSetWriter().Write(writer, result.Mesh, RcByteOrder.LITTLE_ENDIAN, cCompatibility: false);
+        }
+
+        /// <summary>The <c>Navmesh.dat</c> layout in memory: what <see cref="NavMeshPathfinder.FromBytes"/> loads.</summary>
+        public static byte[] ToBytes(NavMeshBakeResult result)
+        {
+            using var stream = new MemoryStream();
+            Write(stream, result);
+            return stream.ToArray();
         }
 
         /// <summary>

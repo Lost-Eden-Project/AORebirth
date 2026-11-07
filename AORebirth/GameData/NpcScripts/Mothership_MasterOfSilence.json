@@ -1,0 +1,25 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mothership_MasterOfSilence",
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        { "SpawnNpc": { "Hash": "ANOV", "Count": 8, "Radius": 10, "LevelPercent": 83, "JoinFight": false } }
+      ]
+    },
+    {
+      "On": "Reset",
+      "Interrupts": true,
+      "Do": [
+        { "SpawnNpc": { "Hash": "ANOV", "Count": 8, "Radius": 10, "LevelPercent": 83, "JoinFight": false } }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Hash": "MLOS",
+      "Provenance": "ao-acg mothership_dataset.json (Mali LiveCapture, 2026-11-05): every captured Master of Silence boss room (12 runs, levels 15-181) has 8 Nanovoiders present at first sighting with the boss, on a ring about 10 m from him (5 tiles); levels 0.82-0.87 x boss level, 83% fits best. The capture names no hash; ANOV is one of the existing Nanovoider templates. A reset brings back a full ring."
+    }
+  ]
+}

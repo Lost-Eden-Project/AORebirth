@@ -34,8 +34,9 @@ namespace ZoneEngine_New.Core.WorldSimulation
     /// </para>
     /// <para>
     /// A door is a vertical panel through its position, across its heading. Its template's collision sphere
-    /// (DynelCollision.json, the sphere the client's contacts use) gives the panel's height (twice the sphere centre)
-    /// and half width (the rest of the radius), and the touch reach (sphere radius plus the player's).
+    /// (DynelCollision.json, the sphere the client's contacts use) gives the panel's height (twice the sphere centre,
+    /// or the sphere's top for one centred at the base) and half width (the rest of the radius), and the touch reach
+    /// (sphere radius plus the player's).
     /// </para>
     /// </summary>
     public sealed class DoorOcclusion
@@ -336,7 +337,10 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 Position = new AoVector3(X, Y, Z);
                 Radius = radius;
                 CenterY = centerY;
-                Height = 2f * centerY;
+                // A sphere centred above the floor gives the panel inscribed in it from the floor up (twice the centre).
+                // One centred at or below the door's base (the Alien Mothership door 262487: CenterY 0) gives the
+                // sphere's span above the floor instead; twice the centre would be no panel at all.
+                Height = centerY > 0f ? 2f * centerY : centerY + radius;
                 HalfWidth = MathF.Sqrt(MathF.Max(0f, (radius * radius) - (centerY * centerY)));
 
                 // Doors turn about the vertical axis only: facing is +Z turned by the yaw, across is +X.

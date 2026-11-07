@@ -12,8 +12,9 @@ namespace AORebirth.World.Pathfinding
     using DotRecast.Detour;
 
     /// <summary>
-    /// Tick-thread Detour query over a GameData <c>Navmesh.dat</c>. One instance per playfield.
-    /// Tiles stream in from the file around each query and out again once idle (<see cref="NavMeshTileStreamer"/>),
+    /// Tick-thread Detour query over a navmesh in the <c>Navmesh.dat</c> layout: a playfield's GameData file, or the
+    /// bytes a generated dungeon was baked to (<see cref="FromBytes"/>). One instance per playfield.
+    /// Tiles stream in from the source around each query and out again once idle (<see cref="NavMeshTileStreamer"/>),
     /// so a playfield's resident navmesh is the part being walked on, not the whole bake.
     /// </summary>
     public sealed class NavMeshPathfinder : IDisposable
@@ -135,32 +136,68 @@ namespace AORebirth.World.Pathfinding
             if (!File.Exists(meshPath))
                 return false;
 
-            NavMeshBuildSettings settings;
+            if (!TryLoadSettings(gameDataRoot, out NavMeshBuildSettings? settings, out failure) || settings == null)
+                return false;
+
+            NavMeshTileSource? source = null;
+            try
+            {
+                source = NavMeshTileSource.OpenFile(meshPath);
+                pathfinder = Create(playfieldId, source, settings);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                source?.Dispose();
+                failure = "mesh: " + exception.Message;
+                return false;
+            }
+        }
+
+        /// <summary>The bake settings beside <paramref name="gameDataRoot"/> (<see cref="NavMeshBuildSettings.ResolvePath"/>).</summary>
+        public static bool TryLoadSettings(string gameDataRoot, out NavMeshBuildSettings? settings, out string? failure)
+        {
+            settings = null;
+            failure = null;
             try
             {
                 settings = NavMeshBuildSettings.Load(NavMeshBuildSettings.ResolvePath(gameDataRoot));
+                return true;
             }
             catch (Exception exception)
             {
                 failure = "settings: " + exception.Message;
                 return false;
             }
+        }
 
-            NavMeshTileStreamer? streamer = null;
+        /// <summary>
+        /// A pathfinder over a mesh held in memory in the <c>Navmesh.dat</c> layout (<see cref="NavMeshFile.ToBytes"/>):
+        /// a generated dungeon's bake. Tiles stream from the bytes exactly as they do from a file.
+        /// </summary>
+        public static NavMeshPathfinder FromBytes(int playfieldId, byte[] navMeshBytes, NavMeshBuildSettings settings)
+        {
+            ArgumentNullException.ThrowIfNull(navMeshBytes);
+            ArgumentNullException.ThrowIfNull(settings);
+            NavMeshTileSource source = NavMeshTileSource.FromBytes(navMeshBytes);
             try
             {
-                NavMeshTileIndex index = NavMeshTileIndex.Build(meshPath);
-                streamer = new NavMeshTileStreamer(index, meshPath);
-                NavMeshIslands? islands = NavMeshIslands.Build(index, streamer.File);
-                pathfinder = new NavMeshPathfinder(playfieldId, streamer, islands, settings);
-                return true;
+                return Create(playfieldId, source, settings);
             }
-            catch (Exception exception)
+            catch
             {
-                streamer?.Dispose();
-                failure = "mesh: " + exception.Message;
-                return false;
+                source.Dispose();
+                throw;
             }
+        }
+
+        /// <summary>Indexes <paramref name="source"/>, builds its islands and takes ownership of it.</summary>
+        static NavMeshPathfinder Create(int playfieldId, NavMeshTileSource source, NavMeshBuildSettings settings)
+        {
+            NavMeshTileIndex index = NavMeshTileIndex.Build(source);
+            var streamer = new NavMeshTileStreamer(index, source);
+            NavMeshIslands? islands = NavMeshIslands.Build(index, streamer.Source);
+            return new NavMeshPathfinder(playfieldId, streamer, islands, settings);
         }
 
         /// <summary>Releases tiles no query has touched lately. Call once per playfield tick.</summary>

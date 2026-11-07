@@ -3,6 +3,7 @@ namespace ZoneEngine_New.Core.Quests;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Security.Cryptography;
 using AORebirth.Interfaces.Persistence.Missions;
 using SmokeLounge.AOtomation.Messaging.GameData;
@@ -12,9 +13,10 @@ using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Quests.Dungeons;
 
 /// <summary>
-/// Sided mission tokens for dungeon quests with AwardsTokens: the dungeon counts its kills in memory
+/// The reward roll for dungeon quests with XP, items or a token behind it: the dungeon counts its kills in memory
 /// (<see cref="DungeonKills"/>), checkpoints them as one mission flag when it unloads, and the quest's completion
 /// transaction draws once with chance killed/total and keeps the draw as one more flag so a reward retry cannot redraw.
+/// A won draw pays the quest's XP and items, plus a sided token for Clan and Omni; a lost one pays only the credits.
 /// </summary>
 public sealed partial class QuestService
 {
@@ -84,23 +86,82 @@ public sealed partial class QuestService
         }
     }
 
-    /// <summary>A kill in a mission dungeon: marks the slot dead and tells the owner the token chance so far.</summary>
+    /// <summary>
+    /// A kill in a mission dungeon: marks the slot dead and tells the owner, or the owner's whole team, the reward
+    /// chance so far, whatever their side. The line comes from the chat server as an anonymous vicinity message
+    /// (yellow, as "All team members can loot these remains."); zone Feedback to the recipients in this dungeon when
+    /// the chat server cannot be reached. The owner only has to be in the dungeon, not near the kill.
+    /// </summary>
     internal void RecordDungeonKill(QuestDungeonPlayfield dungeon, NpcCharacter npc, IReadOnlyList<Player> players)
     {
-        if (dungeon.Kills is not { } kills || !kills.TryRecordKill(npc) || kills.Policy is not { } policy)
+        if (dungeon.Kills is not { } kills)
             return;
-        Player? owner = null;
-        for (int i = 0; i < players.Count; i++)
-            if (players[i].Identity.Instance == kills.OwnerId)
-                owner = players[i];
-        if (owner == null)
+        if (!kills.TryRecordKill(npc))
+        {
+            LogRewardChance(dungeon, npc, kills, "not-population");
             return;
+        }
+        if (kills.Policy is not { } policy)
+        {
+            LogRewardChance(dungeon, npc, kills, "no-reward-policy");
+            return;
+        }
         (int killed, int total) = kills.Chance();
-        if (total <= 0 || killed < policy.FeedbackStartingKill
-            || !policy.SidedItems.ContainsKey(owner.Stats.GetOrZero(CharacterStat.Side)))
+        if (total <= 0 || killed <= 0)
+        {
+            LogRewardChance(dungeon, npc, kills, "no-kills");
             return;
-        ClientFeedback.SendFormatted(owner, policy.FeedbackMessageId, (float)(100.0 * killed / total));
+        }
+        if (policy.FormatFeedback((float)(100.0 * killed / total)) is not { } text)
+        {
+            LogRewardChance(dungeon, npc, kills, "no-feedback-text");
+            return;
+        }
+
+        Player? owner = null;
+        foreach (Player player in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities())
+            if (player.Identity.Instance == kills.OwnerId)
+                owner = player;
+        if (owner == null || !GetLog(owner).Quests.TryGetValue(kills.QuestId, out PlayerQuest? quest))
+        {
+            LogRewardChance(dungeon, npc, kills, "owner-or-quest-missing");
+            return;
+        }
+        if (!HasGatedReward(owner, quest, policy))
+        {
+            LogRewardChance(dungeon, npc, kills, "nothing-gated side=" + owner.Stats.GetOrZero(CharacterStat.Side));
+            return;
+        }
+
+        IReadOnlyList<int> recipients = dungeon.GetService<Teams.TeamService>()?.GetTeam(owner)?.MemberIds
+            ?? [owner.Identity.Instance];
+        if (dungeon.GetService<Chat.VicinityChatRelay>()?.Announce(text, recipients) == true)
+        {
+            LogRewardChance(dungeon, npc, kills, "sent-chat recipients=" + recipients.Count);
+            return;
+        }
+
+        foreach (Player player in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities())
+            if (recipients.Contains(player.Identity.Instance))
+                ClientFeedback.SendFormatted(player, ClientFeedback.PlainText, text);
+        LogRewardChance(dungeon, npc, kills, "sent-zone recipients=" + recipients.Count);
     }
+
+    void LogRewardChance(QuestDungeonPlayfield dungeon, NpcCharacter npc, DungeonKills kills, string outcome)
+    {
+        (int killed, int total) = kills.Chance();
+        _logger.Info("Mission reward chance pf=" + dungeon.Identity.Instance + " quest=" + kills.QuestId + " npc=" + npc.Name
+            + " kills=" + killed + "/" + total + " outcome=" + outcome);
+    }
+
+    /// <summary>
+    /// True when the reward roll has something to decide for <paramref name="player"/>: the quest's XP or items, or a
+    /// token for their side. With nothing behind it the dungeon does not roll and sends no chance line.
+    /// </summary>
+    bool HasGatedReward(Player player, PlayerQuest quest, MissionTokenRewardPolicy policy)
+        => (quest.Template.Reward?.Xp ?? 0) > 0
+            || RewardItemsFor(player, quest).Count > 0
+            || (policy.AwardsTokens && policy.SidedItems.ContainsKey(player.Stats.GetOrZero(CharacterStat.Side)));
 
     static void UpsertFlag(IMissionDaoTransaction tx, MissionKeyData key, string flagKey, string value, long now)
     {
@@ -133,7 +194,7 @@ public sealed partial class QuestService
     {
         if (quest.Source != QuestSource.Generated
             || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var parameters)
-            || parameters.TokenReward is not { } policy)
+            || parameters.TokenReward is not { } policy || !HasGatedReward(player, quest, policy))
             return;
         var key = new MissionKeyData(player.Identity.Instance, quest.QuestId);
         string flagKey = TokenRewardFlag(stored.AssignedAtUtcTicks);
@@ -154,10 +215,13 @@ public sealed partial class QuestService
             // Earning away from the dungeon (a bound objective committed after relogging): the last checkpoint decides.
             (killed, total) = DungeonKills.ChanceOf(parameters, transaction.GetFlag(key, KillsFlag(stored.AssignedAtUtcTicks))?.Value);
         }
+        // Every side rolls for the reward; only Clan and Omni, on a token-awarding quest, have a token to add to a won roll.
         int side = player.Stats.GetOrZero(CharacterStat.Side);
-        bool sided = policy.SidedItems.TryGetValue(side, out int itemId);
-        bool won = sided && total > 0 && killed > 0 && RandomNumberGenerator.GetInt32(total) < killed;
-        var roll = new TokenRoll(killed, total, won, won ? itemId : 0, won ? policy.ItemQuality : 0);
+        int itemId = 0;
+        bool sided = policy.AwardsTokens && policy.SidedItems.TryGetValue(side, out itemId);
+        bool won = total > 0 && killed > 0 && RandomNumberGenerator.GetInt32(total) < killed;
+        bool token = won && sided;
+        var roll = new TokenRoll(killed, total, won, token ? itemId : 0, token ? policy.ItemQuality : 0);
         UpsertFlag(transaction, key, flagKey, roll.Serialize(), now);
     }
 

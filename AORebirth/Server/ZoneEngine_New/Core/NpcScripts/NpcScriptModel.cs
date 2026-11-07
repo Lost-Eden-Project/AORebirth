@@ -124,8 +124,9 @@ public enum NpcScriptTarget
 /// <param name="OwnerDespawnDelaySeconds">
 /// Despawn this long after the owner dies, resets or despawns (0 = at once); -1 leaves the spawn independent.
 /// </param>
-/// <param name="Level">Spawn level; 0 for the template's own.</param>
+/// <param name="Level">Spawn level; 0 for the template's own (or <paramref name="LevelPercent"/>).</param>
 /// <param name="JoinFight">The spawn takes the owner's current target as its first hate.</param>
+/// <param name="LevelPercent">Spawn level as a percent of the owner's level, rounded, at least 1; 0 when unused.</param>
 public readonly record struct SpawnNpcSpec(
     bool Absolute,
     int Count,
@@ -133,7 +134,8 @@ public readonly record struct SpawnNpcSpec(
     int LifetimeSeconds,
     int OwnerDespawnDelaySeconds,
     int Level,
-    bool JoinFight);
+    bool JoinFight,
+    int LevelPercent = 0);
 
 public enum GfxAnchor
 {

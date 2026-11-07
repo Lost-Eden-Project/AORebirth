@@ -137,6 +137,9 @@ namespace ZoneEngine_New.Core.Entities
         protected override void OnOpenRefusedInUse(Player player)
             => Helpers.ClientFeedback.Send(player, Helpers.ClientFeedback.SomebodyAlreadyLootingRemains);
 
+        protected override void OnOpenRefusedNoRights(Player player)
+            => Helpers.ClientFeedback.Send(player, Helpers.ClientFeedback.NotAllowedToLootRemains);
+
         /// <summary>
         /// First opener receives any cash on the corpse, up to the credit cap (the rest is lost); later openers get none.
         /// </summary>

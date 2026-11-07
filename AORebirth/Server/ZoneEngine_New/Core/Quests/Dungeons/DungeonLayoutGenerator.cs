@@ -33,15 +33,17 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     public sealed record DungeonDoorStyle(int DoorTemplate, int ExitTemplate, int OpenChancePercent, int LockedChancePercent);
 
     /// <summary>
-    /// DungeonGeneration.json TokenReward as written: the sided token items by item hash (1 Clan, 2 Omni). The
-    /// generator resolves the hashes against ItemTemplates.json into a <see cref="MissionTokenRewardPolicy"/>.
+    /// DungeonGeneration.json TokenReward as written: the sided token items by item hash (1 Clan, 2 Omni) and the
+    /// reward-chance line. The generator resolves the hashes against ItemTemplates.json into a
+    /// <see cref="MissionTokenRewardPolicy"/>.
     /// </summary>
     public sealed class MissionTokenRewardSetting
     {
         public Dictionary<int, string> SidedItems { get; set; } = [];
         public int ItemQuality { get; set; }
-        public int FeedbackStartingKill { get; set; }
-        public int FeedbackMessageId { get; set; }
+
+        /// <summary>The reward-chance line; {0} is the chance in percent (a composite format string).</summary>
+        public string FeedbackText { get; set; } = string.Empty;
 
         /// <summary>The policy with each side's hash resolved to its single template id; null with the reason when it cannot be.</summary>
         internal MissionTokenRewardPolicy? Resolve(IGameData gameData, out string? problem)
@@ -61,32 +63,58 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             var policy = new MissionTokenRewardPolicy
             {
                 SidedItems = items, ItemQuality = ItemQuality,
-                FeedbackStartingKill = FeedbackStartingKill, FeedbackMessageId = FeedbackMessageId
+                FeedbackText = FeedbackText
             };
-            if (!policy.IsValid)
-                problem = "TokenReward needs one Clan (1) and one Omni (2) hash, a positive ItemQuality, FeedbackStartingKill and FeedbackMessageId";
-            return policy.IsValid ? policy : null;
+            if (!policy.IsValid || policy.FormatFeedback(0) == null)
+            {
+                problem = "TokenReward needs one Clan (1) and one Omni (2) hash, a positive ItemQuality and a FeedbackText format with {0}";
+                return null;
+            }
+            return policy;
         }
     }
 
-    /// <summary>Mission token content frozen with each newly accepted dungeon: the sided token template ids.</summary>
+    /// <summary>
+    /// Mission reward-roll content frozen with each newly accepted dungeon: the sided token template ids and the
+    /// reward-chance line. A dungeon accepted before FeedbackText existed has none and sends no line.
+    /// </summary>
     public sealed class MissionTokenRewardPolicy
     {
         public Dictionary<int, int> SidedItems { get; set; } = [];
         public int ItemQuality { get; set; }
-        public int FeedbackStartingKill { get; set; }
-        public int FeedbackMessageId { get; set; }
+        public string? FeedbackText { get; set; }
+
+        /// <summary>
+        /// Whether a won roll adds the sided token (the quest's AwardsTokens). True on a dungeon accepted before this
+        /// existed: only token-awarding dungeons carried the policy then.
+        /// </summary>
+        public bool AwardsTokens { get; set; } = true;
 
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsValid => SidedItems != null && SidedItems.Count == 2
             && SidedItems.TryGetValue((int)Side.Clan, out int clan) && clan > 0
             && SidedItems.TryGetValue((int)Side.Omni, out int omni) && omni > 0 && clan != omni
-            && ItemQuality > 0 && FeedbackStartingKill > 0 && FeedbackMessageId > 0;
+            && ItemQuality > 0;
+
+        /// <summary>The reward-chance line for <paramref name="percent"/>; null when there is no usable FeedbackText.</summary>
+        public string? FormatFeedback(float percent)
+        {
+            if (string.IsNullOrWhiteSpace(FeedbackText) || !FeedbackText.Contains("{0", StringComparison.Ordinal))
+                return null;
+            try
+            {
+                return string.Format(System.Globalization.CultureInfo.InvariantCulture, FeedbackText, percent);
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
 
         public MissionTokenRewardPolicy Clone() => new()
         {
             SidedItems = new Dictionary<int, int>(SidedItems), ItemQuality = ItemQuality,
-            FeedbackStartingKill = FeedbackStartingKill, FeedbackMessageId = FeedbackMessageId
+            FeedbackText = FeedbackText, AwardsTokens = AwardsTokens
         };
     }
 
@@ -312,7 +340,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 var rooms = _generator.LoadStyle(chosenStyle);
                 parameters.GeneratorVersion = CurrentVersion;
                 parameters.IsTeam = team;
-                parameters.TokenReward = tokenReward ? _tokenReward?.Clone() : null;
+                // Every dungeon carries the reward roll; a quest that declines tokens only adds none to a won roll.
+                parameters.TokenReward = _tokenReward?.Clone();
+                if (parameters.TokenReward != null)
+                    parameters.TokenReward.AwardsTokens = tokenReward;
                 parameters.PopulationNpcHashes = populationNpcHashes;
                 parameters.PopulationLevelSpreadPercent = Math.Clamp(populationLevelSpreadPercent, 0, QuestDungeonTemplate.MaxSpreadPercent);
                 // A quest's own tables are frozen as given (null: none); a terminal mission takes the policy's chest table

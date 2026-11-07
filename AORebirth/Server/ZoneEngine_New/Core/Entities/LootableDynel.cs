@@ -176,7 +176,10 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             if (!CanOpenLoot(player))
+            {
+                OnOpenRefusedNoRights(player);
                 return false;
+            }
 
             // The handle comes from the opener's own pool, shared with their bags; another opener gets one from theirs.
             _inventoryHandle = player.Inventory.GetOrAllocateLootHandle(Identity);
@@ -199,6 +202,11 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>Called when <paramref name="player"/> tries to open this lootable while another player has it open.</summary>
         protected virtual void OnOpenRefusedInUse(Player player)
+        {
+        }
+
+        /// <summary>Called when <paramref name="player"/> tries to open this lootable and <see cref="CanOpenLoot"/> refuses.</summary>
+        protected virtual void OnOpenRefusedNoRights(Player player)
         {
         }
 

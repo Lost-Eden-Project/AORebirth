@@ -116,6 +116,10 @@ public sealed class QuestDungeonPlayfield : Playfield
             _simulation = PlayfieldWorldSimulation.Create(
                 Identity.Instance, geometry, MetaData, DestinationsCatalog.Instance, GameData, Logger, ItemTemplates);
             RegisterWorldServices(_simulation);
+            // Before anything spawns: NPC placement and wandering go through the pathfinder. The bake normally
+            // finished while the player travelled from the terminal; this build runs off the tick, so waiting is fine.
+            if (dungeon != null)
+                Pathfinder = DungeonNavMeshes.TryCreatePathfinder(Identity.Instance, Layout);
         }
 
         if (dungeon != null)

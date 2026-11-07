@@ -330,8 +330,10 @@ public sealed partial class QuestService
                         ?? throw new InvalidOperationException("Stored reward definition is unavailable.")
                     : quest.Template;
                 var reward = rewardTemplate.Reward;
-                var definitions = RewardItemsFor(player, quest, reward).ToList();
-                if (tokenReward?.Won == true)
+                // A dungeon quest's reward roll gates its XP and items (and a sided token); credits pay on completion.
+                bool rewardLost = tokenReward is { Won: false };
+                List<QuestRewardItem> definitions = rewardLost ? new() : RewardItemsFor(player, quest, reward).ToList();
+                if (tokenReward is { Won: true, ItemId: > 0 })
                 {
                     definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
                 }
@@ -375,7 +377,7 @@ public sealed partial class QuestService
                 }
                 // XP is awarded after the commit through the ordinary XP path (caps, research share, level-ups) and
                 // persists with the next save; only cash and mission bits are durable parts of the reward transaction.
-                int xpReward = Math.Max(0, reward?.Xp ?? 0);
+                int xpReward = rewardLost ? 0 : Math.Max(0, reward?.Xp ?? 0);
                 var values = new Dictionary<CharacterStat, int>();
                 if (reward?.Credits > 0)
                     values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
@@ -442,7 +444,7 @@ public sealed partial class QuestService
                 QuestJournal.SendEnded(player, quest, CharacterActionType.MissionAccomplished);
                 QuestJournal.Delete(player, quest);
                 _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId
-                    + (tokenReward == null ? string.Empty : " tokenWon=" + tokenReward.Won + " tokenItem=" + tokenReward.ItemId
+                    + (tokenReward == null ? string.Empty : " rewardWon=" + tokenReward.Won + " tokenItem=" + tokenReward.ItemId
                         + " tokenKills=" + tokenReward.Killed + "/" + tokenReward.Total));
                 if (!string.IsNullOrEmpty(rewardTemplate.NextStep) && _catalog.TryGet(rewardTemplate.NextStep, out _))
                     TryAssignTemplate(player, rewardTemplate.NextStep, out _);

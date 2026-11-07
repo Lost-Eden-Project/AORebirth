@@ -241,8 +241,11 @@ namespace ZoneEngine_New.Core.Playfield
         /// <summary>Parsed Walls.dat / Dynels.dat / Doors.dat / Collision.dat; members null when files are missing.</summary>
         public PlayfieldGeometryData Geometry { get; }
 
-        /// <summary>Null when the playfield is a style template or GameData has no usable Navmesh.dat.</summary>
-        public NavMeshPathfinder? Pathfinder { get; private set; }
+        /// <summary>
+        /// Null when the playfield is a style template or GameData has no usable Navmesh.dat. A generated dungeon
+        /// sets its own from the bake cache (<see cref="DungeonNavMeshes"/>) while it builds.
+        /// </summary>
+        public NavMeshPathfinder? Pathfinder { get; protected set; }
 
         /// <summary>Suppression gas per zone, from the resource playfield's Districts.json.</summary>
         public DistrictFightModes FightModes { get; }
@@ -318,6 +321,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Item definitions, including vicinity spells that live on the template rather than the placement.</summary>
         protected IItemTemplateCatalog ItemTemplates => _playfieldManager.ItemTemplates;
+
+        /// <summary>Baked navmeshes for generated dungeons, shared engine-wide.</summary>
+        protected Quests.Dungeons.DungeonNavMeshCache DungeonNavMeshes => _playfieldManager.DungeonNavMeshes;
 
         /// <summary>Optional world simulation assigned by <see cref="ACGPlayfield.Build"/>.</summary>
         public WorldSimulationAccess WorldAccess =>

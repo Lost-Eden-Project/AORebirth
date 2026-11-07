@@ -897,6 +897,8 @@ public sealed class NpcScriptRunner
 
         SpawnService? spawns = playfield.GetService<SpawnService>();
         int? level = spec.Level > 0 ? spec.Level : null;
+        if (spec.LevelPercent > 0)
+            level = Math.Max(1, (int)Math.Round(_npc.Stats.GetOrOne(CharacterStat.Level) * spec.LevelPercent / 100.0, MidpointRounding.AwayFromZero));
         if (spawns == null
             || !playfield.GetRequiredService<IGameData>().TryResolveMobTemplate(hash, level, out MobTemplate template)
             || !NpcTemplateValidation.CanSpawn(template))

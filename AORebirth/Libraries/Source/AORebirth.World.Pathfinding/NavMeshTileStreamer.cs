@@ -4,7 +4,6 @@ namespace AORebirth.World.Pathfinding
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
-    using Microsoft.Win32.SafeHandles;
 
     using DotRecast.Detour;
     using DotRecast.Detour.Io;
@@ -39,7 +38,7 @@ namespace AORebirth.World.Pathfinding
         const int SweepIntervalMs = 1000;
 
         readonly NavMeshTileIndex _index;
-        readonly SafeFileHandle _file;
+        readonly NavMeshTileSource _source;
         readonly DtNavMesh _mesh;
         readonly DtMeshDataReader _reader = new();
         readonly int _capacity;
@@ -59,23 +58,21 @@ namespace AORebirth.World.Pathfinding
         int _busy;
         bool _disposed;
 
-        public NavMeshTileStreamer(NavMeshTileIndex index, string path)
+        /// <summary>Takes ownership of <paramref name="source"/>.</summary>
+        public NavMeshTileStreamer(NavMeshTileIndex index, NavMeshTileSource source)
         {
             ArgumentNullException.ThrowIfNull(index);
-            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            ArgumentNullException.ThrowIfNull(source);
             _index = index;
+            _source = source;
             _capacity = Math.Min(WindowCapacity, index.Count);
-            _file = System.IO.File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
 
             DtNavMeshParams meshParams = index.Params;
             meshParams.maxTiles = _capacity;
             _mesh = new DtNavMesh();
             DtStatus status = _mesh.Init(meshParams, index.MaxVertsPerPoly);
             if (status.Failed())
-            {
-                _file.Dispose();
                 throw new InvalidDataException("Detour rejected the navmesh parameters.");
-            }
 
             _slotEntry = new int[_capacity];
             _slotTouchMs = new long[_capacity];
@@ -91,8 +88,8 @@ namespace AORebirth.World.Pathfinding
 
         public NavMeshTileIndex Index => _index;
 
-        /// <summary>The open <c>Navmesh.dat</c>; the streamer owns it.</summary>
-        public SafeFileHandle File => _file;
+        /// <summary>The mesh bytes tiles are read from; the streamer owns it.</summary>
+        public NavMeshTileSource Source => _source;
 
         public int LoadedCount { get; private set; }
 
@@ -284,7 +281,7 @@ namespace AORebirth.World.Pathfinding
             if (_disposed)
                 return;
             _disposed = true;
-            _file.Dispose();
+            _source.Dispose();
         }
 
         /// <summary>
@@ -320,7 +317,7 @@ namespace AORebirth.World.Pathfinding
                 return false;
 
             long started = Stopwatch.GetTimestamp();
-            DtMeshData data = _index.ReadTile(_file, entry, ref _scratch, _reader);
+            DtMeshData data = _index.ReadTile(_source, entry, ref _scratch, _reader);
             DtStatus status = _mesh.AddTile(data, 0, 0, out long tileRef);
             LoadTicks += Stopwatch.GetTimestamp() - started;
             if (status.Failed())

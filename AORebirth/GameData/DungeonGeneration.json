@@ -35,11 +35,10 @@
     }
   },
   "TokenReward": {
-    "_comment": "Sided mission token items by item hash: 1 Clan (MSTO), 2 Omni (MSTK). A dungeon quest with AwardsTokens rolls one token at completion with chance killed/total over its population. Feedback starts after FeedbackStartingKill kills.",
+    "_comment": "Every dungeon quest with XP, items or a token behind it rolls its reward at completion with chance killed/total over its population: a won roll pays the quest's XP and items plus, when the quest has AwardsTokens, a sided token (1 Clan MSTO, 2 Omni MSTK; Neutral gets none); credits always pay. FeedbackText ({0} = chance in percent) goes to the owner's team, every side, on every kill.",
     "SidedItems": { "1": "MSTO", "2": "MSTK" },
     "ItemQuality": 1,
-    "FeedbackStartingKill": 5,
-    "FeedbackMessageId": 79979934
+    "FeedbackText": "Mission chance of reward upped to {0:0}% due to your heroic effort."
   },
   "FindItem": {
     "_comment": "AORebirth pickup-objective policy referencing the existing ItemTemplates catalog. URSE is the Urgent Sensitive Information item observed in the completed Find Item capture. QuestInstanceStat is the captured world-item marker; it is not a generated quest ID or a reward. Selection is configurable policy, not a retail probability claim.",

@@ -104,6 +104,9 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"Somebody is already looting these remains." (category 110, 228010023). A corpse another player has open.</summary>
         public const int SomebodyAlreadyLootingRemains = 228010023;
 
+        /// <summary>"You're not allowed to loot these remains!" (category 110, 191940452). A reserved corpse opened without loot rights.</summary>
+        public const int NotAllowedToLootRemains = 191940452;
+
         /// <summary>
         /// "%u of your XP were allocated to your personal research." (category 110, 0x004DA1E0). Live sends it on a kill
         /// whose XP went to research, with FormatFeedback Unknown1 <see cref="ResearchAllocatedChannel"/>, before the

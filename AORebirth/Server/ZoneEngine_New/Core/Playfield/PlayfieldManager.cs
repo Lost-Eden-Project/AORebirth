@@ -129,6 +129,7 @@ namespace ZoneEngine_New.Core.Playfield
             _shopDao = shopDao;
             Teams = teams ?? throw new ArgumentNullException(nameof(teams));
             ItemTemplates = itemTemplates ?? throw new ArgumentNullException(nameof(itemTemplates));
+            DungeonNavMeshes = new ZoneEngine_New.Core.Quests.Dungeons.DungeonNavMeshCache(gameData.RootPath, logger);
             Quests = quests;
             // A reload that gives a visible NPC a script, or takes it away, is told to its observers on each tick.
             if (knubot != null)
@@ -158,6 +159,9 @@ namespace ZoneEngine_New.Core.Playfield
         public ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? NpcScripts { get; }
 
         public IItemTemplateCatalog ItemTemplates { get; }
+
+        /// <summary>Navmeshes for generated dungeons, baked off the tick and kept by layout.</summary>
+        public ZoneEngine_New.Core.Quests.Dungeons.DungeonNavMeshCache DungeonNavMeshes { get; }
 
         /// <summary>Root quest service, forwarded into every playfield container.</summary>
         public Quests.QuestService? Quests { get; }
