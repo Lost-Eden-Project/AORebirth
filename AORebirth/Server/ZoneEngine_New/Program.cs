@@ -422,7 +422,6 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Commands.Setups.GiveSetupService>();
             services.AddSingleton<IGmCommand, GiveCommand>();
             services.AddSingleton<IGmCommand, NpcCommand>();
-            services.AddSingleton<IGmCommand, FeaturesCommand>();
             services.AddSingleton<IGmCommand, ServerStatsCommand>();
             services.AddSingleton<IGmCommand, QuestsCommand>();
             services.AddSingleton<IGmCommand, DiagCommand>();

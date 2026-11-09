@@ -215,10 +215,10 @@ namespace ZoneEngine_New.Core.Inventory
             if (!ApplyMove(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource))
                 return;
 
-            // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F); corpse loot echoes it too,
-            // since the client only joins a looted stack on that echo. Ownership still uses the resolved physical slot,
-            // committed by ApplyMove above.
-            int acknowledgementPlacement = lootSource != null && message.TargetPlacement == LootAutoPlacement
+            // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F). Corpse loot that reaches
+            // here found no stack to join (that path returned above), so it names the physical slot it landed in: the new
+            // client places a looted item only from a real slot. Ownership uses the slot ApplyMove committed.
+            int acknowledgementPlacement = lootSource is Chest && message.TargetPlacement == LootAutoPlacement
                 ? message.TargetPlacement : destSlot;
             SendAck(player, message.SourceContainer, player.Identity, acknowledgementPlacement);
         }
