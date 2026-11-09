@@ -144,6 +144,7 @@ tools-temp/db-backups/
 /diagnostics/
 /tools-temp/ProcDump/
 /tools-temp/_tmp*
+/tools-temp/DbProbe/
 /Captures/*
 !/Captures/README.md
 /AORebirth/Cursor/
