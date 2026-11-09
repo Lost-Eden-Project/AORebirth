@@ -212,22 +212,23 @@ namespace ZoneEngine_New.Core.Entities
         /// moving), and is dropped when its fight ends or moves to another target.
         /// </summary>
         // Request: the receive time of the message that asked for it, for the module action event it resolves with.
-        readonly List<(CharacterStat Special, Identity Target, long Request)> _queuedSpecials = new();
+        // Header: the request's N3 header byte, for the echo sent when it fires.
+        readonly List<(CharacterStat Special, Identity Target, long Request, byte Header)> _queuedSpecials = new();
 
         /// <summary>Queues <paramref name="special"/> against <paramref name="target"/>, replacing an earlier request for it.</summary>
-        public void QueueSpecial(CharacterStat special, Identity target, long requestTimestamp = 0)
+        public void QueueSpecial(CharacterStat special, Identity target, long requestTimestamp = 0, byte requestHeader = 0x01)
         {
             int replaced = _queuedSpecials.FindIndex(entry => entry.Special == special);
             if (replaced >= 0)
             {
-                (CharacterStat _, Identity oldTarget, long oldRequest) = _queuedSpecials[replaced];
+                (CharacterStat _, Identity oldTarget, long oldRequest, byte _) = _queuedSpecials[replaced];
                 _queuedSpecials.RemoveAt(replaced);
                 if (this is Player player)
                     ModuleHooks.ActionResolved(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Cancelled,
                         target: oldTarget, detail: "replaced", requestTimestamp: oldRequest);
             }
 
-            _queuedSpecials.Add((special, target, requestTimestamp));
+            _queuedSpecials.Add((special, target, requestTimestamp, requestHeader));
         }
 
         public bool HasQueuedSpecial(CharacterStat special) => _queuedSpecials.Exists(entry => entry.Special == special);
@@ -238,7 +239,7 @@ namespace ZoneEngine_New.Core.Entities
             if (_queuedSpecials.Count == 0)
                 return;
             if (this is Player dropping)
-                foreach ((CharacterStat special, Identity target, long request) in _queuedSpecials)
+                foreach ((CharacterStat special, Identity target, long request, byte _) in _queuedSpecials)
                     ModuleHooks.ActionResolved(dropping, PlayerActionKind.SpecialAttack, (int)special,
                         PlayerActionOutcome.Cancelled, target: target, detail: detail, requestTimestamp: request);
             _queuedSpecials.Clear();
@@ -255,9 +256,9 @@ namespace ZoneEngine_New.Core.Entities
                 return;
             }
 
-            foreach ((CharacterStat special, Identity target, long request) in _queuedSpecials.ToArray())
+            foreach ((CharacterStat special, Identity target, long request, byte header) in _queuedSpecials.ToArray())
             {
-                if (!_queuedSpecials.Contains((special, target, request)))
+                if (!_queuedSpecials.Contains((special, target, request, header)))
                     continue;
 
                 Character? victim = Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel)
@@ -266,12 +267,12 @@ namespace ZoneEngine_New.Core.Entities
                 // TryFire raises the module Resolved for what it decides; a gone target is decided here.
                 SpecialAttacks.FireResult result = victim == null || victim.IsDead
                     ? SpecialAttacks.FireResult.Dropped
-                    : SpecialAttacks.TryFire(this, victim, special, request);
+                    : SpecialAttacks.TryFire(this, victim, special, request, header);
                 if ((victim == null || victim.IsDead) && this is Player player)
                     ModuleHooks.ActionResolved(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Failed,
                         ActionRefusal.Target, target: target, detail: "target gone", requestTimestamp: request);
                 if (result != SpecialAttacks.FireResult.Waiting)
-                    _queuedSpecials.Remove((special, target, request));
+                    _queuedSpecials.Remove((special, target, request, header));
                 if (Playfield == null)
                     return;
             }
@@ -3555,14 +3556,18 @@ namespace ZoneEngine_New.Core.Entities
         bool _clientFrozen;
 
         /// <summary>
-        /// Tells a player's own client to hold still while rooted or stunned, and to move again after. The client has no
-        /// handling of the Stun (53122) or root functions itself: it applies a server CharDCMove to its own character
-        /// only when the N3 header byte after the identity is 1 (n3InfoItemRemote_t::ToBePassedOn, N3.dll Construct;
-        /// 0 is for observers) and then runs the action through its movement controller (Gamecode.dll 0x1006bb71 ->
-        /// 0x1006c935): SwitchToFrozen (0x17) enters Frozen mode (vehicle halted, body stationary, movement input
-        /// ignored), LeaveFrozen (0x26) returns to the mode it was in. The coordinates in a self-directed move are
-        /// replaced by the client's own, so this never snaps it. Without this the client walked freely through every
-        /// stun and only got pulled back by <see cref="Movement.CharacterMotor"/>'s root correction.
+        /// Tells a player's own client to hold still while rooted or stunned, and to move again after. The client
+        /// applies a server CharDCMove to its own character only when the N3 header byte after the identity is 1
+        /// (n3InfoItemRemote_t::ToBePassedOn, N3.dll Construct; 0 is for observers) and then runs the action through
+        /// its movement controller (Gamecode.dll 0x1006bb71 -> 0x1006c935): SwitchToFrozen (0x17) enters Frozen mode
+        /// (vehicle halted, body stationary, movement input ignored), LeaveFrozen (0x26) returns to the mode it was in.
+        /// Frozen mode accepts only turns, 0x10 and LeaveFrozen (Gamecode.dll 0x1006c6f4), so a FullStop (0x15) goes
+        /// first: otherwise a player running when stunned keeps the run in their movement status and runs in place,
+        /// turning at the moving rate, for the whole stun. The client's own stun function (0xcf82, run from the nano's
+        /// lists: 0x1005a02c, then Features 4 off) also does FullStop then SwitchToFrozen, but the nano's
+        /// SetNanoDuration arrives after this move, so its FullStop is refused too. The coordinates in a self-directed
+        /// move are replaced by the client's own, so this never snaps it. Without this the client walked freely through
+        /// every stun and only got pulled back by <see cref="Movement.CharacterMotor"/>'s root correction.
         /// </summary>
         void SyncClientFrozenMode()
         {
@@ -3572,19 +3577,25 @@ namespace ZoneEngine_New.Core.Entities
             if (rooted == _clientFrozen)
                 return;
             _clientFrozen = rooted;
+            if (rooted)
+                SendSelfMove(session, MovementAction.FullStop);
+            SendSelfMove(session, rooted ? MovementAction.SwitchToFrozen : MovementAction.LeaveFrozen);
+        }
+
+        /// <summary>Sends a CharDCMove the player's own client applies to itself (N3 header byte 1).</summary>
+        void SendSelfMove(Network.IZoneSession session, MovementAction action) =>
             session.Send(
                 new CharDCMoveMessage
                 {
                     Identity = Identity,
                     Unknown = 0x01,
-                    MoveType = (byte)(rooted ? MovementAction.SwitchToFrozen : MovementAction.LeaveFrozen),
+                    MoveType = (byte)action,
                     Heading = new MsgQuaternion { X = Rotation.xf, Y = Rotation.yf, Z = Rotation.zf, W = Rotation.wf },
                     Coordinates = new MsgVector3 { X = Position.xf, Y = Position.yf, Z = Position.zf },
                     Unknown1 = 0,
                     AuxA = 0,
                     AuxB = 0
                 });
-        }
 
         /// <summary>
         /// Requests a stat rebase at the next safe point in the tick. Batched so a burst of buff

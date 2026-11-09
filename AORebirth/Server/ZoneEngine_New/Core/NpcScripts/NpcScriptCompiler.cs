@@ -31,6 +31,9 @@ public sealed class NpcScriptCompiler
     public const float MaxSpawnRadius = 30f;
     public const int MaxSpawnLevelPercent = 200;
     public const int MaxCastDistance = 40;
+    public const int MaxAddDiedDelayMs = 3_600_000;
+    public const int MaxTagLength = 32;
+    public const int MaxRandomWeight = 10_000;
 
     readonly IGameData _gameData;
 
@@ -75,6 +78,13 @@ public sealed class NpcScriptCompiler
 
         CheckSpinningLoops(ctx, handlers);
 
+        // An AddDied Tag no SpawnNpc gives out can never fire: a typo, not a choice.
+        foreach ((int handlerIndex, int tag) in ctx.TagFilters)
+        {
+            if (!ctx.SpawnedTags.Contains(tag))
+                errors.Add("handler " + handlerIndex + ": AddDied Tag '" + ctx.Tags[tag] + "' is on no SpawnNpc");
+        }
+
         if (errors.Count > 0)
         {
             problems.Add(file + ": " + string.Join("; ", errors));
@@ -97,7 +107,8 @@ public sealed class NpcScriptCompiler
             ctx.Strings.ToArray(),
             ctx.Vectors.ToArray(),
             ctx.Jumps.ToArray(),
-            ctx.Spawns.ToArray());
+            ctx.Spawns.ToArray(),
+            ctx.Tags.ToArray());
     }
 
     static ScriptParam[] ParseParams(JsonElement root, List<string> errors)
@@ -170,7 +181,32 @@ public sealed class NpcScriptCompiler
 
         public List<SpawnNpcSpec> Spawns { get; } = new();
 
+        public List<string> Tags { get; } = new();
+
+        /// <summary>Tag ids some SpawnNpc gives out.</summary>
+        public HashSet<int> SpawnedTags { get; } = new();
+
+        /// <summary>(handler index, tag id) for each AddDied handler with a Tag filter.</summary>
+        public List<(int Handler, int Tag)> TagFilters { get; } = new();
+
         public string Where { get; set; } = string.Empty;
+
+        /// <summary>The tag's id, or -1 (with an error) when the name is unusable.</summary>
+        public int Tag(string? name, string verb)
+        {
+            string tag = (name ?? string.Empty).Trim();
+            if (tag.Length == 0 || tag.Length > MaxTagLength)
+            {
+                Error(verb + ": Tag is a name of 1.." + MaxTagLength + " characters");
+                return -1;
+            }
+
+            int index = Tags.IndexOf(tag);
+            if (index >= 0)
+                return index;
+            Tags.Add(tag);
+            return Tags.Count - 1;
+        }
 
         public void Error(string message) => Errors.Add(Where + message);
 
@@ -254,6 +290,19 @@ public sealed class NpcScriptCompiler
             case NpcScriptTrigger.Timer:
                 if (!TryGetRange(element, "EveryMs", out filter, out filter2) || filter < MinWaitMs)
                     ctx.Error("Timer needs EveryMs >= " + MinWaitMs + " (a number or [min, max])");
+                break;
+            case NpcScriptTrigger.AddDied:
+                filter = -1;
+                if (element.TryGetProperty("Tag", out JsonElement tagElement))
+                {
+                    filter = ctx.Tag(tagElement.ValueKind == JsonValueKind.String ? tagElement.GetString() : null, "AddDied");
+                    if (filter >= 0)
+                        ctx.TagFilters.Add((index, filter));
+                }
+
+                filter2 = GetInt(element, "DelayMs", 0);
+                if (filter2 < 0 || filter2 > MaxAddDiedDelayMs)
+                    ctx.Error("AddDied: DelayMs must be 0.." + MaxAddDiedDelayMs);
                 break;
         }
 
@@ -429,6 +478,8 @@ public sealed class NpcScriptCompiler
                 string on = value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
                 if (!Enum.TryParse(on, ignoreCase: true, out NpcScriptTrigger trigger))
                     ctx.Error("Restart: unknown trigger '" + on + "'");
+                else if (trigger == NpcScriptTrigger.AddDied)
+                    ctx.Error("Restart: AddDied only starts from an add's death");
                 else
                     ctx.Ops.Add(new ScriptOp(ScriptOpCode.Restart, (int)trigger));
                 return;
@@ -694,13 +745,14 @@ public sealed class NpcScriptCompiler
     /// <summary>
     /// <c>{ "Hash", "At" | "Offset"?, "Count"?, "Radius"?, "LifetimeSeconds"?, "DespawnWithOwner"?, "Level" | "LevelPercent"?, "JoinFight"? }</c>.
     /// The hash is a constant or a $NpcHash param. DespawnWithOwner is true (at once), false (independent) or the
-    /// seconds the spawn outlives its owner's death, reset or despawn; default true.
+    /// seconds the spawn outlives its owner's death, reset or despawn; default true. Tag names the spawns for the
+    /// owner's AddDied handlers; several SpawnNpc may share one.
     /// </summary>
     void CompileSpawnNpc(JsonElement value, ProgramContext ctx)
     {
         if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty("Hash", out JsonElement hash) || hash.ValueKind != JsonValueKind.String)
         {
-            ctx.Error("SpawnNpc: needs { Hash, At? | Offset?, Count?, Radius?, LifetimeSeconds?, DespawnWithOwner?, Level?, JoinFight? }");
+            ctx.Error("SpawnNpc: needs { Hash, At? | Offset?, Count?, Radius?, LifetimeSeconds?, DespawnWithOwner?, Level?, JoinFight?, Tag? }");
             return;
         }
 
@@ -809,7 +861,16 @@ public sealed class NpcScriptCompiler
             return;
         }
 
-        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true), levelPercent);
+        int tag = -1;
+        if (value.TryGetProperty("Tag", out JsonElement tagElement))
+        {
+            tag = ctx.Tag(tagElement.ValueKind == JsonValueKind.String ? tagElement.GetString() : null, "SpawnNpc");
+            if (tag < 0)
+                return;
+            ctx.SpawnedTags.Add(tag);
+        }
+
+        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true), levelPercent, tag);
         ctx.Spawns.Add(spec);
         ctx.Ops.Add(new ScriptOp(ScriptOpCode.SpawnNpc, hashRef, centreRef, ctx.Spawns.Count - 1));
     }
@@ -1030,40 +1091,85 @@ public sealed class NpcScriptCompiler
         ctx.Ops.Add(new ScriptOp(ScriptOpCode.If, (int)predicate, b, c));
     }
 
+    /// <summary>
+    /// <c>[ block, ... ]</c> where a block is a list of ops (weight 1) or <c>{ "Weight": n, "Do": [ ops ] }</c>. All
+    /// weights 1 compiles to the even pick; otherwise the jump table also carries the running weight totals and C is
+    /// the sum.
+    /// </summary>
     void CompileRandom(JsonElement value, ProgramContext ctx, HandlerScope scope)
     {
         if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0)
         {
-            ctx.Error("Random: needs a non-empty list of op lists");
+            ctx.Error("Random: needs a non-empty list of blocks (op lists or { Weight, Do })");
             return;
         }
 
         int count = value.GetArrayLength();
-        int table = ctx.Jumps.Count;
-        for (int i = 0; i < count; i++)
-            ctx.Jumps.Add(0);
-        ctx.Ops.Add(new ScriptOp(ScriptOpCode.Random, count, table));
-
-        // Each block ends with a Goto to the op after the last block; patched once that index is known.
-        var exits = new List<int>();
-        int block = 0;
-        string where = ctx.Where;
-        foreach (JsonElement blockOps in value.EnumerateArray())
+        int[] weights = new int[count];
+        bool weighted = false;
+        long total = 0;
+        int index = 0;
+        foreach (JsonElement block in value.EnumerateArray())
         {
-            if (blockOps.ValueKind != JsonValueKind.Array)
+            int weight = 1;
+            if (block.ValueKind == JsonValueKind.Object)
             {
-                ctx.Where = where;
-                ctx.Error("Random: each block is a list of ops");
+                if (!block.TryGetProperty("Weight", out JsonElement w) || !w.TryGetInt32(out weight)
+                    || weight < 1 || weight > MaxRandomWeight)
+                {
+                    ctx.Error("Random: block " + index + " Weight must be an integer 1.." + MaxRandomWeight);
+                    return;
+                }
+
+                if (!block.TryGetProperty("Do", out JsonElement doOps) || doOps.ValueKind != JsonValueKind.Array)
+                {
+                    ctx.Error("Random: block " + index + " needs Do, a list of ops");
+                    return;
+                }
+
+                weighted |= weight != 1;
+            }
+            else if (block.ValueKind != JsonValueKind.Array)
+            {
+                ctx.Error("Random: each block is a list of ops or { Weight, Do }");
                 return;
             }
 
-            ctx.Jumps[table + block] = ctx.Ops.Count;
-            CompileBlock(blockOps, ctx, scope, where + "block " + block + " ");
-            exits.Add(ctx.Ops.Count);
-            ctx.Ops.Add(new ScriptOp(ScriptOpCode.Goto));
-            block++;
+            weights[index++] = weight;
+            total += weight;
         }
 
+        // Even: Jumps[B..B+A) are the block starts. Weighted: Jumps[B+A..B+2A) are the running totals and C the sum.
+        int table = ctx.Jumps.Count;
+        for (int i = 0; i < count; i++)
+            ctx.Jumps.Add(0);
+        if (weighted)
+        {
+            int running = 0;
+            for (int i = 0; i < count; i++)
+            {
+                running += weights[i];
+                ctx.Jumps.Add(running);
+            }
+        }
+
+        ctx.Ops.Add(new ScriptOp(ScriptOpCode.Random, count, table, weighted ? (int)total : 0));
+
+        // Each block ends with a Goto to the op after the last block; patched once that index is known.
+        var exits = new List<int>();
+        int blockIndex = 0;
+        string where = ctx.Where;
+        foreach (JsonElement block in value.EnumerateArray())
+        {
+            JsonElement blockOps = block.ValueKind == JsonValueKind.Object ? block.GetProperty("Do") : block;
+            ctx.Jumps[table + blockIndex] = ctx.Ops.Count;
+            CompileBlock(blockOps, ctx, scope, where + "block " + blockIndex + " ");
+            exits.Add(ctx.Ops.Count);
+            ctx.Ops.Add(new ScriptOp(ScriptOpCode.Goto));
+            blockIndex++;
+        }
+
+        ctx.Where = where;
         int after = ctx.Ops.Count;
         foreach (int exit in exits)
             ctx.Ops[exit] = new ScriptOp(ScriptOpCode.Goto, after);

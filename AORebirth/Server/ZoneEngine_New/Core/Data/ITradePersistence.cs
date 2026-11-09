@@ -30,4 +30,15 @@ namespace ZoneEngine_New.Core.Data
         public DatabaseCommitOutcomeUnknownException(Exception inner)
             : base("Database commit outcome is unknown; reconciliation is required.", inner) { }
     }
+
+    /// <summary>
+    /// The write was rolled back because the database already holds a row that contradicts the server's memory
+    /// (a duplicate bag slot). Nothing was written, but retrying the same batch fails the same way forever and every
+    /// later save of the character with it, so the aggregate is quarantined and reloaded instead of requeued.
+    /// </summary>
+    public sealed class DatabaseStateConflictException : Exception
+    {
+        public DatabaseStateConflictException(Exception inner)
+            : base("Database state conflicts with server memory; reconciliation is required.", inner) { }
+    }
 }

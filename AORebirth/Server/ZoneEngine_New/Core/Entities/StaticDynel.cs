@@ -49,7 +49,14 @@ namespace ZoneEngine_New.Core.Entities
             if (uses != null)
                 return uses.TryBegin(player, this) != ItemUseStart.Rejected;
 
-            return CanBeginUse(player) && ExecuteUse(player);
+            // As the delayed path does: an unmet ToUse requirement (a shop terminal's level gate) tells the user why.
+            if (!CanBeginUse(player))
+            {
+                RequirementFeedback.SendIfUnmet(player, Template, ActionType.ToUse, resolve: UseResolver(player));
+                return false;
+            }
+
+            return ExecuteUse(player);
         }
 
         /// <summary>False for uses that open a UI rather than run template spells.</summary>

@@ -4,6 +4,7 @@ namespace WorldEngine.State
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
+    using System.Net;
     using System.Security.Cryptography;
     using System.Threading;
 
@@ -83,11 +84,12 @@ namespace WorldEngine.State
                 {
                     bool sameProcess = message.PreviousSession.Length > 0
                         && string.Equals(message.PreviousSession, existing.Session, StringComparison.Ordinal);
-                    bool alive = existing.Connected && now - existing.LastHeartbeatMs < (long)_options.LeaseTtl.TotalMilliseconds;
-                    if (alive && !sameProcess)
+                    if (IsAlive(existing, now) && !sameProcess)
                         throw new InvalidOperationException("instance_in_use");
                     Retire(existing);
                 }
+
+                if (candidate.Role == ServiceRole.RoleZone) CheckZoneRegistration(candidate.Name, message, now);
 
                 candidate.Game = message.Game;
                 candidate.Build = message.Build;
@@ -121,6 +123,40 @@ namespace WorldEngine.State
                 return accepted;
             }
         }
+
+        /// <summary>Connected and heartbeating within the lease TTL: the process behind the registration is running.</summary>
+        bool IsAlive(ServiceInstance instance, long now)
+            => instance.Connected && now - instance.LastHeartbeatMs < (long)_options.LeaseTtl.TotalMilliseconds;
+
+        /// <summary>
+        /// A zone instance's endpoint and build against the other live zones. Two instances advertising one client
+        /// endpoint is a copied config: every client World routed to either would land on the same process, and the
+        /// other could never be reached. That registration is refused; the rest only warns.
+        /// </summary>
+        void CheckZoneRegistration(string name, Register message, long now)
+        {
+            List<ServiceInstance> others = _instances.Values.Where(i => !i.Removed && i.Role == ServiceRole.RoleZone
+                && !string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+            ServiceInstance? sameEndpoint = others.FirstOrDefault(i => IsAlive(i, now) && SameEndpoint(i.Game, message.Game));
+            if (sameEndpoint != null)
+                throw new InvalidOperationException("endpoint_in_use: " + Describe(message.Game) + " is already advertised by " + sameEndpoint.Name);
+
+            if (!IPAddress.IsLoopback(_options.ListenAddress) && IPAddress.TryParse(message.Game.Address, out IPAddress? advertised)
+                && IPAddress.IsLoopback(advertised))
+                _log.LogWarning("Zone {Instance} advertises loopback endpoint {Endpoint} to a World that serves other hosts; "
+                    + "clients on other machines cannot reach it. Set ZoneIP on that host.", name, Describe(message.Game));
+
+            ServiceInstance? otherBuild = others.FirstOrDefault(i => IsAlive(i, now) && i.Build.Length > 0 && message.Build.Length > 0
+                && !string.Equals(i.Build, message.Build, StringComparison.Ordinal));
+            if (otherBuild != null)
+                _log.LogWarning("Zone {Instance} runs build {Build} while {Other} runs {OtherBuild}; every zone instance must run "
+                    + "the same binaries and GameData, or players see different behaviour depending on which instance runs their playfield.",
+                    name, message.Build, otherBuild.Name, otherBuild.Build);
+        }
+
+        static bool SameEndpoint(Endpoint? first, Endpoint? second)
+            => first != null && second != null && first.Port == second.Port
+                && string.Equals(first.Address, second.Address, StringComparison.OrdinalIgnoreCase);
 
         int AssignSlot(string name, int preferred, ServiceRole role)
         {

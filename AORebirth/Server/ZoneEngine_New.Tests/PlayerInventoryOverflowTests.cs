@@ -177,17 +177,88 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void MarkOrphanedRehomesADurableItemAndSkipsEphemeralOnes()
+        public void MarkOrphanedRehomesADurableItemAndWritesNothingForAnEphemeralOne()
         {
             Player player = TestWorld.CreatePlayer(1);
             PlayerInventory inventory = player.Inventory;
-            var graveyard = new Identity { Type = IdentityType.VendingMachine, Instance = 42 };
+            var graveyard = new Identity { Type = IdentityType.None, Instance = 1 };
 
             inventory.MarkOrphaned(TestWorld.CreateItem(instanceId: 77, persisted: false), graveyard);
+            Assert.IsNull(inventory.TakeDirty(), "an item that was never written needs no row");
             Assert.IsFalse(inventory.HasDirtyEntries);
 
             inventory.MarkOrphaned(TestWorld.CreateItem(instanceId: 78), graveyard);
-            Assert.IsTrue(inventory.HasDirtyEntries);
+            PlayerInventory.InventoryDirtyFlush? flush = inventory.TakeDirty();
+            Assert.IsNotNull(flush);
+            Assert.AreEqual(0, flush!.Inserts.Count);
+            Assert.AreEqual(1, flush.Updates.Count);
+            Assert.AreEqual(78, flush.Updates[0].InstanceId);
+            Assert.AreEqual((int)IdentityType.None, flush.Updates[0].ContainerType);
+            Assert.AreEqual(78, flush.Updates[0].ContainerPlacement);
+        }
+
+        /// <summary>
+        /// A new item's INSERT is taken by the background flush; before the commit is acknowledged the player destroys
+        /// the item (a Newcomer's armour upgrade consumed while its first save was in flight). The next flush must move
+        /// the now-stored row to the graveyard, or it stays in the bag slot: duplicated on relog and blocking every
+        /// later write into that slot with a duplicate-key error.
+        /// </summary>
+        [TestMethod]
+        public void DiscardDuringAnInFlightInsertRetiresTheRowOnTheNextFlush()
+        {
+            Player player = TestWorld.CreatePlayer(1);
+            PlayerInventory inventory = player.Inventory;
+            var graveyard = new Identity { Type = IdentityType.None, Instance = 1 };
+
+            Item item = TestWorld.CreateItem(instanceId: 77, persisted: false);
+            Assert.IsTrue(inventory.TryPlace(item, out Container page, out int slot));
+            inventory.MarkDirty(item, page, slot);
+
+            // The flush thread takes the batch and sends the INSERT.
+            PlayerInventory.InventoryDirtyFlush? inFlight = inventory.TakeDirty();
+            Assert.IsNotNull(inFlight);
+            Assert.AreEqual(1, inFlight!.Inserts.Count);
+
+            // Meanwhile the game thread consumes the item; its row does not exist yet from its point of view.
+            page.Remove(slot);
+            inventory.Discard(item, graveyard);
+
+            // The INSERT commits.
+            inFlight.MarkNewlyPersisted();
+            Assert.IsTrue(item.IsPersisted);
+
+            PlayerInventory.InventoryDirtyFlush? next = inventory.TakeDirty();
+            Assert.IsNotNull(next, "the committed row must be retired");
+            Assert.AreEqual(0, next!.Inserts.Count);
+            Assert.AreEqual(1, next.Updates.Count);
+            Assert.AreEqual(77, next.Updates[0].InstanceId);
+            Assert.AreEqual((int)IdentityType.None, next.Updates[0].ContainerType);
+            Assert.AreEqual(77, next.Updates[0].ContainerPlacement);
+        }
+
+        /// <summary>The same race when the in-flight INSERT is rolled back: no row exists, so none is written.</summary>
+        [TestMethod]
+        public void DiscardDuringAFailedInsertWritesNothing()
+        {
+            Player player = TestWorld.CreatePlayer(1);
+            PlayerInventory inventory = player.Inventory;
+            var graveyard = new Identity { Type = IdentityType.None, Instance = 1 };
+
+            Item item = TestWorld.CreateItem(instanceId: 77, persisted: false);
+            Assert.IsTrue(inventory.TryPlace(item, out Container page, out int slot));
+            inventory.MarkDirty(item, page, slot);
+            PlayerInventory.InventoryDirtyFlush? inFlight = inventory.TakeDirty();
+            Assert.IsNotNull(inFlight);
+
+            page.Remove(slot);
+            inventory.Discard(item, graveyard);
+
+            // The transaction failed: the flush hands its batch back, which must not revive the INSERT.
+            inventory.RestoreDirty(inFlight!);
+            Assert.IsFalse(item.IsPersisted);
+
+            Assert.IsNull(inventory.TakeDirty());
+            Assert.IsFalse(inventory.HasDirtyEntries);
         }
 
         [TestMethod]

@@ -40,6 +40,9 @@ public sealed class NpcScriptRunner
     /// <summary>SpawnNpc generations: a spawn point's NPC may spawn adds (depth 1) that spawn adds (depth 2), no further.</summary>
     public const int MaxSpawnDepth = 2;
 
+    /// <summary>AddDied events one runner holds waiting for their handler; more are dropped with a warning.</summary>
+    public const int MaxQueuedAddDied = 32;
+
     const int ArrivePollMs = 250;
     const int BusyPollMs = 500;
     const int CastPollMs = 250;
@@ -82,6 +85,14 @@ public sealed class NpcScriptRunner
     // SpawnNpc: the live NPCs this runner owns, for the cap and for despawning them with the owner.
     List<NpcCharacter>? _owned;
 
+    // AddDied: add kills waiting for their handler, oldest first. Queued, not dropped, so a slot that loses its add
+    // while another handler runs still respawns. The epoch moves on at the owner's death, reset or despawn, which
+    // cuts every earlier add loose; the second wake lets a queued entry come due during another handler's wait.
+    List<PendingAddDied>? _addDied;
+    long _addDiedWakeMs = long.MaxValue;
+    int _ownerEpoch;
+    bool _addDiedWarned;
+
     // CastNano with Warp: the cast whose landing moves its recipient to the NPC's feet.
     int _pendingWarpNano;
     Identity _pendingWarpTarget;
@@ -93,6 +104,8 @@ public sealed class NpcScriptRunner
         Arrive,
         Cast
     }
+
+    readonly record struct PendingAddDied(long DueMs, int Handler);
 
     public NpcScriptRunner(NpcScriptProgram program, ScriptArgs args, NpcCharacter npc)
     {
@@ -195,7 +208,10 @@ public sealed class NpcScriptRunner
 
         // The owner is gone for its adds whether or not a handler listens.
         if (trigger is NpcScriptTrigger.Death or NpcScriptTrigger.Reset)
+        {
             ReleaseOwned(Now());
+            CancelAddDied(Now());
+        }
 
         if (!_program.Subscribes(trigger))
             return;
@@ -251,18 +267,25 @@ public sealed class NpcScriptRunner
         }
     }
 
-    void Start(int handlerIndex, long now)
+    /// <param name="mark">Latch Once and start the cooldown; false when that already happened at queue time.</param>
+    void Start(int handlerIndex, long now, bool mark = true)
+    {
+        if (mark)
+            MarkFired(handlerIndex, now);
+        _handler = handlerIndex;
+        _pc = _program.Handlers[handlerIndex].Start;
+        _waiting = WaitKind.None;
+        _waitWaypoint = -1;
+        _wakeAtMs = now;
+    }
+
+    void MarkFired(int handlerIndex, long now)
     {
         ScriptHandler handler = _program.Handlers[handlerIndex];
         if (handler.Once)
             _onceFired |= 1UL << (handlerIndex & 63);
         if (_cooldownUntilMs != null && handler.CooldownMs > 0)
             _cooldownUntilMs[handlerIndex] = now + handler.CooldownMs;
-        _handler = handlerIndex;
-        _pc = handler.Start;
-        _waiting = WaitKind.None;
-        _waitWaypoint = -1;
-        _wakeAtMs = now;
     }
 
     void Suspend()
@@ -297,6 +320,7 @@ public sealed class NpcScriptRunner
             }
 
             _wakeAtMs = now;
+            ArmAddDiedWake(now);
             return;
         }
 
@@ -306,6 +330,7 @@ public sealed class NpcScriptRunner
     void ArmIdleWake(long now)
     {
         _wakeAtMs = long.MaxValue;
+        ArmAddDiedWake(now);
         if (_timerDueMs == null)
             return;
         for (int i = 0; i < _timerDueMs.Length; i++)
@@ -350,6 +375,9 @@ public sealed class NpcScriptRunner
 
         _detached = true;
         ReleaseOwned(Now());
+        _ownerEpoch++;
+        _addDied?.Clear();
+        _addDiedWakeMs = long.MaxValue;
         ClearPendingWarp();
         _handler = -1;
         _suspendedHandler = -1;
@@ -386,8 +414,16 @@ public sealed class NpcScriptRunner
 
     void TickOwn(long nowMs)
     {
-        if (nowMs < _wakeAtMs || _detached)
+        if ((nowMs < _wakeAtMs && nowMs < _addDiedWakeMs) || _detached)
             return;
+
+        if (nowMs >= _addDiedWakeMs)
+        {
+            TryStartDueAddDied(nowMs);
+            // Woken only for the queue, and nothing started: the running handler's own wait goes on.
+            if (nowMs < _wakeAtMs)
+                return;
+        }
 
         if (_handler < 0)
         {
@@ -578,7 +614,7 @@ public sealed class NpcScriptRunner
                     break;
 
                 case ScriptOpCode.Random:
-                    _pc = _program.Jumps[op.B + NextInt(0, op.A - 1)];
+                    _pc = _program.Jumps[op.B + PickBlock(op)];
                     break;
 
                 case ScriptOpCode.Restart:
@@ -951,6 +987,9 @@ public sealed class NpcScriptRunner
                 (_owned ??= new List<NpcCharacter>()).Add(add);
             }
 
+            if (_program.Subscribes(NpcScriptTrigger.AddDied))
+                add.ScriptLink = new NpcScriptAddLink(this, spec.Tag, _ownerEpoch);
+
             if (enemy != null)
                 add.Brain?.AddThreat(enemy.Identity, NpcAiRules.ProximityHate);
         }
@@ -985,6 +1024,156 @@ public sealed class NpcScriptRunner
         }
 
         _owned.Clear();
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // AddDied
+    // ----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// One of this runner's adds was killed (<see cref="NpcCharacter.OnDeath"/>; a despawn never comes here). While
+    /// the owner lives and the add is from its current life, the first matching AddDied handler (by priority, passing
+    /// Once, CooldownMs and ChancePercent) is queued to start after its DelayMs. Raised on this runner only: tags are
+    /// program-local.
+    /// </summary>
+    public void OnAddKilled(NpcScriptAddLink link)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+        if (_detached || _npc.IsDead || _npc.Playfield == null || link.Epoch != _ownerEpoch
+            || !_program.Subscribes(NpcScriptTrigger.AddDied))
+            return;
+
+        long now = Now();
+        ScriptHandler[] handlers = _program.Handlers;
+        for (int i = 0; i < handlers.Length; i++)
+        {
+            ScriptHandler handler = handlers[i];
+            if (handler.Trigger != NpcScriptTrigger.AddDied || (handler.Filter >= 0 && handler.Filter != link.Tag))
+                continue;
+            if (handler.Once && (_onceFired & (1UL << (i & 63))) != 0)
+                continue;
+            if (_cooldownUntilMs != null && _cooldownUntilMs[i] > now)
+                continue;
+            if (handler.ChancePercent < 100 && NextInt(0, 99) >= handler.ChancePercent)
+                continue;
+
+            _addDied ??= new List<PendingAddDied>();
+            if (_addDied.Count >= MaxQueuedAddDied)
+            {
+                if (!_addDiedWarned)
+                {
+                    _addDiedWarned = true;
+                    _npc.Playfield.GetService<Logging.IZoneLogger>()?.Warn(
+                        "NpcScripts: program '" + _program.Id + "' on " + _npc.Name + " has " + MaxQueuedAddDied
+                        + " AddDied events waiting; further ones are dropped");
+                }
+
+                return;
+            }
+
+            MarkFired(i, now);
+            long due = now + handler.Filter2;
+            _addDied.Add(new PendingAddDied(due, i));
+            if (due < _addDiedWakeMs)
+                _addDiedWakeMs = due;
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Starts the oldest due AddDied entry: at once when no handler runs, by suspending the running one when the
+    /// entry's handler Interrupts (one level, never over another AddDied). Otherwise it waits for the running handler
+    /// to end, which re-arms the queue.
+    /// </summary>
+    void TryStartDueAddDied(long now)
+    {
+        _addDiedWakeMs = long.MaxValue;
+        List<PendingAddDied>? queue = _addDied;
+        if (queue == null || queue.Count == 0)
+            return;
+
+        int pick = -1;
+        long next = long.MaxValue;
+        for (int i = 0; i < queue.Count; i++)
+        {
+            long due = queue[i].DueMs;
+            if (due <= now)
+            {
+                if (pick < 0)
+                    pick = i;
+            }
+            else if (due < next)
+            {
+                next = due;
+            }
+        }
+
+        if (pick < 0)
+        {
+            _addDiedWakeMs = next;
+            return;
+        }
+
+        int handlerIndex = queue[pick].Handler;
+        if (_handler >= 0)
+        {
+            ScriptHandler[] handlers = _program.Handlers;
+            if (!handlers[handlerIndex].Interrupts || _suspendedHandler >= 0
+                || handlers[_handler].Trigger == NpcScriptTrigger.AddDied)
+                return;
+            Suspend();
+        }
+
+        queue.RemoveAt(pick);
+        Start(handlerIndex, now, mark: false);
+    }
+
+    /// <summary>The queue's next wake: its earliest entry, no earlier than now; never when it is empty.</summary>
+    void ArmAddDiedWake(long now)
+    {
+        _addDiedWakeMs = long.MaxValue;
+        List<PendingAddDied>? queue = _addDied;
+        if (queue == null)
+            return;
+        for (int i = 0; i < queue.Count; i++)
+        {
+            if (queue[i].DueMs < _addDiedWakeMs)
+                _addDiedWakeMs = queue[i].DueMs;
+        }
+
+        if (_addDiedWakeMs < now)
+            _addDiedWakeMs = now;
+    }
+
+    /// <summary>
+    /// The owner died or reset: earlier adds no longer report, queued AddDied events are dropped and a running (or
+    /// suspended) AddDied handler ends where it is.
+    /// </summary>
+    void CancelAddDied(long now)
+    {
+        _ownerEpoch++;
+        _addDied?.Clear();
+        _addDiedWakeMs = long.MaxValue;
+        if (!_program.Subscribes(NpcScriptTrigger.AddDied))
+            return;
+
+        ScriptHandler[] handlers = _program.Handlers;
+        if (_suspendedHandler >= 0 && handlers[_suspendedHandler].Trigger == NpcScriptTrigger.AddDied)
+            _suspendedHandler = -1;
+        if (_handler < 0 || handlers[_handler].Trigger != NpcScriptTrigger.AddDied)
+            return;
+
+        if (_waiting == WaitKind.Arrive)
+        {
+            _moveDestination = null;
+            _npc.Brain?.ScriptReleaseMovement();
+        }
+        else if (_waiting == WaitKind.Cast)
+        {
+            ClearPendingWarp();
+        }
+
+        EndHandler(now);
     }
 
     void WarnSpawnOnce(string what)
@@ -1152,6 +1341,24 @@ public sealed class NpcScriptRunner
         x ^= x >> 27;
         _rng = x;
         return x * 0x2545F4914F6CDD1DUL;
+    }
+
+    /// <summary>A <see cref="ScriptOpCode.Random"/> block index: even when C is 0, else by the running weight totals.</summary>
+    int PickBlock(ScriptOp op)
+    {
+        if (op.C <= 0)
+            return NextInt(0, op.A - 1);
+
+        int roll = NextInt(0, op.C - 1);
+        int[] jumps = _program.Jumps;
+        int totals = op.B + op.A;
+        for (int i = 0; i < op.A - 1; i++)
+        {
+            if (roll < jumps[totals + i])
+                return i;
+        }
+
+        return op.A - 1;
     }
 
     /// <summary>Uniform in [min, max].</summary>

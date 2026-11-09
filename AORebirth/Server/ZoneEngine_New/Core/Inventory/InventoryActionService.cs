@@ -330,6 +330,12 @@ namespace ZoneEngine_New.Core.Inventory
                         player.QuarantinePersistence();
                         throw;
                     }
+                    catch (DatabaseStateConflictException)
+                    {
+                        // Rolled back, but the pending batch contradicts stored rows and would fail on every retry.
+                        player.QuarantinePersistence();
+                        throw;
+                    }
                     catch
                     {
                         if (!committed)
@@ -343,7 +349,8 @@ namespace ZoneEngine_New.Core.Inventory
             }
             catch (Exception exception)
             {
-                if (committed || exception is DatabaseCommitOutcomeUnknownException || player.IsPersistenceQuarantined)
+                if (committed || exception is DatabaseCommitOutcomeUnknownException or DatabaseStateConflictException
+                    || player.IsPersistenceQuarantined)
                 {
                     player.QuarantinePersistence();
                     player.Session?.Close();

@@ -94,6 +94,12 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Milliseconds this NPC outlives its <see cref="ScriptOwner"/>'s death, reset or despawn; -1 when independent of it.</summary>
         public int OwnerDespawnDelayMs { get; set; } = -1;
 
+        /// <summary>
+        /// The spawning runner, tag and owner epoch when that program has AddDied handlers; its kill (never a despawn)
+        /// reaches the runner once. Null for every other NPC.
+        /// </summary>
+        public NpcScripts.NpcScriptAddLink? ScriptLink { get; set; }
+
         /// <summary>Tick clock (<see cref="Environment.TickCount64"/>) at which this NPC leaves the world as a despawn; 0 for never.</summary>
         public long DespawnAtMs { get; set; }
 
@@ -229,6 +235,14 @@ namespace ZoneEngine_New.Core.Entities
             ReleaseForDeath("vendor died");
             Brain?.ScriptReleaseMovement();
             Scripts?.Raise(NpcScripts.NpcScriptTrigger.Death);
+
+            // A scripted add's kill tells the program that spawned it (AddDied); despawns never pass here.
+            if (ScriptLink is { } link)
+            {
+                ScriptLink = null;
+                link.Runner.OnAddKilled(link);
+            }
+
             base.OnDeath(killer);
         }
 
@@ -242,6 +256,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             ReleaseForDeath("vendor despawned");
+            ScriptLink = null;
             base.DespawnAsDeath();
             if (Playfield != null)
                 Playfield.GetRequiredService<SpawnService>().DespawnNpc(this);

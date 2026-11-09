@@ -186,6 +186,81 @@ redirected there. Buffs keep their remaining time, pets are summoned again besid
 
 Each instance gets its own block of NPC ids from World, so NPCs and pets on different instances never clash.
 
+## Running zone engines on more than one host
+
+The usual layout is host 1 with WorldEngine, LoginEngine, ChatEngine, MySQL and one zone engine, and host 2 with a
+second zone engine. Everything in [Running more than one zone engine](#running-more-than-one-zone-engine) still
+applies; this section is what changes when the instances are not on the same machine.
+
+### Network
+
+- World, the database and the status page must only be reachable from the hosts themselves. The World link is
+  HTTP/2 without TLS and the token travels as a plain header, so **put the hosts on a private network or a WireGuard
+  tunnel** and firewall 7600, 7601 and 3306 to the other host's address. Anyone who can reach 7600 with the token can
+  log in as any character.
+- World must listen on that private address (`<World><ListenIP>`), not loopback. It refuses to start that way
+  without `AO_REBIRTH_WORLD_TOKEN`; generate a long random token and set it identically on both hosts.
+- Players must be able to reach **both** hosts' game ports. Login routes a character to whichever instance runs its
+  stored playfield, so a player who cannot reach host 2 cannot log in at all while their playfield is there.
+- Keep the hosts in the same datacenter. Host 2's zone engine commits to host 1's MySQL synchronously on the
+  playfield tick when a player zones, logs out or trades; tens of milliseconds of latency per statement add up.
+- Sync both clocks with NTP. Buffs cross instances with absolute UTC expiry times, and skill, nano-line and perk
+  locks persist absolute due times; clock skew shortens or lengthens them on arrival.
+
+### Host 2's Config.xml
+
+A copied Config.xml is the most common mistake. These settings differ on host 2:
+
+| Setting | Host 2 value |
+|---|---|
+| `ZoneIP` | Host 2's **public** address. World hands it to clients and to host 1's zone for transfers. |
+| `<World><Url>` | `http://<host 1 private address>:7600` |
+| `ChatIP` / `ChatPort` | ChatEngine's **public** address on host 1. Every zone sends its own value to clients. |
+| `MysqlConnection` | Host 1's private database address. Add `SslMode=Required` unless the link is already tunnelled. |
+| `<World><InstanceName>` or `--instance` | Unique per instance. |
+| `AO_REBIRTH_BIND_MODE` | `Public`, otherwise the game port binds loopback. |
+| `AO_REBIRTH_WORLD_TOKEN` | The same value as host 1. |
+| `AO_REBIRTH_GAMEDATA_PATH` | A byte-identical copy of the accepted GameData. |
+
+World now refuses a zone whose advertised endpoint is `0.0.0.0` or is already advertised by another live zone
+(`endpoint_in_use`), and warns when a zone advertises a loopback endpoint to a World that serves other hosts or when
+two zones report different builds. The zone engine itself refuses `ZoneIP` of `0.0.0.0` at startup and warns when
+its `ZoneIP` is public but its `ChatIP` is loopback or empty. None of this checks GameData: both hosts must run the
+same binaries and the same GameData manifest, exactly as the Linux and live manifests must match the accepted
+Windows one.
+
+### Lease timing
+
+The defaults (15 s lease, 10 s grace, 2 s heartbeat) were tuned for one machine. Between hosts, a network
+interruption longer than about 12 s logs every player out of host 2. For a cross-host deployment consider
+`LeaseTtlSeconds` 30 and `LeaseGraceSeconds` 15, identical in every engine's config. The costs are a 45 s recovery
+window after a World restart, during which logins are refused, and 45 s before a crashed instance's characters can
+log in again.
+
+### What is still single-host
+
+- Host 1 is a single point of failure: World, Login, Chat and the database live there. World down for longer than
+  the lease fence logs everyone out of host 2. Start World first and stop it last.
+- Daily Login claim files are read from the local filesystem (`AO_REBIRTH_DAILY_LOGIN_CLAIMS_ROOTS`). Host 2 only
+  sees web claim requests if that setting points at a shared mount. Committed progress lives in the database, so
+  nothing is claimed twice; claims made while the character is on host 2 are simply delivered later.
+- Each zone engine's debug MCP port is local to its host. Host 2 needs its own tunnel.
+- A suspension or ban issued through a zone's GM command is broadcast to the other instances at once. One written
+  by LoginEngine, the account broker or directly to the database reaches players on other hosts at the next sweep,
+  within 60 s.
+
+### Gameplay differences players will notice
+
+- A move to a playfield on the other instance is a full save, a redirect and a client reconnect: a loading screen
+  where the same-instance move is seamless. With two hosts and least-loaded placement, adjacent outdoor playfields
+  often sit on different hosts.
+- Pets are summoned again beside the player with their remaining time and a proportional share of their health.
+  Towers stay behind in both cases, and charms never zone in either case.
+- While a cross-instance move is pending (up to 30 s if the client never arrives), logging that character in is
+  refused with `character_busy`.
+- A login whose dungeon ended, or whose proxy door no longer leads anywhere, is saved at the fallback location and
+  disconnected; the player logs in again and is routed to the right instance.
+
 ## The status page
 
 `http://127.0.0.1:7601/status` shows, as JSON:

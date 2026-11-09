@@ -39,6 +39,11 @@
       "MaxPets": 4
     }
   },
+  "MABS": {
+    "Pets": {
+      "MaxPets": 5
+    }
+  },
   "BYWH": {
     "Features": [
       "NoCombat"

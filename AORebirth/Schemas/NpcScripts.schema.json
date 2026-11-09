@@ -42,7 +42,7 @@
   "$defs": {
     "trigger": {
       "type": "string",
-      "enum": ["Spawned", "Arrived", "Stuck", "HealthBelow", "Death", "Reset", "CombatStart", "CombatEnd", "NanoEnded", "Timer", "Used"]
+      "enum": ["Spawned", "Arrived", "Stuck", "HealthBelow", "Death", "Reset", "CombatStart", "CombatEnd", "NanoEnded", "Timer", "Used", "AddDied"]
     },
     "vector3": {
       "type": "array",
@@ -196,7 +196,8 @@
             },
             "Level": { "type": "integer", "minimum": 1, "description": "Spawn level; omit for the template's own. Not with LevelPercent." },
             "LevelPercent": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Spawn level as a percent of the owner's level, rounded, at least 1. Not with Level." },
-            "JoinFight": { "type": "boolean", "default": true, "description": "The spawn takes the owner's current target as its first hate." }
+            "JoinFight": { "type": "boolean", "default": true, "description": "The spawn takes the owner's current target as its first hate." },
+            "Tag": { "type": "string", "minLength": 1, "maxLength": 32, "description": "Names the spawns for the owner's AddDied handlers (case-sensitive, program-local); several SpawnNpc may share one." }
           }
         },
         "CastNano": {
@@ -249,8 +250,21 @@
         "Random": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/ops" },
-          "description": "Runs one of the blocks, picked evenly."
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/ops" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["Weight", "Do"],
+                "properties": {
+                  "Weight": { "type": "integer", "minimum": 1, "maximum": 10000 },
+                  "Do": { "$ref": "#/$defs/ops" }
+                }
+              }
+            ]
+          },
+          "description": "Runs one of the blocks. A plain op list weighs 1; { Weight, Do } weighs Weight, so blocks are picked in proportion to their weights (all 1: evenly)."
         },
         "Restart": { "$ref": "#/$defs/trigger", "description": "Ends this handler and starts the first handler of that trigger." },
         "ReleaseMovement": { "type": "boolean", "description": "Gives movement back to patrol / wander / idle." },
@@ -283,6 +297,8 @@
         "Waypoint": { "type": "integer", "minimum": 0, "description": "Arrived / Stuck: only this waypoint index; omit for any." },
         "NanoId": { "type": "integer", "minimum": 0, "description": "NanoEnded: only this nano; omit or 0 for any." },
         "EveryMs": { "$ref": "#/$defs/range", "description": "Timer: period in ms (at least 100), re-armed after each run." },
+        "Tag": { "type": "string", "minLength": 1, "maxLength": 32, "description": "AddDied: only adds whose SpawnNpc carried this Tag; omit for any add. Must match a SpawnNpc Tag in the same program." },
+        "DelayMs": { "type": "integer", "minimum": 0, "maximum": 3600000, "default": 0, "description": "AddDied: the handler starts this long after the kill, without holding the NPC's other handlers meanwhile." },
         "Once": { "type": "boolean", "default": false },
         "CooldownMs": { "type": "integer", "minimum": 0, "default": 0 },
         "ChancePercent": { "type": "integer", "minimum": 0, "maximum": 100, "default": 100 },

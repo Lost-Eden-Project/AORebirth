@@ -34,6 +34,11 @@ namespace WorldEngine.Services
             if (register.Role == ServiceRole.RoleZone && (register.Game == null || string.IsNullOrEmpty(register.Game.Address)
                 || register.Game.Port == 0 || register.Game.Port > 65535))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "zone game endpoint required"));
+            // World hands this endpoint to clients and to other zone instances: an unspecified address reaches nobody.
+            if (register.Role == ServiceRole.RoleZone && (!System.Net.IPAddress.TryParse(register.Game!.Address, out System.Net.IPAddress? address)
+                || address.Equals(System.Net.IPAddress.Any) || address.Equals(System.Net.IPAddress.IPv6Any)))
+                throw new RpcException(new Status(StatusCode.InvalidArgument,
+                    "zone game endpoint " + register.Game.Address + " is not an address clients can be sent to; set ZoneIP"));
 
             var instance = new ServiceInstance(name, register.Role, Guid.NewGuid().ToString("N"), Environment.TickCount64);
             RegisterAccepted accepted;

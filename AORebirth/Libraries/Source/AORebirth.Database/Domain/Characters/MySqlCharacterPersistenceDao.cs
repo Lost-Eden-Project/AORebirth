@@ -78,6 +78,10 @@ namespace AORebirth.Database.Domain.Characters
                     {
                         try { transaction.Rollback(); }
                         catch (Exception rollback) { exception.Data["CharacterPersistence.RollbackFailure"] = rollback; }
+                        // ER_DUP_ENTRY before COMMIT: the rows contradict what the caller believes is stored. A deadlock
+                        // or timeout is retryable; this is not, and is reported as such so the caller stops retrying.
+                        if (exception is MySqlConnector.MySqlException { Number: 1062 })
+                            throw new CharacterPersistenceStateConflictException(exception);
                     }
                     throw;
                 }

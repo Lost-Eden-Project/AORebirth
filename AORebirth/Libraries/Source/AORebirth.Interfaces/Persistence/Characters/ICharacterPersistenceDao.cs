@@ -88,4 +88,15 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public CharacterPersistenceCommitOutcomeUnknownException(Exception inner)
             : base("Character persistence commit outcome is unknown; authoritative reload is required.", inner) { }
     }
+
+    /// <summary>
+    /// The write was rolled back because it contradicts stored rows (a duplicate key: a slot the server believed
+    /// empty is occupied). The server's memory and the database disagree, so retrying the same batch can never
+    /// succeed; the character must be reloaded from the database.
+    /// </summary>
+    public sealed class CharacterPersistenceStateConflictException : Exception
+    {
+        public CharacterPersistenceStateConflictException(Exception inner)
+            : base("Character persistence conflicts with stored state; authoritative reload is required.", inner) { }
+    }
 }

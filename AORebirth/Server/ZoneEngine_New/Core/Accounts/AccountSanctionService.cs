@@ -34,13 +34,18 @@ namespace ZoneEngine_New.Core.Accounts
 
         public static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(60);
 
+        /// <summary>A sanction issued on another zone instance: account, end time (UTC ticks, empty for a ban), reason.</summary>
+        const string SanctionCommand = "account.sanction";
+
         readonly IAccountSanctionRepository _repository;
         readonly Lazy<PlayfieldManager> _playfields;
         readonly IZoneLogger _logger;
+        readonly ZoneEngine_New.Core.World.WorldCommands? _commands;
         readonly Timer _sweep;
         int _sweeping;
 
-        public AccountSanctionService(IAccountSanctionRepository repository, Lazy<PlayfieldManager> playfields, IZoneLogger logger)
+        public AccountSanctionService(IAccountSanctionRepository repository, Lazy<PlayfieldManager> playfields, IZoneLogger logger,
+            ZoneEngine_New.Core.World.WorldCommands? commands = null)
         {
             ArgumentNullException.ThrowIfNull(repository);
             ArgumentNullException.ThrowIfNull(playfields);
@@ -48,6 +53,10 @@ namespace ZoneEngine_New.Core.Accounts
             _repository = repository;
             _playfields = playfields;
             _logger = logger;
+            _commands = commands;
+            // Other instances hear of a sanction issued here at once; the sweep remains the backstop for sanctions
+            // written by LoginEngine, the account broker or straight to the database.
+            _commands?.Register(SanctionCommand, OnSanctionedElsewhere);
             _sweep = new Timer(_ => Sweep(), null, SweepInterval, SweepInterval);
         }
 
@@ -75,6 +84,9 @@ namespace ZoneEngine_New.Core.Accounts
                     sanction.Permanent ? "ban" : "suspension", sanction.Account, Describe(sanction.EndsAtUtc), sanction.IssuedBy,
                     sanction.Reason));
                 int removed = Remove(sanction.Account, sanction.EndsAtUtc, sanction.Reason);
+                if (_commands != null)
+                    _ = _commands.BroadcastAsync(SanctionCommand, sanction.Account,
+                        sanction.EndsAtUtc?.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty, sanction.Reason ?? string.Empty);
                 return new SanctionIssueResult(sanction, string.Empty, removed);
             });
         }
@@ -197,6 +209,23 @@ namespace ZoneEngine_New.Core.Accounts
             }
 
             return !digits && seconds > 0;
+        }
+
+        /// <summary>Another zone instance issued a sanction: the account's characters in play here leave now.</summary>
+        void OnSanctionedElsewhere(AORebirth.World.Contracts.V1.InstanceCommand command)
+        {
+            if (command.Arguments.Count < 1 || string.IsNullOrWhiteSpace(command.Arguments[0]))
+                return;
+            DateTime? endsAtUtc = command.Arguments.Count > 1
+                && long.TryParse(command.Arguments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long ticks)
+                && ticks > 0 && ticks <= DateTime.MaxValue.Ticks
+                    ? new DateTime(ticks, DateTimeKind.Utc)
+                    : null;
+            string reason = command.Arguments.Count > 2 ? command.Arguments[2] : string.Empty;
+            int removed = Remove(command.Arguments[0].Trim(), endsAtUtc, reason);
+            if (removed > 0)
+                _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                    "Account sanction from {0} removed {1} character(s) of account={2}", command.Origin, removed, command.Arguments[0]));
         }
 
         /// <summary>Removes the account's characters in play on this instance, each told why on its own tick. Returns how many.</summary>

@@ -28,6 +28,7 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly INanoLineLockRepository? _nanoLineLocks;
         private readonly IPetNameRepository? _petNames;
         private readonly IZoneLogger _logger;
+        private readonly ZoneEngine_New.Core.World.WorldLink? _world;
         private readonly object _scheduleGate = new();
         private readonly Dictionary<int, long> _dueAtMs = new();
         private readonly ManualResetEventSlim _wake = new(false);
@@ -42,7 +43,8 @@ namespace ZoneEngine_New.Core.Inventory
             IPerkLockRepository? perkLocks = null,
             IResearchRepository? research = null,
             INanoLineLockRepository? nanoLineLocks = null,
-            IPetNameRepository? petNames = null)
+            IPetNameRepository? petNames = null,
+            ZoneEngine_New.Core.World.WorldLink? world = null)
         {
             ArgumentNullException.ThrowIfNull(playfieldManager);
             ArgumentNullException.ThrowIfNull(persist);
@@ -56,6 +58,7 @@ namespace ZoneEngine_New.Core.Inventory
             _nanoLineLocks = nanoLineLocks;
             _petNames = petNames;
             _logger = logger;
+            _world = world;
 
             _writer = new Thread(WriterLoop)
             {
@@ -87,7 +90,9 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// Synchronous durable commit (logout, despawn, transfer, shutdown). Cancels a pending coalesce.
+        /// Synchronous durable commit (logout, despawn, transfer, shutdown, and right before a caller's own commit that
+        /// depends on it). Cancels a pending coalesce. Throws when this instance no longer holds the character's World
+        /// lease: callers rely on an exception to abort, so a save that cannot happen is never reported as done.
         /// </summary>
         public void HardFlush(Player player)
         {
@@ -97,7 +102,7 @@ namespace ZoneEngine_New.Core.Inventory
             lock (_scheduleGate)
                 _dueAtMs.Remove(characterId);
 
-            FlushCharacter(player);
+            FlushCharacter(player, requireLease: true);
         }
 
         /// <summary>
@@ -123,6 +128,8 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 if (first.IsPersistenceQuarantined || second?.IsPersistenceQuarantined == true)
                     throw new InvalidOperationException("Trade participant persistence is quarantined.");
+                if (!OwnsLease(first) || (second != null && !OwnsLease(second)))
+                    throw new InvalidOperationException("Trade participant is no longer leased to this zone instance.");
                 lock (_scheduleGate)
                 {
                     _dueAtMs.Remove(first.Identity.Instance);
@@ -199,7 +206,18 @@ namespace ZoneEngine_New.Core.Inventory
             }
         }
 
-        void FlushCharacter(Player player)
+        /// <summary>
+        /// True while this instance may write the character: it holds the World lease and the lease deadline has not
+        /// passed (always, without a World link). The same rule the stat/location checkpoints apply; a character
+        /// another zone instance may own by now is never written from here.
+        /// </summary>
+        bool OwnsLease(Player player) => _world == null || _world.OwnsLease(player.Identity.Instance);
+
+        /// <param name="requireLease">
+        /// Throw when the lease is not owned (a hard flush the caller depends on); false skips with a warning, the
+        /// background writer's rule, leaving the dirty state with the aggregate.
+        /// </param>
+        void FlushCharacter(Player player, bool requireLease = false)
         {
             if (!player.Inventory.IsHydrated)
                 return;
@@ -213,6 +231,20 @@ namespace ZoneEngine_New.Core.Inventory
                     throw new InvalidOperationException("Inventory persistence is quarantined pending database reconciliation.");
                 if (!HasDirtyState(player))
                     return;
+                if (!OwnsLease(player))
+                {
+                    // Nothing is taken: the dirty state stays with the aggregate, which this instance may not write.
+                    if (requireLease)
+                        throw new InvalidOperationException(
+                            "Character " + player.Identity.Instance.ToString(CultureInfo.InvariantCulture)
+                            + " is not leased to this instance; refusing to save its inventory.");
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Inventory flush skipped character={0}: this instance no longer holds its World lease",
+                            player.Identity.Instance));
+                    return;
+                }
 
                 PlayerInventory.InventoryDirtyFlush? inventory = player.Inventory.TakeDirty();
                 int[] nanos = player.DrainDirtyUploadedNanos();
@@ -243,6 +275,21 @@ namespace ZoneEngine_New.Core.Inventory
                     player.QuarantinePersistence();
                     player.Session?.Close();
                     _logger.Error(exception, "Inventory commit outcome is unknown; player persistence quarantined.");
+                    throw;
+                }
+                catch (DatabaseStateConflictException exception)
+                {
+                    // Nothing was written, but the batch can never succeed: a row the server does not know about
+                    // occupies a slot. Requeueing it would fail every later save too, until a logout save failed
+                    // and dropped hours of changes. Disconnecting now reloads the character from the database.
+                    player.QuarantinePersistence();
+                    player.Session?.Close();
+                    _logger.Error(
+                        exception,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Inventory state for character {0} conflicts with the database; player persistence quarantined for reload.",
+                            player.Identity.Instance));
                     throw;
                 }
                 catch (Exception exception)

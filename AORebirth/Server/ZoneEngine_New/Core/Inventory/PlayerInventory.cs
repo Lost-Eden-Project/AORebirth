@@ -32,15 +32,20 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly Dictionary<int, DirtyEntry> _dirty = new();
         private readonly object _dirtyGate = new();
 
-        /// <summary>Pending durable write for an item keyed by unique InstanceId.</summary>
+        /// <summary>
+        /// Pending durable write for an item keyed by unique InstanceId. Whether it becomes an INSERT or an UPDATE is
+        /// decided only in <see cref="TakeDirty"/>, under the player's persistence gate: the game thread records what
+        /// happened, never whether a row exists yet, because a background flush may be mid-commit at that moment.
+        /// </summary>
         internal readonly struct DirtyEntry
         {
-            public DirtyEntry(Item item, int containerType, int containerInstance, int containerPlacement)
+            public DirtyEntry(Item item, int containerType, int containerInstance, int containerPlacement, bool retired = false)
             {
                 Item = item;
                 ContainerType = containerType;
                 ContainerInstance = containerInstance;
                 ContainerPlacement = containerPlacement;
+                Retired = retired;
             }
 
             public Item Item { get; }
@@ -52,6 +57,12 @@ namespace ZoneEngine_New.Core.Inventory
             public int ContainerInstance { get; }
 
             public int ContainerPlacement { get; }
+
+            /// <summary>
+            /// The item no longer exists anywhere; the location is its graveyard. A row that was already written is
+            /// re-homed there, one that was never written needs no row at all.
+            /// </summary>
+            public bool Retired { get; }
         }
 
         public Container Inventory { get; private set; } = null!;
@@ -859,49 +870,37 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// Retires a durable item by re-homing its row under <paramref name="graveyard"/>. The item
-        /// instance repository has no delete, and simply forgetting the item in memory would let the
-        /// row resurrect it at next login. Placement is the instance id so the location unique index
-        /// can never collide.
+        /// Retires an item that no longer exists anywhere by re-homing its row under <paramref name="graveyard"/>.
+        /// The item instance repository has no delete, and simply forgetting the item in memory would let the row
+        /// resurrect it at next login. Placement is the instance id so the location unique index can never collide.
         /// </summary>
+        /// <remarks>
+        /// Always recorded, whether or not the item has a row yet. <see cref="Item.IsPersisted"/> is not consulted
+        /// here: a background flush may hold this item's INSERT in flight, and it only becomes true once that commit
+        /// is acknowledged. Deciding "never written, nothing to do" on the game thread let the row land after the
+        /// item was gone, leaving an orphan in the bag slot that duplicated the item on relog and made every later
+        /// write into that slot fail on the location unique index. <see cref="TakeDirty"/> decides under the gate.
+        /// </remarks>
         public void MarkOrphaned(Item item, Identity graveyard)
-        {
-            ArgumentNullException.ThrowIfNull(item);
-
-            if (item.InstanceId <= 0 || !item.IsPersisted)
-                return;
-
-            var entry = new DirtyEntry(
-                item,
-                (int)graveyard.Type,
-                graveyard.Instance,
-                item.InstanceId);
-
-            lock (_dirtyGate)
-                _dirty[item.InstanceId] = entry;
-        }
-
-        /// <summary>
-        /// Retires an item that no longer exists anywhere. A persisted item is re-homed under
-        /// <paramref name="graveyard"/>; an item that was never written is dropped from the pending
-        /// set instead, so no row is ever created for it.
-        /// </summary>
-        public void Discard(Item item, Identity graveyard)
         {
             ArgumentNullException.ThrowIfNull(item);
 
             if (item.InstanceId <= 0)
                 return;
 
-            if (item.IsPersisted)
-            {
-                MarkOrphaned(item, graveyard);
-                return;
-            }
+            var entry = new DirtyEntry(
+                item,
+                (int)graveyard.Type,
+                graveyard.Instance,
+                item.InstanceId,
+                retired: true);
 
             lock (_dirtyGate)
-                _dirty.Remove(item.InstanceId);
+                _dirty[item.InstanceId] = entry;
         }
+
+        /// <summary>Retires an item that no longer exists anywhere; see <see cref="MarkOrphaned"/>.</summary>
+        public void Discard(Item item, Identity graveyard) => MarkOrphaned(item, graveyard);
 
         public bool HasDirtyEntries
         {
@@ -936,6 +935,12 @@ namespace ZoneEngine_New.Core.Inventory
             }
         }
 
+        /// <summary>
+        /// Takes the pending entries and resolves each to an INSERT or an UPDATE. Callers hold the player's
+        /// persistence gate, so no commit is in flight and <see cref="Item.IsPersisted"/> is exact here: a retired
+        /// item with a row is moved to its graveyard, a retired item without one is dropped. Null when nothing is
+        /// left to write.
+        /// </summary>
         public InventoryDirtyFlush? TakeDirty()
         {
             DirtyEntry[] pending;
@@ -962,6 +967,10 @@ namespace ZoneEngine_New.Core.Inventory
 
                 if (!item.IsPersisted)
                 {
+                    // Never written and already gone: no row must ever be created for it.
+                    if (entry.Retired)
+                        continue;
+
                     inserts.Add(
                         new ItemInstanceRecord
                         {
@@ -989,6 +998,10 @@ namespace ZoneEngine_New.Core.Inventory
                             item.StackCount));
                 }
             }
+
+            // Only entries that resolved to nothing were taken: they are consumed, there is nothing to restore.
+            if (inserts.Count == 0 && updates.Count == 0)
+                return null;
 
             return new InventoryDirtyFlush(pending, inserts, updates, newlyPersisted);
         }

@@ -208,7 +208,26 @@ namespace ZoneEngine_New
             logger.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                 "World registered instance={0} npcIds={1}..{2}", instance.Name, worldLink.NpcIdBase,
                 worldLink.NpcIdBase + (long)worldLink.NpcIdCount - 1));
+            WarnAboutUnreachableChat(logger, instance);
             return true;
+        }
+
+        /// <summary>
+        /// ZoneLogin tells every client this host's ChatIP. A zone reached from other machines (public ZoneIP) that
+        /// still names a loopback or empty ChatIP sends those clients to a chat server they cannot reach: the usual
+        /// mistake when a second zone host copies the first host's Config.xml.
+        /// </summary>
+        private static void WarnAboutUnreachableChat(IZoneLogger logger, ZoneInstanceOptions instance)
+        {
+            if (System.Net.IPAddress.IsLoopback(instance.AdvertisedAddress)) return;
+            string chatHost = Utility.Config.ConfigReadWrite.Instance.CurrentConfig?.ChatIP ?? string.Empty;
+            bool unreachable = string.IsNullOrWhiteSpace(chatHost)
+                || (System.Net.IPAddress.TryParse(chatHost, out System.Net.IPAddress? chat)
+                    && (System.Net.IPAddress.IsLoopback(chat) || chat.Equals(System.Net.IPAddress.Any)));
+            if (unreachable)
+                logger.Warn("ZoneIP " + instance.AdvertisedAddress + " is reachable from other machines but ChatIP is '" + chatHost
+                    + "'; clients sent to this zone will be given a chat address they cannot reach. Set ChatIP to ChatEngine's "
+                    + "public address in this host's Config.xml.");
         }
 
         private static int CheckDatabase()

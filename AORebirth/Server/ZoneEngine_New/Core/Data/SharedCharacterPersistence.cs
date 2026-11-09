@@ -22,6 +22,11 @@ namespace ZoneEngine_New.Core.Data
                 logger?.Error(exception, "Shared character persistence commit outcome unknown");
                 throw new DatabaseCommitOutcomeUnknownException(exception);
             }
+            catch (CharacterPersistenceStateConflictException exception)
+            {
+                logger?.Error(exception, "Shared character persistence conflicts with stored state");
+                throw new DatabaseStateConflictException(exception);
+            }
             catch (Exception exception) { logger?.Error(exception, "Shared character persistence failed"); throw; }
         }
         internal static void Run(Action operation, IZoneLogger? logger = null)

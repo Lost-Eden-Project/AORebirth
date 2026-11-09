@@ -78,7 +78,8 @@ namespace ZoneEngine_New.Core.Helpers
         /// specials (Aimed Shot, Fling Shot, Burst, Full Auto) until the shooter stops moving, and a queued special that
         /// has not fired when the attack stops never fires. A locked or unusable special is refused here.
         /// </summary>
-        public static bool Queue(Character attacker, Character target, CharacterStat special)
+        /// <param name="requestHeader">The request's N3 header byte, sent back in its echo when it fires.</param>
+        public static bool Queue(Character attacker, Character target, CharacterStat special, byte requestHeader = 0x01)
         {
             ArgumentNullException.ThrowIfNull(attacker);
             ArgumentNullException.ThrowIfNull(target);
@@ -116,7 +117,7 @@ namespace ZoneEngine_New.Core.Helpers
             if (attacker is Player player)
                 ModuleHooks.ActionAttempted(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Queued,
                     target: target.Identity);
-            attacker.QueueSpecial(special, target.Identity, ModuleHooks.RequestNow);
+            attacker.QueueSpecial(special, target.Identity, ModuleHooks.RequestNow, requestHeader);
             return true;
         }
 
@@ -156,7 +157,9 @@ namespace ZoneEngine_New.Core.Helpers
         /// One try at a queued special from <paramref name="attacker"/> against <paramref name="target"/>.
         /// </summary>
         /// <param name="requestTimestamp">The receive time of the request that queued it, for the module Resolved.</param>
-        public static FireResult TryFire(Character attacker, Character target, CharacterStat special, long requestTimestamp = -1)
+        /// <param name="requestHeader">The request's N3 header byte, sent back in its echo.</param>
+        public static FireResult TryFire(Character attacker, Character target, CharacterStat special, long requestTimestamp = -1,
+            byte requestHeader = 0x01)
         {
             ArgumentNullException.ThrowIfNull(attacker);
             ArgumentNullException.ThrowIfNull(target);
@@ -204,12 +207,6 @@ namespace ZoneEngine_New.Core.Helpers
             if (!attacker.HasLineOfSightTo(target) || attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
                 return FireResult.Waiting;
 
-            // Firing any special gives the attacker away. A special that opens the fight keeps stealth until here
-            // (StartFightingForSpecial), so one that kills outright gets no swing to break it.
-            attacker.BreakSneak();
-            // Being attacked gives a sneaker away.
-            target.BreakSneak();
-
             // Brawl and Dimach strike with a skill-tier item instead of the hand weapon's damage.
             Item? specialItem = special switch
             {
@@ -219,6 +216,24 @@ namespace ZoneEngine_New.Core.Helpers
             };
             if (special == CharacterStat.Dimach && specialItem == null)
                 return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Requirements, "no dimach item");
+
+            // It fires: only now is the request echoed. The client holds one echoed special at a time until its
+            // SpecialAttackInfo (or the fight's end) and takes the overhead name and animation from the held one, so an
+            // echo for a special that never fires showed the next special's hit under its name (bug #281).
+            if (attacker is Player requester)
+                requester.Session?.Send(new CharSecSpecAttackMessage
+                {
+                    Identity = requester.Identity,
+                    Unknown = requestHeader,
+                    Target = target.Identity,
+                    Stat = (int)special
+                });
+
+            // Firing any special gives the attacker away. A special that opens the fight keeps stealth until here
+            // (StartFightingForSpecial), so one that kills outright gets no swing to break it.
+            attacker.BreakSneak();
+            // Being attacked gives a sneaker away.
+            target.BreakSneak();
 
             // Retail order (Full Auto capture 2026-10-22): SpecialUsed first, then the hit's own messages (FullAuto
             // rounds feedback, SpecialAttackInfo), then the target's health.

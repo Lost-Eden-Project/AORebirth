@@ -12,8 +12,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Playfield;
 
     /// <summary>
-    /// Client special-attack request: attacker, target and the special's stat id. The request is echoed back,
-    /// then the special runs against the target.
+    /// Client special-attack request: attacker, target and the special's stat id. The special is queued against the
+    /// target; the request is echoed back only when it fires (SpecialAttacks.TryFire).
     /// </summary>
     public sealed class CharSecSpecAttackMessageHandler : IMessageHandler<CharSecSpecAttackMessage>
     {
@@ -41,14 +41,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (playfield == null)
                 return;
 
-            session.Send(new CharSecSpecAttackMessage
-            {
-                Identity = player.Identity,
-                Unknown = message.Unknown,
-                Target = message.Target,
-                Stat = message.Stat
-            });
-
+            // No echo here: the client holds an echoed special until its SpecialAttackInfo or the fight's end, one at a
+            // time, and shows the next special's hit under the held one's name. TryFire echoes it when it fires.
             if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Target, out Dynel? dynel)
                 || dynel is not Character target || target.IsDead)
             {
@@ -59,7 +53,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
             }
 
             // Queued, then tried at once: standing in reach it fires on this tick, as before.
-            if (SpecialAttacks.Queue(player, target, (CharacterStat)message.Stat))
+            if (SpecialAttacks.Queue(player, target, (CharacterStat)message.Stat, message.Unknown))
                 player.TickQueuedSpecials();
         }
     }

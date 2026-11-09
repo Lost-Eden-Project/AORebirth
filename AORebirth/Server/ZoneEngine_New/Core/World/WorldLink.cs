@@ -27,6 +27,13 @@ namespace ZoneEngine_New.Core.World
     {
         static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(3);
 
+        /// <summary>
+        /// What this process reports as its build: assembly version plus module id. A deterministic build of the same
+        /// source gives the same value on every host, so World can warn when zone instances run different binaries.
+        /// </summary>
+        static readonly string BuildIdentity = (typeof(WorldLink).Assembly.GetName().Version?.ToString() ?? "0")
+            + "+" + typeof(WorldLink).Assembly.ManifestModule.ModuleVersionId.ToString("N").Substring(0, 12);
+
         /// <summary>Log everyone out this long before the lease deadline, while their saves are still owned.</summary>
         static readonly TimeSpan FenceMargin = TimeSpan.FromSeconds(3);
 
@@ -301,12 +308,16 @@ namespace ZoneEngine_New.Core.World
                     await RunSessionAsync(stop).ConfigureAwait(false);
                     backoff = TimeSpan.FromMilliseconds(250);
                 }
-                catch (RpcException exception) when (!stop.IsCancellationRequested && exception.StatusCode == StatusCode.AlreadyExists
+                catch (RpcException exception) when (!stop.IsCancellationRequested
+                    && exception.StatusCode is (StatusCode.AlreadyExists or StatusCode.InvalidArgument)
                     && !_firstRegistration.Task.IsCompleted)
                 {
-                    // Another live process already runs under this instance name; waiting will not change that.
+                    // Another live process already runs under this name or endpoint, or this instance is configured in a
+                    // way World will never accept; waiting will not change either.
                     FatalRegistrationError = "World refused instance " + Instance.Name + ": " + exception.Status.Detail
-                        + " (another zone engine is already running under this name or port)";
+                        + (exception.StatusCode == StatusCode.AlreadyExists
+                            ? " (another zone engine is already running under this name or endpoint)"
+                            : " (check ZoneIP, ZonePort and --instance for this host)");
                     _logger.Error(FatalRegistrationError);
                     return;
                 }
@@ -387,7 +398,7 @@ namespace ZoneEngine_New.Core.World
                 Instance = Instance.Name,
                 Game = new Endpoint { Address = Instance.AdvertisedAddress.ToString(), Port = (uint)Instance.Port },
                 LastEpoch = Epoch,
-                Build = typeof(WorldLink).Assembly.GetName().Version?.ToString() ?? string.Empty,
+                Build = BuildIdentity,
                 PreferredSlot = _slot,
                 PreviousSession = _session,
                 HandoffHook = _modules?.HasHandoffHook ?? false

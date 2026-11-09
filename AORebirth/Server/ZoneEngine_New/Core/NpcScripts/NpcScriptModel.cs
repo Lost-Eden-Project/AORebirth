@@ -21,7 +21,13 @@ public enum NpcScriptTrigger
     CombatEnd = 7,
     NanoEnded = 8,
     Timer = 9,
-    Used = 10
+    Used = 10,
+
+    /// <summary>
+    /// One of this runner's SpawnNpc adds was killed (not despawned) while the owner lives. Filter = tag id or -1 for
+    /// any add, Filter2 = delay ms. Queued rather than dropped while another handler runs.
+    /// </summary>
+    AddDied = 11
 }
 
 /// <summary>One compiled verb. Operand meanings per code are documented on <see cref="ScriptOp"/>.</summary>
@@ -69,7 +75,10 @@ public enum ScriptOpCode : byte
     /// <summary>Jump to A.</summary>
     Goto,
 
-    /// <summary>Jump to one of A entries of the jump table starting at B, picked evenly.</summary>
+    /// <summary>
+    /// Jump to one of A entries of the jump table starting at B: picked evenly when C is 0, else weighted, with the
+    /// running weight totals at B + A .. B + 2A - 1 and C their sum.
+    /// </summary>
     Random,
 
     /// <summary>End this handler and start the first handler of trigger A.</summary>
@@ -127,6 +136,7 @@ public enum NpcScriptTarget
 /// <param name="Level">Spawn level; 0 for the template's own (or <paramref name="LevelPercent"/>).</param>
 /// <param name="JoinFight">The spawn takes the owner's current target as its first hate.</param>
 /// <param name="LevelPercent">Spawn level as a percent of the owner's level, rounded, at least 1; 0 when unused.</param>
+/// <param name="Tag">Index into <see cref="NpcScriptProgram.Tags"/> the spawns carry for AddDied; -1 for none.</param>
 public readonly record struct SpawnNpcSpec(
     bool Absolute,
     int Count,
@@ -135,7 +145,17 @@ public readonly record struct SpawnNpcSpec(
     int OwnerDespawnDelaySeconds,
     int Level,
     bool JoinFight,
-    int LevelPercent = 0);
+    int LevelPercent = 0,
+    int Tag = -1);
+
+/// <summary>
+/// What a SpawnNpc add remembers of the runner that spawned it, so its kill reaches that runner as AddDied. Only
+/// allocated when the spawning program has an AddDied handler.
+/// </summary>
+/// <param name="Runner">The spawning runner (one program of the owner's chain).</param>
+/// <param name="Tag">The spawn's tag id, or -1.</param>
+/// <param name="Epoch">The runner's owner epoch at spawn; a death, reset or despawn of the owner moves it on.</param>
+public sealed record NpcScriptAddLink(NpcScriptRunner Runner, int Tag, int Epoch);
 
 public enum GfxAnchor
 {
@@ -219,8 +239,10 @@ public sealed class NpcScriptProgram
         string[] strings,
         Vector3[] vectors,
         int[] jumps,
-        SpawnNpcSpec[] spawns)
+        SpawnNpcSpec[] spawns,
+        string[]? tags = null)
     {
+        Tags = tags ?? Array.Empty<string>();
         Id = id;
         File = file;
         Params = parameters;
@@ -279,6 +301,9 @@ public sealed class NpcScriptProgram
 
     /// <summary>Shapes of the program's <see cref="ScriptOpCode.SpawnNpc"/> ops.</summary>
     public SpawnNpcSpec[] Spawns { get; }
+
+    /// <summary>SpawnNpc / AddDied tag names, indexed by tag id. Program-local.</summary>
+    public string[] Tags { get; }
 
     public uint TriggerMask { get; }
 

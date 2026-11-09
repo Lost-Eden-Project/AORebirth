@@ -964,6 +964,12 @@ namespace ZoneEngine_New.Core.Trade
                 foreach (Player player in players) player.QuarantinePersistence();
                 throw;
             }
+            catch (DatabaseStateConflictException)
+            {
+                // Rolled back, but a participant's pending rows contradict the database; a retry cannot succeed.
+                foreach (Player player in players) player.QuarantinePersistence();
+                throw;
+            }
             catch
             {
                 for (int i = 0; i < players.Length; i++)
@@ -978,7 +984,7 @@ namespace ZoneEngine_New.Core.Trade
         void FailedCommit(TradeSession session, Exception exception, bool durable)
         {
             _logger.Error(exception, "Trade persistence failed; completion was not acknowledged.");
-            if (durable || exception is DatabaseCommitOutcomeUnknownException
+            if (durable || exception is DatabaseCommitOutcomeUnknownException or DatabaseStateConflictException
                 || session.Initiator.IsPersistenceQuarantined || session.Partner?.IsPersistenceQuarantined == true)
             {
                 session.Initiator.QuarantinePersistence();

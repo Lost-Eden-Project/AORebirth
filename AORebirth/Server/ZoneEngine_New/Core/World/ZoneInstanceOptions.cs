@@ -61,7 +61,13 @@ namespace ZoneEngine_New.Core.World
         {
             if (string.IsNullOrWhiteSpace(host)) host = "127.0.0.1";
             if (IPAddress.TryParse(host, out IPAddress? parsed) && parsed.AddressFamily == AddressFamily.InterNetwork)
+            {
+                // World hands ZoneIP to clients and other zone instances; the bind address is AO_REBIRTH_BIND_MODE.
+                if (parsed.Equals(IPAddress.Any))
+                    throw new InvalidOperationException("ZoneIP must be the address clients connect to, not 0.0.0.0.");
                 return parsed;
+            }
+
             return Dns.GetHostEntry(host).AddressList.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork)
                 ?? throw new InvalidOperationException("ZoneIP did not resolve to an IPv4 address.");
         }

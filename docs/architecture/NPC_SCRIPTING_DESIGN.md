@@ -271,7 +271,7 @@ Instant unless marked blocking. Operands are constants or `$Param` slots.
 | `CastNano` id, `Target` `Self` / `Target` / `RandomHostile`, `MinDistance`, `Warp` | `NanoRuntime.TryStartCast` (requirements, cost, recharge, legality as for any caster); blocks while the cast bar runs (polled at 4 Hz). `RandomHostile` is a reservoir pick over the brain's hate list of players the NPC may attack and that stand at least `MinDistance` m away (edge to edge); pets are never picked. `Warp: "ToSelf"` moves the recipient to the NPC's feet (1.5 m from its centre, on the side it came from) when the nano lands, after the buff is on: a player through `Player.TeleportWithinPlayfield` with its living pets warped alongside (the Abmouth capture of 2026-07-20: nano 286237, then N3Teleport for the player and SetPos for both pets), an NPC through `NpcBrain.WarpTo`. Nano 286237 ("Summoned") itself carries only a RestrictAction function, no teleport, so the warp has to be the script's | |
 | `SetStat` stat, value | `Stats.Set(..., dirty: true)` for pose / flags style spawn states | stat by `CharacterStat` name only |
 | `SetVar` / `AddVar` / `If` var op value, `Goto` | 8 int slots, compiled predicates | `If` also supports `Health <`, `HasTarget`, `PlayersNear r`, `Chance p` |
-| `Random` [blocks] | jump to one block, equal or weighted | compiled to jump table |
+| `Random` [blocks] | jump to one block, equal or weighted: a block is an op list (weight 1) or `{ "Weight": 1..10000, "Do": [ops] }` | compiled to jump table; weighted tables also carry running totals |
 | `Signal` name, radius | `Raise(Signal)` on scripted NPCs in own + adjacent cells within radius (`PlayfieldLocality.CollectNearby`) | multi-NPC scenes |
 | `ReleaseMovement` | gives movement back to patrol / wander / idle without ending the handler | |
 | `SetHome` `Here` or point | re-posts the NPC: `brain.Home` (leash, return, wander anchor) becomes the point. While a `WalkTo`/`RunTo` (or a brain patrol leg) is under way the brain's distance leash measures from the walk's target (`NpcBrain.LeashAnchor`), not the spawn, so a march or patrol may go beyond the 70 m leash range | |
@@ -428,15 +428,26 @@ bytecode, bindings and args, validation), `NpcScriptCatalog.cs` (folder load, in
 project and `SharedBuild/source-inventory`.
 
 In: triggers `Spawned`, `Arrived`, `Stuck`, `HealthBelow`, `Death`, `Reset`, `CombatStart`, `CombatEnd`,
-`NanoEnded`, `Timer` (`EveryMs`), `Used`; verbs `Wait`, `WalkTo`/`RunTo` (object form `To` + `Direct` for a straight-line step off the navmesh), `Emote` (optional `DurationMs`), `Say`,
+`NanoEnded`, `Timer` (`EveryMs`), `Used`, `AddDied` (2026-11-08: optional `Tag`, `DelayMs`); verbs `Wait`, `WalkTo`/`RunTo` (object form `To` + `Direct` for a straight-line step off the navmesh), `Emote` (optional `DurationMs`), `Say`,
 `SpawnWorldItem`, `SpawnNpc` (2026-11-06: circle spawns, lifetimes, owner-bound despawn, `$NpcHash` params), `Gfx` (anchors `On: Self`, `At`, `Offset`, `From`/`To`),
 `CastNano` (2026-11-06: `Self`/`Target`/`RandomHostile` with `MinDistance`, `Warp: "ToSelf"` on landing), `Despawn`, `SetStat`, `SetVar`/`AddVar`,
-`If` (jumps to its `Goto` label when the condition holds), `Goto`/`Label`, `Random`, `Restart`, `ReleaseMovement`, `SetHome`,
+`If` (jumps to its `Goto` label when the condition holds), `Goto`/`Label`, `Random` (2026-11-08: `{ Weight, Do }` blocks), `Restart`, `ReleaseMovement`, `SetHome`,
 `End`; bindings by `Hash` (optionally per `Playfield`), `SpawnPoint`, `NpcKey`, `Feature` (overlay, 2026-11-06); `Movement` shorthand (`Patrol`,
 `Wander`). Timer handlers re-arm themselves and never queue up. An interrupting handler suspends the running one,
 which resumes where it was (a cut-short walk is re-issued). `NanoRuntime` tells the caster's runners when one of its
 casts lands (`NpcScriptRunner.OnCastLanded`), which is what a `Warp` waits for. `NpcCharacter` carries the add
 bookkeeping (`ScriptOwner`, `ScriptSpawnDepth`, `OwnerDespawnDelayMs`, `DespawnAtMs`: one compare in its tick).
+
+`AddDied` (2026-11-08) lets a boss keep adds at fixed spots. `SpawnNpc` takes an optional `Tag` (a program-local
+name several spawns may share); an add spawned by a program with `AddDied` handlers carries `ScriptLink` (runner, tag,
+owner epoch). `NpcCharacter.OnDeath` (a kill; `DespawnAsDeath` from `LifetimeSeconds`, owner cleanup or a GM despawn
+never) hands it to `NpcScriptRunner.OnAddKilled`. The first matching handler (`Tag` filter or none for any add,
+then `Once`/`CooldownMs`/`ChancePercent`) is queued, not dropped, to start `DelayMs` after the kill; the delay is
+held by the queue, so the boss's other handlers keep running meanwhile. A due entry starts when no handler runs, or
+suspends the running one when it `Interrupts`. The owner's death, reset or despawn moves the runner's epoch on, so
+earlier adds stop reporting, and drops the queue and any running AddDied handler. At most 32 entries wait per
+runner. Example: `{ "On": "AddDied", "Tag": "slot1", "DelayMs": 30000, "Do": [ { "Random": [ [ { "SpawnNpc":
+{ "Hash": "CETN", "At": [134.0, 29.9, 216.5], "Tag": "slot1" } } ], ... ] } ] }`.
 
 The shipped `Summoner.json` binds `Feature: "Summoner"`: in a fight, every 20 to 30 s it casts 286237 on a random
 hostile player more than 10 m away and warps them to its feet. Listing `Summoner` under a hash's `Features` in
