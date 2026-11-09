@@ -77,6 +77,7 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization
                                        { typeof(GenericCmdMessage), new GenericCmdSerializer() },
                                        { typeof(MailMessage), new MailMessageSerializer() },
                                        { typeof(SpellListMessage), new SpellListMessageSerializer() },
+                                       { typeof(ApplySpellsMessage), new ApplySpellsMessageSerializer() },
                                        { typeof(MarketSendMessage), new MarketSendMessageSerializer() },
                                        { typeof(AOTransportSignalMessage), new AOTransportSignalMessageSerializer() },
                                        { typeof(N3TeleportMessage), new N3TeleportMessageSerializer() },

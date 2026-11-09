@@ -27,12 +27,14 @@ namespace ZoneEngine_New.Core.World
     {
         static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(3);
 
+        /// <summary>What this process reports as its build (<see cref="ZoneIdentity.Build"/>); World refuses a mismatch.</summary>
+        static string BuildIdentity => ZoneIdentity.Build;
+
         /// <summary>
-        /// What this process reports as its build: assembly version plus module id. A deterministic build of the same
-        /// source gives the same value on every host, so World can warn when zone instances run different binaries.
+        /// <see cref="GameDataFingerprint"/> of this zone's GameData, set before <see cref="Start"/>. World refuses a fresh
+        /// zone whose fingerprint differs from the running zones'.
         /// </summary>
-        static readonly string BuildIdentity = (typeof(WorldLink).Assembly.GetName().Version?.ToString() ?? "0")
-            + "+" + typeof(WorldLink).Assembly.ManifestModule.ModuleVersionId.ToString("N").Substring(0, 12);
+        public string GameDataFingerprint { get; set; } = string.Empty;
 
         /// <summary>Log everyone out this long before the lease deadline, while their saves are still owned.</summary>
         static readonly TimeSpan FenceMargin = TimeSpan.FromSeconds(3);
@@ -309,15 +311,19 @@ namespace ZoneEngine_New.Core.World
                     backoff = TimeSpan.FromMilliseconds(250);
                 }
                 catch (RpcException exception) when (!stop.IsCancellationRequested
-                    && exception.StatusCode is (StatusCode.AlreadyExists or StatusCode.InvalidArgument)
+                    && exception.StatusCode is (StatusCode.AlreadyExists or StatusCode.InvalidArgument or StatusCode.FailedPrecondition)
                     && !_firstRegistration.Task.IsCompleted)
                 {
-                    // Another live process already runs under this name or endpoint, or this instance is configured in a
-                    // way World will never accept; waiting will not change either.
+                    // Another live process already runs under this name or endpoint, this instance runs a different build
+                    // or GameData than the running zones, or it is configured in a way World will never accept; waiting
+                    // will not change any of them.
                     FatalRegistrationError = "World refused instance " + Instance.Name + ": " + exception.Status.Detail
-                        + (exception.StatusCode == StatusCode.AlreadyExists
-                            ? " (another zone engine is already running under this name or endpoint)"
-                            : " (check ZoneIP, ZonePort and --instance for this host)");
+                        + exception.StatusCode switch
+                        {
+                            StatusCode.AlreadyExists => " (another zone engine is already running under this name or endpoint)",
+                            StatusCode.FailedPrecondition => " (run the same build and GameData as the zone engines already running, or stop them first)",
+                            _ => " (check ZoneIP, ZonePort and --instance for this host)"
+                        };
                     _logger.Error(FatalRegistrationError);
                     return;
                 }
@@ -399,6 +405,7 @@ namespace ZoneEngine_New.Core.World
                 Game = new Endpoint { Address = Instance.AdvertisedAddress.ToString(), Port = (uint)Instance.Port },
                 LastEpoch = Epoch,
                 Build = BuildIdentity,
+                GameData = GameDataFingerprint,
                 PreferredSlot = _slot,
                 PreviousSession = _session,
                 HandoffHook = _modules?.HasHandoffHook ?? false
@@ -559,6 +566,20 @@ namespace ZoneEngine_New.Core.World
 
                 case WorldToService.BodyOneofCase.Announcement:
                     _handlers?.Announce(message.Announcement.Text);
+                    break;
+
+                case WorldToService.BodyOneofCase.Shutdown:
+                    ShutdownRequest shutdown = message.Shutdown;
+                    _logger.Warn(shutdown.Abort
+                        ? "World cancelled the shutdown it asked for (" + shutdown.RequestedBy + ")"
+                        : "World asked this instance to shut down in " + shutdown.Seconds.ToString(CultureInfo.InvariantCulture) + "s ("
+                            + shutdown.RequestedBy + ")");
+                    // Off the stream reader: the countdown announces to every player.
+                    _ = Task.Run(() =>
+                    {
+                        try { _handlers?.Shutdown(shutdown); }
+                        catch (Exception exception) { _logger.Error(exception, "World shutdown request failed"); }
+                    });
                     break;
 
                 default:

@@ -7,6 +7,7 @@ namespace ZoneEngine_New.Core.Lifecycle
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Playfield;
 
@@ -19,6 +20,7 @@ namespace ZoneEngine_New.Core.Lifecycle
     /// <summary>
     /// GM <c>.shutdown &lt;seconds&gt;</c>: counts down on its own timer thread (never a playfield tick, which the
     /// shutdown itself stops), tells every online player at the usual checkpoints, then shuts the engine down.
+    /// Each line goes to chat and to the center-screen announcement window (<see cref="CenterScreenAnnouncement"/>).
     /// <c>.shutdown abort</c> cancels it. One countdown at a time; scheduling again replaces it.
     /// </summary>
     public sealed class ShutdownScheduler : IDisposable
@@ -161,14 +163,21 @@ namespace ZoneEngine_New.Core.Lifecycle
                     continue;
 
                 playfield.DispatchPlayerProjection(player, () =>
-                    player.Session?.Send(new ChatTextMessage
+                {
+                    var session = player.Session;
+                    if (session == null)
+                        return;
+
+                    session.Send(new ChatTextMessage
                     {
                         Identity = player.Identity,
                         Text = text,
                         Unknown1 = 0,
                         Unknown2 = 0,
                         Unknown3 = 0
-                    }));
+                    });
+                    session.Send(CenterScreenAnnouncement.Build(player.Identity, text));
+                });
             }
         }
 

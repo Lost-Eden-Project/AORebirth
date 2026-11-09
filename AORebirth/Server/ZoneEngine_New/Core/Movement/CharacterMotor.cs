@@ -1124,6 +1124,12 @@ namespace ZoneEngine_New.Core.Movement
                 case MovementAction.StrafeLeftStart:
                 case MovementAction.StrafeRightStart:
                 case MovementAction.ElevateUpStart:
+                    // Walking keeps a cast going; any faster mode breaks it.
+                    if (State != MovementState.Walk)
+                        _character.InterruptTimedActions(TimedActionInterrupt.Movement);
+                    break;
+                case MovementAction.SwitchToRun when IsMoving:
+                    // Breaking into a run mid-walk breaks the cast the walk kept.
                     _character.InterruptTimedActions(TimedActionInterrupt.Movement);
                     break;
                 case MovementAction.JumpStart when surface == null:

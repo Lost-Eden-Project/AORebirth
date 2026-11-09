@@ -171,6 +171,7 @@
     <Compile Include="GameData\AcgBuildingGeneratorData.cs" />
     <Compile Include="GameData\AnimationEffect.cs" />
     <Compile Include="GameData\NanoEffect.cs" />
+    <Compile Include="GameData\InlineSpell.cs" />
     <Compile Include="GameData\MissionItemReward.cs" />
     <Compile Include="GameData\PlayfieldVendorInfo.cs" />
     <Compile Include="GameData\Profession.cs" />
@@ -316,6 +317,7 @@
     <Compile Include="Messages\N3Messages\SpecialAttackInfo.cs" />
     <Compile Include="Messages\N3Messages\SpecialAttackWeaponMessage.cs" />
     <Compile Include="Messages\N3Messages\SpellListMessage.cs" />
+    <Compile Include="Messages\N3Messages\ApplySpellsMessage.cs" />
     <Compile Include="Messages\N3Messages\StatMessage.cs" />
     <Compile Include="Messages\N3Messages\StartLogoutMessage.cs" />
     <Compile Include="Messages\N3Messages\StopFightMessage.cs" />
@@ -385,6 +387,7 @@
     <Compile Include="Serialization\Serializers\Custom\GenericCmdSerializer.cs" />
     <Compile Include="Serialization\Serializers\Custom\MailMessageSerializer.cs" />
     <Compile Include="Serialization\Serializers\Custom\SpellListMessageSerializer.cs" />
+    <Compile Include="Serialization\Serializers\Custom\ApplySpellsMessageSerializer.cs" />
     <Compile Include="Serialization\Serializers\Custom\MarketSendMessageSerializer.cs" />
     <Compile Include="Serialization\Serializers\Custom\IdentityOnlyN3MessageSerializer.cs" />
     <Compile Include="Serialization\Serializers\Custom\N3TeleportMessageSerializer.cs" />

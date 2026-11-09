@@ -787,7 +787,7 @@ namespace ZoneEngine_New.Core.Ai
             // Only this NPC's cell and the cells touching it (wider only for an aggro range longer than a cell). The same
             // range is how far it notices players, defends them as a guard, and spots NPCs it hates.
             var locality = Npc.Playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>();
-            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats, locality.Grid.IsOutdoor);
+            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats);
             if (hostile || guard)
             {
                 locality.CollectNearby(Npc, range, _nearbyPlayers);
@@ -905,8 +905,7 @@ namespace ZoneEngine_New.Core.Ai
                     player.Stats.GetOrOne(CharacterStat.Level),
                     Npc.Stats.GetOrOne(CharacterStat.Level)))
                 return;
-            bool outdoor = Npc.Playfield?.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().Grid.IsOutdoor ?? true;
-            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats, outdoor);
+            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats);
             if (Npc.GetEdgeDistanceTo(player) > range)
                 return;
             // Unprovoked aggro needs sight. Once the player is on the hate list, chasing around walls is fine.

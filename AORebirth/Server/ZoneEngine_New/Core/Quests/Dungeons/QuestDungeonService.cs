@@ -654,6 +654,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         && player.Playfield is Playfield here)
                     {
                         Vector3 spawn = layout.Spawn;
+                        AORebirth.Core.Vector.Quaternion spawnHeading = layout.SpawnHeading;
                         _ = link.ResolveAsync(dungeonPlayfield).ContinueWith(resolve =>
                         {
                             if (!resolve.IsCompletedSuccessfully || !resolve.Result.Accepted) return;
@@ -662,7 +663,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                             {
                                 if (!ReferenceEquals(player.Playfield, here) || player.Session == null) return;
                                 if (local) Reenter(player, target);
-                                else _playfields.Value.CrossInstance?.Start(player, dungeonPlayfield, spawn, player.Rotation,
+                                else _playfields.Value.CrossInstance?.Start(player, dungeonPlayfield, spawn, spawnHeading,
                                     AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon);
                             });
                         }, System.Threading.Tasks.TaskScheduler.Default);
@@ -706,10 +707,11 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     {
                         // The dungeon already runs on another zone instance (a teammate went in there): join it.
                         return _playfields.Value.CrossInstance?.Start(player, dungeon.Parameters.DungeonPlayfield, layout.Spawn,
-                            player.Rotation, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon) == true;
+                            layout.SpawnHeading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon) == true;
                     }
 
-                    return session.TransferToPlayfield(world, layout.Spawn);
+                    // Face into the entrance room, not the heading carried in from outside (back at the exit door).
+                    return session.TransferToPlayfield(world, layout.Spawn, layout.SpawnHeading);
                 }
 
                 return false;

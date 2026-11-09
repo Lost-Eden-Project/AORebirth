@@ -62,6 +62,12 @@ Replace values in `<angle brackets>`; values in `[square brackets]` are optional
 - `.gametime dec <n>[h|m|d]` — Move the clock back.
 - `.gametime reset` — Drop every move and return to the `Gameplay.json` worldClock.
 
+## Announcements
+
+- `.announce <text>` — Show text in the center-screen announcement window of every online player.
+- `.announce pf <text>` — Send it to every player on your playfield only.
+- `.announce me <text>` — Send it to yourself only. Only the AORebirth client shows announcements; the retail client ignores them.
+
 ## Weather
 
 - `.weather <type|name> [intensity 0-100] [duration s] [radius m] [me]` — Start weather centred on you; `me` sends it to yourself only.
@@ -116,6 +122,7 @@ The target is an account or character name; use `account:NAME` or `char:NAME` wh
 
 - `.shutdown <seconds>` — Schedule engine shutdown.
 - `.shutdown abort` — Cancel a scheduled shutdown.
+- Countdown lines go to chat and to the announcement window.
 
 ## Required GM levels
 

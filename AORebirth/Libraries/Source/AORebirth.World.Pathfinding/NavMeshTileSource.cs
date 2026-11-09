@@ -26,6 +26,9 @@ namespace AORebirth.World.Pathfinding
 
         public long Length { get; }
 
+        /// <summary>The whole mesh is held in memory (a generated dungeon's bake) rather than read from a file.</summary>
+        public bool InMemory => _bytes != null;
+
         public static NavMeshTileSource OpenFile(string path)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(path);

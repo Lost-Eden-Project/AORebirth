@@ -108,7 +108,8 @@ public sealed class NpcScriptCompiler
             ctx.Vectors.ToArray(),
             ctx.Jumps.ToArray(),
             ctx.Spawns.ToArray(),
-            ctx.Tags.ToArray());
+            ctx.Tags.ToArray(),
+            ctx.NanoLists.ToArray());
     }
 
     static ScriptParam[] ParseParams(JsonElement root, List<string> errors)
@@ -182,6 +183,8 @@ public sealed class NpcScriptCompiler
         public List<SpawnNpcSpec> Spawns { get; } = new();
 
         public List<string> Tags { get; } = new();
+
+        public List<int[]> NanoLists { get; } = new();
 
         /// <summary>Tag ids some SpawnNpc gives out.</summary>
         public HashSet<int> SpawnedTags { get; } = new();
@@ -876,9 +879,10 @@ public sealed class NpcScriptCompiler
     }
 
     /// <summary>
-    /// <c>{ "Nano", "Target"?, "MinDistance"?, "Warp"? }</c>. Target is Self (default), Target (the current fighting
-    /// target) or RandomHostile; MinDistance (metres) only narrows RandomHostile; Warp "ToSelf" moves the recipient to
-    /// the NPC's feet once the nano has landed.
+    /// <c>{ "Nano", "Target"?, "MinDistance"?, "Warp"? }</c>. Nano is one id / $Int param or a list of them (a random
+    /// pick per recipient). Target is Self (default), Target (the current fighting target), RandomHostile or Playfield
+    /// (every living player on the playfield, one cast bar); MinDistance (metres) only narrows RandomHostile; Warp
+    /// "ToSelf" moves the recipient to the NPC's feet once the nano has landed, and is refused with Playfield.
     /// </summary>
     void CompileCastNano(JsonElement value, ProgramContext ctx)
     {
@@ -897,7 +901,7 @@ public sealed class NpcScriptCompiler
             string targetName = GetString(value, "Target") ?? "Self";
             if (!Enum.TryParse(targetName, ignoreCase: true, out target) || !Enum.IsDefined(target))
             {
-                ctx.Error("CastNano: Target is Self, Target or RandomHostile");
+                ctx.Error("CastNano: Target is Self, Target, RandomHostile or Playfield");
                 return;
             }
 
@@ -928,13 +932,45 @@ public sealed class NpcScriptCompiler
                     return;
                 }
 
+                // A warp follows one recipient's landing; a playfield cast has many.
+                if (target == NpcScriptTarget.Playfield)
+                {
+                    ctx.Error("CastNano: Warp does not apply to Target Playfield");
+                    return;
+                }
+
                 flags |= CastWarpToSelf;
             }
         }
 
+        if (nanoElement.ValueKind == JsonValueKind.Array && value.ValueKind == JsonValueKind.Object)
+        {
+            int count = nanoElement.GetArrayLength();
+            if (count < 1 || count > MaxCastNanoList)
+            {
+                ctx.Error("CastNano: a Nano list holds 1.." + MaxCastNanoList + " ids");
+                return;
+            }
+
+            var refs = new int[count];
+            int i = 0;
+            foreach (JsonElement item in nanoElement.EnumerateArray())
+            {
+                if (!TryValueRef(item, ScriptParamType.Int, ctx, out refs[i++], ParseNanoId))
+                {
+                    ctx.Error("CastNano: each Nano list entry is a positive nano id or an $Int param");
+                    return;
+                }
+            }
+
+            ctx.NanoLists.Add(refs);
+            ctx.Ops.Add(new ScriptOp(ScriptOpCode.CastNano, ctx.NanoLists.Count - 1, (int)target, minDistance, flags | CastNanoList));
+            return;
+        }
+
         if (!TryValueRef(nanoElement, ScriptParamType.Int, ctx, out int nanoRef, ParseNanoId))
         {
-            ctx.Error("CastNano: a positive nano id or an $Int param");
+            ctx.Error("CastNano: a positive nano id, an $Int param or (object form) a list of them");
             return;
         }
 
@@ -943,6 +979,12 @@ public sealed class NpcScriptCompiler
 
     /// <summary><see cref="ScriptOpCode.CastNano"/> D flag: warp the recipient to the NPC's feet when the nano lands.</summary>
     public const int CastWarpToSelf = 1;
+
+    /// <summary><see cref="ScriptOpCode.CastNano"/> D flag: A indexes <see cref="NpcScriptProgram.NanoLists"/>.</summary>
+    public const int CastNanoList = 2;
+
+    /// <summary>Longest CastNano Nano list.</summary>
+    public const int MaxCastNanoList = 16;
 
     static bool ParseNanoId(JsonElement element, out int id)
     {

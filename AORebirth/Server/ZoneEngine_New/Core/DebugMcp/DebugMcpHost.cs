@@ -74,10 +74,15 @@ namespace ZoneEngine_New.Core.DebugMcp
             builder.Services.AddSingleton(zoneServices.GetRequiredService<Knubot.KnubotCatalog>());
             builder.Services.AddSingleton(zoneServices.GetRequiredService<GameData.GameDataReloadRegistry>());
             builder.Services.AddMcpServer().WithHttpTransport().WithTools<ZoneDebugTools>().WithTools<ZoneDiagTools>().WithTools<KnubotDebugTools>()
-                .WithTools<GameDataReloadTools>();
+                .WithTools<GameDataReloadTools>().WithTools<ZoneOverviewTools>();
 
             WebApplication app = builder.Build();
             app.MapMcp(DebugMcpOptions.Route);
+            // Same snapshot as the zone_overview tool, as plain JSON for dashboards that do not speak MCP.
+            PlayfieldManager overviewPlayfields = app.Services.GetRequiredService<PlayfieldManager>();
+            IPlayfieldMetricsRegistry overviewMetrics = app.Services.GetRequiredService<IPlayfieldMetricsRegistry>();
+            app.MapGet(ZoneOverview.Route, () => Microsoft.AspNetCore.Http.Results.Text(
+                ZoneOverview.BuildJson(overviewPlayfields, overviewMetrics), "application/json"));
             try
             {
                 app.StartAsync().GetAwaiter().GetResult();

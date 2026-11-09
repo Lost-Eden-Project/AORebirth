@@ -136,6 +136,7 @@ namespace ChatEngine.BotIntegration
             }
 
             channel.BotMessage(wireId, displayName, request.Text);
+            this.server.Modules?.PublishBotMessage(channel, wireId, displayName ?? "AORebirth Bot", request.Text);
             return BotOperationResult.Allowed("ORGANIZATION_MESSAGE_SENT");
         }
 
@@ -203,6 +204,7 @@ namespace ChatEngine.BotIntegration
             }
 
             channel.BotMessage(wireId, displayName, request.Text);
+            this.server.Modules?.PublishBotMessage(channel, wireId, displayName ?? "AORebirth Bot", request.Text);
             return BotOperationResult.Allowed("CHANNEL_MESSAGE_SENT");
         }
 

@@ -1,0 +1,18 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mothership_ExitDevice",
+  "Handlers": [
+    {
+      "On": "Death",
+      "Do": [
+        { "SpawnWorldItem": { "Item": "ARZPRJ", "LifetimeSeconds": 3600 } }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Feature": "SpawnsExitDevice",
+      "Provenance": "Alien Mothership bosses (MJ9O children MLOS, MYOS, CCAT, MOOB, EBOT, MEOO list SpawnsExitDevice in MonsterCombatRules.json): the boss's death leaves an Exit Device (301688, ARZPRJ) that returns the team to the start of the ship. An overlay, so it runs beside a boss's own program such as Mothership_MasterOfSilence."
+    }
+  ]
+}

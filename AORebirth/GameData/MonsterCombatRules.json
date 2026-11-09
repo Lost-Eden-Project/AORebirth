@@ -123,5 +123,35 @@
     "Features": [
       "NoCombat"
     ]
+  },
+  "CCAT": {
+    "Features": [
+      "SpawnsExitDevice"
+    ]
+  },
+  "EBOT": {
+    "Features": [
+      "SpawnsExitDevice"
+    ]
+  },
+  "MEOO": {
+    "Features": [
+      "SpawnsExitDevice"
+    ]
+  },
+  "MLOS": {
+    "Features": [
+      "SpawnsExitDevice"
+    ]
+  },
+  "MOOB": {
+    "Features": [
+      "SpawnsExitDevice"
+    ]
+  },
+  "MYOS": {
+    "Features": [
+      "SpawnsExitDevice"
+    ]
   }
 }

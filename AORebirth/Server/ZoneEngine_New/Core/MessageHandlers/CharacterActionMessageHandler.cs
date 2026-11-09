@@ -14,6 +14,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;
+    using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Teams;
     using ZoneEngine_New.Core.Nanos;
     using ZoneEngine_New.Core.Movement;
@@ -64,7 +65,14 @@ namespace ZoneEngine_New.Core.MessageHandlers
             }
 
             var skill = (CharacterStat)statId;
-            if (!SkillTraining.TryReset(player, skill, player.SkillCatalog, out int refund, out SkillTraining.ResetRefusal refusal))
+            string ipBefore = PlayerActionLog.IpState(player);
+            int baseBefore = player.Stats.GetOrZero(skill, StatDetail.Base);
+            bool reset = SkillTraining.TryReset(player, skill, player.SkillCatalog, out int refund, out SkillTraining.ResetRefusal refusal);
+            PlayerActionLog.Write(player, reset ? "skill-reset ok" : "skill-reset REFUSED",
+                string.Format(CultureInfo.InvariantCulture, "skill={0} reason={1} base={2}->{3} refund={4} before=[{5}] after=[{6}]",
+                    skill, refusal, baseBefore, player.Stats.GetOrZero(skill, StatDetail.Base), refund, ipBefore,
+                    PlayerActionLog.IpState(player)));
+            if (!reset)
             {
                 SendResetRefusal(player, refusal);
                 LogUtil.Debug(DebugInfoDetail.Network, string.Format(CultureInfo.InvariantCulture,
@@ -93,8 +101,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
         {
             StatCollection stats = player.Stats;
             bool freeReset = (stats.GetOrZero(CharacterStat.SpecialCondition, StatDetail.Base) & SkillTraining.FreeFullResetUsedBit) == 0;
-            if (!SkillTraining.TryFullReset(player, player.SkillCatalog, out int refund, out List<CharacterStat> changed,
-                    out SkillTraining.ResetRefusal refusal))
+            string ipBefore = PlayerActionLog.IpState(player);
+            bool reset = SkillTraining.TryFullReset(player, player.SkillCatalog, out int refund, out List<CharacterStat> changed,
+                out SkillTraining.ResetRefusal refusal);
+            PlayerActionLog.Write(player, reset ? "full-ip-reset ok" : "full-ip-reset REFUSED",
+                string.Format(CultureInfo.InvariantCulture, "reason={0} free={1} refund={2} lowered={3} before=[{4}] after=[{5}]",
+                    refusal, freeReset, refund, changed.Count, ipBefore, PlayerActionLog.IpState(player)));
+            if (!reset)
             {
                 SendResetRefusal(player, refusal);
                 LogUtil.Debug(DebugInfoDetail.Network, string.Format(CultureInfo.InvariantCulture,

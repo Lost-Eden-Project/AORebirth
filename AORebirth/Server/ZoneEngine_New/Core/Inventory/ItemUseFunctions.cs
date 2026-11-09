@@ -982,7 +982,9 @@ namespace ZoneEngine_New.Core.Inventory
         /// Absolute OnUse teleport. Positional args are RelX, RelY, RelZ, destination playfield.
         /// A destination playfield of 0 is a soft in-place teleport on the current playfield
         /// (e.g. 258912 Entrance to Hangar), like LineTeleport's intrazone lift.
-        /// One-way: it clears any stored proxy return door.
+        /// Naming the playfield a proxy instance copies stays in that instance.
+        /// Leaving the playfield is one-way: it clears any stored proxy return door. A move within the playfield keeps
+        /// it, so an interior's exit still leads back out after an in-room teleport (Bio MARE's Emergency Exit).
         /// </summary>
         static bool Teleport(Player player, ItemSpell spell)
         {
@@ -996,7 +998,7 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
 
             Playfield source = player.Playfield;
-            bool samePlayfield = playfieldId == 0 || playfieldId == source.Identity.Instance;
+            bool samePlayfield = IsCurrentPlayfield(source, playfieldId);
             if (!samePlayfield)
             {
                 if (playfieldId < 0)
@@ -1010,7 +1012,8 @@ namespace ZoneEngine_New.Core.Inventory
                     return false;
             }
 
-            ClearProxyReturn(player);
+            if (!samePlayfield)
+                ClearProxyReturn(player);
             source.GetService<WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
 
             if (samePlayfield)
@@ -1031,7 +1034,8 @@ namespace ZoneEngine_New.Core.Inventory
 
         /// <summary>
         /// LineTeleport names a Destinations.dat line: <c>{Playfield3, packed, destPlayfield}</c>.
-        /// A destination playfield of 0 stays on the character's current playfield. One-way.
+        /// A destination playfield of 0, or the current one, stays on the character's current playfield (inside a proxy
+        /// instance, on its interior's lines) and keeps the stored proxy return door. Leaving the playfield is one-way.
         /// </summary>
         static bool LineTeleport(Player player, ItemSpell spell)
         {
@@ -1042,14 +1046,13 @@ namespace ZoneEngine_New.Core.Inventory
                 return false;
 
             Playfield source = player.Playfield;
-            int playfieldId = destination.PlayfieldId == 0
-                ? source.Identity.Instance
-                : destination.PlayfieldId;
+            bool samePlayfield = IsCurrentPlayfield(source, destination.PlayfieldId);
+            int playfieldId = samePlayfield ? source.ResourceId : destination.PlayfieldId;
             if (playfieldId <= 0)
                 return false;
 
             IGameData gameData = source.GetRequiredService<IGameData>();
-            if (playfieldId != source.Identity.Instance)
+            if (!samePlayfield)
             {
                 string playfieldDir = Path.Combine(
                     gameData.RootPath,
@@ -1066,7 +1069,8 @@ namespace ZoneEngine_New.Core.Inventory
                     out Quaternion heading))
                 return false;
 
-            ClearProxyReturn(player);
+            if (!samePlayfield)
+                ClearProxyReturn(player);
             // Drops the pad overlap and holds triggers off briefly; afterwards the landing's
             // overlaps are adopted, so a return beam beside the landing only fires once walked off.
             source.GetService<WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
@@ -1077,7 +1081,7 @@ namespace ZoneEngine_New.Core.Inventory
                 return true;
             }
 
-            if (playfieldId == source.Identity.Instance)
+            if (samePlayfield)
             {
                 FinishSamePlayfieldMove(player, source, landing, heading, destination.DestinationKey);
                 return true;
@@ -1091,6 +1095,10 @@ namespace ZoneEngine_New.Core.Inventory
                 session.TransferToPlayfield(destPlayfield, landing, heading);
             }, new ZoneEngine_New.Core.World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
         }
+
+        /// <summary>0, the playfield's own identity, or (in a proxy instance) the interior it copies.</summary>
+        static bool IsCurrentPlayfield(Playfield source, int playfieldId)
+            => playfieldId == 0 || playfieldId == source.Identity.Instance || playfieldId == source.ResourceId;
 
         static void ClearProxyReturn(Player player)
         {

@@ -40,6 +40,7 @@
     <ProjectReference Include="Translations.Engines.WinNet10.csproj" />
     <ProjectReference Include="Utility.Engines.WinNet10.csproj" />
     <ProjectReference Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.World.Contracts/AORebirth.World.Contracts.csproj" />
+    <ProjectReference Include="$(AORebirthRepositoryRoot)/AORebirth/Libraries/Source/AORebirth.ChatModules.Abstractions/AORebirth.ChatModules.Abstractions.csproj" />
   </ItemGroup>
 
   <Import Project="$(AORebirthRepositoryRoot)/SharedBuild/source-inventory/ChatEngine.CompileItems.props" />

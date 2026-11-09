@@ -18,6 +18,10 @@
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/Channels/TeamChannel.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/ChatLogger.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/BotIntegration/ChatEngineBotRouter.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/Modules/ChatModuleDelivery.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/Modules/ChatModuleHost.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/Modules/ChatModuleLoadContext.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/Modules/ChatModulesSettings.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/CoreClient/Character.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/CoreClient/CharacterBase.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/ChatEngine/CoreClient/Client.cs" />

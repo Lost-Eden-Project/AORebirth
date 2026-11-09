@@ -15,6 +15,12 @@ namespace ZoneEngine_New.Core.Mobs
 
         public int LevelMod { get; set; }
 
+        /// <summary>
+        /// The row drops whatever the mob's (or mission's) level: items outside the LevelMod window are not filtered out,
+        /// they drop at the rolled QL clamped into their own range.
+        /// </summary>
+        public bool IgnoreLevel { get; set; }
+
         /// <summary>A row a loot roll can use: a hash, at least one repeat, a chance from 1 to 100 and no negative level window.</summary>
         public static bool IsWellFormed(MobItemTableEntry? entry)
             => entry != null && !string.IsNullOrWhiteSpace(entry.Hash) && entry.Repeats > 0
@@ -26,7 +32,7 @@ namespace ZoneEngine_New.Core.Mobs
             if (source == null)
                 return copy;
             foreach (MobItemTableEntry entry in source)
-                copy.Add(new MobItemTableEntry { Hash = entry.Hash, Repeats = entry.Repeats, Chance = entry.Chance, LevelMod = entry.LevelMod });
+                copy.Add(new MobItemTableEntry { Hash = entry.Hash, Repeats = entry.Repeats, Chance = entry.Chance, LevelMod = entry.LevelMod, IgnoreLevel = entry.IgnoreLevel });
             return copy;
         }
     }

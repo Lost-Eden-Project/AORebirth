@@ -33,16 +33,25 @@ namespace ZoneEngine_New.Core.GameData
         readonly Dictionary<int, PerkEntry> _perks;
         readonly Dictionary<int, int> _perkIdsByItemId = new();
 
-        PerkCatalog(Dictionary<int, PerkEntry> perks)
+        PerkCatalog(Dictionary<int, PerkEntry> perks, int[] grantedToAll)
         {
             _perks = perks;
+            GrantedToAll = grantedToAll;
             foreach ((int perkId, PerkEntry perk) in perks)
                 _perkIdsByItemId.TryAdd(perk.ItemId, perkId);
         }
 
         readonly record struct PerkEntry(int ItemId, int PreviousId, int Flags);
 
-        public static PerkCatalog Empty { get; } = new(new Dictionary<int, PerkEntry>());
+        public static PerkCatalog Empty { get; } = new(new Dictionary<int, PerkEntry>(), []);
+
+        /// <summary>
+        /// HACK: every tier of the Perks.json lines marked GrantedToAll, owned by every player at runtime and never
+        /// saved (<see cref="Entities.TrainedPerks.Grant"/>). These are the Global Advantage lines, which are Global
+        /// Research. We do not support Global Research and might never support it. Owning them lets every player
+        /// equip the Research Attunement Devices, which check them with HasPerk.
+        /// </summary>
+        public IReadOnlyList<int> GrantedToAll { get; }
 
         /// <summary>Catalog from the runtime GameData folder. Empty, with an error logged, when it cannot be loaded.</summary>
         public static PerkCatalog Default => DefaultCatalog.Value;
@@ -103,6 +112,7 @@ namespace ZoneEngine_New.Core.GameData
                 ?? throw Invalid("empty file");
 
             var perks = new Dictionary<int, PerkEntry>();
+            var grantedToAll = new List<int>();
             foreach (PerkLineRow? line in file.PerkLines ?? [])
             {
                 int previous = 0;
@@ -112,10 +122,12 @@ namespace ZoneEngine_New.Core.GameData
                         || !perks.TryAdd(perk.Id, new PerkEntry(perk.ItemId, previous, perk.Flags ?? line!.Flags)))
                         throw Invalid("perk " + perk?.Id);
                     previous = perk.Id;
+                    if (line!.GrantedToAll)
+                        grantedToAll.Add(perk.Id);
                 }
             }
 
-            return new PerkCatalog(perks);
+            return new PerkCatalog(perks, grantedToAll.ToArray());
         }
 
         static PerkCatalog LoadOrEmpty(string root)
@@ -142,6 +154,9 @@ namespace ZoneEngine_New.Core.GameData
         sealed class PerkLineRow
         {
             public int Flags { get; set; }
+
+            /// <summary>HACK, see <see cref="PerkCatalog.GrantedToAll"/>.</summary>
+            public bool GrantedToAll { get; set; }
 
             public PerkRow?[]? Perks { get; set; }
         }

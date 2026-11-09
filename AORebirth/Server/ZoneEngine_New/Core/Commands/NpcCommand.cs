@@ -393,12 +393,13 @@ namespace ZoneEngine_New.Core.Commands
                 lines.Add(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "  itemTable[{0}] hash={1} repeats={2} chance={3} levelMod={4}",
+                        "  itemTable[{0}] hash={1} repeats={2} chance={3} levelMod={4}{5}",
                         i,
                         table.Hash,
                         table.Repeats,
                         table.Chance,
-                        table.LevelMod));
+                        table.LevelMod,
+                        table.IgnoreLevel ? " ignoreLevel" : string.Empty));
             }
 
             return lines;
@@ -596,11 +597,12 @@ namespace ZoneEngine_New.Core.Commands
                 rows.Add(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0} Chance {1}% x{2} levelMod={3}",
+                        "{0} Chance {1}% x{2} levelMod={3}{4}",
                         entry.Hash.Replace('"', '\''),
                         entry.Chance,
                         entry.Repeats,
-                        entry.LevelMod));
+                        entry.LevelMod,
+                        entry.IgnoreLevel ? " ignoreLevel" : string.Empty));
 
                 instances.Clear();
                 _gameData.CollectHashLeafInstances(entry.Hash, instances);

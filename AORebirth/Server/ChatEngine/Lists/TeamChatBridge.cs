@@ -174,7 +174,11 @@ namespace ChatEngine.Lists
         {
             if (channel.SnapshotConnectedClients().Length == 0)
             {
-                server.Channels.Remove(channel);
+                // Chat modules read the channel set from their own threads under this lock.
+                lock (server.Channels)
+                {
+                    server.Channels.Remove(channel);
+                }
             }
         }
 
@@ -187,7 +191,11 @@ namespace ChatEngine.Lists
             }
 
             var channel = new TeamChannel(teamId);
-            server.Channels.Add(channel);
+            lock (server.Channels)
+            {
+                server.Channels.Add(channel);
+            }
+
             return channel;
         }
 
@@ -200,7 +208,11 @@ namespace ChatEngine.Lists
             }
 
             var channel = new RaidChannel(teamId);
-            server.Channels.Add(channel);
+            lock (server.Channels)
+            {
+                server.Channels.Add(channel);
+            }
+
             return channel;
         }
 

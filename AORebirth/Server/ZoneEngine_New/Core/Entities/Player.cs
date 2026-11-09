@@ -323,6 +323,8 @@ namespace ZoneEngine_New.Core.Entities
                 Operator.HasNotWieldedItem => !Inventory.IsEquipped(id, wieldedOnly: true),
                 Operator.MustNotAlliedCombat => !IsAlliedInCombat(),
                 Operator.MustAlliedCombat => IsAlliedInCombat(),
+                // The client asks for one free slot when the value is under 2, else for that many.
+                Operator.NeedFreeInventorySlots => Inventory.HasFreeInventorySlots(Math.Max(id, 1)),
                 // The client passes ObtainedItem without looking (Gamecode.dll FUN_100065d8 case 0x6c), so an effect
                 // never depends on it here either: a perk trained with Bazzit's Alien Library keeps working when the
                 // library is gone. Training checks it (ResolveTrainRequirement).
@@ -574,11 +576,16 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public IReadOnlyList<ItemTemplate> PerkTemplates => _perkTemplates;
 
-        /// <summary>Login: the stored perks become the trained set and their templates are built.</summary>
+        /// <summary>
+        /// Login: the stored perks become the trained set and their templates are built. HACK: the GrantedToAll perks
+        /// (Global Advantage, Global Research we do not support and might never support) are owned too, unsaved, so
+        /// the Research Attunement Devices can be equipped (<see cref="PerkCatalog.GrantedToAll"/>).
+        /// </summary>
         public void LoadTrainedPerks(IEnumerable<int> perkIds)
         {
             ArgumentNullException.ThrowIfNull(perkIds);
             TrainedPerks.Restore(perkIds);
+            TrainedPerks.Grant(PerkCatalog.GrantedToAll);
             RebasePerkTemplates();
             _perksLoaded = true;
         }
@@ -899,6 +906,29 @@ namespace ZoneEngine_New.Core.Entities
                 Unknown1 = researchId,
                 Unknown2 = goal,
                 Unknown3 = Math.Max(0, remaining)
+            });
+        }
+
+        /// <summary>
+        /// HACK (<see cref="PerkCatalog.GrantedToAll"/>): tells the client every GrantedToAll research is completed.
+        /// The client never checks a global research perk (flag 0x80) against the FullCharacter perk map: HasPerk looks
+        /// it up in a per-side global research table and passes only at 0 XP remaining (Gamecode.dll 0x100051d8,
+        /// 0x1002be1a). ResearchUpdate fills that table (ResearchUpdateIIR read 0x1003a746 / write 0x1003a832): a byte,
+        /// then per research its id and the XP remaining for side 0, 1 and 2, ended by id 0. Every side gets 0, so a
+        /// side change keeps it. We do not support Global Research and might never support it.
+        /// </summary>
+        public void SendGrantedGlobalResearch()
+        {
+            if (Session == null || PerkCatalog.GrantedToAll.Count == 0)
+                return;
+
+            Session.Send(new ResearchUpdateMessage
+            {
+                Identity = Identity,
+                Unknown1 = 1,
+                Entries = PerkCatalog.GrantedToAll
+                    .Select(researchId => new ResearchUpdateEntry { ResearchId = researchId })
+                    .ToArray()
             });
         }
 

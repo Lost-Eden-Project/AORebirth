@@ -114,6 +114,10 @@ namespace ZoneEngine_New.Core.Inventory
                 || _moves.HasPending(player.Identity.Instance))
                 return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, BusyRefusal(player), "queue full or busy");
 
+            // Spamming Use on the same item (or another copy of it) does not stack further uses behind the one waiting.
+            if (IsQueued(player.Identity.Instance, item))
+                return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, ActionRefusal.Busy, "already queued");
+
             if (item.IsBackpackUse)
             {
                 ModuleHooks.ActionAttempted(player, PlayerActionKind.ItemUse, item.LowId, PlayerActionOutcome.Started, item: item);
@@ -227,6 +231,10 @@ namespace ZoneEngine_New.Core.Inventory
                 || _moves.HasPending(player.Identity.Instance))
                 return Refused(player, PlayerActionKind.Other, templateId, null, BusyRefusal(player), "queue full or busy", dynel.Identity);
 
+            // Spamming Use on the same door or terminal does not queue a second trip through it.
+            if (IsQueued(player.Identity.Instance, dynel))
+                return Refused(player, PlayerActionKind.Other, templateId, null, ActionRefusal.Busy, "already queued", dynel.Identity);
+
             if (RejectMissingSpawnHash(player, dynel.Template))
                 return Refused(player, PlayerActionKind.Other, templateId, null, ActionRefusal.Other, "spawn hash not defined", dynel.Identity);
             if (RejectHeldUniqueSpawn(player, dynel.Template))
@@ -256,7 +264,8 @@ namespace ZoneEngine_New.Core.Inventory
                 lockTarget: null,
                 ResolveDelayCentiseconds(dynel))
             {
-                Kind = PlayerActionKind.Other, AbilityId = templateId, Target = dynel.Identity, Request = ModuleHooks.RequestNow
+                Kind = PlayerActionKind.Other, AbilityId = templateId, Target = dynel.Identity, Request = ModuleHooks.RequestNow,
+                Source = dynel
             };
             return Enqueue(pending);
         }
@@ -336,6 +345,26 @@ namespace ZoneEngine_New.Core.Inventory
             lock (_gate)
                 return _queues.TryGetValue(characterId, out List<PendingItemUse>? queue)
                     && queue.Exists(pending => pending.PerkHash == perkHash);
+        }
+
+        /// <summary>True while the player already has a use of this world object running or queued.</summary>
+        bool IsQueued(int characterId, StaticDynel dynel)
+        {
+            lock (_gate)
+                return _queues.TryGetValue(characterId, out List<PendingItemUse>? queue)
+                    && queue.Exists(pending => ReferenceEquals(pending.Source, dynel));
+        }
+
+        /// <summary>
+        /// True while the player already has a use of this item, or of another copy of it (same template, another
+        /// slot or stack), running or queued.
+        /// </summary>
+        bool IsQueued(int characterId, Item item)
+        {
+            lock (_gate)
+                return _queues.TryGetValue(characterId, out List<PendingItemUse>? queue)
+                    && queue.Exists(pending => pending.Item is { } queued
+                        && (ReferenceEquals(queued, item) || queued.LowId == item.LowId));
         }
 
         /// <summary>
@@ -707,6 +736,9 @@ namespace ZoneEngine_New.Core.Inventory
 
             /// <summary>The perk action hash, for refusing the same action twice; null for item uses.</summary>
             public int? PerkHash { get; } = perkHash;
+
+            /// <summary>The world object used, for refusing the same use twice; null for items and perks.</summary>
+            public object? Source { get; init; }
 
             public bool Started { get; set; }
 

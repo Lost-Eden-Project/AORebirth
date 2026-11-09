@@ -38,7 +38,9 @@
             "Guard",
             "Boss",
             "Social",
-            "Summoner"
+            "Summoner",
+            "SpawnsExitDevice",
+            "NoXp"
           ]
         }
       },

@@ -963,6 +963,7 @@ namespace ZoneEngine_New.Core.Playfield
             player.MarkServerInPlay(DateTime.UtcNow);
             session.State = SessionState.InPlay;
             player.SendPerkActions();
+            player.SendGrantedGlobalResearch();
 
             Metrics.TickStallWatch.Stage("arrive.teams", characterId);
             _playfieldManager.Teams.AttachPlayer(player);
@@ -982,6 +983,9 @@ namespace ZoneEngine_New.Core.Playfield
             else
                 Modules.ModuleHooks.PlayerLoggedIn(_playfield, player);
             Modules.ModuleHooks.PlayerEntered(_playfield, player);
+            // What the client was just given: the line to compare against what the player saw before zoning.
+            Logging.PlayerActionLog.Write(player, command.Envelope != null ? "zone-in" : "login",
+                Logging.PlayerActionLog.IpState(player));
 
             _logger.Info(
                 string.Format(
@@ -1065,6 +1069,7 @@ namespace ZoneEngine_New.Core.Playfield
             player.MarkServerInPlay(DateTime.UtcNow);
             session.State = SessionState.InPlay;
             player.SendPerkActions();
+            player.SendGrantedGlobalResearch();
 
             _playfieldManager.Teams.AttachPlayer(player);
             // Zoning retains the client roster (capture 2026-10-06T16:36:31Z); reconcile only changes missed
@@ -1388,6 +1393,7 @@ namespace ZoneEngine_New.Core.Playfield
                 session.Send(stance);
             session.Send(player.BuildFullCharacterMessage());
             player.SendPerkActions();
+            player.SendGrantedGlobalResearch();
 
             SendGameTime(session, player);
             player.SyncLastPerkResetTime();

@@ -42,5 +42,19 @@ namespace ZoneEngine_New.Core.Mobs
         /// the NPC; the nano, cadence and distance are the script's.
         /// </summary>
         Summoner,
+
+        /// <summary>
+        /// Leaves an Exit Device where it dies: runs the NpcScripts program bound to this feature
+        /// (<c>GameData/NpcScripts/Mothership_ExitDevice.json</c>) beside whatever program the NPC's own binding gives it.
+        /// The feature only names the NPC; the item and its lifetime are the script's.
+        /// </summary>
+        SpawnsExitDevice,
+
+        /// <summary>
+        /// Its kill gives no XP at all: no regular kill XP, not even the grey 1 XP, and no alien XP
+        /// (<see cref="Entities.Character"/> kill rewards). Loot, quest kill credit and the rest of the kill are unchanged.
+        /// Pets never give kill XP, with or without it.
+        /// </summary>
+        NoXp,
     }
 }

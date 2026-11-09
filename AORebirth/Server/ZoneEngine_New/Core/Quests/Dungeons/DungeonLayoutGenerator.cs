@@ -22,6 +22,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     public sealed record DungeonLayout(AcgBuildingGeneratorData Generator, byte[] GeneratorPayload, Vector3 Spawn, int Seed, DungeonDoorStyle? Doors)
     {
         public IReadOnlyList<AORebirth.DungeonGenerator.DungeonFloorTransition> FloorTransitions { get; init; } = [];
+
+        /// <summary>Arrival heading, facing into the entrance room away from the way-in door.</summary>
+        public AORebirth.Core.Vector.Quaternion SpawnHeading { get; init; } = YawHeading(0f);
+
+        internal static AORebirth.Core.Vector.Quaternion YawHeading(float yawRadians)
+            => new(0, MathF.Sin(yawRadians * 0.5f), 0, MathF.Cos(yawRadians * 0.5f));
         public int? BossRoomIndex { get; init; }
         public DungeonPopulationPolicy Population { get; init; } = new();
 
@@ -147,7 +153,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>Building identity type of a quest dungeon (ACG building, as in the captured PlayfieldAnarchyF).</summary>
         public const int BuildingIdentityType = 0xC7A1;
 
-        sealed record Built(AcgBuildingGeneratorData Generator, Vector3 Spawn);
+        sealed record Built(AcgBuildingGeneratorData Generator, Vector3 Spawn, float SpawnYaw);
 
         readonly Dictionary<int, DungeonDoorStyle> _doorStyles = new();
         readonly ConcurrentDictionary<(int Seed, int Building), Built> _built = new();
@@ -391,6 +397,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z), parameters.Seed, doors)
                 {
                     FloorTransitions = result.Transitions, BossRoomIndex = result.BossRoomIndex,
+                    SpawnHeading = DungeonLayout.YawHeading(result.SpawnYaw),
                     Population = PopulationFor(parameters),
                     MobLoot = parameters.MobLoot?.Where(Mobs.MobItemTableEntry.IsWellFormed).ToArray() ?? []
                 };
@@ -440,7 +447,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         LockedDoorChancePercent = TemporaryLockedDoorChancePercent,
                         BuildingInstance = buildingInstance
                     });
-                    built = new Built(result.Generator, new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z));
+                    built = new Built(result.Generator, new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z), result.SpawnYaw);
                 }
                 catch (Exception exception)
                 {
@@ -459,6 +466,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 : null;
             layout = new DungeonLayout(generator, generator.ToByteArray(), built.Spawn, seed, doors)
             {
+                SpawnHeading = DungeonLayout.YawHeading(built.SpawnYaw),
                 Population = _policy?.Population ?? new DungeonPopulationPolicy()
             };
             return true;

@@ -11,6 +11,21 @@ namespace ZoneEngine_New.Core.Playfield.Locality
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Metrics;
 
+    /// <summary>
+    /// A playfield's cells by heat after its latest heartbeat, for diagnostics. <see cref="Scheduled"/> is false for
+    /// indoor playfields and when heat scheduling is off: every cell then ticks each heartbeat and counts as Hot.
+    /// Asleep includes cells the scheduler is not tracking at all.
+    /// </summary>
+    internal readonly record struct CellHeatCounts(
+        bool Scheduled,
+        int TotalCells,
+        int Hot,
+        int Warm,
+        int Cold,
+        int Asleep,
+        int TickedLastHeartbeat,
+        DateTime UpdatedUtc);
+
     internal enum CellHeat
     {
         Asleep = 0,
@@ -59,12 +74,24 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private Action<int>? _onCellTick;
         private Action? _onIndoorSpawnTick;
         private int _heartbeatCounter;
+        private readonly object _countsSync = new();
+        private CellHeatCounts _counts;
 
         internal CellHeatScheduler(int playfieldId, CellGrid grid, LocalityPolicy policy)
         {
             _playfieldId = playfieldId;
             _grid = grid;
             _policy = policy;
+        }
+
+        /// <summary>Heat counts from the latest heartbeat; safe to read from any thread.</summary>
+        internal CellHeatCounts Counts
+        {
+            get
+            {
+                lock (_countsSync)
+                    return _counts;
+            }
         }
 
         internal void ConfigureSpawnHooks(
@@ -112,6 +139,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
                 TickStallWatch.Stage("heat.indoorspawn");
                 _onIndoorSpawnTick?.Invoke();
+                int cells = _grid.CellCount;
+                PublishCounts(new CellHeatCounts(false, cells, cells, 0, 0, 0, cells, DateTime.UtcNow));
                 return;
             }
 
@@ -167,6 +196,10 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             CollectHeatCells(_heatCellBuffer);
             HashSet<int> seenCells = _seenCells;
             seenCells.Clear();
+            int hot = 0;
+            int warm = 0;
+            int cold = 0;
+            int ticked = 0;
 
             foreach (int cellId in _heatCellBuffer)
             {
@@ -187,6 +220,19 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                     LogHeatChange(cellId, previousHeat, heat);
 
                 _heatByCell[cellId] = heat;
+                switch (heat)
+                {
+                    case CellHeat.Hot:
+                        hot++;
+                        break;
+                    case CellHeat.Warm:
+                        warm++;
+                        break;
+                    case CellHeat.Cold:
+                        cold++;
+                        break;
+                }
+
                 // A cell held only by a passing scripted NPC starts no cooldown: it sleeps as soon as the NPC leaves.
                 if (!heldByScript)
                     UpdateColdTimer(cellId, heat, now);
@@ -216,6 +262,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 }
 
                 _lastTickUtcByCell[cellId] = now;
+                ticked++;
                 // Not spawned by a scripted NPC walking through: every cell on its route would spawn its mobs for no
                 // one, then sleep-despawn them once it moved on.
                 if (!heldByScript)
@@ -257,6 +304,15 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 _coldSinceUtcByCell.Remove(cellId);
                 _lastTickUtcByCell.Remove(cellId);
             }
+
+            int total = _grid.CellCount;
+            PublishCounts(new CellHeatCounts(true, total, hot, warm, cold, Math.Max(0, total - hot - warm - cold), ticked, now));
+        }
+
+        private void PublishCounts(CellHeatCounts counts)
+        {
+            lock (_countsSync)
+                _counts = counts;
         }
 
         private void CollectHeatCells(List<int> results)

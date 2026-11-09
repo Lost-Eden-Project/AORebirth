@@ -11,6 +11,7 @@ namespace ZoneEngine_New.Core.Entities
     {
         readonly object _gate = new();
         readonly HashSet<int> _perkIds = new();
+        readonly HashSet<int> _granted = new();
         bool _dirty;
 
         public bool IsDirty
@@ -25,14 +26,33 @@ namespace ZoneEngine_New.Core.Entities
         public bool Contains(int perkId)
         {
             lock (_gate)
-                return _perkIds.Contains(perkId);
+                return _perkIds.Contains(perkId) || _granted.Contains(perkId);
         }
 
-        /// <summary>Sorted copy of the trained perk ids.</summary>
+        /// <summary>Sorted copy of the trained perk ids, granted ones included.</summary>
         public int[] Snapshot()
         {
             lock (_gate)
-                return _perkIds.Order().ToArray();
+                return _perkIds.Union(_granted).Order().ToArray();
+        }
+
+        /// <summary>
+        /// HACK (<see cref="GameData.PerkCatalog.GrantedToAll"/>): perks every player owns at runtime because we do not
+        /// support Global Research. They count as trained everywhere (HasPerk, the client's perk map, perk
+        /// templates), but they are never saved, can never be untrained, and survive <see cref="Restore"/> and
+        /// <see cref="Replace"/>.
+        /// </summary>
+        public void Grant(IEnumerable<int> perkIds)
+        {
+            lock (_gate)
+            {
+                _granted.Clear();
+                foreach (int perkId in perkIds)
+                {
+                    if (perkId > 0)
+                        _granted.Add(perkId);
+                }
+            }
         }
 
         /// <summary>Hydration: replaces the set with the stored perks without marking it dirty.</summary>
@@ -69,7 +89,7 @@ namespace ZoneEngine_New.Core.Entities
         {
             lock (_gate)
             {
-                if (!_perkIds.Add(perkId))
+                if (_granted.Contains(perkId) || !_perkIds.Add(perkId))
                     return false;
                 _dirty = true;
                 return true;
@@ -87,7 +107,7 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
-        /// <summary>The set to persist, or null when nothing changed since the last take.</summary>
+        /// <summary>The set to persist, or null when nothing changed since the last take. Granted perks never persist.</summary>
         public int[]? TakeDirty()
         {
             lock (_gate)

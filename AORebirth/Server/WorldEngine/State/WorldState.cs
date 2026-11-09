@@ -86,6 +86,14 @@ namespace WorldEngine.State
                         && string.Equals(message.PreviousSession, existing.Session, StringComparison.Ordinal);
                     if (IsAlive(existing, now) && !sameProcess)
                         throw new InvalidOperationException("instance_in_use");
+                    // The same process reconnecting stays out of rotation if an operator took it out.
+                    if (sameProcess)
+                    {
+                        candidate.Draining = existing.Draining;
+                        candidate.ShutdownDueUtc = existing.ShutdownDueUtc;
+                        candidate.DrainedBy = existing.DrainedBy;
+                    }
+
                     Retire(existing);
                 }
 
@@ -93,6 +101,7 @@ namespace WorldEngine.State
 
                 candidate.Game = message.Game;
                 candidate.Build = message.Build;
+                candidate.GameData = message.GameData;
                 candidate.HasHandoffHook = message.HandoffHook;
                 candidate.Slot = AssignSlot(candidate.Name, message.PreferredSlot, candidate.Role);
                 _instances[candidate.Name] = candidate;
@@ -129,15 +138,18 @@ namespace WorldEngine.State
             => instance.Connected && now - instance.LastHeartbeatMs < (long)_options.LeaseTtl.TotalMilliseconds;
 
         /// <summary>
-        /// A zone instance's endpoint and build against the other live zones. Two instances advertising one client
-        /// endpoint is a copied config: every client World routed to either would land on the same process, and the
-        /// other could never be reached. That registration is refused; the rest only warns.
+        /// A zone instance's endpoint, build and GameData against the other live zones. Two instances advertising one
+        /// client endpoint is a copied config: every client World routed to either would land on the same process, and
+        /// the other could never be reached. A different build or GameData means players see different behaviour
+        /// depending on which instance runs their playfield. Both are refused for a freshly started zone. A zone that
+        /// was already running (re-registering after a World restart or a dropped stream) holds players and is only
+        /// warned about: refusing it could only log them out.
         /// </summary>
         void CheckZoneRegistration(string name, Register message, long now)
         {
-            List<ServiceInstance> others = _instances.Values.Where(i => !i.Removed && i.Role == ServiceRole.RoleZone
-                && !string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
-            ServiceInstance? sameEndpoint = others.FirstOrDefault(i => IsAlive(i, now) && SameEndpoint(i.Game, message.Game));
+            List<ServiceInstance> live = _instances.Values.Where(i => !i.Removed && i.Role == ServiceRole.RoleZone
+                && !string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase) && IsAlive(i, now)).ToList();
+            ServiceInstance? sameEndpoint = live.FirstOrDefault(i => SameEndpoint(i.Game, message.Game));
             if (sameEndpoint != null)
                 throw new InvalidOperationException("endpoint_in_use: " + Describe(message.Game) + " is already advertised by " + sameEndpoint.Name);
 
@@ -146,13 +158,36 @@ namespace WorldEngine.State
                 _log.LogWarning("Zone {Instance} advertises loopback endpoint {Endpoint} to a World that serves other hosts; "
                     + "clients on other machines cannot reach it. Set ZoneIP on that host.", name, Describe(message.Game));
 
-            ServiceInstance? otherBuild = others.FirstOrDefault(i => IsAlive(i, now) && i.Build.Length > 0 && message.Build.Length > 0
-                && !string.Equals(i.Build, message.Build, StringComparison.Ordinal));
+            bool fresh = message.LastEpoch == 0;
+            ServiceInstance? otherBuild = live.FirstOrDefault(i => Differs(i.Build, message.Build));
             if (otherBuild != null)
+            {
+                if (fresh)
+                    throw new ZoneMismatchException("build_mismatch: " + name + " runs build " + message.Build + " but " + otherBuild.Name
+                        + " runs " + otherBuild.Build + "; every zone instance must run the same binaries");
                 _log.LogWarning("Zone {Instance} runs build {Build} while {Other} runs {OtherBuild}; every zone instance must run "
-                    + "the same binaries and GameData, or players see different behaviour depending on which instance runs their playfield.",
+                    + "the same binaries, or players see different behaviour depending on which instance runs their playfield.",
                     name, message.Build, otherBuild.Name, otherBuild.Build);
+            }
+
+            ServiceInstance? otherData = live.FirstOrDefault(i => Differs(i.GameData, message.GameData));
+            if (otherData != null)
+            {
+                if (fresh)
+                    throw new ZoneMismatchException("gamedata_mismatch: " + name + " runs GameData " + Short(message.GameData) + " but "
+                        + otherData.Name + " runs " + Short(otherData.GameData) + "; every zone instance must run the same GameData");
+                _log.LogWarning("Zone {Instance} runs GameData {GameData} while {Other} runs {OtherGameData}; every zone instance must run "
+                    + "the same GameData.", name, Short(message.GameData), otherData.Name, Short(otherData.GameData));
+            }
+
+            if (live.Count > 0 && (message.GameData.Length == 0 || live.Any(i => i.GameData.Length == 0)))
+                _log.LogWarning("Zone {Instance} or a zone already running does not report its GameData; World cannot check that they match.", name);
         }
+
+        static bool Differs(string first, string second)
+            => first.Length > 0 && second.Length > 0 && !string.Equals(first, second, StringComparison.Ordinal);
+
+        static string Short(string fingerprint) => fingerprint.Length > 16 ? fingerprint.Substring(0, 16) : fingerprint;
 
         static bool SameEndpoint(Endpoint? first, Endpoint? second)
             => first != null && second != null && first.Port == second.Port
@@ -419,8 +454,9 @@ namespace WorldEngine.State
         void AssignDuty()
         {
             long now = Now;
-            if (_dutyHolder != null && Instance(_dutyHolder) is ServiceInstance holder && IsRoutable(holder, now)) return;
-            ServiceInstance? next = _instances.Values.Where(i => IsRoutable(i, now)).OrderBy(i => i.Slot).FirstOrDefault();
+            if (_dutyHolder != null && Instance(_dutyHolder) is ServiceInstance holder && IsRoutable(holder, now) && !holder.Draining) return;
+            // A draining zone is on its way out: hand the sweeps to one that is staying, when there is one.
+            ServiceInstance? next = _instances.Values.Where(i => IsRoutable(i, now)).OrderBy(i => i.Draining).ThenBy(i => i.Slot).FirstOrDefault();
             if (next == null || string.Equals(next.Name, _dutyHolder, StringComparison.OrdinalIgnoreCase)) return;
             if (_dutyHolder != null && Instance(_dutyHolder) is ServiceInstance previous)
                 previous.Send(new WorldToService { Duty = new DutyAssignment { Holder = false } });
@@ -788,7 +824,7 @@ namespace WorldEngine.State
                 _playfields.Remove(playfieldId);
             }
 
-            List<ServiceInstance> candidates = _instances.Values.Where(i => IsRoutable(i, now)).ToList();
+            List<ServiceInstance> candidates = _instances.Values.Where(i => IsRoutable(i, now) && !i.Draining).ToList();
             if (candidates.Count == 0) return null;
             var playfieldCounts = _playfields.Values.GroupBy(p => p.Instance, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
@@ -996,6 +1032,118 @@ namespace WorldEngine.State
                 return _instances.Values.Where(i => !i.Removed && i.Connected && i.Role == role).ToList();
         }
 
+        // ------------------------------------------------------------------------------------------ admin
+
+        /// <summary>What the admin API shows for one zone instance.</summary>
+        public sealed record ZoneView(string Name, int Slot, string Address, int Port, string Build, string GameData, bool Connected,
+            bool Alive, bool Draining, string? DrainedBy, DateTime? ShutdownDueUtc, bool DutyHolder, int Players, int Playfields,
+            long ConnectedSeconds, long HeartbeatAgeMs);
+
+        public enum AdminOutcome
+        {
+            Done,
+            NotFound,
+            NotConnected
+        }
+
+        public IReadOnlyList<ZoneView> Zones()
+        {
+            long now = Now;
+            lock (_sync)
+                return _instances.Values.Where(i => !i.Removed && i.Role == ServiceRole.RoleZone).OrderBy(i => i.Slot)
+                    .Select(i => View(i, now)).ToList();
+        }
+
+        public ZoneView? Zone(string name)
+        {
+            lock (_sync)
+                return Instance(name) is ServiceInstance instance && instance.Role == ServiceRole.RoleZone ? View(instance, Now) : null;
+        }
+
+        /// <summary>Game ports live zones advertise, at <paramref name="address"/> only when one is given.</summary>
+        public HashSet<int> PortsInUse(string? address)
+        {
+            long now = Now;
+            lock (_sync)
+                return _instances.Values.Where(i => !i.Removed && i.Role == ServiceRole.RoleZone && IsLive(i.Name, now) && i.Game != null
+                        && (string.IsNullOrEmpty(address) || string.Equals(i.Game.Address, address, StringComparison.OrdinalIgnoreCase)))
+                    .Select(i => (int)i.Game!.Port).ToHashSet();
+        }
+
+        /// <summary>Takes a zone out of rotation (no new playfields; it keeps what it runs) or puts it back.</summary>
+        public AdminOutcome SetDraining(string name, bool draining, string requestedBy)
+        {
+            lock (_sync)
+            {
+                if (Instance(name) is not ServiceInstance instance || instance.Role != ServiceRole.RoleZone) return AdminOutcome.NotFound;
+                instance.Draining = draining;
+                instance.DrainedBy = draining ? requestedBy : null;
+                _log.LogWarning("Zone {Instance} {State} by {By}", instance.Name, draining ? "draining" : "back in rotation", requestedBy);
+                AssignDuty();
+                return AdminOutcome.Done;
+            }
+        }
+
+        /// <summary>
+        /// Takes a zone out of rotation and asks it to count down, save everyone and exit. Its characters and playfields
+        /// are freed as for any stopped instance; players log in again elsewhere.
+        /// </summary>
+        public AdminOutcome RequestShutdown(string name, int seconds, string message, string requestedBy)
+        {
+            lock (_sync)
+            {
+                if (Instance(name) is not ServiceInstance instance || instance.Role != ServiceRole.RoleZone) return AdminOutcome.NotFound;
+                if (!instance.Connected) return AdminOutcome.NotConnected;
+                instance.Draining = true;
+                instance.DrainedBy = requestedBy;
+                instance.ShutdownDueUtc = DateTime.UtcNow.AddSeconds(seconds);
+                instance.Send(new WorldToService
+                {
+                    Shutdown = new ShutdownRequest { Seconds = seconds, Message = message, RequestedBy = requestedBy }
+                });
+                _log.LogWarning("Zone {Instance} asked to shut down in {Seconds}s by {By}", instance.Name, seconds, requestedBy);
+                AssignDuty();
+                return AdminOutcome.Done;
+            }
+        }
+
+        /// <summary>Cancels a shutdown World asked for and puts the zone back in rotation.</summary>
+        public AdminOutcome CancelShutdown(string name, string requestedBy)
+        {
+            lock (_sync)
+            {
+                if (Instance(name) is not ServiceInstance instance || instance.Role != ServiceRole.RoleZone) return AdminOutcome.NotFound;
+                if (!instance.Connected) return AdminOutcome.NotConnected;
+                bool pending = instance.ShutdownDueUtc != null;
+                instance.Draining = false;
+                instance.DrainedBy = null;
+                instance.ShutdownDueUtc = null;
+                if (pending)
+                    instance.Send(new WorldToService { Shutdown = new ShutdownRequest { Abort = true, RequestedBy = requestedBy } });
+                _log.LogWarning("Zone {Instance} back in rotation by {By}{Cancelled}", instance.Name, requestedBy,
+                    pending ? "; shutdown cancelled" : string.Empty);
+                return AdminOutcome.Done;
+            }
+        }
+
+        ZoneView View(ServiceInstance instance, long now) => new(
+            instance.Name,
+            instance.Slot,
+            instance.Game?.Address ?? string.Empty,
+            (int)(instance.Game?.Port ?? 0),
+            instance.Build,
+            instance.GameData,
+            instance.Connected,
+            IsAlive(instance, now),
+            instance.Draining,
+            instance.DrainedBy,
+            instance.ShutdownDueUtc,
+            string.Equals(_dutyHolder, instance.Name, StringComparison.OrdinalIgnoreCase),
+            instance.Players,
+            instance.PlayfieldLoads.Count,
+            (now - instance.ConnectedSinceMs) / 1000,
+            now - instance.LastHeartbeatMs);
+
         // ------------------------------------------------------------------------------------------ status
 
         public object Snapshot()
@@ -1020,7 +1168,9 @@ namespace WorldEngine.State
                         players = i.Players,
                         playfields = i.PlayfieldLoads.Count,
                         heartbeatAgeMs = now - i.LastHeartbeatMs,
-                        build = i.Build
+                        build = i.Build,
+                        gameData = i.GameData,
+                        draining = i.Draining
                     }).ToList(),
                     leaseCount = _leases.Count,
                     leases = _leases.Values.OrderBy(l => l.CharacterId).Take(500).Select(l => new
@@ -1086,4 +1236,7 @@ namespace WorldEngine.State
                 ? "-"
                 : endpoint.Address + ":" + endpoint.Port.ToString(CultureInfo.InvariantCulture);
     }
+
+    /// <summary>A fresh zone whose build or GameData differs from the zones already running; refused, never retried.</summary>
+    public sealed class ZoneMismatchException(string message) : InvalidOperationException(message);
 }

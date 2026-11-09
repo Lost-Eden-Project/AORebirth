@@ -111,6 +111,12 @@ namespace ChatEngine.PacketHandlers
                         client.Character.characterName,
                         text);
                 }
+
+                client.ChatServer().Modules?.PublishPlayerMessage(
+                    channel,
+                    client.Character.CharacterId,
+                    client.Character.characterName,
+                    text);
             }
 
             ChatLogger.WriteString(channelName, text, client.Character.characterName);

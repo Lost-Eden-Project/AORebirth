@@ -24,6 +24,9 @@ namespace ZoneEngine_New.Core.Inventory
 
         const int TemplateActionCount = 1;
 
+        /// <summary>The automatic placement a loot take names, and the echo the client joins a looted stack on.</summary>
+        const int LootAutoPlacement = 0x6F;
+
         private readonly object _gate = new();
         private readonly Dictionary<int, PendingEquip> _pending = new();
         private readonly IZoneLogger _logger;
@@ -147,6 +150,16 @@ namespace ZoneEngine_New.Core.Inventory
                 return;
             }
 
+            // Looted to the automatic marker: stock picks a stack to join before it looks for a free slot, so a full
+            // inventory still takes the join.
+            if (lootSource != null && message.TargetPlacement == LootAutoPlacement
+                && TryFindLootJoinTarget(player.Inventory.Inventory, item, out int joinSlot, out Item joinTarget))
+            {
+                if (TryJoinLoot(player, sourcePage, sourceSlot, item, lootSource, joinSlot, joinTarget))
+                    SendAck(player, message.SourceContainer, player.Identity, LootAutoPlacement);
+                return;
+            }
+
             bool sourceIsWear = sourcePage.Identity.Type.IsWearPage();
             if (!player.Inventory.TryResolveTargetSlot(
                     message.TargetPlacement,
@@ -202,9 +215,10 @@ namespace ZoneEngine_New.Core.Inventory
             if (!ApplyMove(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource))
                 return;
 
-            // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F).
-            // Ownership still uses the resolved physical slot, committed by ApplyMove above.
-            int acknowledgementPlacement = lootSource is Chest && message.TargetPlacement == 0x6F
+            // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F); corpse loot echoes it too,
+            // since the client only joins a looted stack on that echo. Ownership still uses the resolved physical slot,
+            // committed by ApplyMove above.
+            int acknowledgementPlacement = lootSource != null && message.TargetPlacement == LootAutoPlacement
                 ? message.TargetPlacement : destSlot;
             SendAck(player, message.SourceContainer, player.Identity, acknowledgementPlacement);
         }
@@ -1054,6 +1068,96 @@ namespace ZoneEngine_New.Core.Inventory
                 }
             }
             return committed;
+        }
+
+        /// <summary>
+        /// Stock's loot placement (1004ac4b): a looted item with Can Stackable (0x200) set and CantSplit (0x1000000)
+        /// clear goes onto the FIRST inventory slot from 0x40 up holding the same LowId / HighId / QL. The target's own
+        /// flags and count are not part of the choice; whether the join can go ahead is decided by the caller.
+        /// </summary>
+        static bool TryFindLootJoinTarget(Container inventory, Item looted, out int slot, out Item target)
+        {
+            slot = -1;
+            target = null!;
+            if (!looted.Can(CanFlags.Stackable) || looted.Can(CanFlags.CantSplit))
+                return false;
+
+            for (int candidate = inventory.Offset; candidate < inventory.Offset + inventory.Capacity; candidate++)
+            {
+                if (inventory.Content.TryGetValue(candidate, out Item? held) && InventoryStacking.SameStack(held, looted))
+                {
+                    slot = candidate;
+                    target = held;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Adds the looted count onto the inventory stack stock chose and retires the looted item. When the join cannot
+        /// go ahead (the stack would pass 50000, either item is locked or a bag) the take is refused outright: no echo,
+        /// so the client, which joins on the 0x6F echo by the same rule, never shows a stack the server does not hold.
+        /// Stock instead swaps the looted item in and drops the stack into the loot (1002aa2a); loot never swaps here.
+        /// </summary>
+        bool TryJoinLoot(Player player, Container sourcePage, int sourceSlot, Item item, LootableDynel lootSource,
+            int targetSlot, Item target)
+        {
+            if (lootSource is Chest chest)
+            {
+                lock (player.PersistenceGate)
+                    lock (chest.LootGate)
+                        return chest.CanTransferLoot(player) && chest.CanDistribute(item)
+                            && TryJoinLootCore(player, sourcePage, sourceSlot, item, lootSource, targetSlot, target);
+            }
+            return TryJoinLootCore(player, sourcePage, sourceSlot, item, lootSource, targetSlot, target);
+        }
+
+        bool TryJoinLootCore(Player player, Container sourcePage, int sourceSlot, Item item, LootableDynel lootSource,
+            int targetSlot, Item target)
+        {
+            int lootedCount = item.StackCount;
+            int targetCount = target.StackCount;
+            if (item.Locked || target.Locked || item.InstanceId <= 0 || target.InstanceId <= 0
+                || IsBagItem(item) || IsBagItem(target)
+                || lootedCount <= 0 || targetCount <= 0
+                || (long)targetCount + lootedCount > InventoryStacking.MaxStackCount)
+                return false;
+
+            Container inventory = player.Inventory.Inventory;
+            if (UniqueItems.WouldDuplicate(player, item, out string incomingName))
+            {
+                Helpers.ClientFeedback.SendFormatted(player, Helpers.ClientFeedback.AlreadyHaveUniqueItem, incomingName);
+                return false;
+            }
+
+            int total = targetCount + lootedCount;
+            var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
+            ItemInstanceRecord[] expectedSources = item.IsPersisted
+                ? [item.ToRecord(sourcePage.Identity, sourceSlot, lootedCount)] : [];
+            bool committed = _actions.TryCommit(player,
+                [new InventoryRowChange(target, inventory.Identity, targetSlot, total),
+                 new InventoryRowChange(item, graveyard, item.InstanceId, lootedCount, Retired: true)],
+                () => !item.Locked && !target.Locked
+                    && (lootSource is not Chest sourceChest || sourceChest.CanDistribute(item))
+                    && sourcePage.Content.TryGetValue(sourceSlot, out Item? current) && ReferenceEquals(current, item)
+                    && ReferenceEquals(inventory.Content.GetValueOrDefault(targetSlot), target)
+                    && item.StackCount == lootedCount && target.StackCount == targetCount,
+                () =>
+                {
+                    sourcePage.Content.Remove(sourceSlot);
+                    target.StackCount = total;
+                }, expectedSources: expectedSources);
+            if (!committed)
+                return false;
+
+            lootSource.NotifyLootChanged();
+            if (lootSource is Corpse corpse)
+                player.Playfield?.GetService<Chat.VicinityChatRelay>()?.AnnounceLoot(player, corpse, item);
+            if (Modules.ModuleHooks.WantsItemMoves(player.Playfield))
+                ItemPlaces.Moved(player, item, ItemPlaces.Of(sourcePage, lootSource), ItemPlaces.Of(inventory));
+            return true;
         }
 
         static void SetMoveLock(PendingEquip pending, bool locked)

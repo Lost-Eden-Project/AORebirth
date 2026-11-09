@@ -46,6 +46,11 @@ namespace WorldEngine.Services
             {
                 accepted = state.Register(instance, register);
             }
+            catch (ZoneMismatchException exception)
+            {
+                log.LogWarning("Refused zone {Instance}: {Reason}", name, exception.Message);
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, exception.Message));
+            }
             catch (InvalidOperationException exception)
             {
                 throw new RpcException(new Status(StatusCode.AlreadyExists, exception.Message));

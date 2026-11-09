@@ -59,11 +59,14 @@ namespace AORebirth.Database.Domain.Missions
                 IReadOnlyList<MissionItemInstanceData> consumed)
             {
                 if (grants == null || consumed == null) throw new ArgumentNullException("inventoryPlan");
-                if (grants.Concat(consumed).Any(item => item == null || item.InstanceId <= 0
-                    || item.ContainerType != 104 || item.ContainerInstance != this.CharacterId
+                // A grant goes to the main inventory or, when that is full, the character's saved overflow window
+                // (IdentityType.OverflowWindow 0x6E); an item is only ever consumed from the main inventory.
+                if (grants.Any(item => item == null || (item.ContainerType != 104 && item.ContainerType != 0x6E))
+                    || consumed.Any(item => item == null || item.ContainerType != 104)
+                    || grants.Concat(consumed).Any(item => item.InstanceId <= 0 || item.ContainerInstance != this.CharacterId
                     || item.ContainerPlacement < 0 || item.StackCount <= 0)
                     || grants.Concat(consumed).Select(item => item.InstanceId).Distinct().Count() != grants.Count + consumed.Count)
-                    throw new ArgumentException("Authored inventory mutation requires distinct exact owned main-inventory rows.");
+                    throw new ArgumentException("Authored inventory mutation requires distinct exact owned main-inventory or overflow rows.");
 
                 // Runtime rejects bag use, and the durable boundary also rejects any surviving
                 // child row (including unhydrated content). 0xC749 is IdentityType.Container.

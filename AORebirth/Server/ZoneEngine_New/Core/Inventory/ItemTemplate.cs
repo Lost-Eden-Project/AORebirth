@@ -619,11 +619,14 @@ namespace ZoneEngine_New.Core.Inventory
             Character user = source ?? target;
             target = ResolveApplyOn(target, source, spell);
             Character applyOn = target;
+            Identity usedFrom = criteria.SubjectSlot;
             if (!skipRequirements && !ItemTemplate.MeetsRequirements(
                     spell.Requirements,
-                    new RequirementSubject(stat => criteria.Resolve(stat, id => applyOn.Stats.Get(id)), applyOn.ResolveRequirement),
-                    new RequirementSubject(stat => user.Stats.Get(stat), user.ResolveRequirement),
-                    new RequirementSubject(stat => eventTarget.Stats.Get(stat), eventTarget.ResolveRequirement)))
+                    new RequirementSubject(stat => criteria.Resolve(stat, id => applyOn.Stats.Get(id)),
+                        WithUseLocation(applyOn.ResolveRequirement, usedFrom)),
+                    new RequirementSubject(stat => user.Stats.Get(stat), WithUseLocation(user.ResolveRequirement, usedFrom)),
+                    new RequirementSubject(stat => eventTarget.Stats.Get(stat),
+                        WithUseLocation(eventTarget.ResolveRequirement, usedFrom))))
                 return false;
 
             if (spell.Is(FunctionType.Modify) || spell.Is(FunctionType.ScalingModify) || spell.Is(FunctionType.Skill)
@@ -700,6 +703,31 @@ namespace ZoneEngine_New.Core.Inventory
                 Operator.MustBeCastersPet => target is NpcCharacter { Pet: { } pet } && ReferenceEquals(pet.Owner, user),
                 _ => resolve?.Invoke(requirement)
             };
+        }
+
+        /// <summary>
+        /// Adds <see cref="Operator.UseLocation"/> to <paramref name="resolve"/>: the leaf's value is a bit set tested
+        /// against the place the used item was used from (<paramref name="usedFrom"/>, the event's
+        /// <see cref="SpellCriteria.SubjectSlot"/>). The leaf's stat is not read. See <see cref="IsUsedFrom"/>.
+        /// </summary>
+        public static Func<ItemRequirement, bool?> WithUseLocation(Func<ItemRequirement, bool?>? resolve, Identity usedFrom)
+            => requirement => (Operator)requirement.Operator == Operator.UseLocation
+                ? IsUsedFrom(usedFrom, requirement.Value)
+                : resolve?.Invoke(requirement);
+
+        /// <summary>
+        /// Stock UseLocation (Gamecode.dll 10047d30), on the identity type of the place the item is used from:
+        /// bit 1 = a weapon, armor or implant page (not social); bit 2 = the main inventory; bit 4 = a type above
+        /// 0xfa, which on stock is a bag (Container 0xC749). Here a bag slot is a packed Backpack identity, so it
+        /// counts as the bag. No used item (type 0, stock's initial value) fails every bit. Only the Solar-Powered
+        /// pistols (164489-164513) use it, with 2: they upgrade only when right-clicked from the main inventory.
+        /// </summary>
+        public static bool IsUsedFrom(Identity usedFrom, int bits)
+        {
+            int placeType = usedFrom.Type == IdentityType.Backpack ? (int)IdentityType.Container : (int)usedFrom.Type;
+            return ((bits & 1) != 0 && usedFrom.Type is IdentityType.WeaponPage or IdentityType.ArmorPage or IdentityType.ImplantPage)
+                || ((bits & 2) != 0 && usedFrom.Type == IdentityType.Inventory)
+                || ((bits & 4) != 0 && placeType > 0xfa);
         }
 
         public static bool EvaluateRequirement(int statValue, ItemRequirement requirement)

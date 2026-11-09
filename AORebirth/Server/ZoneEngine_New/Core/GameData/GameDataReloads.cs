@@ -146,6 +146,41 @@ namespace ZoneEngine_New.Core.GameData
         }
     }
 
+    /// <summary>
+    /// items.dat, swapped inside <see cref="ZoneEngine_New.Core.Inventory.ItemTemplateCatalog"/>. The minter's per-hash QL
+    /// spans were read from the old templates and Knubot item conditions resolve AOIDs when the scripts load, so a
+    /// successful reload drops the minter caches and reloads Knubot. Items already built, static dynels and playfield
+    /// triggers keep the templates they were built from until they are built again.
+    /// </summary>
+    public sealed class ItemsDatReload(ZoneEngine_New.Core.Inventory.IItemTemplateCatalog catalog, KnubotCatalog knubot,
+        ZoneEngine_New.Core.Inventory.HashItemMinter minter)
+        : IReloadableGameData
+    {
+        public string Name => ZoneEngine_New.Core.Inventory.ItemTemplateCatalog.ReloadName;
+
+        public IReadOnlyList<string> Files { get; } = [ZoneEngine_New.Core.Inventory.ItemTemplateCatalog.FileName];
+
+        public GameDataReloadResult Reload()
+        {
+            if (catalog is not ZoneEngine_New.Core.Inventory.ItemTemplateCatalog items)
+                return new GameDataReloadResult(Name, false, 0, ["this zone's item catalog does not reload items.dat"]);
+
+            GameDataReloadResult loaded = items.Reload();
+            if (!loaded.Ok)
+                return loaded;
+
+            minter.ClearCaches();
+            KnubotLoadResult scripts = knubot.Reload();
+            if (scripts.Problems.Count == 0)
+                return loaded;
+
+            var problems = new List<string>(loaded.Problems);
+            foreach (string problem in scripts.Problems)
+                problems.Add("Knubot: " + problem);
+            return new GameDataReloadResult(Name, true, loaded.Entries, problems);
+        }
+    }
+
     /// <summary>Tradeskills.json, swapped inside <see cref="TradeskillService"/>.</summary>
     public sealed class TradeskillsReload(TradeskillService tradeskills) : IReloadableGameData
     {

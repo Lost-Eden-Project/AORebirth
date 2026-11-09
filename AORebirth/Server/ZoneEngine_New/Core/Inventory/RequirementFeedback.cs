@@ -219,6 +219,8 @@ namespace ZoneEngine_New.Core.Inventory
                 Operator.IsPetOverEquipped => "needs an over-equipped pet",
                 Operator.MustAlliedCombat => "an ally must be in combat",
                 Operator.MustNotAlliedCombat => "no ally may be in combat",
+                Operator.NeedFreeInventorySlots => "needs " + Math.Max(requirement.Value, 1).ToString(CultureInfo.InvariantCulture)
+                    + " free inventory slot(s)",
                 _ => null
             };
             if (state != null)

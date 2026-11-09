@@ -34,6 +34,9 @@ namespace ZoneEngine_New.Core.World
 
         void Announce(string text);
 
+        /// <summary>An operator asked World to remove this instance: count down, save everyone and exit (or cancel that).</summary>
+        void Shutdown(ShutdownRequest request);
+
         /// <summary>The teams this instance mirrors, for World's registration.</summary>
         IReadOnlyList<TeamState> Teams();
     }

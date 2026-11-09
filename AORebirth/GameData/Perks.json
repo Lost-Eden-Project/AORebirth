@@ -1,4 +1,5 @@
 {
+  "_comment": "GrantedToAll is a hack: every player owns that line's tiers at runtime (never saved). The Global Advantage lines are Global Research, which the server does not support and might never support; owning them lets every player use the Research Attunement Devices.",
   "PerkLines": [
     {
       "Name": "Alien Technology Expertise",
@@ -2522,6 +2523,7 @@
     },
     {
       "Name": "Global Advantage - Combat Knowledge",
+      "GrantedToAll": true,
       "Category": "Research",
       "Flags": 128,
       "Perks": [
@@ -2532,6 +2534,7 @@
     },
     {
       "Name": "Global Advantage - Defensive Power",
+      "GrantedToAll": true,
       "Category": "Research",
       "Flags": 128,
       "Perks": [
@@ -2542,6 +2545,7 @@
     },
     {
       "Name": "Global Advantage - Health",
+      "GrantedToAll": true,
       "Category": "Research",
       "Flags": 128,
       "Perks": [
@@ -2552,6 +2556,7 @@
     },
     {
       "Name": "Global Advantage - Medical Knowledge",
+      "GrantedToAll": true,
       "Category": "Research",
       "Flags": 128,
       "Perks": [
@@ -2562,6 +2567,7 @@
     },
     {
       "Name": "Global Advantage - Nano Technology Knowledge",
+      "GrantedToAll": true,
       "Category": "Research",
       "Flags": 128,
       "Perks": [
@@ -2572,6 +2578,7 @@
     },
     {
       "Name": "Global Advantage - Offensive Power",
+      "GrantedToAll": true,
       "Category": "Research",
       "Flags": 128,
       "Perks": [

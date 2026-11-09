@@ -316,6 +316,22 @@ namespace Utility.Config
 
         public int HeartbeatMilliseconds { get; set; }
 
+        /// <summary>
+        /// Port of World's admin API (HTTP, JSON) for adding and removing zone engines. 0 or omitted leaves it off.
+        /// Its token comes from AO_REBIRTH_WORLD_ADMIN_TOKEN, never from this file.
+        /// </summary>
+        public int AdminPort { get; set; }
+
+        /// <summary>The address the admin API binds, e.g. this host's WireGuard address. Defaults to ListenIP.</summary>
+        public string AdminListenIP { get; set; }
+
+        /// <summary>The hosts the admin API may start zone engines on, and the command that starts one there.</summary>
+        [System.Xml.Serialization.XmlArrayItem("ZoneHost")]
+        public System.Collections.Generic.List<ZoneHostSettings> ZoneHosts { get; set; }
+
+        public static string ResolveAdminListenIP(WorldSettings settings)
+            => settings == null || string.IsNullOrWhiteSpace(settings.AdminListenIP) ? ResolveListenIP(settings) : settings.AdminListenIP.Trim();
+
         public static string ResolveListenIP(WorldSettings settings)
             => settings == null || string.IsNullOrWhiteSpace(settings.ListenIP) ? DefaultListenIP : settings.ListenIP.Trim();
 
@@ -349,6 +365,40 @@ namespace Utility.Config
 
         public static int ResolveHeartbeatMilliseconds(WorldSettings settings)
             => settings == null || settings.HeartbeatMilliseconds < 250 ? DefaultHeartbeatMilliseconds : settings.HeartbeatMilliseconds;
+    }
+
+    /// <summary>
+    /// One host World's admin API can start zone engines on. <see cref="Command"/> and <see cref="Arguments"/> may use
+    /// {instance}, {port} and {debugMcpPort}; World fills them with validated values only. The command either is the
+    /// zone engine itself (<see cref="Detached"/>) or starts it and exits (systemctl, ssh to another host).
+    /// </summary>
+    public class ZoneHostSettings
+    {
+        /// <summary>What API callers name this host by.</summary>
+        public string Name { get; set; }
+
+        /// <summary>The ZoneIP the zones on this host advertise; World uses it to see which ports there are taken.</summary>
+        public string Address { get; set; }
+
+        /// <summary>The game ports zones started here may use, inclusive.</summary>
+        public int FirstPort { get; set; }
+
+        public int LastPort { get; set; }
+
+        /// <summary>Debug MCP port for FirstPort; each further game port adds one. 0: {debugMcpPort} is not available.</summary>
+        public int FirstDebugMcpPort { get; set; }
+
+        public string Command { get; set; }
+
+        public string Arguments { get; set; }
+
+        public string WorkingDirectory { get; set; }
+
+        /// <summary>True when Command is the zone engine itself: World starts it and does not wait for it to exit.</summary>
+        public bool Detached { get; set; }
+
+        /// <summary>How long a non-detached command may run before it counts as failed (seconds). Default 60.</summary>
+        public int TimeoutSeconds { get; set; }
     }
 
     #endregion

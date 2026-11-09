@@ -89,6 +89,10 @@
     <Compile Include="Channels\TeamChannel.cs" />
     <Compile Include="ChatLogger.cs" />
     <Compile Include="BotIntegration\ChatEngineBotRouter.cs" />
+    <Compile Include="Modules\ChatModuleDelivery.cs" />
+    <Compile Include="Modules\ChatModuleHost.cs" />
+    <Compile Include="Modules\ChatModuleLoadContext.cs" />
+    <Compile Include="Modules\ChatModulesSettings.cs" />
     <Compile Include="CoreClient\Character.cs" />
     <Compile Include="CoreClient\CharacterBase.cs" />
     <Compile Include="CoreClient\Client.cs" />

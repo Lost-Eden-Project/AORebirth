@@ -84,6 +84,9 @@ namespace AORebirth.World.Pathfinding
 
         public int PolyBase(int entry) => _polyBase[entry];
 
+        /// <summary>Raw record size of one tile in the mesh file.</summary>
+        public int TileBytes(int entry) => _size[entry];
+
         public int PolyCount(int entry) => (entry + 1 < _polyBase.Length ? _polyBase[entry + 1] : TotalPolys) - _polyBase[entry];
 
         /// <summary>Tile at grid cell (<paramref name="tx"/>, <paramref name="ty"/>), or -1 when the bake left it empty.</summary>

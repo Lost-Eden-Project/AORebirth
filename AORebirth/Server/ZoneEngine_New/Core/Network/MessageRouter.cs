@@ -59,7 +59,24 @@ namespace ZoneEngine_New.Core.Network
                 return;
             }
 
-            handler.Handle(message.Body, session);
+            try
+            {
+                handler.Handle(message.Body, session);
+            }
+            catch (Exception exception) when (RecordFailure(exception, bodyType, session))
+            {
+                // Not reached: the filter only records, the exception goes on to whoever handles it today.
+                throw;
+            }
+        }
+
+        /// <summary>Puts a handler failure in the player's action log; always false, so nothing is caught.</summary>
+        static bool RecordFailure(Exception exception, Type bodyType, IZoneSession? session)
+        {
+            if (session?.Player is { } player)
+                PlayerActionLog.Write(player, "handler ERROR", string.Format(CultureInfo.InvariantCulture,
+                    "message={0} error={1}: {2}", bodyType.Name, exception.GetType().Name, exception.Message));
+            return false;
         }
     }
 }

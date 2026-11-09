@@ -47,9 +47,9 @@ namespace ZoneEngine_New.Core.GameData
         public List<VendingMachineStockEntry> Inventory { get; set; } = new();
 
         /// <summary>
-        /// Upper bound on generated slots. The client shop pane is a fixed grid, and
-        /// <see cref="StockExpansion.ExpandAll"/> over a large category can produce far more
-        /// entries than it can show.
+        /// Upper bound on slots generated from a VendingMachines.json table, where
+        /// <see cref="StockExpansion.ExpandAll"/> over a large category can produce a huge list. It is not a client
+        /// limit: retail sent Tsunayoshi Smith's shop (164104) with 213 slots, and items.dat ShopInventory stock is uncapped.
         /// </summary>
         public const int MaxSlots = 64;
 

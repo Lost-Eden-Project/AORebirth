@@ -63,6 +63,9 @@ namespace AORebirth.DungeonGenerator
         /// <summary>Arrival point: just inside the way-in door (floor 0 world coordinates).</summary>
         public Vector3 Spawn { get; init; }
 
+        /// <summary>Arrival yaw in radians about Y: facing into the entrance room, away from the way-in door.</summary>
+        public float SpawnYaw { get; init; }
+
         /// <summary>Generation attempts used (retries run with a seed derived from the request's).</summary>
         public int Attempts { get; init; }
 
@@ -278,6 +281,8 @@ namespace AORebirth.DungeonGenerator
                 GridWidth = grid,
                 GridHeight = grid,
                 Spawn = spawn,
+                // Forward is +Z turned by the yaw, (sin, cos): face the same way the spawn steps in from the door.
+                SpawnYaw = MathF.Atan2(dx, dz),
                 Attempts = attempts,
                 Validation = validation,
                 BossRoomIndex = builder.BossRoomIndex is int boss ? order.IndexOf(boss) : null,

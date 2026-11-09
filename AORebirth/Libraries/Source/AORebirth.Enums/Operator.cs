@@ -341,6 +341,12 @@ namespace AORebirth.Enums
         MonsterTemplate = 57,
 
         /// <summary>
+        /// Value = free main-inventory slots needed; under 2 means one (Gamecode.dll FUN_100065d8 case 0x6a,
+        /// "Feedback_NeedAtLeastOneFree" / "Feedback_NeedAtLeastSomeFree"). Restock Special Ammo 297632.
+        /// </summary>
+        NeedFreeInventorySlots = 106,
+
+        /// <summary>
         /// </summary>
         Not = 42,
 

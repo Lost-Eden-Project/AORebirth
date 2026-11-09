@@ -60,6 +60,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         internal bool IsDungeon => _rooms.Length > 0;
 
+        /// <summary>Cells in the grid: outdoor zones, dungeon rooms, or the single indoor cell.</summary>
+        internal int CellCount => _cells.Count;
+
         internal int NumZonesX => _numZonesX;
 
         /// <summary>World size of one cell (outdoor grid).</summary>

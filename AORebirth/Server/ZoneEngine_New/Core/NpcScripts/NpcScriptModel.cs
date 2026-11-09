@@ -100,9 +100,10 @@ public enum ScriptOpCode : byte
     SpawnNpc,
 
     /// <summary>
-    /// Casts a nano from the NPC. A = nano id value ref, B = <see cref="NpcScriptTarget"/>, C = minimum distance in
-    /// metres for a hostile picker, D = flags: 1 warp the recipient to the NPC's feet when the nano lands. Blocks
-    /// while the cast bar runs.
+    /// Casts a nano from the NPC. A = nano id value ref, or with flag 2 an index into
+    /// <see cref="NpcScriptProgram.NanoLists"/>; B = <see cref="NpcScriptTarget"/>, C = minimum distance in metres for
+    /// a hostile picker, D = flags: 1 warp the recipient to the NPC's feet when the nano lands, 2 A is a nano list.
+    /// Blocks while the cast bar runs.
     /// </summary>
     CastNano
 }
@@ -120,7 +121,13 @@ public enum NpcScriptTarget
     /// A random player on the NPC's hate list that it may attack, at least the op's minimum distance away. Pets are
     /// never picked.
     /// </summary>
-    RandomHostile = 2
+    RandomHostile = 2,
+
+    /// <summary>
+    /// Every living player on the NPC's playfield instance, whatever their distance (pets never). One cast bar, one
+    /// cost and one recharge; with a nano list each player gets their own even pick.
+    /// </summary>
+    Playfield = 3
 }
 
 /// <summary>
@@ -240,9 +247,11 @@ public sealed class NpcScriptProgram
         Vector3[] vectors,
         int[] jumps,
         SpawnNpcSpec[] spawns,
-        string[]? tags = null)
+        string[]? tags = null,
+        int[][]? nanoLists = null)
     {
         Tags = tags ?? Array.Empty<string>();
+        NanoLists = nanoLists ?? Array.Empty<int[]>();
         Id = id;
         File = file;
         Params = parameters;
@@ -304,6 +313,9 @@ public sealed class NpcScriptProgram
 
     /// <summary>SpawnNpc / AddDied tag names, indexed by tag id. Program-local.</summary>
     public string[] Tags { get; }
+
+    /// <summary>The nano lists of <see cref="ScriptOpCode.CastNano"/> ops given an array: nano id value refs.</summary>
+    public int[][] NanoLists { get; }
 
     public uint TriggerMask { get; }
 

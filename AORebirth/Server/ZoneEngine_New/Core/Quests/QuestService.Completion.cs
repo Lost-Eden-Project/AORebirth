@@ -406,15 +406,6 @@ public sealed partial class QuestService
                     if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
                         throw new InvalidOperationException("Reward item definition is invalid; delivery remains pending.");
                     int highId = definition.HighId ?? definition.Id;
-                    // A Unique reward the character already holds is left out: the quest still completes on its dialog
-                    // and pays the rest, rather than staying open until the held copy is gone. Checked on the template,
-                    // so no item is minted for it.
-                    if (IsUniqueTemplate(definition.Id) && (ZoneEngine_New.Core.Trade.TradeRules.WouldDuplicateUnique(player, definition.Id, highId)
-                        || items.Any(existing => existing.LowId == definition.Id || existing.HighId == highId)))
-                    {
-                        skippedUnique.Add(string.IsNullOrEmpty(definition.Name) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Name);
-                        continue;
-                    }
                     // Live's virtual reward items (Daily Mission XP Reward, Token Add, Set Flag items) carry the Null
                     // flag: they are used on the player, never placed in the inventory, so no instance is minted.
                     if (IsUsedOnReward(definition.Id, highId, definition.Quality))
@@ -422,18 +413,36 @@ public sealed partial class QuestService
                         used.Add(_items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest));
                         continue;
                     }
+                    // A Unique reward the character already holds (or this reward already gives) is left out: the quest
+                    // still completes on its dialog and pays the rest, rather than staying open until the held copy is
+                    // gone. Checked on the item exactly as it will be minted, with the grant plan's own Unique checks, so
+                    // the plan never refuses what this lets through; no instance is allocated for one left out.
+                    Item candidate = _items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest);
+                    if (UniqueItems.WouldDuplicate(player, candidate, out _) || UniqueItems.HasRepeatedUnique([.. items, candidate], out _))
+                    {
+                        skippedUnique.Add(string.IsNullOrEmpty(definition.Name) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Name);
+                        continue;
+                    }
                     Item minted = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
-                    // A configured Count replaces the template's mint count, as a daily login reward's does.
-                    if (definition.Count is int count)
-                        minted.StackCount = count;
                     items.Add(minted);
+                    // A configured Count replaces a stackable template's mint count, as a daily login reward's does. A
+                    // non-stackable reward (sleeves, armor, bags) is given as that many separate items; a Unique once.
+                    if (definition.Count is int count)
+                    {
+                        if (InventoryStacking.IsStackable(minted))
+                            minted.StackCount = count;
+                        else if (!ZoneEngine_New.Core.Trade.TradeRules.IsUnique(minted))
+                            for (int copy = 1; copy < count; copy++)
+                                items.Add(_items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest));
+                    }
                 }
                 if (skippedUnique.Count > 0)
                     _logger.Info("Quest reward unique items already held, left out char=" + player.Identity.Instance
                         + " quest=" + quest.QuestId + " items=" + string.Join(", ", skippedUnique));
-                if (!InventoryGrantPlan.TryCreate(player, items, out var grant, allowOverflow: true))
+                if (!InventoryGrantPlan.TryCreate(player, items, out var grant, out GrantRefusal refusal, allowOverflow: true))
                 {
-                    NotifyPending(player, quest);
+                    _logger.Warn("Quest reward pending char=" + player.Identity.Instance + " quest=" + quest.QuestId + " reason=" + refusal);
+                    NotifyPending(player, quest, uniqueConflict: refusal is GrantRefusal.UniqueHeld or GrantRefusal.UniqueRepeated);
                     return;
                 }
                 // XP is awarded after the commit through the ordinary XP path (caps, research share, level-ups) and
@@ -516,19 +525,6 @@ public sealed partial class QuestService
                 if (quest.IsRewardPending && !player.IsPersistenceQuarantined)
                     NotifyPending(player, quest);
             }
-        }
-    }
-
-    /// <summary>The reward template carries the Unique flag (read from the template, nothing minted).</summary>
-    bool IsUniqueTemplate(int templateId)
-    {
-        try
-        {
-            return (_items.CreateTemplate(templateId, templateId, 1).Flags & (int)ItemFlags.Unique) != 0;
-        }
-        catch (Exception)
-        {
-            return false;
         }
     }
 

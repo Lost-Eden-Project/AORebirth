@@ -241,8 +241,44 @@ namespace ZoneEngine_New.Core.Quests
                 return false;
             }
 
+            // Count is a stack size: an item that does not stack would come out as one item showing that count.
+            if (item.Count > 1 && FirstUnstackable(hasHash ? item.Hash!.Trim() : null, item.Id, item.HighId ?? item.Id) is string single)
+            {
+                problems.Add(at + "Count " + item.Count.Value.ToString(CultureInfo.InvariantCulture) + " on " + single
+                    + ", which does not stack; give it as separate item rows");
+                return false;
+            }
+
             parsed = new RewardItem(hasHash ? item.Hash!.Trim() : null, item.Id, item.HighId, item.Name, quality, item.Count);
             return true;
+        }
+
+        /// <summary>
+        /// The name of the first item the row can give that does not stack (a hash: any of its leaf families), or null
+        /// when all of them stack.
+        /// </summary>
+        string? FirstUnstackable(string? hash, int lowId, int highId)
+        {
+            var families = new List<(int Low, int High)>();
+            if (hash == null)
+                families.Add((lowId, highId));
+            else
+            {
+                var leaves = new List<HashInstance>();
+                _minter.CollectLeafInstances(hash, leaves);
+                foreach (HashInstance leaf in leaves)
+                    families.Add((leaf.TemplateIds[0], leaf.TemplateIds[^1]));
+            }
+
+            foreach ((int low, int high) in families)
+            {
+                Item probe = _minter.Create(low, high, 1, AORebirth.Enums.ItemSource.Quest);
+                if (!InventoryStacking.IsStackable(probe))
+                    return (string.IsNullOrEmpty(probe.Name) ? low.ToString(CultureInfo.InvariantCulture) : probe.Name)
+                        + " (" + low.ToString(CultureInfo.InvariantCulture) + ")";
+            }
+
+            return null;
         }
 
         sealed record RewardTable(bool PickOne, RewardEntry[] Entries);

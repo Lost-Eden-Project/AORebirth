@@ -225,14 +225,17 @@ namespace ZoneEngine_New.Core.Inventory
         /// only when its QL range overlaps the window, at the roll clamped into its range. A Special family
         /// (<see cref="ItemFlags.Special"/>) ignores the window: below its range it drops at its lowest QL, above at its
         /// highest. A QL ladder (spirits, symbiants: see <see cref="GetLadderTiers"/>) does not: it picks only its tiers
-        /// in the window, or the tier just below it. Appends to <paramref name="into"/>.
+        /// in the window, or the tier just below it. With <paramref name="ignoreLevel"/> (a loot row's IgnoreLevel) every
+        /// family drops like a Special one: any pick under the hash, at the roll clamped into its range.
+        /// Appends to <paramref name="into"/>.
         /// </summary>
         public void RollSpawnIds(
             string hash,
             int minQuality,
             int maxQuality,
             int rolledQuality,
-            List<(int LowId, int HighId, int Quality)> into)
+            List<(int LowId, int HighId, int Quality)> into,
+            bool ignoreLevel = false)
         {
             ArgumentNullException.ThrowIfNull(into);
             if (string.IsNullOrEmpty(hash))
@@ -244,12 +247,13 @@ namespace ZoneEngine_New.Core.Inventory
 
             // A random category pick only lands on families the window can drop.
             var instances = new List<HashInstance>();
-            _gameData.CollectHashSpawns(hash, instances, (parent, child) => CanPick(parent, child, min, max));
+            _gameData.CollectHashSpawns(
+                hash, instances, (parent, child) => ignoreLevel || CanPick(parent, child, min, max));
             for (int i = 0; i < instances.Count; i++)
             {
                 // A leaf listed directly is not filtered by the pick above.
                 FamilySpan span = GetFamilySpan(instances[i]);
-                if (span.Min > span.Max || (!span.Special && (span.Max < min || span.Min > max)))
+                if (span.Min > span.Max || (!span.Special && !ignoreLevel && (span.Max < min || span.Min > max)))
                     continue;
 
                 if (TryRollIdsFor(instances[i], Math.Clamp(roll, span.Min, span.Max), out int lowId, out int highId, out int quality))
@@ -344,12 +348,18 @@ namespace ZoneEngine_New.Core.Inventory
             return false;
         }
 
-        /// <summary>The leaf family can be made at <paramref name="quality"/>: its QL range covers it, or it is Special.</summary>
-        public bool LeafCoversQuality(HashInstance leaf, int quality)
+        /// <summary>
+        /// A leaf family's QL range (its lowest..highest template QL) and whether any of its templates is Special;
+        /// false when the family has no usable template id.
+        /// </summary>
+        public bool TryGetLeafQualitySpan(HashInstance leaf, out int min, out int max, out bool special)
         {
             ArgumentNullException.ThrowIfNull(leaf);
             FamilySpan family = GetFamilySpan(leaf);
-            return family.Special || (family.Min <= quality && quality <= family.Max);
+            min = family.Min;
+            max = family.Max;
+            special = family.Special;
+            return family.Min <= family.Max;
         }
 
         public Item CreateWithNewInstance(int lowId, int highId, int quality, ItemSource source)

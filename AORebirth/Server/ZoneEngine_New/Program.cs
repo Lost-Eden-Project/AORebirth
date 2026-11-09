@@ -89,6 +89,8 @@ namespace ZoneEngine_New
                 OnScreenBanner.PrintAORebirthBanner(ConsoleColor.Green);
                 rootServices = BuildRootServices();
                 IZoneLogger logger = rootServices.GetRequiredService<IZoneLogger>();
+                // Hashed beside the GameData load; World registration waits for it.
+                System.Threading.Tasks.Task<string> gameDataFingerprint = GameDataFingerprint.StartAsync(logger);
                 IGameData gameData = rootServices.GetRequiredService<IGameData>();
                 DestinationsCatalog.Instance.ConfigureRoot(gameData.RootPath);
                 LogLocalityStartup();
@@ -107,7 +109,7 @@ namespace ZoneEngine_New
                 // registration, which says whether a module's handoff hook decides on logins to this zone.
                 modules = rootServices.GetRequiredService<ZoneEngine_New.Core.Modules.ZoneModuleHost>();
                 // World first: no playfield builds and no client connects before this instance is registered.
-                if (!ConnectWorld(rootServices, logger, instance))
+                if (!ConnectWorld(rootServices, logger, instance, gameDataFingerprint))
                     return 1;
                 chatEngineLink = rootServices.GetRequiredService<IChatEngineLink>();
                 chatEngineLink.Start();
@@ -177,9 +179,15 @@ namespace ZoneEngine_New
         /// Registers with World and waits until it accepts this instance. World is required: without it no character
         /// can be leased, so the game port stays closed.
         /// </summary>
-        private static bool ConnectWorld(ServiceProvider services, IZoneLogger logger, ZoneInstanceOptions instance)
+        private static bool ConnectWorld(ServiceProvider services, IZoneLogger logger, ZoneInstanceOptions instance,
+            System.Threading.Tasks.Task<string> gameDataFingerprint)
         {
             worldLink = services.GetRequiredService<WorldLink>();
+            if (!gameDataFingerprint.IsCompleted)
+                Console.WriteLine("ZoneEngine_New fingerprinting GameData for World (the first start after a content change reads all of it)...");
+            // An unreadable GameData file fails startup here: World could not be told what this zone runs.
+            worldLink.GameDataFingerprint = gameDataFingerprint.GetAwaiter().GetResult();
+            logger.Info("Build " + ZoneIdentity.Build + " GameData " + worldLink.GameDataFingerprint.Substring(0, 16));
             worldLink.Attach(services.GetRequiredService<WorldZoneBridge>());
             if (modules != null)
                 worldLink.AttachModules(modules);
@@ -396,6 +404,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcTemplatesReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcScriptsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.ItemTemplatesReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.ItemsDatReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.KnubotReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.Quests.QuestRewardsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.QuestsReload>();
@@ -413,6 +422,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Commands.Setups.GiveSetupService>();
             services.AddSingleton<IGmCommand, GiveCommand>();
             services.AddSingleton<IGmCommand, NpcCommand>();
+            services.AddSingleton<IGmCommand, FeaturesCommand>();
             services.AddSingleton<IGmCommand, ServerStatsCommand>();
             services.AddSingleton<IGmCommand, QuestsCommand>();
             services.AddSingleton<IGmCommand, DiagCommand>();
@@ -420,10 +430,13 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, OnlineCommand>();
             services.AddSingleton<IGmCommand, GameTimeCommand>();
             services.AddSingleton<IGmCommand, WeatherCommand>();
+            services.AddSingleton<IGmCommand, AnnounceCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
             services.AddSingleton<IGmCommand, VisibilityCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();
+            services.AddSingleton(provider => new Lazy<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>(
+                provider.GetRequiredService<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>));
             services.AddSingleton<IGmCommand, ShutdownCommand>();
             services.AddSingleton<IGmCommand, AccountCommand>();
             services.AddSingleton<GmCommandDispatcher>();
@@ -439,6 +452,7 @@ namespace ZoneEngine_New
             AddMessageHandler<AttackMessageHandler>(services);
             AddMessageHandler<CharSecSpecAttackMessageHandler>(services);
             AddMessageHandler<StopFightMessageHandler>(services);
+            AddMessageHandler<ResearchRequestMessageHandler>(services);
             AddMessageHandler<SocialActionCmdMessageHandler>(services);
             AddMessageHandler<FollowTargetMessageHandler>(services);
             AddMessageHandler<GenericCmdMessageHandler>(services);
@@ -549,6 +563,9 @@ namespace ZoneEngine_New
                 LogUtil.SetupFileLogging(primary
                     ? "${basedir}/ZoneEngine_NewLog.txt"
                     : "${basedir}/ZoneEngine_New." + instance.Name + ".Log.txt", LogLevel.Trace);
+                ZoneEngine_New.Core.Logging.PlayerActionLog.Configure(primary
+                    ? "${basedir}/ZoneEngine_New.PlayerActions.txt"
+                    : "${basedir}/ZoneEngine_New." + instance.Name + ".PlayerActions.txt");
                 DebugMcpLogBuffer.Shared.Install();
                 ZoneEngine_New.Core.Logging.AsyncLogging.Install();
                 LogActiveConfiguration();

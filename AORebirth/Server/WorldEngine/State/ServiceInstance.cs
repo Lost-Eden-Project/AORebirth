@@ -43,6 +43,17 @@ namespace WorldEngine.State
 
         public string Build { get; set; } = string.Empty;
 
+        /// <summary>Content fingerprint of the GameData the zone runs; empty from a zone too old to report one.</summary>
+        public string GameData { get; set; } = string.Empty;
+
+        /// <summary>An operator took this zone out of rotation: it keeps what it runs but is given no new playfields.</summary>
+        public bool Draining { get; set; }
+
+        /// <summary>When the shutdown World asked this zone for is due; null when none was asked for.</summary>
+        public DateTime? ShutdownDueUtc { get; set; }
+
+        public string? DrainedBy { get; set; }
+
         /// <summary>A module on this zone decides on login handoffs to it; World asks it (AdmitClient) at character select.</summary>
         public bool HasHandoffHook { get; set; }
 

@@ -527,6 +527,18 @@ namespace ChatEngine
                 }
             }
 
+            if (chatServer?.Modules != null)
+            {
+                try
+                {
+                    chatServer.Modules.Shutdown();
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine("Chat module shutdown failed: " + e.Message);
+                }
+            }
+
             if (chatServer != null)
             {
                 try
@@ -666,6 +678,11 @@ namespace ChatEngine
                     return false;
                 }
 
+                if (!InitializeChatModules())
+                {
+                    return false;
+                }
+
                 if (!InitializeConsoleCommands())
                 {
                     return false;
@@ -684,6 +701,29 @@ namespace ChatEngine
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Loads Config/ChatModules.json modules before the chat listener opens. A module listed as Required that fails to
+        /// load stops startup; any other failure skips that module.
+        /// </summary>
+        private static bool InitializeChatModules()
+        {
+            try
+            {
+                chatServer.Modules = ChatEngine.Modules.ChatModuleHost.Load(chatServer);
+                if (chatServer.Modules.Count > 0)
+                {
+                    Console.WriteLine("Chat modules loaded: " + chatServer.Modules.Count + ".");
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("Chat module initialization failed: " + e.Message);
+                return false;
+            }
         }
 
         private static bool InitializeBotService()

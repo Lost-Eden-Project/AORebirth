@@ -341,6 +341,13 @@ namespace AORebirth.Enums
         MakeVendorShop = 53074,
 
         /// <summary>
+        /// Client-side only: shows string 0 (HTML) in the center-screen notification window when stat 11 (range)
+        /// is 0 and the target is the client's own character, or the target is within range (Gamecode.dll
+        /// FUN_100a98d1). Server-sent through ApplySpellsMessage.
+        /// </summary>
+        CenterScreenNotification = 53247,
+
+        /// <summary>
         /// </summary>
         Mesh = 53004,
 

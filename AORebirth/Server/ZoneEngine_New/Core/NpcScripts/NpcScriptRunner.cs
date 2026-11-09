@@ -37,8 +37,11 @@ public sealed class NpcScriptRunner
     /// <summary>Live NPCs one runner may own at once (<see cref="ScriptOpCode.SpawnNpc"/>).</summary>
     public const int MaxOwnedNpcs = 16;
 
-    /// <summary>SpawnNpc generations: a spawn point's NPC may spawn adds (depth 1) that spawn adds (depth 2), no further.</summary>
-    public const int MaxSpawnDepth = 2;
+    /// <summary>
+    /// SpawnNpc generations: a spawn point's NPC may spawn adds (depth 1) that spawn adds (depth 2) that spawn adds
+    /// (depth 3), no further. Independent spawns count too, so a program that spawns itself still stops.
+    /// </summary>
+    public const int MaxSpawnDepth = 3;
 
     /// <summary>AddDied events one runner holds waiting for their handler; more are dropped with a warning.</summary>
     public const int MaxQueuedAddDied = 32;
@@ -96,6 +99,9 @@ public sealed class NpcScriptRunner
     // CastNano with Warp: the cast whose landing moves its recipient to the NPC's feet.
     int _pendingWarpNano;
     Identity _pendingWarpTarget;
+
+    // Target Playfield: the op's resolved nano ids, reused across casts.
+    List<int>? _castNanos;
 
     enum WaitKind : byte
     {
@@ -166,6 +172,8 @@ public sealed class NpcScriptRunner
 
     // Diagnostics (debug MCP).
     public string? CurrentTrigger => _handler >= 0 ? _program.Handlers[_handler].Trigger.ToString() : null;
+
+    bool InDeathHandler => _handler >= 0 && _program.Handlers[_handler].Trigger == NpcScriptTrigger.Death;
 
     /// <summary>Program ids along the chain, comma separated.</summary>
     public string ProgramIds
@@ -825,8 +833,10 @@ public sealed class NpcScriptRunner
 
     void DoSpawnWorldItem(ScriptOp op)
     {
+        // A Death handler runs on the corpse-to-be, so it may still drop an item where the NPC fell; any other
+        // handler stops littering once the NPC is dead.
         Playfield? playfield = _npc.Playfield;
-        if (playfield == null || _npc.IsDead)
+        if (playfield == null || (_npc.IsDead && !InDeathHandler))
             return;
         string? hash = StringValue(op.A);
         if (string.IsNullOrEmpty(hash))
@@ -905,11 +915,14 @@ public sealed class NpcScriptRunner
     /// or Count of them evenly on a circle of Radius. Each is owned by this runner: capped at
     /// <see cref="MaxOwnedNpcs"/> live, given the spec's lifetime, and despawned after the owner's death, reset or
     /// despawn unless the spec leaves it independent. With JoinFight the add starts on the owner's current target.
+    /// From a Death handler the owner is already dead: an independent spawn is unaffected, a linked one starts its
+    /// owner-despawn delay at once (0 = gone next tick), and none reports AddDied to the dead owner.
     /// </summary>
     void DoSpawnNpc(ScriptOp op, long now)
     {
         Playfield? playfield = _npc.Playfield;
-        if (playfield == null || _npc.IsDead)
+        bool ownerDead = _npc.IsDead;
+        if (playfield == null || (ownerDead && !InDeathHandler))
             return;
 
         if (_npc.ScriptSpawnDepth >= MaxSpawnDepth)
@@ -985,9 +998,17 @@ public sealed class NpcScriptRunner
             {
                 add.OwnerDespawnDelayMs = spec.OwnerDespawnDelaySeconds * 1000;
                 (_owned ??= new List<NpcCharacter>()).Add(add);
+
+                // The owner's death already released its adds; this one's delay runs from now.
+                if (ownerDead)
+                {
+                    long releaseAt = now + add.OwnerDespawnDelayMs;
+                    if (add.DespawnAtMs == 0 || releaseAt < add.DespawnAtMs)
+                        add.DespawnAtMs = releaseAt;
+                }
             }
 
-            if (_program.Subscribes(NpcScriptTrigger.AddDied))
+            if (!ownerDead && _program.Subscribes(NpcScriptTrigger.AddDied))
                 add.ScriptLink = new NpcScriptAddLink(this, spec.Tag, _ownerEpoch);
 
             if (enemy != null)
@@ -1199,7 +1220,11 @@ public sealed class NpcScriptRunner
         if (_npc.IsDead || _npc.Playfield == null)
             return false;
 
-        int nanoId = IntValue(op.A);
+        int[]? list = (op.D & NpcScriptCompiler.CastNanoList) != 0 ? _program.NanoLists[op.A] : null;
+        if ((NpcScriptTarget)op.B == NpcScriptTarget.Playfield)
+            return BeginPlayfieldCast(op, list, now);
+
+        int nanoId = IntValue(list == null ? op.A : list[NextInt(0, list.Length - 1)]);
         Character? recipient = PickTarget((NpcScriptTarget)op.B, op.C);
         if (nanoId <= 0 || recipient == null)
             return false;
@@ -1226,6 +1251,41 @@ public sealed class NpcScriptRunner
             ClearPendingWarp();
             return false;
         }
+
+        _waiting = WaitKind.Cast;
+        _wakeAtMs = now + CastPollMs;
+        return true;
+    }
+
+    /// <summary>
+    /// Target Playfield: one cast bar on the NPC (<see cref="NanoRuntime.TryStartPlayfieldCast"/>) that lands on every
+    /// living player on its playfield, each picking from <paramref name="list"/> on its own. Blocks as a cast does.
+    /// </summary>
+    bool BeginPlayfieldCast(ScriptOp op, int[]? list, long now)
+    {
+        List<int> nanos = _castNanos ??= new List<int>(4);
+        nanos.Clear();
+        if (list == null)
+        {
+            nanos.Add(IntValue(op.A));
+        }
+        else
+        {
+            for (int i = 0; i < list.Length; i++)
+                nanos.Add(IntValue(list[i]));
+        }
+
+        NanoCastRefusal refusal = NanoRuntime.TryStartPlayfieldCast(_npc, nanos, DateTime.UtcNow);
+        if (refusal != NanoCastRefusal.None)
+        {
+            Utility.LogUtil.Debug(
+                Utility.DebugInfoDetail.Engine,
+                "NpcScripts: program '" + _program.Id + "' on " + _npc.Name + " could not cast on the playfield: " + refusal);
+            return false;
+        }
+
+        if (!_npc.IsCastingNano)
+            return false;
 
         _waiting = WaitKind.Cast;
         _wakeAtMs = now + CastPollMs;

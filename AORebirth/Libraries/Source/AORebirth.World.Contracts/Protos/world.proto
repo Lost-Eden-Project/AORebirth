@@ -65,6 +65,8 @@ message WorldToService {
     Announcement announcement = 9;
     ClearOnline clear_online = 10;
     InstanceCommand command = 11;
+    // An operator asked World to take this zone instance out of service.
+    ShutdownRequest shutdown = 12;
   }
 }
 
@@ -85,6 +87,9 @@ message Register {
   string previous_session = 10;
   // True when a module on this zone decides on handoffs; World then asks it (AdmitClient) at character select.
   bool handoff_hook = 11;
+  // Content fingerprint of the GameData this zone runs (and its override folders). World refuses a fresh zone whose
+  // build or GameData differs from the zones already running: players would see different behaviour by playfield.
+  string game_data = 12;
 }
 
 message LeaseAssertion {
@@ -225,6 +230,15 @@ message Announcement {
 // Nobody owns these characters any more (their instance died or restarted): clear their Online flag.
 message ClearOnline {
   repeated int32 character_ids = 1;
+}
+
+// Count down, tell the players, save everyone and exit, as the GM .shutdown command does. abort cancels a pending
+// countdown instead.
+message ShutdownRequest {
+  int32 seconds = 1;
+  string message = 2;
+  bool abort = 3;
+  string requested_by = 4;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -111,7 +111,9 @@ namespace AORebirth.World.Pathfinding
             _streamer.TileLoads,
             _streamer.TileUnloads,
             _streamer.LoadMilliseconds,
-            _streamer.Index.TotalPolys);
+            _streamer.Index.TotalPolys,
+            _streamer.ResidentTileBytes,
+            _streamer.Source.InMemory ? _streamer.Source.Length : 0L);
 
         public static bool TryLoad(string gameDataRoot, int playfieldId, out NavMeshPathfinder? pathfinder)
         {
@@ -665,7 +667,11 @@ namespace AORebirth.World.Pathfinding
         }
     }
 
-    /// <summary>What a pathfinder's tile window holds: baked tiles in the file versus tiles resident now.</summary>
+    /// <summary>
+    /// What a pathfinder's tile window holds: baked tiles in the file versus tiles resident now.
+    /// <paramref name="ResidentTileBytes"/> is the raw size of the resident tiles; <paramref name="InMemoryMeshBytes"/>
+    /// is the whole bake when the mesh lives in memory (generated dungeons), else 0.
+    /// </summary>
     public readonly record struct NavMeshResidency(
         int IndexedTiles,
         int LoadedTiles,
@@ -673,7 +679,9 @@ namespace AORebirth.World.Pathfinding
         long TileLoads,
         long TileUnloads,
         double LoadMilliseconds,
-        int TotalPolys);
+        int TotalPolys,
+        long ResidentTileBytes,
+        long InMemoryMeshBytes);
 
     /// <summary>How a <see cref="NavMeshPathfinder.TryFindPath"/> call ended.</summary>
     public enum PathSearchOutcome

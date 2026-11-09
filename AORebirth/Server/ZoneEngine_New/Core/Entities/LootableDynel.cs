@@ -111,6 +111,7 @@ namespace ZoneEngine_New.Core.Entities
         /// One corpse's loot roll: every item table row is tried Repeats times at its Chance, each hit rolls a quality
         /// within the row's own LevelMod percent of <paramref name="level"/> (or <paramref name="qualityVariancePercent"/>,
         /// Gameplay.json loot, when the row has none) and spawns its hash's items, until <paramref name="capacity"/> items.
+        /// An IgnoreLevel row drops whatever the level, each item at that roll clamped into its own QL range.
         /// Appends template ids and quality to <paramref name="into"/>; builds no items (GM loot simulation uses it too).
         /// </summary>
         public static void RollItemTable(
@@ -145,7 +146,8 @@ namespace ZoneEngine_New.Core.Entities
                     (int minQuality, int maxQuality) = QualityWindow(
                         level, entry.LevelMod > 0 ? entry.LevelMod : qualityVariancePercent);
                     minter.RollSpawnIds(
-                        entry.Hash, minQuality, maxQuality, LootRandom.Next(minQuality, maxQuality + 1), spawned);
+                        entry.Hash, minQuality, maxQuality, LootRandom.Next(minQuality, maxQuality + 1), spawned,
+                        entry.IgnoreLevel);
                     for (int i = 0; i < spawned.Count; i++)
                     {
                         if (into.Count - start >= capacity)

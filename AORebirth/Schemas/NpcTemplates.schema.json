@@ -157,6 +157,9 @@
                   },
                   "LevelMod": {
                     "type": "integer"
+                  },
+                  "IgnoreLevel": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

@@ -2,6 +2,7 @@ namespace ZoneEngine_New.Core.Trade
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics.CodeAnalysis;
     using System.Linq;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
@@ -163,11 +164,13 @@ namespace ZoneEngine_New.Core.Trade
         /// <summary>
         /// Stock from the shop item's own list (items.dat ShopInventory), as the stock engine expands it: each line's
         /// hash fans out one level (a leaf hash is its own single child), and each child is rolled
-        /// <see cref="Inventory.ShopInventoryEntry.Amount"/> times. A roll picks a QL in the line's band and a leaf under
-        /// the child that can be made at it, and is kept when random(0, 100) &lt; <see cref="Inventory.ShopInventoryEntry.Chance"/>;
-        /// a roll identical to one already stocked adds no row. Items <paramref name="hasTemplate"/> rejects
-        /// (no server template for the low/high ids) are skipped. Lines stay in list order, up to
-        /// <see cref="VendingMachineDefinition.MaxSlots"/>.
+        /// <see cref="Inventory.ShopInventoryEntry.Amount"/> times. A roll is kept when random(0, 100) &lt;
+        /// <see cref="Inventory.ShopInventoryEntry.Chance"/>, and picks a QL inside the child's own QL span intersected with the
+        /// line's band, then a leaf under the child made at it; a child is dropped only when that intersection is empty
+        /// (unless it has a Special family, which stocks at its nearest QL as Special loot does). Retail Specialist Commerce
+        /// (KWJH QL 1-200, Amount 1) lists 48 of KWJH's 49 children, single-QL items included. A roll identical to one
+        /// already stocked adds no row. Items <paramref name="hasTemplate"/> rejects (no server template for the low/high
+        /// ids) are skipped. Lines stay in list order, uncapped: retail sent Tsunayoshi Smith's shop (164104) with 213 slots.
         /// </summary>
         public void EnsureFreshFromShopInventory(
             IReadOnlyList<Inventory.ShopInventoryEntry> lines,
@@ -189,8 +192,6 @@ namespace ZoneEngine_New.Core.Trade
             HashSet<(int LowId, int HighId, int Quality)> stocked = new();
             foreach (Inventory.ShopInventoryEntry line in lines)
             {
-                if (_slots.Count >= VendingMachineDefinition.MaxSlots)
-                    break;
                 if (string.IsNullOrEmpty(line.Hash))
                     continue;
 
@@ -202,29 +203,20 @@ namespace ZoneEngine_New.Core.Trade
                     : new[] { line.Hash };
 
                 // Count rounds over every child, as retail lists them (all children, then all children again).
-                for (int round = 0; round < line.Amount && _slots.Count < VendingMachineDefinition.MaxSlots; round++)
+                for (int round = 0; round < line.Amount; round++)
                 {
-                    for (int g = 0; g < groups.Count && _slots.Count < VendingMachineDefinition.MaxSlots; g++)
+                    for (int g = 0; g < groups.Count; g++)
                     {
-                        int quality = random.Next(minQuality, maxQuality + 1);
                         if (random.Next(100) >= chance)
                             continue;
 
                         leaves.Clear();
                         minter.CollectLeafInstances(groups[g], leaves);
-                        usable.Clear();
-                        for (int i = 0; i < leaves.Count; i++)
-                        {
-                            if (minter.LeafCoversQuality(leaves[i], quality))
-                                usable.Add(leaves[i]);
-                        }
-
-                        if (usable.Count == 0)
+                        if (!TryPickShopLeaf(minter, leaves, minQuality, maxQuality, random, usable, out HashInstance? leaf, out int quality))
                             continue;
 
                         // A roll matching one already stocked adds no row: retail Antonio Stacklund (GMUE, Count 5,
                         // fixed-QL items) lists each item once, while a QL band yields one row per distinct QL.
-                        HashInstance leaf = usable[random.Next(usable.Count)];
                         if (minter.TryRollIdsFor(leaf, quality, out int lowId, out int highId, out int rolledQuality)
                             && (hasTemplate == null || hasTemplate(lowId, highId))
                             && stocked.Add((lowId, highId, rolledQuality)))
@@ -235,6 +227,85 @@ namespace ZoneEngine_New.Core.Trade
 
             IsGenerated = true;
             _idleSinceMs = Environment.TickCount64;
+        }
+
+        /// <summary>
+        /// One ShopInventory roll for a child's leaf families: a QL inside the child's QL span (the union of its families'
+        /// ranges) intersected with the line's band <paramref name="bandMin"/>..<paramref name="bandMax"/>, and a family made
+        /// at it. A QL that falls between two families' ranges goes to the nearest one, clamped into its range. When no
+        /// family reaches the band, only Special families stock (at their nearest QL); otherwise the child is dropped.
+        /// </summary>
+        static bool TryPickShopLeaf(
+            HashItemMinter minter,
+            List<HashInstance> leaves,
+            int bandMin,
+            int bandMax,
+            Random random,
+            List<HashInstance> usable,
+            [NotNullWhen(true)] out HashInstance? leaf,
+            out int quality)
+        {
+            leaf = null;
+            quality = 0;
+            usable.Clear();
+
+            int low = int.MaxValue;
+            int high = int.MinValue;
+            for (int i = 0; i < leaves.Count; i++)
+            {
+                if (!minter.TryGetLeafQualitySpan(leaves[i], out int min, out int max, out _))
+                    continue;
+                int lo = Math.Max(bandMin, min);
+                int hi = Math.Min(bandMax, max);
+                if (lo > hi)
+                    continue;
+                low = Math.Min(low, lo);
+                high = Math.Max(high, hi);
+            }
+
+            if (low > high)
+            {
+                // No family reaches the band: a Special family still stocks, clamped to its own range by TryRollIdsFor.
+                for (int i = 0; i < leaves.Count; i++)
+                {
+                    if (minter.TryGetLeafQualitySpan(leaves[i], out _, out _, out bool special) && special)
+                        usable.Add(leaves[i]);
+                }
+
+                if (usable.Count == 0)
+                    return false;
+                leaf = usable[random.Next(usable.Count)];
+                quality = random.Next(bandMin, bandMax + 1);
+                return true;
+            }
+
+            quality = random.Next(low, high + 1);
+            int nearest = int.MaxValue;
+            for (int i = 0; i < leaves.Count; i++)
+            {
+                if (!minter.TryGetLeafQualitySpan(leaves[i], out int min, out int max, out _))
+                    continue;
+                int lo = Math.Max(bandMin, min);
+                int hi = Math.Min(bandMax, max);
+                if (lo > hi)
+                    continue;
+
+                int distance = quality < lo ? lo - quality : quality > hi ? quality - hi : 0;
+                if (distance > nearest)
+                    continue;
+                if (distance < nearest)
+                {
+                    nearest = distance;
+                    usable.Clear();
+                }
+
+                usable.Add(leaves[i]);
+            }
+
+            leaf = usable[random.Next(usable.Count)];
+            if (nearest > 0 && minter.TryGetLeafQualitySpan(leaf, out int leafMin, out int leafMax, out _))
+                quality = Math.Clamp(quality, Math.Max(bandMin, leafMin), Math.Min(bandMax, leafMax));
+            return true;
         }
 
         public bool IsIdleExpired()

@@ -187,7 +187,8 @@ namespace ZoneEngine_New.Core.Nanos
         /// Casts the child on the team of the character the function applies to, still from
         /// <paramref name="caster"/>. A self-cast team nano names its caster (User / Wearer); one aimed at a
         /// Target, such as 90449 (child 90445), buffs that target's team. Without a team only that character
-        /// gets it.
+        /// gets it. The caster's own pets count as its side of the team: when the caster receives the child, so
+        /// do its living pets on its playfield (<see cref="ApplyTeamNano"/>).
         /// </summary>
         static bool TeamCastNano(
             Character caster,
@@ -203,7 +204,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (recipient is not Player player)
             {
                 if (!recipient.IsDead)
-                    NanoRuntime.TryApplyImmediate(caster, recipient, nanoId, items, inventory, nowUtc);
+                    ApplyTeamNano(caster, recipient, nanoId, items, inventory, nowUtc);
                 return true;
             }
 
@@ -215,7 +216,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (team == null || manager == null)
             {
                 if (!player.IsDead)
-                    NanoRuntime.TryApplyImmediate(caster, player, nanoId, items, inventory, nowUtc);
+                    ApplyTeamNano(caster, player, nanoId, items, inventory, nowUtc);
                 return true;
             }
 
@@ -230,10 +231,37 @@ namespace ZoneEngine_New.Core.Nanos
                     && (!ReferenceEquals(mate.Playfield, playfield) || locality == null || !locality.IsVisibleTo(mate, player)))
                     continue;
 
-                NanoRuntime.TryApplyImmediate(caster, mate, nanoId, items, inventory, nowUtc);
+                ApplyTeamNano(caster, mate, nanoId, items, inventory, nowUtc);
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Applies a team nano's child to one team member. When that member is the caster, the caster's living
+        /// pets on its playfield get it too: a team buff originating from a pet owner covers its pets, while a
+        /// teammate's pets stay with their own owner.
+        /// </summary>
+        static void ApplyTeamNano(
+            Character caster,
+            Character member,
+            int nanoId,
+            IItemBuilder items,
+            IInventoryRepository inventory,
+            DateTime nowUtc)
+        {
+            NanoRuntime.TryApplyImmediate(caster, member, nanoId, items, inventory, nowUtc);
+            if (!ReferenceEquals(member, caster) || caster.OwnedPets.Count == 0)
+                return;
+
+            // Snapshot: applying the child can rebase a pet, and nothing here may observe a list that changes under it.
+            NpcCharacter[] pets = [.. caster.OwnedPets.All];
+            foreach (NpcCharacter pet in pets)
+            {
+                if (pet.IsDead || !ReferenceEquals(pet.Playfield, caster.Playfield))
+                    continue;
+                NanoRuntime.TryApplyImmediate(caster, pet, nanoId, items, inventory, nowUtc);
+            }
         }
 
         static bool PlayfieldNano(

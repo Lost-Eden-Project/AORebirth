@@ -265,6 +265,210 @@ namespace ZoneEngine_New.Core.Nanos
             return NanoCastRefusal.None;
         }
 
+        /// <summary>
+        /// One cast bar on an NPC that lands on every living player on its playfield (an NPC script's CastNano Target
+        /// Playfield), pets excluded. The bar runs the longest cast time among <paramref name="nanoIds"/>, and the NPC
+        /// pays that nano's cost and recharge once. When the bar finishes each player gets one of the nanos, picked
+        /// evenly per player, judged for that player as a cast on them is: ToUse criteria, target legality, resists
+        /// and nanoline stacking. The nano's attack range does not apply (NPC casts are not range gated).
+        /// </summary>
+        public static NanoCastRefusal TryStartPlayfieldCast(NpcCharacter caster, IReadOnlyList<int> nanoIds, DateTime nowUtc)
+        {
+            ArgumentNullException.ThrowIfNull(caster);
+            ArgumentNullException.ThrowIfNull(nanoIds);
+
+            var spells = new List<NanoSpell>(nanoIds.Count);
+            NanoSpell? bar = null;
+            int barTime = -1;
+            for (int i = 0; i < nanoIds.Count; i++)
+            {
+                if (nanoIds[i] <= 0 || !TryResolveSpell(caster, nanoIds[i], out NanoSpell? spell) || spell == null)
+                {
+                    LogCastRefused(caster, nanoIds[i], caster.Identity, NanoCastRefusal.NotUploaded, phase: "start",
+                        detail: "playfield cast: spell resolve failed");
+                    continue;
+                }
+
+                spells.Add(spell);
+                int time = AttackTime(caster, spell);
+                if (time > barTime)
+                {
+                    bar = spell;
+                    barTime = time;
+                }
+            }
+
+            if (bar == null)
+                return NanoCastRefusal.NotUploaded;
+
+            int nanoCost = ResolveNanoCost(caster, bar);
+            NanoCastAttempt attempt = SpreadAttempt(caster, bar, nanoCost, nowUtc);
+            NanoCastRefusal refusal = NanoCastRules.Evaluate(attempt);
+            if (refusal == NanoCastRefusal.None && IsNoCombat(caster))
+                refusal = NanoCastRefusal.InvalidTarget;
+            if (refusal != NanoCastRefusal.None)
+            {
+                LogCastRefused(caster, bar.Id, caster.Identity, refusal, phase: "start", attempt: attempt, spell: bar);
+                return refusal;
+            }
+
+            caster.BreakSneak();
+
+            // The bar is the NPC's own: no single recipient, so it names the NPC as a self-centred area does.
+            var cast = new PendingNanoCast(bar, caster.Identity, nanoCost, barTime, nowUtc)
+            {
+                RequestTimestamp = ModuleHooks.RequestNow,
+                Spread = spells
+            };
+            caster.BeginNanoCast(cast);
+            SpendNano(caster, nanoCost);
+            AnnounceCastStarted(caster, bar.Id, caster.Identity);
+
+            if (cast.IsReady(nowUtc))
+            {
+                caster.CancelNanoCast();
+                using (ModuleCooldowns.During(PlayerActionKind.NanoCast, bar.Id))
+                    Complete(caster, cast, nowUtc);
+            }
+
+            return NanoCastRefusal.None;
+        }
+
+        static int AttackTime(Character caster, NanoSpell spell)
+            => NanoDelayCalculator.AttackTimeCentiseconds(
+                spell.AttackDelayCentiseconds,
+                spell.AttackDelayCapCentiseconds,
+                caster.Stats.GetOrZero(CharacterStat.AggDef),
+                caster.Stats.GetOrZero(CharacterStat.NanoCInit));
+
+        /// <summary>
+        /// The caster-side gate of a playfield-wide cast. Requirements are left to each player's landing, where the
+        /// nano's ToUse criteria are read against that player.
+        /// </summary>
+        static NanoCastAttempt SpreadAttempt(Character caster, NanoSpell bar, int nanoCost, DateTime nowUtc)
+            => BuildAttempt(caster, bar, caster, nanoCost, nowUtc) with { RequirementsMet = true };
+
+        /// <summary>
+        /// A playfield-wide cast's bar finished: the NPC's recharge starts once, then every living player on the
+        /// playfield gets a nano of <paramref name="spread"/>, each player rolled separately.
+        /// </summary>
+        static void CompleteSpread(Character caster, PendingNanoCast cast, IReadOnlyList<NanoSpell> spread, DateTime nowUtc)
+        {
+            NanoSpell bar = cast.Spell;
+            NanoCastAttempt attempt = SpreadAttempt(caster, bar, nanoCost: 0, nowUtc);
+            NanoCastRefusal refusal = NanoCastRules.Evaluate(attempt);
+            Playfield? playfield = caster.Playfield;
+            if (refusal == NanoCastRefusal.None && playfield == null)
+                refusal = NanoCastRefusal.InvalidTarget;
+            if (refusal != NanoCastRefusal.None)
+            {
+                LogCastRefused(caster, bar.Id, cast.Target, refusal, phase: "complete", attempt: attempt, spell: bar);
+                AnnounceCastInterrupted(caster, bar.Id);
+                CastFailed(caster, cast, refusal, nowUtc);
+                return;
+            }
+
+            AnnounceCastFinished(caster, bar.Id, landed: true);
+
+            int recharge = (bar.Flags & (int)NanoFlags.NoTimerNotify) != 0
+                ? 0
+                : NanoDelayCalculator.RechargeTimeCentiseconds(bar.RechargeDelayCentiseconds);
+            caster.StartNanoRecharge(recharge, nowUtc);
+
+            // Which spread nanos landed at least once, for the line locks below; the compiler caps the list length.
+            Span<bool> landedAny = stackalloc bool[spread.Count];
+            int landedPlayers = 0;
+            foreach (Player player in playfield!.GetRequiredService<DynelRegistry>().PlayerEntities())
+            {
+                // A landing's effects (a reflect, a proc) may kill or move the caster part-way through.
+                if (caster.IsDead || !ReferenceEquals(caster.Playfield, playfield))
+                    break;
+                if (player.IsDead || !ReferenceEquals(player.Playfield, playfield))
+                    continue;
+
+                int pick = spread.Count == 1 ? 0 : Random.Shared.Next(spread.Count);
+                if (!LandSpread(caster, player, spread[pick], nowUtc))
+                    continue;
+                landedAny[pick] = true;
+                landedPlayers++;
+            }
+
+            // A landed nano with a line cooldown locks its strain for the caster, once per nano however many it reached.
+            for (int i = 0; i < spread.Count; i++)
+            {
+                NanoSpell spell = spread[i];
+                if (landedAny[i] && spell.NanoLineLockCentiseconds > 0 && spell.NanoStrain > 0)
+                    caster.LockNanoLine(spell.NanoStrain, (int)Math.Ceiling(spell.NanoLineLockCentiseconds / 100.0), nowUtc);
+            }
+
+            CastResolved(caster, cast, PlayerActionOutcome.Executed);
+            LogUtil.Debug(
+                DebugInfoDetail.Engine,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Nano playfield cast caster={0} bar={1} nanos={2} landedOn={3} recharge={4}cs",
+                    caster.Identity.Instance,
+                    bar.Id,
+                    spread.Count,
+                    landedPlayers,
+                    recharge));
+        }
+
+        /// <summary>
+        /// One player's share of a playfield-wide cast: the checks a cast on that player faces (ToUse criteria against
+        /// them, target legality, a stronger nano of the line already running, resists), then the landing as an
+        /// item-function nano lands on a recipient. True when the nano took.
+        /// </summary>
+        static bool LandSpread(Character caster, Player recipient, NanoSpell spell, DateTime nowUtc)
+        {
+            if (!BuildAttempt(caster, spell, recipient, nanoCost: 0, nowUtc).RequirementsMet)
+                return false;
+            if (spell.IsHostile
+                    ? !IsHostileNanoTarget(caster, recipient)
+                    : FriendlyNanoTargetRefusal(caster, recipient) != NanoCastRefusal.None)
+                return false;
+            if (TargetRunsBetterNano(spell, recipient))
+                return false;
+            if (spell.IsHostile && RollCastResist(caster, recipient, spell) != null)
+                return false;
+
+            AnnounceImmediateLand(caster, recipient, spell.Id);
+            AnnounceCastFinished(recipient, spell.Id, landed: true);
+
+            if (!spell.IsBuff)
+            {
+                ExecuteOnUseEffects(caster, recipient, spell, skipPassiveModifiers: false);
+                return true;
+            }
+
+            BuffApplyDecision decision = recipient.TryApplyBuff(
+                spell,
+                caster.Identity,
+                nowUtc,
+                out Buff? applied,
+                out IReadOnlyList<Buff> replaced);
+            if (applied == null)
+            {
+                LogUtil.Debug(
+                    DebugInfoDetail.Engine,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Nano playfield cast apply refused caster={0} nano={1} target={2} decision={3}",
+                        caster.Identity.Instance,
+                        spell.Id,
+                        recipient.Identity.Instance,
+                        decision));
+                return false;
+            }
+
+            AnnounceReplaced(recipient, replaced, spell);
+            SendNanoDuration(caster, recipient, applied);
+            ExecuteOnUseEffects(caster, recipient, spell, skipPassiveModifiers: true);
+            if (spell.IsHostile)
+                OnDebuffLanded(caster, recipient, applied);
+            return true;
+        }
+
         /// <summary>Reads a nano template. False when the id is not a template.</summary>
         public static bool TryGetSpell(Character caster, int nanoId, out NanoSpell? spell)
         {
@@ -605,6 +809,12 @@ namespace ZoneEngine_New.Core.Nanos
 
         static void Complete(Character caster, PendingNanoCast cast, DateTime nowUtc)
         {
+            if (cast.Spread != null)
+            {
+                CompleteSpread(caster, cast, cast.Spread, nowUtc);
+                return;
+            }
+
             NanoSpell spell = cast.Spell;
             Character? recipient = ResolveTarget(caster, cast.Target);
 
@@ -673,7 +883,7 @@ namespace ZoneEngine_New.Core.Nanos
                 AddHostileThreat(caster, recipient!);
 
             // The resist rolls come before FinishNanoCasting: its Parameter1 is the client's "landed" flag.
-            string? resisted = rollsRecipient ? RollCastResist(caster, recipient!, spell, cast) : null;
+            string? resisted = rollsRecipient ? RollCastResist(caster, recipient!, spell) : null;
             bool landed = resisted == null;
 
             AnnounceCastFinished(caster, spell.Id, landed);
@@ -805,7 +1015,7 @@ namespace ZoneEngine_New.Core.Nanos
         /// Rolls the target's resists against a finished hostile cast: an evading NPC, the target's Resist Nano for the
         /// strain, then nano defense (DamageCalculator.ResolveNanoLand). Returns the resist reason, or null when it lands.
         /// </summary>
-        static string? RollCastResist(Character caster, Character recipient, NanoSpell spell, PendingNanoCast cast)
+        static string? RollCastResist(Character caster, Character recipient, NanoSpell spell)
         {
             // An evading NPC is untouchable on its way home.
             if (recipient.IsEvading)
@@ -817,7 +1027,7 @@ namespace ZoneEngine_New.Core.Nanos
                         "Nano resisted by evading target caster={0} nano={1} target={2}",
                         caster.Identity.Instance,
                         spell.Id,
-                        cast.Target.Instance));
+                        recipient.Identity.Instance));
                 ModuleHooks.CombatResolved(caster, recipient, CombatSource.Nano, spell.Id, CombatResult.Evaded, 0, 0);
                 return "target evading";
             }
@@ -832,7 +1042,7 @@ namespace ZoneEngine_New.Core.Nanos
                         "Nano resisted by strain caster={0} nano={1} target={2} strain={3} chance={4}%",
                         caster.Identity.Instance,
                         spell.Id,
-                        cast.Target.Instance,
+                        recipient.Identity.Instance,
                         spell.NanoStrain,
                         recipient.NanoStrainResistPercent(spell.NanoStrain)));
                 ModuleHooks.CombatResolved(caster, recipient, CombatSource.Nano, spell.Id, CombatResult.Resisted, 0, 0);
@@ -850,7 +1060,7 @@ namespace ZoneEngine_New.Core.Nanos
                         "Nano resisted caster={0} nano={1} target={2} attack={3} defense={4} landChance={5}%",
                         caster.Identity.Instance,
                         spell.Id,
-                        cast.Target.Instance,
+                        recipient.Identity.Instance,
                         attackRating,
                         defenseRating,
                         landChance));

@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Nanos
 {
     using System;
+    using System.Collections.Generic;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
 
@@ -39,6 +40,13 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>The receive time of the cast request, for the module action event the cast resolves with (API 1.6).</summary>
         public long RequestTimestamp { get; init; }
+
+        /// <summary>
+        /// A playfield-wide cast (<see cref="NanoRuntime.TryStartPlayfieldCast"/>): the bar runs <see cref="Spell"/>,
+        /// the longest of these, and when it finishes every living player on the caster's playfield gets one of them,
+        /// picked evenly per player. Null for an ordinary cast on <see cref="Target"/>.
+        /// </summary>
+        public IReadOnlyList<NanoSpell>? Spread { get; init; }
 
         public bool IsReady(DateTime nowUtc) => nowUtc >= CompletesAtUtc;
     }

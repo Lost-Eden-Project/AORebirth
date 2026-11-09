@@ -2,6 +2,7 @@ namespace ZoneEngine_New.Core.Modules
 {
     using System;
     using System.Diagnostics;
+    using System.Globalization;
 
     using AORebirth.Modules.Events;
     using AORebirth.Modules.World;
@@ -96,6 +97,12 @@ namespace ZoneEngine_New.Core.Modules
             ActionRefusal refusal = ActionRefusal.None, Item? item = null, Identity target = default, CooldownKey? cooldown = null,
             TimeSpan readyIn = default, string detail = "", long requestTimestamp = -1)
         {
+            // Lock, busy and queue refusals are the normal answer to a held key or button mash: not worth a line each.
+            if (outcome == PlayerActionOutcome.Refused
+                && refusal is not (ActionRefusal.Cooldown or ActionRefusal.Busy or ActionRefusal.QueueFull))
+                Logging.PlayerActionLog.Write(player, "action REFUSED", string.Format(CultureInfo.InvariantCulture,
+                    "kind={0} id={1} reason={2} item={3} target={4} detail=\"{5}\"",
+                    kind, abilityId, refusal, item?.LowId ?? 0, target.Instance, detail));
             if (player.Playfield is Playfield playfield && Events(playfield) is { PlayerActionAttempted.HasHandlers: true } events)
                 events.PlayerActionAttempted.Raise(Action(playfield, player, kind, abilityId, outcome, refusal, item, target,
                     cooldown, readyIn, detail, requestTimestamp));

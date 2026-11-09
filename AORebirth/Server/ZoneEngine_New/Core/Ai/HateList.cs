@@ -73,7 +73,7 @@ namespace ZoneEngine_New.Core.Ai
         /// BreedHostility proximity aggro radius. Separate from <see cref="NearbyRange"/>, which is how far a
         /// new attacker can be for the NPC to fight back: shrinking that would leash an NPC nuked from range.
         /// </summary>
-        public const float ProximityAggroRange = 10f;
+        public const float ProximityAggroRange = 7.5f;
 
         public const float MaxLeashRange = 70f;
 
@@ -131,19 +131,19 @@ namespace ZoneEngine_New.Core.Ai
         public static bool IsProximityHostile(int breedHostility) => breedHostility > 0;
 
         /// <summary>
-        /// Unprovoked aggro range from the NPC's own stats: ProximityRangeOutdoors (454) on outdoor playfields,
-        /// ProximityRangeIndoors (484) indoors. <see cref="ProximityAggroRange"/> when the NPC has none.
+        /// Unprovoked aggro range from the NPC's own stats: ProximityRangeIndoors (484) on every playfield, indoor or
+        /// outdoor (the outdoor range is not used). <see cref="ProximityAggroRange"/> when the NPC has none.
         /// </summary>
-        /// <summary>Same, read straight from <paramref name="stats"/> (no delegate per call).</summary>
-        public static float ProximityAggroRangeFor(ZoneEngine_New.Core.Entities.StatCollection stats, bool outdoor)
+        public static float ProximityAggroRangeFor(ZoneEngine_New.Core.Entities.StatCollection stats)
         {
-            int range = stats.GetOrZero(outdoor ? CharacterStat.ProximityRangeOutdoors : CharacterStat.ProximityRangeIndoors);
+            int range = stats.GetOrZero(CharacterStat.ProximityRangeIndoors);
             return range > 0 ? range : ProximityAggroRange;
         }
 
-        public static float ProximityAggroRangeFor(Func<CharacterStat, int> stats, bool outdoor)
+        /// <summary>Same, read through <paramref name="stats"/>.</summary>
+        public static float ProximityAggroRangeFor(Func<CharacterStat, int> stats)
         {
-            int range = stats(outdoor ? CharacterStat.ProximityRangeOutdoors : CharacterStat.ProximityRangeIndoors);
+            int range = stats(CharacterStat.ProximityRangeIndoors);
             return range > 0 ? range : ProximityAggroRange;
         }
 

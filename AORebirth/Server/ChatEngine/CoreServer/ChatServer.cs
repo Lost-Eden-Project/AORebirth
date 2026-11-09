@@ -95,6 +95,12 @@ namespace ChatEngine.CoreServer
         /// </summary>
         internal ChatEngineBotRouter BotRouter;
 
+        /// <summary>
+        /// The external chat modules from Config/ChatModules.json, which relay channel lines out of the game and post into
+        /// channels; null until startup loads them.
+        /// </summary>
+        internal ChatEngine.Modules.ChatModuleHost Modules;
+
         /// <summary>The GameData ChatChannels.json channels, fixed for the process; also in <see cref="Channels"/>.</summary>
         private readonly ConfiguredChannel[] staticChannels;
 

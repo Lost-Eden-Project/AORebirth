@@ -26,12 +26,15 @@ namespace ZoneEngine_New.Core.World
         readonly Lazy<ZoneEngine_New.Core.Teams.TeamService>? _teams;
         readonly ICharacterRepository _characters;
         readonly IZoneLogger _logger;
+        readonly Lazy<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? _shutdown;
 
         /// <summary>Lazy: World connects before the playfield manager (and the modules it loads) exists.</summary>
         public WorldZoneBridge(Lazy<PlayfieldManager> playfields, ICharacterRepository characters, IZoneLogger logger,
-            Lazy<ZoneEngine_New.Core.Teams.TeamService>? teams = null)
+            Lazy<ZoneEngine_New.Core.Teams.TeamService>? teams = null,
+            Lazy<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown = null)
         {
             _teams = teams;
+            _shutdown = shutdown;
             _manager = playfields ?? throw new ArgumentNullException(nameof(playfields));
             _characters = characters ?? throw new ArgumentNullException(nameof(characters));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -210,6 +213,27 @@ namespace ZoneEngine_New.Core.World
         public void Announce(string text)
         {
             foreach (Player player in _playfields.SnapshotPlayers()) Send(player, text);
+        }
+
+        /// <summary>The GM .shutdown countdown, started (or aborted) by World's admin API instead of a GM.</summary>
+        public void Shutdown(ShutdownRequest request)
+        {
+            ZoneEngine_New.Core.Lifecycle.ShutdownScheduler? scheduler = _shutdown?.Value;
+            if (scheduler == null)
+            {
+                _logger.Warn("World asked for a shutdown but this engine has no shutdown scheduler");
+                return;
+            }
+
+            string by = string.IsNullOrWhiteSpace(request.RequestedBy) ? "World" : "World (" + request.RequestedBy + ")";
+            if (request.Abort)
+            {
+                scheduler.Abort(by);
+                return;
+            }
+
+            scheduler.Schedule(Math.Clamp(request.Seconds, 1, ZoneEngine_New.Core.Lifecycle.ShutdownScheduler.MaxSeconds), by,
+                string.IsNullOrWhiteSpace(request.Message) ? null : request.Message);
         }
 
         static void Send(Player player, string text)

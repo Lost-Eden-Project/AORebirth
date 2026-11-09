@@ -99,6 +99,9 @@ namespace AORebirth.World.Pathfinding
 
         public long TileUnloads { get; private set; }
 
+        /// <summary>Raw file bytes of the tiles resident now (the parsed Detour tiles take more).</summary>
+        public long ResidentTileBytes { get; private set; }
+
         /// <summary>Time spent reading and parsing tiles, in Stopwatch ticks.</summary>
         public long LoadTicks { get; private set; }
 
@@ -331,6 +334,7 @@ namespace AORebirth.World.Pathfinding
             _entrySlot[entry] = slot;
             LoadedCount++;
             TileLoads++;
+            ResidentTileBytes += _index.TileBytes(entry);
             return true;
         }
 
@@ -343,6 +347,7 @@ namespace AORebirth.World.Pathfinding
             _entrySlot[entry] = -1;
             LoadedCount--;
             TileUnloads++;
+            ResidentTileBytes -= _index.TileBytes(entry);
             LastUnloadStamp = Stamp;
         }
 

@@ -11,6 +11,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Network;
 
     /// <summary>
@@ -39,7 +40,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 || message.Identity != player.Identity)
                 return;
 
+            // Priced against the bases before training, so an accepted line shows what was paid.
+            string request = SkillTraining.DescribeRequest(player, message.Skills, player.SkillCatalog);
+            string ipBefore = PlayerActionLog.IpState(player);
             bool trained = SkillTraining.TryTrain(player, message.Skills, player.SkillCatalog, out string? rejection);
+            PlayerActionLog.Write(player, trained ? "skill-train ok" : "skill-train REFUSED",
+                string.Format(CultureInfo.InvariantCulture, "reason=\"{0}\" before=[{1}] after=[{2}] request=[{3}]",
+                    rejection ?? string.Empty, ipBefore, PlayerActionLog.IpState(player), request));
             if (!trained)
             {
                 LogUtil.Debug(
@@ -51,7 +58,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         message.Skills?.Length ?? 0,
                         player.AvailableIp,
                         rejection,
-                        SkillTraining.DescribeRequest(player, message.Skills, player.SkillCatalog)));
+                        request));
             }
 
             session.Send(new SkillMessage

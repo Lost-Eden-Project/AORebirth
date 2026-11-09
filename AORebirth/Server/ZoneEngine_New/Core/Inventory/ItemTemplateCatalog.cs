@@ -6,27 +6,39 @@ namespace ZoneEngine_New.Core.Inventory
     using System.IO;
 
     using AORebirth.Core.GameData;
+    using AORebirth.Modules.Content;
 
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Inventory.Dat;
     using ZoneEngine_New.Core.Logging;
 
+    /// <summary>
+    /// GameData items.dat is the only source of item templates, names included. Read through the GameData override folder
+    /// (<see cref="GameDataPaths.ResolveFile"/>) and swapped whole on <see cref="Reload"/>, so a lookup sees the old catalog
+    /// or the new, never a mix. A reload that fails to read, or reads no templates, keeps the old catalog. Items already
+    /// built keep the definition they were built from (<see cref="Item.Definition"/>) until they are built again.
+    /// </summary>
     public sealed class ItemTemplateCatalog : IItemTemplateCatalog
     {
-        private readonly Dictionary<int, ItemTemplate> _templates;
-        private readonly IZoneLogger _logger;
-        private readonly string _itemsDatPath;
+        /// <summary>The name the catalog reloads under.</summary>
+        public const string ReloadName = "ItemsDat";
 
-        /// <summary>GameData items.dat is the only source of item templates, names included.</summary>
+        public const string FileName = GameDataPaths.ItemsFileName;
+
+        private readonly IZoneLogger _logger;
+        private readonly string _root;
+        private volatile Dictionary<int, ItemTemplate> _templates = new();
+
         public ItemTemplateCatalog(IGameData gameData, IZoneLogger logger)
         {
             ArgumentNullException.ThrowIfNull(gameData);
             ArgumentNullException.ThrowIfNull(logger);
             _logger = logger;
-            _itemsDatPath = Path.Combine(gameData.RootPath, GameDataPaths.ItemsFileName);
-            _templates = new Dictionary<int, ItemTemplate>(capacity: 130000);
+            _root = gameData.RootPath;
 
-            TryLoadItemsDat();
+            GameDataReloadResult loaded = Reload();
+            foreach (string problem in loaded.Problems)
+                _logger.Warn("ItemTemplateCatalog: " + problem + "; item catalog is empty");
 
             _logger.Info(
                 string.Format(
@@ -36,6 +48,8 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         public IReadOnlyCollection<ItemTemplate> Templates => _templates.Values;
+
+        public int Count => _templates.Count;
 
         public bool TryGet(int aoid, out ItemTemplate template)
             => _templates.TryGetValue(aoid, out template!);
@@ -49,44 +63,39 @@ namespace ZoneEngine_New.Core.Inventory
                 string.Format(CultureInfo.InvariantCulture, "Item template {0} not found", aoid));
         }
 
-        private void TryLoadItemsDat()
+        /// <summary>Reads items.dat again and swaps it in whole. Off the playfield tick: it reads a large file.</summary>
+        public GameDataReloadResult Reload()
         {
-            if (!File.Exists(_itemsDatPath))
-            {
-                _logger.Warn(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "GameData items.dat not found at {0}; item catalog is empty",
-                        _itemsDatPath));
-                return;
-            }
+            string path = GameDataPaths.ResolveFile(_root, FileName);
+            if (!File.Exists(path))
+                return new GameDataReloadResult(ReloadName, false, _templates.Count, [FileName + " not found at " + path]);
 
+            Dictionary<int, ItemTemplate> next;
             try
             {
-                List<DatItemTemplate> loaded = ItemsDatReader.Read(_itemsDatPath);
-                int merged = 0;
+                List<DatItemTemplate> loaded = ItemsDatReader.Read(path);
+                next = new Dictionary<int, ItemTemplate>(loaded.Count);
                 foreach (DatItemTemplate dat in loaded)
-                {
-                    _templates[dat.ID] = DatItemMapper.ToTemplate(dat, dat.Name ?? string.Empty);
-                    merged++;
-                }
-
-                _logger.Info(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Loaded {0} item templates from {1}",
-                        merged,
-                        _itemsDatPath));
+                    next[dat.ID] = DatItemMapper.ToTemplate(dat, dat.Name ?? string.Empty);
             }
             catch (Exception exception)
             {
-                _logger.Error(
-                    exception,
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Failed to load GameData items.dat from {0}; item catalog is empty",
-                        _itemsDatPath));
+                _logger.Error(exception, "Failed to load GameData items.dat from " + path);
+                return new GameDataReloadResult(ReloadName, false, _templates.Count,
+                    [FileName + ": " + exception.GetType().Name + ": " + exception.Message]);
             }
+
+            if (next.Count == 0)
+                return new GameDataReloadResult(ReloadName, false, _templates.Count, [FileName + " at " + path + " holds no templates"]);
+
+            _templates = next;
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Loaded {0} item templates from {1}",
+                    next.Count,
+                    path));
+            return new GameDataReloadResult(ReloadName, true, next.Count, []);
         }
     }
 }

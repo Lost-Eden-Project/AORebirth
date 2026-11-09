@@ -44,6 +44,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         internal CellGrid Grid => _grid;
 
+        /// <summary>Cells by heat after the latest heartbeat; safe to read from any thread.</summary>
+        internal CellHeatCounts HeatCounts => _heatScheduler.Counts;
+
         /// <summary>
         /// Fills <paramref name="results"/> with the dynels an NPC concerns itself with: those in
         /// <paramref name="center"/>'s cell and the cells touching it. Indoors the playfield is one cell, and a

@@ -259,6 +259,31 @@ namespace ZoneEngine_New.Core.Inventory
                     && perkLocks == null && research == null && nanoLineLocks == null && petNames == null)
                     return;
 
+                // The perk, lock, research and pet-name sets are full replacements of their own tables, each in its
+                // own transaction, and they share nothing with the inventory batch. They are written first so that no
+                // outcome of that batch can take them with it: a bag slot holding a row the server does not know about
+                // quarantines the player below, and research the player finished must not be lost to it (bug #292).
+                // A failed or uncertain set write is safe to repeat: it only leaves that set dirty for a retry.
+                bool perksSaved = SaveReplacementSet(player, trainedPerks,
+                    perks => _trainedPerks!.Save(player.Identity.Instance, perks),
+                    () => player.TrainedPerks.RestoreDirty(trainedPerks), "trained perks");
+                SaveReplacementSet(player, perkLocks, locks => _perkLocks!.Save(player.Identity.Instance, locks),
+                    () => player.PerkLocks.RestoreDirty(perkLocks), "perk locks");
+                SaveReplacementSet(player, nanoLineLocks, locks => _nanoLineLocks!.Save(player.Identity.Instance, locks),
+                    () => player.NanoLineLocks.RestoreDirty(nanoLineLocks), "nano line locks");
+                SaveReplacementSet(player, petNames, names => _petNames!.Save(player.Identity.Instance, names),
+                    () => player.PetNames.RestoreDirty(petNames), "pet names");
+                // A finished research tier leaves its progress row only once it is a stored trained perk: never write
+                // the research set ahead of a trained-perk set that failed, or the tier would be lost on a restart.
+                if (perksSaved)
+                    SaveReplacementSet(player, research, rows => _research!.Save(player.Identity.Instance, rows),
+                        () => player.Research.RestoreDirty(research), "research");
+                else
+                    player.Research.RestoreDirty(research);
+
+                if (inventory == null && nanos.Length == 0 && activeNanos == null && skillLocks == null)
+                    return;
+
                 try
                 {
                     _persist.Persist(
@@ -299,12 +324,6 @@ namespace ZoneEngine_New.Core.Inventory
                     player.RestoreDirtyUploadedNanos(nanos);
                     player.RestoreDirtyActiveNanos(activeNanos);
                     player.SkillLocks.RestoreDirty(skillLocks);
-                    // Not attempted: the perk sets stay dirty for the next flush.
-                    player.TrainedPerks.RestoreDirty(trainedPerks);
-                    player.PerkLocks.RestoreDirty(perkLocks);
-                    player.Research.RestoreDirty(research);
-                    player.NanoLineLocks.RestoreDirty(nanoLineLocks);
-                    player.PetNames.RestoreDirty(petNames);
                     _logger.Error(
                         exception,
                         string.Format(
@@ -313,26 +332,6 @@ namespace ZoneEngine_New.Core.Inventory
                             player.Identity.Instance));
                     throw;
                 }
-
-                // The coalesced transaction is committed. The perk sets are independent full replacements, so a
-                // failed or uncertain write is safe to repeat: it only leaves that set dirty for a retry and never
-                // hands the already committed inventory back to the queue.
-                bool perksSaved = SaveReplacementSet(player, trainedPerks,
-                    perks => _trainedPerks!.Save(player.Identity.Instance, perks),
-                    () => player.TrainedPerks.RestoreDirty(trainedPerks), "trained perks");
-                SaveReplacementSet(player, perkLocks, locks => _perkLocks!.Save(player.Identity.Instance, locks),
-                    () => player.PerkLocks.RestoreDirty(perkLocks), "perk locks");
-                SaveReplacementSet(player, nanoLineLocks, locks => _nanoLineLocks!.Save(player.Identity.Instance, locks),
-                    () => player.NanoLineLocks.RestoreDirty(nanoLineLocks), "nano line locks");
-                SaveReplacementSet(player, petNames, names => _petNames!.Save(player.Identity.Instance, names),
-                    () => player.PetNames.RestoreDirty(petNames), "pet names");
-                // A finished research tier leaves its progress row only once it is a stored trained perk: never write
-                // the research set ahead of a trained-perk set that failed, or the tier would be lost on a restart.
-                if (perksSaved)
-                    SaveReplacementSet(player, research, rows => _research!.Save(player.Identity.Instance, rows),
-                        () => player.Research.RestoreDirty(research), "research");
-                else
-                    player.Research.RestoreDirty(research);
             }
         }
 

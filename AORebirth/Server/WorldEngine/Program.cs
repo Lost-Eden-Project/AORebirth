@@ -64,6 +64,10 @@ namespace WorldEngine
                 options.ListenAddress, options.Port,
                 options.StatusPort > 0 ? "http://" + options.ListenAddress + ":" + options.StatusPort + "/status" : "off",
                 state.Epoch, options.Token.Length > 0 ? "set" : "none", (int)options.RecoveryWindow.TotalSeconds);
+            if (options.AdminPort > 0)
+                log.LogInformation("World admin API http://{Address}:{Port}/admin/zones token={Token} zoneHosts={Hosts}",
+                    options.AdminAddress, options.AdminPort, options.AdminToken.Length > 0 ? "set" : "none (loopback only)",
+                    options.ZoneHosts.Count);
             if (options.Token.Length == 0)
                 log.LogWarning("No " + AORebirth.World.Contracts.WorldChannel.TokenVariable + " set: any process on this machine can act as a zone. "
                     + "Set the same token for World and every engine before running for players.");
@@ -104,6 +108,8 @@ namespace WorldEngine
                 kestrel.Listen(options.ListenAddress, options.Port, listen => listen.Protocols = HttpProtocols.Http2);
                 if (options.StatusPort > 0)
                     kestrel.Listen(options.ListenAddress, options.StatusPort, listen => listen.Protocols = HttpProtocols.Http1);
+                if (options.AdminPort > 0)
+                    kestrel.Listen(options.AdminAddress, options.AdminPort, listen => listen.Protocols = HttpProtocols.Http1);
                 kestrel.Limits.Http2.KeepAlivePingDelay = TimeSpan.FromSeconds(10);
                 kestrel.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(5);
             });
@@ -112,6 +118,7 @@ namespace WorldEngine
             builder.Services.AddSingleton<WorldState>();
             builder.Services.AddSingleton<WorldEngine.Teams.TeamRegistry>();
             builder.Services.AddSingleton<TokenInterceptor>();
+            builder.Services.AddSingleton<ZoneLauncher>();
             builder.Services.AddHostedService<SweepService>();
             builder.Services.AddGrpc(grpc =>
             {
@@ -140,6 +147,8 @@ namespace WorldEngine
                 });
             }
 
+            if (options.AdminPort > 0)
+                AdminApi.Map(app, options);
             return app;
         }
 

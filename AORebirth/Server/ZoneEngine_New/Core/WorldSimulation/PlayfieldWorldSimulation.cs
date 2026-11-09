@@ -1467,7 +1467,10 @@
 
         /// <summary>
         /// Gives a dynel spawned after the bake (a hash-spawned static such as the Elysium teleporter 245613) the
-        /// walk-in pad its OnTargetInVicinity spells need. False when it has none or already has a pad.
+        /// walk-in pad its OnTargetInVicinity spells need, and one for its OnEnter list. OnEnter needs no AreaTrigger:
+        /// the DB1 altars (269535 / 269541 / 269544 / 269547, PF 6003) are SystemText and CastNano rows only, each run
+        /// on the entering player under its own criteria (<see cref="FireTargetVicinity"/>). A list with a Teleport
+        /// stays with the portal path. False when it has none or already has a pad.
         /// </summary>
         public bool RegisterVicinityDynel(Identity identity, ItemTemplate events, float x, float y, float z)
         {
@@ -1476,7 +1479,7 @@
             foreach (EventType eventType in new[] { EventType.OnTargetInVicinity, EventType.OnEnter })
             {
                 if (!events.SpellList.TryGetValue(eventType, out List<ItemSpell>? rows)
-                    || (eventType == EventType.OnEnter && (!rows.Exists(DynelEventSpells.IsAreaTrigger) || rows.Exists(IsTeleport)))
+                    || (eventType == EventType.OnEnter && (rows.Count == 0 || rows.Exists(IsTeleport)))
                     || _triggers.HasStaticEvent(identity, eventType))
                     continue;
                 AddVicinityPad(identity, events.Id, events, x, y, z, placedMesh: 0, placedScale: 0, eventType: eventType);

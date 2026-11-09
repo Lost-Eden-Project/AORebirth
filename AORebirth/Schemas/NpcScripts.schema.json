@@ -180,7 +180,7 @@
         },
         "SpawnNpc": {
           "type": "object",
-          "description": "Spawns NPCs the program owns: one at the centre, or Count of them evenly on a circle of Radius around it. The centre is the NPC's position, Offset in its frame (x right, y up, z ahead) or a world position At. Random add types: a Random block with one SpawnNpc per option. The spawned NPC's own Hash bindings attach as usual, so an add can run its own program.",
+          "description": "Spawns NPCs the program owns: one at the centre, or Count of them evenly on a circle of Radius around it. The centre is the NPC's position, Offset in its frame (x right, y up, z ahead) or a world position At. Random add types: a Random block with one SpawnNpc per option. The spawned NPC's own Hash bindings attach as usual, so an add can run its own program, up to three SpawnNpc generations deep (independent spawns count too). A Death handler may spawn: an independent spawn stays, a linked one starts its DespawnWithOwner delay at once, and neither reports AddDied.",
           "additionalProperties": false,
           "required": ["Hash"],
           "properties": {
@@ -209,10 +209,17 @@
               "additionalProperties": false,
               "required": ["Nano"],
               "properties": {
-                "Nano": { "description": "A nano id or a $Int param.", "oneOf": [ { "type": "integer", "minimum": 1 }, { "$ref": "#/$defs/paramRef" } ] },
-                "Target": { "type": "string", "enum": ["Self", "Target", "RandomHostile"], "default": "Self", "description": "Self; Target: the current fighting target; RandomHostile: a random player on the hate list the NPC may attack (never a pet)." },
+                "Nano": {
+                  "description": "A nano id or a $Int param, or a list of them: each recipient gets one, picked evenly (with Target Playfield, every player rolls their own).",
+                  "oneOf": [
+                    { "type": "integer", "minimum": 1 },
+                    { "$ref": "#/$defs/paramRef" },
+                    { "type": "array", "minItems": 1, "maxItems": 16, "items": { "oneOf": [ { "type": "integer", "minimum": 1 }, { "$ref": "#/$defs/paramRef" } ] } }
+                  ]
+                },
+                "Target": { "type": "string", "enum": ["Self", "Target", "RandomHostile", "Playfield"], "default": "Self", "description": "Self; Target: the current fighting target; RandomHostile: a random player on the hate list the NPC may attack (never a pet); Playfield: every living player on the NPC's playfield instance whatever their distance (never a pet), with one cast bar (the longest cast time in a Nano list), one cost and one recharge; each player's landing still checks the nano's ToUse criteria against that player, target legality, resists and nanoline stacking." },
                 "MinDistance": { "type": "integer", "minimum": 0, "maximum": 40, "default": 0, "description": "RandomHostile only: players closer than this (edge to edge, metres) are not picked." },
-                "Warp": { "type": "string", "enum": ["ToSelf"], "description": "Move the recipient to the NPC's feet (and a player's living pets with it) when the nano lands. Needs a Target other than Self." }
+                "Warp": { "type": "string", "enum": ["ToSelf"], "description": "Move the recipient to the NPC's feet (and a player's living pets with it) when the nano lands. Needs a Target other than Self or Playfield." }
               }
             }
           ]
@@ -314,7 +321,7 @@
       "properties": {
         "Playfield": { "type": "integer" },
         "Hash": { "type": "string", "minLength": 1 },
-        "Feature": { "type": "string", "enum": ["NoCombat", "NoMove", "Wander", "Guard", "Boss", "Social", "Summoner"] },
+        "Feature": { "type": "string", "enum": ["NoCombat", "NoMove", "Wander", "Guard", "Boss", "Social", "Summoner", "SpawnsExitDevice"] },
         "SpawnPoint": { "type": "string", "pattern": "^[^@\\s]+@-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?(#[0-9]+)?$" },
         "NpcKey": { "type": "string", "minLength": 1 },
         "Args": {

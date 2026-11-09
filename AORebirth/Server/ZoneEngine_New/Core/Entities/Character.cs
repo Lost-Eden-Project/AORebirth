@@ -1101,9 +1101,16 @@ namespace ZoneEngine_New.Core.Entities
             return catalog != null ? catalog.GivesNoKillXp(npcFamily) : xpRules.GivesNoKillXp(npcFamily);
         }
 
+        /// <summary>
+        /// No regular or alien kill XP: an NPC whose template has the NoXp feature (MonsterCombatRules.json), or any pet
+        /// (an NPC's summoned add, a player's summoned pet, a charmed NPC) while it is one.
+        /// </summary>
+        bool HasNoXpFeature => this is NpcCharacter npc
+            && (npc.PetOwner != null || (npc.MobTemplate is { } template && template.Has(Mobs.NpcFeature.NoXp)));
+
         void AwardRegularXp(Playfield playfield, IReadOnlyList<int> present)
         {
-            if (IsPlayer)
+            if (IsPlayer || HasNoXpFeature)
                 return;
 
             // Guards and civilians (family 0) and the other Xp.json NoKillXpFamilies are worth nothing, grey XP included.
@@ -1263,7 +1270,7 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         void AwardAlienXp(Playfield playfield, IReadOnlyList<int> present)
         {
-            if (IsPlayer || Stats.GetOrZero(CharacterStat.NPCFamily) != AlienNpcFamily)
+            if (IsPlayer || HasNoXpFeature || Stats.GetOrZero(CharacterStat.NPCFamily) != AlienNpcFamily)
                 return;
 
             int monsterLevel = Stats.GetOrOne(CharacterStat.Level);

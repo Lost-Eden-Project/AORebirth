@@ -104,6 +104,14 @@ runs on one machine.
   <HeartbeatMilliseconds>2000</HeartbeatMilliseconds>
   <!-- This zone engine's name among several (zone engines only). Defaults to "zone-" plus its ZonePort. -->
   <InstanceName>zone-7501</InstanceName>
+  <!-- Admin API for adding and removing zone engines; omitted or 0 leaves it off. See "Adding and removing zone
+       engines while World runs". -->
+  <AdminPort>7602</AdminPort>
+  <!-- Where the admin API listens. Defaults to ListenIP. Anything but loopback requires AO_REBIRTH_WORLD_ADMIN_TOKEN. -->
+  <AdminListenIP>127.0.0.1</AdminListenIP>
+  <ZoneHosts>
+    <!-- One per host the admin API may start zone engines on. -->
+  </ZoneHosts>
 </World>
 ```
 
@@ -133,6 +141,8 @@ Set it on any server players use.
 | `AO_REBIRTH_ZONE_INSTANCE` | `zone-<ZonePort>` | Zone engine instance name (same as `--instance`). |
 | `AO_REBIRTH_ZONE_PORT` | `ZonePort` | Zone engine game port (same as `--zone-port`). |
 | `AO_REBIRTH_DEBUG_MCP_PORT` | `DebugMcp/Port` | Zone engine debug MCP port (same as `--debug-mcp-port`). |
+| `AO_REBIRTH_WORLD_ADMIN_TOKEN` | none | Bearer token for World's admin API, at least 24 characters. Required when the admin API is not on loopback. Separate from `AO_REBIRTH_WORLD_TOKEN`: it can start and stop zone engines. |
+| `AO_REBIRTH_ZONE_STATE_DIR` | temp folder | Where a zone engine keeps its GameData fingerprint cache (`gamedata-fingerprint-*.cache`). |
 
 ## Starting and stopping
 
@@ -186,6 +196,103 @@ redirected there. Buffs keep their remaining time, pets are summoned again besid
 
 Each instance gets its own block of NPC ids from World, so NPCs and pets on different instances never clash.
 
+Every instance must run the same build and the same GameData. Each zone engine reports both when it registers: its
+build (the version plus a hash of every AORebirth assembly it loads) and a fingerprint of its GameData (a SHA-256
+over every file's path, size and content, plus the `AO_REBIRTH_GAMEDATA_OVERRIDE_PATH` and `AO_REBIRTH_KNUBOT_PATH`
+folders, skipping `.git`, caches, logs and the other directories the release manifest leaves out). World refuses a
+**freshly started** zone whose build (`build_mismatch`) or GameData (`gamedata_mismatch`) differs from a zone already
+running, and that zone exits. A zone that was already running and is only re-registering, after a World restart or a
+dropped stream, is warned about instead, because refusing it would log its players out.
+
+The first start after a GameData change reads the whole tree (about 3 seconds for 9 GB from a warm disk cache, longer
+from a cold disk). Later starts reuse per-file hashes cached by size and modification time, which takes a fraction of
+a second. A file edited without changing its size or modification time is not noticed until the cache is deleted. To
+change the build or GameData of a running set, stop every zone engine, then start the new ones; World can stay up.
+
+## Adding and removing zone engines while World runs
+
+World does not need a restart to change how many zone engines run. A zone engine started at any time registers, gets
+the next free slot and its own block of NPC ids, and World places new playfields on it from then on: it starts with
+nothing, so it wins every placement until it is as busy as the others. Playfields already running elsewhere stay where
+they are until they empty and unload.
+
+You can start one by hand as in [Running more than one zone engine](#running-more-than-one-zone-engine), or through
+World's admin API.
+
+### The admin API
+
+It is plain HTTP/1.1 with JSON, on its own port, and only answers on that port.
+
+```xml
+<World>
+  <AdminPort>7602</AdminPort>
+  <!-- This host's WireGuard address: reachable over the tunnel, not from the internet. -->
+  <AdminListenIP>10.8.0.1</AdminListenIP>
+  <ZoneHosts>
+    <!-- Host 1, where World runs: the zone engine is started through its systemd template unit. -->
+    <ZoneHost>
+      <Name>host1</Name>
+      <Address>203.0.113.10</Address>
+      <FirstPort>7502</FirstPort>
+      <LastPort>7510</LastPort>
+      <Command>sudo</Command>
+      <Arguments>-n systemctl start zoneengine@{port}</Arguments>
+    </ZoneHost>
+    <!-- Host 2: the same unit, started over SSH through the tunnel. -->
+    <ZoneHost>
+      <Name>host2</Name>
+      <Address>203.0.113.20</Address>
+      <FirstPort>7501</FirstPort>
+      <LastPort>7510</LastPort>
+      <Command>ssh</Command>
+      <Arguments>-o BatchMode=yes aorebirth@10.8.0.2 sudo -n systemctl start zoneengine@{port}</Arguments>
+      <TimeoutSeconds>30</TimeoutSeconds>
+    </ZoneHost>
+  </ZoneHosts>
+</World>
+```
+
+- **Token.** Every request carries `Authorization: Bearer <AO_REBIRTH_WORLD_ADMIN_TOKEN>`. World refuses to start
+  with a non-loopback `AdminListenIP` and no token. Use a different value from `AO_REBIRTH_WORLD_TOKEN`.
+- **Network.** The token travels in plain text, as the World link's does. Bind the admin API to a WireGuard (or other
+  private) address and firewall its port to the hosts and operators that need it.
+- **ZoneHost fields.**
+  - `Name` is what you call the host in requests.
+  - `Address` is the `ZoneIP` that host's zones advertise; World uses it to see which ports are taken.
+  - `FirstPort`..`LastPort` are the game ports it may use.
+  - `FirstDebugMcpPort` is the debug MCP port for `FirstPort`, plus one per later port.
+  - `Command`, `Arguments` and `WorkingDirectory` may use `{instance}`, `{port}` and `{debugMcpPort}`. World fills
+    them only with the validated instance name and port numbers, never with request text.
+  - `Detached` set to `true` means `Command` is the zone engine itself: World starts it and does not wait for it.
+    Otherwise `Command` is something that starts the zone and exits (`systemctl`, `ssh`): exit code 0 is success, and
+    it is stopped after `TimeoutSeconds` (default 60).
+- **What a started zone gets.** It inherits World's environment when World starts it directly. When started by
+  systemd or over SSH, it gets that unit's environment and config, which must point at this World with the same
+  token, binaries and GameData.
+- **Linux.** Do not use `Detached` under systemd: a zone World starts itself lives in World's service group, and
+  stopping World stops it. Start the template unit instead. The `systemctl` user needs a sudoers or polkit rule
+  limited to `systemctl start zoneengine@*`.
+
+| Request | What it does |
+|---|---|
+| `GET /admin/zones` | Every zone instance (slot, endpoint, build, GameData, players, playfields, draining, duty holder), recent launches, and the configured hosts. |
+| `GET /admin/zones/{name}` | One zone and, when the API started it, its launch. |
+| `POST /admin/zones` with `{"host": "host2", "port": 7503, "instance": "host2-7503"}` | Starts a zone engine. Every field is optional: the host when only one is configured, the port (lowest free in the host's range) and the name (`<host>-<port>`). Answers `202` at once. The launch `status` goes `started`, then `registered` once the zone is in World's list. It is `failed`, `exited` or `timed_out` when it did not come up, and `not_registered` after 5 minutes without registering. |
+| `POST /admin/zones/{name}/drain` | Takes the zone out of rotation: no new playfields are placed on it; what it already runs keeps running there. The database sweeps move to another zone if there is one. |
+| `POST /admin/zones/{name}/resume` | Puts it back in rotation, and cancels a shutdown the API asked for. |
+| `DELETE /admin/zones/{name}?seconds=60&message=...` | Removes the zone. It is drained at once, then runs the GM `.shutdown` countdown (`seconds`, 1–86400, default 60; `message` follows each countdown line). It saves everyone and exits. World frees its characters and playfields as for any stopped instance (about 25 s with the default lease); its players log in again on another instance. |
+
+```
+curl -H "Authorization: Bearer $AO_REBIRTH_WORLD_ADMIN_TOKEN" http://10.8.0.1:7602/admin/zones
+curl -X POST -H "Authorization: Bearer $AO_REBIRTH_WORLD_ADMIN_TOKEN" -H "Content-Type: application/json" \
+     -d '{"host":"host2"}' http://10.8.0.1:7602/admin/zones
+curl -X DELETE -H "Authorization: Bearer $AO_REBIRTH_WORLD_ADMIN_TOKEN" \
+     "http://10.8.0.1:7602/admin/zones/host2-7501?seconds=300&message=Moving%20this%20area%20to%20another%20server"
+```
+
+A systemd unit for zones the API removes should use `Restart=on-failure` (not `always`), or systemd starts the zone
+again after its requested exit.
+
 ## Running zone engines on more than one host
 
 The usual layout is host 1 with WorldEngine, LoginEngine, ChatEngine, MySQL and one zone engine, and host 2 with a
@@ -223,11 +330,12 @@ A copied Config.xml is the most common mistake. These settings differ on host 2:
 | `AO_REBIRTH_GAMEDATA_PATH` | A byte-identical copy of the accepted GameData. |
 
 World now refuses a zone whose advertised endpoint is `0.0.0.0` or is already advertised by another live zone
-(`endpoint_in_use`), and warns when a zone advertises a loopback endpoint to a World that serves other hosts or when
-two zones report different builds. The zone engine itself refuses `ZoneIP` of `0.0.0.0` at startup and warns when
-its `ZoneIP` is public but its `ChatIP` is loopback or empty. None of this checks GameData: both hosts must run the
-same binaries and the same GameData manifest, exactly as the Linux and live manifests must match the accepted
-Windows one.
+(`endpoint_in_use`). It also refuses a freshly started zone whose build or GameData differs from the running zones
+(`build_mismatch`, `gamedata_mismatch`). It warns when a zone advertises a loopback endpoint to a World that serves
+other hosts. The zone engine itself refuses `ZoneIP` of `0.0.0.0` at startup and warns when its `ZoneIP` is public but
+its `ChatIP` is loopback or empty. The GameData check compares hosts with each other, not with the release manifest:
+both hosts must still run the accepted GameData manifest, exactly as the Linux and live manifests must match the
+accepted Windows one.
 
 ### Lease timing
 
@@ -313,11 +421,14 @@ WorldEngine runs the same way on Linux; it is a plain .NET 10 executable. When p
 | Logins fail with `no_zone_available` | No zone engine is connected to World (check the status page). |
 | Everyone gets logged out with "World service unreachable" | World stopped or hung for more than about 12 seconds. |
 | `Unauthenticated` errors in an engine's log | `AO_REBIRTH_WORLD_TOKEN` differs between World and that engine. |
+| "World refused instance ...: build_mismatch" or "gamedata_mismatch" and the zone engine exits | That zone runs other binaries or GameData than the zones already running. Deploy the same build and GameData, or stop the running zones first. |
+| An admin API launch ends `exited` within seconds | The zone failed at startup; its console or log says why. A port it needs (game or debug MCP) is often taken. |
+| `401` from the admin API | Missing `Authorization: Bearer` header, or it differs from `AO_REBIRTH_WORLD_ADMIN_TOKEN`. |
 
 ## Where the code is
 
 | Path | What |
 |---|---|
-| `AORebirth/Server/WorldEngine/` | The service: leases, tickets, playfield assignment, teams, status page |
+| `AORebirth/Server/WorldEngine/` | The service: leases, tickets, playfield assignment, teams, status page, admin API (`Services/ZoneAdmin.cs`) |
 | `AORebirth/Libraries/Source/AORebirth.World.Contracts/` | The gRPC contract (`Protos/world.proto`) and the clients Login and Chat use |
-| `AORebirth/Server/ZoneEngine_New/Core/World/` | A zone engine's side: connection, leases, cross-instance transfer, World commands |
+| `AORebirth/Server/ZoneEngine_New/Core/World/` | A zone engine's side: connection, leases, cross-instance transfer, World commands, build and GameData fingerprint |
