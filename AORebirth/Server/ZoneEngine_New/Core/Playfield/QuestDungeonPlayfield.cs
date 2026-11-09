@@ -137,6 +137,23 @@ public sealed class QuestDungeonPlayfield : Playfield
         MarkBuilt();
     }
 
+    /// <summary>
+    /// The client vetoes a placement outside every room: N3.dll n3RoomSurface_t::VetoRoomTransition (0x1001462f) moves
+    /// the character to Gamecode.dll PlayfieldAnarchy_t::GetSafePos (0x10121b3f), the middle of room 0
+    /// (<see cref="AORebirth.World.Collision.DungeonSafePosition"/>), and keeps its heading. Left at the vetoed point
+    /// the server refused every move the client then sent (the Exit Device's (1, 0, 1) rubberbanded non-GMs).
+    /// </summary>
+    internal bool TryVetoLanding(AORebirth.Core.Vector.Vector3 landing, out AORebirth.Core.Vector.Vector3 safe)
+    {
+        safe = landing;
+        if (_chestDungeon?.SafePosition is not System.Numerics.Vector3 position
+            || GetService<PlayfieldLocality>()?.IsOutsideDungeonRooms(landing) != true)
+            return false;
+
+        safe = new AORebirth.Core.Vector.Vector3(position.X, position.Y, position.Z);
+        return true;
+    }
+
     /// <summary>Called during build and on the existing destination admission tick before visibility activates.</summary>
     internal bool EnsureChestPopulation()
     {

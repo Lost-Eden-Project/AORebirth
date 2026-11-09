@@ -85,5 +85,11 @@ namespace AORebirth.World.Collision
 
         /// <summary>How each room of a generated (ACG) layout was placed, in room order; empty for static playfields.</summary>
         public IReadOnlyList<DungeonRoomPlacement> Placements { get; }
+
+        /// <summary>
+        /// Where the client puts a body vetoed into no room (<see cref="DungeonSafePosition"/>); null when not known
+        /// (a static playfield, or a style without tilemap channels).
+        /// </summary>
+        public System.Numerics.Vector3? SafePosition { get; init; }
     }
 }

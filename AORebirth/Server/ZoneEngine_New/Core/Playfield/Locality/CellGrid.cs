@@ -60,6 +60,19 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         internal bool IsDungeon => _rooms.Length > 0;
 
+        /// <summary>True when some dungeon room's box holds <paramref name="position"/>; false outside every room or with no rooms.</summary>
+        internal bool IsInsideDungeonRoom(Vector3 position)
+        {
+            var point = new System.Numerics.Vector3(position.xf, position.yf, position.zf);
+            for (int i = 0; i < _rooms.Length; i++)
+            {
+                if (_rooms[i].Contains(point))
+                    return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Cells in the grid: outdoor zones, dungeon rooms, or the single indoor cell.</summary>
         internal int CellCount => _cells.Count;
 

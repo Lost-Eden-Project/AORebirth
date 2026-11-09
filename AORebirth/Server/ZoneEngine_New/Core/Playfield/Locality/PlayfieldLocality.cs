@@ -150,6 +150,10 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         public void ApplyDungeonRooms(AORebirth.World.Collision.DungeonWorldLayout layout)
             => _grid.ApplyDungeonRooms(layout);
 
+        /// <summary>A dungeon whose rooms are applied, and <paramref name="position"/> lies outside every one of them.</summary>
+        public bool IsOutsideDungeonRooms(AORebirth.Core.Vector.Vector3 position)
+            => _grid.IsDungeon && !_grid.IsInsideDungeonRoom(position);
+
         /// <summary>
         /// Outdoor XZ must lie in the legacy playfield extent (<c>Width|Height * 4</c>).
         /// Indoor layouts always accept.

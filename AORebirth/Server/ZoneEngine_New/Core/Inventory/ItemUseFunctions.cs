@@ -1019,6 +1019,10 @@ namespace ZoneEngine_New.Core.Inventory
             if (samePlayfield)
             {
                 Vector3 local = source.SnapFeetToFloor(new Vector3(x, y, z));
+                // The Exit Device's (1, 0, 1) is in no room: the client vetoes it to the middle of room 0.
+                if (source is QuestDungeonPlayfield dungeon && dungeon.TryVetoLanding(local, out Vector3 safe))
+                    local = safe;
+
                 FinishSamePlayfieldMove(player, source, local, heading: null, source.Identity.Instance);
                 return true;
             }

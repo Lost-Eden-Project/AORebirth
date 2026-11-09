@@ -159,7 +159,12 @@ namespace AORebirth.World.Collision
                 new PlayfieldCollisionSet(id, meshes, terrain: null),
                 bounds,
                 PlaceDoors(rooms, templates, bounds, catalog.TileSize),
-                placements);
+                placements)
+            {
+                SafePosition = placements.Count > 0 && catalog.Gnda.Length > 0 && catalog.Dcga.Length > 0
+                    ? DungeonSafePosition.Compute(catalog, placements[0].Template, placements[0].Placed, placements[0].Facing)
+                    : null
+            };
         }
 
         /// <summary>Two door connections closer than this (units) are the same doorway.</summary>
