@@ -524,7 +524,8 @@ namespace ZoneEngine_New.Core.GameData
                         Repeats = entry.Repeats,
                         Chance = entry.Chance,
                         LevelMod = entry.LevelMod,
-                        IgnoreLevel = entry.IgnoreLevel
+                        IgnoreLevel = entry.IgnoreLevel,
+                        QualityPercent = entry.QualityPercent
                     });
             }
 

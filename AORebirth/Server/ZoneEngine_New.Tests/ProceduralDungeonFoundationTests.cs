@@ -10,6 +10,7 @@ using AORebirth.DungeonGenerator;
 using AORebirth.World.Collision;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ZoneEngine_New.Core.GameData;
+using ZoneEngine_New.Core.Quests;
 using ZoneEngine_New.Core.Quests.Dungeons;
 
 [TestClass]
@@ -286,6 +287,157 @@ public sealed class ProceduralDungeonFoundationTests
         Assert.AreEqual(0, failures.Count, string.Join(Environment.NewLine, failures));
         Assert.IsTrue(checkedLayouts > 0);
     }
+
+    [TestMethod]
+    [DataRow(51, true)]
+    [DataRow(200, true)]
+    [DataRow(120, false)]
+    public void StoredVersion3PlansStillReplayTheClassicLayoutWhileNewDungeonsArePlanned(int quality, bool team)
+    {
+        var layouts = new DungeonLayoutGenerator(RuntimeData.Value, new StubLogger());
+        var parameters = new QuestDungeonParameters
+        {
+            Seed = 1475420236, Quality = quality, EntranceInstance = unchecked((int)0xC00001F9),
+            DungeonPlayfield = QuestDungeonIds.FirstPlayfield + 101
+        };
+        Assert.IsTrue(layouts.ConfigureNewDungeon(parameters, team));
+        Assert.AreEqual(DungeonLayoutGenerator.FirstPlannedLayoutVersion, parameters.GeneratorVersion);
+        DungeonLayoutPlan plan = parameters.LayoutPlan!;
+        Assert.IsTrue(layouts.TryGenerate(parameters, out DungeonLayout planned));
+
+        parameters.GeneratorVersion = DungeonLayoutGenerator.FirstPlanVersion;
+        Assert.IsTrue(QuestDungeonParameters.TryParse(parameters.ToJson(), out QuestDungeonParameters stored));
+        Assert.IsTrue(layouts.TryGenerate(stored, out DungeonLayout replayed));
+        DungeonGenerationResult classic = new DungeonGenerator(RuntimeRoot()).Generate(new DungeonGenerationRequest
+        {
+            StyleId = plan.StyleId, Seed = parameters.Seed, FloorCount = plan.FloorCount, FloorSize = plan.FloorSize,
+            FloorHeight = plan.FloorHeight, BossFloor = plan.BossFloor, DescendingFloors = plan.DescendingFloors,
+            UseFloorTransitions = true, LockedDoorChancePercent = plan.LockedDoorChancePercent,
+            BuildingInstance = parameters.EntranceInstance
+        });
+        CollectionAssert.AreEqual(classic.Generator.ToByteArray(), replayed.GeneratorPayload, "A stored v3 dungeon must keep its classic layout.");
+        CollectionAssert.AreNotEqual(replayed.GeneratorPayload, planned.GeneratorPayload, "A new dungeon must use the planned layout.");
+    }
+
+    [TestMethod]
+    public void PlannedLayoutsAreConnectedAndArchitecturalForEveryConfiguredProfile()
+    {
+        string root = RuntimeRoot();
+        using JsonDocument policy = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, DungeonLayoutGenerator.GenerationFileName)));
+        var generator = new DungeonGenerator(root);
+        var failures = new List<string>();
+        int checkedLayouts = 0;
+        foreach (JsonElement profile in policy.RootElement.GetProperty("Profiles").EnumerateArray())
+        {
+            bool team = profile.GetProperty("Team").GetBoolean();
+            int floors = profile.GetProperty("Floors").GetInt32();
+            int height = profile.TryGetProperty("FloorHeight", out JsonElement own) ? own.GetInt32() : policy.RootElement.GetProperty("FloorHeight").GetInt32();
+            foreach (JsonElement styleValue in profile.GetProperty("Styles").EnumerateArray())
+            {
+                int style = styleValue.GetInt32();
+                StyleRoomSet rooms = generator.LoadStyle(style);
+                foreach (int size in new[] { profile.GetProperty("MinFloorSize").GetInt32(), profile.GetProperty("MaxFloorSize").GetInt32() }.Distinct())
+                {
+                    for (int seed = 0; seed < 12; seed++)
+                    {
+                        string context = "team=" + team + " style=" + style + " floors=" + floors + " size=" + size + " seed=" + seed;
+                        try
+                        {
+                            var request = new DungeonGenerationRequest
+                            {
+                                StyleId = style, Seed = seed, FloorCount = floors, FloorSize = size, BossFloor = team,
+                                FloorHeight = height, DescendingFloors = rooms.Transitions?.DescendingFloors ?? false,
+                                UseFloorTransitions = true, BuildingInstance = unchecked((int)0xC00001F9),
+                                Layout = DungeonLayoutKind.Planned
+                            };
+                            DungeonGenerationResult result = generator.Generate(request);
+                            Assert.IsTrue(result.Validation.IsValid);
+                            Assert.AreEqual(team, result.BossRoomIndex.HasValue);
+                            Assert.AreEqual(floors - 1, result.Transitions.Count);
+                            AssertPhysicalPlacementAndReachability(root, result, buildCollision: false);
+                            CollectionAssert.AreEqual(result.Generator.ToByteArray(), generator.Generate(request).Generator.ToByteArray(), "Same request, same layout.");
+                            AssertArchitectural(rooms, result, context);
+                            checkedLayouts++;
+                        }
+                        catch (Exception exception)
+                        {
+                            failures.Add(context + ": " + exception.Message);
+                        }
+                    }
+                }
+            }
+        }
+        TestContext.WriteLine("Planned layouts checked={0}; failures={1}", checkedLayouts, failures.Count);
+        Assert.AreEqual(0, failures.Count, string.Join(Environment.NewLine, failures));
+        Assert.IsTrue(checkedLayouts > 0);
+    }
+
+    /// <summary>
+    /// The planned layout's promises: no doorway leads nowhere (every one is paired, or is the way in), connector pieces
+    /// never chain (an end block sits right on a room, a bridge joins two rooms), and each lift arrives over the platform
+    /// it left (within a room's width).
+    /// </summary>
+    static void AssertArchitectural(StyleRoomSet rooms, DungeonGenerationResult result, string context)
+    {
+        Assert.AreEqual(0, result.Validation.SealedDoors, context + ": a doorway leads nowhere");
+        for (int i = 0; i < result.Rooms.Count; i++)
+        {
+            PlacedRoom room = result.Rooms[i];
+            if (!rooms.Connectors.Contains(room.Shape))
+                continue;
+            int connectedConnectors = Enumerable.Range(0, result.Rooms.Count).Count(j => j != i && result.Rooms[j].Floor == room.Floor
+                && rooms.Connectors.Contains(result.Rooms[j].Shape) && room.Doors.Any(door => result.Rooms[j].Doors.Any(door.Meets)));
+            Assert.AreEqual(0, connectedConnectors, context + ": connector " + i + " joins another connector");
+        }
+
+        foreach (DungeonFloorTransition transition in result.Transitions)
+        {
+            float dx = transition.From.Position.X - transition.To.Position.X;
+            float dz = transition.From.Position.Z - transition.To.Position.Z;
+            Assert.IsTrue(MathF.Sqrt((dx * dx) + (dz * dz)) <= 40f, context + ": lift arrives " + MathF.Sqrt((dx * dx) + (dz * dz)) + " m from where it left");
+        }
+    }
+
+    [TestMethod]
+    public void MissionQualityStopsAt250SoTheHardestDialogChoiceStillBuildsAtHighLevels()
+    {
+        var dungeon = new QuestDungeonTemplate { Floors = QuestDungeonTemplate.MultiFloor, Playfield = 4364 };
+        // The Unicorn Recruiter's level+53% at level 220 asks for 337; no generation profile goes past 250.
+        Assert.AreEqual(QuestDungeonTemplate.MaxMissionQuality, dungeon.QualityFor(LevelPlus(220, 53), 220));
+        Assert.AreEqual(LevelPlus(100, 53), dungeon.QualityFor(LevelPlus(100, 53), 100));
+        Assert.AreEqual(1, dungeon.QualityFor(0, 0));
+    }
+
+    [TestMethod]
+    public void LootRowQualityPercentCentresTheRollOnAShareOfTheLevel()
+    {
+        var half = new ZoneEngine_New.Core.Mobs.MobItemTableEntry { Hash = "LEALCRU", Repeats = 1, Chance = 5, QualityPercent = 50 };
+        Assert.IsTrue(ZoneEngine_New.Core.Mobs.MobItemTableEntry.IsWellFormed(half));
+        Assert.AreEqual(25, half.QualityLevel(50));
+        Assert.AreEqual(100, half.QualityLevel(200));
+        Assert.AreEqual(110, half.QualityLevel(220));
+        Assert.AreEqual(1, half.QualityLevel(1));
+        // A row without the field keeps the level itself, so every existing table rolls as before.
+        var plain = System.Text.Json.JsonSerializer.Deserialize<ZoneEngine_New.Core.Mobs.MobItemTableEntry>("{\"Hash\":\"X\",\"Repeats\":1,\"Chance\":10}")!;
+        Assert.AreEqual(100, plain.QualityPercent);
+        Assert.AreEqual(77, plain.QualityLevel(77));
+        Assert.AreEqual(50, ZoneEngine_New.Core.Mobs.MobItemTableEntry.Clone([half])[0].QualityPercent);
+        Assert.IsFalse(ZoneEngine_New.Core.Mobs.MobItemTableEntry.IsWellFormed(new ZoneEngine_New.Core.Mobs.MobItemTableEntry { Hash = "X", Repeats = 1, Chance = 10, QualityPercent = 0 }));
+    }
+
+    [TestMethod]
+    public void ChestRoomDensityMayAskForSeveralChestsPerRoom()
+    {
+        var policy = new MissionChestPolicy { RoomDensity = 2, CountVariationFraction = 0 };
+        Assert.IsTrue(policy.IsValid);
+        Assert.AreEqual(8, policy.RollChestCount(4, new Random(1)));
+        Assert.AreEqual(0, policy.RollChestCount(0, new Random(1)));
+        Assert.IsFalse(new MissionChestPolicy { RoomDensity = MissionChestPolicy.MaxRoomDensity + 0.5 }.IsValid);
+        Assert.IsTrue(new MissionChestPolicy { RoomDensity = 0.3 }.IsValid, "The old one-per-room-or-fewer densities stay valid.");
+    }
+
+    static int LevelPlus(int level, int percent)
+        => Math.Max(1, (int)Math.Round(level * (100 + percent) / 100.0, MidpointRounding.AwayFromZero));
 
     static void AssertPhysicalPlacementAndReachability(string root, DungeonGenerationResult result, bool buildCollision = true)
     {

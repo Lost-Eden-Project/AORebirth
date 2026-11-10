@@ -265,12 +265,16 @@ namespace ZoneEngine_New.Core.Quests
         [JsonIgnore]
         public bool IsMultiFloor => string.Equals(Floors, MultiFloor, StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>Highest mission quality: the generation profiles, chests and items go no further.</summary>
+        public const int MaxMissionQuality = 250;
+
         /// <summary>
         /// The mission quality: what the giving dialog <paramref name="requested"/>, else the fixed <see cref="Quality"/>,
-        /// else the player's level.
+        /// else the player's level, at most <see cref="MaxMissionQuality"/> (a level 220 asking for level+53% gets 250,
+        /// not a mission no profile covers).
         /// </summary>
         public int QualityFor(int? requested, int playerLevel)
-            => Math.Max(1, requested ?? Quality ?? playerLevel);
+            => Math.Clamp(requested ?? Quality ?? playerLevel, 1, MaxMissionQuality);
 
         /// <summary>The objective NPC's level for a mission of <paramref name="quality"/>.</summary>
         public int ObjectiveLevelFor(int quality) => Scale(quality, ObjectiveLevelPercent);

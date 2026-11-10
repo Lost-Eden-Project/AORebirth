@@ -67,7 +67,7 @@ public sealed class MissionChestPopulation
             return true;
         if (_policy == null)
             return Defer("policy-unavailable");
-        if (_parameters.Quality is < 1 or > 250)
+        if (_parameters.Quality is < 1 or > QuestDungeonTemplate.MaxMissionQuality)
             return Defer("accepted-quality-unavailable");
         if (_parameters.ChestLoot is not { Count: > 0 } chestLoot)
             return Defer("chest-loot-table-empty");

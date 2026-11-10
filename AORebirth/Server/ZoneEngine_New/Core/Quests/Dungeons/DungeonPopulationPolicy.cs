@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Quests.Dungeons;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using ZoneEngine_New.Core.GameData;
 
@@ -8,6 +9,19 @@ using ZoneEngine_New.Core.GameData;
 public sealed class DungeonPopulationPolicy
 {
     public int SpawnPointChancePercent { get; set; }
+
+    /// <summary>
+    /// Per style, the spawn point chance for planned layouts (generator version 4) in place of
+    /// <see cref="SpawnPointChancePercent"/>. Planned floors have fewer, bigger rooms than classic ones, whose many
+    /// one-block pieces each forced a spawn, so a style can raise its chance to keep its old mob count.
+    /// </summary>
+    public Dictionary<int, int>? PlannedLayoutSpawnPointChancePercent { get; set; }
+
+    /// <summary>The spawn point chance for a dungeon of <paramref name="style"/>, planned or classic.</summary>
+    public int SpawnPointChanceFor(int style, bool planned)
+        => planned && PlannedLayoutSpawnPointChancePercent != null
+            && PlannedLayoutSpawnPointChancePercent.TryGetValue(style, out int chance)
+            ? chance : SpawnPointChancePercent;
 
     public string[] RegularNpcHashes { get; set; } = [];
 
@@ -31,6 +45,7 @@ public sealed class DungeonPopulationPolicy
 
     internal bool IsValid(IGameData gameData)
         => SpawnPointChancePercent is >= 0 and <= 100
+            && (PlannedLayoutSpawnPointChancePercent?.Values.All(chance => chance is >= 0 and <= 100) ?? true)
             && RegularNpcHashes is { Length: > 0 }
             && RegularNpcHashes.Distinct(StringComparer.Ordinal).Count() == RegularNpcHashes.Length
             && RegularNpcHashes.All(hash => !string.IsNullOrWhiteSpace(hash) && gameData.HasMobTemplate(hash));
