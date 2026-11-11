@@ -75,6 +75,11 @@ namespace LoginEngine
     /// </summary>
     internal class Program
     {
+        /// <summary>
+        /// Character slots every account gets at least (login.AllowedCharacters can raise it for one account).
+        /// </summary>
+        internal const int DefaultAllowedCharacters = 50;
+
         #region Static Fields
 
         /// <summary>
@@ -167,8 +172,8 @@ namespace LoginEngine
                     break;
                 }
 
-                Console.WriteLine("Fourteen character slots are enabled for new accounts.");
-                temp.Add("14");
+                Console.WriteLine("Fifty character slots are enabled for new accounts.");
+                temp.Add(DefaultAllowedCharacters.ToString());
 
                 Console.WriteLine("All supported expansions are enabled for new accounts.");
                 temp.Add(((int)Expansions.All).ToString());
@@ -244,7 +249,7 @@ namespace LoginEngine
             {
                 Username = obj[1],
                 AccountFlags = 0,
-                AllowedCharacters = 14,
+                AllowedCharacters = DefaultAllowedCharacters,
                 CreationDate = DateTime.Now,
                 Email = obj[6],
                 Expansions = (int)Expansions.All,

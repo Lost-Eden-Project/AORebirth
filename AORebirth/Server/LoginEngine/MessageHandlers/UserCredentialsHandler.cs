@@ -133,8 +133,12 @@ namespace LoginEngine.MessageHandlers
             int expansions =
                 loginData.Expansions;
 
-            // Every account receives fourteen slots, including existing rows with older allowances.
-            int allowedCharacters = 14;
+            // Every account receives at least fifty slots, including existing rows with older allowances;
+            // login.AllowedCharacters can raise it for one account.
+            int allowedCharacters =
+                Math.Max(
+                    loginData.AllowedCharacters,
+                    Program.DefaultAllowedCharacters);
 
             IEnumerable<LoginCharacterInfo> characters =
                 from c in CharacterList.LoadCharacters(
