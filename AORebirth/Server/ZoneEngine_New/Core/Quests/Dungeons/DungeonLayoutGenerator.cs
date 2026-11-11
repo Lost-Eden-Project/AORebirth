@@ -134,7 +134,21 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     {
         public const string DoorStylesFileName = "DungeonDoorStyles.json";
 
-        public const int CurrentVersion = 3;
+        /// <summary>
+        /// Version stamped on new dungeons. 3 is the classic grown layout with a frozen plan; 4 builds the same plan as
+        /// a planned layout (main-hall spine, real rooms, stacked floors). Stored 3s keep replaying the classic layout.
+        /// </summary>
+        public const int CurrentVersion = 4;
+
+        /// <summary>First version that stores a <see cref="DungeonLayoutPlan"/> (3 and later).</summary>
+        public const int FirstPlanVersion = 3;
+
+        /// <summary>First version built as a planned layout.</summary>
+        public const int FirstPlannedLayoutVersion = 4;
+
+        /// <summary>True for a version that stores a plan and builds from it (3: classic, 4: planned).</summary>
+        public static bool IsPlanVersion(int version) => version >= FirstPlanVersion && version <= CurrentVersion;
+
         public const string GenerationFileName = "DungeonGeneration.json";
 
         /// <summary>The removed captured-layout version; its stored seeds now build procedurally.</summary>
@@ -380,7 +394,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 return TryGenerate(parameters.Seed, parameters.GeneratorVersion, parameters.EntranceInstance, out layout);
             layout = null!;
             DungeonLayoutPlan? plan = parameters.LayoutPlan;
-            if (parameters.GeneratorVersion != CurrentVersion || _generator == null || plan?.IsValid != true
+            if (!IsPlanVersion(parameters.GeneratorVersion) || _generator == null || plan?.IsValid != true
                 || parameters.IsTeam != plan.BossFloor) return false;
             try
             {
@@ -389,7 +403,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     StyleId = plan.StyleId, Seed = parameters.Seed, FloorCount = plan.FloorCount,
                     FloorSize = plan.FloorSize, FloorHeight = plan.FloorHeight, BossFloor = plan.BossFloor,
                     DescendingFloors = plan.DescendingFloors, UseFloorTransitions = true,
-                    LockedDoorChancePercent = plan.LockedDoorChancePercent, BuildingInstance = parameters.EntranceInstance
+                    LockedDoorChancePercent = plan.LockedDoorChancePercent, BuildingInstance = parameters.EntranceInstance,
+                    Layout = parameters.GeneratorVersion >= FirstPlannedLayoutVersion
+                        ? AORebirth.DungeonGenerator.DungeonLayoutKind.Planned
+                        : AORebirth.DungeonGenerator.DungeonLayoutKind.Classic
                 });
                 DungeonDoorStyle? doors = _doorStyles.TryGetValue(plan.StyleId, out var style)
                     ? style with { LockedChancePercent = plan.LockedDoorChancePercent } : null;
@@ -414,11 +431,14 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         DungeonPopulationPolicy PopulationFor(QuestDungeonParameters parameters)
         {
             DungeonPopulationPolicy policy = _policy?.Population ?? new DungeonPopulationPolicy();
-            if (parameters.PopulationNpcHashes == null && parameters.PopulationLevelSpreadPercent <= 0)
+            int chance = policy.SpawnPointChanceFor(parameters.LayoutPlan?.StyleId ?? 0,
+                parameters.GeneratorVersion >= FirstPlannedLayoutVersion);
+            if (parameters.PopulationNpcHashes == null && parameters.PopulationLevelSpreadPercent <= 0
+                && chance == policy.SpawnPointChancePercent)
                 return policy;
             return new DungeonPopulationPolicy
             {
-                SpawnPointChancePercent = policy.SpawnPointChancePercent,
+                SpawnPointChancePercent = chance,
                 RegularNpcHashes = parameters.PopulationNpcHashes ?? policy.RegularNpcHashes,
                 LevelSpreadPercent = parameters.PopulationLevelSpreadPercent
             };

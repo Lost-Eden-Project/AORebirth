@@ -1,5 +1,6 @@
 namespace ZoneEngine_New.Core.Mobs
 {
+    using System;
     using System.Collections.Generic;
     using System.Text.Json;
 
@@ -21,10 +22,27 @@ namespace ZoneEngine_New.Core.Mobs
         /// </summary>
         public bool IgnoreLevel { get; set; }
 
-        /// <summary>A row a loot roll can use: a hash, at least one repeat, a chance from 1 to 100 and no negative level window.</summary>
+        /// <summary>
+        /// Percent of the mob's (or mission's) level the row's quality centres on: 100 the level itself, 50 half of it
+        /// (a level 50 mission's row drops QL 25). The LevelMod window is taken around that quality.
+        /// </summary>
+        public int QualityPercent { get; set; } = 100;
+
+        /// <summary>Highest <see cref="QualityPercent"/> a row may ask for.</summary>
+        public const int MaxQualityPercent = 1000;
+
+        /// <summary>
+        /// A row a loot roll can use: a hash, at least one repeat, a chance from 1 to 100, no negative level window and a
+        /// quality percent from 1 to <see cref="MaxQualityPercent"/>.
+        /// </summary>
         public static bool IsWellFormed(MobItemTableEntry? entry)
             => entry != null && !string.IsNullOrWhiteSpace(entry.Hash) && entry.Repeats > 0
-                && entry.Chance is > 0 and <= 100 && entry.LevelMod >= 0;
+                && entry.Chance is > 0 and <= 100 && entry.LevelMod >= 0
+                && entry.QualityPercent is > 0 and <= MaxQualityPercent;
+
+        /// <summary>The level this row's quality centres on for a mob (or mission) of <paramref name="level"/>.</summary>
+        public int QualityLevel(int level)
+            => QualityPercent == 100 ? level : Math.Max(1, (int)Math.Round(level * QualityPercent / 100.0, MidpointRounding.AwayFromZero));
 
         public static List<MobItemTableEntry> Clone(IEnumerable<MobItemTableEntry>? source)
         {
@@ -32,7 +50,7 @@ namespace ZoneEngine_New.Core.Mobs
             if (source == null)
                 return copy;
             foreach (MobItemTableEntry entry in source)
-                copy.Add(new MobItemTableEntry { Hash = entry.Hash, Repeats = entry.Repeats, Chance = entry.Chance, LevelMod = entry.LevelMod, IgnoreLevel = entry.IgnoreLevel });
+                copy.Add(new MobItemTableEntry { Hash = entry.Hash, Repeats = entry.Repeats, Chance = entry.Chance, LevelMod = entry.LevelMod, IgnoreLevel = entry.IgnoreLevel, QualityPercent = entry.QualityPercent });
             return copy;
         }
     }

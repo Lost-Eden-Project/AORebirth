@@ -40,6 +40,21 @@ namespace AORebirth.DungeonGenerator
 
         /// <summary>Use the style's editable, capture-backed floor platform roles and validate whole-instance reachability.</summary>
         public bool UseFloorTransitions { get; init; }
+
+        /// <summary>How floors are laid out. Classic is the seed-stable original; Planned is the spine-and-rooms layout.</summary>
+        public DungeonLayoutKind Layout { get; init; } = DungeonLayoutKind.Classic;
+    }
+
+    public enum DungeonLayoutKind
+    {
+        /// <summary>Rooms grown doorway by doorway (generator versions 1-3). Must never change: stored seeds replay it.</summary>
+        Classic = 0,
+
+        /// <summary>
+        /// A main-hall spine with real rooms off it, connector pieces only to bridge a gap or close a doorway, every
+        /// doorway leading somewhere, and each floor's arrival placed over the floor below's departure (generator version 4).
+        /// </summary>
+        Planned = 1
     }
 
     public sealed record DungeonTransitionEndpoint(int RoomIndex, Vector3 Position, int PlatformTemplateId, int ButtonTemplateId);
@@ -108,7 +123,7 @@ namespace AORebirth.DungeonGenerator
     /// uses the requested separation and mapped platforms, with a separate boss chamber when requested.
     /// </para>
     /// </summary>
-    public sealed class DungeonGenerator
+    public sealed partial class DungeonGenerator
     {
         public const int MinFloorSize = 3;
 
@@ -146,10 +161,12 @@ namespace AORebirth.DungeonGenerator
                 throw new ArgumentException("Floor transitions require a positive floor separation.", nameof(request));
             int floors = Math.Clamp(request.FloorCount, 1, MaxFloors);
             int floorSize = Math.Clamp(request.FloorSize, MinFloorSize, MaxFloorSize);
-            int grid = GridSize(floorSize);
             StyleRoomSet style = LoadStyle(request.StyleId);
             if (request.UseFloorTransitions && floors > 1)
                 style.ValidateTransitionRoles(floors, request.BossFloor);
+            if (request.Layout == DungeonLayoutKind.Planned)
+                return GeneratePlanned(request, style, floors, floorSize);
+            int grid = GridSize(floorSize);
 
             DungeonGenerationResult? best = null;
             for (int attempt = 0; attempt < MaxAttempts; attempt++)
@@ -291,7 +308,7 @@ namespace AORebirth.DungeonGenerator
         }
 
         /// <summary>One layout attempt.</summary>
-        sealed class LayoutBuilder
+        sealed partial class LayoutBuilder
         {
             readonly StyleRoomSet _style;
             readonly int _width;
@@ -679,6 +696,10 @@ namespace AORebirth.DungeonGenerator
 
             // Live single-floor layouts use start rooms as ordinary hubs too.
             Hubs = Growth.Concat(Starts).ToList();
+            Connectors = all.Where(room => room.Role is RoomRole.Growth or RoomRole.Terminator
+                && !mainHalls.Contains(room.RoomId) && LooksLikeConnector(room)).ToList();
+            Features = all.Where(room => room.Role is RoomRole.Growth or RoomRole.Terminator
+                && !mainHalls.Contains(room.RoomId) && !LooksLikeConnector(room)).ToList();
             Transitions = transitions;
             TransitionArrivals = Resolve(transitions?.ArrivalRooms);
             TransitionDepartures = Resolve(transitions?.DepartureRooms);
@@ -708,6 +729,27 @@ namespace AORebirth.DungeonGenerator
         public IReadOnlyList<RoomShape> MainHalls { get; }
 
         public DungeonTransitionMap? Transitions { get; }
+
+        /// <summary>Corridor bits and end blocks (by name): the planned layout uses them only to bridge a gap.</summary>
+        public IReadOnlyList<RoomShape> Connectors { get; }
+
+        /// <summary>Real rooms: every growth or one-door room that is neither a main hall nor a connector.</summary>
+        public IReadOnlyList<RoomShape> Features { get; }
+
+        /// <summary>Real rooms with one door: they close a doorway as a destination.</summary>
+        public IReadOnlyList<RoomShape> OneDoorFeatures => Features.Where(room => room.Doors.Count == 1).ToList();
+
+        /// <summary>Connectors with one door: the last resort for a doorway nothing else fits.</summary>
+        public IReadOnlyList<RoomShape> Caps => Connectors.Where(room => room.Doors.Count == 1).ToList();
+
+        /// <summary>Connectors with two doors: one bridges a gap between two rooms.</summary>
+        public IReadOnlyList<RoomShape> Bridges => Connectors.Where(room => room.Doors.Count == 2).ToList();
+
+        static readonly string[] ConnectorNameParts = ["endblock", "hallway", "corridor", "passage", "intersection"];
+
+        static bool LooksLikeConnector(RoomShape room)
+            => ConnectorNameParts.Any(part => room.Name.Contains(part, StringComparison.OrdinalIgnoreCase))
+                || (room.FootprintBlocks == 1 && room.Name.Contains("_mini", StringComparison.OrdinalIgnoreCase));
 
         internal IReadOnlyList<RoomShape> TransitionArrivals { get; }
         internal IReadOnlyList<RoomShape> TransitionDepartures { get; }

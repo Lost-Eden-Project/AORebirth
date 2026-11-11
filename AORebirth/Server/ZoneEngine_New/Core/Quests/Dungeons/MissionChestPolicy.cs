@@ -18,7 +18,14 @@ public sealed class MissionChestPolicy
     /// <summary>False: generated dungeons get no chest population at all (no placement, loot or stored-chest work).</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Chests per eligible room: 0.3 puts one in about a third of the rooms, 2 about two in each. Every room gets one
+    /// before any gets a second, and a room never holds more than its free spawn points.
+    /// </summary>
     public double RoomDensity { get; set; }
+
+    /// <summary>Most chests per eligible room a policy may ask for.</summary>
+    public const double MaxRoomDensity = 4;
     public double CountVariationFraction { get; set; }
 
     /// <summary>Chest item table for missions rolled at a terminal (a Quests.json quest brings its own ChestLoot).</summary>
@@ -28,7 +35,7 @@ public sealed class MissionChestPolicy
     public MissionChestPlacementPolicy? Placement { get; set; }
 
     [JsonIgnore]
-    public bool IsValid => double.IsFinite(RoomDensity) && RoomDensity is >= 0 and <= 1
+    public bool IsValid => double.IsFinite(RoomDensity) && RoomDensity is >= 0 and <= MaxRoomDensity
         && double.IsFinite(CountVariationFraction) && CountVariationFraction is >= 0 and <= 1
         && LootTable != null && LootTable.All(MobItemTableEntry.IsWellFormed)
         && (Placement == null || Placement.IsValid) && AppearanceValid();

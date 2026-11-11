@@ -125,7 +125,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
                     || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
                     || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType)
-                    || (parsed.GeneratorVersion == DungeonLayoutGenerator.CurrentVersion
+                    || (DungeonLayoutGenerator.IsPlanVersion(parsed.GeneratorVersion)
                         && (parsed.LayoutPlan?.IsValid != true || parsed.IsTeam != parsed.LayoutPlan.BossFloor)))
                     return false;
 
