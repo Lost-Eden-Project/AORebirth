@@ -75,7 +75,8 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             mess.Temp4 = streamReader.ReadInt32();
             mess.User = streamReader.ReadIdentity();
             int len = 1;
-            if (mess.Action == GenericCmdAction.UseItemOnItem)
+            // Both build the same two-identity list in the client (source slot, then target).
+            if (mess.Action == GenericCmdAction.UseItemOnItem || mess.Action == GenericCmdAction.UseItemOnCharacter)
             {
                 len = 2;
             }

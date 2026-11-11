@@ -170,7 +170,8 @@ namespace ZoneEngine_New.Core.Modules
 
         // ---- 1.6 E: movement ----
 
-        public static void MovementCorrected(Character character, Vector3 reported, Vector3 kept, MovementCorrection reason)
+        public static void MovementCorrected(Character character, Vector3 reported, Vector3 kept, MovementCorrection reason,
+            Movement.ClientMoveCheck check = default, int refusedMoves = 0)
         {
             if (character is Player player && player.Playfield is Playfield playfield
                 && Events(playfield) is { PlayerMovementCorrected.HasHandlers: true } events)
@@ -182,7 +183,12 @@ namespace ZoneEngine_New.Core.Modules
                     RequestTimestamp = ModuleRequest.Current,
                     Reported = Position(reported),
                     Kept = Position(kept),
-                    Reason = reason
+                    Reason = reason,
+                    Distance = check.Distance,
+                    Allowed = check.Allowed,
+                    MaxSpeed = check.MaxSpeed,
+                    SinceLastAccepted = check.SinceLastAccepted,
+                    RefusedMoves = refusedMoves
                 });
         }
 

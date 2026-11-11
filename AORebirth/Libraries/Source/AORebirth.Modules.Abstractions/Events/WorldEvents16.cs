@@ -10,7 +10,10 @@ namespace AORebirth.Modules.Events
         Speed,
         Collision,
         Bounds,
-        Other
+        Other,
+
+        /// <summary>Higher above the floor than a jump, a fall or a slope explains (module API 1.9).</summary>
+        Height
     }
 
     /// <summary>The engine refused or rewrote a client's position and pulled it back (module API 1.6).</summary>
@@ -33,6 +36,37 @@ namespace AORebirth.Modules.Events
         public WorldPosition Kept { get; init; }
 
         public MovementCorrection Reason { get; init; }
+
+        /// <summary>
+        /// How far (XZ, metres) the reported position was (module API 1.9): from the last accepted position for
+        /// <see cref="MovementCorrection.Speed"/> and <see cref="MovementCorrection.Jump"/>, from the held position for
+        /// <see cref="MovementCorrection.Rooted"/>, from the server's for <see cref="MovementCorrection.Bounds"/>. For
+        /// <see cref="MovementCorrection.Height"/> it is vertical: how high the reported position was above the floor under it.
+        /// </summary>
+        public float Distance { get; init; }
+
+        /// <summary>
+        /// How far the move could have been (module API 1.9): the travel budget left for Speed and Jump, the drift
+        /// tolerance for Rooted, 0 for Bounds, and for Height how high above that floor it could have been.
+        /// <see cref="Distance"/> over this is the size of the violation.
+        /// </summary>
+        public float Allowed { get; init; }
+
+        /// <summary>
+        /// The top speed (m/s) the move was judged against, before the engine's tolerance (module API 1.9): at least the
+        /// flight speed while the character holds a flight effect where flying is allowed.
+        /// </summary>
+        public float MaxSpeed { get; init; }
+
+        /// <summary>Seconds since the engine last accepted a position from this client (module API 1.9).</summary>
+        public float SinceLastAccepted { get; init; }
+
+        /// <summary>
+        /// Speed, Jump and Height: moves refused since the previous such correction of this player, this one included
+        /// (module API 1.9). Pull-backs and their events come at most twice a second, so one event can stand for several
+        /// refused moves. 0 for other reasons.
+        /// </summary>
+        public int RefusedMoves { get; init; }
     }
 
     /// <summary>Where an item can be (module API 1.6).</summary>

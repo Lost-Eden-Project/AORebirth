@@ -34,13 +34,40 @@ namespace ZoneEngine_New.Core.Movement
 
         public const float LineOfSightEyeHeight = 1.6f;
 
-        /// <summary>Client move check: a reported position may be this far (XZ) from the server's whatever the speed.</summary>
-        public const float ClientMoveSlackMeters = 5f;
+        /// <summary>
+        /// Client move budget: travel is earned at the top speed times this. Kept tight: a sped-up client runs dry within
+        /// seconds, while the server's top speed matches the client's own (see <c>CharacterMotor.MovementRunSpeed</c>).
+        /// </summary>
+        public const float ClientMoveSpeedTolerance = 1.05f;
 
-        /// <summary>Client move check: travel time granted on top of the time since the last accepted move, for lag.</summary>
-        public const float ClientMoveLagAllowanceSeconds = 1.5f;
+        /// <summary>
+        /// Client move budget: the most travel time banked while moving. A running or following client reports an Update
+        /// only about every 5 s, so this must cover one quiet stretch; it is also the longest hop ever accepted.
+        /// </summary>
+        public const float ClientMoveBurstSeconds = 6f;
 
-        /// <summary>Client move check: the most time since the last accepted move that earns travel, so a quiet client cannot bank a hop.</summary>
-        public const float ClientMoveElapsedCreditSeconds = 10f;
+        /// <summary>Client move budget: the most travel time banked while the body stands still, so idling cannot bank a hop.</summary>
+        public const float ClientMoveIdleSeconds = 1f;
+
+        /// <summary>
+        /// Client move budget: a move may overdraw the budget by this much, for rounding and packet timing. It is a debt
+        /// paid back from later travel, not a per-move allowance.
+        /// </summary>
+        public const float ClientMoveJitterMeters = 1f;
+
+        /// <summary>
+        /// Client height check: a position off the floor may be up to the jump height plus this above the floor under it
+        /// or above where the character last stood, for client and server collision that differ (rocks, props, ledges).
+        /// </summary>
+        public const float ClientHeightBufferMeters = 3f;
+
+        /// <summary>Client height check: airtime, from the first report off the floor, before the takeoff height stops counting in full.</summary>
+        public const float ClientAirborneGraceSeconds = 3f;
+
+        /// <summary>
+        /// Client height check: after the grace, the allowance above the takeoff height shrinks this fast (m/s), so a client
+        /// cannot walk on air off a ledge. A real fall drops far faster.
+        /// </summary>
+        public const float ClientAirborneCeilingDecay = 2f;
     }
 }

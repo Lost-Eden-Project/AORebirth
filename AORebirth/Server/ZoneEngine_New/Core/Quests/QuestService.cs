@@ -475,6 +475,39 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
+        /// <paramref name="player"/> used <paramref name="item"/> on <paramref name="npc"/> (GenericCmd UseItemOnCharacter):
+        /// active UseItemOnCharacter quests on that NPC whose <see cref="QuestObjective.SpecItem"/> hash covers the item
+        /// complete when the player has line of sight to it. The item is kept. True when one completed.
+        /// </summary>
+        public bool OnItemUsedOnNpc(Player player, Item item, NpcCharacter npc)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(item);
+            ArgumentNullException.ThrowIfNull(npc);
+            if (player.Playfield?.GetService<IGameData>() is not IGameData gameData)
+                return false;
+
+            List<PlayerQuest>? found = null;
+            foreach (PlayerQuest quest in GetLog(player).Quests.Values)
+            {
+                if (quest.IsActive
+                    && string.Equals(quest.Template.Action, QuestTemplate.UseItemOnCharacterAction, StringComparison.Ordinal)
+                    && !RequiresBoundObjective(quest)
+                    && Matches(npc, quest.Template.Objective.Npc)
+                    && quest.Template.Objective.SpecItem is { Length: > 0 } specItem
+                    && HashHolds(gameData, specItem, item))
+                    (found ??= new List<PlayerQuest>()).Add(quest);
+            }
+
+            // Raycast only when something would complete.
+            if (found == null || !player.HasLineOfSightTo(npc))
+                return false;
+
+            CompleteAll(player, found);
+            return true;
+        }
+
+        /// <summary>
         /// A tradeskill combine made <paramref name="result"/>: active Assemble quests whose
         /// <see cref="QuestObjective.SpecItem"/> hash covers that item complete.
         /// </summary>

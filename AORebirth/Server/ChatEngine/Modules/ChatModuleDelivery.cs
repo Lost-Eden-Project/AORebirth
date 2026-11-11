@@ -9,9 +9,9 @@ namespace ChatEngine.Modules
     using NLog;
 
     /// <summary>
-    /// One module's channel-message delivery: a bounded queue the network threads add to without waiting, drained by the
-    /// module's own thread. A slow or stuck module therefore delays only itself, never chat traffic or other modules.
-    /// The thread starts with the first subscriber.
+    /// One module's delivery of channel lines and consumed commands: a bounded queue the network threads add to without
+    /// waiting, drained by the module's own thread. A slow or stuck module therefore delays only itself, never chat
+    /// traffic or other modules. The thread starts with the first subscriber or registered command.
     /// </summary>
     internal sealed class ChatModuleDelivery
     {
@@ -23,8 +23,9 @@ namespace ChatEngine.Modules
 
         private readonly Logger log;
 
-        private readonly BlockingCollection<ChatChannelMessage> queue =
-            new BlockingCollection<ChatChannelMessage>(new ConcurrentQueue<ChatChannelMessage>(), Capacity);
+        /// <summary>Holds <see cref="ChatChannelMessage"/> and <see cref="PendingCommand"/> items, in arrival order.</summary>
+        private readonly BlockingCollection<object> queue =
+            new BlockingCollection<object>(new ConcurrentQueue<object>(), Capacity);
 
         private readonly object sync = new object();
 
@@ -65,14 +66,18 @@ namespace ChatEngine.Modules
                 Array.Copy(current, next, current.Length);
                 next[current.Length] = new Subscriber(handler);
                 Volatile.Write(ref this.subscribers, next);
-                if (this.thread == null)
+                this.StartLocked();
+            }
+        }
+
+        /// <summary>Starts the delivery thread for a module that registered commands, subscribed or not.</summary>
+        public void EnsureStarted()
+        {
+            lock (this.sync)
+            {
+                if (!this.stopped)
                 {
-                    this.thread = new Thread(this.Run)
-                    {
-                        IsBackground = true,
-                        Name = "ChatModule " + this.moduleId,
-                    };
-                    this.thread.Start();
+                    this.StartLocked();
                 }
             }
         }
@@ -103,26 +108,16 @@ namespace ChatEngine.Modules
                 return;
             }
 
-            bool added;
-            try
-            {
-                added = this.queue.TryAdd(message);
-            }
-            catch (InvalidOperationException)
-            {
-                // Stopped: the engine is shutting down.
-                return;
-            }
+            this.TryAdd(message);
+        }
 
-            if (!added)
-            {
-                long count = Interlocked.Increment(ref this.dropped);
-                if (count == 1 || count % 1000 == 0)
-                {
-                    this.log.Warn("[ChatModule " + this.moduleId + "] is " + Capacity + " lines behind; dropped "
-                        + count + " channel line(s) so far.");
-                }
-            }
+        /// <summary>
+        /// Queues a consumed command; never waits. <paramref name="run"/> calls the module's handler and
+        /// <paramref name="failed"/> tells the issuer when it throws. False when the queue is full or stopped.
+        /// </summary>
+        public bool EnqueueCommand(string name, Action run, Action failed)
+        {
+            return this.TryAdd(new PendingCommand(name, run, failed));
         }
 
         /// <summary>Delivers what is already queued, then stops the thread, waiting at most <paramref name="timeout"/>.</summary>
@@ -148,10 +143,56 @@ namespace ChatEngine.Modules
             }
         }
 
+        private bool TryAdd(object item)
+        {
+            bool added;
+            try
+            {
+                added = this.queue.TryAdd(item);
+            }
+            catch (InvalidOperationException)
+            {
+                // Stopped: the engine is shutting down.
+                return false;
+            }
+
+            if (!added)
+            {
+                long count = Interlocked.Increment(ref this.dropped);
+                if (count == 1 || count % 1000 == 0)
+                {
+                    this.log.Warn("[ChatModule " + this.moduleId + "] is " + Capacity + " lines behind; dropped "
+                        + count + " channel line(s) or command(s) so far.");
+                }
+            }
+
+            return added;
+        }
+
+        private void StartLocked()
+        {
+            if (this.thread == null)
+            {
+                this.thread = new Thread(this.Run)
+                {
+                    IsBackground = true,
+                    Name = "ChatModule " + this.moduleId,
+                };
+                this.thread.Start();
+            }
+        }
+
         private void Run()
         {
-            foreach (ChatChannelMessage message in this.queue.GetConsumingEnumerable())
+            foreach (object item in this.queue.GetConsumingEnumerable())
             {
+                if (item is PendingCommand command)
+                {
+                    this.RunCommand(command);
+                    continue;
+                }
+
+                var message = (ChatChannelMessage)item;
                 foreach (Subscriber subscriber in Volatile.Read(ref this.subscribers))
                 {
                     try
@@ -183,12 +224,50 @@ namespace ChatEngine.Modules
             }
         }
 
+        /// <summary>A failing command stays registered: the issuer is told and every failure is logged.</summary>
+        private void RunCommand(PendingCommand command)
+        {
+            try
+            {
+                command.Run();
+            }
+            catch (Exception exception)
+            {
+                this.log.Error(exception, "[ChatModule " + this.moduleId + "] command " + command.Name + " failed.");
+                try
+                {
+                    command.Failed();
+                }
+                catch (Exception notifyException)
+                {
+                    this.log.Error(notifyException, "[ChatModule " + this.moduleId + "] could not report the failure of "
+                        + command.Name + ".");
+                }
+            }
+        }
+
         private void RemoveAt(Subscriber[] current, int index)
         {
             var next = new Subscriber[current.Length - 1];
             Array.Copy(current, 0, next, 0, index);
             Array.Copy(current, index + 1, next, index, current.Length - index - 1);
             Volatile.Write(ref this.subscribers, next);
+        }
+
+        private sealed class PendingCommand
+        {
+            public PendingCommand(string name, Action run, Action failed)
+            {
+                this.Name = name;
+                this.Run = run;
+                this.Failed = failed;
+            }
+
+            public string Name { get; }
+
+            public Action Run { get; }
+
+            public Action Failed { get; }
         }
 
         private sealed class Subscriber

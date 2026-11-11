@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.8**.
+The current version is **1.9**.
 
 ## Loading
 
@@ -44,6 +44,7 @@ The current version is **1.8**.
 | 1.6 | `Clock` and a timestamp on every event; action, cooldown, movement-correction, item-move, chat and combat events; `RegisterVisibilityObserver`; `World.Cooldowns` and `World.MessageCounts`; `MessageSubscription.AllTypes`; more on `NpcSpawned`, `NpcInfo` and `PlayerInfo`; the `observe-actions`, `observe-visibility`, `observe-chat` and `read-chat-text` capabilities |
 | 1.7 | `PlayerInfo.TeamId`, `TeamLeader` and `OrgId`; the `server.shutdown` and `server.shutdown-abort` operations |
 | 1.8 | Account sanctions: the `account.suspend` and `account.unban` operations, `account.ban` recorded as a sanction, `Actions.AccountSanctions`, the `read-sanctions` capability |
+| 1.9 | `PlayerMovementCorrected` adds `Distance`, `Allowed`, `MaxSpeed`, `SinceLastAccepted` and `RefusedMoves`, and the `Height` reason; the `Speed` and `Bounds` reasons are raised |
 
 ## Context members
 
@@ -77,7 +78,7 @@ actions on it return false.
 | `KnubotChatOpened` | A player opened a Knubot chat (character, NPC instance, script id). |
 | `PlayerActionAttempted` / `PlayerActionResolved` | A player's request to use something was decided, and how it ended (1.6, `observe-actions`; see below). |
 | `CooldownStarted` / `CooldownEnded` | A lock was set on a player, or ran out or was cleared (1.6, `observe-actions`; see below). |
-| `PlayerMovementCorrected` | The engine refused or rewrote a client position and pulled the client back (1.6). |
+| `PlayerMovementCorrected` | The engine refused or rewrote a client position and pulled the client back (1.6; see Movement corrections). |
 | `ItemMoved` | An item changed place: loot, pickup, trade, shop, bank, reward, creation, destruction (1.6). |
 | `PlayerSpoke` | A player spoke in chat the zone handles (1.6, `observe-chat`; the text needs `read-chat-text`). |
 | `CombatResolved` | A hit or miss involving at least one player was resolved (1.6). |
@@ -357,6 +358,45 @@ seen something, which is not the entity's spawn. An empty `EntityTypes` means NP
 - **Cost.** It is the highest-volume hook, so it is an observer with a struct sample rather than an event. With no
   observer it costs one field read. `OnVisibility` must not block or allocate; failures and slow calls are handled as
   for message observers.
+
+## Movement corrections
+
+`PlayerMovementCorrected` (1.6) reports each pull-back, so an anti-cheat module can count violations. `Reason` says
+why:
+
+- `Speed`: the move was farther than the character's travel budget allowed. The client was pulled back.
+- `Jump`: the move was farther than even a full budget allows, a teleport-style hop. The client was pulled back.
+- `Rooted`: the character is rooted or stunned and its client drifted. The client was pulled back.
+- `Bounds`: the position was outside the playfield. The move was refused but the client is **not** pulled back.
+- `Height` (1.9): the position was higher above the floor than a jump, a fall or a slope explains. The client was
+  pulled back.
+
+The engine judges client moves against a travel budget. Travel is earned at the character's top speed (5% tolerance)
+for the real time that passes, and each accepted move spends its XZ distance from the last accepted position. At most
+6 s of travel is banked while moving (a running or following client reports only about every 5 s), and 1 s while
+standing. Sending packets faster earns nothing. GMs are not judged and raise no `Speed` or `Jump`.
+
+Height is judged too. A position on a floor the server knows is always fine. Off the floor, it may be no higher than
+the jump height plus 3 m above the floor under it, or above where the character last stood. After 3 s of airtime the
+allowance above the takeoff point shrinks at 2 m/s, so a client cannot walk on air off a ledge. Not judged: GMs,
+flyers and characters that may fly (a flight effect where flying is allowed), swimmers, and positions with no
+collision under them at all.
+
+From 1.9 the event also carries the measurements:
+
+- `Distance`: the XZ metres the move covered. For `Height`, how high above the floor under it the position was.
+- `Allowed`: the metres it could have covered, or for `Height` how high it could have been. `Distance - Allowed` is
+  the size of the violation.
+- `MaxSpeed`: the top speed in m/s the move was judged against. While the character may fly (a running flight effect
+  where flying is allowed) it is at least the flight speed, as the client can switch itself into flight.
+- `SinceLastAccepted`: the seconds since the engine last accepted a position from this client.
+- `RefusedMoves` (`Speed`, `Jump` and `Height`): how many moves were refused since the previous such event, this one
+  included.
+
+Pull-backs and their events come at most twice a second per player, so use `RefusedMoves` to count refused moves.
+A single `Speed` after lag, a zone landing or a long fall can be legitimate; a hack shows as repeated corrections.
+`Bounds` can also appear at a zone edge while the client zones. To act on a player, use the `player.kick`,
+`player.teleport`, `account.suspend` or `account.ban` operations.
 
 ## Item moves
 

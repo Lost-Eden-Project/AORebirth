@@ -21,6 +21,9 @@ namespace AORebirth.ChatModules.Channels
 
         /// <summary>The engine has handed out every sender identity it keeps for module posts; reuse fewer names.</summary>
         SenderLimitReached = 4,
+
+        /// <summary><see cref="IChatCommand.ReplyPrivate"/>: the issuer is no longer online (1.1).</summary>
+        RecipientOffline = 5,
     }
 
     /// <summary>
@@ -46,7 +49,7 @@ namespace AORebirth.ChatModules.Channels
 
         /// <summary>
         /// Raised for every line a player, a BotService bot or another module says in a channel. Chat commands (lines
-        /// starting with '.' or '/') are not raised. Handlers run on this module's own delivery thread, one line at a
+        /// starting with '.' or '/') and lines consumed by a module's <see cref="RegisterCommand"/> are not raised. Handlers run on this module's own delivery thread, one line at a
         /// time and in the order the engine accepted them, never on a network thread, so a slow handler delays only
         /// this module. While this module is 4096 lines behind, newer lines are dropped and the drop is logged. A
         /// handler that throws is logged; after 10 failures in a row it is unsubscribed.
@@ -60,5 +63,16 @@ namespace AORebirth.ChatModules.Channels
         /// what it lets through. The line is also raised to the other modules and written to the chat log.
         /// </summary>
         ChatPostResult Post(byte type, uint id, string senderName, string text);
+
+        /// <summary>
+        /// Claims a channel command such as <c>!level</c> (1.1). <paramref name="name"/> is one prefix character (any
+        /// punctuation or symbol except '.' and '/', which belong to the zone) followed by 1 to 32 letters, digits, '-'
+        /// or '_', compared ignoring case. A player line whose first word is the name is consumed: no channel member,
+        /// bot or other module sees it, and <paramref name="handler"/> runs on this module's delivery thread with the
+        /// command. Unregistered lines, <c>!roll</c> for example, still go out and reach <see cref="MessagePosted"/>.
+        /// Only during <see cref="IChatModule.Initialize"/>; a name another module claimed fails this module's load.
+        /// Needs <c>consume-commands</c> with a Capabilities entry.
+        /// </summary>
+        void RegisterCommand(string name, Action<IChatCommand> handler);
     }
 }

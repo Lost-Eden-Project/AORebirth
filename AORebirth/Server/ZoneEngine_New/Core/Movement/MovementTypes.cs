@@ -84,4 +84,25 @@ namespace ZoneEngine_New.Core.Movement
         LeaveSleep = 0x29,
         LeaveLounge = 0x2a
     }
+
+    /// <summary>
+    /// One judged client move: the XZ <paramref name="Distance"/> travelled, the metres <paramref name="Allowed"/>, the
+    /// <paramref name="MaxSpeed"/> (m/s) it was judged against and the seconds <paramref name="SinceLastAccepted"/> move.
+    /// </summary>
+    public readonly record struct ClientMoveCheck(float Distance, float Allowed, float MaxSpeed, float SinceLastAccepted);
+
+    /// <summary>Why a client move was refused and pulled back.</summary>
+    public enum ClientMoveRefusal
+    {
+        None,
+
+        /// <summary>Farther than the travel budget allowed.</summary>
+        Speed,
+
+        /// <summary>Farther than even a full travel budget allows.</summary>
+        Hop,
+
+        /// <summary>Higher above the floor than a jump, a fall or a slope explains.</summary>
+        Height
+    }
 }

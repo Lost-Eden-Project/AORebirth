@@ -6,7 +6,7 @@ channels outside the game, for example to Discord or IRC, and back. A module bui
 is the whole contract and holds no ChatEngine type. It is separate from the zone module API
 ([ZONE_MODULE_API.md](ZONE_MODULE_API.md)).
 
-The current version is **1.0**. The major version of the Abstractions `AssemblyVersion` is the contract. ChatEngine
+The current version is **1.1** (1.1 adds channel commands). The major version of the Abstractions `AssemblyVersion` is the contract. ChatEngine
 refuses a module built against a different major version, and minor versions only add members.
 
 ## Loading
@@ -18,7 +18,7 @@ refuses a module built against a different major version, and minor versions onl
   "Enabled": ["DiscordRelay"],
   "Required": [],
   "Directory": "ChatModules",
-  "Capabilities": { "DiscordRelay": ["read-channels", "post-channels"] }
+  "Capabilities": { "DiscordRelay": ["read-channels", "post-channels"], "LevelBot": ["consume-commands"] }
 }
 ```
 
@@ -51,6 +51,31 @@ own module.
 - The text is sent exactly as given, AO markup included. A module that relays outside text decides what markup it lets
   through.
 
+## Commands (1.1)
+
+During `Initialize`, a module claims a channel command with `context.Channels.RegisterCommand("!level", handler)`.
+
+```csharp
+context.Channels.RegisterCommand("!level", cmd =>
+    cmd.ReplyPrivate("LevelBot", "Level " + cmd.Args + " needs ..."));
+```
+
+- **Names:** one prefix character, any punctuation or symbol except `.` and `/` (those go to the zone), then 1 to 32
+  letters, digits, `-` or `_`. Names are compared ignoring case. A name another module already claimed fails the second
+  module's load. Registering after `Initialize` throws.
+- **Consumed:** a player's channel line whose first word is a registered name is shown to nobody. The channel, BotService
+  and the other modules (including `MessagePosted`) do not see it. It is still written to the chat log. Lines that do not
+  match, `!roll` for example, go out as usual, so a module can still answer those with `Post`.
+- **Handler:** runs on the module's delivery thread, in order with its `MessagePosted` lines, so it may do I/O. The
+  `IChatCommand` it gets has `Channel`, `SenderId`, `SenderName`, `SenderGmLevel` (for permission checks), `Name`,
+  `Args` (the rest of the line, trimmed), `Text` and `Timestamp`.
+- **`ReplyPrivate(senderName, text)`:** a tell to the issuer alone. It uses the same name and text rules and sender
+  identities as `Post`, and returns `RecipientOffline` once the issuer has logged off. A player cannot tell the sender
+  back.
+- **Failures:** if the handler throws, the issuer gets a system line "`<name>` failed." and the exception is logged; the
+  command stays registered. When the module's queue is full, the issuer is told it is busy.
+- Only channel lines from players are matched. Vicinity chat, tells, bot posts and module posts never are.
+
 ## Capabilities
 
 The `Capabilities` entry is optional. A module with no entry may use everything. A module with an entry may use only
@@ -60,3 +85,4 @@ what it lists; any other member throws `UnauthorizedAccessException`, and the en
 |---|---|
 | `read-channels` | subscribing to `MessagePosted` |
 | `post-channels` | `Post` |
+| `consume-commands` | `RegisterCommand` and `ReplyPrivate` (1.1) |

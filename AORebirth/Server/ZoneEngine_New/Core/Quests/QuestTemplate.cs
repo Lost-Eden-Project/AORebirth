@@ -24,6 +24,9 @@ namespace ZoneEngine_New.Core.Quests
         public const string ReturnItemAction = "FindItem2";
         public const string RepairAction = "UseItemOnItem";
 
+        /// <summary>Finished by using the <see cref="QuestObjective.SpecItem"/> item on the objective NPC; the item is kept.</summary>
+        public const string UseItemOnCharacterAction = "UseItemOnCharacter";
+
         /// <summary>Finished by a tradeskill combine that makes the <see cref="QuestObjective.SpecItem"/> item.</summary>
         public const string AssembleAction = "Assemble";
 

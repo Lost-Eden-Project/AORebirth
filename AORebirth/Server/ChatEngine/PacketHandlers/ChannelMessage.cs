@@ -81,8 +81,15 @@ namespace ChatEngine.PacketHandlers
             string text = reader.ReadString();
             string channelName = channel.ChannelName;
 
-            // Check if it is a Chat Command (starting with a dot)
-            if (!ProcessServerCommand(text, client))
+            // '.' and '/' lines go to the zone; a chat module's registered command (such as !level) goes to that module.
+            // Either way nobody in the channel sees the line.
+            if (!ProcessServerCommand(text, client)
+                && client.ChatServer().Modules?.TryConsumeCommand(
+                    channel,
+                    client.Character.CharacterId,
+                    client.Character.characterName,
+                    client.Character.CharacterGMLevel,
+                    text) != true)
             {
                 byte[] newpacket = InsertSender(packet, senderId, ChatLineFlags.IsGm(client));
 

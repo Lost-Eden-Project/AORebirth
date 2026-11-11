@@ -26,6 +26,9 @@ namespace SmokeLounge.AOtomation.Messaging.Messages.N3Messages
 
         Repair = 4, 
 
-        UseItemOnItem = 5
+        UseItemOnItem = 5,
+
+        /// <summary>An inventory item used on a character: Target is the item's slot, then the character (Gamecode N3Msg_UseItemOnCharacter 10026a2b).</summary>
+        UseItemOnCharacter = 0x20
     }
 }

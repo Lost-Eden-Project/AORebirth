@@ -270,7 +270,15 @@ namespace ZoneEngine_New.Core.Movement
         public event Action? Jumped;
 
         /// <summary>The movement rules' stats: <see cref="CharMovement.SetStats"/> takes the whole struct each time.</summary>
-        public void RefreshFromStats() => _move.SetStats(BuildMovementStats());
+        public void RefreshFromStats()
+        {
+            MovementStats stats = BuildMovementStats();
+            _move.SetStats(stats);
+            // The rules' Fly curve on the same Run Speed the vehicle gets: what the client's own vehicle flies at.
+            _flightTopSpeed = CharMovementRules.MaxSpeed((int)MovementState.Fly, 1, stats.RunSpeed);
+        }
+
+        float _flightTopSpeed;
 
         /// <summary>The full (buffed) values of the stats the movement rules read.</summary>
         MovementStats BuildMovementStats() => new()
@@ -628,8 +636,9 @@ namespace ZoneEngine_New.Core.Movement
             _character.Position = position;
             _sim.Position = ToVec3(position);
             _holdingOverVoid = false;
-            // The server placed the body: the client's next move is measured from here and from now.
-            _lastAcceptedMoveUtc = DateTime.UtcNow;
+            // The server placed the body: the client's next move is measured from here and from now, as if standing here.
+            ResetMoveBudget(position, DateTime.UtcNow);
+            NoteSupport(position.yf);
             if (rotation != null)
             {
                 _character.Rotation = rotation;
@@ -655,7 +664,9 @@ namespace ZoneEngine_New.Core.Movement
             // Both corrections are per-move verdicts. A root pull-back raised by the last held move used to stay raised
             // after the root ended, and every free move then snapped the client back to where it already was.
             JumpCorrectionDue = false;
+            CorrectionRefusal = ClientMoveRefusal.None;
             RootCorrectionDue = false;
+            BoundsRefusalDue = false;
             if (_character.IsRooted)
                 return ConsumeRooted(message);
 
@@ -685,47 +696,258 @@ namespace ZoneEngine_New.Core.Movement
         /// <summary>True when the last rooted move drifted and the client needs the server position again.</summary>
         public bool RootCorrectionDue { get; private set; }
 
-        /// <summary>True when the last move was refused as a hop the character could not have made (<see cref="IsPlausibleClientMove"/>).</summary>
+        /// <summary>
+        /// True when the last move was refused as farther than the character could have travelled
+        /// (<see cref="IsPlausibleClientMove"/>) and the client is due a pull-back.
+        /// </summary>
         public bool JumpCorrectionDue { get; private set; }
+
+        /// <summary>With <see cref="JumpCorrectionDue"/>: why the move was refused.</summary>
+        public ClientMoveRefusal CorrectionRefusal { get; private set; }
+
+        // Client height check (IsPlausibleClientHeight): the floor height the character last stood at, and when its
+        // current airtime was first reported (default while standing).
+        bool _hasSupport;
+        float _supportY;
+        DateTime _airborneSinceUtc;
+
+        /// <summary>
+        /// True when the last move was refused as outside the playfield. That client is not pulled back, but the refusal is
+        /// reported to modules, at most once per <see cref="RootCorrectionSeconds"/>.
+        /// </summary>
+        public bool BoundsRefusalDue { get; private set; }
+
+        /// <summary>The last client move judged: what the correction event reports.</summary>
+        public ClientMoveCheck LastMoveCheck { get; private set; }
 
         DateTime _lastAcceptedMoveUtc;
         DateTime _lastJumpCorrectionUtc;
+        DateTime _lastBoundsRefusalUtc;
+
+        // Client move budget (IsPlausibleClientMove): metres of travel earned and not yet spent, measured from the last
+        // accepted client position, not from the server's dead-reckoned one.
+        bool _hasMoveBase;
+        double _moveBaseX;
+        double _moveBaseZ;
+        double _moveBudget;
+        DateTime _moveBudgetUtc;
+        float _moveBudgetSpeed;
+        int _refusedMoves;
+
+        /// <summary>Moves refused since this was last taken, then zero. A correction event reports it.</summary>
+        public int TakeRefusedMoves()
+        {
+            int refused = _refusedMoves;
+            _refusedMoves = 0;
+            return refused;
+        }
 
         /// <summary>
-        /// EXPLOIT guard: a reported position farther (XZ) from the server's than the character could have run since its
-        /// last accepted move is refused and the client pulled back (<see cref="JumpCorrectionDue"/>): the vehicle's top
-        /// speed over the time elapsed (credited up to <see cref="MovementConfig.ClientMoveElapsedCreditSeconds"/>) plus
-        /// a lag allowance and a little slack. A server placement (<see cref="Warp"/>) restarts the clock, so a stale
-        /// position sent after a teleport or zone landing is refused too. Flying is judged the same way: a flyer's top
-        /// speed is its run speed. A GM is not judged.
+        /// EXPLOIT guard against speed hacks and hops. Travel is a budget: it is earned at the vehicle's top speed (times
+        /// <see cref="MovementConfig.ClientMoveSpeedTolerance"/>) for the real time that passes, banked up to
+        /// <see cref="MovementConfig.ClientMoveBurstSeconds"/> while the body moves and
+        /// <see cref="MovementConfig.ClientMoveIdleSeconds"/> while it stands, and every accepted move spends its XZ
+        /// distance from the last accepted client position. A move the budget cannot pay for is refused and the client
+        /// pulled back (<see cref="JumpCorrectionDue"/>). Packet rate earns nothing, so a client with a sped-up clock
+        /// cannot outrun its top speed for more than one banked stretch. A server placement (<see cref="Warp"/>) restarts
+        /// the measure. A GM is not judged.
         /// </summary>
         bool IsPlausibleClientMove(Player player, float x, float z, DateTime now)
         {
-            if (player.Stats.GetOrZero(CharacterStat.GmLevel) > 0)
-                return true;
+            float rate = AccrueMoveBudget(now);
+            if (!_hasMoveBase)
+            {
+                _hasMoveBase = true;
+                _moveBaseX = _character.Position.x;
+                _moveBaseZ = _character.Position.z;
+            }
 
-            double elapsed = _lastAcceptedMoveUtc == default
-                ? 0.0
-                : Math.Clamp((now - _lastAcceptedMoveUtc).TotalSeconds, 0.0, MovementConfig.ClientMoveElapsedCreditSeconds);
-            double allowed = MovementConfig.ClientMoveSlackMeters
-                + (Math.Max(0f, _sim.MaxVel) * (elapsed + MovementConfig.ClientMoveLagAllowanceSeconds));
-            double dx = x - _character.Position.x;
-            double dz = z - _character.Position.z;
+            double dx = x - _moveBaseX;
+            double dz = z - _moveBaseZ;
             double distance = Math.Sqrt((dx * dx) + (dz * dz));
-            if (distance <= allowed)
-                return true;
+            double allowed = Math.Max(0.0, _moveBudget + MovementConfig.ClientMoveJitterMeters);
+            double sinceAccepted = _lastAcceptedMoveUtc == default ? 0.0 : Math.Max(0.0, (now - _lastAcceptedMoveUtc).TotalSeconds);
+            LastMoveCheck = new ClientMoveCheck((float)distance, (float)allowed, MoveCheckTopSpeed(), (float)sinceAccepted);
 
+            if (distance <= allowed || player.Stats.GetOrZero(CharacterStat.GmLevel) > 0)
+            {
+                SpendMoveBudget(distance);
+                return true;
+            }
+
+            _refusedMoves++;
             if ((now - _lastJumpCorrectionUtc).TotalSeconds >= RootCorrectionSeconds)
             {
                 JumpCorrectionDue = true;
+                CorrectionRefusal = distance > (rate * MovementConfig.ClientMoveBurstSeconds) + MovementConfig.ClientMoveJitterMeters
+                    ? ClientMoveRefusal.Hop
+                    : ClientMoveRefusal.Speed;
                 _lastJumpCorrectionUtc = now;
                 player.Logger.Warn(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Rejected CharDCMove hop character={0} from=({1:F1},{2:F1}) to=({3:F1},{4:F1}) distance={5:F1}m allowed={6:F1}m maxVel={7:F1}",
-                    player.Identity.Instance, _character.Position.x, _character.Position.z, x, z, distance, allowed, _sim.MaxVel));
+                    "Rejected CharDCMove {0} character={1} from=({2:F1},{3:F1}) to=({4:F1},{5:F1}) distance={6:F1}m allowed={7:F1}m maxVel={8:F2} since={9:F2}s refused={10}",
+                    CorrectionRefusal == ClientMoveRefusal.Hop ? "hop" : "speed", player.Identity.Instance, _moveBaseX, _moveBaseZ,
+                    x, z, distance, allowed, MoveCheckTopSpeed(), sinceAccepted, _refusedMoves));
+                // The pull-back puts the client where the server holds the body: measure from there, charging the way
+                // there, so a dead-reckoned lead is not earned twice and an unannounced server placement cannot wedge it.
+                RebaseMove(_character.Position, charge: true);
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// The top speed client moves are judged against: the vehicle's, or while the server holds flight authority the
+        /// rules' Fly speed if that is faster. The client enters Fly by itself whenever a CanFly spell runs (a recast, a
+        /// second flight item, arriving where flying is allowed) and tells the server nothing, while the server switches
+        /// only on gaining authority; a flyer the server holds landed would otherwise be judged 2 m/s slow and pulled
+        /// back. It grants nothing a flyer could not do by flying.
+        /// </summary>
+        float MoveCheckTopSpeed()
+        {
+            float speed = Math.Max(0f, _sim.MaxVel);
+            if (IsPlayer && _flightTopSpeed > speed && _move.State != (int)MovementState.Fly && HasFlightAuthority())
+                speed = _flightTopSpeed;
+            return speed;
+        }
+
+        /// <summary>Credits the time since the last check; returns the earning rate (m/s) used.</summary>
+        float AccrueMoveBudget(DateTime now)
+        {
+            float speed = MoveCheckTopSpeed();
+            if (_moveBudgetUtc == default)
+            {
+                ResetMoveBudget(_character.Position, now);
+                return speed * MovementConfig.ClientMoveSpeedTolerance;
+            }
+
+            double elapsed = Math.Clamp((now - _moveBudgetUtc).TotalSeconds, 0.0, MovementConfig.ClientMoveBurstSeconds);
+            // A speed drop since the last check (a run buff ending, walking) credits the stretch at the faster of the two.
+            float rate = Math.Max(speed, _moveBudgetSpeed) * MovementConfig.ClientMoveSpeedTolerance;
+            _moveBudgetUtc = now;
+            _moveBudgetSpeed = speed;
+
+            // The state left by the last move is the state of the whole stretch since it.
+            bool moving = (CurrentFlags & TranslationFlags) != 0
+                || HasPath
+                || _followTarget != null
+                || _sim.Airborne
+                || _sim.Speed > MovementConfig.SpeedStopEpsilon;
+            double ceiling = rate * (moving ? MovementConfig.ClientMoveBurstSeconds : MovementConfig.ClientMoveIdleSeconds);
+            if (_moveBudget < ceiling)
+                _moveBudget = Math.Min(ceiling, _moveBudget + (rate * elapsed));
+            return rate;
+        }
+
+        /// <summary>
+        /// EXPLOIT guard against sky-walking and air-walking. A reported position on a floor the server knows (within the
+        /// floor snap) is always fine and is where the next airtime starts. Off the floor it may be no higher than the jump
+        /// height plus <see cref="MovementConfig.ClientHeightBufferMeters"/> above the floor under it, or above where the
+        /// character last stood; after <see cref="MovementConfig.ClientAirborneGraceSeconds"/> of airtime that second
+        /// allowance shrinks at <see cref="MovementConfig.ClientAirborneCeilingDecay"/>. Not judged: a GM, a flyer or a
+        /// character that may fly (flight authority), a swimmer (the server has no water to measure against; swim speed is
+        /// the cost of claiming it), and a position with no collision under it at all (missing geometry, as
+        /// <see cref="HoldOverVoid"/>). A refused move is pulled back like a speed refusal.
+        /// </summary>
+        bool IsPlausibleClientHeight(Player player, Playfield? playfield, float x, float y, float z, DateTime now)
+        {
+            if (playfield == null)
+                return true;
+
+            var feet = new Vector3(x, y, z);
+            if (playfield.TrySnapFeetToFloor(feet, out Vector3 floor))
+            {
+                NoteSupport(Math.Max(y, (float)floor.y));
+                return true;
+            }
+
+            if (_move.State == (int)MovementState.Fly
+                || _move.State == (int)MovementState.Swim
+                || player.Stats.GetOrZero(CharacterStat.GmLevel) > 0
+                || HasFlightAuthority())
+            {
+                NoteSupport(y);
+                return true;
+            }
+
+            PlayfieldWorldSimulation? world = playfield.WorldAccess.Instance;
+            if (world == null
+                || !world.TryRaycastDown(new Vector3(x, y + MovementConfig.GroundProbeLift, z), MovementConfig.VoidProbeDepth,
+                    out Vector3 below))
+                return true;
+
+            float jump = CharMovementRules.JumpHeight(
+                _character.Stats.GetOrZero(CharacterStat.Strength),
+                _character.Stats.GetOrZero(CharacterStat.Agility),
+                _character.Stats.GetOrZero(CharacterStat.GmLevel));
+            double reach = jump + MovementConfig.ClientHeightBufferMeters;
+            double ceiling = below.y + reach;
+            if (_hasSupport)
+            {
+                if (_airborneSinceUtc == default)
+                    _airborneSinceUtc = now;
+                double airtime = Math.Max(0.0, (now - _airborneSinceUtc).TotalSeconds);
+                double fromTakeoff = _supportY + reach
+                    - (MovementConfig.ClientAirborneCeilingDecay * Math.Max(0.0, airtime - MovementConfig.ClientAirborneGraceSeconds));
+                ceiling = Math.Max(ceiling, fromTakeoff);
+            }
+
+            if (y <= ceiling)
+                return true;
+
+            _refusedMoves++;
+            if ((now - _lastJumpCorrectionUtc).TotalSeconds >= RootCorrectionSeconds)
+            {
+                double sinceAccepted = _lastAcceptedMoveUtc == default ? 0.0 : Math.Max(0.0, (now - _lastAcceptedMoveUtc).TotalSeconds);
+                LastMoveCheck = new ClientMoveCheck((float)(y - below.y), (float)(ceiling - below.y), MoveCheckTopSpeed(),
+                    (float)sinceAccepted);
+                JumpCorrectionDue = true;
+                CorrectionRefusal = ClientMoveRefusal.Height;
+                _lastJumpCorrectionUtc = now;
+                player.Logger.Warn(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Rejected CharDCMove height character={0} pos=({1:F1},{2:F1},{3:F1}) floorBelow={4:F1} ceiling={5:F1} takeoff={6} airtime={7:F2}s jump={8:F2}m refused={9}",
+                    player.Identity.Instance, x, y, z, below.y, ceiling,
+                    _hasSupport ? _supportY.ToString("F1", CultureInfo.InvariantCulture) : "none",
+                    _airborneSinceUtc == default ? 0.0 : (now - _airborneSinceUtc).TotalSeconds, jump, _refusedMoves));
+                RebaseMove(_character.Position, charge: true);
+            }
+
+            return false;
+        }
+
+        void NoteSupport(float y)
+        {
+            _hasSupport = true;
+            _supportY = y;
+            _airborneSinceUtc = default;
+        }
+
+        void SpendMoveBudget(double distance) =>
+            _moveBudget = Math.Max(-MovementConfig.ClientMoveJitterMeters, _moveBudget - distance);
+
+        void RebaseMove(Vector3 position, bool charge)
+        {
+            if (charge && _hasMoveBase)
+            {
+                double dx = position.x - _moveBaseX;
+                double dz = position.z - _moveBaseZ;
+                SpendMoveBudget(Math.Sqrt((dx * dx) + (dz * dz)));
+            }
+
+            _hasMoveBase = true;
+            _moveBaseX = position.x;
+            _moveBaseZ = position.z;
+        }
+
+        /// <summary>A server placement: measured from here and now, with a standing body's budget.</summary>
+        void ResetMoveBudget(Vector3 position, DateTime now)
+        {
+            _lastAcceptedMoveUtc = now;
+            _moveBudgetUtc = now;
+            _moveBudgetSpeed = MoveCheckTopSpeed();
+            _moveBudget = _moveBudgetSpeed * MovementConfig.ClientMoveSpeedTolerance * MovementConfig.ClientMoveIdleSeconds;
+            RebaseMove(position, charge: false);
         }
 
         /// <summary>
@@ -745,11 +967,17 @@ namespace ZoneEngine_New.Core.Movement
                 double dx = message.Coordinates.X - held.x;
                 double dz = message.Coordinates.Z - held.z;
                 DateTime now = DateTime.UtcNow;
+                // The client is held where the server holds the body, so its next free move is measured from there.
+                AccrueMoveBudget(now);
+                RebaseMove(held, charge: true);
                 if ((dx * dx) + (dz * dz) > RootDriftMeters * RootDriftMeters
                     && (now - _lastRootCorrectionUtc).TotalSeconds >= RootCorrectionSeconds)
                 {
                     RootCorrectionDue = true;
                     _lastRootCorrectionUtc = now;
+                    LastMoveCheck = new ClientMoveCheck((float)Math.Sqrt((dx * dx) + (dz * dz)), RootDriftMeters,
+                        Math.Max(0f, _sim.MaxVel),
+                        _lastAcceptedMoveUtc == default ? 0f : (float)Math.Max(0.0, (now - _lastAcceptedMoveUtc).TotalSeconds));
                 }
 
                 float reportedY = message.Coordinates.Y;
@@ -822,6 +1050,17 @@ namespace ZoneEngine_New.Core.Movement
                                 z,
                                 locality.WorldSizeX,
                                 locality.WorldSizeZ));
+                        DateTime refusedAt = DateTime.UtcNow;
+                        if ((refusedAt - _lastBoundsRefusalUtc).TotalSeconds >= RootCorrectionSeconds)
+                        {
+                            BoundsRefusalDue = true;
+                            _lastBoundsRefusalUtc = refusedAt;
+                            double bx = x - _character.Position.x;
+                            double bz = z - _character.Position.z;
+                            LastMoveCheck = new ClientMoveCheck((float)Math.Sqrt((bx * bx) + (bz * bz)), 0f,
+                                Math.Max(0f, _sim.MaxVel),
+                                _lastAcceptedMoveUtc == default ? 0f : (float)Math.Max(0.0, (refusedAt - _lastAcceptedMoveUtc).TotalSeconds));
+                        }
                     }
 
                     return false;
@@ -829,7 +1068,9 @@ namespace ZoneEngine_New.Core.Movement
             }
 
             DateTime now = DateTime.UtcNow;
-            if (_character is Player mover && !IsPlausibleClientMove(mover, x, z, now))
+            // Height first: a refused height spends no travel.
+            if (_character is Player mover
+                && (!IsPlausibleClientHeight(mover, playfield, x, y, z, now) || !IsPlausibleClientMove(mover, x, z, now)))
                 return false;
 
             var requested = new Vector3(x, y, z);
@@ -844,6 +1085,9 @@ namespace ZoneEngine_New.Core.Movement
             _character.Position = new Vector3(x, y, z);
             _sim.Position = new Vec3(x, y, z);
             _lastAcceptedMoveUtc = now;
+            _hasMoveBase = true;
+            _moveBaseX = x;
+            _moveBaseZ = z;
             return true;
         }
 

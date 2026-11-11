@@ -12,5 +12,11 @@ namespace AORebirth.ChatModules
 
         /// <summary><see cref="Channels.IChatChannels.Post"/>: speak into channels.</summary>
         public const string PostChannels = "post-channels";
+
+        /// <summary>
+        /// <see cref="Channels.IChatChannels.RegisterCommand"/> and <see cref="Channels.IChatCommand.ReplyPrivate"/>:
+        /// hide matching channel lines and answer the issuer privately (1.1).
+        /// </summary>
+        public const string ConsumeCommands = "consume-commands";
     }
 }

@@ -184,6 +184,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     else Deny(session, message, player, "no accepted item-on-target interaction");
                     break;
 
+                case GenericCmdAction.UseItemOnCharacter:
+                    if (message.Target is not { Length: >= 2 })
+                        Deny(session, message, player, "missing item slot or target character");
+                    else if (TryUseItemOnCharacter(player, playfield, message.Target[0], message.Target[1], out string refusal))
+                        Acknowledge(session, message, Identity.None);
+                    else
+                        Deny(session, message, player, refusal);
+                    break;
+
                 default:
                     player.Logger.Warn(
                         string.Format(
@@ -463,6 +472,58 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     Subject = source,
                     SubjectSlot = sourceSlot
                 });
+        }
+
+        /// <summary>
+        /// An inventory item used on a character this client can see: UseItemOnCharacter quest steps on that NPC complete,
+        /// and the item's own OnUseItemOn functions run on the character. The item stays unless a function destroys it.
+        /// </summary>
+        bool TryUseItemOnCharacter(Player player, Playfield playfield, Identity sourceSlot, Identity target, out string refusal)
+        {
+            if (!player.Inventory.IsHydrated || sourceSlot.Type is not (IdentityType.Inventory or IdentityType.Backpack))
+            {
+                refusal = "item is not in the inventory or a carried bag";
+                return false;
+            }
+            if (!player.Inventory.TryGetUseItem(sourceSlot, out Item item) || item.Locked)
+            {
+                refusal = "item not found in slot or locked";
+                return false;
+            }
+            // Only a living character on this playfield that this client was actually sent, so a spoofed identity cannot complete it.
+            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel) || dynel is not Character character
+                || character.IsDead || !ReferenceEquals(character.Playfield, playfield)
+                || !playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().IsVisibleTo(character, player))
+            {
+                refusal = "target is not a living character visible to the player";
+                return false;
+            }
+
+            bool used = character is NpcCharacter npc
+                && playfield.GetService<Quests.QuestService>()?.OnItemUsedOnNpc(player, item, npc) == true;
+
+            ItemTemplate template = item.Definition;
+            // Completing a step can hand out items, so the item is looked up again before its functions run.
+            if (template.SpellList.ContainsKey(EventType.OnUseItemOn)
+                && template.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.UseItemOnCharacter)
+                && player.Inventory.TryGetUseItem(sourceSlot, out Item current) && ReferenceEquals(current, item) && !item.Locked)
+            {
+                used |= template.ExecuteSpells(
+                    EventType.OnUseItemOn,
+                    character,
+                    _inventoryRepository,
+                    _items,
+                    new SpellCriteria
+                    {
+                        SecondaryItemTemplate = item.LowId,
+                        Subject = item,
+                        SubjectSlot = sourceSlot
+                    },
+                    source: player);
+            }
+
+            refusal = "no active quest step or item function for this item on this character";
+            return used;
         }
 
         static string FormatTargets(GenericCmdMessage message)

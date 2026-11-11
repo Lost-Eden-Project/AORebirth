@@ -8,20 +8,24 @@ namespace ChatEngine.Modules
     using System.Reflection;
     using System.Security.Cryptography;
     using System.Text.Json;
+    using System.Threading;
 
     using AORebirth.ChatModules;
     using AORebirth.ChatModules.Channels;
     using AORebirth.Core.GameData;
 
     using ChatEngine.Channels;
+    using ChatEngine.CoreClient;
     using ChatEngine.CoreServer;
+    using ChatEngine.Packets;
 
     using NLog;
 
     /// <summary>
     /// Loads the external chat modules named in Config/ChatModules.json once at startup, each into its own load context,
     /// and connects them to the channels: modules see what is said in channels (to relay it out of the game) and post into
-    /// channels (to relay outside text in). With no ChatModules.json nothing is loaded and every hook is a no-op.
+    /// channels (to relay outside text in), and may claim channel commands such as !level that are hidden from the channel
+    /// and answered privately. With no ChatModules.json nothing is loaded and every hook is a no-op.
     /// Modules are trusted code running in the chat process; there is no unloading or hot reload.
     /// </summary>
     internal sealed class ChatModuleHost
@@ -32,6 +36,9 @@ namespace ChatEngine.Modules
 
         /// <summary>Distinct module sender names kept for the life of the process.</summary>
         internal const int MaxSenderIdentities = 65536;
+
+        /// <summary>Longest command name after its prefix character.</summary>
+        internal const int MaxCommandNameLength = 32;
 
         /// <summary>
         /// Module senders get chat wire ids from here up; BotService bots start at 0xE0000000, so the two ranges cannot meet
@@ -59,6 +66,9 @@ namespace ChatEngine.Modules
         private ChatModuleDelivery[] deliveries = Array.Empty<ChatModuleDelivery>();
 
         private uint nextSenderWireId = FirstSenderWireId;
+
+        /// <summary>Built during load, before the listener opens, then only read; swapped whole.</summary>
+        private CommandTable commandTable = CommandTable.Empty;
 
         private ChatModuleHost(ChatServer server)
         {
@@ -121,6 +131,44 @@ namespace ChatEngine.Modules
             this.Publish(channel, ChatMessageSource.Player, characterId, characterName, text, null);
         }
 
+        /// <summary>
+        /// When <paramref name="text"/> starts with a module's registered command, queues it to that module and returns true:
+        /// the caller then shows the line to nobody. Called on the client's network thread; runs no module code.
+        /// </summary>
+        public bool TryConsumeCommand(ChannelBase channel, uint characterId, string characterName, int gmLevel, string text)
+        {
+            CommandTable table = Volatile.Read(ref this.commandTable);
+            if (table.Commands.Count == 0 || channel == null || string.IsNullOrEmpty(text)
+                || table.Prefixes.IndexOf(text[0]) < 0)
+            {
+                return false;
+            }
+
+            int end = 1;
+            while (end < text.Length && !char.IsWhiteSpace(text[end]))
+            {
+                end++;
+            }
+
+            CommandEntry entry;
+            if (end - 1 > MaxCommandNameLength || !table.Commands.TryGetValue(text.Substring(0, end), out entry))
+            {
+                return false;
+            }
+
+            var command = new ModuleCommand(this, Describe(channel), characterId, characterName, gmLevel, entry.Name,
+                text.Substring(end).Trim(), text, DateTime.UtcNow);
+            if (!entry.Delivery.EnqueueCommand(
+                    entry.Name,
+                    () => entry.Handler(command),
+                    () => this.SendSystem(characterId, entry.Name + " failed.")))
+            {
+                this.SendSystem(characterId, entry.Name + " is busy; try again in a moment.");
+            }
+
+            return true;
+        }
+
         /// <summary>A BotService bot said <paramref name="text"/> in <paramref name="channel"/>.</summary>
         public void PublishBotMessage(ChannelBase channel, uint botWireId, string botName, string text)
         {
@@ -165,6 +213,7 @@ namespace ChatEngine.Modules
             {
                 ChatModuleCapabilities.ReadChannels,
                 ChatModuleCapabilities.PostChannels,
+                ChatModuleCapabilities.ConsumeCommands,
             };
             var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             if (settings.Capabilities == null)
@@ -229,6 +278,32 @@ namespace ChatEngine.Modules
             foreach (char c in name)
             {
                 if (char.IsControl(c))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>One prefix character (punctuation or symbol, not '.' or '/'), then 1 to 32 letters, digits, '-' or '_'.</summary>
+        private static bool IsValidCommandName(string name)
+        {
+            if (name == null || name.Length < 2 || name.Length > MaxCommandNameLength + 1)
+            {
+                return false;
+            }
+
+            char prefix = name[0];
+            if (prefix == '.' || prefix == '/' || !(char.IsPunctuation(prefix) || char.IsSymbol(prefix)))
+            {
+                return false;
+            }
+
+            for (int i = 1; i < name.Length; i++)
+            {
+                char c = name[i];
+                if (!(char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_'))
                 {
                     return false;
                 }
@@ -303,9 +378,25 @@ namespace ChatEngine.Modules
             }
             catch
             {
+                context.View.EndRegistration();
                 delivery.Stop(DeliveryStopTimeout);
                 ShutdownEntries(manifest.Id, entries);
                 throw;
+            }
+
+            List<CommandEntry> registered = context.View.EndRegistration();
+            if (registered.Count > 0)
+            {
+                CommandTable table = this.commandTable;
+                var commands = new Dictionary<string, CommandEntry>(table.Commands, StringComparer.OrdinalIgnoreCase);
+                foreach (CommandEntry command in registered)
+                {
+                    commands.Add(command.Name, command);
+                }
+
+                Volatile.Write(ref this.commandTable, new CommandTable(commands));
+                delivery.EnsureStarted();
+                Log.Info("Chat module " + manifest.Id + " commands: " + string.Join(", ", registered.Select(x => x.Name)));
             }
 
             this.modules.Add(new LoadedModule(manifest.Id, entries));
@@ -413,6 +504,51 @@ namespace ChatEngine.Modules
             return ChatPostResult.Posted;
         }
 
+        /// <summary>A tell from a module sender to one online character, for <see cref="IChatCommand.ReplyPrivate"/>.</summary>
+        private ChatPostResult Tell(uint characterId, string senderName, string text)
+        {
+            string name = (senderName ?? string.Empty).Trim();
+            if (!IsValidSenderName(name))
+            {
+                return ChatPostResult.InvalidSenderName;
+            }
+
+            if (string.IsNullOrEmpty(text) || text.Length > MaxTextLength)
+            {
+                return ChatPostResult.InvalidText;
+            }
+
+            Client client;
+            if (!this.server.ConnectedClients.TryGetValue(characterId, out client) || client == null)
+            {
+                return ChatPostResult.RecipientOffline;
+            }
+
+            Sender sender;
+            if (!this.TryGetSender(name, out sender))
+            {
+                return ChatPostResult.SenderLimitReached;
+            }
+
+            if (!client.KnownClients.Contains(sender.WireId))
+            {
+                client.Send(NameLookupResult.Create(sender.WireId, sender.Name));
+                client.KnownClients.Add(sender.WireId);
+            }
+
+            client.Send(MsgPrivate.Create(sender.WireId, text));
+            return ChatPostResult.Posted;
+        }
+
+        private void SendSystem(uint characterId, string text)
+        {
+            Client client;
+            if (this.server.ConnectedClients.TryGetValue(characterId, out client) && client != null)
+            {
+                client.Send(MsgSystem.Create(text));
+            }
+        }
+
         /// <summary>
         /// One stable wire id per sender name: clients cache the name per id for the session, so an id must never change
         /// name. The first spelling seen is the one shown.
@@ -455,6 +591,79 @@ namespace ChatEngine.Modules
             public uint WireId { get; }
 
             public string Name { get; }
+        }
+
+        private sealed class CommandTable
+        {
+            public static readonly CommandTable Empty =
+                new CommandTable(new Dictionary<string, CommandEntry>(StringComparer.OrdinalIgnoreCase));
+
+            public CommandTable(Dictionary<string, CommandEntry> commands)
+            {
+                this.Commands = commands;
+                this.Prefixes = new string(commands.Keys.Select(x => x[0]).Distinct().ToArray());
+            }
+
+            public Dictionary<string, CommandEntry> Commands { get; }
+
+            /// <summary>The distinct first characters of the names: most lines are rejected on this alone.</summary>
+            public string Prefixes { get; }
+        }
+
+        private sealed class CommandEntry
+        {
+            public CommandEntry(string name, Action<IChatCommand> handler, ChatModuleDelivery delivery)
+            {
+                this.Name = name;
+                this.Handler = handler;
+                this.Delivery = delivery;
+            }
+
+            public string Name { get; }
+
+            public Action<IChatCommand> Handler { get; }
+
+            public ChatModuleDelivery Delivery { get; }
+        }
+
+        private sealed class ModuleCommand : IChatCommand
+        {
+            private readonly ChatModuleHost host;
+
+            public ModuleCommand(ChatModuleHost host, ChatChannelInfo channel, uint senderId, string senderName,
+                int senderGmLevel, string name, string args, string text, DateTime timestamp)
+            {
+                this.host = host;
+                this.Channel = channel;
+                this.SenderId = senderId;
+                this.SenderName = senderName ?? string.Empty;
+                this.SenderGmLevel = senderGmLevel;
+                this.Name = name;
+                this.Args = args;
+                this.Text = text;
+                this.Timestamp = timestamp;
+            }
+
+            public ChatChannelInfo Channel { get; }
+
+            public uint SenderId { get; }
+
+            public string SenderName { get; }
+
+            public int SenderGmLevel { get; }
+
+            public string Name { get; }
+
+            public string Args { get; }
+
+            public string Text { get; }
+
+            public DateTime Timestamp { get; }
+
+            public ChatPostResult ReplyPrivate(string senderName, string text)
+            {
+                return this.host.Tell(this.SenderId, senderName, text);
+            }
         }
 
         private sealed class LoadedModule
@@ -534,8 +743,10 @@ namespace ChatEngine.Modules
                 this.ModuleId = moduleId;
                 this.ModuleDirectory = moduleDirectory;
                 this.Log = new ModuleLogger(moduleId);
-                this.Channels = new ChannelsView(host, moduleId, gate, delivery);
+                this.View = new ChannelsView(host, moduleId, gate, delivery);
             }
+
+            public ChannelsView View { get; }
 
             public string ModuleId { get; }
 
@@ -543,7 +754,7 @@ namespace ChatEngine.Modules
 
             public IChatModuleLogger Log { get; }
 
-            public IChatChannels Channels { get; }
+            public IChatChannels Channels => this.View;
 
             public T GetConfig<T>()
                 where T : class
@@ -570,6 +781,11 @@ namespace ChatEngine.Modules
             private readonly Gate gate;
 
             private readonly ChatModuleDelivery delivery;
+
+            private readonly object registrationSync = new object();
+
+            /// <summary>Commands claimed during Initialize; null once registration has ended.</summary>
+            private List<CommandEntry> pendingCommands = new List<CommandEntry>();
 
             public ChannelsView(ChatModuleHost host, string moduleId, Gate gate, ChatModuleDelivery delivery)
             {
@@ -612,6 +828,48 @@ namespace ChatEngine.Modules
             {
                 this.gate.Demand(ChatModuleCapabilities.PostChannels);
                 return this.host.Post(this.moduleId, type, id, senderName, text);
+            }
+
+            public void RegisterCommand(string name, Action<IChatCommand> handler)
+            {
+                this.gate.Demand(ChatModuleCapabilities.ConsumeCommands);
+                if (handler == null)
+                {
+                    throw new ArgumentNullException(nameof(handler));
+                }
+
+                if (!IsValidCommandName(name))
+                {
+                    throw new ArgumentException("Chat command '" + name + "' must be one prefix character other than '.' "
+                        + "or '/' followed by 1 to " + MaxCommandNameLength + " letters, digits, '-' or '_'.", nameof(name));
+                }
+
+                lock (this.registrationSync)
+                {
+                    if (this.pendingCommands == null)
+                    {
+                        throw new InvalidOperationException("Chat commands can be registered only during Initialize.");
+                    }
+
+                    if (this.host.commandTable.Commands.ContainsKey(name)
+                        || this.pendingCommands.Any(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw new InvalidOperationException("Chat command '" + name + "' is already registered.");
+                    }
+
+                    this.pendingCommands.Add(new CommandEntry(name, handler, this.delivery));
+                }
+            }
+
+            /// <summary>Ends registration and returns what was claimed; later RegisterCommand calls throw.</summary>
+            public List<CommandEntry> EndRegistration()
+            {
+                lock (this.registrationSync)
+                {
+                    List<CommandEntry> result = this.pendingCommands ?? new List<CommandEntry>();
+                    this.pendingCommands = null;
+                    return result;
+                }
             }
         }
     }

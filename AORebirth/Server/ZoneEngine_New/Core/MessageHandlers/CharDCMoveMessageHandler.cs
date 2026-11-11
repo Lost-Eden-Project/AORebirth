@@ -63,17 +63,33 @@ namespace ZoneEngine_New.Core.MessageHandlers
             SmokeLounge.AOtomation.Messaging.GameData.Vector3? reported = message.Coordinates;
             bool accepted = player.Motor.Consume(message);
 
-            // Rooted but the client moved, or a hop the character could not have made: snap it back in place with a
-            // soft intrazone teleport; heading is kept.
+            // Rooted but the client moved, or farther than the character could have travelled: snap it back in place
+            // with a soft intrazone teleport; heading is kept.
             if ((player.Motor.RootCorrectionDue || player.Motor.JumpCorrectionDue) && player.Playfield != null)
             {
                 session.SendIntrazoneTeleport(player.Position, player.Rotation, player.Playfield.ClientPlayfieldId);
                 if (reported != null)
+                {
+                    AORebirth.Modules.Events.MovementCorrection reason = player.Motor.RootCorrectionDue
+                        ? AORebirth.Modules.Events.MovementCorrection.Rooted
+                        : player.Motor.CorrectionRefusal switch
+                        {
+                            Movement.ClientMoveRefusal.Hop => AORebirth.Modules.Events.MovementCorrection.Jump,
+                            Movement.ClientMoveRefusal.Height => AORebirth.Modules.Events.MovementCorrection.Height,
+                            _ => AORebirth.Modules.Events.MovementCorrection.Speed
+                        };
                     Modules.ModuleHooks.MovementCorrected(player,
-                        new AORebirth.Core.Vector.Vector3(reported.X, reported.Y, reported.Z), player.Position,
-                        player.Motor.RootCorrectionDue
-                            ? AORebirth.Modules.Events.MovementCorrection.Rooted
-                            : AORebirth.Modules.Events.MovementCorrection.Jump);
+                        new AORebirth.Core.Vector.Vector3(reported.X, reported.Y, reported.Z), player.Position, reason,
+                        player.Motor.LastMoveCheck,
+                        player.Motor.RootCorrectionDue ? 0 : player.Motor.TakeRefusedMoves());
+                }
+            }
+            else if (player.Motor.BoundsRefusalDue && reported != null)
+            {
+                // Outside the playfield: refused, not pulled back, but a module tracking violations is told.
+                Modules.ModuleHooks.MovementCorrected(player,
+                    new AORebirth.Core.Vector.Vector3(reported.X, reported.Y, reported.Z), player.Position,
+                    AORebirth.Modules.Events.MovementCorrection.Bounds, player.Motor.LastMoveCheck);
             }
             if (!accepted)
                 return;
