@@ -643,75 +643,51 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                         || unchecked((uint)dungeon.Parameters.EntranceInstance) != entrance.IdentityInstance)
                         continue;
 
-                    if (!_layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
-                        return false;
+                    // Already live here: it was built with its layout, kills and chests, so the tick only hands the player
+                    // over. Face into the entrance room, not the heading carried in from outside (back at the exit door).
+                    int dungeonPlayfield = dungeon.Parameters.DungeonPlayfield;
+                    if (_playfields.Value.TryReuseQuestDungeon(dungeonPlayfield, questId, out QuestDungeonPlayfield live))
+                        return session.TransferToPlayfield(live, live.Layout.Spawn, live.Layout.SpawnHeading);
 
                     // World has not said where this dungeon runs: ask off the tick, then try the entrance again.
-                    int dungeonPlayfield = dungeon.Parameters.DungeonPlayfield;
                     ZoneEngine_New.Core.World.WorldLink? link = _playfields.Value.World;
-                    if (link != null && !link.HostsPlayfield(dungeonPlayfield)
-                        && !_playfields.Value.TryGetQuestDungeon(dungeonPlayfield, out _)
-                        && player.Playfield is Playfield here)
+                    if (link != null && !link.HostsPlayfield(dungeonPlayfield))
                     {
-                        Vector3 spawn = layout.Spawn;
-                        AORebirth.Core.Vector.Quaternion spawnHeading = layout.SpawnHeading;
+                        QuestDungeonParameters parameters = dungeon.Parameters;
                         _ = link.ResolveAsync(dungeonPlayfield).ContinueWith(resolve =>
                         {
                             if (!resolve.IsCompletedSuccessfully || !resolve.Result.Accepted) return;
                             bool local = string.Equals(resolve.Result.Instance, link.Instance.Name, StringComparison.OrdinalIgnoreCase);
-                            here.DispatchPlayerProjection(player, () =>
+                            // Joining another instance lands on the layout's spawn: generate it here, still off the tick.
+                            DungeonLayout? remote = null;
+                            if (!local && !_layouts.TryGenerate(parameters, out remote)) return;
+                            playfield.DispatchPlayerProjection(player, () =>
                             {
-                                if (!ReferenceEquals(player.Playfield, here) || player.Session == null) return;
+                                if (!ReferenceEquals(player.Playfield, playfield) || player.Session == null) return;
                                 if (local) Reenter(player, target);
-                                else _playfields.Value.CrossInstance?.Start(player, dungeonPlayfield, spawn, spawnHeading,
+                                else _playfields.Value.CrossInstance?.Start(player, dungeonPlayfield, remote!.Spawn, remote.SpawnHeading,
                                     AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon);
                             });
                         }, System.Threading.Tasks.TaskScheduler.Default);
                         return true;
                     }
 
-                    DungeonKills kills = _quests.LoadDungeonKills(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters);
-                    MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
-                    MissionChestPopulation? chests = CreateChestPopulation(questId, dungeon);
-
-                    // Building a dungeon (room geometry, collision world, spawns, chests) costs several tick budgets:
-                    // do it on the thread pool, then try the entrance again once the dungeon is live. Everyone who
-                    // uses the entrance meanwhile waits on that same build.
-                    if (!_playfields.Value.TryGetQuestDungeon(dungeonPlayfield, out _) && player.Playfield is Playfield source)
+                    // Building a dungeon (layout generation, kill and objective reads, room geometry, collision world,
+                    // spawns, chests) costs several tick budgets: do it on the thread pool, then try the entrance again
+                    // once the dungeon is live. Everyone who uses the entrance meanwhile waits on that same build.
+                    System.Threading.Tasks.Task<bool> build = _pendingBuilds.GetOrAdd(dungeonPlayfield,
+                        _ => new Lazy<System.Threading.Tasks.Task<bool>>(() => System.Threading.Tasks.Task.Run(() =>
+                            BuildDungeonOffTick(dungeonPlayfield, questId, entrance, dungeon)))).Value;
+                    build.ContinueWith(done =>
                     {
-                        System.Threading.Tasks.Task<bool> build = _pendingBuilds.GetOrAdd(dungeonPlayfield,
-                            _ => new Lazy<System.Threading.Tasks.Task<bool>>(() => System.Threading.Tasks.Task.Run(() =>
-                                BuildDungeonOffTick(dungeonPlayfield, questId, layout, entrance, dungeon, unfinishedNpc, kills, chests)))).Value;
-                        build.ContinueWith(done =>
+                        if (!done.IsCompletedSuccessfully || !done.Result) return;
+                        playfield.DispatchPlayerProjection(player, () =>
                         {
-                            if (!done.IsCompletedSuccessfully || !done.Result) return;
-                            source.DispatchPlayerProjection(player, () =>
-                            {
-                                if (!ReferenceEquals(player.Playfield, source) || player.Session == null) return;
-                                Reenter(player, target);
-                            });
-                        }, System.Threading.Tasks.TaskScheduler.Default);
-                        return true;
-                    }
-
-                    QuestDungeonPlayfield world;
-                    try
-                    {
-                        world = _playfields.Value.GetOrCreateQuestDungeon(dungeonPlayfield, questId, layout, entrance,
-                            dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
-                            unfinishedNpc, kills,
-                            spawnNpcObjective: unfinishedNpc != null, chestPopulation: chests);
-                        world.KillsCheckpoint ??= _quests.SaveDungeonKills;
-                    }
-                    catch (ZoneEngine_New.Core.World.PlayfieldHostedElsewhereException)
-                    {
-                        // The dungeon already runs on another zone instance (a teammate went in there): join it.
-                        return _playfields.Value.CrossInstance?.Start(player, dungeon.Parameters.DungeonPlayfield, layout.Spawn,
-                            layout.SpawnHeading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalDungeon) == true;
-                    }
-
-                    // Face into the entrance room, not the heading carried in from outside (back at the exit door).
-                    return session.TransferToPlayfield(world, layout.Spawn, layout.SpawnHeading);
+                            if (!ReferenceEquals(player.Playfield, playfield) || player.Session == null) return;
+                            Reenter(player, target);
+                        });
+                    }, System.Threading.Tasks.TaskScheduler.Default);
+                    return true;
                 }
 
                 return false;
@@ -723,11 +699,20 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// dungeon is live here, or World placed it on another instance (the retry hands the player over). False
         /// when the build failed; that is logged and the player's next use of the entrance tries again.
         /// </summary>
-        bool BuildDungeonOffTick(int dungeonPlayfield, string questId, DungeonLayout layout, MissionEntrancePlacement entrance,
-            CachedDungeon dungeon, MissionNpcObjectiveBinding? unfinishedNpc, DungeonKills kills, MissionChestPopulation? chests)
+        bool BuildDungeonOffTick(int dungeonPlayfield, string questId, MissionEntrancePlacement entrance, CachedDungeon dungeon)
         {
             try
             {
+                if (!_layouts.TryGenerate(dungeon.Parameters, out DungeonLayout layout))
+                {
+                    _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Quest dungeon layout could not be generated playfield={0} quest={1}",
+                        dungeonPlayfield, questId));
+                    return false;
+                }
+
+                DungeonKills kills = _quests.LoadDungeonKills(dungeon.OwnerId, questId, dungeon.AssignedAtUtcTicks, dungeon.Parameters);
+                MissionNpcObjectiveBinding? unfinishedNpc = UnfinishedNpc(dungeon.Parameters);
+                MissionChestPopulation? chests = CreateChestPopulation(questId, dungeon);
                 QuestDungeonPlayfield world = _playfields.Value.GetOrCreateQuestDungeon(dungeonPlayfield, questId, layout, entrance,
                     dungeon.TargetHash, dungeon.Parameters.Quality, UncollectedObjective(dungeon.Parameters), TryCollectObjective,
                     unfinishedNpc, kills,

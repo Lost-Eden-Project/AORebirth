@@ -710,6 +710,24 @@ namespace ZoneEngine_New.Core.Playfield
             return created;
         }
 
+        /// <summary>
+        /// The live dungeon for <paramref name="questId"/>, kept from the empty-dungeon sweep the way
+        /// <see cref="GetOrCreateQuestDungeon"/> keeps an existing one, without building anything. False when it is not live here.
+        /// </summary>
+        public bool TryReuseQuestDungeon(int playfieldId, string questId, out QuestDungeonPlayfield dungeon)
+        {
+            ArgumentNullException.ThrowIfNull(questId);
+            lock (_sync)
+            {
+                dungeon = null!;
+                if (_disposed || !_playfields.TryGetValue(playfieldId, out var existing))
+                    return false;
+                _dungeonEmptySince.Remove(playfieldId);
+                dungeon = RequireQuestDungeon(existing, questId);
+                return true;
+            }
+        }
+
         public bool TryGetQuestDungeon(int playfieldId, out QuestDungeonPlayfield dungeon)
         {
             lock (_sync)
