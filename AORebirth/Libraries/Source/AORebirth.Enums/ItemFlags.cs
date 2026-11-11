@@ -130,6 +130,8 @@ namespace AORebirth.Enums
         NoSelectionIndicator = 0x1 << 10,
 
         /// <summary>
+        /// Virtual item (Daily Mission XP Reward, Token Add, Set Flag items): with Can Consume it is auto-consumed, its
+        /// OnUse run on whoever gains it, and it is never held.
         /// </summary>
         Null = 0x1 << 16,
 

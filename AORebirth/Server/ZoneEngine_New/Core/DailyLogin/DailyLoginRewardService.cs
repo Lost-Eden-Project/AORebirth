@@ -59,11 +59,15 @@ public sealed class DailyLoginRewardService(
             if (!selector.TrySelect(day, player.Stats.GetOrOne(CharacterStat.Level),
                 player.Stats.GetOrZero(CharacterStat.Profession), Random.Shared, out var selection, out string error))
                 return Failure(error, state, true);
-            if (!player.Inventory.HasFreeInventorySlots(selection!.ItemCount))
+            // An auto-consumed reward (Null flag + Can Consume) is used after the claim commits; nothing is minted or placed.
+            Item rewardTemplate = items.Create(selection!.LowId, selection.HighId, selection.Quality, ItemSource.Other);
+            rewardTemplate.StackCount = selection.StackCount;
+            bool autoConsumed = AutoConsumedItems.IsAutoConsumed(rewardTemplate);
+            if (!autoConsumed && !player.Inventory.HasFreeInventorySlots(selection.ItemCount))
                 return Failure("There is not enough inventory space for the complete daily reward.", state);
 
             var grants = new List<Item>(selection.ItemCount);
-            for (int index = 0; index < selection.ItemCount; index++)
+            for (int index = 0; index < (autoConsumed ? 0 : selection.ItemCount); index++)
             {
                 Item item = items.CreateWithNewInstance(selection.LowId, selection.HighId, selection.Quality,
                     ItemSource.Other, selection.StackCount);
@@ -99,6 +103,8 @@ public sealed class DailyLoginRewardService(
                 {
                     committed = true;
                     plan.PublishAfterCommit();
+                    for (int index = 0; autoConsumed && index < selection.ItemCount; index++)
+                        AutoConsumedItems.TryConsume(player, rewardTemplate);
                     return success;
                 }
                 if (result.Status == DailyLoginClaimCommitStatus.AlreadyApplied && result.Snapshot is not null)

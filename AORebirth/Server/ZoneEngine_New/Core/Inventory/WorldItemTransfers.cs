@@ -113,6 +113,19 @@ namespace ZoneEngine_New.Core.Inventory
             if (!registry.TryGet(worldItem.Identity, out Dynel? registered) || !ReferenceEquals(registered, worldItem))
                 return false;
 
+            // An auto-consumed item is used on the spot: no slot, no inventory row.
+            Item consumed = items.Create(worldItem.LowId, worldItem.HighId, worldItem.Quality, ItemSource.Other);
+            consumed.StackCount = Math.Max(1, worldItem.StackCount);
+            if (AutoConsumedItems.IsAutoConsumed(consumed))
+            {
+                if (!AutoConsumedItems.TryConsume(player, consumed))
+                    return false;
+                DespawnPickedUp(playfield, worldItem);
+                logger?.Info("World item auto-consumed by char=" + player.Identity.Instance + " item=" + worldItem.Identity.Instance
+                    + " template=" + worldItem.LowId + " count=" + consumed.StackCount);
+                return true;
+            }
+
             Container page = player.Inventory.Inventory;
             int placement = page.FindFreeSlot();
             if (placement < 0)
@@ -147,12 +160,17 @@ namespace ZoneEngine_New.Core.Inventory
                 Count = item.StackCount
             });
 
-            // A spawn point's item comes back on its own timer; a drop simply goes.
-            if (!playfield.GetRequiredService<HashSpawnSystem>().TryDespawnStaticAsDeath(worldItem))
-                playfield.GetRequiredService<SpawnService>().DespawnStatic(worldItem);
+            DespawnPickedUp(playfield, worldItem);
             logger?.Info("World item picked up by char=" + player.Identity.Instance + " item=" + worldItem.Identity.Instance
                 + " template=" + worldItem.LowId + " count=" + item.StackCount);
             return true;
+        }
+
+        /// <summary>A spawn point's item comes back on its own timer; a drop simply goes.</summary>
+        static void DespawnPickedUp(Playfield playfield, WorldItem worldItem)
+        {
+            if (!playfield.GetRequiredService<HashSpawnSystem>().TryDespawnStaticAsDeath(worldItem))
+                playfield.GetRequiredService<SpawnService>().DespawnStatic(worldItem);
         }
 
         /// <summary>

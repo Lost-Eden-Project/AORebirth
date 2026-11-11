@@ -321,6 +321,8 @@ public static class KnubotItems
 
     public static void Give(Player player, Item item, InventoryFlushService flush)
     {
+        if (AutoConsumedItems.TryConsume(player, item))
+            return;
         if (InventoryStacking.TryGrantOntoStack(player, item, flush))
             return;
 

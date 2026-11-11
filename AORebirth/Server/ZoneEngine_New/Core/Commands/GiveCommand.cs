@@ -183,6 +183,14 @@ namespace ZoneEngine_New.Core.Commands
                 return;
             }
 
+            if (AutoConsumedItems.TryConsume(subject, item))
+            {
+                GmCommandFeedback.Send(context.Session, context.Player, string.Format(CultureInfo.InvariantCulture,
+                    "Used {0} QL{1} x{2} on {3} (auto-consumed)", item.Name, item.Quality, Math.Max(1, item.StackCount),
+                    PlayerSubjectName(subject, context.Player)));
+                return;
+            }
+
             if (InventoryStacking.TryGrantOntoStack(subject, item, _flush))
             {
                 GmCommandFeedback.Send(

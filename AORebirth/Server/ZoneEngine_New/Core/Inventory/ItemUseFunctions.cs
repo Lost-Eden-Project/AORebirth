@@ -774,6 +774,8 @@ namespace ZoneEngine_New.Core.Inventory
                 return true;
             }
 
+            if (AutoConsumedItems.TryConsume(player, item))
+                return true;
             if (InventoryStacking.TryGrantOntoStack(player, item, player.Playfield!.GetService<InventoryFlushService>()))
                 return true;
             if (!player.Inventory.TryPlace(item, out Container page, out int slot))

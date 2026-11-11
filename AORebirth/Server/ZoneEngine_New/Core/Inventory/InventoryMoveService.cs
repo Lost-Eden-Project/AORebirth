@@ -152,7 +152,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             // Looted to the automatic marker: stock picks a stack to join before it looks for a free slot, so a full
             // inventory still takes the join.
-            if (lootSource != null && message.TargetPlacement == LootAutoPlacement
+            if (lootSource != null && message.TargetPlacement == LootAutoPlacement && !AutoConsumedItems.IsAutoConsumed(item)
                 && TryFindLootJoinTarget(player.Inventory.Inventory, item, out int joinSlot, out Item joinTarget))
             {
                 if (TryJoinLoot(player, sourcePage, sourceSlot, item, lootSource, joinSlot, joinTarget))
@@ -221,6 +221,10 @@ namespace ZoneEngine_New.Core.Inventory
             int acknowledgementPlacement = lootSource is Chest && message.TargetPlacement == LootAutoPlacement
                 ? message.TargetPlacement : destSlot;
             SendAck(player, message.SourceContainer, player.Identity, acknowledgementPlacement);
+
+            // Looted auto-consumed items (Null flag + Can Consume) are used as they land.
+            if (lootSource != null && ReferenceEquals(destPage, player.Inventory.Inventory))
+                AutoConsumedItems.ConsumeLanded(player, destSlot, item, _actions);
         }
 
         public void Handle(Player player, ClientContainerAddItemMessage message)
