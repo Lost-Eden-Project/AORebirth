@@ -94,6 +94,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (InventoryMoveService.IsBagItem(item)
                 && player.Inventory.TryGetBackpackPage(item.Identity, out Container bagPage)
                 && bagPage.Content.Count != 0) return false;
+            if (!BeltDeckSlots.AllowsRemoval(player, page, placement)) return false;
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
             ItemInstanceRecord[] expectedSources = loot != null && item.IsPersisted
                 ? [item.ToRecord(page.Identity, placement, item.StackCount)] : [];

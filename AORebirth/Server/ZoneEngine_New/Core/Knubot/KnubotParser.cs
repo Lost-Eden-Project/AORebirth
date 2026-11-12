@@ -3,6 +3,7 @@ namespace ZoneEngine_New.Core.Knubot;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -11,7 +12,7 @@ using ZoneEngine_New.Core.Inventory;
 /// <summary>
 /// Turns line text into ordered pieces and effects. Tags:
 /// text <c>{name}</c> <c>{npc}</c> <c>{itemref LOW HIGH QL}</c> <c>{emote}…{/emote}</c> <c>{delay SECONDS}</c>;
-/// effects (applied when the text reaches them) <c>{givequest HASH}</c> <c>{completequest HASH}</c> <c>{spawn ITEMHASH QL|level [count]}</c> <c>{take ITEMHASH [count]}</c> <c>{shop}</c> <c>{opentrade}</c> <c>{givebuff NANOID}</c> <c>{useitem ITEMID}</c>; flow <c>{goto LINE}</c> <c>{close [SECONDS]}</c>.
+/// effects (applied when the text reaches them) <c>{givequest HASH}</c> <c>{completequest HASH}</c> <c>{spawn ITEMHASH QL|level [count]}</c> <c>{take ITEMHASH [count]}</c> <c>{shop}</c> <c>{opentrade}</c> <c>{givebuff NANOID}</c> <c>{useitem ITEMID}</c> <c>{teleport X Y Z PLAYFIELD}</c>; flow <c>{goto LINE}</c> <c>{close [SECONDS]}</c>.
 /// <c>{{</c> and <c>}}</c> write literal braces. Reply text allows only the text tags without delay.
 /// </summary>
 public static class KnubotParser
@@ -239,6 +240,29 @@ public static class KnubotParser
                     Effect(new KnubotUseItem(useItemId));
                     break;
 
+                case "teleport":
+                    // X Y Z then the playfield, as .tp and the item Teleport function; playfield 0 is the current one.
+                    float tpX = 0, tpY = 0, tpZ = 0;
+                    int tpPlayfield = -1;
+                    bool tpParsed = words.Length == 5
+                        && TryCoordinate(words[1], out tpX) && TryCoordinate(words[2], out tpY) && TryCoordinate(words[3], out tpZ)
+                        && int.TryParse(words[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out tpPlayfield) && tpPlayfield >= 0;
+                    if (!tpParsed || (tpPlayfield != 0 && !Directory.Exists(Path.Combine(load.GameData.RootPath,
+                            AORebirth.Core.GameData.GameDataPaths.PlayfieldRelativeDirectory(tpPlayfield)))))
+                    {
+                        errors.Add("expected {teleport X Y Z PLAYFIELD} with a known playfield id (0: the current one): {" + body + "}");
+                        break;
+                    }
+
+                    if (parsed.Effects.Any(effect => effect.EndsChat))
+                    {
+                        errors.Add("only one {teleport} per line: {" + body + "}");
+                        break;
+                    }
+
+                    Effect(new KnubotTeleport(tpPlayfield, tpX, tpY, tpZ));
+                    break;
+
                 case "goto":
                     if (words.Length != 2 || parsed.Goto != null)
                     {
@@ -274,6 +298,9 @@ public static class KnubotParser
         Flush();
         return parsed;
     }
+
+    static bool TryCoordinate(string word, out float value)
+        => float.TryParse(word, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && float.IsFinite(value);
 
     static void Expect(string[] words, int min, int max, string body, List<string> errors)
     {

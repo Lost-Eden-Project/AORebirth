@@ -42,18 +42,23 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     public KnubotCatalog Catalog => catalog;
 
     /// <summary>
-    /// One queued step, in the order written: a packet, or the end of a line (its replies, goto or close). Each
-    /// waits <see cref="DelayMilliseconds"/> after the previous one. Effects are never queued: a line's effects
-    /// are all applied when it is chosen, so a chat that ends mid-line drops only text.
+    /// One queued step, in the order written: a packet, a window the text has reached, or the end of a line (its
+    /// replies, goto or close). Each waits <see cref="DelayMilliseconds"/> after the previous one. A line's takes and
+    /// grants are never queued: they are all applied when it is chosen, so a chat that ends mid-line drops only text
+    /// and windows, which change nothing the player holds.
     /// </summary>
     sealed class Outgoing
     {
         public MessageBody? Body;
+        public KnubotEffect? Window;
         public KnubotLine? Line;
         public int Chain;
         public int DelayMilliseconds;
 
         public static Outgoing Packet(MessageBody body, int delay) => new() { Body = body, DelayMilliseconds = delay };
+
+        public static Outgoing Open(KnubotEffect window, KnubotLine line, int chain, int delay)
+            => new() { Window = window, Line = line, Chain = chain, DelayMilliseconds = delay };
 
         public static Outgoing Finish(KnubotLine line, int chain, int delay)
             => new() { Line = line, Chain = chain, DelayMilliseconds = delay };
@@ -457,7 +462,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             return;
         }
 
-        // Applied, but an effect after the line's grants did not (a window that would not open): the line stands.
+        // Applied, but a grant after the first one landed did not, or a take came up short: the line stands.
         if (failure.Length != 0)
             logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: line '{1}' for char={2}: {3}",
                 conversation.Script.Id, lineId, conversation.Player.Identity.Instance, failure));
@@ -533,8 +538,9 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     }
 
     /// <summary>
-    /// One AppendText per run of spoken or emote text; a delay starts a new packet held back that long. An effect
-    /// piece is already applied (<see cref="Say"/>) and takes no place in the queue. Text is sent as written: the
+    /// One AppendText per run of spoken or emote text; a delay starts a new packet held back that long. A window is
+    /// queued where it was written; any other effect piece is already applied (<see cref="Say"/>) and takes no place
+    /// in the queue. Text is sent as written: the
     /// client joins packets without a separator, so line breaks are the author's \n. Returns a delay left over
     /// after the last piece.
     /// </summary>
@@ -565,6 +571,12 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
                     delay += pause.Milliseconds;
                     break;
 
+                case KnubotEffectPiece { Effect.Phase: KnubotEffectPhase.Window } window:
+                    Flush();
+                    conversation.Packets.Enqueue(Outgoing.Open(window.Effect, line, chain, delay));
+                    delay = 0;
+                    break;
+
                 case KnubotEffectPiece:
                     break;
 
@@ -592,7 +604,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     }
 
     /// <summary>
-    /// Runs every step that is due. Packets are paced; a line end runs as soon as its delay has passed.
+    /// Runs every step that is due. Packets are paced; a window or a line end runs as soon as its delay has passed.
     /// </summary>
     void Pump(Conversation conversation)
     {
@@ -619,8 +631,47 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             if (next.DelayMilliseconds > 0)
                 conversation.LastSentAt = now;
 
-            Finish(conversation, next.Line!, next.Chain);
+            if (next.Window == null)
+                Finish(conversation, next.Line!, next.Chain);
+            else if (!OpenWindow(conversation, next.Window, next.Line!, next.Chain))
+                return;
         }
+    }
+
+    /// <summary>
+    /// Opens a window the line's text has reached, after one more check against the player as they are now. A line
+    /// that is only text and windows says its Fail line instead when the window will not open; one whose takes and
+    /// grants already applied stands, and the miss is logged. False when the rest of the line was dropped.
+    /// </summary>
+    bool OpenWindow(Conversation conversation, KnubotEffect window, KnubotLine line, int chain)
+    {
+        KnubotContext context = Context(conversation);
+        if (window.EndsChat && window.Check(context, new KnubotPlan(), effects))
+        {
+            // The player leaves the NPC: the chat closes before the move, and the rest of the line is dropped.
+            Remove(conversation);
+            conversation.Transport.Send(CloseMessage(conversation, 0));
+            if (!window.Apply(context, effects))
+                logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: {1} did not apply on line '{2}' for char={3}",
+                    conversation.Script.Id, window, line.Id, conversation.Player.Identity.Instance));
+            return false;
+        }
+
+        if (window.Check(context, new KnubotPlan(), effects) && window.Apply(context, effects))
+            return true;
+
+        if (line.Effects.Any(effect => effect.Phase != KnubotEffectPhase.Window))
+        {
+            logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: {1} did not open on line '{2}' for char={3}; the line's effects stand",
+                conversation.Script.Id, window, line.Id, conversation.Player.Identity.Instance));
+            return true;
+        }
+
+        logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: {1} no longer applies on line '{2}' for char={3}",
+            conversation.Script.Id, window, line.Id, conversation.Player.Identity.Instance));
+        conversation.Packets.Clear();
+        Fail(conversation, line, chain);
+        return false;
     }
 
     void Remove(Conversation conversation)

@@ -1165,6 +1165,11 @@ namespace ZoneEngine_New.Core.Nanos
         /// </summary>
         static void OnDebuffLanded(Character caster, Character recipient, Buff applied, bool addThreat = true)
         {
+            // A hostile-flagged nano an NPC lands on itself (its Anger items' self casts) is not an enemy debuff: it must
+            // not break the calm or root someone else put on it.
+            if (ReferenceEquals(caster, recipient))
+                return;
+
             recipient.RollBuffBreaks(BuffBreakCause.Debuff, caster, except: applied);
             if (addThreat)
                 AddHostileThreat(caster, recipient);

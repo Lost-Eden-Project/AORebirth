@@ -1568,12 +1568,19 @@ namespace ZoneEngine_New.Core.Movement
         }
 
         /// <summary>
-        /// After hydration: the stored CurrentMovementMode and WaitState follow the motor. A character that logged out
-        /// sitting is stored with mode Sit, while every body starts as a standing runner and the client builds its
-        /// login character in Run as well. Left at Sit, the nano cast rules (which read the stat, not the motor)
-        /// refuse every cast with "You must be standing up" until the player sits and stands again (bug #405).
+        /// After hydration: a stored seated state stands up. A character that logged out sitting is stored with mode
+        /// Sit (WaitState 2), while every body starts as a standing runner and the client builds its login character in
+        /// Run as well. Left at Sit, the nano cast rules (which read the stat, not the motor) refuse every cast with
+        /// "You must be standing up" until the player sits and stands again (bug #405). Any other stored mode (Fly,
+        /// Sneak, Walk) is left as stored: FullCharacter reports it as before.
         /// </summary>
-        public void SyncModeStatsAfterHydration() => SyncModeStats();
+        public void SyncModeStatsAfterHydration()
+        {
+            if (_character.Stats.GetOrZero(CharacterStat.CurrentMovementMode) == (int)MovementState.Sit)
+                SyncModeStats();
+            else if (_character.Stats.GetOrZero(CharacterStat.WaitState) == 2)
+                _character.Stats.Set(CharacterStat.WaitState, 0, StatDetail.Base);
+        }
 
         /// <summary>
         /// Leaves Sit for the last walk/run mode. Attacking stands a seated character up on the client without a movement

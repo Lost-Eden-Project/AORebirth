@@ -207,12 +207,14 @@ namespace ZoneEngine_New.Core.Ai
             NpcCharacter npc = brain.Npc;
             Character? enemy = null;
 
-            // Leashed to the owner: a guarding pet drops its fight past GuardRange of the owner and heads back. An
-            // attack order holds as far as MaxPlayerPetDistance, so a pet sent at a mob keeps fighting when its owner
-            // leaves the room (bug #144); past that it is warped back instead.
-            double ownerDistance = OwnerDistance(brain);
-            if (ownerDistance > GuardRange
-                && (pet.Mode != PetMode.Attack || ownerDistance > PetService.MaxPlayerPetDistance))
+            // Leashed to the owner: a guarding pet drops its fight past GuardRange of the owner (by the walk back) and
+            // heads back. An attack order holds until the straight line passes MaxPlayerPetDistance, the same rule
+            // ShouldRejoinOwner warps it by: a pet sent at a mob keeps fighting when its owner leaves the room or steps
+            // behind a pillar, where the walk back runs long or finds no route at all (bug #144).
+            bool leashed = pet.Mode == PetMode.Attack && pet.AttackTarget != Identity.None
+                ? Distance(npc, pet.Owner) > PetService.MaxPlayerPetDistance
+                : OwnerDistance(brain) > GuardRange;
+            if (leashed)
             {
                 // Tell the owner once, on the tick the pet breaks off a fight (bug #260). Afterwards the pet has no
                 // target and no attack order, so later ticks out of range stay quiet.

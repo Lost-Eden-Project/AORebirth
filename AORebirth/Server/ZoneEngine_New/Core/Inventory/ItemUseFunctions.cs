@@ -999,6 +999,19 @@ namespace ZoneEngine_New.Core.Inventory
                 || !spell.TryReadInt(3, out int playfieldId))
                 return false;
 
+            return TeleportTo(player, playfieldId, new Vector3(x, y, z));
+        }
+
+        /// <summary>
+        /// The Teleport function's move, shared with Knubot's <c>{teleport}</c>: playfield 0 or the current one is a soft
+        /// in-place move, any other is a one-way zone change to a playfield GameData knows.
+        /// </summary>
+        internal static bool TeleportTo(Player player, int playfieldId, Vector3 position)
+        {
+            if (player.Session == null || player.Playfield == null)
+                return false;
+
+            double x = position.x, y = position.y, z = position.z;
             Playfield source = player.Playfield;
             bool samePlayfield = IsCurrentPlayfield(source, playfieldId);
             if (!samePlayfield)

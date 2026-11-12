@@ -326,6 +326,9 @@ namespace ZoneEngine_New.Core.Inventory
             if (!MeetsWeaponHandPairing(player, item, destPage, destSlot, sourcePage, sourceSlot))
                 return;
 
+            if (!BeltDeckSlots.AllowsMove(player, sourcePage, sourceSlot, destPage, destSlot, destOccupant))
+                return;
+
             // Social clothing takes the default delay going on and coming off; an item going onto another wear page
             // always takes its own.
             double delaySeconds = ResolveEquipDelaySeconds(item, IsSocialMove(sourcePage, destPage));
