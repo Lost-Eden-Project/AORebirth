@@ -343,7 +343,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// </summary>
         public bool ConfigureNewDungeon(QuestDungeonParameters parameters, bool team, int? style = null, bool tokenReward = true,
             string[]? populationNpcHashes = null, int populationLevelSpreadPercent = 0,
-            IReadOnlyList<Mobs.MobItemTableEntry>? chestLoot = null, IReadOnlyList<Mobs.MobItemTableEntry>? mobLoot = null)
+            QuestDungeonChests? chests = null, IReadOnlyList<Mobs.MobItemTableEntry>? mobLoot = null)
         {
             ArgumentNullException.ThrowIfNull(parameters);
             if (_generator == null || _policy == null || (parameters.GeneratorVersion != 0 && parameters.GeneratorVersion != CurrentVersion))
@@ -366,9 +366,11 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     parameters.TokenReward.AwardsTokens = tokenReward;
                 parameters.PopulationNpcHashes = populationNpcHashes;
                 parameters.PopulationLevelSpreadPercent = Math.Clamp(populationLevelSpreadPercent, 0, QuestDungeonTemplate.MaxSpreadPercent);
-                // A quest's own tables are frozen as given (null: none); a terminal mission takes the policy's chest table
-                // and adds nothing to its NPCs' own tables.
-                parameters.ChestLoot = Mobs.MobItemTableEntry.Clone(chestLoot ?? _policy.Chests?.LootTable);
+                // A quest's own chests and tables are frozen as given (null: none). A terminal mission names none, so it
+                // gets no chests and adds nothing to its NPCs' own tables.
+                parameters.ChestLoot = chests?.EffectiveLoot ?? [];
+                parameters.ChestRoomDensity = chests?.RoomDensity;
+                parameters.ChestCountVariationFraction = chests?.CountVariationFraction;
                 parameters.MobLoot = Mobs.MobItemTableEntry.Clone(mobLoot);
                 parameters.LayoutPlan = new DungeonLayoutPlan
                 {

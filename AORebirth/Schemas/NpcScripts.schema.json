@@ -178,6 +178,10 @@
             }
           ]
         },
+        "GfxEffect": {
+          "description": "Plays a gfx on the NPC as retail's GfxEffect function effect (a SpellList, not a GfxTrigger): the Fresh Recruit's hatch flash 43232. A gfx id or a $Gfx param.",
+          "oneOf": [ { "type": "integer", "minimum": 1 }, { "$ref": "#/$defs/paramRef" } ]
+        },
         "SpawnNpc": {
           "type": "object",
           "description": "Spawns NPCs the program owns: one at the centre, or Count of them evenly on a circle of Radius around it. The centre is the NPC's position, Offset in its frame (x right, y up, z ahead) or a world position At. Random add types: a Random block with one SpawnNpc per option. The spawned NPC's own Hash bindings attach as usual, so an add can run its own program, up to three SpawnNpc generations deep (independent spawns count too). A Death handler may spawn: an independent spawn stays, a linked one starts its DespawnWithOwner delay at once, and neither reports AddDied.",
@@ -217,8 +221,10 @@
                     { "type": "array", "minItems": 1, "maxItems": 16, "items": { "oneOf": [ { "type": "integer", "minimum": 1 }, { "$ref": "#/$defs/paramRef" } ] } }
                   ]
                 },
-                "Target": { "type": "string", "enum": ["Self", "Target", "RandomHostile", "Playfield"], "default": "Self", "description": "Self; Target: the current fighting target; RandomHostile: a random player on the hate list the NPC may attack (never a pet); Playfield: every living player on the NPC's playfield instance whatever their distance (never a pet), with one cast bar (the longest cast time in a Nano list), one cost and one recharge; each player's landing still checks the nano's ToUse criteria against that player, target legality, resists and nanoline stacking." },
+                "Target": { "type": "string", "enum": ["Self", "Target", "RandomHostile", "Playfield", "RandomNearby"], "default": "Self", "description": "Self; Target: the current fighting target; RandomHostile: a random player on the hate list the NPC may attack (never a pet); Playfield: every living player on the NPC's playfield instance whatever their distance (never a pet), with one cast bar (the longest cast time in a Nano list), one cost and one recharge; each player's landing still checks the nano's ToUse criteria against that player, target legality, resists and nanoline stacking. RandomNearby: a random living NPC near this one (never itself or a pet) within MaxDistance whose spawn hash is in Hashes (required)." },
                 "MinDistance": { "type": "integer", "minimum": 0, "maximum": 40, "default": 0, "description": "RandomHostile only: players closer than this (edge to edge, metres) are not picked." },
+                "MaxDistance": { "type": "integer", "minimum": 1, "maximum": 40, "default": 40, "description": "RandomNearby only: NPCs farther than this (edge to edge, metres) are not picked." },
+                "Hashes": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string", "minLength": 1 }, "description": "RandomNearby (required): pick only NPCs spawned with one of these NPC template hashes." },
                 "Warp": { "type": "string", "enum": ["ToSelf"], "description": "Move the recipient to the NPC's feet (and a player's living pets with it) when the nano lands. Needs a Target other than Self or Playfield." }
               }
             }
@@ -231,7 +237,8 @@
           "required": ["Stat", "Value"],
           "properties": {
             "Stat": { "type": "string", "description": "A CharacterStat enum name." },
-            "Value": { "type": "integer" }
+            "Value": { "type": "integer" },
+            "Show": { "type": "boolean", "default": false, "description": "Also tell the NPC's observers as retail does (a SpellList Set function effect), so the client applies it at once: Scale grows or shrinks the model (the Fresh Recruit hatch)." }
           }
         },
         "SetVar": { "$ref": "#/$defs/varOp" },

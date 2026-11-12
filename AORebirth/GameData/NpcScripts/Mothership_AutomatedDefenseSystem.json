@@ -1,0 +1,21 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mothership_AutomatedDefenseSystem",
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        { "Wait": 3500 },
+        { "CastNano": 262715 },
+        { "Wait": 1000 },
+        { "Despawn": true }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Hash": "ATDE",
+      "Provenance": "capture packets-all.log 2026-10-30 17:39 (Delmus): an Alien Defense System that reached its player cast 262722 (range 3 m: SpawnMonster2 ATDE level 1, 3000) and an Automated Defense System appeared on that player; 3.6 s later it cast 262715 on itself, an AreaCastNano of 262716 (Hit Health -18000..-28000) at radius 4, which killed the player. The fuse gives the player time to step out of the 4 m blast; the system then leaves, since SpawnMonster2 gives it no lifetime."
+    }
+  ]
+}

@@ -449,6 +449,20 @@ earlier adds stop reporting, and drops the queue and any running AddDied handler
 runner. Example: `{ "On": "AddDied", "Tag": "slot1", "DelayMs": 30000, "Do": [ { "Random": [ [ { "SpawnNpc":
 { "Hash": "CETN", "At": [134.0, 29.9, 216.5], "Tag": "slot1" } } ], ... ] } ] }`.
 
+Stock monster spawns (2026-11-12, Alien Mothership bosses). Script only what the stock items cannot say.
+DelayedSpawnNpc (53220) on an NPC's equipment runs: `SpawnService.ScheduleEquipmentSpawns` queues OnWear entries at
+spawn and OnTerminate entries at a kill (`NpcCharacter.OnDeath`), [hash, level, x, y, z, ?, delay ms, mode, ?]: the
+level is interpolated with the item's QL, the offset is on world axes from the spawner (as retail places them), the heading 0 for mode 0 and a random yaw otherwise, a death spawn starts on its killer;
+`SpawnService.Tick` spawns them when due (at most 256 waiting, spawn generations capped as for scripts). Spawn items
+whose names differ only in a variant number (EP3_CoccoonRoomFill1/2/3_001) are alternative layouts and one, picked at
+random, runs. These spawns and SpawnMonster2's use `SpawnSource.ItemSpawn`, so their hash bindings attach
+(`Summoned` stays for pets). `CastNano` `Target: "RandomNearby"` with `Hashes` (required) and `MaxDistance` (default
+40) picks a living NPC of those hashes from the locality query (the Coccoon Accelerator hatching cocoons). The NPC nano
+AI never casts a friendly Set-Health-0 nano (`NanoKind.Lethal`). Programs: `Mothership_AlienCoccoon` (the starting
+200 Health and no regeneration), `Mothership_CoccoonAccelerator`, `Mothership_AutomatedDefenseSystem` (fuse and
+blast); the Coccoon Attendant's field, the hatchlings, and Master of Biological Metamorphoses' conduits come from the
+stock items.
+
 The shipped `Summoner.json` binds `Feature: "Summoner"`: in a fight, every 20 to 30 s it casts 286237 on a random
 hostile player more than 10 m away and warps them to its feet. Listing `Summoner` under a hash's `Features` in
 `MonsterCombatRules.json` is all a monster needs.

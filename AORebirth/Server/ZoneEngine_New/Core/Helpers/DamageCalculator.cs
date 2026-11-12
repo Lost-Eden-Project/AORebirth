@@ -245,17 +245,23 @@ namespace ZoneEngine_New.Core.Helpers
                     break;
             }
 
-            return ResolveAttackRating(attacker, weapon?.DamageItem?.Definition);
+            return ResolveAttackRating(attacker, weapon?.DamageItem?.Definition, expandAms: false);
         }
 
-        static int ResolveAttackRating(Character attacker, ItemTemplate? template)
+        static int ResolveAttackRating(Character attacker, ItemTemplate? template, bool expandAms = true)
         {
             int attackRating = 0;
             if (template?.Attack is { Count: > 0 })
             {
                 foreach (System.Collections.Generic.KeyValuePair<CharacterStat, int> entry in template.Attack)
                 {
-                    attackRating += (int)((long)entry.Value * NormalizeStat(attacker.Stats.GetOrZero(entry.Key)) / 100);
+                    // AMS (22) is not stored: it is the wielded weapon's attack rating (weapon skill + Add All Off.).
+                    // An AMS-checked action (Force Opponent 252315) then adds Add All Off. again below. The weapon's
+                    // own rating never expands AMS, so it cannot recurse.
+                    int skill = entry.Key == CharacterStat.AMS
+                        ? (expandAms ? ResolveAttackRating(attacker) : 0)
+                        : NormalizeStat(attacker.Stats.GetOrZero(entry.Key));
+                    attackRating += (int)((long)entry.Value * skill / 100);
                 }
             }
 

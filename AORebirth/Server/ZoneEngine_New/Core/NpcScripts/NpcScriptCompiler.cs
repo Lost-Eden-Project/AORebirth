@@ -109,7 +109,8 @@ public sealed class NpcScriptCompiler
             ctx.Jumps.ToArray(),
             ctx.Spawns.ToArray(),
             ctx.Tags.ToArray(),
-            ctx.NanoLists.ToArray());
+            ctx.NanoLists.ToArray(),
+            ctx.HashLists.ToArray());
     }
 
     static ScriptParam[] ParseParams(JsonElement root, List<string> errors)
@@ -185,6 +186,8 @@ public sealed class NpcScriptCompiler
         public List<string> Tags { get; } = new();
 
         public List<int[]> NanoLists { get; } = new();
+
+        public List<string[]> HashLists { get; } = new();
 
         /// <summary>Tag ids some SpawnNpc gives out.</summary>
         public HashSet<int> SpawnedTags { get; } = new();
@@ -421,6 +424,13 @@ public sealed class NpcScriptCompiler
                 CompileGfx(value, ctx);
                 return;
 
+            case "GfxEffect":
+                if (!TryValueRef(value, ScriptParamType.Gfx, ctx, out int gfxEffectRef, ParseNanoId))
+                    ctx.Error("GfxEffect: a positive gfx id or a $Gfx param");
+                else
+                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.GfxEffect, gfxEffectRef));
+                return;
+
             case "SpawnNpc":
                 CompileSpawnNpc(value, ctx);
                 return;
@@ -439,7 +449,7 @@ public sealed class NpcScriptCompiler
                 if (!Enum.TryParse(statName, ignoreCase: false, out CharacterStat stat) || !Enum.IsDefined(stat))
                     ctx.Error("SetStat: unknown CharacterStat '" + statName + "'");
                 else
-                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.SetStat, (int)stat, GetInt(value, "Value", 0)));
+                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.SetStat, (int)stat, GetInt(value, "Value", 0), GetBool(value, "Show", false) ? 1 : 0));
                 return;
             }
 
@@ -901,7 +911,7 @@ public sealed class NpcScriptCompiler
             string targetName = GetString(value, "Target") ?? "Self";
             if (!Enum.TryParse(targetName, ignoreCase: true, out target) || !Enum.IsDefined(target))
             {
-                ctx.Error("CastNano: Target is Self, Target, RandomHostile or Playfield");
+                ctx.Error("CastNano: Target is Self, Target, RandomHostile, Playfield or RandomNearby");
                 return;
             }
 
@@ -916,6 +926,50 @@ public sealed class NpcScriptCompiler
             {
                 ctx.Error("CastNano: MinDistance only applies to Target RandomHostile");
                 return;
+            }
+
+            bool hasMax = value.TryGetProperty("MaxDistance", out _);
+            bool hasHashes = value.TryGetProperty("Hashes", out JsonElement hashesElement);
+            if ((hasMax || hasHashes) && target != NpcScriptTarget.RandomNearby)
+            {
+                ctx.Error("CastNano: MaxDistance and Hashes only apply to Target RandomNearby");
+                return;
+            }
+
+            if (target == NpcScriptTarget.RandomNearby)
+            {
+                // C carries the maximum distance for a nearby pick.
+                minDistance = GetInt(value, "MaxDistance", MaxCastDistance);
+                if (minDistance < 1 || minDistance > MaxCastDistance)
+                {
+                    ctx.Error("CastNano: MaxDistance must be 1.." + MaxCastDistance);
+                    return;
+                }
+
+                // Hashes is required: an unfiltered "any NPC near me" would reach every bystander in the cell.
+                if (!hasHashes || hashesElement.ValueKind != JsonValueKind.Array || hashesElement.GetArrayLength() < 1
+                    || hashesElement.GetArrayLength() > MaxCastHashList)
+                {
+                    ctx.Error("CastNano: Target RandomNearby needs Hashes, a list of 1.." + MaxCastHashList + " NPC template hashes");
+                    return;
+                }
+
+                var hashes = new List<string>();
+                foreach (JsonElement item in hashesElement.EnumerateArray())
+                {
+                    string hashText = item.ValueKind == JsonValueKind.String ? (item.GetString() ?? string.Empty).Trim() : string.Empty;
+                    if (!_gameData.HasMobTemplate(hashText))
+                    {
+                        ctx.Error("CastNano: Hashes: no NPC template for hash '" + hashText + "'");
+                        return;
+                    }
+
+                    if (!hashes.Contains(hashText))
+                        hashes.Add(hashText);
+                }
+
+                ctx.HashLists.Add(hashes.ToArray());
+                flags |= ctx.HashLists.Count << CastHashListShift;
             }
 
             if (value.TryGetProperty("Warp", out JsonElement warp))
@@ -985,6 +1039,12 @@ public sealed class NpcScriptCompiler
 
     /// <summary>Longest CastNano Nano list.</summary>
     public const int MaxCastNanoList = 16;
+
+    /// <summary><see cref="ScriptOpCode.CastNano"/> D: bits from here hold 1 + a <see cref="NpcScriptProgram.HashLists"/> index.</summary>
+    public const int CastHashListShift = 8;
+
+    /// <summary>Longest CastNano RandomNearby Hashes list.</summary>
+    public const int MaxCastHashList = 16;
 
     static bool ParseNanoId(JsonElement element, out int id)
     {

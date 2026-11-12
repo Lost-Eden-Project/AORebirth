@@ -84,6 +84,13 @@ namespace LoginEngine.MessageHandlers
                                     MonsterScale = createCharacterMessage.MonsterScale,
                                     Fatness = (int)createCharacterMessage.Fatness
                                 };
+            // Stock client name rule (4-12 ASCII letters/digits, letters first, digits only trailing); refused as if taken (the only name refusal the client knows).
+            if (!CharacterName.IsValidNameFormat(createCharacterMessage.Name))
+            {
+                client.Send(0x0000FFFF, new NameInUseMessage());
+                return;
+            }
+
             // Config/NameFilter.json: the worst names are refused as if taken (the only name refusal the client knows).
             if (!AORebirth.Core.Text.NameFilter.For(AORebirth.Core.GameData.GameDataPaths.ResolveRuntimeRoot())
                     .IsAllowed(createCharacterMessage.Name))

@@ -37,7 +37,7 @@ namespace ZoneEngine_New.Core.Playfield
     /// <summary>
     /// Playfield-scoped spawn. Constructs players via DI; session/DB row are method args.
     /// </summary>
-    public sealed class SpawnService
+    public sealed partial class SpawnService
     {
         private readonly IServiceProvider _services;
         private readonly DynelRegistry _registry;
@@ -261,6 +261,10 @@ namespace ZoneEngine_New.Core.Playfield
                     position.zf));
 
             Modules.ModuleHooks.NpcSpawned(_playfield, npc);
+
+            // Stock monster spawns on its equipment (DelayedSpawnNpc OnWear: a boss's conduits). Queued, so the
+            // caller's own setup (an add's spawn generation) is in place before they come due.
+            ScheduleEquipmentSpawns(npc, AORebirth.Enums.EventType.OnWear);
             return npc;
         }
 
@@ -737,6 +741,7 @@ namespace ZoneEngine_New.Core.Playfield
             DespawnEmptyLootables(_tickSnapshot);
             DespawnExpiredWorldItems(_tickSnapshot);
             _tickSnapshot.Clear();
+            SpawnDueItemSpawns();
         }
 
         /// <summary>Still on this playfield: an earlier pass this tick may have despawned it (Playfield is then null).</summary>

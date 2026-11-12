@@ -43,7 +43,13 @@ namespace ZoneEngine_New.Core.Ai
         Hostile,
         Summon,
         Heal,
-        Buff
+        Buff,
+
+        /// <summary>
+        /// A friendly nano that sets Health to 0 (Coccoon Accelerator's 258501, which hatches a cocoon): in no cast
+        /// order, so the AI never "heals" itself or a hurt neighbour to death with it. Only a script casts it.
+        /// </summary>
+        Lethal
     }
 
     sealed class NpcNanoCaster
@@ -150,6 +156,7 @@ namespace ZoneEngine_New.Core.Ai
                 return known;
 
             NanoKind kind = spell.IsHostile ? NanoKind.Hostile
+                : SetsHealthToZero(spell) ? NanoKind.Lethal
                 : TrySummonedPetType(spell, out _) ? NanoKind.Summon
                 : IsHeal(spell) ? NanoKind.Heal
                 : IsBuffLike(spell) ? NanoKind.Buff
@@ -468,6 +475,24 @@ namespace ZoneEngine_New.Core.Ai
                     if (hit.Is(FunctionType.Hit)
                         && hit.TryReadInt(0, out int stat) && stat == (int)CharacterStat.Health
                         && hit.TryReadInt(1, out int amount) && amount > 0)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>A Set of Health to 0 or below in any of the nano's events.</summary>
+        static bool SetsHealthToZero(NanoSpell spell)
+        {
+            foreach (List<ItemSpell> spells in spell.SpellList.Values)
+            {
+                for (int i = 0; i < spells.Count; i++)
+                {
+                    ItemSpell set = spells[i];
+                    if (set.Is(FunctionType.Set)
+                        && set.TryReadInt(0, out int stat) && stat == (int)CharacterStat.Health
+                        && set.TryReadInt(1, out int value) && value <= 0)
                         return true;
                 }
             }

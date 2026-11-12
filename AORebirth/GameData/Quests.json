@@ -1480,7 +1480,61 @@
       "AwardsTokens": true,
       "Npcs": [
         "ARZWEH"
-      ]
+      ],
+      "Chests": {
+        "Enabled": true,
+        "RoomDensity": 2.0,
+        "LootTable": [
+          {
+            "Hash": "LEALRARE",
+            "Repeats": 3,
+            "Chance": 1,
+            "LevelMod": 0,
+            "IgnoreLevel": true
+          },
+          {
+            "Hash": "LEALTS",
+            "Repeats": 3,
+            "Chance": 24,
+            "LevelMod": 0,
+            "IgnoreLevel": true
+          },
+          {
+            "Hash": "LEALEQ",
+            "Repeats": 1,
+            "Chance": 8,
+            "LevelMod": 0,
+            "IgnoreLevel": true
+          },
+          {
+            "Hash": "LEALCOM",
+            "Repeats": 1,
+            "Chance": 20,
+            "LevelMod": 10
+          },
+          {
+            "Hash": "LEALCLUMP",
+            "Repeats": 1,
+            "Chance": 30,
+            "LevelMod": 10
+          },
+          {
+            "Hash": "LEALSOC",
+            "Repeats": 1,
+            "Chance": 1,
+            "LevelMod": 0,
+            "IgnoreLevel": true
+          },
+          {
+            "Hash": "LEALCRU",
+            "Repeats": 1,
+            "Chance": 5,
+            "LevelMod": 0,
+            "IgnoreLevel": true,
+            "QualityPercent": 50
+          }
+        ]
+      }
     }
   }
 ]

@@ -102,10 +102,17 @@ public enum ScriptOpCode : byte
     /// <summary>
     /// Casts a nano from the NPC. A = nano id value ref, or with flag 2 an index into
     /// <see cref="NpcScriptProgram.NanoLists"/>; B = <see cref="NpcScriptTarget"/>, C = minimum distance in metres for
-    /// a hostile picker, D = flags: 1 warp the recipient to the NPC's feet when the nano lands, 2 A is a nano list.
-    /// Blocks while the cast bar runs.
+    /// a hostile picker (maximum distance for <see cref="NpcScriptTarget.RandomNearby"/>), D = flags: 1 warp the
+    /// recipient to the NPC's feet when the nano lands, 2 A is a nano list; bits 8 and up hold 1 + an index into
+    /// <see cref="NpcScriptProgram.HashLists"/> (the RandomNearby hash filter). Blocks while the cast bar runs.
     /// </summary>
-    CastNano
+    CastNano,
+
+    /// <summary>
+    /// Plays a gfx on the NPC as a GfxEffect function effect (a SpellList, as retail plays the Fresh Recruit's hatch
+    /// flash 43232), not a GfxTrigger. A = gfx id value ref.
+    /// </summary>
+    GfxEffect
 }
 
 /// <summary>Who a <see cref="ScriptOpCode.CastNano"/> lands on.</summary>
@@ -127,7 +134,14 @@ public enum NpcScriptTarget
     /// Every living player on the NPC's playfield instance, whatever their distance (pets never). One cast bar, one
     /// cost and one recharge; with a nano list each player gets their own even pick.
     /// </summary>
-    Playfield = 3
+    Playfield = 3,
+
+    /// <summary>
+    /// A random living NPC near this one (never itself or a player's pet), within the op's maximum distance, whose spawn
+    /// hash is in the op's hash list: an NPC that acts on particular neighbours, such as the Coccoon Accelerator
+    /// hatching the cocoons around it.
+    /// </summary>
+    RandomNearby = 4
 }
 
 /// <summary>
@@ -248,10 +262,12 @@ public sealed class NpcScriptProgram
         int[] jumps,
         SpawnNpcSpec[] spawns,
         string[]? tags = null,
-        int[][]? nanoLists = null)
+        int[][]? nanoLists = null,
+        string[][]? hashLists = null)
     {
         Tags = tags ?? Array.Empty<string>();
         NanoLists = nanoLists ?? Array.Empty<int[]>();
+        HashLists = hashLists ?? Array.Empty<string[]>();
         Id = id;
         File = file;
         Params = parameters;
@@ -316,6 +332,9 @@ public sealed class NpcScriptProgram
 
     /// <summary>The nano lists of <see cref="ScriptOpCode.CastNano"/> ops given an array: nano id value refs.</summary>
     public int[][] NanoLists { get; }
+
+    /// <summary>NPC hash filters of <see cref="NpcScriptTarget.RandomNearby"/> casts (ordinal).</summary>
+    public string[][] HashLists { get; }
 
     public uint TriggerMask { get; }
 

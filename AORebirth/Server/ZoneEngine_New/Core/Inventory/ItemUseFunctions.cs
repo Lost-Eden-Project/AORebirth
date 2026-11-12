@@ -1387,7 +1387,7 @@ namespace ZoneEngine_New.Core.Inventory
                     target.Position,
                     target.Rotation,
                     level,
-                    SpawnSource.Summoned);
+                    SpawnSource.ItemSpawn);
                 return spawned.Count > 0;
             }
             catch (Exception exception) when (exception is KeyNotFoundException

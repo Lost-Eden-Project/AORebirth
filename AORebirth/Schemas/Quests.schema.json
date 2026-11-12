@@ -253,32 +253,65 @@
           "AwardsTokens": {
             "type": "boolean"
           },
-          "ChestLoot": {
+          "Chests": {
             "type": [
-              "array",
+              "object",
               "null"
             ],
-            "items": {
-              "type": "object",
-              "properties": {
-                "Hash": {
-                  "type": "string"
-                },
-                "Repeats": {
-                  "type": "integer"
-                },
-                "Chance": {
-                  "type": "integer"
-                },
-                "LevelMod": {
-                  "type": "integer"
-                },
-                "IgnoreLevel": {
-                  "type": "boolean"
-                }
+            "properties": {
+              "Enabled": {
+                "type": "boolean"
               },
-              "additionalProperties": false
-            }
+              "RoomDensity": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 4
+              },
+              "CountVariationFraction": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "LootTable": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "Hash": {
+                      "type": "string"
+                    },
+                    "Repeats": {
+                      "type": "integer"
+                    },
+                    "Chance": {
+                      "type": "integer"
+                    },
+                    "LevelMod": {
+                      "type": "integer"
+                    },
+                    "IgnoreLevel": {
+                      "type": "boolean"
+                    },
+                    "QualityPercent": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
           },
           "MobLoot": {
             "type": [
@@ -286,7 +319,7 @@
               "null"
             ],
             "items": {
-              "$ref": "#/items/properties/Dungeon/properties/ChestLoot/items"
+              "$ref": "#/items/properties/Dungeon/properties/Chests/properties/LootTable/items"
             }
           }
         },

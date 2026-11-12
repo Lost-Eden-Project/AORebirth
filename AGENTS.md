@@ -284,8 +284,8 @@ alternate build or deployment path.
 
 Generated mission loot is modeled as NPC-style loot tables (Hash, Repeats,
 Chance, LevelMod) in editable GameData: a Quests.json dungeon quest's
-`Dungeon.ChestLoot` and `Dungeon.MobLoot`, with `DungeonGeneration.json`
-`Chests.LootTable` for missions rolled at a terminal. Rare drops are ordinary
+`Dungeon.Chests.LootTable` and `Dungeon.MobLoot`; terminal-rolled missions get
+no chests. Rare drops are ordinary
 `NpcTemplates.json` loot-table rows. There is no separate chest allowlist,
 exclusion list or rare-loot catalog. Private
 loot tables stay private and belong in the same Windows/Linux/live content

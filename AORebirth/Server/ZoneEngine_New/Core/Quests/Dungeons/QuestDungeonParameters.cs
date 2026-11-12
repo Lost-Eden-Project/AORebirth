@@ -37,8 +37,14 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>The ordinary population's level spread around <see cref="Quality"/>, in percent (a quest's Dungeon.MobLevelPercent); 0: none.</summary>
         public int PopulationLevelSpreadPercent { get; set; }
 
-        /// <summary>The chests' item table (a quest's Dungeon.ChestLoot, else the generation policy's LootTable), frozen at acceptance. Null or empty: no chests.</summary>
+        /// <summary>The chests' item table (a quest's enabled Dungeon.Chests.LootTable), frozen at acceptance. Null or empty: no chests.</summary>
         public System.Collections.Generic.List<Mobs.MobItemTableEntry>? ChestLoot { get; set; }
+
+        /// <summary>The quest's Dungeon.Chests.RoomDensity, frozen at acceptance; null: the code default.</summary>
+        public double? ChestRoomDensity { get; set; }
+
+        /// <summary>The quest's Dungeon.Chests.CountVariationFraction, frozen at acceptance; null: the code default.</summary>
+        public double? ChestCountVariationFraction { get; set; }
 
         /// <summary>Rows every dungeon NPC's corpse rolls besides its own table (a quest's Dungeon.MobLoot), frozen at acceptance.</summary>
         public System.Collections.Generic.List<Mobs.MobItemTableEntry>? MobLoot { get; set; }
@@ -122,6 +128,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     || (parsed.TokenReward != null && !parsed.TokenReward.IsValid)
                     || (parsed.PopulationNpcHashes != null && System.Array.Exists(parsed.PopulationNpcHashes, string.IsNullOrWhiteSpace))
                     || parsed.PopulationLevelSpreadPercent is < 0 or > QuestDungeonTemplate.MaxSpreadPercent
+                    || (parsed.ChestRoomDensity is double density && !MissionChestPolicy.IsValidRoomDensity(density))
+                    || (parsed.ChestCountVariationFraction is double variation && !MissionChestPolicy.IsValidCountVariation(variation))
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
                     || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
                     || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType)

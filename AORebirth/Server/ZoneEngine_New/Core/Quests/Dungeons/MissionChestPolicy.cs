@@ -5,52 +5,54 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Serialization;
-using ZoneEngine_New.Core.Entities;
-using ZoneEngine_New.Core.Mobs;
 
 /// <summary>
-/// Editable AORebirth chest placement policy. What a chest holds is an NPC-style item table: a Quests.json dungeon
-/// quest's Dungeon.ChestLoot, or for terminal-rolled missions this policy's LootTable. A dungeon whose effective chest
-/// item table is empty gets no chests.
+/// DungeonGeneration.json chest policy: the global switch and which rooms chests avoid. Chests are defined per quest
+/// (a Quests.json dungeon quest's Dungeon.Chests); a dungeon whose frozen chest loot table is empty gets none. The
+/// count settings default in code and a quest may override them for its own dungeons.
 /// </summary>
 public sealed class MissionChestPolicy
 {
+    /// <summary>Chests per eligible room when the quest names none.</summary>
+    public const double DefaultRoomDensity = 0.3;
+
+    /// <summary>Count variation either way when the quest names none.</summary>
+    public const double DefaultCountVariationFraction = 0.2;
+
+    /// <summary>Most chests per eligible room a quest may ask for.</summary>
+    public const double MaxRoomDensity = 4;
+
     /// <summary>False: generated dungeons get no chest population at all (no placement, loot or stored-chest work).</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Chests per eligible room: 0.3 puts one in about a third of the rooms, 2 about two in each. Every room gets one
-    /// before any gets a second, and a room never holds more than its free spawn points.
+    /// before any gets a second, and a room never holds more than its free spawn points. Set per mission, not from JSON.
     /// </summary>
-    public double RoomDensity { get; set; }
+    [JsonIgnore]
+    public double RoomDensity { get; set; } = DefaultRoomDensity;
 
-    /// <summary>Most chests per eligible room a policy may ask for.</summary>
-    public const double MaxRoomDensity = 4;
-    public double CountVariationFraction { get; set; }
+    /// <summary>How far the chest count varies either way, as a fraction. Set per mission, not from JSON.</summary>
+    [JsonIgnore]
+    public double CountVariationFraction { get; set; } = DefaultCountVariationFraction;
 
-    /// <summary>Chest item table for missions rolled at a terminal (a Quests.json quest brings its own ChestLoot).</summary>
-    public List<MobItemTableEntry> LootTable { get; set; } = [];
-
-    public ChestSpawnDefinition? SpawnDefinition { get; set; }
     public MissionChestPlacementPolicy? Placement { get; set; }
 
-    [JsonIgnore]
-    public bool IsValid => double.IsFinite(RoomDensity) && RoomDensity is >= 0 and <= MaxRoomDensity
-        && double.IsFinite(CountVariationFraction) && CountVariationFraction is >= 0 and <= 1
-        && LootTable != null && LootTable.All(MobItemTableEntry.IsWellFormed)
-        && (Placement == null || Placement.IsValid) && AppearanceValid();
+    public static bool IsValidRoomDensity(double density) => double.IsFinite(density) && density is >= 0 and <= MaxRoomDensity;
 
-    bool AppearanceValid()
+    public static bool IsValidCountVariation(double variation) => double.IsFinite(variation) && variation is >= 0 and <= 1;
+
+    [JsonIgnore]
+    public bool IsValid => IsValidRoomDensity(RoomDensity) && IsValidCountVariation(CountVariationFraction)
+        && (Placement == null || Placement.IsValid);
+
+    /// <summary>This policy with a mission's frozen count overrides (null keeps the code defaults).</summary>
+    internal MissionChestPolicy ForMission(double? roomDensity, double? countVariationFraction)
     {
-        try
-        {
-            SpawnDefinition?.Validate();
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
+        MissionChestPolicy policy = Clone();
+        policy.RoomDensity = roomDensity ?? DefaultRoomDensity;
+        policy.CountVariationFraction = countVariationFraction ?? DefaultCountVariationFraction;
+        return policy;
     }
 
     /// <summary>One count roll over eligible actual rooms, persisted with the generated placement results.</summary>
@@ -73,15 +75,6 @@ public sealed class MissionChestPolicy
         Enabled = Enabled,
         RoomDensity = RoomDensity,
         CountVariationFraction = CountVariationFraction,
-        LootTable = MobItemTableEntry.Clone(LootTable),
-        SpawnDefinition = SpawnDefinition == null ? null : new ChestSpawnDefinition
-        {
-            StateMachineType = SpawnDefinition.StateMachineType,
-            StateMachineInstance = SpawnDefinition.StateMachineInstance,
-            HeaderStatBytes = SpawnDefinition.HeaderStatBytes,
-            LockableValue = SpawnDefinition.LockableValue,
-            Stats = SpawnDefinition.Stats.Select(stat => new ChestSpawnStat { StatId = stat.StatId, Value = stat.Value }).ToArray()
-        },
         Placement = Placement?.Clone()
     };
 }

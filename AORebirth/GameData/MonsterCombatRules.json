@@ -146,12 +146,33 @@
   },
   "MOOB": {
     "Features": [
-      "SpawnsExitDevice"
+      "SpawnsExitDevice",
+      "Summoner"
     ]
   },
   "MYOS": {
     "Features": [
       "SpawnsExitDevice"
+    ]
+  },
+  "ACCN": {
+    "Features": [
+      "NoMove"
+    ]
+  },
+  "AOCO": {
+    "Features": [
+      "NoMove"
+    ]
+  },
+  "RGCO": {
+    "Features": [
+      "NoMove"
+    ]
+  },
+  "ATDE": {
+    "Features": [
+      "NoMove"
     ]
   }
 }

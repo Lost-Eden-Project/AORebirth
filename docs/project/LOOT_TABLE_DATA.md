@@ -16,20 +16,21 @@ and `HashItemMinter`, exactly as an NPC corpse does.
 ## Where mission loot is defined
 
 - `Quests.json` dungeon quest, under `Dungeon`:
-  - `ChestLoot`: what every chest in the dungeon holds, rolled at the mission
-    quality when the dungeon is first populated. Null or empty: no chests.
+  - `Chests`: the dungeon's chests. `Enabled` (default true) turns them on or
+    off for this quest; `RoomDensity` and `CountVariationFraction` are optional
+    and override the code defaults (0.3 and 0.2); `LootTable` is what every
+    chest holds, rolled at the mission quality when the dungeon is first
+    populated. No `Chests`, `Enabled: false` or an empty table: no chests.
   - `MobLoot`: rows added to every NPC that dies in the dungeon, on top of the
     NPC's own table. Null or empty: none.
-- `DungeonGeneration.json`, for missions rolled at a terminal (no Quests.json
-  template): `Chests.LootTable` is the chest table. Terminal missions add
-  nothing to their NPCs' own tables. `Chests.Enabled: false` turns chest
-  generation off for every dungeon.
+- Missions rolled at a terminal (no Quests.json template) get no chests and add
+  nothing to their NPCs' own tables.
 - Rare drops are ordinary rows on the NPC that drops them, in
   `NpcTemplates.json`; the public placeholder template `AAAA` shows the shape.
 
-Both tables are frozen into the accepted mission's parameters, so a dungeon
-rebuilt later rolls from the tables it was accepted with. Chest contents are
-rolled once per chest and persisted as ordinary container item rows.
+The chest settings and both tables are frozen into the accepted mission's
+parameters, so a dungeon rebuilt later uses what it was accepted with. Chest
+contents are rolled once per chest and persisted as ordinary container item rows.
 
-`Chests` in `DungeonGeneration.json` otherwise holds only placement policy
-(`RoomDensity`, `CountVariationFraction`, `SpawnDefinition`, `Placement`).
+`Chests` in `DungeonGeneration.json` holds only the global policy: `Enabled`
+(false turns chest generation off for every dungeon) and `Placement`.

@@ -5,9 +5,31 @@ namespace ZoneEngine_New.Core.Entities
 
     using SmokeLounge.AOtomation.Messaging.GameData;
 
-    /// <summary>Editable, frozen appearance fields from a positioned ChestFullUpdate; never a loot definition.</summary>
+    /// <summary>Appearance fields of a positioned ChestFullUpdate; never a loot definition.</summary>
     public sealed class ChestSpawnDefinition
     {
+        /// <summary>
+        /// The generated mission chest's spawn appearance. Retail mission-20261011-004128-b8e7bf2e, ordinal 480:
+        /// state machine 1000015:7, chest template 162447, header stat bytes 111 and lockable marker 15. Only the
+        /// verified Locked flag is cleared from the captured Flags (0x20001841) for an ordinary unlocked chest.
+        /// </summary>
+        public static ChestSpawnDefinition MissionChest() => new()
+        {
+            StateMachineType = 1000015,
+            StateMachineInstance = 7,
+            HeaderStatBytes = 111,
+            LockableValue = 15,
+            Stats =
+            [
+                new() { StatId = (int)CharacterStat.Flags, Value = 0x20001801 },
+                new() { StatId = (int)CharacterStat.StaticInstance, Value = 162447 },
+                new() { StatId = (int)CharacterStat.ACGItemLevel, Value = 1 },
+                new() { StatId = (int)CharacterStat.ACGItemTemplateID, Value = 162447 },
+                new() { StatId = (int)CharacterStat.ACGItemTemplateID2, Value = 162447 },
+                new() { StatId = (int)CharacterStat.MultipleCount, Value = 1 }
+            ]
+        };
+
         public int StateMachineType { get; set; }
         public int StateMachineInstance { get; set; }
         public short HeaderStatBytes { get; set; }

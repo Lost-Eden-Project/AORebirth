@@ -123,6 +123,52 @@ namespace LoginEngine.Packets
 
         #region Public Methods and Operators
 
+        public const int MinNameLength = 4;
+
+        public const int MaxNameLength = 12;
+
+        /// <summary>
+        /// The client's stock character-name rule: 4-12 ASCII letters and digits, the first
+        /// four characters are letters, and digits may only trail (no letter after a digit).
+        /// </summary>
+        public static bool IsValidNameFormat(string name)
+        {
+            if (name == null || name.Length < MinNameLength || name.Length > MaxNameLength)
+            {
+                return false;
+            }
+
+            bool seenDigit = false;
+            for (int i = 0; i < name.Length; i++)
+            {
+                char c = name[i];
+                bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+                bool digit = c >= '0' && c <= '9';
+                if (letter)
+                {
+                    if (seenDigit)
+                    {
+                        return false;
+                    }
+                }
+                else if (digit)
+                {
+                    if (i < MinNameLength)
+                    {
+                        return false;
+                    }
+
+                    seenDigit = true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         public static void InitializeMissionPersistence(IMissionDao dao)
         {
             if (dao == null)

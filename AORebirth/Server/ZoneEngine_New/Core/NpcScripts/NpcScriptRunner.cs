@@ -17,6 +17,7 @@ using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Mobs;
 using ZoneEngine_New.Core.Nanos;
 using ZoneEngine_New.Core.Playfield;
+using ZoneEngine_New.Core.Playfield.Locality;
 
 using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
 using Vector3 = AORebirth.Core.Vector.Vector3;
@@ -95,6 +96,9 @@ public sealed class NpcScriptRunner
     long _addDiedWakeMs = long.MaxValue;
     int _ownerEpoch;
     bool _addDiedWarned;
+
+    // CastNano RandomNearby: the locality query's buffer, reused across casts.
+    List<NpcCharacter>? _nearby;
 
     // CastNano with Warp: the cast whose landing moves its recipient to the NPC's feet.
     int _pendingWarpNano;
@@ -581,6 +585,10 @@ public sealed class NpcScriptRunner
                     DoGfx(op);
                     break;
 
+                case ScriptOpCode.GfxEffect:
+                    DoGfxEffect(IntValue(op.A));
+                    break;
+
                 case ScriptOpCode.SpawnNpc:
                     DoSpawnNpc(op, now);
                     break;
@@ -600,6 +608,8 @@ public sealed class NpcScriptRunner
 
                 case ScriptOpCode.SetStat:
                     _npc.Stats.Set((CharacterStat)op.A, op.B, StatDetail.Base, dirty: true);
+                    if (op.C != 0)
+                        ShowSetStat((CharacterStat)op.A, op.B);
                     break;
 
                 case ScriptOpCode.SetVar:
@@ -856,6 +866,58 @@ public sealed class NpcScriptRunner
         }
 
         spawns.SpawnDroppedItem(item, at, _npc.Rotation, Identity.None, TimeSpan.FromSeconds(op.D));
+    }
+
+    /// <summary>The Set function type (0xCF22): the effect identity type of a SetStat Show.</summary>
+    const int SetFunctionType = 53026;
+
+    /// <summary>The GfxEffect function type (0xCF26): the effect identity type of a GfxEffect op.</summary>
+    const int GfxEffectFunctionType = 53030;
+
+    /// <summary>Effect instances for SetStat Show and GfxEffect, unique per process as retail's are.</summary>
+    static int _setEffectInstance;
+
+    /// <summary>GfxEffect: plays <paramref name="gfx"/> on the NPC for its observers as a SpellList GfxEffect function effect.</summary>
+    void DoGfxEffect(int gfx)
+    {
+        if (gfx <= 0 || _npc.Cell == null)
+            return;
+
+        _npc.Cell.Announce(new SpellListMessage
+        {
+            Identity = _npc.Identity,
+            NanoEffects = Array.Empty<NanoEffect>(),
+            Character = _npc.Identity,
+            GfxEffect = new SpellListGfxEffect
+            {
+                Effect = new Identity { Type = (IdentityType)GfxEffectFunctionType, Instance = System.Threading.Interlocked.Increment(ref _setEffectInstance) },
+                Gfx = gfx
+            }
+        });
+    }
+
+    /// <summary>
+    /// SetStat Show: tells the NPC's observers the stat changed the way retail does for a Fresh Recruit hatching (a
+    /// SpellList Set function effect on it), so the client applies it at once: Scale grows the model. The stat itself is
+    /// already set, so later spawn packets carry the new value.
+    /// </summary>
+    void ShowSetStat(CharacterStat stat, int value)
+    {
+        if (_npc.Cell == null)
+            return;
+
+        _npc.Cell.Announce(new SpellListMessage
+        {
+            Identity = _npc.Identity,
+            NanoEffects = Array.Empty<NanoEffect>(),
+            Character = _npc.Identity,
+            SetStat = new SpellListSetStat
+            {
+                Effect = new Identity { Type = (IdentityType)SetFunctionType, Instance = System.Threading.Interlocked.Increment(ref _setEffectInstance) },
+                Stat = (int)stat,
+                Value = value
+            }
+        });
     }
 
     void DoGfx(ScriptOp op)
@@ -1225,7 +1287,9 @@ public sealed class NpcScriptRunner
             return BeginPlayfieldCast(op, list, now);
 
         int nanoId = IntValue(list == null ? op.A : list[NextInt(0, list.Length - 1)]);
-        Character? recipient = PickTarget((NpcScriptTarget)op.B, op.C);
+        Character? recipient = (NpcScriptTarget)op.B == NpcScriptTarget.RandomNearby
+            ? PickRandomNearby(op.C, op.D >> NpcScriptCompiler.CastHashListShift)
+            : PickTarget((NpcScriptTarget)op.B, op.C);
         if (nanoId <= 0 || recipient == null)
             return false;
 
@@ -1333,6 +1397,40 @@ public sealed class NpcScriptRunner
                 chosen = player;
         }
 
+        return chosen;
+    }
+
+    /// <summary>
+    /// A random living NPC near this one (the locality cell and its neighbours, <see cref="PlayfieldLocality"/>),
+    /// other than this NPC and never a player's pet, within <paramref name="maxDistance"/> metres (edge to edge) and
+    /// spawned with one of the hashes in <see cref="NpcScriptProgram.HashLists"/>[hashList - 1]. Reservoir pick over a
+    /// reused buffer.
+    /// </summary>
+    NpcCharacter? PickRandomNearby(int maxDistance, int hashList)
+    {
+        Playfield? playfield = _npc.Playfield;
+        if (playfield == null || hashList <= 0 || hashList > _program.HashLists.Length)
+            return null;
+
+        string[] hashes = _program.HashLists[hashList - 1];
+        List<NpcCharacter> nearby = _nearby ??= new List<NpcCharacter>();
+        playfield.GetRequiredService<PlayfieldLocality>().CollectNearby(_npc, maxDistance, nearby);
+        NpcCharacter? chosen = null;
+        int eligible = 0;
+        for (int i = 0; i < nearby.Count; i++)
+        {
+            NpcCharacter other = nearby[i];
+            if (ReferenceEquals(other, _npc) || other.IsDead || other.Pet != null || Array.IndexOf(hashes, other.SpawnHash) < 0)
+                continue;
+            if (_npc.GetEdgeDistanceTo(other) > maxDistance)
+                continue;
+
+            eligible++;
+            if (NextInt(0, eligible - 1) == 0)
+                chosen = other;
+        }
+
+        nearby.Clear();
         return chosen;
     }
 

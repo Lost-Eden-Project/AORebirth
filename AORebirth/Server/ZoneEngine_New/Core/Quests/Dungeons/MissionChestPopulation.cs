@@ -51,7 +51,8 @@ public sealed class MissionChestPopulation
         _questId = questId;
         _assigned = assigned;
         _parameters = parameters;
-        _policy = policy?.Clone();
+        // The global policy with this mission's frozen count settings (the quest's overrides, else the code defaults).
+        _policy = policy?.ForMission(parameters.ChestRoomDensity, parameters.ChestCountVariationFraction);
         _items = items;
         _logger = logger;
     }
@@ -73,7 +74,8 @@ public sealed class MissionChestPopulation
             return Defer("chest-loot-table-empty");
         IGameData data = world.GetRequiredService<IGameData>();
         IItemTemplateCatalog templates = world.GetRequiredService<IItemTemplateCatalog>();
-        if (!MissionChestPlacement.TryGetChestSphere(data, templates, _policy, out var sphere))
+        ChestSpawnDefinition appearance = ChestSpawnDefinition.MissionChest();
+        if (!MissionChestPlacement.TryGetChestSphere(data, templates, appearance, out var sphere))
             return Defer("chest-collision-sphere-unavailable-or-invalid");
 
         // Placement is a function of the seed, so it is the same on every build of this dungeon.
@@ -140,7 +142,7 @@ public sealed class MissionChestPopulation
                 Position = sites[index].Position,
                 Rotation = Door.Heading(heading.Next(360)),
                 SpawnSource = SpawnSource.ContentPlacement,
-                SpawnDefinition = _policy.SpawnDefinition,
+                SpawnDefinition = appearance,
                 CollisionRadius = sphere.Radius,
                 AccessValidator = player => !_retired,
                 RefreshLoot = target => Refresh(target, inventory, catalog)

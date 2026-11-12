@@ -101,12 +101,10 @@ public static class MissionChestPlacement
 
     /// <summary>The chest dynel's collision sphere from its spawn definition's template, mesh and scale.</summary>
     public static bool TryGetChestSphere(IGameData gameData, IItemTemplateCatalog templates,
-        MissionChestPolicy policy, out CollisionSphereData sphere)
+        ChestSpawnDefinition appearance, out CollisionSphereData sphere)
     {
+        ArgumentNullException.ThrowIfNull(appearance);
         sphere = null!;
-        ChestSpawnDefinition? appearance = policy.SpawnDefinition;
-        if (appearance == null)
-            return false;
         appearance.Validate();
         uint rawId = appearance.Stats.Single(stat => stat.StatId == (int)CharacterStat.StaticInstance).Value;
         if (rawId == 0 || rawId > int.MaxValue || !templates.TryGet((int)rawId, out ItemTemplate template))

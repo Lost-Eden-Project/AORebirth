@@ -1,0 +1,23 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mothership_AlienCoccoon",
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        { "SetStat": { "Stat": "HealDelta", "Value": 0 } },
+        { "SetStat": { "Stat": "Health", "Value": 200 } }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Hash": "AOCO",
+      "Provenance": "capture 2026-11-09 22:50 (Delmus): every Alien Coccoon around the Coccoon Attendant came in at Health 200 of MaxHealth 653 and held 200 (Stat 27 each second) until a single hit (279, 616) killed it. No stock item sets that; the cocoons themselves are laid out by the Attendant's EP3_CoccoonRoomFill items."
+    },
+    {
+      "Hash": "ACCN",
+      "Provenance": "as AOCO: the Accelerator's cocoon looks and behaves the same until it dies."
+    }
+  ]
+}

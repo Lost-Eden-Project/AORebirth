@@ -148,6 +148,39 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             streamWriter.WriteIdentity(message.Identity);
             streamWriter.WriteByte(message.Unknown);
 
+            // Set function effect, byte for byte as retail sends it (capture 2026-11-09 22:50, Fresh Recruit hatch, 86
+            // bytes): one effect, its identity, [4, 0, 1, 0, 0, 0, 0, stat, value, 0, 0], Character, 9 zero bytes.
+            if (message.SetStat != null)
+            {
+                streamWriter.WriteInt32(2 * X3F1Factor);
+                streamWriter.WriteIdentity(message.SetStat.Effect);
+                foreach (int field in new[] { 4, 0, 1, 0, 0, 0, 0, message.SetStat.Stat, message.SetStat.Value, 0, 0 })
+                {
+                    streamWriter.WriteInt32(field);
+                }
+
+                streamWriter.WriteIdentity(message.Character);
+                streamWriter.WriteBytes(new byte[9]);
+                return;
+            }
+
+            // GfxEffect function effect, as retail sends it (same capture, 102 bytes): one effect, its identity,
+            // [4, 0, 1, 0, 0, 0, gfx, 0, 0, 0, 0, 0, 0], Identity.None, Character, 9 zero bytes.
+            if (message.GfxEffect != null)
+            {
+                streamWriter.WriteInt32(2 * X3F1Factor);
+                streamWriter.WriteIdentity(message.GfxEffect.Effect);
+                foreach (int field in new[] { 4, 0, 1, 0, 0, 0, message.GfxEffect.Gfx, 0, 0, 0, 0, 0, 0 })
+                {
+                    streamWriter.WriteInt32(field);
+                }
+
+                streamWriter.WriteIdentity(Identity.None);
+                streamWriter.WriteIdentity(message.Character);
+                streamWriter.WriteBytes(new byte[9]);
+                return;
+            }
+
             NanoEffect[] effects = message.NanoEffects ?? new NanoEffect[0];
             streamWriter.WriteInt32((effects.Length + 1) * X3F1Factor);
 

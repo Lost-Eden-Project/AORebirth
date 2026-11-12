@@ -410,8 +410,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     : now.AddSeconds(_layouts.AcceptedLifetimeSeconds);
                 return Establish(player, questId, ownerType, parameters, CopyTemplate(source, questId), input.IsMultiFloor, input.Style,
                     source.Objective, input.ObjectiveLevelFor(quality), input.AwardsTokens, population, input.MobLevelPercent,
-                    // The quest's own tables; a quest naming none gets no chests and no extra NPC drops.
-                    input.ChestLoot ?? [], input.MobLoot ?? [], now, expires, (quest, characterRow, key, sourceItem) =>
+                    // The quest's own chests and tables; a quest naming none gets no chests and no extra NPC drops.
+                    input.Chests, input.MobLoot ?? [], now, expires, (quest, characterRow, key, sourceItem) =>
                         _store.TryAssignDungeonQuest(player.Identity.Instance, quest, characterRow, key, sourceItem),
                     "Mission acceptance is unavailable right now.", "template=" + source.Hash, entrance.DisplayName);
             }
@@ -495,7 +495,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// </summary>
         string? Establish(Player player, string questId, QuestOwnerType ownerType, QuestDungeonParameters parameters, QuestTemplate template, bool team, int? style,
             QuestObjective? authored, int objectiveQuality, bool tokenReward, string[]? population, int populationLevelSpreadPercent,
-            IReadOnlyList<MobItemTableEntry>? chestLoot, IReadOnlyList<MobItemTableEntry>? mobLoot,
+            QuestDungeonChests? chests, IReadOnlyList<MobItemTableEntry>? mobLoot,
             DateTime now, DateTime expires,
             Func<GeneratedQuestRow, CharacterQuestRow, QuestDungeonKeyItemRow, QuestDungeonKeyItemRow?, bool> commit,
             string notCommitted, string source, string entranceName)
@@ -504,7 +504,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             // room all derive from that seed when the dungeon builds on first entry.
             using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.layout", player.Identity.Instance))
             {
-                if (!_layouts.ConfigureNewDungeon(parameters, team, style, tokenReward, population, populationLevelSpreadPercent, chestLoot, mobLoot))
+                if (!_layouts.ConfigureNewDungeon(parameters, team, style, tokenReward, population, populationLevelSpreadPercent, chests, mobLoot))
                     return "Mission dungeons are unavailable.";
             }
 

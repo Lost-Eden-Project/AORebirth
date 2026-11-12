@@ -246,11 +246,8 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>Whether the dungeon pays DungeonGeneration.json's sided mission token reward on its kills.</summary>
         public bool AwardsTokens { get; set; } = true;
 
-        /// <summary>
-        /// What the dungeon's chests hold, as an NPC loot table (Hash, Repeats, Chance, LevelMod) rolled at the mission
-        /// quality. Null or empty: the dungeon has no chests.
-        /// </summary>
-        public List<Mobs.MobItemTableEntry>? ChestLoot { get; set; }
+        /// <summary>The dungeon's chests: whether it has any, how many, and what they hold. Null: no chests.</summary>
+        public QuestDungeonChests? Chests { get; set; }
 
         /// <summary>
         /// Loot table rows added to every NPC that dies in the dungeon, on top of its own NpcTemplates.json table:
@@ -312,6 +309,45 @@ namespace ZoneEngine_New.Core.Quests
                 return "Dungeon.ObjectiveLevelPercent must be between " + MinPercent + " and " + MaxPercent;
             if (Npcs != null && (Npcs.Length == 0 || Array.Exists(Npcs, string.IsNullOrWhiteSpace)))
                 return "Dungeon.Npcs must name at least one NPC hash";
+            return Chests?.Problem();
+        }
+    }
+
+    /// <summary>
+    /// A Quests.json dungeon quest's chests (<see cref="QuestDungeonTemplate.Chests"/>). The count settings override the
+    /// code defaults on <see cref="Dungeons.MissionChestPolicy"/>; everything is frozen into the mission at acceptance.
+    /// </summary>
+    public sealed class QuestDungeonChests
+    {
+        /// <summary>False: the dungeon gets no chests, whatever its loot table.</summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>Chests per eligible room; null keeps <see cref="Dungeons.MissionChestPolicy.DefaultRoomDensity"/>.</summary>
+        public double? RoomDensity { get; set; }
+
+        /// <summary>How far the chest count varies either way, as a fraction; null keeps <see cref="Dungeons.MissionChestPolicy.DefaultCountVariationFraction"/>.</summary>
+        public double? CountVariationFraction { get; set; }
+
+        /// <summary>
+        /// What the chests hold, as an NPC loot table (Hash, Repeats, Chance, LevelMod) rolled at the mission quality.
+        /// Null or empty: no chests.
+        /// </summary>
+        public List<Mobs.MobItemTableEntry>? LootTable { get; set; }
+
+        /// <summary>The loot the mission freezes: the table when chests are enabled, else none.</summary>
+        [JsonIgnore]
+        public List<Mobs.MobItemTableEntry> EffectiveLoot => Enabled ? Mobs.MobItemTableEntry.Clone(LootTable) : [];
+
+        /// <summary>Why these chest settings are unusable, or null when they are fine.</summary>
+        public string? Problem()
+        {
+            if (RoomDensity is double density && !Dungeons.MissionChestPolicy.IsValidRoomDensity(density))
+                return "Dungeon.Chests.RoomDensity must be between 0 and " + Dungeons.MissionChestPolicy.MaxRoomDensity;
+            if (CountVariationFraction is double variation && !Dungeons.MissionChestPolicy.IsValidCountVariation(variation))
+                return "Dungeon.Chests.CountVariationFraction must be between 0 and 1";
+            if (LootTable != null && !LootTable.TrueForAll(Mobs.MobItemTableEntry.IsWellFormed))
+                return "Dungeon.Chests.LootTable rows need a Hash, Repeats of at least 1, Chance 1-100, LevelMod of at least 0 and QualityPercent 1-"
+                    + Mobs.MobItemTableEntry.MaxQualityPercent;
             return null;
         }
     }

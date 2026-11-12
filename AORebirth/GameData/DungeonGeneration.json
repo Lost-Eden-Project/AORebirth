@@ -11,25 +11,8 @@
     { "Type": "FindItemReturn", "Icon": 11329, "Action": 8 }
   ],
   "Chests": {
-    "_comment": "Chest placement policy. What a chest holds is an NPC-style loot table (Hash, Repeats, Chance, LevelMod) rolled at the mission QL: a Quests.json dungeon quest's Dungeon.ChestLoot, or LootTable here for missions rolled at a terminal. An empty effective table means no chests; Enabled false turns chest generation off for every dungeon. Appearance comes from mission-20261011-004128-b8e7bf2e ordinal 480; only the verified Locked flag is cleared for ordinary chests.",
-    "Enabled": false,
-    "RoomDensity": 0.3,
-    "CountVariationFraction": 0.2,
-    "LootTable": [],
-    "SpawnDefinition": {
-      "StateMachineType": 1000015,
-      "StateMachineInstance": 7,
-      "HeaderStatBytes": 111,
-      "LockableValue": 15,
-      "Stats": [
-        { "StatId": 0, "Value": 536877057 },
-        { "StatId": 23, "Value": 162447 },
-        { "StatId": 701, "Value": 1 },
-        { "StatId": 702, "Value": 162447 },
-        { "StatId": 703, "Value": 162447 },
-        { "StatId": 412, "Value": 1 }
-      ]
-    },
+    "_comment": "Global chest policy. Chests are defined per quest in Quests.json Dungeon.Chests (Enabled, optional RoomDensity and CountVariationFraction overriding the code defaults 0.3 and 0.2, and the LootTable rolled at the mission QL); terminal missions get none. Enabled false here turns chest generation off for every dungeon. The chest spawn appearance is fixed protocol data in code (ChestSpawnDefinition.MissionChest).",
+    "Enabled": true,
     "Placement": {
       "ExcludedRoomNameParts": ["hallway", "corridor", "endblock", "entrance", "startroom", "stair", "elevator", "ramp", "vent", "checkpoint", "passage", "intersection", "foyaer", "foyer"]
     }

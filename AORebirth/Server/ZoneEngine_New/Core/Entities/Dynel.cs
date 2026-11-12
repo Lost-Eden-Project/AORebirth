@@ -28,7 +28,13 @@ namespace ZoneEngine_New.Core.Entities
         Summoned = 7,
 
         /// <summary>An NPC script's SpawnNpc (its adds). Hash bindings still attach to it; it dies and despawns like any NPC.</summary>
-        Script = 8
+        Script = 8,
+
+        /// <summary>
+        /// A monster an item or nano function brings in (SpawnMonster2, an NPC's DelayedSpawnNpc equipment). Not a pet:
+        /// its hash bindings attach like any spawn's.
+        /// </summary>
+        ItemSpawn = 9
     }
 
     /// <summary>

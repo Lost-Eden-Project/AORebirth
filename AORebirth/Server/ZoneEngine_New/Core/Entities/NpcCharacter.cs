@@ -243,6 +243,9 @@ namespace ZoneEngine_New.Core.Entities
                 link.Runner.OnAddKilled(link);
             }
 
+            // Stock monster spawns on its equipment (DelayedSpawnNpc OnTerminate: a cocoon's hatchling), from where it fell.
+            Playfield?.GetService<SpawnService>()?.ScheduleEquipmentSpawns(this, EventType.OnTerminate, killer);
+
             base.OnDeath(killer);
         }
 

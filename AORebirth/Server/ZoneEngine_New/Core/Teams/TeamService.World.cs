@@ -13,6 +13,7 @@ namespace ZoneEngine_New.Core.Teams
     using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Playfield.Locality;
 
     using Identity = SmokeLounge.AOtomation.Messaging.GameData.Identity;
 
@@ -367,7 +368,11 @@ namespace ZoneEngine_New.Core.Teams
             {
                 if (!_players.TryGetValue(invited.Invitee, out Player? invitee) || !IsActive(invitee) || invited.Inviter == null) return;
                 Identity inviter = CharacterIdentity(invited.Inviter.CharacterId);
-                if (!invited.SamePlayfield)
+                // The invitee's client names the inviter from its own view of them; one out of that view (another
+                // playfield, or out of locality range, as an LFT invite usually is) needs the name sent (bug #41).
+                if (!invited.SamePlayfield || !_players.TryGetValue(invited.Inviter.CharacterId, out Player? inviterPlayer)
+                    || !ReferenceEquals(inviterPlayer.Playfield, invitee.Playfield)
+                    || invitee.Playfield?.GetService<PlayfieldLocality>()?.IsVisibleTo(inviterPlayer, invitee) != true)
                     Send(invitee, new TeamInviteMessage { Identity = invitee.Identity, Unknown = 1, Inviter = inviter, Name = invited.Inviter.Name });
                 Send(invitee, Action(invitee, CharacterActionType.TeamRequestInvite, inviter));
             }

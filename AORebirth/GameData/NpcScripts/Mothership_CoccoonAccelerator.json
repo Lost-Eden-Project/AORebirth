@@ -1,0 +1,33 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mothership_CoccoonAccelerator",
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        { "Wait": 250 },
+        { "GfxEffect": 43232 },
+        { "Wait": 1150 },
+        { "SetStat": { "Stat": "Scale", "Value": 31, "Show": true } },
+        { "Wait": 1000 },
+        { "SetStat": { "Stat": "Scale", "Value": 61, "Show": true } },
+        { "Wait": 1200 },
+        { "SetStat": { "Stat": "Scale", "Value": 81, "Show": true } },
+        { "CastNano": { "Nano": 258501, "Target": "RandomNearby", "Hashes": ["AOCO", "ACCN"], "MaxDistance": 30 } }
+      ]
+    },
+    {
+      "On": "Timer",
+      "EveryMs": [8000, 12000],
+      "Do": [
+        { "CastNano": { "Nano": 258501, "Target": "RandomNearby", "Hashes": ["AOCO", "ACCN"], "MaxDistance": 30 } }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Hash": "CCAC",
+      "Provenance": "capture 2026-11-09 22:50 (Delmus): the Coccoon Accelerator began casting 258501 on a cocoon 23.5 m away 1.2 s after it spawned; the cast ran about 6 s and the cocoon died, leaving a Fresh Recruit. It grows as the recruits do (Set Scale 31, 61, 81 at +1.4, +2.4, +3.6 s; see Mothership_CoccoonHatchling), here before its first cast. Stock: CCAC's 258502 uploads 258501 (Set Health 0, needs stat 21 = 800, which the cocoons have), but nothing in the item says whom to cast it on, and the NPC nano AI never casts a Set-Health-0 nano (NanoKind.Lethal), so the program picks the cocoon. The cocoon's death runs its own OnTerminate spawn (EP3_CoccoonSurprise) like a player kill."
+    }
+  ]
+}

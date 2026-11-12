@@ -1,0 +1,29 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mothership_CoccoonHatchling",
+  "Handlers": [
+    {
+      "On": "Spawned",
+      "Do": [
+        { "Wait": 250 },
+        { "GfxEffect": 43232 },
+        { "Wait": 1150 },
+        { "SetStat": { "Stat": "Scale", "Value": 31, "Show": true } },
+        { "Wait": 1000 },
+        { "SetStat": { "Stat": "Scale", "Value": 61, "Show": true } },
+        { "Wait": 1200 },
+        { "SetStat": { "Stat": "Scale", "Value": 81, "Show": true } }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Hash": "HAQY",
+      "Provenance": "capture 2026-11-09 22:50 (Delmus): a Fresh Recruit - Cha'Heru left by a cocoon spawns at MonsterScale 10 (its template's own scale) and plays gfx 43232 on itself (SpellList GfxEffect) about 0.26 s after it appears, then grows: SpellList Set Scale 31, 61, 81 about 1.4, 2.4 and 3.6 s after it appears (three recruits and the Accelerator alike). No stock item or nano sets Scale to those values, so the program does."
+    },
+    {
+      "Hash": "FG4S",
+      "Provenance": "as HAQY: the other Fresh Recruit - Cha'Heru a cocoon can leave (Alien_Coccoon_001 258477, on AECC)."
+    }
+  ]
+}
