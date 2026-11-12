@@ -425,7 +425,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     /// <summary>
     /// Checks all of the line's effects, applies them at once (the caller holds the player's persistence gate),
     /// then queues its text in the order written, and its end. A line whose effects cannot all be applied says its
-    /// Fail line instead; one whose effects still fail gives back what it took first.
+    /// Fail line instead; one whose effect still fails before any grant landed gives back what it took first.
     /// </summary>
     void Say(Conversation conversation, string lineId, int chain)
     {
@@ -456,6 +456,11 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             Fail(conversation, line, chain);
             return;
         }
+
+        // Applied, but an effect after the line's grants did not (a window that would not open): the line stands.
+        if (failure.Length != 0)
+            logger.Warn(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: line '{1}' for char={2}: {3}",
+                conversation.Script.Id, lineId, conversation.Player.Identity.Instance, failure));
 
         int pendingDelay = QueueText(conversation, line, chain);
         conversation.Packets.Enqueue(Outgoing.Finish(line, chain, pendingDelay));

@@ -43,6 +43,19 @@ public sealed class KnubotPlan
     }
 }
 
+/// <summary>When a line's effect is applied relative to the others (<see cref="KnubotEffect.ApplyAll"/>).</summary>
+public enum KnubotEffectPhase
+{
+    /// <summary>Takes from the player and can give it back: applied first, before anything is handed over.</summary>
+    Take,
+
+    /// <summary>Hands something over (an item, a quest, its reward, a buff) and cannot be taken back.</summary>
+    Grant,
+
+    /// <summary>Opens a window; changes nothing the player holds. Applied last.</summary>
+    Window
+}
+
 /// <summary>
 /// What the effects applied so far can give back when a later effect of the same line fails, newest first.
 /// </summary>
@@ -51,6 +64,9 @@ public sealed class KnubotUndo
     readonly List<(KnubotEffect Effect, Action Revert)> _steps = [];
 
     public void Add(KnubotEffect effect, Action revert) => _steps.Add((effect, revert));
+
+    /// <summary>The effects that took something, newest last.</summary>
+    public string Names => string.Join(", ", _steps.Select(step => step.Effect.ToString()));
 
     /// <summary>Runs every step and names the effects given back, or "" when there was nothing to give back.</summary>
     public string Revert()
@@ -86,6 +102,11 @@ public abstract record KnubotEffect
     /// </summary>
     public abstract bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo);
 
+    /// <summary>When this effect is applied relative to the line's others; a grant by default.</summary>
+    public virtual KnubotEffectPhase Phase => KnubotEffectPhase.Grant;
+
+    static readonly KnubotEffectPhase[] PhaseOrder = [KnubotEffectPhase.Take, KnubotEffectPhase.Grant, KnubotEffectPhase.Window];
+
     public static bool CanApplyAll(KnubotEffect[] effects, KnubotContext context, KnubotEffectServices services)
     {
         if (effects.Length == 0)
@@ -106,21 +127,46 @@ public abstract record KnubotEffect
     }
 
     /// <summary>
-    /// Applies every effect in the order written, right after <see cref="CanApplyAll"/> passed and under the same
-    /// gate. When one still fails, the effects before it give back what they took and <paramref name="failure"/>
-    /// names the effect and what was given back; nothing of the line should then be said but its Fail line.
+    /// Applies every effect right after <see cref="CanApplyAll"/> passed and under the same gate: the takes first,
+    /// then the grants, then the windows, each phase in the order written (every Check already ran against the
+    /// player as they were before the line, so the takes going first changes nothing it decided).
+    /// <para>
+    /// Only the takes can be given back, so a give-back is allowed only while no grant has landed. An effect that
+    /// fails before any grant gives back every take and returns false: the player is left as they were, and only the
+    /// line's Fail line should be said. One that fails after a grant landed gives nothing back (that would hand the
+    /// turned-in items back with the reward) and returns true with <paramref name="failure"/> naming what did not
+    /// apply: the line stands as applied.
+    /// </para>
     /// </summary>
     public static bool ApplyAll(KnubotEffect[] effects, KnubotContext context, KnubotEffectServices services, out string failure)
     {
         failure = string.Empty;
         var undo = new KnubotUndo();
-        foreach (KnubotEffect effect in effects)
+        bool granted = false;
+        foreach (KnubotEffectPhase phase in PhaseOrder)
         {
-            if (effect.Apply(context, services, undo))
-                continue;
+            foreach (KnubotEffect effect in effects)
+            {
+                if (effect.Phase != phase)
+                    continue;
 
-            failure = effect + " failed" + undo.Revert();
-            return false;
+                if (effect.Apply(context, services, undo))
+                {
+                    granted |= phase == KnubotEffectPhase.Grant;
+                    continue;
+                }
+
+                if (!granted)
+                {
+                    failure = effect + " failed" + undo.Revert();
+                    return false;
+                }
+
+                string kept = undo.Names;
+                failure = effect + " failed after the line's grants landed; nothing was given back"
+                    + (kept.Length == 0 ? string.Empty : " (" + kept + " kept)");
+                return true;
+            }
         }
 
         return true;
@@ -197,8 +243,22 @@ public sealed record KnubotCompleteQuest(string Hash) : KnubotEffect
         return true;
     }
 
+    /// <summary>
+    /// Applied once the quest is earned: paid now, or earned by this line with its reward pending delivery (no room
+    /// yet), which the quest service delivers later. That pending reward is not a failure: giving the line back would
+    /// hand back what it took (a turned-in item) while the reward still arrives. A quest that was already earned and
+    /// pending before the line and still cannot be paid did not apply: the line gives its takes back, so the same
+    /// turn-in is never taken twice for one reward.
+    /// </summary>
     public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
-        => services.Quests.TryComplete(context.Player, Hash, out _);
+    {
+        QuestLog log = context.Quests.GetLog(context.Player);
+        bool pendingBefore = log.TryFind(Hash, out PlayerQuest? before) && before.IsRewardPending;
+        if (services.Quests.TryComplete(context.Player, Hash, out _))
+            return true;
+
+        return !pendingBefore && log.TryFind(Hash, out PlayerQuest? after) && after.IsRewardPending;
+    }
 }
 
 /// <summary><c>{spawn ITEMHASH QL [count]}</c>: mints the item into the player's inventory.</summary>
@@ -239,11 +299,13 @@ public sealed record KnubotSpawnItem(string Hash, int? Quality, int Count) : Knu
 /// <c>{take ITEMHASH [count]}</c>: takes carried main-inventory items minted from the hash, any QL (Windcaller Karrec's
 /// "Give it to me!" takes the Bronto Burger and Maddy's Credit Card without a Give Item window). The line fails up
 /// front when the player does not carry enough that can be taken: a locked item (mid-use or mid-move) does not
-/// count, as it would not be taken. A take that still comes up short fails the line, and what it took is given
-/// back when a later effect of the line fails.
+/// count, as it would not be taken. Applied before the line's grants: a take that still comes up short, or a later
+/// effect that fails before any grant lands, gives back what the line's takes took (<see cref="KnubotEffect.ApplyAll"/>).
 /// </summary>
 public sealed record KnubotTakeItem(HashSet<int> TemplateIds, int Count) : KnubotEffect
 {
+    public override KnubotEffectPhase Phase => KnubotEffectPhase.Take;
+
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
         => KnubotItems.CountCarried(context.Player, TemplateIds, takeable: true) >= Count;
 
@@ -287,17 +349,14 @@ public sealed record KnubotTakeItem(HashSet<int> TemplateIds, int Count) : Knubo
         if (taken.Count != 0)
             undo.Add(this, () => GiveBack(player, taken, services.Flush));
 
-        // Short: give back what this effect took, so the player is left as they were.
-        if (remaining > 0)
-        {
-            undo.Revert();
-            return false;
-        }
-
-        return true;
+        // Short: the line fails, and ApplyAll gives back what this and any earlier take took.
+        return remaining <= 0;
     }
 
-    /// <summary>Re-creates what was taken (the taken instances are retired) and hands it back like a grant.</summary>
+    /// <summary>
+    /// Re-creates what was taken (the taken instances are retired) and hands it back like a grant, each with a new
+    /// instance id so the write-behind stores it: an item without one is never written and would be gone at relog.
+    /// </summary>
     static void GiveBack(Player player, List<(int LowId, int HighId, int Quality, int Count)> taken, InventoryFlushService flush)
     {
         if (player.Playfield == null)
@@ -305,13 +364,15 @@ public sealed record KnubotTakeItem(HashSet<int> TemplateIds, int Count) : Knubo
 
         IItemBuilder items = player.Playfield.GetRequiredService<IItemBuilder>();
         foreach (var (lowId, highId, quality, count) in taken)
-            KnubotItems.Give(player, items.Create(lowId, highId, quality, ItemSource.Quest, count), flush);
+            KnubotItems.Give(player, items.CreateWithNewInstance(lowId, highId, quality, ItemSource.Quest, count), flush);
     }
 }
 
 /// <summary><c>{shop}</c>: opens the NPC's vendor window.</summary>
 public sealed record KnubotOpenShop : KnubotEffect
 {
+    public override KnubotEffectPhase Phase => KnubotEffectPhase.Window;
+
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services) => context.Npc.Shop != null;
 
     public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
@@ -321,6 +382,8 @@ public sealed record KnubotOpenShop : KnubotEffect
 /// <summary><c>{opentrade}</c>: opens the NPC's Give Item window for the script's Trades.</summary>
 public sealed record KnubotOpenTrade : KnubotEffect
 {
+    public override KnubotEffectPhase Phase => KnubotEffectPhase.Window;
+
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services) => context.Script.Trades.Length != 0;
 
     public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)

@@ -20,6 +20,9 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>Quiet period after last MarkDirty before an async write runs.</summary>
         public const int CoalesceMilliseconds = 300;
 
+        /// <summary>Retry delay for queued commits the writer skipped because the World lease was not held.</summary>
+        const int LeaseRetryMilliseconds = 1000;
+
         private readonly Lazy<PlayfieldManager> _playfieldManager;
         private readonly ICharacterCoalesceCommit _persist;
         private readonly ITrainedPerkRepository? _trainedPerks;
@@ -303,6 +306,13 @@ namespace ZoneEngine_New.Core.Inventory
                             CultureInfo.InvariantCulture,
                             "Inventory flush skipped character={0}: this instance no longer holds its World lease",
                             player.Identity.Instance));
+                    // Queued commits hold the player's checkpoints back: try again once the lease may be renewed.
+                    if (!player.PendingCommits.IsEmpty && !_disposed)
+                        lock (_scheduleGate)
+                        {
+                            _dueAtMs[player.Identity.Instance] = Environment.TickCount64 + LeaseRetryMilliseconds;
+                            _wake.Set();
+                        }
                     return;
                 }
 
