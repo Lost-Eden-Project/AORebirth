@@ -17,7 +17,10 @@ namespace AORebirth.Modules.World
     /// </summary>
     public interface IZoneWorld
     {
-        /// <summary>Every player in play on this instance's playfields.</summary>
+        /// <summary>
+        /// Every player in play on this instance's playfields, each character at most once. A player who changed
+        /// playfield between two playfields' snapshots is listed once, where the later snapshot saw them.
+        /// </summary>
         IReadOnlyList<PlayerInfo> Players();
 
         /// <summary>The player with this character id on this instance, or null.</summary>

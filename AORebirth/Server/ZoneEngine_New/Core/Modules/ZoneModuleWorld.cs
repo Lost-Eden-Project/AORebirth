@@ -47,11 +47,32 @@ namespace ZoneEngine_New.Core.Modules
             _manager = new Lazy<PlayfieldManager>(manager);
         }
 
+        /// <summary>
+        /// Every playfield's snapshot is from its own tick, so a player who zoned between two of them is in both: the
+        /// playfield it left (built before it left) and the one it entered (built after it arrived). Both are copies of
+        /// the same entity, which is never in two registries at once, so the later snapshot is where it is now.
+        /// </summary>
         public IReadOnlyList<PlayerInfo> Players()
         {
             var players = new List<PlayerInfo>();
+            var seen = new Dictionary<int, (int Index, long BuiltAt)>();
             foreach (Snapshot snapshot in ReadAll())
-                players.AddRange(snapshot.Players);
+            {
+                foreach (PlayerInfo player in snapshot.Players)
+                {
+                    if (!seen.TryGetValue(player.CharacterId, out (int Index, long BuiltAt) earlier))
+                    {
+                        seen[player.CharacterId] = (players.Count, snapshot.BuiltAt);
+                        players.Add(player);
+                    }
+                    else if (snapshot.BuiltAt > earlier.BuiltAt)
+                    {
+                        players[earlier.Index] = player;
+                        seen[player.CharacterId] = (earlier.Index, snapshot.BuiltAt);
+                    }
+                }
+            }
+
             return players.ToArray();
         }
 

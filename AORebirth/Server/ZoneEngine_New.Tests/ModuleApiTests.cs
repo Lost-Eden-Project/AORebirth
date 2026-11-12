@@ -98,6 +98,44 @@ public sealed class ModuleApiTests
         }
     }
 
+    /// <summary>
+    /// AntiCheat case #12 (2026-11-11): one character twice in one Players() list, both connected. A zone change
+    /// lands between the two playfields' publishes, so the source's last snapshot still has the player and the
+    /// destination's newer one has it too. Either direction: the newer snapshot may be listed first or last.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, DisplayName = "into the playfield listed last")]
+    [DataRow(true, DisplayName = "into the playfield listed first")]
+    public void PlayerZonedBetweenTwoPublishesIsListedOnceWhereItArrived(bool intoFirstListed)
+    {
+        using var rig = new Rig();
+        const int Other = PlayfieldId + 1;
+        Player player = rig.AddPlayer(906, new Vector3(10, 0, 10));
+        rig.AddPlayfield(Other);
+        Assert.AreEqual(PlayfieldId, rig.Manager.SnapshotPlayfields()[0].Identity.Instance, "The rig's playfield is listed first.");
+        int from = intoFirstListed ? Other : PlayfieldId;
+        int to = intoFirstListed ? PlayfieldId : Other;
+        if (from != PlayfieldId)
+            rig.Move(player, PlayfieldId, from, new Vector3(10, 0, 10));
+        var world = new ZoneModuleWorld(() => rig.Manager);
+
+        // The source publishes with the player still there (a read on its own tick builds in place).
+        rig.Owner(from, () => world.Npcs(from));
+        // The zone change: LeaveForTransfer on the source's tick, then ArriveFromTransfer on the destination's.
+        rig.Move(player, from, to, new Vector3(200, 0, 200));
+        // The destination publishes before the source does again.
+        rig.Owner(to, () => world.Npcs(to));
+
+        // A module thread: both snapshots are within a tick, so neither is rebuilt.
+        PlayerInfo[] seen = world.Players().Where(info => info.CharacterId == 906).ToArray();
+
+        Assert.AreEqual(1, seen.Length, "One entity, so one entry.");
+        Assert.AreEqual(to, seen[0].PlayfieldId);
+        Assert.AreEqual(200f, seen[0].Position.X);
+        Assert.IsTrue(seen[0].IsConnected);
+        Assert.AreEqual(to, world.Player(906)?.PlayfieldId);
+    }
+
     [TestMethod]
     public void ActionsRunOnTheOwningTick()
     {
@@ -283,6 +321,7 @@ public sealed class ModuleApiTests
         internal readonly KnubotCatalog Knubot;
         readonly Dictionary<int, CaptureSession> _sessions = [];
         readonly ServiceProvider _services;
+        readonly List<ServiceProvider> _extra = [];
 
         internal Rig()
         {
@@ -344,6 +383,55 @@ public sealed class ModuleApiTests
             return npc;
         }
 
+        /// <summary>A second, empty playfield on the same manager, listed after the rig's own.</summary>
+        internal void AddPlayfield(int id)
+        {
+            Playfield playfield = Blank<Playfield>();
+            var registry = new DynelRegistry();
+            Set(playfield, "<Identity>k__BackingField", new Identity { Type = IdentityType.Playfield2, Instance = id });
+            Set(playfield, "_tickSync", new Lock());
+            Set(playfield, "_lifecycleSync", new Lock());
+            Set(playfield, "_inbound", new PlayfieldInboundQueue());
+            Set(playfield, "_dynelRegistry", registry);
+            Set(playfield, "_logger", new StubLogger());
+            Set(playfield, "_playfieldManager", Manager);
+            ServiceProvider services = new ServiceCollection().AddSingleton(registry).BuildServiceProvider();
+            _extra.Add(services);
+            Set(playfield, "_serviceProvider", services);
+            ((Dictionary<int, Playfield>)Get(Manager, "_playfields"))[id] = playfield;
+        }
+
+        /// <summary>
+        /// What a playfield transfer does to the registries: the source drops the player on its tick
+        /// (<c>LeaveForTransfer</c>), then the destination registers it on its own (<c>ArriveFromTransfer</c>).
+        /// The session stays bound throughout.
+        /// </summary>
+        internal void Move(Player player, int from, int to, Vector3 at)
+        {
+            Owner(from, () =>
+            {
+                Playfield source = PlayfieldOf(from);
+                source.GetRequiredService<DynelRegistry>().Unregister(player.Identity);
+                if (ReferenceEquals(player.Playfield, source))
+                    player.Playfield = null;
+            });
+            Owner(to, () =>
+            {
+                Playfield destination = PlayfieldOf(to);
+                player.Position = at;
+                player.Playfield = destination;
+                destination.GetRequiredService<DynelRegistry>().Register(player);
+            });
+        }
+
+        Playfield PlayfieldOf(int id) => ((Dictionary<int, Playfield>)Get(Manager, "_playfields"))[id];
+
+        internal void Owner(int playfieldId, Action work)
+        {
+            lock ((Lock)Get(PlayfieldOf(playfieldId), "_tickSync"))
+                work();
+        }
+
         internal CaptureSession Session(int id) => _sessions[id];
 
         /// <summary>A host with no Modules.json (no module loaded), to register into directly.</summary>
@@ -360,6 +448,8 @@ public sealed class ModuleApiTests
         public void Dispose()
         {
             _services.Dispose();
+            foreach (ServiceProvider services in _extra)
+                services.Dispose();
             if (Directory.Exists(Root))
                 Directory.Delete(Root, true);
         }
@@ -380,7 +470,7 @@ public sealed class ModuleApiTests
         public Player? Player { get; private set; }
         public void BindPlayer(Player player) => Player = player;
         public void UnbindPlayer() => Player = null;
-        public void TransferToPlayfield(Playfield destination, Vector3 landing) => throw new NotSupportedException();
+        public bool TransferToPlayfield(Playfield destination, Vector3 landing) => throw new NotSupportedException();
         public void Send(byte[] packet) { }
         public void Send(Message message) => Bodies.Add(message.Body);
         public void Send(MessageBody body) => Bodies.Add(body);
