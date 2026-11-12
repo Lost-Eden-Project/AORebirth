@@ -106,6 +106,7 @@ namespace ZoneEngine_New.Core.Helpers
                 return Refused(attacker, target, special,
                     blocked == ClientFeedback.SpecialOutOfRange ? ActionRefusal.Range
                     : blocked == ClientFeedback.SpecialNoLineOfSight ? ActionRefusal.LineOfSight
+                    : blocked == ClientFeedback.ActionNotAvailable ? ActionRefusal.Requirements
                     : ActionRefusal.Target, "blocked");
             }
 
@@ -127,9 +128,15 @@ namespace ZoneEngine_New.Core.Helpers
         /// </summary>
         static int? Blocker(Character attacker, Character target, CharacterStat special)
         {
-            if (TryGetCanFlag(special, out CanFlags canFlag) && TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out _)
-                && attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
-                return ClientFeedback.SpecialOutOfRange;
+            if (TryGetCanFlag(special, out CanFlags canFlag))
+            {
+                // No wielded weapon can perform it (Brawl with a weapon that lacks CanBrawl): refused now, as the
+                // client does, instead of queued and dropped without a word at fire time (bug #80).
+                if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out _))
+                    return ClientFeedback.ActionNotAvailable;
+                if (attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
+                    return ClientFeedback.SpecialOutOfRange;
+            }
             if (!attacker.HasLineOfSightTo(target))
                 return ClientFeedback.SpecialNoLineOfSight;
             if (IsNoticedStealthStrike(attacker, target, special))

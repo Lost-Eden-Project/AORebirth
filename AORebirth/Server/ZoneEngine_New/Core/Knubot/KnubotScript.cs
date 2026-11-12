@@ -245,5 +245,5 @@ public sealed record KnubotTextPiece(KnubotTextKind Kind, string Text, bool Emot
 
 public sealed record KnubotDelayPiece(int Milliseconds) : KnubotPiece;
 
-/// <summary>An effect applied when the text reaches it.</summary>
+/// <summary>An effect written at this point of the text; applied with the rest of the line's effects before any text is sent.</summary>
 public sealed record KnubotEffectPiece(KnubotEffect Effect) : KnubotPiece;

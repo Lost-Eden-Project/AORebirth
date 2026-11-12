@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages;
@@ -20,9 +21,9 @@ using ZoneEngine_New.Core.Trade;
 
 /// <summary>
 /// Knubot conversations: open picks the first opener whose conditions pass, each line applies its effects
-/// (all or none) and then sends its text, and each reply points at the next line. Inbound messages and
-/// <see cref="Tick"/> run on the playfield owner; delays are owner-tick deadlines, never sleeps.
-/// One conversation per player. Every step revalidates the session, playfield, NPC and range.
+/// (all or none, at once, before a word of it is queued) and then sends its text, and each reply points at the
+/// next line. Inbound messages and <see cref="Tick"/> run on the playfield owner; delays are owner-tick deadlines,
+/// never sleeps. One conversation per player. Every step revalidates the session, playfield, NPC and range.
 /// </summary>
 public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices effects, IZoneLogger logger, Func<long>? milliseconds = null)
 {
@@ -41,21 +42,18 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     public KnubotCatalog Catalog => catalog;
 
     /// <summary>
-    /// One queued step, in the order written: a packet, an effect the text has reached, or the end of a line
-    /// (its replies, goto or close). Each waits <see cref="DelayMilliseconds"/> after the previous one.
+    /// One queued step, in the order written: a packet, or the end of a line (its replies, goto or close). Each
+    /// waits <see cref="DelayMilliseconds"/> after the previous one. Effects are never queued: a line's effects
+    /// are all applied when it is chosen, so a chat that ends mid-line drops only text.
     /// </summary>
     sealed class Outgoing
     {
         public MessageBody? Body;
-        public KnubotEffect? Effect;
         public KnubotLine? Line;
         public int Chain;
         public int DelayMilliseconds;
 
         public static Outgoing Packet(MessageBody body, int delay) => new() { Body = body, DelayMilliseconds = delay };
-
-        public static Outgoing Apply(KnubotEffect effect, KnubotLine line, int chain, int delay)
-            => new() { Effect = effect, Line = line, Chain = chain, DelayMilliseconds = delay };
 
         public static Outgoing Finish(KnubotLine line, int chain, int delay)
             => new() { Line = line, Chain = chain, DelayMilliseconds = delay };
@@ -386,7 +384,12 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             if (!ReferenceEquals(conversation.Playfield, playfield))
                 continue;
 
-            lock (conversation.Player.PersistenceGate)
+            // A write-behind thread holds the gate while it stores this player (a checkpoint, the inventory, a queued
+            // quest reward): this chat waits a tick rather than stalling the playfield on the database.
+            object gate = conversation.Player.PersistenceGate;
+            if (!Monitor.TryEnter(gate))
+                continue;
+            try
             {
                 if (!Valid(conversation))
                 {
@@ -403,6 +406,10 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
                 else
                     Pump(conversation);
             }
+            finally
+            {
+                Monitor.Exit(gate);
+            }
         }
     }
 
@@ -416,8 +423,9 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     }
 
     /// <summary>
-    /// Checks all of the line's effects, then queues its text and effects in the order written, and its end.
-    /// A line whose effects cannot all be applied says its Fail line instead.
+    /// Checks all of the line's effects, applies them at once (the caller holds the player's persistence gate),
+    /// then queues its text in the order written, and its end. A line whose effects cannot all be applied says its
+    /// Fail line instead; one whose effects still fail gives back what it took first.
     /// </summary>
     void Say(Conversation conversation, string lineId, int chain)
     {
@@ -434,6 +442,16 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Knubot {0}: line '{1}' cannot run for char={2}: {3}; {4}",
                 conversation.Script.Id, lineId, conversation.Player.Identity.Instance, BlockingEffect(conversation, line),
+                line.Fail != null ? "saying '" + line.Fail + "'" : "closing (no Fail line)"));
+            Fail(conversation, line, chain);
+            return;
+        }
+
+        if (!KnubotEffect.ApplyAll(line.Effects, Context(conversation), effects, out string failure))
+        {
+            logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                "Knubot {0}: line '{1}' stopped for char={2}: {3}; {4}",
+                conversation.Script.Id, lineId, conversation.Player.Identity.Instance, failure,
                 line.Fail != null ? "saying '" + line.Fail + "'" : "closing (no Fail line)"));
             Fail(conversation, line, chain);
             return;
@@ -510,9 +528,10 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     }
 
     /// <summary>
-    /// One AppendText per run of spoken or emote text; a delay starts a new packet held back that long, and an
-    /// effect is queued where it was written. Text is sent as written: the client joins packets without a
-    /// separator, so line breaks are the author's \n. Returns a delay left over after the last piece.
+    /// One AppendText per run of spoken or emote text; a delay starts a new packet held back that long. An effect
+    /// piece is already applied (<see cref="Say"/>) and takes no place in the queue. Text is sent as written: the
+    /// client joins packets without a separator, so line breaks are the author's \n. Returns a delay left over
+    /// after the last piece.
     /// </summary>
     int QueueText(Conversation conversation, KnubotLine line, int chain)
     {
@@ -541,10 +560,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
                     delay += pause.Milliseconds;
                     break;
 
-                case KnubotEffectPiece effect:
-                    Flush();
-                    conversation.Packets.Enqueue(Outgoing.Apply(effect.Effect, line, chain, delay));
-                    delay = 0;
+                case KnubotEffectPiece:
                     break;
 
                 case KnubotTextPiece part:
@@ -571,7 +587,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     }
 
     /// <summary>
-    /// Runs every step that is due. Packets are paced; an effect or a line end runs as soon as its delay has passed.
+    /// Runs every step that is due. Packets are paced; a line end runs as soon as its delay has passed.
     /// </summary>
     void Pump(Conversation conversation)
     {
@@ -598,17 +614,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             if (next.DelayMilliseconds > 0)
                 conversation.LastSentAt = now;
 
-            if (next.Effect == null)
-                Finish(conversation, next.Line!, next.Chain);
-            else if (!KnubotEffect.TryApply(next.Effect, Context(conversation), effects))
-            {
-                // The player's state changed since the line started (full inventory, quest taken elsewhere):
-                // the rest of the line is dropped and its Fail line is said instead.
-                logger.Info(string.Format(CultureInfo.InvariantCulture, "Knubot {0}: {1} no longer applies on line '{2}' for char={3}",
-                    conversation.Script.Id, next.Effect, next.Line!.Id, conversation.Player.Identity.Instance));
-                conversation.Packets.Clear();
-                Fail(conversation, next.Line, next.Chain);
-            }
+            Finish(conversation, next.Line!, next.Chain);
         }
     }
 

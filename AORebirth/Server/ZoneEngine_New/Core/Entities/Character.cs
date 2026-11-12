@@ -23,6 +23,7 @@ namespace ZoneEngine_New.Core.Entities
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Nanos;
     using ZoneEngine_New.Core.Playfield;
+    using ZoneEngine_New.Core.Playfield.Locality;
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Teams;
 
@@ -884,10 +885,15 @@ namespace ZoneEngine_New.Core.Entities
         {
             int lastSaveXp = 0;
             int nextLevelXp = 0;
+            // The client writes this field straight into XPKillRange (275) (Gamecode NewLevelIIR_t 0x10075f55, SetStat
+            // 0x113 from message +0x30), so it carries the new level's Xp.json range, the value SyncXpKillRange sets.
+            int xpKillRange = Stats.GetOrZero(CharacterStat.XPKillRange, StatDetail.Base);
             if (gameData.TryGetXpLevel(level, out XpLevelEntry current))
             {
                 lastSaveXp = current.FloorXp;
                 nextLevelXp = current.NextLevelXp > 0 ? current.FloorXp + current.NextLevelXp : 0;
+                if (current.XpKillRange > 0)
+                    xpKillRange = current.XpKillRange;
             }
 
             return new NewLevelMessage
@@ -900,7 +906,7 @@ namespace ZoneEngine_New.Core.Entities
                 LastSaveXp = lastSaveXp,
                 NextLevelXp = nextLevelXp,
                 Unknown1 = 0,
-                Unknown2 = 4,
+                Unknown2 = xpKillRange,
                 LastXp = lastGain
             };
         }
@@ -1405,6 +1411,7 @@ namespace ZoneEngine_New.Core.Entities
         {
             int alienLevel = Stats.GetOrZero(CharacterStat.AlienLevel);
             int alienBefore = alienLevel;
+            long progressBefore = Stats.GetOrZero(CharacterStat.AlienXP);
             int next = 0;
             int level = Stats.GetOrOne(CharacterStat.Level);
             while (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry step) && step.NextLevelXp > 0)
@@ -1417,6 +1424,9 @@ namespace ZoneEngine_New.Core.Entities
                 // stays full and the rest of the grant is lost.
                 if (step.MinLevel > level)
                 {
+                    // Said once, as the bar fills: "...but your level must be: %d to obtain it." (bug #188).
+                    if (alienLevel == alienBefore && progressBefore < next)
+                        ClientFeedback.SendFormatted(this, ClientFeedback.AlienLevelNeedsLevel, step.MinLevel);
                     progress = next;
                     break;
                 }
@@ -2038,6 +2048,56 @@ namespace ZoneEngine_New.Core.Entities
             SyncCharState();
             TickStallWatch.Stage("dynel.flush", instance);
             base.Tick(deltaTime);
+
+            // After this tick's flush, so observers end the tick on the full max (the flush carries only the base).
+            SyncObserverMaxNano();
+        }
+
+        /// <summary>The full MaxNanoEnergy last announced to the characters observing this one; -1 until announced.</summary>
+        int _observerMaxNano = -1;
+
+        /// <summary>
+        /// Keeps observers' nano bars for this character current: announces its full MaxNanoEnergy (221), with gear and
+        /// buff bonuses, to everyone who has it spawned whenever it differs from what was last announced. The dirty stat
+        /// flush sends only the base, and an NPC's max (from its template) is never dirty at all. CurrentNano needs no
+        /// sync here: it has no bonus, so the dirty flush already carries it. Never sent to the character itself, whose
+        /// client derives its own full max from the base.
+        /// </summary>
+        void SyncObserverMaxNano()
+        {
+            int maxNano = Math.Max(0, Stats.GetOrZero(CharacterStat.MaxNanoEnergy));
+            if (maxNano == _observerMaxNano
+                || Playfield?.GetService<PlayfieldLocality>() is not { } locality)
+                return;
+
+            locality.Announce(this, new StatMessage
+            {
+                Identity = Identity,
+                Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.MaxNanoEnergy, Value2 = (uint)maxNano }]
+            });
+            _observerMaxNano = maxNano;
+        }
+
+        /// <summary>
+        /// This character's CurrentNano (214) and full MaxNanoEnergy (221) for a client it has just been spawned on:
+        /// the spawn carries no nano, and only later changes reach the client. Null when it has no nano pool.
+        /// </summary>
+        public StatMessage? BuildObserverNanoMessage()
+        {
+            int maxNano = Math.Max(0, Stats.GetOrZero(CharacterStat.MaxNanoEnergy));
+            if (maxNano == 0)
+                return null;
+
+            int nano = Math.Max(0, Stats.GetOrZero(CharacterStat.CurrentNano));
+            return new StatMessage
+            {
+                Identity = Identity,
+                Stats =
+                [
+                    new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.CurrentNano, Value2 = (uint)nano },
+                    new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.MaxNanoEnergy, Value2 = (uint)maxNano }
+                ]
+            };
         }
 
         void TickPassiveRegen(double deltaTime)
@@ -3366,6 +3426,12 @@ namespace ZoneEngine_New.Core.Entities
             SyncClientFrozenMode();
             MarkRebaseDirty();
             SnapshotActiveNanosForPersistence();
+            OnBuffSetChanged();
+        }
+
+        /// <summary>The set of running buffs changed (one landed, ended or was replaced); after the NCU bookkeeping.</summary>
+        protected virtual void OnBuffSetChanged()
+        {
         }
 
         void SyncUsedNcu()

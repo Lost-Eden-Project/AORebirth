@@ -195,6 +195,12 @@ namespace ZoneEngine_New.Core.Playfield
                 npc.Stats.Set(stat, entry.Value);
             }
 
+            // WaitState (2 while sitting) is kept by the motor for players alone; an NPC's would stay unset, and an item
+            // used on it with a WaitState criterion (nano kits and trimmers on a pet) read the unset sentinel (bugs #161,
+            // #393). An NPC never sits: 0.
+            if (StatCollection.IsUnset(npc.Stats.Get(CharacterStat.WaitState)))
+                npc.Stats.Set(CharacterStat.WaitState, 0);
+
             // The client writes the MonsterData record's stats onto an NPC (Gamecode.dll 0x100523d3); Mass and
             // CharRadius (its weapon-range body radius) come from there, not the template.
             if (_gameData.TryGetMonsterBodyStats(npc.Stats.GetOrZero(CharacterStat.MonsterData), out int? mass, out int? charRadius))
@@ -831,6 +837,9 @@ namespace ZoneEngine_New.Core.Playfield
             {
                 _services.GetRequiredService<PlayerHydrator>().Apply(player, hydration);
                 player.SaveState.SeedPersisted(character, hydration.Stats);
+                // The stored movement mode (Sit after a seated logout) follows the motor's standing runner before
+                // FullCharacter reports it and before the nano cast rules read it.
+                player.Motor.SyncModeStatsAfterHydration();
                 int savedCash = player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
                 if (savedCash > Characters.CashLimit.Max)
                 {
@@ -848,6 +857,7 @@ namespace ZoneEngine_New.Core.Playfield
                 registered = true;
                 _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(player);
                 player.EnterOnline(session);
+                ReapplyWornCasts(player);
                 player.AttachOnlineOwnership(ownership);
                 ownership = null;
             }
@@ -1437,6 +1447,7 @@ namespace ZoneEngine_New.Core.Playfield
             Nanos.NanoRuntime.StripPlayshiftFailures(player);
             // Worn items go ineffective (or work again) by the same requirements.
             ZoneEngine_New.Core.Inventory.PlayshiftItems.Refresh(player);
+            ReapplyWornCasts(player);
             // A flyer that just went ineffective (a Yalmaha in the Shadowlands) leaves Fly now, not on the next tick: the
             // FullCharacter the client gets carries CurrentMovementMode, and Fly there keeps the client flying.
             player.Motor.RefreshFlightAuthority();
@@ -1458,6 +1469,23 @@ namespace ZoneEngine_New.Core.Playfield
                     position.xf,
                     position.yf,
                     position.zf));
+        }
+
+        /// <summary>
+        /// Runs the worn items' OnWear (and the wielded weapons' OnWield) one-shot casts again. They run on equip only,
+        /// a stored NCU entry without an expiry is not restored at login, and a zone change strips what RemovesOnZone
+        /// says, so an Izgimmer-modified Cyberdeck lost its "wielding" nano on every relog and zone (bug #174). A nano
+        /// still running is replaced by itself.
+        /// </summary>
+        void ReapplyWornCasts(Player player)
+        {
+            IInventoryRepository? inventory = _playfield.GetService<IInventoryRepository>();
+            if (inventory == null)
+                return;
+
+            WearCastNano.ApplyContainer(player, player.Inventory.Equipment, includeWield: true, _items, inventory);
+            WearCastNano.ApplyContainer(player, player.Inventory.Armor, includeWield: false, _items, inventory);
+            WearCastNano.ApplyContainer(player, player.Inventory.Implant, includeWield: false, _items, inventory);
         }
 
         /// <summary>
@@ -1637,12 +1665,11 @@ namespace ZoneEngine_New.Core.Playfield
                     player.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
                     // Return offered items before the snapshot so a logout mid-trade cannot eat them.
                     _trades.Cancel(player, "logged out");
+                    // Buffs stop running while the character is offline: they are saved with the time they have left.
                     if (player.Inventory.IsHydrated)
-                    {
-                        // Buffs stop running while the character is offline: they are saved with the time they have left.
                         player.SnapshotActiveNanosForLogout();
-                        _flush.HardFlush(player);
-                    }
+                    // Also stores queued quest commits; an unhydrated player with none has nothing to flush.
+                    _flush.HardFlush(player);
 
                     // Leaving dead must not store the corpse: the character is saved where its respawn would put it.
                     _snapshot.Commit(player, player.SettleDeathForLogout());

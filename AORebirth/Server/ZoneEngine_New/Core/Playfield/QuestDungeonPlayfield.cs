@@ -600,7 +600,10 @@ public sealed class QuestDungeonPlayfield : Playfield
                 Rotation = Door.Heading(placement.YawDegrees)
             };
             registry.Register(door);
-            locality.RegisterDynel(door);
+            // In its owning room's cell, not the cell its position resolves to: the door sits on that room's floor,
+            // which a lower floor's room box (a floor tall from its own base) can also contain, and a door in the
+            // wrong cell never reaches the players who can see it. The exit belongs to the entrance room.
+            locality.RegisterDynel(door, placement.IsExit ? placement.LinkedRoom : placement.Room);
             if (_simulation != null && !_simulation.RegisterDoorBlocker(door))
                 Logger.Warn("Dungeon door template " + templateId + " has no collision sphere; it does not block sight");
 

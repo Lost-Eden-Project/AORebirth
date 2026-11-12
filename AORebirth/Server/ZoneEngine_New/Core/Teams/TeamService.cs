@@ -603,7 +603,10 @@ namespace ZoneEngine_New.Core.Teams
                 inviter.Session!, target.Session!, team?.Id ?? 0);
             // Real name+level for Recruit/LFT — never invent levels (avoids fake too high/low).
             WireInvitePresence(inviter, target, targetLevel);
-            if (!ReferenceEquals(inviter.Playfield, target.Playfield))
+            // The invitee's client names the inviter from its own view of them. One it cannot see (another playfield,
+            // or out of its locality range, as an LFT invite usually is) gets the name in TeamInviteMessage (bug #41).
+            if (!ReferenceEquals(inviter.Playfield, target.Playfield)
+                || target.Playfield?.GetService<PlayfieldLocality>()?.IsVisibleTo(inviter, target) != true)
                 Send(target, new TeamInviteMessage { Identity = target.Identity, Unknown = 1,
                     Inviter = inviter.Identity, Name = _data[inviter.Identity.Instance].Name });
             Send(target, Action(target, CharacterActionType.TeamRequestInvite, inviter.Identity));

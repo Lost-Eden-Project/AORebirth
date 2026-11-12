@@ -166,17 +166,19 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
             message.Health = flags.HasFlag(SimpleCharFullUpdateFlags.HasSmallHealth)
                                  ? streamReader.ReadUInt16()
                                  : streamReader.ReadInt32();
+            // Mirrors the writer: small form carries damage, otherwise the field
+            // is the current health and damage is derived from it.
             if (flags.HasFlag(SimpleCharFullUpdateFlags.HasSmallHealthDamage))
             {
                 message.HealthDamage = streamReader.ReadByte();
             }
             else if (flags.HasFlag(SimpleCharFullUpdateFlags.HasSmallHealth))
             {
-                message.HealthDamage = streamReader.ReadUInt16();
+                message.HealthDamage = message.Health - streamReader.ReadUInt16();
             }
             else
             {
-                message.HealthDamage = streamReader.ReadInt32();
+                message.HealthDamage = message.Health - streamReader.ReadInt32();
             }
 
             message.MonsterData = streamReader.ReadUInt32();
@@ -420,18 +422,35 @@ namespace SmokeLounge.AOtomation.Messaging.Serialization.Serializers.Custom
                 streamWriter.WriteInt32(scfu.Health);
             }
 
+            // Stock client: with HasSmallHealthDamage the field is a damage byte
+            // (current = max - byte); without it the field is the CURRENT health
+            // itself (u16 when HasSmallHealth, else int32). Writing the damage
+            // in the non-small branch makes observers see health == damage.
             if (scfu.HealthDamage >= 0 && scfu.HealthDamage <= byte.MaxValue)
             {
                 flags |= SimpleCharFullUpdateFlags.HasSmallHealthDamage;
                 streamWriter.WriteByte((byte)scfu.HealthDamage);
             }
-            else if (flags.HasFlag(SimpleCharFullUpdateFlags.HasSmallHealth))
-            {
-                streamWriter.WriteUInt16((ushort)scfu.HealthDamage);
-            }
             else
             {
-                streamWriter.WriteInt32(scfu.HealthDamage);
+                var currentHealth = scfu.Health - scfu.HealthDamage;
+                if (currentHealth < 0)
+                {
+                    currentHealth = 0;
+                }
+                else if (currentHealth > scfu.Health)
+                {
+                    currentHealth = scfu.Health;
+                }
+
+                if (flags.HasFlag(SimpleCharFullUpdateFlags.HasSmallHealth))
+                {
+                    streamWriter.WriteUInt16((ushort)currentHealth);
+                }
+                else
+                {
+                    streamWriter.WriteInt32(currentHealth);
+                }
             }
 
             streamWriter.WriteUInt32(scfu.MonsterData);

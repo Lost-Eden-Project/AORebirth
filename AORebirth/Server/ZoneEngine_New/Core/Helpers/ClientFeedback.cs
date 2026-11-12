@@ -52,6 +52,15 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"Special attack not possible. The target is aware of your presence." (category 110).</summary>
         public const int SpecialTargetAware = 90809749;
 
+        /// <summary>"Action is not available." (category 110). A special no wielded weapon can perform.</summary>
+        public const int ActionNotAvailable = 19815477;
+
+        /// <summary>
+        /// "You have gained enough Alien XP to get to another alien level but your level must be: %d to obtain it."
+        /// (category 110, FormatFeedback).
+        /// </summary>
+        public const int AlienLevelNeedsLevel = 199506192;
+
         /// <summary>"%d credits were deducted from your account." (category 110, FormatFeedback). Insurance save fee.</summary>
         public const int CreditsDeducted = 57671460;
 

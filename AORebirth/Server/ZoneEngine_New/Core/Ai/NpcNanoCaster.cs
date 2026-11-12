@@ -31,6 +31,8 @@ namespace ZoneEngine_New.Core.Ai
     {
         Cast,
         OutOfRange,
+        /// <summary>A heal reaches the target, but there is no sight of it or the cast cannot start right now.</summary>
+        Blocked,
         Busy,
         NoHeal
     }
@@ -158,7 +160,8 @@ namespace ZoneEngine_New.Core.Ai
 
         /// <summary>
         /// A heal order: casts the first heal this NPC has that can land on <paramref name="target"/> now.
-        /// <see cref="HealOrderResult.OutOfRange"/> when a heal exists but the target is too far or out of sight.
+        /// <see cref="HealOrderResult.OutOfRange"/> when a heal exists but the target is too far for every one of them;
+        /// <see cref="HealOrderResult.Blocked"/> when one reaches but sight is missing or the cast cannot start.
         /// </summary>
         public HealOrderResult TryHeal(Character target, DateTime nowUtc)
         {
@@ -172,6 +175,7 @@ namespace ZoneEngine_New.Core.Ai
 
             GameplayNpcNanos rules = Rules;
             bool hasHeal = false;
+            bool reaches = false;
             foreach (int nanoId in Npc.UploadedNanoIds)
             {
                 NanoSpell? spell = Resolve(nanoId);
@@ -179,7 +183,10 @@ namespace ZoneEngine_New.Core.Ai
                     continue;
 
                 hasHeal = true;
-                if (!InRange(spell, target, rules.SupportRange) || !NanoRuntime.CanStartCast(Npc, spell, target, nowUtc))
+                if (!InReach(spell, target, rules.SupportRange))
+                    continue;
+                reaches = true;
+                if (!Npc.HasLineOfSightTo(target) || !NanoRuntime.CanStartCast(Npc, spell, target, nowUtc))
                     continue;
                 if (NanoRuntime.TryStartCast(Npc, spell.Id, target.Identity, nowUtc) != NanoCastRefusal.None)
                     continue;
@@ -188,7 +195,7 @@ namespace ZoneEngine_New.Core.Ai
                 return HealOrderResult.Cast;
             }
 
-            return hasHeal ? HealOrderResult.OutOfRange : HealOrderResult.NoHeal;
+            return !hasHeal ? HealOrderResult.NoHeal : reaches ? HealOrderResult.Blocked : HealOrderResult.OutOfRange;
         }
 
         NanoSpell? Resolve(int nanoId)
@@ -354,6 +361,10 @@ namespace ZoneEngine_New.Core.Ai
         }
 
         bool InRange(NanoSpell spell, Character target, double fallback)
+            => InReach(spell, target, fallback) && (ReferenceEquals(target, Npc) || Npc.HasLineOfSightTo(target));
+
+        /// <summary><see cref="InRange"/> by distance alone, sight aside.</summary>
+        bool InReach(NanoSpell spell, Character target, double fallback)
         {
             if (ReferenceEquals(target, Npc))
                 return true;
@@ -364,7 +375,7 @@ namespace ZoneEngine_New.Core.Ai
             if (range <= 0)
                 range = fallback;
 
-            return Npc.GetEdgeDistanceTo(target) <= range && Npc.HasLineOfSightTo(target);
+            return Npc.GetEdgeDistanceTo(target) <= range;
         }
 
         /// <summary>

@@ -751,10 +751,14 @@ namespace ZoneEngine_New.Core.Quests
             }
         }
 
-        /// <summary>The player's state only; a generated quest's definition lives in generatedquests.</summary>
+        /// <summary>
+        /// The player's state only; a generated quest's definition lives in generatedquests. A Quests.json quest's row is
+        /// written behind, in order with its earn and reward; a generated mission's stays a direct write, read by its own
+        /// transactions.
+        /// </summary>
         void Save(Player player, PlayerQuest quest)
         {
-            _store.Save(new CharacterQuestRow
+            CharacterQuestRow row = new()
             {
                 CharacterId = player.Identity.Instance,
                 QuestId = quest.QuestId,
@@ -764,7 +768,11 @@ namespace ZoneEngine_New.Core.Quests
                 RequiredCount = quest.RequiredCount,
                 AssignedAtUtcTicks = quest.AssignedAtUtc.Ticks,
                 UpdatedAtUtcTicks = _now().Ticks
-            });
+            };
+            if (quest.Source != QuestSource.Template || player.Identity.Instance <= 0)
+                _store.Save(row);
+            else if (!player.IsPersistenceQuarantined) // A quarantined aggregate is reloaded from storage, never written.
+                _flush.Enqueue(player, () => _store.Save(row));
         }
     }
 }

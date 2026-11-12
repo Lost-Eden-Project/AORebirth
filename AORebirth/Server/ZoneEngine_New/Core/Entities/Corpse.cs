@@ -521,6 +521,11 @@ namespace ZoneEngine_New.Core.Entities
                 if (stat == CharacterStat.Cash && dead.Stats.GetOrZero(CharacterStat.NPCFamily) == 0)
                     continue;
 
+                // Nor does a vendor, whatever family its template carries (Clan merchants 1, Omni 2, the Equipment
+                // Vendor 87): its Cash stat is the shop's float, not loot (bug #136).
+                if (stat == CharacterStat.Cash && dead is NpcCharacter { Shop: not null })
+                    continue;
+
                 int value = dead.Stats.Get(stat);
                 if (!StatCollection.IsUnset(value))
                     SourceStats[stat] = value;

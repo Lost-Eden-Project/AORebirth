@@ -26,6 +26,17 @@ public sealed partial class QuestService
             || QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
                 && parameters.ObjectiveNpc != null);
 
+    /// <summary>
+    /// True when <see cref="TryComplete"/> would complete the quest now: it is active and, for a generated mission
+    /// with a bound objective, that objective is done. A dialog checks this before it takes anything for the quest.
+    /// </summary>
+    public bool CanComplete(Player player, string questId)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return GetLog(player).TryFind(questId, out PlayerQuest? quest) && quest.IsActive
+            && (!RequiresBoundObjective(quest) || quest.IsRewardPending);
+    }
+
     /// <summary>Retail Find Person completes on inspection of the accepted actor, not ordinary targeting.</summary>
     public void OnNpcInspected(Player player, NpcCharacter npc)
     {
@@ -343,6 +354,176 @@ public sealed partial class QuestService
 
     void Complete(Player player, PlayerQuest quest)
     {
+        if (quest.Source == QuestSource.Template)
+            CompleteTemplate(player, quest);
+        else
+            CompleteMission(player, quest);
+    }
+
+    /// <summary>
+    /// A Quests.json quest's completion, decided and shown on the tick without waiting on the database: the reward is
+    /// paid in memory and its earn and reward transactions are queued in the player's write-behind lane
+    /// (<see cref="InventoryFlushService.Enqueue"/>), which stores them in order ahead of any later inventory or trade
+    /// write, checkpoint, logout or zone change. A queued transaction that fails quarantines the player; storage then
+    /// still holds the quest unpaid (or earned and pending), so a reward is never paid twice.
+    /// </summary>
+    void CompleteTemplate(Player player, PlayerQuest quest)
+    {
+        lock (player.PersistenceGate)
+        {
+            if (!CanDeliver(player) || _completionDao == null || _snapshot == null || !quest.IsActive)
+                return;
+            quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
+            bool queued = false;
+            quest.Progress = quest.RequiredCount;
+            try
+            {
+                QuestReward? reward = quest.Template.Reward;
+                List<Item> items = MintRewardItems(player, quest, RewardItemsFor(player, quest, reward), out List<Item> used);
+                if (!InventoryGrantPlan.TryCreate(player, items, out var grant, out GrantRefusal refusal, allowOverflow: true))
+                {
+                    QueueTemplateEarn(player, quest);
+                    _logger.Warn("Quest reward pending char=" + player.Identity.Instance + " quest=" + quest.QuestId + " reason=" + refusal);
+                    NotifyPending(player, quest, uniqueConflict: refusal is GrantRefusal.UniqueHeld or GrantRefusal.UniqueRepeated);
+                    return;
+                }
+                int xpReward = Math.Max(0, reward?.Xp ?? 0);
+                var values = new Dictionary<CharacterStat, int>();
+                if (reward?.Credits > 0)
+                    values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
+                        (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + reward.Credits);
+                if (quest.Template.MissionBit is int bit && MissionBits.IsValid(bit))
+                {
+                    var (stat, mask) = MissionBits.Locate(bit);
+                    values[stat] = player.Stats.GetOrZero(stat, StatDetail.Base) | mask;
+                }
+                // What the tick holds now is what the reward transaction expects storage to hold; the commit stores it first.
+                StatRecord[] before = values.Keys.Select(stat => new StatRecord
+                {
+                    StatId = (int)stat, StatValue = player.Stats.GetOrZero(stat, StatDetail.Base)
+                }).ToArray();
+                StatRecord[] paid = values.Select(pair => new StatRecord { StatId = (int)pair.Key, StatValue = pair.Value }).ToArray();
+                MissionItemInstanceData[] grants = grant.ParkedRows().Select(ToMissionItem).ToArray();
+
+                quest.State = QuestState.Completed;
+                // The reward commit earns first itself (an earn already stored is accepted as it is).
+                _flush.Enqueue(player, () => CommitTemplateReward(player, quest, grant, grants, before, paid));
+                quest.EarnQueued = true;
+                queued = true;
+                try
+                {
+                    grant.PublishBeforeCommit();
+                }
+                finally
+                {
+                    Ended(player, quest);
+                }
+                foreach (var pair in values)
+                    player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
+                player.FlushDirtyStats();
+                if (xpReward > 0)
+                    player.AwardXp(xpReward, XpSource.Quest);
+                if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
+                    foreach (Item item in used)
+                        item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
+                QuestJournal.SendEnded(player, quest, CharacterActionType.MissionAccomplished);
+                QuestJournal.Delete(player, quest);
+                _logger.Info("Quest completed, rewards queued for commit char=" + player.Identity.Instance + " quest=" + quest.QuestId);
+                if (!string.IsNullOrEmpty(quest.Template.NextStep) && _catalog.TryGet(quest.Template.NextStep, out _))
+                    TryAssignTemplate(player, quest.Template.NextStep, out _);
+            }
+            catch (Exception exception)
+            {
+                // Once the reward is queued, memory already shows it: a failure past that point must reload from storage.
+                CompletionFailure(player, exception, queued);
+                if (!queued && !player.IsPersistenceQuarantined)
+                {
+                    // Delivery failed before anything was paid; the earn is still stored, as the quest shows it earned.
+                    try
+                    {
+                        QueueTemplateEarn(player, quest);
+                    }
+                    catch (Exception earnFailure)
+                    {
+                        _logger.Error(earnFailure, "Queuing quest earn failed char=" + player.Identity.Instance + " quest=" + quest.QuestId);
+                    }
+                }
+                if (quest.IsRewardPending && !player.IsPersistenceQuarantined)
+                    NotifyPending(player, quest);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Queues the earn of a Quests.json quest the tick shows as earned and pending delivery, once per session: storage
+    /// then keeps it pending across a relog, as a reward that does not fit yet must stay.
+    /// </summary>
+    void QueueTemplateEarn(Player player, PlayerQuest quest)
+    {
+        if (quest.EarnQueued)
+            return;
+        _flush.Enqueue(player, () => EarnTemplate(player, quest));
+        quest.EarnQueued = true;
+    }
+
+    /// <summary>Write-behind lane: stores a Quests.json quest's earn (already shown as earned on the tick).</summary>
+    CharacterQuestCompletionResult EarnTemplate(Player player, PlayerQuest quest)
+    {
+        var earned = _completionDao!.Execute(player.Identity.Instance, null!, tx =>
+        {
+            var completion = RequireCompletion(tx);
+            var stored = completion.ReadCharacterQuest(quest.QuestId);
+            RequireCurrent(stored, quest, player);
+            return completion.TryEarnCharacterQuest(new()
+            {
+                QuestId = quest.QuestId, AssignedAtUtcTicks = stored.AssignedAtUtcTicks,
+                ExpectedDefinitionJson = stored.DefinitionJson,
+                ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson, NowUtcTicks = _now().Ticks
+            });
+        });
+        if (earned.Status is not (CharacterQuestCompletionStatus.Earned or CharacterQuestCompletionStatus.AlreadyEarned))
+            throw new InvalidOperationException("Quest " + quest.QuestId + " was not earned: " + earned.Status + " " + earned.Reason);
+        return earned;
+    }
+
+    /// <summary>
+    /// Write-behind lane: stores the reward the tick already paid. Items go in at their parked rows (the dirty
+    /// inventory flush right after moves them into their slots); credits and the mission bit are set from the values
+    /// the tick held when it decided the reward, which are stored first so the transaction's fail-closed check holds.
+    /// </summary>
+    void CommitTemplateReward(Player player, PlayerQuest quest, InventoryGrantPlan grant, MissionItemInstanceData[] grants,
+        StatRecord[] before, StatRecord[] paid)
+    {
+        var earned = EarnTemplate(player, quest);
+        _snapshot!.SyncStats(player, before);
+        var result = _completionDao!.Execute(player.Identity.Instance, null!, tx => RequireCompletion(tx).TryCompleteCharacterQuest(new()
+        {
+            QuestId = quest.QuestId, AssignedAtUtcTicks = earned.Quest.AssignedAtUtcTicks,
+            ExpectedDefinitionJson = earned.Quest.DefinitionJson,
+            ExpectedAcgBuildingGeneratorJson = earned.Quest.AcgBuildingGeneratorJson, NowUtcTicks = _now().Ticks,
+            Grants = grants,
+            ExpectedStatValues = before.Select(stat => new MissionStatValueData
+            {
+                StatIdentityType = (int)player.Identity.Type, StatId = stat.StatId, Value = stat.StatValue
+            }).ToArray(),
+            StatMutations = paid.Select(stat => new MissionStatMutationData
+            {
+                StatIdentityType = (int)player.Identity.Type, StatId = stat.StatId,
+                Kind = MissionStatMutationKind.Set, Value = stat.StatValue,
+                MinimumValue = int.MinValue, MaximumValue = int.MaxValue
+            }).ToArray()
+        }));
+        if (result.Status != CharacterQuestCompletionStatus.Applied)
+            throw new InvalidOperationException("Quest " + quest.QuestId + " reward was not applied: " + result.Status + " " + result.Reason);
+        grant.MarkStored();
+        // Retire any checkpoint captured before the reward, so it cannot overwrite paid stats; then take a fresh one.
+        player.SaveState.MarkCommitted(player.SaveState.NextSequence(), paid, location: null);
+        player.SaveState.RequestCheckpoint();
+        _logger.Info("Quest rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId);
+    }
+
+    void CompleteMission(Player player, PlayerQuest quest)
+    {
         lock (player.PersistenceGate)
         {
             if (!CanDeliver(player) || _completionDao == null || !quest.IsActive)
@@ -398,47 +579,7 @@ public sealed partial class QuestService
                 {
                     definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
                 }
-                var items = new List<Item>();
-                var skippedUnique = new List<string>();
-                var used = new List<Item>();
-                foreach (var definition in definitions)
-                {
-                    if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
-                        throw new InvalidOperationException("Reward item definition is invalid; delivery remains pending.");
-                    int highId = definition.HighId ?? definition.Id;
-                    // Live's virtual reward items (Daily Mission XP Reward, Token Add, Set Flag items) carry the Null
-                    // flag: they are used on the player, never placed in the inventory, so no instance is minted.
-                    if (IsUsedOnReward(definition.Id, highId, definition.Quality))
-                    {
-                        used.Add(_items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest));
-                        continue;
-                    }
-                    // A Unique reward the character already holds (or this reward already gives) is left out: the quest
-                    // still completes on its dialog and pays the rest, rather than staying open until the held copy is
-                    // gone. Checked on the item exactly as it will be minted, with the grant plan's own Unique checks, so
-                    // the plan never refuses what this lets through; no instance is allocated for one left out.
-                    Item candidate = _items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest);
-                    if (UniqueItems.WouldDuplicate(player, candidate, out _) || UniqueItems.HasRepeatedUnique([.. items, candidate], out _))
-                    {
-                        skippedUnique.Add(string.IsNullOrEmpty(definition.Name) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Name);
-                        continue;
-                    }
-                    Item minted = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
-                    items.Add(minted);
-                    // A configured Count replaces a stackable template's mint count, as a daily login reward's does. A
-                    // non-stackable reward (sleeves, armor, bags) is given as that many separate items; a Unique once.
-                    if (definition.Count is int count)
-                    {
-                        if (InventoryStacking.IsStackable(minted))
-                            minted.StackCount = count;
-                        else if (!ZoneEngine_New.Core.Trade.TradeRules.IsUnique(minted))
-                            for (int copy = 1; copy < count; copy++)
-                                items.Add(_items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest));
-                    }
-                }
-                if (skippedUnique.Count > 0)
-                    _logger.Info("Quest reward unique items already held, left out char=" + player.Identity.Instance
-                        + " quest=" + quest.QuestId + " items=" + string.Join(", ", skippedUnique));
+                List<Item> items = MintRewardItems(player, quest, definitions, out List<Item> used);
                 if (!InventoryGrantPlan.TryCreate(player, items, out var grant, out GrantRefusal refusal, allowOverflow: true))
                 {
                     _logger.Warn("Quest reward pending char=" + player.Identity.Instance + " quest=" + quest.QuestId + " reason=" + refusal);
@@ -526,6 +667,57 @@ public sealed partial class QuestService
                     NotifyPending(player, quest);
             }
         }
+    }
+
+    /// <summary>
+    /// Mints the reward items for <paramref name="definitions"/>. Live's virtual reward items, used on the player rather
+    /// than handed over, come back in <paramref name="used"/>; a Unique the character holds, or the reward gives twice,
+    /// is left out. Throws on an invalid definition, which leaves delivery pending.
+    /// </summary>
+    List<Item> MintRewardItems(Player player, PlayerQuest quest, IEnumerable<QuestRewardItem> definitions, out List<Item> used)
+    {
+        var items = new List<Item>();
+        var skippedUnique = new List<string>();
+        used = new List<Item>();
+        foreach (var definition in definitions)
+        {
+            if (definition.Id <= 0 || definition.HighId is <= 0 || definition.Quality <= 0)
+                throw new InvalidOperationException("Reward item definition is invalid; delivery remains pending.");
+            int highId = definition.HighId ?? definition.Id;
+            // Live's virtual reward items (Daily Mission XP Reward, Token Add, Set Flag items) carry the Null
+            // flag: they are used on the player, never placed in the inventory, so no instance is minted.
+            if (IsUsedOnReward(definition.Id, highId, definition.Quality))
+            {
+                used.Add(_items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest));
+                continue;
+            }
+            // A Unique reward the character already holds (or this reward already gives) is left out: the quest
+            // still completes on its dialog and pays the rest, rather than staying open until the held copy is
+            // gone. Checked on the item exactly as it will be minted, with the grant plan's own Unique checks, so
+            // the plan never refuses what this lets through; no instance is allocated for one left out.
+            Item candidate = _items.Create(definition.Id, highId, definition.Quality, ItemSource.Quest);
+            if (UniqueItems.WouldDuplicate(player, candidate, out _) || UniqueItems.HasRepeatedUnique([.. items, candidate], out _))
+            {
+                skippedUnique.Add(string.IsNullOrEmpty(definition.Name) ? definition.Id.ToString(CultureInfo.InvariantCulture) : definition.Name);
+                continue;
+            }
+            Item minted = _items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest);
+            items.Add(minted);
+            // A configured Count replaces a stackable template's mint count, as a daily login reward's does. A
+            // non-stackable reward (sleeves, armor, bags) is given as that many separate items; a Unique once.
+            if (definition.Count is int count)
+            {
+                if (InventoryStacking.IsStackable(minted))
+                    minted.StackCount = count;
+                else if (!ZoneEngine_New.Core.Trade.TradeRules.IsUnique(minted))
+                    for (int copy = 1; copy < count; copy++)
+                        items.Add(_items.CreateWithNewInstance(definition.Id, highId, definition.Quality, ItemSource.Quest));
+            }
+        }
+        if (skippedUnique.Count > 0)
+            _logger.Info("Quest reward unique items already held, left out char=" + player.Identity.Instance
+                + " quest=" + quest.QuestId + " items=" + string.Join(", ", skippedUnique));
+        return items;
     }
 
     /// <summary>

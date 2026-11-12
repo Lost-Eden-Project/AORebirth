@@ -84,8 +84,65 @@ namespace ZoneEngine_New.Core.Inventory
             long due = Environment.TickCount64 + CoalesceMilliseconds;
             lock (_scheduleGate)
             {
+                // Queued commits keep their time: a busy inventory must not keep pushing an earned reward back.
+                if (!player.PendingCommits.IsEmpty && _dueAtMs.TryGetValue(characterId, out long scheduled))
+                    due = Math.Min(due, scheduled);
                 _dueAtMs[characterId] = due;
                 _wake.Set();
+            }
+        }
+
+        /// <summary>
+        /// Queues database work the tick has already applied in memory, to run off the tick in the order queued, under
+        /// the player's gate and lease, before the dirty inventory and ahead of every hard flush (logout, zone change,
+        /// trade, mission transaction). It runs after the coalesce period, so the rest of the action that queued it is
+        /// done first. A commit that throws quarantines the player and closes the session: the next login loads storage.
+        /// </summary>
+        public void Enqueue(Player player, Action commit)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(commit);
+            if (player.IsPersistenceQuarantined)
+                throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
+            int characterId = player.Identity.Instance;
+            if (characterId <= 0)
+                throw new InvalidOperationException("Only a stored character has commits to queue.");
+
+            player.PendingCommits.Enqueue(commit);
+            if (_disposed)
+                return; // Shutdown hard-flushes every player, which runs it.
+
+            long due = Environment.TickCount64 + CoalesceMilliseconds;
+            lock (_scheduleGate)
+            {
+                _dueAtMs[characterId] = _dueAtMs.TryGetValue(characterId, out long scheduled) ? Math.Min(scheduled, due) : due;
+                _wake.Set();
+            }
+        }
+
+        /// <summary>Runs the player's queued commits in order. The caller holds the gate and has checked the lease.</summary>
+        void RunPendingCommits(Player player)
+        {
+            while (player.PendingCommits.TryDequeue(out Action? commit))
+            {
+                try
+                {
+                    commit();
+                }
+                catch (Exception exception)
+                {
+                    // The aggregate already shows what this commit was to store: without it memory and storage disagree.
+                    player.QuarantinePersistence();
+                    player.PendingCommits.Clear();
+                    player.Session?.Close();
+                    _logger.Error(
+                        exception,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Queued commit failed for character {0}; player persistence quarantined for reload.",
+                            player.Identity.Instance));
+                    throw;
+                }
             }
         }
 
@@ -135,6 +192,9 @@ namespace ZoneEngine_New.Core.Inventory
                     _dueAtMs.Remove(first.Identity.Instance);
                     if (second != null) _dueAtMs.Remove(second.Identity.Instance);
                 }
+                // Queued rewards are stored before a transaction that takes the dirty inventory or writes stats itself.
+                RunPendingCommits(first);
+                if (second != null) RunPendingCommits(second);
                 action();
             }
         }
@@ -219,7 +279,7 @@ namespace ZoneEngine_New.Core.Inventory
         /// </param>
         void FlushCharacter(Player player, bool requireLease = false)
         {
-            if (!player.Inventory.IsHydrated)
+            if (!player.Inventory.IsHydrated && player.PendingCommits.IsEmpty)
                 return;
 
             if (!HasDirtyState(player))
@@ -245,6 +305,11 @@ namespace ZoneEngine_New.Core.Inventory
                             player.Identity.Instance));
                     return;
                 }
+
+                // A queued reward inserts its rows before the dirty entries that move them are taken.
+                RunPendingCommits(player);
+                if (!player.Inventory.IsHydrated)
+                    return;
 
                 PlayerInventory.InventoryDirtyFlush? inventory = player.Inventory.TakeDirty();
                 int[] nanos = player.DrainDirtyUploadedNanos();
@@ -362,7 +427,7 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         static bool HasDirtyState(Player player)
-            => player.Inventory.HasDirtyEntries || player.HasDirtyUploadedNanos || player.HasDirtyActiveNanos
+            => !player.PendingCommits.IsEmpty || player.Inventory.HasDirtyEntries || player.HasDirtyUploadedNanos || player.HasDirtyActiveNanos
                 || player.SkillLocks.IsDirty || player.TrainedPerks.IsDirty || player.PerkLocks.IsDirty
                 || player.Research.IsDirty || player.NanoLineLocks.IsDirty || player.PetNames.IsDirty;
 

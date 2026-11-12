@@ -63,6 +63,13 @@ namespace ZoneEngine_New.Core.Trade
     {
         public const int IdleRefreshMinutes = 10;
 
+        /// <summary>
+        /// Upper bound on slots rolled from an items.dat ShopInventory list. The ShopUpdate packet carries 12 bytes per
+        /// slot under a 16-bit packet size, so an uncapped category (Basic Augmentations' IMAN line has 5914 pre-built
+        /// implant children) overflows it and drops the client. Retail's largest observed shop is 213 slots.
+        /// </summary>
+        public const int MaxShopInventorySlots = 256;
+
         readonly List<ShopStockSlot> _slots = new();
         bool _sorted;
         ShopStockRange[]? _configuredRanges;
@@ -170,7 +177,9 @@ namespace ZoneEngine_New.Core.Trade
         /// (unless it has a Special family, which stocks at its nearest QL as Special loot does). Retail Specialist Commerce
         /// (KWJH QL 1-200, Amount 1) lists 48 of KWJH's 49 children, single-QL items included. A roll identical to one
         /// already stocked adds no row. Items <paramref name="hasTemplate"/> rejects (no server template for the low/high
-        /// ids) are skipped. Lines stay in list order, uncapped: retail sent Tsunayoshi Smith's shop (164104) with 213 slots.
+        /// ids) are skipped. Lines stay in list order (retail sent Tsunayoshi Smith's shop (164104) with 213 slots), up to
+        /// <see cref="MaxShopInventorySlots"/>: a round with more children than the remaining room visits them in a random
+        /// order, so an oversized category stocks a different random subset on each refresh.
         /// </summary>
         public void EnsureFreshFromShopInventory(
             IReadOnlyList<Inventory.ShopInventoryEntry> lines,
@@ -190,8 +199,12 @@ namespace ZoneEngine_New.Core.Trade
             List<HashInstance> leaves = new();
             List<HashInstance> usable = new();
             HashSet<(int LowId, int HighId, int Quality)> stocked = new();
+            int[]? order = null;
             foreach (Inventory.ShopInventoryEntry line in lines)
             {
+                if (_slots.Count >= MaxShopInventorySlots)
+                    break;
+
                 if (string.IsNullOrEmpty(line.Hash))
                     continue;
 
@@ -203,10 +216,29 @@ namespace ZoneEngine_New.Core.Trade
                     : new[] { line.Hash };
 
                 // Count rounds over every child, as retail lists them (all children, then all children again).
-                for (int round = 0; round < line.Amount; round++)
+                for (int round = 0; round < line.Amount && _slots.Count < MaxShopInventorySlots; round++)
                 {
-                    for (int g = 0; g < groups.Count; g++)
+                    // More children than room left: visit them in a lazily shuffled order (one Fisher-Yates step per
+                    // visit) so the capped stock is a random subset rather than the alphabetically first children.
+                    bool shuffle = groups.Count > MaxShopInventorySlots - _slots.Count;
+                    if (shuffle)
                     {
+                        if (order == null || order.Length < groups.Count)
+                            order = new int[groups.Count];
+                        for (int i = 0; i < groups.Count; i++)
+                            order[i] = i;
+                    }
+
+                    for (int step = 0; step < groups.Count && _slots.Count < MaxShopInventorySlots; step++)
+                    {
+                        int g = step;
+                        if (shuffle)
+                        {
+                            int pick = random.Next(step, groups.Count);
+                            (order![step], order[pick]) = (order[pick], order[step]);
+                            g = order[step];
+                        }
+
                         if (random.Next(100) >= chance)
                             continue;
 

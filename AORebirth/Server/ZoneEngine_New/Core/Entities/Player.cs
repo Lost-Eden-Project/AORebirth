@@ -23,6 +23,7 @@ namespace ZoneEngine_New.Core.Entities
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Teams;
     using ZoneEngine_New.Core.Playfield.Locality;
+    using Utility;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
     using Quaternion = AORebirth.Core.Vector.Quaternion;
@@ -49,6 +50,12 @@ namespace ZoneEngine_New.Core.Entities
         public object PersistenceGate { get; } = new();
 
         public bool IsPersistenceQuarantined => _persistenceQuarantined;
+
+        /// <summary>
+        /// Database work the tick already shows (a Quests.json quest's progress, earn and reward), written in order off
+        /// the tick by <see cref="InventoryFlushService"/>, ahead of the dirty inventory and of every hard flush.
+        /// </summary>
+        internal System.Collections.Concurrent.ConcurrentQueue<Action> PendingCommits { get; } = new();
 
         public CharacterSaveState SaveState { get; } = new();
 
@@ -1047,28 +1054,50 @@ namespace ZoneEngine_New.Core.Entities
             }
         }
 
-        /// <summary>Rebuilds <see cref="PerkActions"/> from the perk templates' OnWear AddAction functions.</summary>
+        /// <summary>
+        /// Rebuilds <see cref="PerkActions"/> from the perk templates' OnWear AddAction functions and from the AddAction
+        /// functions of running nanos (Keeper Wrath/Fury grant Righteous Wrath/Fury only while they run, bug #211).
+        /// </summary>
         void RebasePerkActions()
         {
             var actions = new List<PerkAction>();
             foreach (ItemTemplate perk in _perkTemplates)
             {
-                if (!perk.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear))
-                    continue;
+                if (perk.SpellList.TryGetValue(EventType.OnWear, out List<ItemSpell>? wear))
+                    CollectPerkActions(wear, actions);
+            }
 
-                foreach (ItemSpell spell in wear)
-                {
-                    if (!spell.Is(FunctionType.AddAction)
-                        || !spell.TryReadInt(0, out int slot)
-                        || !spell.TryReadInt(3, out int actionTemplateId)
-                        || !TryReadPerkActionHash(spell, out int hash))
-                        continue;
-
-                    actions.Add(new PerkAction(actionTemplateId, slot, hash));
-                }
+            foreach (Nanos.Buff buff in Buffs)
+            {
+                foreach (List<ItemSpell> spells in buff.SpellList.Values)
+                    CollectPerkActions(spells, actions);
             }
 
             _perkActions = actions.ToArray();
+        }
+
+        static void CollectPerkActions(List<ItemSpell> spells, List<PerkAction> actions)
+        {
+            foreach (ItemSpell spell in spells)
+            {
+                if (!spell.Is(FunctionType.AddAction)
+                    || !spell.TryReadInt(0, out int slot)
+                    || !spell.TryReadInt(3, out int actionTemplateId)
+                    || !TryReadPerkActionHash(spell, out int hash))
+                    continue;
+
+                PerkAction action = new PerkAction(actionTemplateId, slot, hash);
+                if (!actions.Contains(action))
+                    actions.Add(action);
+            }
+        }
+
+        /// <summary>A nano that grants an action came or went: the client's perk action list follows it.</summary>
+        protected override void OnBuffSetChanged()
+        {
+            PerkAction[] before = _perkActions;
+            RebasePerkActions();
+            AnnouncePerkActionChanges(before, _perkActions);
         }
 
         /// <summary>
@@ -1443,26 +1472,34 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// Whether a perk action aimed at another character succeeds, deterministically: this player's attack rating
-        /// (the action's Attack skills weighted against this player, plus Add All Offense) must reach the target's
-        /// defense rating (the action's Defend skills weighted against the target, plus Add All Defense). Pulverize:
-        /// 2H Blunt 100% + AAO vs skill 155 at 85% + AAD. Self-only actions and actions without Attack or Defend skills
-        /// always succeed. Decided when the action is used: live answers a miss at once, with no QueuePerk.
+        /// Whether a perk action aimed at another character lands: the same roll as a hostile nano
+        /// (<see cref="DamageCalculator.ResolveNanoLand"/>), this player's attack rating (the action's Attack skills
+        /// weighted against this player, plus Add All Offense) against the target's defense rating (the action's Defend
+        /// skills weighted against the target, plus Add All Defense) at 1/sqrt(2) x AR/DR. Pulverize: 2H Blunt 100% +
+        /// AAO vs skill 155 at 85% + AAD. Self-only actions and actions without Attack or Defend skills always succeed.
+        /// Decided when the action is used: live answers a miss at once, with no QueuePerk. A hard AR >= DR threshold
+        /// had every Shade perk resisted by any mob whose check was higher (bugs #302, #385, #390).
         /// </summary>
         public bool PerkActionLands(PerkActionUse use)
         {
-            // TODO: Placeholder. This is not even close to the correct perk action landing formula.
             if (ReferenceEquals(use.Target, this) || use.Template.Attack.Count == 0 || use.Template.Defend.Count == 0)
                 return true;
 
-            long attackRating = WeightedSkill(use.Template.Attack) + Stats.GetOrZero(CharacterStat.AMSModifier);
-
-            long defenseSkill = 0;
-            foreach ((CharacterStat stat, int percent) in use.Template.Defend)
-                defenseSkill += (long)use.Target.Stats.GetOrZero(stat) * percent;
-            long defenseRating = defenseSkill / 100 + use.Target.Stats.GetOrZero(CharacterStat.DMSModifier);
-
-            return attackRating >= defenseRating;
+            bool lands = DamageCalculator.ResolveNanoLand(this, use.Target, use.Template,
+                out int attackRating, out int defenseRating, out int landChance);
+            if (!lands)
+                LogUtil.Debug(
+                    DebugInfoDetail.Engine,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Perk action resisted player={0} action={1} target={2} attack={3} defense={4} landChance={5}%",
+                        Identity.Instance,
+                        use.Template.Id,
+                        use.Target.Identity.Instance,
+                        attackRating,
+                        defenseRating,
+                        landChance));
+            return lands;
         }
 
         /// <summary>Template AttackRange in meters; a missing or zero range means touch range.</summary>
@@ -1643,7 +1680,8 @@ namespace ZoneEngine_New.Core.Entities
                 for (int i = 0; i < wear.Count; i++)
                 {
                     ItemSpell spell = wear[i];
-                    if (spell.TickCount < 0 && spell.TickInterval > 0 && WearCastNano.IsCastFunction(spell))
+                    if (spell.TickCount < 0 && spell.TickInterval > 0
+                        && (WearCastNano.IsCastFunction(spell) || IsPulseHit(spell)))
                         pulses.Add(new PerkPulse(perk.Id, i, perk, spell,
                             TimeSpan.FromMilliseconds(spell.TickInterval / CentisecondsPerMillisecond)));
                 }
@@ -1656,6 +1694,10 @@ namespace ZoneEngine_New.Core.Entities
                     ? due : DateTime.MinValue;
             _nextPerkPulseUtc = _perkPulseDueUtc.Length == 0 ? DateTime.MaxValue : _perkPulseDueUtc.Min();
         }
+
+        /// <summary>An OnWear Hit or SpecialHit with Duration -1 and an Interval: a stat the perk pulses on its wearer.</summary>
+        static bool IsPulseHit(ItemSpell spell)
+            => spell.Is(FunctionType.Hit) || spell.Is(FunctionType.SpecialHit);
 
         /// <summary>Fires each due perk pulse whose perk and function requirements pass, then schedules its next one.</summary>
         void TickPerkPulses()
@@ -1680,7 +1722,14 @@ namespace ZoneEngine_New.Core.Entities
                         && ItemTemplate.MeetsRequirements(pulse.Spell.Requirements, stat => Stats.Get(stat), ResolvePerkRequirement))
                     {
                         using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("perk.pulse", pulse.PerkItemId))
-                            Nanos.NanoCastFunctions.TryExecute(this, this, pulse.Spell, _items, inventory);
+                        {
+                            if (IsPulseHit(pulse.Spell))
+                                // A pulsing Hit on the wearer (Notum Siphon 223600: CurrentNano every 10 s, bug #259).
+                                ItemUseFunctions.TryExecute(pulse.PerkItemId, this, this, pulse.Spell, inventory, _items,
+                                    isTick: true, sourceTemplate: pulse.Perk);
+                            else
+                                Nanos.NanoCastFunctions.TryExecute(this, this, pulse.Spell, _items, inventory);
+                        }
                     }
                 }
 

@@ -114,10 +114,17 @@ namespace ZoneEngine_New.Core.Ai
             // Too far to walk back, or no way to walk back at all (a waiting pet only on distance: it stays put).
             // A pet already at its owner's side is not warped over a route that just fails to reach an owner
             // standing on a ledge or an unmeshed spot.
+            // A pet sent at a mob stays on it when its owner steps out of the room or behind a pillar, where the walk
+            // back runs long or no route is found at all (bug #144): only the straight line past MaxPlayerPetDistance
+            // brings an attacking pet back.
+            double straight = Distance(brain.Npc, pet.Owner);
+            if (pet.Mode == PetMode.Attack && pet.AttackTarget != Identity.None)
+                return straight > PetService.MaxPlayerPetDistance;
+
             double distance = OwnerDistance(brain);
             return distance > PetService.MaxPlayerPetDistance
                    || (double.IsPositiveInfinity(distance) && pet.Mode != PetMode.Wait
-                       && Distance(brain.Npc, pet.Owner) > NoRouteWarpMeters);
+                       && straight > NoRouteWarpMeters);
         }
 
         /// <summary>
@@ -200,12 +207,23 @@ namespace ZoneEngine_New.Core.Ai
             NpcCharacter npc = brain.Npc;
             Character? enemy = null;
 
-            // Leashed to the owner: with the owner too far away, any fight (an attack order too) is dropped and the
-            // pet heads back; past MaxPlayerPetDistance it is warped back instead.
-            if (OwnerDistance(brain) > GuardRange)
+            // Leashed to the owner: a guarding pet drops its fight past GuardRange of the owner and heads back. An
+            // attack order holds as far as MaxPlayerPetDistance, so a pet sent at a mob keeps fighting when its owner
+            // leaves the room (bug #144); past that it is warped back instead.
+            double ownerDistance = OwnerDistance(brain);
+            if (ownerDistance > GuardRange
+                && (pet.Mode != PetMode.Attack || ownerDistance > PetService.MaxPlayerPetDistance))
             {
+                // Tell the owner once, on the tick the pet breaks off a fight (bug #260). Afterwards the pet has no
+                // target and no attack order, so later ticks out of range stay quiet.
+                bool wasFighting = pet.Mode == PetMode.Attack || !brain.CurrentTarget.Equals(Identity.None);
                 pet.EndAttack();
                 brain.SetCurrentTarget(Identity.None);
+                if (wasFighting && pet.Owner is Player owner)
+                    Helpers.ClientFeedback.SendFormatted(
+                        owner,
+                        Helpers.ClientFeedback.PlainText,
+                        $"Warning: {npc.Name} is out of range and is aborting combat to return to you.");
                 return false;
             }
 
@@ -511,6 +529,10 @@ namespace ZoneEngine_New.Core.Ai
                     // Out of range of the owner: following brings the pet back in range.
                     if (!ReferenceEquals(charge, pet.Owner))
                         pet.EndHeal();
+                    return _nodeState = NodeState.Failure;
+                case HealOrderResult.Blocked:
+                    // In range but without sight of the target, or the heal cannot start yet: the order stands and the
+                    // next tick tries again (bug #203: a heal pet forgot its target behind any corner).
                     return _nodeState = NodeState.Failure;
                 default:
                     return _nodeState = NodeState.Failure;

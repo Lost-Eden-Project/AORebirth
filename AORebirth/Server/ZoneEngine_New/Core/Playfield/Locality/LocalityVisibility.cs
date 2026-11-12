@@ -427,6 +427,11 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             foreach (MessageBody companion in source.BuildSpawnCompanionMessages())
                 recipient.Session.Send(companion);
 
+            // A fresh spawn carries no nano: the observer's nano bar for this character (target, pet and team windows)
+            // starts from its current values; later changes reach it through the stat flush and max nano sync.
+            if (source is Character { } spawnedCharacter && spawnedCharacter.BuildObserverNanoMessage() is { } nanoStats)
+                recipient.Session.Send(nanoStats);
+
             return true;
         }
 

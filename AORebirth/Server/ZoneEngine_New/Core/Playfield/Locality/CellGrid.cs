@@ -148,20 +148,22 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         /// The room a dynel in room <paramref name="currentRoom"/> is in after moving to <paramref name="position"/>, as
         /// the client picks it (Vehicle.dll RoomSpace_t, 0x100073e2): it stays in its room while still inside it, else
         /// takes the first linked room that holds it, and only then looks at every room. Room boxes overlap, so the
-        /// room a dynel is already in wins.
+        /// room a dynel is already in wins; but only on its own floor, since a room's box reaches up into the floor
+        /// above (<see cref="DungeonRoomCellResolver.HoldsOnFloor"/>).
         /// </summary>
         private int ResolveRoom(System.Numerics.Vector3 position, int currentRoom)
         {
             if (currentRoom >= 0 && _roomById.TryGetValue(currentRoom, out DungeonRoomBounds current))
             {
-                if (current.Contains(position))
+                if (DungeonRoomCellResolver.HoldsOnFloor(_rooms, current, position))
                     return currentRoom;
 
                 if (_roomLinks.TryGetValue(currentRoom, out IReadOnlyList<int>? linked))
                 {
                     for (int i = 0; i < linked.Count; i++)
                     {
-                        if (_roomById.TryGetValue(linked[i], out DungeonRoomBounds next) && next.Contains(position))
+                        if (_roomById.TryGetValue(linked[i], out DungeonRoomBounds next)
+                            && DungeonRoomCellResolver.HoldsOnFloor(_rooms, next, position))
                             return linked[i];
                     }
                 }

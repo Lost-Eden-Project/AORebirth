@@ -34,6 +34,7 @@ namespace ZoneEngine_New.Tests
         readonly bool _allowMissingCatMesh;
         readonly Dictionary<string, int[]> _monsterWeapons;
         readonly Dictionary<string, MobTemplate>? _mobs;
+        readonly Dictionary<int, AlienXpLevelEntry>? _alienXp;
         readonly string _rootPath;
 
         public StubGameData(
@@ -42,8 +43,10 @@ namespace ZoneEngine_New.Tests
             bool allowMissingCatMesh = false,
             Dictionary<string, int[]>? monsterWeapons = null,
             string? rootPath = null,
-            Dictionary<string, MobTemplate>? mobs = null)
+            Dictionary<string, MobTemplate>? mobs = null,
+            Dictionary<int, AlienXpLevelEntry>? alienXp = null)
         {
+            _alienXp = alienXp;
             _hashItems = hashItems;
             _machines = machines ?? new Dictionary<int, VendingMachineDefinition>();
             _allowMissingCatMesh = allowMissingCatMesh;
@@ -110,6 +113,21 @@ namespace ZoneEngine_New.Tests
             => _machines.TryGetValue(templateId, out definition!);
 
         public bool TryGetXpLevel(int level, out XpLevelEntry entry) => throw new NotSupportedException();
+
+        public int AlienXpLevelCount => _alienXp?.Count ?? 0;
+
+        /// <summary>Alien levels given to the constructor; none when it got none.</summary>
+        public bool TryGetAlienXpLevel(int level, out AlienXpLevelEntry entry)
+        {
+            if (_alienXp != null && _alienXp.TryGetValue(level, out AlienXpLevelEntry? found))
+            {
+                entry = found;
+                return true;
+            }
+
+            entry = null!;
+            return false;
+        }
 
         public bool CanResolveMobHash(string hash)
             => _mobs != null ? TryGetMobTemplate(hash, out _) : throw new NotSupportedException();

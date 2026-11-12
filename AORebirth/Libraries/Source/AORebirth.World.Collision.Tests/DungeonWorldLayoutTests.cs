@@ -86,6 +86,25 @@ namespace AORebirth.World.Collision.Tests
         }
 
         [TestMethod]
+        public void StackedFloors_LowerBoxReachingIntoUpperFloor_UpperFloorWins()
+        {
+            // Boxes are a floor (128) tall from each room's own base: a floor-0 room based at 9 reaches 138, past a
+            // floor-1 door at 135.995 (seed 584046177, style 386: door 0x10000008 resolved to room 4, not room 8).
+            // The upper room is the larger box, so volume alone would still pick the lower room.
+            var lower = new DungeonRoomBounds(4, new Vector3(0f, 9f, 0f), new Vector3(40f, 138f, 40f));
+            var upper = new DungeonRoomBounds(8, new Vector3(0f, 134.995f, 0f), new Vector3(60f, 263.995f, 60f));
+            var rooms = new[] { lower, upper };
+            var onUpperFloor = new Vector3(10f, 135.995f, 10f);
+            var onLowerFloor = new Vector3(10f, 10f, 10f);
+
+            Assert.AreEqual(8, DungeonRoomCellResolver.Resolve(rooms, onUpperFloor));
+            Assert.AreEqual(4, DungeonRoomCellResolver.Resolve(rooms, onLowerFloor));
+            Assert.IsFalse(DungeonRoomCellResolver.HoldsOnFloor(rooms, lower, onUpperFloor));
+            Assert.IsTrue(DungeonRoomCellResolver.HoldsOnFloor(rooms, upper, onUpperFloor));
+            Assert.IsTrue(DungeonRoomCellResolver.HoldsOnFloor(rooms, lower, onLowerFloor));
+        }
+
+        [TestMethod]
         public void Miss_PicksNearestRoom()
         {
             var a = new DungeonRoomBounds(3, new Vector3(0f, 0f, 0f), new Vector3(10f, 10f, 10f));

@@ -78,10 +78,9 @@ namespace ZoneEngine_New.Core.World
                 // Offered items go back before the save, as on logout.
                 _trades.Cancel(player, "changed zone");
                 if (player.Inventory.IsHydrated)
-                {
                     player.SnapshotActiveNanosForTransfer();
-                    _flush.HardFlush(player);
-                }
+                // Also stores queued quest commits; an unhydrated player with none has nothing to flush.
+                _flush.HardFlush(player);
 
                 _snapshot.CommitForTransfer(player, destinationPlayfield, landing, heading);
             }

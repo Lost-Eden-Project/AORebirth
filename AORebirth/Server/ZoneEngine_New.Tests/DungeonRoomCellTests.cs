@@ -44,6 +44,29 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
+        public void RegisterDynel_WithCellId_PlacesInThatCellNotByPosition()
+        {
+            var locality = new PlayfieldLocality(127, metaData: null);
+            locality.ApplyDungeonRooms(
+                new[]
+                {
+                    new DungeonRoomBounds(0, new System.Numerics.Vector3(0f, 0f, 0f), new System.Numerics.Vector3(40f, 16f, 40f)),
+                    new DungeonRoomBounds(1, new System.Numerics.Vector3(100f, 0f, 100f), new System.Numerics.Vector3(140f, 16f, 140f))
+                });
+
+            // A door placed inside room 0's box but owned by room 1 stays in room 1's cell across the tick.
+            var door = new Dynel(new Identity { Type = IdentityType.Door, Instance = 1 })
+            {
+                Position = new Vector3(2f, 4f, 2f)
+            };
+            locality.RegisterDynel(door, 1);
+            Assert.AreEqual(1, door.Cell?.Id);
+
+            locality.Tick(0.1f);
+            Assert.AreEqual(1, door.Cell?.Id);
+        }
+
+        [TestMethod]
         public void IndoorAnnounce_ReachesOccupantsInOtherRooms()
         {
             var locality = new PlayfieldLocality(127, metaData: null);

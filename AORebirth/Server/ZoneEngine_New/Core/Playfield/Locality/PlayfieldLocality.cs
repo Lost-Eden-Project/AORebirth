@@ -227,7 +227,36 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _tracked.Add(dynel);
             _visibility.Track(dynel);
             PlaceInCell(dynel, logPlayerCellChange: dynel is Player);
+            ReconcileRegistered(dynel);
+        }
 
+        /// <summary>
+        /// Registers <paramref name="dynel"/> straight into cell <paramref name="cellId"/> instead of the cell its
+        /// position resolves to: a generated dungeon's door belongs to the room that owns it, and its position (on
+        /// that room's floor, at the doorway) can also fall inside another room's box. The dynel keeps that cell
+        /// until it moves. Falls back to the position when the grid has no such cell.
+        /// </summary>
+        public void RegisterDynel(Dynel dynel, int cellId)
+        {
+            ArgumentNullException.ThrowIfNull(dynel);
+            if (!_grid.TryGetCell(cellId, out Cell cell))
+            {
+                RegisterDynel(dynel);
+                return;
+            }
+
+            _tracked.Add(dynel);
+            _visibility.Track(dynel);
+            dynel.Cell?.Remove(dynel);
+            cell.Add(dynel);
+            dynel.Cell = cell;
+            // The tick re-places only dynels that moved; the initial position must not count as a move here.
+            dynel.Transform.AcknowledgePositionChange();
+            ReconcileRegistered(dynel);
+        }
+
+        private void ReconcileRegistered(Dynel dynel)
+        {
             // Players activate visibility after self spawn packets (see ActivatePlayerVisibility).
             if (dynel is not Player)
                 _visibility.Reconcile(dynel, AORebirth.Modules.Events.VisibilityReason.Spawned);

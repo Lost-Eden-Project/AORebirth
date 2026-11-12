@@ -136,7 +136,39 @@ namespace ZoneEngine_New.Core.Inventory
         /// tells the client itself calls <see cref="OverflowGrants.Trim"/> after it has. <paramref name="from"/>: where the
         /// items came from, for module item moves; none (created) by default.
         /// </summary>
-        public bool PublishAfterCommit(bool notify = true, ItemPlace? from = null)
+        public bool PublishAfterCommit(bool notify = true, ItemPlace? from = null) => Publish(committed: true, notify, from);
+
+        /// <summary>
+        /// <see cref="PublishAfterCommit"/> for a grant whose rows a queued commit inserts at <see cref="ParkedRows"/>
+        /// (<see cref="InventoryFlushService.Enqueue"/>): the items go to their planned slots now, still unpersisted,
+        /// and are marked dirty there, so the write-behind moves each row into its slot right after the commit stores it.
+        /// The commit sets <see cref="Item.IsPersisted"/> once stored (<see cref="MarkStored"/>).
+        /// </summary>
+        public bool PublishBeforeCommit() => Publish(committed: false, notify: true, from: null);
+
+        /// <summary>
+        /// The rows a queued commit inserts: under the character's overflow window at placement = instance id, the place
+        /// a trade parks an offered item, which no slot uses. Nothing a later move writes can collide with them, and a
+        /// crash before the move leaves them in overflow at the next login.
+        /// </summary>
+        public IReadOnlyList<ItemInstanceRecord> ParkedRows()
+        {
+            var parking = new SmokeLounge.AOtomation.Messaging.GameData.Identity
+            {
+                Type = SmokeLounge.AOtomation.Messaging.GameData.IdentityType.OverflowWindow, Instance = _player.Identity.Instance
+            };
+            return _items.Select(item => item.ToRecord(parking, item.InstanceId, item.StackCount)).ToArray();
+        }
+
+        /// <summary>The queued commit stored the rows (write-behind lane, inside the player's gate).</summary>
+        public void MarkStored()
+        {
+            if (!Monitor.IsEntered(_player.PersistenceGate)) throw new InvalidOperationException("Grant storage requires the player's persistence gate.");
+            foreach (Item item in _items)
+                item.IsPersisted = true;
+        }
+
+        bool Publish(bool committed, bool notify, ItemPlace? from)
         {
             if (!Monitor.IsEntered(_player.PersistenceGate)) throw new InvalidOperationException("Grant publication requires the player's persistence gate.");
             if (_published) return false;
@@ -147,7 +179,10 @@ namespace ZoneEngine_New.Core.Inventory
             for (int i = 0; i < _items.Length; i++)
             {
                 _pages[i].Add(_slots[i], _items[i]);
-                _items[i].IsPersisted = true;
+                if (committed)
+                    _items[i].IsPersisted = true;
+                else
+                    _player.Inventory.MarkDirty(_items[i], _pages[i], _slots[i]);
                 if (ReferenceEquals(_pages[i], _player.Inventory.Overflow))
                     _player.Inventory.NoteOverflowArrival(_items[i]);
                 ModuleHooks.ItemMoved(_player, _items[i], from ?? ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Inventory));

@@ -62,6 +62,9 @@ namespace ZoneEngine_New.Core.Quests
 
         internal long NextRewardRetryUtcTicks { get; set; }
         internal bool RewardPendingNotified { get; set; }
+
+        /// <summary>A Quests.json quest's earn is queued or stored this session (<see cref="QuestService"/> write-behind).</summary>
+        internal bool EarnQueued { get; set; }
         // A validated server-side death is one-shot; retry its transaction while this actor remains loaded.
         internal bool NpcObjectiveCommitPending { get; set; }
 

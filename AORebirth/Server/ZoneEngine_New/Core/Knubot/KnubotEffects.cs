@@ -44,15 +44,47 @@ public sealed class KnubotPlan
 }
 
 /// <summary>
+/// What the effects applied so far can give back when a later effect of the same line fails, newest first.
+/// </summary>
+public sealed class KnubotUndo
+{
+    readonly List<(KnubotEffect Effect, Action Revert)> _steps = [];
+
+    public void Add(KnubotEffect effect, Action revert) => _steps.Add((effect, revert));
+
+    /// <summary>Runs every step and names the effects given back, or "" when there was nothing to give back.</summary>
+    public string Revert()
+    {
+        if (_steps.Count == 0)
+            return string.Empty;
+
+        var names = new List<string>(_steps.Count);
+        for (int i = _steps.Count - 1; i >= 0; i--)
+        {
+            _steps[i].Revert();
+            names.Add(_steps[i].Effect.ToString()!);
+        }
+
+        _steps.Clear();
+        return "; gave back " + string.Join(", ", names);
+    }
+}
+
+/// <summary>
 /// A side effect written inline in a line's text. All of a line's effects are checked together against one
 /// <see cref="KnubotPlan"/> before the line starts, so a line that cannot finish goes to its Fail line up front.
-/// Each is then applied when the text reaches it, after one more check against the player's state at that moment.
+/// They are then all applied at once, under the player's persistence gate, before any of the text is sent: the
+/// chat closing, the player walking off or logging out mid-line can never leave a line half applied.
 /// </summary>
 public abstract record KnubotEffect
 {
     public abstract bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services);
 
-    public abstract void Apply(KnubotContext context, KnubotEffectServices services);
+    /// <summary>
+    /// Applies the effect; false when it could not be fully applied even though <see cref="Check"/> passed.
+    /// An effect that takes something registers how to give it back in <paramref name="undo"/>.
+    /// </summary>
+    public abstract bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo);
 
     public static bool CanApplyAll(KnubotEffect[] effects, KnubotContext context, KnubotEffectServices services)
     {
@@ -73,13 +105,24 @@ public abstract record KnubotEffect
         return KnubotItems.FreeSlots(player) >= plan.SlotsNeeded;
     }
 
-    /// <summary>Applies one effect if it can still be applied now.</summary>
-    public static bool TryApply(KnubotEffect effect, KnubotContext context, KnubotEffectServices services)
+    /// <summary>
+    /// Applies every effect in the order written, right after <see cref="CanApplyAll"/> passed and under the same
+    /// gate. When one still fails, the effects before it give back what they took and <paramref name="failure"/>
+    /// names the effect and what was given back; nothing of the line should then be said but its Fail line.
+    /// </summary>
+    public static bool ApplyAll(KnubotEffect[] effects, KnubotContext context, KnubotEffectServices services, out string failure)
     {
-        if (!CanApplyAll([effect], context, services))
-            return false;
+        failure = string.Empty;
+        var undo = new KnubotUndo();
+        foreach (KnubotEffect effect in effects)
+        {
+            if (effect.Apply(context, services, undo))
+                continue;
 
-        effect.Apply(context, services);
+            failure = effect + " failed" + undo.Revert();
+            return false;
+        }
+
         return true;
     }
 }
@@ -126,12 +169,12 @@ public sealed record KnubotAcceptQuest(string Hash, KnubotQuestQuality? Quality 
         return true;
     }
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
     {
         if (context.Quests.GetLog(context.Player).TryFind(Hash, out PlayerQuest? quest) && quest.State == QuestState.Active)
-            return;
+            return true;
 
-        services.Quests.TryAssignTemplate(context.Player, Hash, out _, Quality?.Resolve(context.Player));
+        return services.Quests.TryAssignTemplate(context.Player, Hash, out _, Quality?.Resolve(context.Player));
     }
 }
 
@@ -143,13 +186,18 @@ public sealed record KnubotCompleteQuest(string Hash) : KnubotEffect
         if (plan.QuestState(context, Hash) != QuestState.Active)
             return false;
 
+        // A quest the player already holds must be completable now (a bound mission objective done); one given
+        // earlier on this line has nothing to complete yet beyond being active.
+        if (!plan.Quests.ContainsKey(Hash) && !services.Quests.CanComplete(context.Player, Hash))
+            return false;
+
         // No inventory space is reserved: the quest service delivers a reward that does not fit into overflow, so a
         // full inventory never stops the dialog that completes it.
         plan.Quests[Hash] = QuestState.Completed;
         return true;
     }
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
         => services.Quests.TryComplete(context.Player, Hash, out _);
 }
 
@@ -168,7 +216,7 @@ public sealed record KnubotSpawnItem(string Hash, int? Quality, int Count) : Knu
         return true;
     }
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
     {
         for (int i = 0; i < Count; i++)
         {
@@ -182,23 +230,28 @@ public sealed record KnubotSpawnItem(string Hash, int? Quality, int Count) : Knu
 
             KnubotItems.Give(context.Player, item, services.Flush);
         }
+
+        return true;
     }
 }
 
 /// <summary>
 /// <c>{take ITEMHASH [count]}</c>: takes carried main-inventory items minted from the hash, any QL (Windcaller Karrec's
 /// "Give it to me!" takes the Bronto Burger and Maddy's Credit Card without a Give Item window). The line fails up
-/// front when the player does not carry enough.
+/// front when the player does not carry enough that can be taken: a locked item (mid-use or mid-move) does not
+/// count, as it would not be taken. A take that still comes up short fails the line, and what it took is given
+/// back when a later effect of the line fails.
 /// </summary>
 public sealed record KnubotTakeItem(HashSet<int> TemplateIds, int Count) : KnubotEffect
 {
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
-        => KnubotItems.CountCarried(context.Player, TemplateIds) >= Count;
+        => KnubotItems.CountCarried(context.Player, TemplateIds, takeable: true) >= Count;
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
     {
         Player player = context.Player;
         Container page = player.Inventory.Inventory;
+        var taken = new List<(int LowId, int HighId, int Quality, int Count)>();
         int remaining = Count;
         foreach (var (placement, item) in page.Content.ToArray())
         {
@@ -211,7 +264,11 @@ public sealed record KnubotTakeItem(HashSet<int> TemplateIds, int Count) : Knubo
             if (stack > remaining)
             {
                 if (item.TakeFromStack(player, page, placement, remaining))
+                {
+                    taken.Add((item.LowId, item.HighId, item.Quality, remaining));
                     remaining = 0;
+                }
+
                 continue;
             }
 
@@ -219,12 +276,36 @@ public sealed record KnubotTakeItem(HashSet<int> TemplateIds, int Count) : Knubo
             if (!services.InventoryActions.TryDelete(player, slot, item.InstanceId))
                 continue;
 
+            taken.Add((item.LowId, item.HighId, item.Quality, stack));
             remaining -= stack;
             player.Session?.Send(new CharacterActionMessage
             {
                 Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = slot
             });
         }
+
+        if (taken.Count != 0)
+            undo.Add(this, () => GiveBack(player, taken, services.Flush));
+
+        // Short: give back what this effect took, so the player is left as they were.
+        if (remaining > 0)
+        {
+            undo.Revert();
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Re-creates what was taken (the taken instances are retired) and hands it back like a grant.</summary>
+    static void GiveBack(Player player, List<(int LowId, int HighId, int Quality, int Count)> taken, InventoryFlushService flush)
+    {
+        if (player.Playfield == null)
+            return;
+
+        IItemBuilder items = player.Playfield.GetRequiredService<IItemBuilder>();
+        foreach (var (lowId, highId, quality, count) in taken)
+            KnubotItems.Give(player, items.Create(lowId, highId, quality, ItemSource.Quest, count), flush);
     }
 }
 
@@ -233,7 +314,7 @@ public sealed record KnubotOpenShop : KnubotEffect
 {
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services) => context.Npc.Shop != null;
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
         => services.Trades.TryOpenShop(context.Player, context.Npc.Shop!);
 }
 
@@ -242,7 +323,7 @@ public sealed record KnubotOpenTrade : KnubotEffect
 {
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services) => context.Script.Trades.Length != 0;
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
         => services.Trades.TryOpenKnubot(context.Player, context.Npc, KnubotService.TradeText(context.Npc), context.Script.TradeSlots);
 }
 
@@ -255,7 +336,7 @@ public sealed record KnubotGiveBuff(int NanoId) : KnubotEffect
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
         => !context.Player.IsDead && context.Player.Playfield != null;
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
     {
         Playfield.Playfield playfield = context.Player.Playfield!;
         Nanos.NanoRuntime.TryApplyImmediate(
@@ -265,6 +346,7 @@ public sealed record KnubotGiveBuff(int NanoId) : KnubotEffect
             playfield.GetRequiredService<IItemBuilder>(),
             playfield.GetRequiredService<Data.IInventoryRepository>(),
             DateTime.UtcNow);
+        return true;
     }
 }
 
@@ -278,20 +360,25 @@ public sealed record KnubotUseItem(int ItemId) : KnubotEffect
     public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services)
         => !context.Player.IsDead && context.Player.Playfield != null;
 
-    public override void Apply(KnubotContext context, KnubotEffectServices services)
+    public override bool Apply(KnubotContext context, KnubotEffectServices services, KnubotUndo undo)
     {
         Playfield.Playfield playfield = context.Player.Playfield!;
         IItemBuilder items = playfield.GetRequiredService<IItemBuilder>();
         Item item = items.Create(ItemId, ItemId, 1, ItemSource.Quest);
         item.Definition.ExecuteOnUseSpells(context.Player, playfield.GetRequiredService<Data.IInventoryRepository>(), items, source: context.Player);
         context.Player.FlushDirtyStats();
+        return true;
     }
 }
 
 /// <summary>Main-inventory item helpers shared by conditions and effects.</summary>
 public static class KnubotItems
 {
-    public static int CountCarried(Player player, HashSet<int> templateIds)
+    /// <summary>
+    /// Items carried in the main inventory minted from the ids; with <paramref name="takeable"/>, only those a
+    /// <c>{take}</c> could remove now (a locked item is mid-use or mid-move).
+    /// </summary>
+    public static int CountCarried(Player player, HashSet<int> templateIds, bool takeable = false)
     {
         if (!player.Inventory.IsHydrated)
             return 0;
@@ -299,7 +386,9 @@ public static class KnubotItems
         int count = 0;
         foreach (Item item in player.Inventory.Inventory.Content.Values)
         {
-            if (item != null && (templateIds.Contains(item.LowId) || templateIds.Contains(item.HighId)))
+            if (item == null || (takeable && item.Locked))
+                continue;
+            if (templateIds.Contains(item.LowId) || templateIds.Contains(item.HighId))
                 count += Math.Max(1, item.StackCount);
         }
 

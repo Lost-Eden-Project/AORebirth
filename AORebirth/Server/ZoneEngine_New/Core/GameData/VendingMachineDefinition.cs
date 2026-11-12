@@ -49,7 +49,7 @@ namespace ZoneEngine_New.Core.GameData
         /// <summary>
         /// Upper bound on slots generated from a VendingMachines.json table, where
         /// <see cref="StockExpansion.ExpandAll"/> over a large category can produce a huge list. It is not a client
-        /// limit: retail sent Tsunayoshi Smith's shop (164104) with 213 slots, and items.dat ShopInventory stock is uncapped.
+        /// limit: retail sent Tsunayoshi Smith's shop (164104) with 213 slots; items.dat ShopInventory stock uses ShopStock.MaxShopInventorySlots.
         /// </summary>
         public const int MaxSlots = 64;
 

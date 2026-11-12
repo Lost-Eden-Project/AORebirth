@@ -142,6 +142,28 @@ namespace ZoneEngine_New.Core.Characters
             }
         }
 
+        /// <summary>
+        /// Stores <paramref name="stats"/> as the character's base values ahead of a reward transaction that expects
+        /// exactly them: the values the tick held when it decided the reward. Runs in the write-behind lane, inside the
+        /// player's gate. Fails unless this instance still owns the online character.
+        /// </summary>
+        internal void SyncStats(Player player, IReadOnlyList<StatRecord> stats)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(stats);
+            if (!Monitor.IsEntered(player.PersistenceGate))
+                throw new InvalidOperationException("Stat sync requires the player's persistence gate.");
+            if (player.IsPersistenceQuarantined)
+                throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
+            RequireLease(player);
+            if (stats.Count == 0)
+                return;
+            if (!_characters.SaveOnlineCheckpoint(player.Identity.Instance, null, stats))
+                throw new InvalidOperationException("Reward stat sync requires the current online character owner.");
+            // No sequence of its own: it records what storage now holds, and never retires a checkpoint.
+            player.SaveState.MarkCommitted(0, stats, location: null);
+        }
+
         /// <summary>Puts Online back after a transfer that did not happen (the transfer save cleared it).</summary>
         public void RestoreOnline(int characterId) => _characters.SetOnline(characterId);
 
@@ -234,7 +256,9 @@ namespace ZoneEngine_New.Core.Characters
         internal void CheckpointIfDue(Player player, long nowMs)
         {
             ArgumentNullException.ThrowIfNull(player);
-            if (_disposed || player.IsPersistenceQuarantined || player.Identity.Instance <= 0)
+            // Stats captured while a quest commit is queued would include a reward storage does not hold yet; the due
+            // state waits, and the commit requests a checkpoint when it lands.
+            if (_disposed || player.IsPersistenceQuarantined || player.Identity.Instance <= 0 || !player.PendingCommits.IsEmpty)
                 return;
             if (!player.SaveState.TakeDue(nowMs, player.Identity.Instance))
                 return;
@@ -363,6 +387,13 @@ namespace ZoneEngine_New.Core.Characters
                 // A logout snapshot or newer checkpoint already made this capture obsolete.
                 if (player.IsPersistenceQuarantined || !state.IsNewerThanCommitted(checkpoint.Sequence))
                     return;
+                // A queued quest commit has not stored what the tick already paid; stats that include it must not land
+                // first. The commit asks for a fresh checkpoint once it is stored.
+                if (!player.PendingCommits.IsEmpty)
+                {
+                    state.RequestCheckpoint();
+                    return;
+                }
                 if (!OwnsLease(player.Identity.Instance))
                 {
                     _logger.Warn(
@@ -502,6 +533,10 @@ namespace ZoneEngine_New.Core.Characters
         private long _dueAtMs;
         private long _deadlineMs;
         private long _nextCheckpointMs;
+        private volatile bool _checkpointRequested;
+
+        /// <summary>Asks for a checkpoint at the next due check, from any thread (a write-behind commit that just landed).</summary>
+        public void RequestCheckpoint() => _checkpointRequested = true;
 
         /// <summary>Requests a coalesced checkpoint. Call from the owning playfield tick.</summary>
         public void MarkDirty()
@@ -547,10 +582,11 @@ namespace ZoneEngine_New.Core.Characters
             if (_nextCheckpointMs == 0)
                 _nextCheckpointMs = nowMs + half + characterId % half;
 
-            bool dirtyDue = _dueAtMs != 0 && nowMs >= _dueAtMs;
+            bool dirtyDue = (_dueAtMs != 0 && nowMs >= _dueAtMs) || _checkpointRequested;
             if (!dirtyDue && nowMs < _nextCheckpointMs)
                 return false;
 
+            _checkpointRequested = false;
             _dueAtMs = 0;
             _nextCheckpointMs = nowMs + CharacterSnapshotService.CheckpointIntervalMilliseconds;
             return true;
