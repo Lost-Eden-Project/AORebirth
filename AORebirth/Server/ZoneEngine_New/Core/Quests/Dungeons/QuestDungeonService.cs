@@ -423,6 +423,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     BuildingHighId = worldPosition?.WorldOffsetZ ?? QuestJournal.WaypointUnknown,
                     MissionType = missionType,
                     Quality = quality,
+                    ObjectiveRoomChoices = input.ObjectiveRoomChoices,
                     MissionIconId = source.IconId is int icon and > 0 ? icon : _layouts.Icon((MissionRollType)missionType),
                     TeamOwnerId = teamRoster != null ? player.Identity.Instance : 0,
                     TeamRoster = teamRoster

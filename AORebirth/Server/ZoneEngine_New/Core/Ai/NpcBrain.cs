@@ -787,7 +787,7 @@ namespace ZoneEngine_New.Core.Ai
             // Only this NPC's cell and the cells touching it (wider only for an aggro range longer than a cell). The same
             // range is how far it notices players, defends them as a guard, and spots NPCs it hates.
             var locality = Npc.Playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>();
-            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats);
+            float range = ProximityRange();
             if (hostile || guard)
             {
                 locality.CollectNearby(Npc, range, _nearbyPlayers);
@@ -905,7 +905,7 @@ namespace ZoneEngine_New.Core.Ai
                     player.Stats.GetOrOne(CharacterStat.Level),
                     Npc.Stats.GetOrOne(CharacterStat.Level)))
                 return;
-            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats);
+            float range = ProximityRange();
             if (Npc.GetEdgeDistanceTo(player) > range)
                 return;
             // Unprovoked aggro needs sight. Once the player is on the hate list, chasing around walls is fine.
@@ -947,6 +947,18 @@ namespace ZoneEngine_New.Core.Ai
 
         static bool IsPlayerSide(Character character)
             => character is Player || character is NpcCharacter { PetOwner: Player };
+
+        /// <summary>
+        /// This NPC's unprovoked aggro range on its playfield: the indoor or outdoor proximity stat (no metadata counts as
+        /// indoor, as elsewhere in the zone engine), scaled by Gameplay.json proximityAggro.
+        /// </summary>
+        float ProximityRange()
+        {
+            var playfield = Npc.Playfield;
+            bool indoor = playfield?.MetaData?.IsIndoor ?? true;
+            var rules = playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.ProximityAggro;
+            return NpcAiRules.ProximityAggroRangeFor(Npc.Stats, indoor, rules);
+        }
 
         /// <summary>
         /// The walk to <paramref name="player"/> is short enough for unprovoked aggro: at most proximityAggro.maxWalkFactor

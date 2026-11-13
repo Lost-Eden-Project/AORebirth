@@ -177,6 +177,33 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
         }
     }
 
+    /// <summary>
+    /// TEMP (remove with <c>Commands/ClearShopStockCommand</c> once shops are fixed): releases a database-bound
+    /// standalone shop so it falls back to its template's ShopInventory without a playfield reload.
+    /// </summary>
+    internal bool TryReleaseDatabaseShop(VendingMachine machine, out string failure)
+    {
+        ArgumentNullException.ThrowIfNull(machine);
+        failure = string.Empty;
+        if (_stopped || !ReferenceEquals(machine.Playfield, playfield) || machine.DatabaseVendorId == 0)
+        {
+            failure = "Shop is not bound to a database vendor on this playfield.";
+            return false;
+        }
+
+        if (!machine.Stock.TryClearConfiguredStock())
+        {
+            failure = "Someone is trading with this shop; try again once it is closed.";
+            return false;
+        }
+
+        _standaloneShops.Remove(machine);
+        _unavailableVendorEndpoints.Remove(
+            "database:" + machine.DatabaseVendorId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        machine.ClearDatabaseDefinition();
+        return true;
+    }
+
     internal static int DatabaseVendorId(int playfieldId, int vendingMachineInstance)
         => checked((playfieldId << 16) | ((vendingMachineInstance >> 16) & 0xff));
 

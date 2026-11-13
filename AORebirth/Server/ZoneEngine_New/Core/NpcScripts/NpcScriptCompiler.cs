@@ -889,10 +889,11 @@ public sealed class NpcScriptCompiler
     }
 
     /// <summary>
-    /// <c>{ "Nano", "Target"?, "MinDistance"?, "Warp"? }</c>. Nano is one id / $Int param or a list of them (a random
-    /// pick per recipient). Target is Self (default), Target (the current fighting target), RandomHostile or Playfield
-    /// (every living player on the playfield, one cast bar); MinDistance (metres) only narrows RandomHostile; Warp
-    /// "ToSelf" moves the recipient to the NPC's feet once the nano has landed, and is refused with Playfield.
+    /// <c>{ "Nano", "Target"?, "MinDistance"?, "Warp"?, "NoNanoCost"? }</c>. Nano is one id / $Int param or a list of
+    /// them (a random pick per recipient). Target is Self (default), Target (the current fighting target), RandomHostile
+    /// or Playfield (every living player on the playfield, one cast bar); MinDistance (metres) only narrows
+    /// RandomHostile; Warp "ToSelf" moves the recipient to the NPC's feet once the nano has landed, and is refused with
+    /// Playfield; NoNanoCost true casts without needing or spending the NPC's nano.
     /// </summary>
     void CompileCastNano(JsonElement value, ProgramContext ctx)
     {
@@ -995,6 +996,18 @@ public sealed class NpcScriptCompiler
 
                 flags |= CastWarpToSelf;
             }
+
+            if (value.TryGetProperty("NoNanoCost", out JsonElement noCost))
+            {
+                if (noCost.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    ctx.Error("CastNano: NoNanoCost is true or false");
+                    return;
+                }
+
+                if (noCost.ValueKind == JsonValueKind.True)
+                    flags |= CastNoNanoCost;
+            }
         }
 
         if (nanoElement.ValueKind == JsonValueKind.Array && value.ValueKind == JsonValueKind.Object)
@@ -1036,6 +1049,9 @@ public sealed class NpcScriptCompiler
 
     /// <summary><see cref="ScriptOpCode.CastNano"/> D flag: A indexes <see cref="NpcScriptProgram.NanoLists"/>.</summary>
     public const int CastNanoList = 2;
+
+    /// <summary><see cref="ScriptOpCode.CastNano"/> D flag: the cast neither needs nor spends the NPC's nano.</summary>
+    public const int CastNoNanoCost = 4;
 
     /// <summary>Longest CastNano Nano list.</summary>
     public const int MaxCastNanoList = 16;

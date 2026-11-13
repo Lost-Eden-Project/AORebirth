@@ -5,7 +5,7 @@ param(
     [string]$Database = "",
     [string]$MysqlExe = "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe",
     [string]$MysqlUser = "cellaodbuser",
-    [string]$MysqlPassword = "1Guiness4828!",
+    [string]$MysqlPassword = $env:AOREBIRTH_MYSQL_PASSWORD,
     [string]$ReportPath = "",
     [string]$OutDir = "",
     [switch]$DryRun,
@@ -80,7 +80,9 @@ function Invoke-MySqlRows {
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $rows = & $MysqlExe "-u$MysqlUser" "-p$MysqlPassword" $Database --batch --raw --skip-column-names -e $Sql 2>$null
+        # Through the environment, not the command line, where any local process could read it.
+        $env:MYSQL_PWD = $MysqlPassword
+        $rows = & $MysqlExe "-u$MysqlUser" $Database --batch --raw --skip-column-names -e $Sql 2>$null
         if ($LASTEXITCODE -ne 0) {
             throw "mysql exited with code $LASTEXITCODE"
         }

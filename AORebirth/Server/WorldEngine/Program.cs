@@ -71,6 +71,13 @@ namespace WorldEngine
             if (options.Token.Length == 0)
                 log.LogWarning("No " + AORebirth.World.Contracts.WorldChannel.TokenVariable + " set: any process on this machine can act as a zone. "
                     + "Set the same token for World and every engine before running for players.");
+            if (!System.Net.IPAddress.IsLoopback(options.ListenAddress))
+                log.LogWarning("World listens on {Address} without TLS: the engine tokens cross that network in clear text. "
+                    + "Keep it on a private, encrypted link (WireGuard or similar) that only the engine hosts can reach.",
+                    options.ListenAddress);
+            if (options.LoginToken.Length == 0)
+                log.LogWarning("No " + AORebirth.World.Contracts.WorldChannel.LoginTokenVariable + " set: any engine holding the world token can "
+                    + "request zone tickets for any account. Set it for World and LoginEngine only.");
             NotifyService("READY=1\nSTATUS=WorldEngine ready");
             Console.WriteLine("WORLDENGINE_READY");
 

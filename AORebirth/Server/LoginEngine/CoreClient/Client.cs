@@ -342,6 +342,7 @@ namespace LoginEngine.CoreClient
                 this.authenticatedAccountName = attemptedAccountName;
                 this.authenticationState = AuthenticationState.Authenticated;
                 this.serverSalt = string.Empty;
+                this.MarkAdmitted();
                 return true;
             }
         }

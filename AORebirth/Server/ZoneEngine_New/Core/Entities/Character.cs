@@ -1411,7 +1411,8 @@ namespace ZoneEngine_New.Core.Entities
         {
             int alienLevel = Stats.GetOrZero(CharacterStat.AlienLevel);
             int alienBefore = alienLevel;
-            long progressBefore = Stats.GetOrZero(CharacterStat.AlienXP);
+            // A level-up resettle passes the stored bar unchanged; only an actual grant counts as gaining alien XP.
+            bool gained = progress > Stats.GetOrZero(CharacterStat.AlienXP);
             int next = 0;
             int level = Stats.GetOrOne(CharacterStat.Level);
             while (gameData.TryGetAlienXpLevel(alienLevel + 1, out AlienXpLevelEntry step) && step.NextLevelXp > 0)
@@ -1424,8 +1425,8 @@ namespace ZoneEngine_New.Core.Entities
                 // stays full and the rest of the grant is lost.
                 if (step.MinLevel > level)
                 {
-                    // Said once, as the bar fills: "...but your level must be: %d to obtain it." (bug #188).
-                    if (alienLevel == alienBefore && progressBefore < next)
+                    // Said on every alien XP gain while capped: "...but your level must be: %d to obtain it." (bug #188).
+                    if (gained)
                         ClientFeedback.SendFormatted(this, ClientFeedback.AlienLevelNeedsLevel, step.MinLevel);
                     progress = next;
                     break;

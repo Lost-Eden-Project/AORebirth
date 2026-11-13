@@ -180,6 +180,9 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pvp.attackerFlagNano must be a nano id, or 0 for none.");
             if (ProximityAggro == null || !float.IsFinite(ProximityAggro.MaxWalkFactor) || ProximityAggro.MaxWalkFactor < 0)
                 throw new InvalidDataException(path + ": proximityAggro.maxWalkFactor must be a finite number, 0 or more.");
+            if (!float.IsFinite(ProximityAggro.IndoorRangePercent) || ProximityAggro.IndoorRangePercent < 0
+                || !float.IsFinite(ProximityAggro.OutdoorRangePercent) || ProximityAggro.OutdoorRangePercent < 0)
+                throw new InvalidDataException(path + ": proximityAggro.indoorRangePercent and outdoorRangePercent must be finite percents, 0 or more.");
             if (Loot == null || Loot.QualityVariancePercent is < 0 or > 100)
                 throw new InvalidDataException(path + ": loot.qualityVariancePercent must be 0 to 100.");
             if (SocialAggro == null
@@ -380,6 +383,12 @@ namespace ZoneEngine_New.Core.Configuration
         /// already started (attacks, calls for help) chase as before.
         /// </summary>
         public float MaxWalkFactor { get; init; } = 2f;
+
+        /// <summary>Percent of an NPC's ProximityRangeIndoors used as its aggro range on an indoor playfield. 100 leaves it as it is.</summary>
+        public float IndoorRangePercent { get; init; } = 100f;
+
+        /// <summary>Percent of an NPC's ProximityRangeOutdoors used as its aggro range on an outdoor playfield. 100 leaves it as it is.</summary>
+        public float OutdoorRangePercent { get; init; } = 100f;
     }
 
     public sealed class GameplaySocialAggro

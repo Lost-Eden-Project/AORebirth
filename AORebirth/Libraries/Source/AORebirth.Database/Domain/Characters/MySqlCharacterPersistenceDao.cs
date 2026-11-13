@@ -262,6 +262,32 @@ namespace AORebirth.Database.Domain.Characters
             });
         }
 
+        public void SaveTrainedPerkChanges(int characterId, IList<int> trained, IList<int> removed)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (trained == null) throw new ArgumentNullException(nameof(trained));
+            if (removed == null) throw new ArgumentNullException(nameof(removed));
+            if (trained.Any(id => id <= 0) || trained.Distinct().Count() != trained.Count)
+                throw new ArgumentException("Invalid or duplicate perk id.", nameof(trained));
+            if (removed.Any(id => id <= 0) || removed.Intersect(trained).Any())
+                throw new ArgumentException("Invalid removed perk id, or one that is also trained.", nameof(removed));
+            if (trained.Count == 0 && removed.Count == 0) return;
+            Transaction((c, t) =>
+            {
+                foreach (int perkId in removed.Distinct())
+                    Execute(c, t, "DELETE FROM charactersperks WHERE CharacterId=@Id AND PacketId=@Perk", "@Id", characterId, "@Perk", perkId);
+                // The table has no unique key on the pair: lock the character's rows and insert only what is missing.
+                var stored = new HashSet<int>();
+                using (IDbCommand command = Command(c, t, "SELECT PacketId FROM charactersperks WHERE CharacterId=@Id FOR UPDATE", "@Id", characterId))
+                using (IDataReader reader = command.ExecuteReader())
+                    while (reader.Read()) stored.Add(reader.GetInt32(0));
+                foreach (int perkId in trained)
+                    if (!stored.Contains(perkId))
+                        Execute(c, t, "INSERT INTO charactersperks (CharacterId,PacketId) VALUES (@Id,@Perk)", "@Id", characterId, "@Perk", perkId);
+                return 0;
+            });
+        }
+
         public IList<PersistedPerkLockData> LoadPerkLocks(int characterId)
         {
             if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
@@ -353,6 +379,30 @@ namespace AORebirth.Database.Domain.Characters
                 Execute(c, t, "DELETE FROM characterresearch WHERE CharacterId=@Id", "@Id", characterId);
                 foreach (var row in research)
                     Execute(c, t, "INSERT INTO characterresearch (CharacterId,ResearchId,RemainingXp) VALUES (@Id,@Research,@Remaining)",
+                        "@Id", characterId, "@Research", row.ResearchId, "@Remaining", row.RemainingXp);
+                return 0;
+            });
+        }
+
+        public void SaveResearchChanges(int characterId, IList<PersistedResearchData> research, IList<int> removedResearchIds)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (research == null) throw new ArgumentNullException(nameof(research));
+            if (removedResearchIds == null) throw new ArgumentNullException(nameof(removedResearchIds));
+            if (research.Any(r => r.ResearchId <= 0 || r.RemainingXp <= 0)
+                || research.Select(r => r.ResearchId).Distinct().Count() != research.Count)
+                throw new ArgumentException("Invalid or duplicate research progress.", nameof(research));
+            if (removedResearchIds.Any(id => id <= 0) || removedResearchIds.Intersect(research.Select(r => r.ResearchId)).Any())
+                throw new ArgumentException("Invalid removed research id, or one that is also in progress.", nameof(removedResearchIds));
+            if (research.Count == 0 && removedResearchIds.Count == 0) return;
+            Transaction((c, t) =>
+            {
+                foreach (int researchId in removedResearchIds.Distinct())
+                    Execute(c, t, "DELETE FROM characterresearch WHERE CharacterId=@Id AND ResearchId=@Research",
+                        "@Id", characterId, "@Research", researchId);
+                foreach (var row in research)
+                    Execute(c, t, "INSERT INTO characterresearch (CharacterId,ResearchId,RemainingXp) VALUES (@Id,@Research,@Remaining) "
+                        + "ON DUPLICATE KEY UPDATE RemainingXp=VALUES(RemainingXp)",
                         "@Id", characterId, "@Research", row.ResearchId, "@Remaining", row.RemainingXp);
                 return 0;
             });

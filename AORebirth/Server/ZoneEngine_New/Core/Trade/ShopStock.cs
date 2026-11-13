@@ -126,6 +126,24 @@ namespace ZoneEngine_New.Core.Trade
             GenerateConfigured(random);
         }
 
+        /// <summary>
+        /// TEMP (remove with <c>Commands/ClearShopStockCommand</c> once shops are fixed): drops a database-configured
+        /// stock so the next open rolls from the shop template's own ShopInventory. Refused while a shopper is trading.
+        /// </summary>
+        internal bool TryClearConfiguredStock()
+        {
+            if (_openTrades != 0)
+                return false;
+
+            _slots.Clear();
+            _sorted = false;
+            _configuredRanges = null;
+            IsGenerated = false;
+            IsConfiguredSnapshot = false;
+            ConfigurationUnavailableReason = null;
+            return true;
+        }
+
         internal void SetConfigurationUnavailable(string reason)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(reason);

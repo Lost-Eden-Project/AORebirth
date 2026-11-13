@@ -84,6 +84,12 @@ namespace LoginEngine.CoreServer
         public LoginServer(ClientFactory clientfactory)
         {
             this.clientFactory = clientfactory;
+
+            // A connection has this long to pass the password check; one address can only hold so many.
+            this.MaxConnections = 8192;
+            this.MaxConnectionsPerAddress = ResolveMaxConnectionsPerAddress(16);
+            this.AdmissionTimeoutSeconds = 30;
+            this.MaxClientSendQueueBytes = 1024 * 1024;
         }
 
         #endregion

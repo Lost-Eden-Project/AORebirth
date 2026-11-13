@@ -88,6 +88,13 @@ namespace ChatEngine.CoreClient
 
         private int receivePacketLength;
 
+        private volatile bool chatReady;
+
+        // Inbound budgets (token buckets). Generous for a real client; a flood is dropped, not relayed.
+        private readonly TokenBucket packetBudget = new TokenBucket(120, 40);
+
+        private readonly TokenBucket messageBudget = new TokenBucket(20, 4);
+
         #endregion
 
         #region Constructors and Destructors
@@ -249,6 +256,30 @@ namespace ChatEngine.CoreClient
         /// </summary>
         public string ServerSalt { get; set; }
 
+        /// <summary>True once the connection is bound to a character it proved it owns.</summary>
+        internal bool IsChatReady
+        {
+            get { return this.chatReady; }
+        }
+
+        internal void MarkChatReady()
+        {
+            this.chatReady = true;
+            this.MarkAdmitted();
+        }
+
+        /// <summary>Spends one unit of the general packet budget; false when the client is flooding.</summary>
+        internal bool TryTakePacket()
+        {
+            return this.packetBudget.TryTake();
+        }
+
+        /// <summary>Spends one unit of the budget for lines relayed to other players.</summary>
+        internal bool TryTakeMessage()
+        {
+            return this.messageBudget.TryTake();
+        }
+
         /// <summary>
         /// UTC when this chat client finished character login (LFT login-echo grace).
         /// </summary>
@@ -354,8 +385,14 @@ namespace ChatEngine.CoreClient
                 byte[] packet = this.receivePacket;
                 this.receivePacket = null;
                 this.receivePacketLength = 0;
-                LogUtil.Debug(DebugInfoDetail.Network, "\r\nReceived:\r\n" + HexOutput.Output(packet));
                 ushort messageNumber = this.GetMessageNumber(packet);
+
+                // Login requests carry the encrypted password; never write them to a log.
+                if (messageNumber != 0 && messageNumber != 2)
+                {
+                    LogUtil.Debug(DebugInfoDetail.Network, "\r\nReceived:\r\n" + HexOutput.Output(packet));
+                }
+
                 Parser parser = new Parser();
                 // Unknown complete opcodes are logged by Parser; their frame is still consumed.
                 parser.Parse(this, packet, messageNumber);
@@ -369,5 +406,40 @@ namespace ChatEngine.CoreClient
         }
 
         #endregion
+
+        private sealed class TokenBucket
+        {
+            private readonly double capacity;
+
+            private readonly double refillPerSecond;
+
+            private double tokens;
+
+            private long lastTimestamp;
+
+            internal TokenBucket(double capacity, double refillPerSecond)
+            {
+                this.capacity = capacity;
+                this.refillPerSecond = refillPerSecond;
+                this.tokens = capacity;
+                this.lastTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            }
+
+            // Called only from this client's receive loop, which handles one packet at a time.
+            internal bool TryTake()
+            {
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                double elapsed = (now - this.lastTimestamp) / (double)System.Diagnostics.Stopwatch.Frequency;
+                this.lastTimestamp = now;
+                this.tokens = Math.Min(this.capacity, this.tokens + (elapsed * this.refillPerSecond));
+                if (this.tokens < 1)
+                {
+                    return false;
+                }
+
+                this.tokens -= 1;
+                return true;
+            }
+        }
     }
 }

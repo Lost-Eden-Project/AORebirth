@@ -95,7 +95,10 @@ namespace ChatEngine.PacketHandlers
             if (this.channelId.Length == 5 && this.channelId[0] == (byte)ChannelType.Raid)
             {
                 uint raidId = BitConverter.ToUInt32(this.channelId, 1);
-                bool eligible = client.IsBot && client.Character.CharacterId != 0;
+                // Raid members are joined by the zone (TeamChatBridge). Any account can connect as a bot, so a bot
+                // asking for a raid channel it was not put in must be a GM's.
+                bool eligible = client.IsBot && client.Character.CharacterId != 0
+                    && client.Character.CharacterGMLevel > 0;
                 bool channelFound = false;
                 bool added = false;
                 bool member = false;
@@ -104,7 +107,7 @@ namespace ChatEngine.PacketHandlers
                     if (channel.channelType == ChannelType.Raid && channel.ChannelId == raidId)
                     {
                         channelFound = true;
-                        if (true)
+                        if (eligible)
                         {
                             added = channel.AddClient(client);
                             member = client.Channels.Contains(channel);
@@ -151,7 +154,7 @@ namespace ChatEngine.PacketHandlers
                     }
                 }
 
-                if (orgChannel != null)
+                if (orgChannel != null && MayJoinOrganization(client, orgChannel.ChannelId))
                 {
                     orgChannel.AddClient(client);
                 }
@@ -160,5 +163,19 @@ namespace ChatEngine.PacketHandlers
         }
 
         #endregion
+
+        // Any account can connect as a bot, so being one grants nothing: the character must belong to the
+        // organization (the same stat AddClientToChannels reads) or be a GM's.
+        private static bool MayJoinOrganization(Client client, uint organizationId)
+        {
+            if (client.Character.CharacterGMLevel > 0)
+            {
+                return true;
+            }
+
+            int memberOf = AORebirth.Database.Dao.StatDao.Instance
+                .GetById(50000, (int)client.Character.CharacterId, 5).StatValue;
+            return memberOf > 0 && (uint)memberOf == organizationId;
+        }
     }
 }

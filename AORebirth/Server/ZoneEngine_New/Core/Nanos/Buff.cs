@@ -93,8 +93,9 @@ namespace ZoneEngine_New.Core.Nanos
         }
 
         /// <summary>
-        /// Periodic functions due by <paramref name="nowUtc"/>. A tick that would land at or after expiry
-        /// is dropped. Each returned entry is one tick.
+        /// Periodic functions due by <paramref name="nowUtc"/>. A repeating tick that would land at or after expiry
+        /// is dropped; a delayed single tick due exactly at expiry still runs (proc carrier 267028 lasts 1 cs and lands
+        /// its self buff 267027 at 1 cs). Each returned entry is one tick.
         /// </summary>
         public void CollectDueTicks(DateTime nowUtc, List<ItemSpell> due)
         {
@@ -102,7 +103,9 @@ namespace ZoneEngine_New.Core.Nanos
             for (int i = 0; i < _periodic.Count; i++)
             {
                 PeriodicEffect effect = _periodic[i];
-                while (effect.Remaining > 0 && effect.NextUtc <= nowUtc && effect.NextUtc < ExpiresAtUtc)
+                bool runsAtExpiry = IsDelayedOnce(effect.Spell);
+                while (effect.Remaining > 0 && effect.NextUtc <= nowUtc
+                    && (effect.NextUtc < ExpiresAtUtc || (runsAtExpiry && effect.NextUtc == ExpiresAtUtc)))
                 {
                     due.Add(effect.Spell);
                     effect.Remaining--;

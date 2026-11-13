@@ -29,6 +29,9 @@ namespace Cell.Core
         private bool _sendStopped;
         private bool _disconnectRequested;
         private Exception _sendFailure;
+        private long _queuedSendBytes;
+        private readonly long _acceptedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        private volatile bool _admitted;
 
         protected Socket _tcpSock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         protected ServerBase _server;
@@ -43,6 +46,32 @@ namespace Cell.Core
         {
             _server = server;
             _bufferSegment = Buffers.CheckOut();
+        }
+
+        /// <summary>
+        /// True once the connection has proven who it is. Until then the server's admission timeout applies.
+        /// </summary>
+        public bool IsAdmitted
+        {
+            get { return _admitted; }
+        }
+
+        /// <summary>Marks the connection as authenticated, exempting it from the pre-authentication timeout.</summary>
+        public void MarkAdmitted()
+        {
+            _admitted = true;
+        }
+
+        /// <summary>The remote address captured at accept; still readable after the socket is closed.</summary>
+        public IPAddress AcceptedAddress { get; internal set; }
+
+        internal double SecondsSinceAccept
+        {
+            get
+            {
+                return (System.Diagnostics.Stopwatch.GetTimestamp() - _acceptedTimestamp)
+                    / (double)System.Diagnostics.Stopwatch.Frequency;
+            }
         }
 
         public static long TotalBytesSent
@@ -163,8 +192,19 @@ namespace Cell.Core
                 if (disposed || _sendStopped || !IsConnected)
                     return;
 
-                _sendQueue.Enqueue(new PendingSend(packet, offset, length));
-                PumpSendLocked();
+                // A peer that stops reading must not grow this queue without limit: drop the slow consumer.
+                long limit = _server == null ? 0 : _server.MaxClientSendQueueBytes;
+                if (limit > 0 && _queuedSendBytes + length > limit)
+                {
+                    FailSendLocked(new InvalidOperationException(
+                        "Send queue limit exceeded (" + _queuedSendBytes + " bytes pending); disconnecting slow client."));
+                }
+                else
+                {
+                    _queuedSendBytes += length;
+                    _sendQueue.Enqueue(new PendingSend(packet, offset, length));
+                    PumpSendLocked();
+                }
                 failure = TakeSendFailureLocked();
             }
             DisconnectAfterSocketFailure(failure, false);
@@ -235,6 +275,7 @@ namespace Cell.Core
                 Interlocked.Add(ref totalBytesSent, transferred);
                 _activeSend.Offset += transferred;
                 _activeSend.Remaining -= transferred;
+                _queuedSendBytes -= transferred;
                 if (_activeSend.Remaining == 0)
                     _activeSend = null;
             }
@@ -257,6 +298,7 @@ namespace Cell.Core
                 _sendFailure = failure;
             }
             _sendQueue.Clear();
+            _queuedSendBytes = 0;
             if (!_sendPending)
                 _activeSend = null;
         }

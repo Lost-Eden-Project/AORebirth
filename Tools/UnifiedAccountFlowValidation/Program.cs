@@ -122,7 +122,7 @@ namespace UnifiedAccountFlowValidation
             Pass("one-mapping", ScalarLong(connectionString, "SELECT COUNT(*) FROM account_game_mappings m INNER JOIN login l ON l.Id=m.GameAccountId WHERE l.Username='FlowA1'") == 1);
             Pass("flags", ScalarLong(connectionString, "SELECT Flags FROM login WHERE Username='FlowA1'") == 0);
             string hash = ScalarString(connectionString, "SELECT Password FROM login WHERE Username='FlowA1'");
-            Pass("hash-format", hash.Split(':').Length == 3);
+            Pass("hash-format", hash.Split(':').Length == 4);
             Pass("password-correct", PasswordHash.ValidatePassword(password, hash));
             Pass("password-wrong", !PasswordHash.ValidatePassword("WrongPass!2026", hash));
 

@@ -256,6 +256,7 @@ namespace ZoneEngine_New.Core.Playfield
                 }
 
                 add.ScriptSpawnDepth = spawner.ScriptSpawnDepth + 1;
+                add.ItemSpawner = spawner;
                 if (pending.Enemy.Instance != 0 && _registry.TryGet(pending.Enemy, out Dynel? dynel)
                     && dynel is Character { IsDead: false } enemy && ReferenceEquals(enemy.Playfield, _playfield)
                     && CombatRules.CanAttack(add, enemy))

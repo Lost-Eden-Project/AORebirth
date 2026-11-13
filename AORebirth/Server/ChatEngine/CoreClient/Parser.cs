@@ -58,6 +58,45 @@ namespace ChatEngine
         /// </returns>
         public bool Parse(Client client, byte[] packet, ushort messageNumber)
         {
+            const ushort Login = 0;
+            const ushort BotLogin = 2;
+            const ushort SelectCharacter = 3;
+            const ushort Ping = 100;
+
+            bool accountProven = !string.IsNullOrEmpty(client.AuthenticatedUsername);
+            if (!client.IsChatReady)
+            {
+                // Until a character is bound, the only valid traffic is the login exchange itself.
+                bool loginStep = accountProven
+                    ? messageNumber == SelectCharacter
+                    : messageNumber == Login || messageNumber == BotLogin;
+                if (!loginStep)
+                {
+                    if (messageNumber != Ping)
+                    {
+                        client.Server.DisconnectClient(client);
+                    }
+
+                    return false;
+                }
+            }
+            else if (messageNumber == Login || messageNumber == BotLogin
+                     || (messageNumber == SelectCharacter && !accountProven))
+            {
+                // A bound connection cannot log in again as someone else.
+                client.Server.DisconnectClient(client);
+                return false;
+            }
+            else if (!client.TryTakePacket())
+            {
+                return false;
+            }
+            else if ((messageNumber == 30 || messageNumber == 57 || messageNumber == 65) && !client.TryTakeMessage())
+            {
+                // Tell, private group and channel lines: over budget, the line is dropped rather than fanned out.
+                return false;
+            }
+
             switch (messageNumber)
             {
                 case 0:

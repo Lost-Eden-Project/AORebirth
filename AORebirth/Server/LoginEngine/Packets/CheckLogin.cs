@@ -134,15 +134,26 @@ namespace LoginEngine.Packets
                 return false;
             }
 
-            var le = new LoginEncryption();
-
             this.lp.GetLoginPassword(accountName);
+            string storedHash = this.lp.PasswdL;
+            if (string.IsNullOrWhiteSpace(storedHash))
+            {
+                return false;
+            }
 
-            return IsLoginCorrect(
-                loginKey,
-                serverSalt,
-                accountName,
-                this.lp.PasswdL);
+            string upgradedHash;
+            if (!new LoginEncryption().IsValidLogin(loginKey, serverSalt, accountName, storedHash, out upgradedHash))
+            {
+                return false;
+            }
+
+            // The password is proven: move an older, weaker stored hash up to the current strength.
+            if (upgradedHash != null)
+            {
+                LoginDataDao.Instance.UpgradePasswordHash(accountName, storedHash, upgradedHash);
+            }
+
+            return true;
         }
 
         internal static bool IsLoginCorrect(

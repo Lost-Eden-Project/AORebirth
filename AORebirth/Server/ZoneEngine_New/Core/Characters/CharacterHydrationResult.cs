@@ -4,7 +4,12 @@ namespace ZoneEngine_New.Core.Characters
 
     using ZoneEngine_New.Core.Data;
 
-    public sealed class CharacterHydrationResult
+    /// <summary>
+    /// Everything a login loads for one character. A record: change one member with <c>with</c>, which keeps every
+    /// other one. Never rebuild it member by member: a member left out loads as empty, and the next save of that set
+    /// then stores the empty set over the character's own (the login that dropped trained perks and research).
+    /// </summary>
+    public sealed record CharacterHydrationResult
     {
         public CharacterRecord Character { get; init; } = null!;
 

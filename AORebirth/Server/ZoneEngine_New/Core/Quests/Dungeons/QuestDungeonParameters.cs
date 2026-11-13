@@ -49,6 +49,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>Rows every dungeon NPC's corpse rolls besides its own table (a quest's Dungeon.MobLoot), frozen at acceptance.</summary>
         public System.Collections.Generic.List<Mobs.MobItemTableEntry>? MobLoot { get; set; }
 
+        /// <summary>How many of the rooms farthest from the entrance the objective may stand in (a quest's Dungeon.ObjectiveRoomChoices); 1 on older quests.</summary>
+        public int ObjectiveRoomChoices { get; set; } = 1;
+
         public int OriginTerminalType { get; set; }
         public int OriginTerminalInstance { get; set; }
         public int OriginPlayfield { get; set; }
@@ -128,6 +131,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     || (parsed.TokenReward != null && !parsed.TokenReward.IsValid)
                     || (parsed.PopulationNpcHashes != null && System.Array.Exists(parsed.PopulationNpcHashes, string.IsNullOrWhiteSpace))
                     || parsed.PopulationLevelSpreadPercent is < 0 or > QuestDungeonTemplate.MaxSpreadPercent
+                    || parsed.ObjectiveRoomChoices is < 1 or > QuestDungeonTemplate.MaxObjectiveRoomChoices
                     || (parsed.ChestRoomDensity is double density && !MissionChestPolicy.IsValidRoomDensity(density))
                     || (parsed.ChestCountVariationFraction is double variation && !MissionChestPolicy.IsValidCountVariation(variation))
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)

@@ -64,6 +64,20 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
+        /// TEMP (remove with <c>Commands/ClearShopStockCommand</c> once shops are fixed): undoes
+        /// <see cref="BindDatabaseDefinition"/> and the vendor row's buy/sell modifiers, restoring the template's own.
+        /// </summary>
+        internal void ClearDatabaseDefinition()
+        {
+            DatabaseVendorId = 0;
+            DatabaseVendorTemplateHash = string.Empty;
+            DatabaseStockGroupHash = string.Empty;
+            PricingSkill = (int)CharacterStat.ComputerLiteracy;
+            foreach (CharacterStat stat in new[] { CharacterStat.BuyModifier, CharacterStat.SellModifier })
+                Stats.Set(stat, Template.Stats.TryGetValue(stat, out int value) ? value : (int)CharacterStat.Unset);
+        }
+
+        /// <summary>
         /// Set when this machine is the shop behind an NPC vendor. The NPC owns the transform and is
         /// the identity the player interacts with; the machine itself is never directly usable.
         /// </summary>

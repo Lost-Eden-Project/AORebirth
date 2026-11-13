@@ -238,6 +238,15 @@ namespace ZoneEngine_New.Core.Quests
         public int ObjectiveLevelPercent { get; set; }
 
         /// <summary>
+        /// The objective stands in one of this many rooms farthest from the entrance, picked from the layout seed; 1: the
+        /// farthest. A multi-floor dungeon's objective stays in its boss room.
+        /// </summary>
+        public int ObjectiveRoomChoices { get; set; } = 1;
+
+        /// <summary>Most rooms <see cref="ObjectiveRoomChoices"/> may name.</summary>
+        public const int MaxObjectiveRoomChoices = 10;
+
+        /// <summary>
         /// NPC hashes for the ordinary population instead of DungeonGeneration.json's. A hash with no NpcTemplates.json
         /// entry is left out with a warning; when none is left the dungeon has only its objective.
         /// </summary>
@@ -307,6 +316,8 @@ namespace ZoneEngine_New.Core.Quests
                 return "Dungeon.MobLevelPercent must be between 0 and " + MaxSpreadPercent;
             if (ObjectiveLevelPercent is < MinPercent or > MaxPercent)
                 return "Dungeon.ObjectiveLevelPercent must be between " + MinPercent + " and " + MaxPercent;
+            if (ObjectiveRoomChoices is < 1 or > MaxObjectiveRoomChoices)
+                return "Dungeon.ObjectiveRoomChoices must be between 1 and " + MaxObjectiveRoomChoices;
             if (Npcs != null && (Npcs.Length == 0 || Array.Exists(Npcs, string.IsNullOrWhiteSpace)))
                 return "Dungeon.Npcs must name at least one NPC hash";
             return Chests?.Problem();

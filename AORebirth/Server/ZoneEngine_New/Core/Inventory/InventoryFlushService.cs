@@ -325,17 +325,18 @@ namespace ZoneEngine_New.Core.Inventory
                 int[] nanos = player.DrainDirtyUploadedNanos();
                 List<ActiveNanoRecord>? activeNanos = player.TakeDirtyActiveNanos();
                 List<SkillLockRecord>? skillLocks = player.SkillLocks.TakeDirty(DateTime.UtcNow);
-                int[]? trainedPerks = _trainedPerks == null ? null : player.TrainedPerks.TakeDirty();
+                TrainedPerkChanges? trainedPerks = _trainedPerks == null ? null : player.TrainedPerks.TakeDirty();
                 List<SkillLockRecord>? perkLocks = _perkLocks == null ? null : player.PerkLocks.TakeDirty(DateTime.UtcNow);
-                ResearchProgressRecord[]? research = _research == null ? null : player.Research.TakeDirty();
+                ResearchChanges? research = _research == null ? null : player.Research.TakeDirty();
                 List<SkillLockRecord>? nanoLineLocks = _nanoLineLocks == null ? null : player.NanoLineLocks.TakeDirty(DateTime.UtcNow);
                 PetNameRecord[]? petNames = _petNames == null ? null : player.PetNames.TakeDirty();
                 if (inventory == null && nanos.Length == 0 && activeNanos == null && skillLocks == null && trainedPerks == null
                     && perkLocks == null && research == null && nanoLineLocks == null && petNames == null)
                     return;
 
-                // The perk, lock, research and pet-name sets are full replacements of their own tables, each in its
-                // own transaction, and they share nothing with the inventory batch. They are written first so that no
+                // The perk, lock, research and pet-name sets are written to their own tables, each in its own
+                // transaction, and they share nothing with the inventory batch. Trained perks and research only add
+                // what the character has and delete what this session removed: what a login failed to load stays stored. They are written first so that no
                 // outcome of that batch can take them with it: a bag slot holding a row the server does not know about
                 // quarantines the player below, and research the player finished must not be lost to it (bug #292).
                 // A failed or uncertain set write is safe to repeat: it only leaves that set dirty for a retry.

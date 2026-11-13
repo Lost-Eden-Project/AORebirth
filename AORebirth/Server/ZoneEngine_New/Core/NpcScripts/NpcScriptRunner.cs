@@ -1283,8 +1283,9 @@ public sealed class NpcScriptRunner
             return false;
 
         int[]? list = (op.D & NpcScriptCompiler.CastNanoList) != 0 ? _program.NanoLists[op.A] : null;
+        bool noNanoCost = (op.D & NpcScriptCompiler.CastNoNanoCost) != 0;
         if ((NpcScriptTarget)op.B == NpcScriptTarget.Playfield)
-            return BeginPlayfieldCast(op, list, now);
+            return BeginPlayfieldCast(list, op.A, noNanoCost, now);
 
         int nanoId = IntValue(list == null ? op.A : list[NextInt(0, list.Length - 1)]);
         Character? recipient = (NpcScriptTarget)op.B == NpcScriptTarget.RandomNearby
@@ -1300,7 +1301,7 @@ public sealed class NpcScriptRunner
             _pendingWarpTarget = recipient.Identity;
         }
 
-        NanoCastRefusal refusal = NanoRuntime.TryStartCast(_npc, nanoId, recipient.Identity, DateTime.UtcNow);
+        NanoCastRefusal refusal = NanoRuntime.TryStartCast(_npc, nanoId, recipient.Identity, DateTime.UtcNow, noNanoCost);
         if (refusal != NanoCastRefusal.None)
         {
             ClearPendingWarp();
@@ -1325,13 +1326,13 @@ public sealed class NpcScriptRunner
     /// Target Playfield: one cast bar on the NPC (<see cref="NanoRuntime.TryStartPlayfieldCast"/>) that lands on every
     /// living player on its playfield, each picking from <paramref name="list"/> on its own. Blocks as a cast does.
     /// </summary>
-    bool BeginPlayfieldCast(ScriptOp op, int[]? list, long now)
+    bool BeginPlayfieldCast(int[]? list, int nanoRef, bool noNanoCost, long now)
     {
         List<int> nanos = _castNanos ??= new List<int>(4);
         nanos.Clear();
         if (list == null)
         {
-            nanos.Add(IntValue(op.A));
+            nanos.Add(IntValue(nanoRef));
         }
         else
         {
@@ -1339,7 +1340,7 @@ public sealed class NpcScriptRunner
                 nanos.Add(IntValue(list[i]));
         }
 
-        NanoCastRefusal refusal = NanoRuntime.TryStartPlayfieldCast(_npc, nanos, DateTime.UtcNow);
+        NanoCastRefusal refusal = NanoRuntime.TryStartPlayfieldCast(_npc, nanos, DateTime.UtcNow, noNanoCost);
         if (refusal != NanoCastRefusal.None)
         {
             Utility.LogUtil.Debug(

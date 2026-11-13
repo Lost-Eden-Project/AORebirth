@@ -21,7 +21,15 @@ namespace ZoneEngine_New.Core.Network
         private readonly ZoneMessageDispatcher _dispatcher;
         private readonly IZoneLogger _logger;
         private readonly ZoneModuleHost? _modules;
+        // Bounds on what unauthenticated peers can hold open. A real client logs in within moments of connecting.
+        private const int MaxSessions = 8192;
+        private static readonly int MaxSessionsPerAddress = ResolveMaxSessionsPerAddress(32);
+        private static readonly TimeSpan LoginDeadline = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(5);
+
         private readonly ConcurrentDictionary<Guid, ZoneSession> _sessions = new();
+        private readonly ConcurrentDictionary<Guid, long> _acceptedAt = new();
+        private Task? _sweepLoop;
         private readonly CancellationTokenSource _cts = new();
         private Socket? _listener;
         private Task? _acceptLoop;
@@ -66,6 +74,7 @@ namespace ZoneEngine_New.Core.Network
             _started = true;
 
             _acceptLoop = AcceptLoopAsync(_cts.Token);
+            _sweepLoop = SweepLoopAsync(_cts.Token);
 
             _logger.Info(
                 string.Format(
@@ -107,6 +116,17 @@ namespace ZoneEngine_New.Core.Network
                 }
             }
 
+            if (_sweepLoop != null)
+            {
+                try
+                {
+                    await _sweepLoop.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
             foreach (ZoneSession session in _sessions.Values)
             {
                 await session.DisposeAsync().ConfigureAwait(false);
@@ -125,6 +145,14 @@ namespace ZoneEngine_New.Core.Network
                 try
                 {
                     Socket socket = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+                    if (!HasCapacityFor(socket))
+                    {
+                        // Refused before a session and its buffers exist.
+                        try { socket.Close(0); }
+                        catch { }
+                        continue;
+                    }
+
                     Guid sessionId = Guid.NewGuid();
                     if (!TryCreateConnectionFilter(sessionId, socket, out IConnectionFilter? filter))
                         continue;
@@ -138,6 +166,7 @@ namespace ZoneEngine_New.Core.Network
                         filter,
                         _modules?.MessageObservers);
 
+                    _acceptedAt[sessionId] = Environment.TickCount64;
                     _sessions[sessionId] = session;
 
                     _logger.Info(
@@ -199,6 +228,79 @@ namespace ZoneEngine_New.Core.Network
             finally
             {
                 _sessions.TryRemove(session.Id, out _);
+                _acceptedAt.TryRemove(session.Id, out _);
+            }
+        }
+
+        private bool HasCapacityFor(Socket socket)
+        {
+            if (_sessions.Count >= MaxSessions)
+                return false;
+
+            IPAddress? address;
+            try
+            {
+                address = (socket.RemoteEndPoint as IPEndPoint)?.Address;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (address == null || IPAddress.IsLoopback(address) || MaxSessionsPerAddress == 0)
+                return true;
+
+            int sameAddress = 0;
+            foreach (ZoneSession existing in _sessions.Values)
+            {
+                if (address.Equals(existing.RemoteAddress()) && ++sameAddress >= MaxSessionsPerAddress)
+                    return false;
+            }
+
+            return true;
+        }
+
+        // The same operator override Login and Chat honour (0 = no per-address limit, for a proxy or NAT in front).
+        private static int ResolveMaxSessionsPerAddress(int defaultLimit)
+        {
+            string? configured = Environment.GetEnvironmentVariable("AO_REBIRTH_MAX_CONNECTIONS_PER_ADDRESS");
+            return !string.IsNullOrWhiteSpace(configured) && int.TryParse(configured.Trim(), out int limit) && limit >= 0
+                ? limit
+                : defaultLimit;
+        }
+
+        /// <summary>Closes connections that never got as far as a zone login.</summary>
+        private async Task SweepLoopAsync(CancellationToken cancellationToken)
+        {
+            using var timer = new PeriodicTimer(SweepInterval);
+            try
+            {
+                while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    long now = Environment.TickCount64;
+                    foreach (var accepted in _acceptedAt)
+                    {
+                        if (now - accepted.Value < (long)LoginDeadline.TotalMilliseconds)
+                            continue;
+
+                        // Past the deadline it is either logged in (stop tracking) or idle (drop it).
+                        _acceptedAt.TryRemove(accepted.Key, out _);
+                        if (_sessions.TryGetValue(accepted.Key, out ZoneSession? session)
+                            && session.State == SessionState.Connected)
+                        {
+                            _logger.Info("Closing zone connection from " + session.RemoteEndPoint() + ": no login within "
+                                + (int)LoginDeadline.TotalSeconds + " s.");
+                            session.Close();
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Zone connection sweep stopped.");
             }
         }
     }

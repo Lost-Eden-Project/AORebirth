@@ -24,7 +24,8 @@ namespace ZoneEngine_New.Core.Ai
     /// the fight to end unless npcNanos allows them in combat. Out of a fight it heals, then buffs. A buff goes on the
     /// caster when it lacks it, otherwise on a random nearby NPC that does. A heal goes on the caster when it is hurt,
     /// otherwise on the most hurt nearby NPC. A pet looks after its owner and the owner's other pets instead of
-    /// nearby NPCs. A summon (SummonPet) nano is cast once a fight starts, while that pet slot is free.
+    /// nearby NPCs. An NPC with the HealsSpawner feature looks after only the NPC that spawned it, never itself.
+    /// A summon (SummonPet) nano is cast once a fight starts, while that pet slot is free.
     /// </summary>
     /// <summary>Outcome of a heal order.</summary>
     enum HealOrderResult
@@ -235,6 +236,9 @@ namespace ZoneEngine_New.Core.Ai
                 return NanoRuntime.CanStartCast(Npc, spell, enemy, nowUtc) ? enemy : null;
             }
 
+            if (Npc.MobTemplate is { } template && template.Has(Mobs.NpcFeature.HealsSpawner))
+                return SpawnerTarget(spell, kind, rules, nowUtc);
+
             // Heals, including heal-over-time buffs, only go on someone who is actually hurt.
             // The caster looks after itself first; only then does it help a neighbour.
             if (kind == NanoKind.Buff)
@@ -285,6 +289,24 @@ namespace ZoneEngine_New.Core.Ai
             }
 
             return hurt;
+        }
+
+        /// <summary>
+        /// HealsSpawner: the NPC that spawned this one (its equipment's DelayedSpawnNpc, or a script's SpawnNpc) when it
+        /// is alive here, in range and sight, and needs the nano (hurt enough for a heal, lacking a buff); otherwise none.
+        /// Never the caster itself.
+        /// </summary>
+        Character? SpawnerTarget(NanoSpell spell, NanoKind kind, GameplayNpcNanos rules, DateTime nowUtc)
+        {
+            NpcCharacter? spawner = Npc.ItemSpawner ?? Npc.ScriptOwner;
+            if (spawner == null || spawner.IsDead || !ReferenceEquals(spawner.Playfield, Npc.Playfield)
+                || !CanApplyOnFriendly(spell) || !InRange(spell, spawner, rules.SupportRange) || HasNano(spawner, spell))
+                return null;
+
+            if (kind == NanoKind.Heal && HealthPercent(spawner) >= rules.HealBelowPercent)
+                return null;
+
+            return NanoRuntime.CanStartCast(Npc, spell, spawner, nowUtc) ? spawner : null;
         }
 
         /// <summary>

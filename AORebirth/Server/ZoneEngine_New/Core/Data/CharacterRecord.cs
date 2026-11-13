@@ -4,7 +4,7 @@ namespace ZoneEngine_New.Core.Data
     /// Minimal characters-row projection for zone login (no schema changes).
     /// Built once by the repository and never mutated afterwards.
     /// </summary>
-    public sealed class CharacterRecord
+    public sealed record CharacterRecord
     {
         public int Id { get; init; }
 

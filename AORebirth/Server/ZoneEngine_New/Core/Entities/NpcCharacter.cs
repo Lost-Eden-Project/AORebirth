@@ -88,6 +88,12 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>The scripted NPC whose SpawnNpc made this one; null for every other NPC.</summary>
         public NpcCharacter? ScriptOwner { get; set; }
 
+        /// <summary>
+        /// The NPC whose equipment (DelayedSpawnNpc) brought this one into the world, as a boss's heal towers; null for
+        /// every other NPC. A death spawn's spawner is already dead.
+        /// </summary>
+        public NpcCharacter? ItemSpawner { get; set; }
+
         /// <summary>SpawnNpc generations behind this NPC: 0 for a placed or hash-spawned NPC, 1 for its adds, and so on.</summary>
         public int ScriptSpawnDepth { get; set; }
 

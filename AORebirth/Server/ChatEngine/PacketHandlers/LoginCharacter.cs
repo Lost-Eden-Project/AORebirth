@@ -96,6 +96,7 @@ namespace ChatEngine.PacketHandlers
 
             if (client.IsBot && !client.ChatServer().RegisterClient(client)) return;
 
+            client.MarkChatReady();
             client.Send(LoginOk.Create());
             client.ChatServer().AddClientToChannels(client);
 

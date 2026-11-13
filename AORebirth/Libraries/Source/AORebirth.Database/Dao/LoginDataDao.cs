@@ -205,6 +205,34 @@ namespace AORebirth.Database.Dao
             }
         }
 
+        /// <summary>
+        /// Replaces a stored password hash with a stronger hash of the same password. Only if the stored value is still
+        /// <paramref name="currentHash"/>: a password changed meanwhile must not be put back.
+        /// </summary>
+        public bool UpgradePasswordHash(string username, string currentHash, string upgradedHash)
+        {
+            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(currentHash) || string.IsNullOrEmpty(upgradedHash))
+            {
+                return false;
+            }
+
+            try
+            {
+                using (IDbConnection conn = Connector.GetConnection())
+                {
+                    return conn.Execute(
+                        "UPDATE login SET Password=@upgradedHash WHERE Username=@username AND Password=@currentHash",
+                        new { username, currentHash, upgradedHash }) == 1;
+                }
+            }
+            catch (Exception e)
+            {
+                // The login already succeeded; the upgrade is retried at the next one.
+                LogUtil.ErrorException(e);
+                return false;
+            }
+        }
+
         public bool Exists(string username)
         {
             return DatabaseDaoFactory.CreateAccountDao().UsernameExists(username);

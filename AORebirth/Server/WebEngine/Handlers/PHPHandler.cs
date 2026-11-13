@@ -573,7 +573,30 @@ namespace WebEngine.Handlers
                        : path + Path.DirectorySeparatorChar;
         }
 
+        private const int MaxConcurrentCgiProcesses = 8;
+
+        private static readonly SemaphoreSlim CgiSlots =
+            new SemaphoreSlim(MaxConcurrentCgiProcesses, MaxConcurrentCgiProcesses);
+
+        // Each request starts a php-cgi process; a hard budget keeps a burst from exhausting the host.
         private static byte[] Execute(PhpCgiExecutionPlan plan)
+        {
+            if (!CgiSlots.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new InvalidOperationException("PHP CGI is at its concurrency limit.");
+            }
+
+            try
+            {
+                return ExecuteProcess(plan);
+            }
+            finally
+            {
+                CgiSlots.Release();
+            }
+        }
+
+        private static byte[] ExecuteProcess(PhpCgiExecutionPlan plan)
         {
             ProcessStartInfo startInfo = BuildProcessStartInfo(plan);
             using (var process = new Process { StartInfo = startInfo })

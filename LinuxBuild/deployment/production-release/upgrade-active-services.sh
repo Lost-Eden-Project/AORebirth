@@ -609,7 +609,7 @@ wait_for_readiness()
 }
 online_count()
 {
-    if [[ "${test_mode}" == "1" ]]; then cat "${TEST_STATE}/online"; else docker exec -i "${DATABASE_CONTAINER}" sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" '"${EXPECTED_DATABASE}"' --batch --raw --skip-column-names -e "SELECT COUNT(*) FROM characters WHERE Online IS NOT NULL AND Online <> 0;"'; fi
+    if [[ "${test_mode}" == "1" ]]; then cat "${TEST_STATE}/online"; else docker exec -i "${DATABASE_CONTAINER}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"${EXPECTED_DATABASE}"' --batch --raw --skip-column-names -e "SELECT COUNT(*) FROM characters WHERE Online IS NOT NULL AND Online <> 0;"'; fi
 }
 daemon_reload()
 {
@@ -732,25 +732,26 @@ validate_candidate_database_contract()
     login_connection="$(environment_value "${LOGIN_ENV}" AO_REBIRTH_MYSQL_CONNECTION)"
     zone_connection="$(environment_value "${ZONE_ENV}" AO_REBIRTH_MYSQL_CONNECTION)"
 
-    if ! runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
+    if ! AO_REBIRTH_MYSQL_CONNECTION="${login_connection}" \
+        runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
         AO_REBIRTH_REQUIRED_SQL_TYPE=MySql \
         AO_REBIRTH_EXPECTED_DATABASE="${EXPECTED_DATABASE}" \
         AO_REBIRTH_BIND_MODE=Public \
         AO_REBIRTH_CONFIG_PATH="${login_config_path}" \
-        AO_REBIRTH_MYSQL_CONNECTION="${login_connection}" \
         "${LOGIN_ARTIFACT_DIR}/LoginEngine" --validate-startup >/dev/null; then
         fail "candidate LoginEngine startup contract validation failed"
     fi
-    if ! runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
+    if ! AO_REBIRTH_MYSQL_CONNECTION="${login_connection}" \
+        runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
         AO_REBIRTH_REQUIRED_SQL_TYPE=MySql \
         AO_REBIRTH_EXPECTED_DATABASE="${EXPECTED_DATABASE}" \
         AO_REBIRTH_BIND_MODE=Public \
         AO_REBIRTH_CONFIG_PATH="${login_config_path}" \
-        AO_REBIRTH_MYSQL_CONNECTION="${login_connection}" \
         "${LOGIN_ARTIFACT_DIR}/LoginEngine" --validate-database >/dev/null; then
         fail "candidate LoginEngine database contract validation failed"
     fi
-    if ! runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
+    if ! AO_REBIRTH_MYSQL_CONNECTION="${zone_connection}" \
+        runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
         AO_REBIRTH_REQUIRED_SQL_TYPE=MySql \
         AO_REBIRTH_EXPECTED_DATABASE="${EXPECTED_DATABASE}" \
         AO_REBIRTH_BIND_MODE=Public \
@@ -758,11 +759,11 @@ validate_candidate_database_contract()
         AO_REBIRTH_ZONE_LISTEN_IP=0.0.0.0 \
         AO_REBIRTH_CHAT_LISTEN_IP=127.0.0.1 \
         AO_REBIRTH_CONFIG_PATH="${zone_config_path}" \
-        AO_REBIRTH_MYSQL_CONNECTION="${zone_connection}" \
         "${ZONE_ARTIFACT_DIR}/${ZONE_APPHOST}" --validate-startup >/dev/null; then
         fail "candidate ZoneEngine startup contract validation failed"
     fi
-    if ! runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
+    if ! AO_REBIRTH_MYSQL_CONNECTION="${zone_connection}" \
+        runuser -u "${EXPECTED_SERVICE_USER}" -g "${EXPECTED_SERVICE_GROUP}" -- env \
         AO_REBIRTH_REQUIRED_SQL_TYPE=MySql \
         AO_REBIRTH_EXPECTED_DATABASE="${EXPECTED_DATABASE}" \
         AO_REBIRTH_BIND_MODE=Public \
@@ -770,7 +771,6 @@ validate_candidate_database_contract()
         AO_REBIRTH_ZONE_LISTEN_IP=0.0.0.0 \
         AO_REBIRTH_CHAT_LISTEN_IP=127.0.0.1 \
         AO_REBIRTH_CONFIG_PATH="${zone_config_path}" \
-        AO_REBIRTH_MYSQL_CONNECTION="${zone_connection}" \
         "${ZONE_ARTIFACT_DIR}/${ZONE_APPHOST}" --validate-database >/dev/null; then
         fail "candidate ZoneEngine database contract validation failed"
     fi

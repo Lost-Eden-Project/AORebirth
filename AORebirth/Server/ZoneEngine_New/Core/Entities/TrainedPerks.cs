@@ -3,6 +3,8 @@ namespace ZoneEngine_New.Core.Entities
     using System.Collections.Generic;
     using System.Linq;
 
+    using ZoneEngine_New.Core.Data;
+
     /// <summary>
     /// The perk ids a player has trained: the persistent perk state (charactersperks). Mutated on the
     /// playfield tick; the flush writer only ever sees a copied snapshot.
@@ -12,6 +14,10 @@ namespace ZoneEngine_New.Core.Entities
         readonly object _gate = new();
         readonly HashSet<int> _perkIds = new();
         readonly HashSet<int> _granted = new();
+        // What the next save takes out of storage: only perks this session removed on purpose (untrain, reset).
+        readonly HashSet<int> _removed = new();
+        // A GM replace: the next save makes storage exactly the set.
+        bool _replaceAll;
         bool _dirty;
 
         public bool IsDirty
@@ -81,6 +87,8 @@ namespace ZoneEngine_New.Core.Entities
                         _perkIds.Add(perkId);
                 }
 
+                _removed.Clear();
+                _replaceAll = true;
                 _dirty = true;
             }
         }
@@ -91,6 +99,7 @@ namespace ZoneEngine_New.Core.Entities
             {
                 if (_granted.Contains(perkId) || !_perkIds.Add(perkId))
                     return false;
+                _removed.Remove(perkId);
                 _dirty = true;
                 return true;
             }
@@ -102,32 +111,49 @@ namespace ZoneEngine_New.Core.Entities
             {
                 if (!_perkIds.Remove(perkId))
                     return false;
+                _removed.Add(perkId);
                 _dirty = true;
                 return true;
             }
         }
 
-        /// <summary>The set to persist, or null when nothing changed since the last take. Granted perks never persist.</summary>
-        public int[]? TakeDirty()
+        /// <summary>
+        /// What to persist, or null when nothing changed since the last take: the trained perks to have in storage and
+        /// the perks to take out of it. Storage only ever loses a perk this session removed on purpose, so a set that
+        /// was loaded short can never erase what the character owns. Granted perks never persist.
+        /// </summary>
+        public TrainedPerkChanges? TakeDirty()
         {
             lock (_gate)
             {
                 if (!_dirty)
                     return null;
 
+                var changes = new TrainedPerkChanges(_perkIds.Order().ToArray(), _removed.Order().ToArray(), _replaceAll);
                 _dirty = false;
-                return _perkIds.Order().ToArray();
+                _replaceAll = false;
+                _removed.Clear();
+                return changes;
             }
         }
 
-        /// <summary>A failed write leaves the set dirty; the next take re-reads the current perks.</summary>
-        public void RestoreDirty(int[]? snapshot)
+        /// <summary>A failed write leaves the set dirty and its removals pending; the next take re-reads the current perks.</summary>
+        public void RestoreDirty(TrainedPerkChanges? changes)
         {
-            if (snapshot == null)
+            if (changes == null)
                 return;
 
             lock (_gate)
+            {
                 _dirty = true;
+                _replaceAll |= changes.ReplaceAll;
+                foreach (int perkId in changes.Removed)
+                {
+                    // Trained again since the failed write: it stays.
+                    if (!_perkIds.Contains(perkId))
+                        _removed.Add(perkId);
+                }
+            }
         }
     }
 }

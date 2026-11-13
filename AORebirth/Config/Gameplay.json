@@ -37,7 +37,9 @@
     "maxPauseSeconds": 20
   },
   "proximityAggro": {
-    "maxWalkFactor": 2
+    "maxWalkFactor": 2,
+    "indoorRangePercent": 50,
+    "outdoorRangePercent": 50
   },
   "socialAggro": {
     "enabled": true,

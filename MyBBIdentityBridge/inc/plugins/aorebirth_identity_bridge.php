@@ -10,6 +10,9 @@ if(!defined('IN_MYBB')){
 	die('Direct initialization of this file is not allowed.');
 }
 
+define('AOREBIRTH_IDENTITY_BRIDGE_STATE_COOKIE', 'aor_sso_state');
+define('AOREBIRTH_IDENTITY_BRIDGE_RESTART_COOKIE', 'aor_sso_restart');
+
 $plugins->add_hook('member_register_start', 'aorebirth_identity_bridge_register_redirect');
 $plugins->add_hook('member_do_register_start', 'aorebirth_identity_bridge_register_redirect');
 $plugins->add_hook('member_login', 'aorebirth_identity_bridge_login_redirect');
@@ -61,7 +64,11 @@ function aorebirth_identity_bridge_misc_start(){
 
 	$action = isset($mybb->input['action']) ? (string)$mybb->input['action'] : '';
 	if($action === 'aor_start'){
-		aorebirth_identity_bridge_redirect_to_website('https://ao-rebirth.com/forum-login');
+		// Bind the login to this browser: the website hands the state to the Broker with the
+		// code request, and the callback only accepts a code whose state matches this cookie.
+		$state = aorebirth_identity_bridge_random_string(32);
+		my_setcookie(AOREBIRTH_IDENTITY_BRIDGE_STATE_COOKIE, $state, 600, true, 'lax');
+		aorebirth_identity_bridge_redirect_to_website('https://ao-rebirth.com/forum-login?state=' . rawurlencode($state));
 	}
 
 	if($action !== 'aor_sso'){
@@ -73,10 +80,36 @@ function aorebirth_identity_bridge_misc_start(){
 		aorebirth_identity_bridge_error('Missing AORebirth forum login code.');
 	}
 
+	$config = aorebirth_identity_bridge_config();
+	$requireState = !empty($config['require_sso_state']);
+	$expectedState = isset($mybb->cookies[AOREBIRTH_IDENTITY_BRIDGE_STATE_COOKIE])
+		? (string)$mybb->cookies[AOREBIRTH_IDENTITY_BRIDGE_STATE_COOKIE]
+		: '';
+	if(!preg_match('/^[A-Za-z0-9_-]{16,128}$/', $expectedState)){
+		$expectedState = '';
+	}
+
+	// A code arriving in a browser that never started a login here (a link straight to the
+	// website, or a forged callback) is not redeemed; the browser restarts through aor_start.
+	if($expectedState === '' && $requireState){
+		aorebirth_identity_bridge_restart_login();
+	}
+
+	my_unsetcookie(AOREBIRTH_IDENTITY_BRIDGE_STATE_COOKIE);
+
 	$redeem = aorebirth_identity_bridge_broker_post('/api/forum/sso/redeem', array('code' => $code));
 	if(!$redeem['ok'] || !isset($redeem['json']['identity']) || !is_array($redeem['json']['identity'])){
 		aorebirth_identity_bridge_error('AORebirth forum login code is invalid or expired.');
 	}
+
+	if($requireState){
+		$returnedState = isset($redeem['json']['state']) && is_string($redeem['json']['state']) ? $redeem['json']['state'] : '';
+		if($returnedState === '' || !hash_equals($expectedState, $returnedState)){
+			aorebirth_identity_bridge_restart_login();
+		}
+	}
+
+	my_unsetcookie(AOREBIRTH_IDENTITY_BRIDGE_RESTART_COOKIE);
 
 	$identity = $redeem['json']['identity'];
 	if(!isset($identity['identityStatus']) || $identity['identityStatus'] !== 'Active'){
@@ -110,6 +143,22 @@ function aorebirth_identity_bridge_misc_start(){
 	}
 
 	redirect($returnTo);
+}
+
+/**
+ * Sends the browser through aor_start once. A second consecutive failure stops with an
+ * error instead, so a callback that can never match does not loop.
+ */
+function aorebirth_identity_bridge_restart_login(){
+	global $mybb;
+
+	if(!empty($mybb->cookies[AOREBIRTH_IDENTITY_BRIDGE_RESTART_COOKIE])){
+		my_unsetcookie(AOREBIRTH_IDENTITY_BRIDGE_RESTART_COOKIE);
+		aorebirth_identity_bridge_error('AORebirth forum login could not be verified for this browser. Please try again.');
+	}
+
+	my_setcookie(AOREBIRTH_IDENTITY_BRIDGE_RESTART_COOKIE, '1', 600, true, 'lax');
+	aorebirth_identity_bridge_redirect_to_website(aorebirth_identity_bridge_forum_url('misc.php?action=aor_start'));
 }
 
 function aorebirth_identity_bridge_create_user($identity){
@@ -240,7 +289,11 @@ function aorebirth_identity_bridge_broker_post($path, $fields){
 function aorebirth_identity_bridge_config(){
 	$config = array(
 		'broker_url' => 'http://172.18.0.1:7510',
-		'secret_file' => '/run/secrets/forum_sso_secret'
+		'secret_file' => '/run/secrets/forum_sso_secret',
+		// Binds a forum login to the browser that started it. Turn on only once the website's
+		// /forum-login forwards ?state= to the Broker's /api/forum/sso/issue; before that,
+		// enabling it refuses every forum login.
+		'require_sso_state' => false
 	);
 	$configFile = MYBB_ROOT . 'inc/aorebirth_identity_bridge_config.php';
 	if(is_readable($configFile)){

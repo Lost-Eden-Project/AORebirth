@@ -178,6 +178,18 @@ namespace AO.Core.Encryption
         /// </returns>
         public bool IsValidLogin(string LoginKey, string ServerSalt, string UserName, string passwordHash)
         {
+            string upgradedHash;
+            return this.IsValidLogin(LoginKey, ServerSalt, UserName, passwordHash, out upgradedHash);
+        }
+
+        /// <summary>
+        /// As <see cref="IsValidLogin(string,string,string,string)"/>. On success, <paramref name="upgradedHash"/> is a
+        /// current-strength hash of the same password when the stored one is weaker, else null; the caller stores it.
+        /// </summary>
+        public bool IsValidLogin(
+            string LoginKey, string ServerSalt, string UserName, string passwordHash, out string upgradedHash)
+        {
+            upgradedHash = null;
             string ClientUserName;
             string ClientPassword;
             string ClientServerSalt;
@@ -240,6 +252,11 @@ namespace AO.Core.Encryption
             if (ClientServerSalt != ServerSalt)
             {
                 return false;
+            }
+
+            if (PasswordHash.NeedsRehash(passwordHash))
+            {
+                upgradedHash = PasswordHash.CreateHash(ClientPassword);
             }
 
             return true;

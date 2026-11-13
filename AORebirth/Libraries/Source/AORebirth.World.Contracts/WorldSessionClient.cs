@@ -26,7 +26,7 @@ namespace AORebirth.World.Contracts
 
         public WorldSessionClient(string url)
         {
-            _channel = new WorldChannel(url, "login");
+            _channel = new WorldChannel(url, WorldChannel.LoginRole);
         }
 
         /// <summary>One connection for the process, created on first use.</summary>

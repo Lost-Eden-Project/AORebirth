@@ -201,6 +201,12 @@ namespace AORebirth.Modules.Missions
         /// <summary>Percent added to the quality for the objective NPC's level, -90 to 400.</summary>
         public int ObjectiveLevelPercent { get; init; }
 
+        /// <summary>
+        /// The objective stands in one of this many rooms farthest from the entrance, picked at random (1 to 10; 1: the
+        /// farthest). A multi-floor dungeon's objective stays in its boss room.
+        /// </summary>
+        public int ObjectiveRoomChoices { get; init; } = 1;
+
         /// <summary>NPC hashes for the ordinary population; null takes DungeonGeneration.json's.</summary>
         public IReadOnlyList<string>? Npcs { get; init; }
 

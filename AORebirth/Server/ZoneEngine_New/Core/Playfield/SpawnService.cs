@@ -228,6 +228,9 @@ namespace ZoneEngine_New.Core.Playfield
                 _playfield.GetRequiredService<IInventoryRepository>());
             Metrics.TickStallWatch.Stage("spawn.rebase", identity.Instance);
             npc.Rebase();
+            // The template's Health and Nano were set before its equipment's wear casts raised the maxima (a Boss
+            // Modifier Item's Massive Health Booster); a fresh spawn starts full.
+            FillVitals(npc);
             TryAttachShop(npc);
             // Vendors fight back like any NPC; only NoCombat (blue-named or flagged) NPCs stay brainless.
             if (attachDefaultBrain && npc.Attackable)
@@ -266,6 +269,17 @@ namespace ZoneEngine_New.Core.Playfield
             // caller's own setup (an add's spawn generation) is in place before they come due.
             ScheduleEquipmentSpawns(npc, AORebirth.Enums.EventType.OnWear);
             return npc;
+        }
+
+        /// <summary>Health and Nano at their maxima, where the maxima are set.</summary>
+        static void FillVitals(NpcCharacter npc)
+        {
+            int maxHealth = npc.Stats.GetOrZero(CharacterStat.MaxHealth);
+            if (maxHealth > 0)
+                npc.Stats.Set(CharacterStat.Health, maxHealth, StatDetail.Base, dirty: true);
+            int maxNano = npc.Stats.GetOrZero(CharacterStat.MaxNanoEnergy);
+            if (maxNano > 0)
+                npc.Stats.Set(CharacterStat.CurrentNano, maxNano, StatDetail.Base, dirty: true);
         }
 
         /// <summary>

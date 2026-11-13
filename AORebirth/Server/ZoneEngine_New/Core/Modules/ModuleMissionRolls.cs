@@ -406,6 +406,7 @@ namespace ZoneEngine_New.Core.Modules
                     Entrance = entrance,
                     MobLevelPercent = dungeon.MobLevelPercent,
                     ObjectiveLevelPercent = dungeon.ObjectiveLevelPercent,
+                    ObjectiveRoomChoices = dungeon.ObjectiveRoomChoices,
                     Npcs = dungeon.Npcs?.ToArray(),
                     AwardsTokens = dungeon.AwardsTokens,
                     Chests = dungeon.Chests == null ? null : new QuestDungeonChests
@@ -455,6 +456,7 @@ namespace ZoneEngine_New.Core.Modules
                 Style = offer.Dungeon.Style,
                 MobLevelPercent = offer.Dungeon.MobLevelPercent,
                 ObjectiveLevelPercent = offer.Dungeon.ObjectiveLevelPercent,
+                ObjectiveRoomChoices = offer.Dungeon.ObjectiveRoomChoices,
                 Npcs = offer.Dungeon.Npcs,
                 AwardsTokens = offer.Dungeon.AwardsTokens,
                 Chests = offer.Dungeon.Chests,

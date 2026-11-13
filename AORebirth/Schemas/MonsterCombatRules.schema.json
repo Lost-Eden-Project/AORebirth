@@ -40,7 +40,8 @@
             "Social",
             "Summoner",
             "SpawnsExitDevice",
-            "NoXp"
+            "NoXp",
+            "HealsSpawner"
           ]
         }
       },

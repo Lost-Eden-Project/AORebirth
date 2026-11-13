@@ -33,16 +33,8 @@ namespace ChatEngine.PacketHandlers
 {
     #region Usings ...
 
-    using System.IO;
-    using System.Net;
-    using System.Text;
-
-    using AO.Core.Encryption;
-
     using ChatEngine.CoreClient;
     using ChatEngine.Packets;
-
-    using Utility;
 
     #endregion
 
@@ -62,38 +54,29 @@ namespace ChatEngine.PacketHandlers
         /// </param>
         public static void Read(Client client, byte[] packet)
         {
-            LogUtil.Debug(DebugInfoDetail.Network, "\r\nReceived:\r\n" + HexOutput.Output(packet));
-
-            MemoryStream m_stream = new MemoryStream(packet);
-            BinaryReader m_reader = new BinaryReader(m_stream);
-
-            // now we should do password check and then send OK or Error
-            // sending OK now
-            m_stream.Position = 8;
-
-            short userNameLength = IPAddress.NetworkToHostOrder(m_reader.ReadInt16());
-            string userName = Encoding.ASCII.GetString(m_reader.ReadBytes(userNameLength));
-            short loginKeyLength = IPAddress.NetworkToHostOrder(m_reader.ReadInt16());
-            string loginKey = Encoding.ASCII.GetString(m_reader.ReadBytes(loginKeyLength));
-
-            LoginEncryption loginEncryption = new LoginEncryption();
-
-            if (loginEncryption.IsValidLogin(loginKey, client.ServerSalt, userName))
+            // type(2) length(2) unknown(4) name(S) key(S)
+            string userName;
+            string loginKey;
+            string accountName;
+            string refusal;
+            if (!Authenticate.TryReadCredentials(packet, 8, out userName, out loginKey))
             {
-                client.IsBot = true;
-                client.AuthenticatedUsername = userName;
-                byte[] chars = AccountCharacterList.Create(userName);
-                LogUtil.Debug(DebugInfoDetail.Network, "\r\nReceived:\r\n" + HexOutput.Output(chars));
+                Authenticate.Refuse(client, "malformed bot login request");
+                return;
+            }
 
-                client.Send(chars);
-            }
-            else
+            if (!Authenticate.TryVerifyAccount(client, userName, loginKey, out accountName, out refusal))
             {
-                LogUtil.Debug(DebugInfoDetail.Network, "Chat bot authentication failed for '" + userName + "'.");
-                byte[] loginerr = LoginError.Create("Invalid login");
-                client.Send(loginerr);
-                client.Server.DisconnectClient(client);
+                Authenticate.Refuse(client, refusal);
+                return;
             }
+
+            client.IsBot = true;
+            client.AuthenticatedUsername = accountName;
+
+            // The account has proven itself; it may now take its time choosing a character.
+            client.MarkAdmitted();
+            client.Send(AccountCharacterList.Create(accountName));
         }
 
         #endregion

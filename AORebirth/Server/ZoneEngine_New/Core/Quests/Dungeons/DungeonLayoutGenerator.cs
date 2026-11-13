@@ -29,6 +29,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         internal static AORebirth.Core.Vector.Quaternion YawHeading(float yawRadians)
             => new(0, MathF.Sin(yawRadians * 0.5f), 0, MathF.Cos(yawRadians * 0.5f));
         public int? BossRoomIndex { get; init; }
+
+        /// <summary>How many of the rooms farthest from the entrance the objective may stand in; 1: the farthest.</summary>
+        public int ObjectiveRoomChoices { get; init; } = 1;
         public DungeonPopulationPolicy Population { get; init; } = new();
 
         /// <summary>Rows every NPC corpse in the dungeon rolls besides its template's own table; empty: none.</summary>
@@ -416,6 +419,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z), parameters.Seed, doors)
                 {
                     FloorTransitions = result.Transitions, BossRoomIndex = result.BossRoomIndex,
+                    ObjectiveRoomChoices = parameters.ObjectiveRoomChoices,
                     SpawnHeading = DungeonLayout.YawHeading(result.SpawnYaw),
                     Population = PopulationFor(parameters),
                     MobLoot = parameters.MobLoot?.Where(Mobs.MobItemTableEntry.IsWellFormed).ToArray() ?? []

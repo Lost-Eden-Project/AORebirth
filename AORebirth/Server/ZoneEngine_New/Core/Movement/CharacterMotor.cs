@@ -56,6 +56,8 @@ namespace ZoneEngine_New.Core.Movement
         int _playerPathIndex = -1;
         // The character a player's acknowledged /follow steers at, or null.
         Character? _followTarget;
+        // Whether the last step of that /follow moved the body, so its start breaks a cast once (BreakCastOnFollowMove).
+        bool _followMoving;
         bool _voidWarned;
         bool _holdingOverVoid;
         bool _hadFlightAuthority;
@@ -441,6 +443,7 @@ namespace ZoneEngine_New.Core.Movement
             ClearPath();
             _move.Apply((int)MovementAction.FullStop);
             _followTarget = target;
+            _followMoving = false;
             _sim.FollowCanMove = !_character.IsRooted;
             _sim.SetFollowDynel(ToVec3(target.Position));
         }
@@ -452,6 +455,7 @@ namespace ZoneEngine_New.Core.Movement
                 return;
 
             _followTarget = null;
+            _followMoving = false;
             _sim.ClearFollowDynel();
             _sim.SetForwardDrive(0f);
             _sim.Halt();
@@ -475,6 +479,22 @@ namespace ZoneEngine_New.Core.Movement
 
             _sim.FollowCanMove = !_character.IsRooted;
             _sim.FollowDynelPosition = ToVec3(target.Position);
+        }
+
+        /// <summary>
+        /// A /follow moves the body without any movement action from the follower's client, so the ForwardStart rule in
+        /// <see cref="ActPlayer"/> never sees it. When a step of the follow starts the body moving, the same rule applies
+        /// here: walking keeps a cast going, any faster mode breaks it. Only the start counts, as with ForwardStart. A cast
+        /// cannot begin while the follow is moving (the cast gate refuses a moving caster), so one started while the
+        /// follower stood within reach breaks when the target walks off and the follow moves again.
+        /// </summary>
+        void BreakCastOnFollowMove()
+        {
+            bool moving = _followTarget != null && _sim.Speed > MovementConfig.SpeedStopEpsilon;
+            bool started = moving && !_followMoving;
+            _followMoving = moving;
+            if (started && State != MovementState.Walk)
+                _character.InterruptTimedActions(TimedActionInterrupt.Movement);
         }
 
         public void ClearPath()
@@ -1193,6 +1213,7 @@ namespace ZoneEngine_New.Core.Movement
 
             _character.Position = ToVector3(_sim.Position);
             PullHeading();
+            BreakCastOnFollowMove();
 
             if (_npc != null && _npc.HasFollowTarget && _npc.FollowQueue.Count == 0
                 && _sim.Speed <= VehicleSim.MovingSpeedEpsilon)

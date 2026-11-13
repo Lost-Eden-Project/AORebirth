@@ -23,9 +23,22 @@ namespace AORebirth.World.Contracts
 
         public const string TokenVariable = "AO_REBIRTH_WORLD_TOKEN";
 
+        /// <summary>Carries the credential only LoginEngine holds; World requires it on the Session service.</summary>
+        public const string LoginTokenHeader = "x-aorebirth-login-token";
+
+        /// <summary>
+        /// Set to the same value for World and LoginEngine only. Zones and chat never hold it, so a compromised one
+        /// cannot ask World for another account's zone ticket.
+        /// </summary>
+        public const string LoginTokenVariable = "AO_REBIRTH_WORLD_LOGIN_TOKEN";
+
+        /// <summary>The role LoginEngine connects with.</summary>
+        public const string LoginRole = "login";
+
         readonly GrpcChannel _channel;
         readonly string _token;
         readonly string _role;
+        readonly string _loginToken;
         string _session = string.Empty;
 
         public WorldChannel(string url, string role)
@@ -33,6 +46,9 @@ namespace AORebirth.World.Contracts
             if (string.IsNullOrWhiteSpace(url)) throw new ArgumentException("World url required.", nameof(url));
             _token = Environment.GetEnvironmentVariable(TokenVariable) ?? string.Empty;
             _role = role ?? string.Empty;
+            _loginToken = _role == LoginRole
+                ? Environment.GetEnvironmentVariable(LoginTokenVariable) ?? string.Empty
+                : string.Empty;
             var handler = new SocketsHttpHandler
             {
                 EnableMultipleHttp2Connections = true,
@@ -85,6 +101,7 @@ namespace AORebirth.World.Contracts
             var headers = new Metadata();
             if (_token.Length > 0) headers.Add(TokenHeader, _token);
             if (_role.Length > 0) headers.Add(RoleHeader, _role);
+            if (_loginToken.Length > 0) headers.Add(LoginTokenHeader, _loginToken);
             string session = RegistrySession;
             if (session.Length > 0) headers.Add(SessionHeader, session);
             return headers;

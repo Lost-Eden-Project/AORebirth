@@ -71,6 +71,11 @@ namespace ZoneEngine_New.Core.Network
         private readonly Modules.ModuleMessageObservers? _observers;
         private readonly Modules.MessageFieldReader? _inboundFields;
         private readonly Modules.MessageFieldReader? _outboundFields;
+        // A client that stops reading must not make the server hold its traffic forever. Far above anything a
+        // healthy connection queues (a login burst is a few hundred KB); past it the session is closed.
+        private const long MaxQueuedSendBytes = 16L * 1024 * 1024;
+        private long _queuedSendBytes;
+        private int _overflowCloseRequested;
         private readonly Channel<byte[]> _sendQueue = Channel.CreateUnbounded<byte[]>(
             new UnboundedChannelOptions
             {
@@ -240,7 +245,25 @@ namespace ZoneEngine_New.Core.Network
                 return;
             }
 
-            _sendQueue.Writer.TryWrite(packet);
+            if (Interlocked.Add(ref _queuedSendBytes, packet.Length) > MaxQueuedSendBytes)
+            {
+                Interlocked.Add(ref _queuedSendBytes, -packet.Length);
+                if (Interlocked.Exchange(ref _overflowCloseRequested, 1) == 0)
+                {
+                    _logger.Info("Closing zone connection from " + RemoteEndPoint() + ": client is not reading ("
+                        + (MaxQueuedSendBytes / (1024 * 1024)) + " MB queued).");
+
+                    // Off this thread: the sender may be a playfield tick holding its own locks.
+                    ThreadPool.QueueUserWorkItem(static state => ((ZoneSession)state!).Close(), this);
+                }
+
+                return;
+            }
+
+            if (!_sendQueue.Writer.TryWrite(packet))
+            {
+                Interlocked.Add(ref _queuedSendBytes, -packet.Length);
+            }
         }
 
         public void Send(Message message)
@@ -925,6 +948,7 @@ namespace ZoneEngine_New.Core.Network
                 await foreach (byte[] packet in _sendQueue.Reader.ReadAllAsync(cancellationToken)
                                    .ConfigureAwait(false))
                 {
+                    Interlocked.Add(ref _queuedSendBytes, -packet.Length);
                     if (packet.Length >= HeaderLength + 4
                         && BinaryPrimitives.ReadInt16BigEndian(packet.AsSpan(2)) == (short)PacketType.N3Message)
                         CountMessage((int)TryReadN3MessageId(packet), inbound: false);

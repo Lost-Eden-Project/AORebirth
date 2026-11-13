@@ -251,22 +251,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
             session.Close();
         }
 
-        /// <summary>The same hydration, placed at <paramref name="position"/> on <paramref name="playfieldId"/>.</summary>
-        static CharacterHydrationResult WithLoginPosition(CharacterHydrationResult hydration, int playfieldId, AORebirth.Core.Vector.Vector3 position)
-        {
-            var source = hydration.Character;
-            return new CharacterHydrationResult
+        /// <summary>
+        /// The same hydration, placed at <paramref name="position"/> on <paramref name="playfieldId"/>. Everything else
+        /// the login loaded is kept: perks, research, buffs, cooldowns, pet names and the organization.
+        /// </summary>
+        internal static CharacterHydrationResult WithLoginPosition(CharacterHydrationResult hydration, int playfieldId, AORebirth.Core.Vector.Vector3 position)
+            => hydration with
             {
-                Character = new CharacterRecord
-                {
-                    Id = source.Id, Name = source.Name, FirstName = source.FirstName, LastName = source.LastName,
-                    Playfield = playfieldId, X = position.xf, Y = position.yf, Z = position.zf,
-                    HeadingX = source.HeadingX, HeadingY = source.HeadingY, HeadingZ = source.HeadingZ, HeadingW = source.HeadingW,
-                    AccountFlags = source.AccountFlags, GmLevel = source.GmLevel
-                },
-                Stats = hydration.Stats, Items = hydration.Items, UploadedNanoIds = hydration.UploadedNanoIds
+                Character = hydration.Character with { Playfield = playfieldId, X = position.xf, Y = position.yf, Z = position.zf }
             };
-        }
 
         private void BeginReconnect(IZoneSession session, Player player, int characterId)
         {

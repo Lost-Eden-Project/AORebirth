@@ -142,6 +142,8 @@ namespace AORebirth.AccountBroker.Service
 
         private readonly string publicBaseUrl;
 
+        private readonly bool secureCookies;
+
         private readonly int emailVerificationTtlMinutes;
 
         private readonly int passwordResetTtlMinutes;
@@ -160,6 +162,10 @@ namespace AORebirth.AccountBroker.Service
                 "AOREBIRTH_ACCOUNT_BROKER_ACCOUNT_MAIL_SECRET",
                 "AOREBIRTH_ACCOUNT_BROKER_ACCOUNT_MAIL_SECRET_FILE");
             this.publicBaseUrl = GetEnvironment("AOREBIRTH_PUBLIC_BASE_URL", "https://ao-rebirth.com").TrimEnd('/');
+
+            // Behind a TLS-terminating proxy the listener only ever sees plain HTTP, so the
+            // configured public origin decides the Secure flag, never a forwarded header.
+            this.secureCookies = this.publicBaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
             this.emailVerificationTtlMinutes = GetIntEnvironment("AOREBIRTH_EMAIL_VERIFICATION_TOKEN_MINUTES", 120);
             this.passwordResetTtlMinutes = GetIntEnvironment("AOREBIRTH_PASSWORD_RESET_TOKEN_MINUTES", 30);
             this.emailSender = AccountEmailSender.FromEnvironment();
@@ -198,6 +204,17 @@ namespace AORebirth.AccountBroker.Service
             try
             {
                 this.Route(context);
+            }
+            catch (RequestTooLargeException)
+            {
+                try
+                {
+                    WriteJson(context.Response, 413, "{\"ok\":false,\"error\":\"REQUEST_TOO_LARGE\"}");
+                }
+                catch (Exception)
+                {
+                    context.Response.Abort();
+                }
             }
             catch (Exception)
             {
@@ -478,7 +495,7 @@ namespace AORebirth.AccountBroker.Service
             }
 
             WebSession session = this.sessions.Create(result.Identity);
-            SetCookie(context.Response, SessionCookieName, session.Token, context.Request.IsSecureConnection, true);
+            SetCookie(context.Response, SessionCookieName, session.Token, this.UseSecureCookies(context), true);
             if (api)
             {
                 WriteJson(context.Response, 200, "{\"ok\":true,\"username\":\"" + Json(result.Identity.CanonicalUsername) + "\"}");
@@ -504,7 +521,7 @@ namespace AORebirth.AccountBroker.Service
                 this.sessions.Invalidate(token);
             }
 
-            ExpireCookie(context.Response, SessionCookieName, context.Request.IsSecureConnection);
+            ExpireCookie(context.Response, SessionCookieName, this.UseSecureCookies(context));
             if (api)
             {
                 WriteJson(context.Response, 200, "{\"ok\":true}");
@@ -607,7 +624,7 @@ namespace AORebirth.AccountBroker.Service
             }
 
             this.sessions.InvalidateIdentity(result.IdentityPublicId);
-            ExpireCookie(context.Response, SessionCookieName, context.Request.IsSecureConnection);
+            ExpireCookie(context.Response, SessionCookieName, this.UseSecureCookies(context));
             Redirect(context.Response, "/login?passwordChanged=1");
         }
 
@@ -904,6 +921,13 @@ namespace AORebirth.AccountBroker.Service
             Dictionary<string, string> form = this.ReadForm(context);
             string identityPublicId = GetForm(form, "identityPublicId");
             string returnTo = GetForm(form, "returnTo");
+            string state = GetForm(form, "state") ?? string.Empty;
+            if (state.Length != 0 && !IsValidForumSsoState(state))
+            {
+                WriteJson(context.Response, 400, "{\"ok\":false,\"error\":\"SSO_STATE_INVALID\"}");
+                return;
+            }
+
             try
             {
                 ForumSsoIdentity identity = this.broker.GetForumSsoIdentityByPublicId(identityPublicId);
@@ -913,7 +937,7 @@ namespace AORebirth.AccountBroker.Service
                     return;
                 }
 
-                string code = this.forumSsoCodes.Issue(identity.IdentityPublicId, returnTo);
+                string code = this.forumSsoCodes.Issue(identity.IdentityPublicId, returnTo, state);
                 WriteJson(
                     context.Response,
                     200,
@@ -956,12 +980,37 @@ namespace AORebirth.AccountBroker.Service
                     context.Response,
                     200,
                     "{\"ok\":true,\"identity\":" + ForumSsoIdentityJson(identity)
-                    + ",\"returnTo\":\"" + Json(code.ReturnTo) + "\"}");
+                    + ",\"returnTo\":\"" + Json(code.ReturnTo)
+                    + "\",\"state\":\"" + Json(code.State) + "\"}");
             }
             catch (AccountBrokerException exception)
             {
                 WriteJson(context.Response, 400, "{\"ok\":false,\"error\":\"" + Json(exception.Code) + "\"}");
             }
+        }
+
+        // The forum's browser-bound login state: opaque here, only stored with the code and echoed on redeem.
+        private static bool IsValidForumSsoState(string state)
+        {
+            if (state.Length < 16 || state.Length > 128)
+            {
+                return false;
+            }
+
+            foreach (char character in state)
+            {
+                bool allowed = (character >= 'A' && character <= 'Z')
+                    || (character >= 'a' && character <= 'z')
+                    || (character >= '0' && character <= '9')
+                    || character == '-'
+                    || character == '_';
+                if (!allowed)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void HandleForumMappingConfirm(HttpListenerContext context)
@@ -1136,10 +1185,15 @@ namespace AORebirth.AccountBroker.Service
             return string.IsNullOrEmpty(token) ? null : this.sessions.Get(token);
         }
 
+        private bool UseSecureCookies(HttpListenerContext context)
+        {
+            return this.secureCookies || context.Request.IsSecureConnection;
+        }
+
         private string IssueCsrf(HttpListenerContext context)
         {
             string token = this.csrfTokens.Create();
-            SetCookie(context.Response, CsrfCookieName, token, context.Request.IsSecureConnection, true);
+            SetCookie(context.Response, CsrfCookieName, token, this.UseSecureCookies(context), true);
             return token;
         }
 
@@ -1156,32 +1210,42 @@ namespace AORebirth.AccountBroker.Service
         {
             if (context.Request.ContentLength64 > MaxRequestBytes)
             {
-                throw new InvalidOperationException("Request too large.");
+                throw new RequestTooLargeException();
             }
 
-            using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding ?? Encoding.UTF8))
+            // Content-Length is absent for chunked bodies, so the cap is enforced on the bytes actually read.
+            var buffer = new byte[MaxRequestBytes + 1];
+            int total = 0;
+            int read;
+            while ((read = context.Request.InputStream.Read(buffer, total, buffer.Length - total)) > 0)
             {
-                string body = reader.ReadToEnd();
-                var result = new Dictionary<string, string>(StringComparer.Ordinal);
-                string[] pairs = body.Split('&');
-                foreach (string pair in pairs)
+                total += read;
+                if (total > MaxRequestBytes)
                 {
-                    if (pair.Length == 0)
-                    {
-                        continue;
-                    }
+                    throw new RequestTooLargeException();
+                }
+            }
 
-                    string[] parts = pair.Split(new[] { '=' }, 2);
-                    string name = WebUtility.UrlDecode(parts[0] ?? string.Empty);
-                    string value = parts.Length > 1 ? WebUtility.UrlDecode(parts[1]) : string.Empty;
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        result[name] = value;
-                    }
+            string body = (context.Request.ContentEncoding ?? Encoding.UTF8).GetString(buffer, 0, total);
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            string[] pairs = body.Split('&');
+            foreach (string pair in pairs)
+            {
+                if (pair.Length == 0)
+                {
+                    continue;
                 }
 
-                return result;
+                string[] parts = pair.Split(new[] { '=' }, 2);
+                string name = WebUtility.UrlDecode(parts[0] ?? string.Empty);
+                string value = parts.Length > 1 ? WebUtility.UrlDecode(parts[1]) : string.Empty;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    result[name] = value;
+                }
             }
+
+            return result;
         }
 
         private void WriteFailure(HttpListenerContext context, bool api, int status, string code, string message)
@@ -1449,11 +1513,21 @@ namespace AORebirth.AccountBroker.Service
             if (IsTrustedProxyRemote(context.Request.RemoteEndPoint == null ? null : context.Request.RemoteEndPoint.Address)
                 && !string.IsNullOrWhiteSpace(proxyHeader))
             {
-                string candidate = proxyHeader.Split(',')[0].Trim();
-                IPAddress address;
-                if (IPAddress.TryParse(candidate, out address))
+                // Proxies append, so only the right-hand end is trustworthy: walk leftwards past our own
+                // proxies and stop at the first address they did not vouch for.
+                string[] hops = proxyHeader.Split(',');
+                for (int index = hops.Length - 1; index >= 0; index--)
                 {
-                    return address.ToString();
+                    IPAddress address;
+                    if (!IPAddress.TryParse(hops[index].Trim(), out address))
+                    {
+                        break;
+                    }
+
+                    if (!IsTrustedProxyRemote(address))
+                    {
+                        return address.ToString();
+                    }
                 }
             }
 
@@ -1573,6 +1647,10 @@ namespace AORebirth.AccountBroker.Service
             }
 
             return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        private sealed class RequestTooLargeException : Exception
+        {
         }
 
         private sealed class EmailDeliveryResult
@@ -1723,7 +1801,12 @@ namespace AORebirth.AccountBroker.Service
 
         private sealed class CsrfTokenStore
         {
+            private const int MaxTokens = 100000;
+
             private readonly Dictionary<string, DateTime> tokens = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+
+            // Every token has the same lifetime, so issue order is expiry order and the head is always the oldest.
+            private readonly Queue<string> issueOrder = new Queue<string>();
 
             private readonly object sync = new object();
 
@@ -1732,7 +1815,15 @@ namespace AORebirth.AccountBroker.Service
                 string token = NewToken();
                 lock (this.sync)
                 {
-                    this.tokens[token] = DateTime.UtcNow.AddMinutes(30);
+                    DateTime now = DateTime.UtcNow;
+                    while (this.issueOrder.Count > 0
+                        && (this.issueOrder.Count >= MaxTokens || this.tokens[this.issueOrder.Peek()] < now))
+                    {
+                        this.tokens.Remove(this.issueOrder.Dequeue());
+                    }
+
+                    this.tokens[token] = now.AddMinutes(30);
+                    this.issueOrder.Enqueue(token);
                 }
 
                 return token;
@@ -1757,7 +1848,12 @@ namespace AORebirth.AccountBroker.Service
 
         private sealed class FixedWindowRateLimiter
         {
+            private const int MaxKeys = 100000;
+
             private readonly Dictionary<string, Counter> counters = new Dictionary<string, Counter>(StringComparer.Ordinal);
+
+            // Windows are all the same length, so creation order is expiry order and the head is always the oldest.
+            private readonly Queue<Counter> windowOrder = new Queue<Counter>();
 
             private readonly int limit;
 
@@ -1779,7 +1875,23 @@ namespace AORebirth.AccountBroker.Service
                     Counter counter;
                     if (!this.counters.TryGetValue(key, out counter) || counter.WindowEnd <= now)
                     {
-                        this.counters[key] = new Counter { Count = 1, WindowEnd = now.Add(this.window) };
+                        this.counters.Remove(key);
+                        while (this.windowOrder.Count > 0
+                            && (this.counters.Count >= MaxKeys || this.windowOrder.Peek().WindowEnd <= now))
+                        {
+                            Counter oldest = this.windowOrder.Dequeue();
+                            Counter current;
+
+                            // A key re-created since leaves a stale queue entry; only drop the counter it still owns.
+                            if (this.counters.TryGetValue(oldest.Key, out current) && ReferenceEquals(current, oldest))
+                            {
+                                this.counters.Remove(oldest.Key);
+                            }
+                        }
+
+                        counter = new Counter { Key = key, Count = 1, WindowEnd = now.Add(this.window) };
+                        this.counters[key] = counter;
+                        this.windowOrder.Enqueue(counter);
                         return true;
                     }
 
@@ -1795,6 +1907,8 @@ namespace AORebirth.AccountBroker.Service
 
             private sealed class Counter
             {
+                public string Key { get; set; }
+
                 public int Count { get; set; }
 
                 public DateTime WindowEnd { get; set; }
@@ -1914,7 +2028,7 @@ namespace AORebirth.AccountBroker.Service
 
             public int TtlSeconds { get; private set; }
 
-            public string Issue(string identityPublicId, string returnTo)
+            public string Issue(string identityPublicId, string returnTo, string state)
             {
                 string code = NewToken();
                 lock (this.sync)
@@ -1924,6 +2038,7 @@ namespace AORebirth.AccountBroker.Service
                         Code = code,
                         IdentityPublicId = identityPublicId,
                         ReturnTo = returnTo ?? string.Empty,
+                        State = state ?? string.Empty,
                         ExpiresAt = DateTime.UtcNow.Add(this.ttl)
                     };
                 }
@@ -1954,6 +2069,8 @@ namespace AORebirth.AccountBroker.Service
             public string IdentityPublicId { get; set; }
 
             public string ReturnTo { get; set; }
+
+            public string State { get; set; }
 
             public DateTime ExpiresAt { get; set; }
         }

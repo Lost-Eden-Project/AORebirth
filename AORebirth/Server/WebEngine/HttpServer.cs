@@ -251,6 +251,13 @@ namespace WebEngine
         /// </summary>
         /// <param name="sockets">
         /// </param>
+        private const int MaxConcurrentRequests = 64;
+
+        private const int SocketTimeoutMilliseconds = 15000;
+
+        private static readonly SemaphoreSlim RequestSlots =
+            new SemaphoreSlim(MaxConcurrentRequests, MaxConcurrentRequests);
+
         private void HttpThread(Socket sockets)
         {
             try
@@ -509,9 +516,40 @@ namespace WebEngine
                 while (!this.stopServer)
                 {
                     Socket sockets = this.myListener.AcceptSocket();
-                    var listening = new Thread(() => this.HttpThread(sockets));
 
-                    listening.Start();
+                    // One thread per request, so cap how many run at once; over the cap the connection is refused.
+                    if (!RequestSlots.Wait(0))
+                    {
+                        CloseSocket(sockets);
+                        continue;
+                    }
+
+                    // A silent or stalled peer must not hold its thread forever.
+                    sockets.ReceiveTimeout = SocketTimeoutMilliseconds;
+                    sockets.SendTimeout = SocketTimeoutMilliseconds;
+                    var listening = new Thread(() =>
+                    {
+                        try
+                        {
+                            this.HttpThread(sockets);
+                        }
+                        finally
+                        {
+                            RequestSlots.Release();
+                        }
+                    });
+                    listening.IsBackground = true;
+
+                    try
+                    {
+                        listening.Start();
+                    }
+                    catch
+                    {
+                        RequestSlots.Release();
+                        CloseSocket(sockets);
+                        throw;
+                    }
 
 
                     

@@ -55,6 +55,20 @@ namespace AORebirth.Core.Encryption
         public const int MinPBKDF2Iterations = 1111;
 
         /// <summary>
+        /// Work factor for new hashes. Each login pays this once on a network thread, so it is a balance; raising it
+        /// upgrades stored hashes as players next log in.
+        /// </summary>
+        public const int Iterations = 200000;
+
+        /// <summary>Marks a PBKDF2-HMAC-SHA256 hash. A hash without a prefix is the legacy PBKDF2-HMAC-SHA1 format.</summary>
+        private const string Sha256Prefix = "sha256";
+
+        // Bounds what a stored value may ask of the CPU.
+        private const int MaxIterations = 10000000;
+
+        private const int Sha256HashSize = 32;
+
+        /// <summary>
         /// Creates a salted PBKDF2 hash of the password.
         /// </summary>
         /// <param name="password">
@@ -65,25 +79,33 @@ namespace AORebirth.Core.Encryption
         /// </returns>
         public static string CreateHash(string password)
         {
-            // Generate a random salt
-            RNGCryptoServiceProvider csprng = new RNGCryptoServiceProvider();
             byte[] salt = new byte[SaltSize];
-            csprng.GetBytes(salt);
+            using (RandomNumberGenerator csprng = RandomNumberGenerator.Create())
+            {
+                csprng.GetBytes(salt);
+            }
 
-            // Getting up to 255 additional iterations for PBKDF2
-            byte[] iterRandom = new byte[4];
-            csprng.GetBytes(iterRandom);
-            iterRandom[0] = (byte)(iterRandom[0] ^ iterRandom[1] ^ iterRandom[2] ^ iterRandom[3]);
-            iterRandom[1] = 0;
-            iterRandom[2] = 0;
-            iterRandom[3] = 0;
+            // sha256:iterations:salt:hash is 99 characters; login.Password holds 100.
+            byte[] hash = PBKDF2(password, salt, Iterations, Sha256HashSize, HashAlgorithmName.SHA256);
+            return Sha256Prefix + ":" + Iterations + ":" + Convert.ToBase64String(salt) + ":"
+                + Convert.ToBase64String(hash);
+        }
 
-            // Back to int32
-            int rnd = BitConverter.ToInt32(iterRandom, 0);
+        /// <summary>
+        /// True when a stored hash is weaker than what <see cref="CreateHash"/> produces now, so the caller should
+        /// replace it once the password has been verified.
+        /// </summary>
+        public static bool NeedsRehash(string storedHash)
+        {
+            if (string.IsNullOrEmpty(storedHash))
+            {
+                return false;
+            }
 
-            // Hash it
-            byte[] hash = PBKDF2(password, salt, MinPBKDF2Iterations + rnd, HashSize);
-            return (MinPBKDF2Iterations + rnd) + ":" + Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hash);
+            string[] split = storedHash.Split(':');
+            int iterations;
+            return split.Length != 4 || split[0] != Sha256Prefix
+                || !int.TryParse(split[1], out iterations) || iterations < Iterations;
         }
 
         /// <summary>
@@ -101,11 +123,27 @@ namespace AORebirth.Core.Encryption
             // Use the same iterations and salt as in correctHash
             char[] delimiter = { ':' };
             string[] split = correctHash.Split(delimiter);
-            int iterations = int.Parse(split[0]);
-            byte[] salt = Convert.FromBase64String(split[1]);
-            byte[] hash = Convert.FromBase64String(split[2]);
+            HashAlgorithmName algorithm = HashAlgorithmName.SHA1;
+            int first = 0;
+            if (split.Length == 4 && split[0] == Sha256Prefix)
+            {
+                algorithm = HashAlgorithmName.SHA256;
+                first = 1;
+            }
+            else if (split.Length != 3)
+            {
+                throw new FormatException("Unrecognized password hash format.");
+            }
 
-            byte[] testHash = PBKDF2(password, salt, iterations, hash.Length);
+            int iterations = int.Parse(split[first]);
+            byte[] salt = Convert.FromBase64String(split[first + 1]);
+            byte[] hash = Convert.FromBase64String(split[first + 2]);
+            if (iterations < 1 || iterations > MaxIterations || salt.Length < 8 || hash.Length < 16 || hash.Length > 64)
+            {
+                throw new FormatException("Password hash parameters are out of range.");
+            }
+
+            byte[] testHash = PBKDF2(password, salt, iterations, hash.Length, algorithm);
             return SlowEquals(hash, testHash);
         }
 
@@ -150,11 +188,13 @@ namespace AORebirth.Core.Encryption
         /// <returns>
         /// A hash of the password.
         /// </returns>
-        private static byte[] PBKDF2(string password, byte[] salt, int iterations, int outputBytes)
+        private static byte[] PBKDF2(
+            string password, byte[] salt, int iterations, int outputBytes, HashAlgorithmName algorithm)
         {
-            Rfc2898DeriveBytes pbkdf2 = new Rfc2898DeriveBytes(password, salt);
-            pbkdf2.IterationCount = iterations;
-            return pbkdf2.GetBytes(outputBytes);
+            using (Rfc2898DeriveBytes pbkdf2 = new Rfc2898DeriveBytes(password, salt, iterations, algorithm))
+            {
+                return pbkdf2.GetBytes(outputBytes);
+            }
         }
     }
 }

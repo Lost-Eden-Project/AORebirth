@@ -140,11 +140,13 @@ namespace ZoneEngine_New.Core.Nanos
         /// Up-front gate for a client cast request. On success the cast bar starts and the world
         /// sees CastNanoSpell; the buff itself lands only when the bar finishes.
         /// </summary>
+        /// <param name="noNanoCost">An NPC script cast that neither needs nor spends the caster's nano.</param>
         public static NanoCastRefusal TryStartCast(
             Character caster,
             int nanoId,
             Identity target,
-            DateTime nowUtc)
+            DateTime nowUtc,
+            bool noNanoCost = false)
         {
             ArgumentNullException.ThrowIfNull(caster);
 
@@ -178,7 +180,7 @@ namespace ZoneEngine_New.Core.Nanos
                 target = caster.Identity;
 
             Character? recipient = ResolveTarget(caster, target);
-            int nanoCost = ResolveNanoCost(caster, spell);
+            int nanoCost = noNanoCost ? 0 : ResolveNanoCost(caster, spell);
             NanoCastAttempt attempt = BuildAttempt(caster, spell, recipient, nanoCost, nowUtc);
             NanoCastRefusal refusal = NanoCastRules.Evaluate(attempt);
             if (refusal == NanoCastRefusal.None && caster is Player)
@@ -272,7 +274,12 @@ namespace ZoneEngine_New.Core.Nanos
         /// evenly per player, judged for that player as a cast on them is: ToUse criteria, target legality, resists
         /// and nanoline stacking. The nano's attack range does not apply (NPC casts are not range gated).
         /// </summary>
-        public static NanoCastRefusal TryStartPlayfieldCast(NpcCharacter caster, IReadOnlyList<int> nanoIds, DateTime nowUtc)
+        /// <param name="noNanoCost">The cast neither needs nor spends the NPC's nano.</param>
+        public static NanoCastRefusal TryStartPlayfieldCast(
+            NpcCharacter caster,
+            IReadOnlyList<int> nanoIds,
+            DateTime nowUtc,
+            bool noNanoCost = false)
         {
             ArgumentNullException.ThrowIfNull(caster);
             ArgumentNullException.ThrowIfNull(nanoIds);
@@ -301,7 +308,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (bar == null)
                 return NanoCastRefusal.NotUploaded;
 
-            int nanoCost = ResolveNanoCost(caster, bar);
+            int nanoCost = noNanoCost ? 0 : ResolveNanoCost(caster, bar);
             NanoCastAttempt attempt = SpreadAttempt(caster, bar, nanoCost, nowUtc);
             NanoCastRefusal refusal = NanoCastRules.Evaluate(attempt);
             if (refusal == NanoCastRefusal.None && IsNoCombat(caster))

@@ -49,6 +49,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
             Handle((CharacterActionMessage)body, session);
         }
 
+        /// <summary>Every perk train and untrain request and its outcome: a perk set that changes leaves a trace.</summary>
+        static void LogPerkRequest(Player player, string request, int perkId, bool accepted)
+            => player.Logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Perk {0} character={1} perk={2} accepted={3} trained={4}",
+                request, player.Identity.Instance, perkId, accepted, player.TrainedPerks.Snapshot().Length));
+
         /// <summary>
         /// Client skill reset (Parameter2 = skill stat id). Live on success (capture 2026-10-14T00:07:33Z): Stat RP, then
         /// Stat IP + the skill's base, then FormatFeedback "%d IP have been returned to you for the reset of %s!"; on a
@@ -307,13 +313,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 case CharacterActionType.TrainPerk:
                     // Client train request: Parameter2 = perk id. The accepted request goes back unchanged;
                     // client case 0x48 (Gamecode.dll 0x100536d7) then adds the perk to its own map.
-                    player.TryTrainPerk(message.Parameter2, () => session.Send(message));
+                    LogPerkRequest(player, "train", message.Parameter2,
+                        player.TryTrainPerk(message.Parameter2, () => session.Send(message)));
                     break;
 
                 case CharacterActionType.UntrainPerk:
                     // Client untrain request: Parameter2 = perk id. The accepted request goes back unchanged;
                     // client case 0x49 (Gamecode.dll 0x10053362) then removes the perk from its map.
-                    player.TryUntrainPerk(message.Parameter2, () => session.Send(message));
+                    LogPerkRequest(player, "untrain", message.Parameter2,
+                        player.TryUntrainPerk(message.Parameter2, () => session.Send(message)));
                     break;
 
                 case CharacterActionType.ResetSkill:

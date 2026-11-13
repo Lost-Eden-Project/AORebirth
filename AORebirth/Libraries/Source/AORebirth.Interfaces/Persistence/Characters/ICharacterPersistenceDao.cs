@@ -37,6 +37,11 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<int> LoadTrainedPerks(int characterId);
         /// <summary>Replaces the character's trained perk ids in one transaction.</summary>
         void SaveTrainedPerks(int characterId, IList<int> perkIds);
+        /// <summary>
+        /// In one transaction: deletes the <paramref name="removed"/> perk ids and inserts the <paramref name="trained"/>
+        /// ones not stored yet. Every other stored perk of the character is left as it is.
+        /// </summary>
+        void SaveTrainedPerkChanges(int characterId, IList<int> trained, IList<int> removed);
         /// <summary>LockPerk cooldowns (characterperklocks).</summary>
         IList<PersistedPerkLockData> LoadPerkLocks(int characterId);
         /// <summary>Replaces the character's perk locks in one transaction.</summary>
@@ -53,6 +58,11 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<PersistedResearchData> LoadResearch(int characterId);
         /// <summary>Replaces the character's research progress in one transaction.</summary>
         void SaveResearch(int characterId, IList<PersistedResearchData> research);
+        /// <summary>
+        /// In one transaction: deletes the <paramref name="removedResearchIds"/> rows and inserts or updates the
+        /// <paramref name="research"/> rows. Every other stored row of the character is left as it is.
+        /// </summary>
+        void SaveResearchChanges(int characterId, IList<PersistedResearchData> research, IList<int> removedResearchIds);
         int LeaseItemInstanceIds(int count);
         void SaveLocation(CharacterStateData character, int online);
         void SaveSnapshot(CharacterStateData character, int online, IList<CharacterStatData> stats);

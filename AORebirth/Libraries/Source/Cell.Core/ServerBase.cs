@@ -55,6 +55,38 @@ namespace Cell.Core
         protected bool UdpEnabledEnabled;
 
         private readonly byte[] udpBuffer = new byte[1024];
+        private System.Threading.Timer _admissionSweep;
+
+        /// <summary>Most TCP clients held at once; further connections are closed at accept. 0 = unlimited.</summary>
+        public int MaxConnections { get; set; }
+
+        /// <summary>Most TCP clients held at once from one non-loopback address. 0 = unlimited.</summary>
+        public int MaxConnectionsPerAddress { get; set; }
+
+        /// <summary>
+        /// Operator override for the per-address limit of every engine listener. Set it to 0 where a proxy or NAT in
+        /// front of the engines makes all players arrive from one address.
+        /// </summary>
+        public const string MaxConnectionsPerAddressVariable = "AO_REBIRTH_MAX_CONNECTIONS_PER_ADDRESS";
+
+        /// <summary>The per-address limit to use: the operator's override when set and valid, else the default.</summary>
+        public static int ResolveMaxConnectionsPerAddress(int defaultLimit)
+        {
+            string configured = Environment.GetEnvironmentVariable(MaxConnectionsPerAddressVariable);
+            int limit;
+            return !string.IsNullOrWhiteSpace(configured) && int.TryParse(configured.Trim(), out limit) && limit >= 0
+                ? limit
+                : defaultLimit;
+        }
+
+        /// <summary>
+        /// Seconds a connection may stay open without <see cref="ClientBase.MarkAdmitted"/> before it is dropped.
+        /// 0 = no limit.
+        /// </summary>
+        public int AdmissionTimeoutSeconds { get; set; }
+
+        /// <summary>Most bytes one client may have queued for sending before it is disconnected. 0 = unlimited.</summary>
+        public long MaxClientSendQueueBytes { get; set; }
 
         public event ClientConnectedHandler ClientConnected;
         public event ClientDisconnectedHandler ClientDisconnected;
@@ -217,6 +249,13 @@ namespace Cell.Core
             }
 
             IsRunning = false;
+            System.Threading.Timer sweep = _admissionSweep;
+            _admissionSweep = null;
+            if (sweep != null)
+            {
+                sweep.Dispose();
+            }
+
             RemoveAllClients();
 
             if (_tcpListen != null)
@@ -445,6 +484,11 @@ namespace Cell.Core
             SocketHelpers.SetListenSocketOptions(_tcpListen);
             StartAccept(null);
 
+            if (_admissionSweep == null)
+            {
+                _admissionSweep = new System.Threading.Timer(SweepClients, null, 5000, 5000);
+            }
+
             TcpEnabledEnabled = true;
             Info(null, Resources.ListeningTCPSocket, TcpEndPoint);
         }
@@ -562,22 +606,56 @@ namespace Cell.Core
                     return;
                 }
 
-                IPAddress address = ((IPEndPoint)args.AcceptSocket.RemoteEndPoint).Address;
-                IClient client = CreateClient(address);
-                client.TcpSocket = args.AcceptSocket;
-                client.BeginReceive();
+                Socket accepted = args.AcceptSocket;
+                SocketError acceptError = args.SocketError;
 
+                // Re-arm first: nothing below may stop the listener from accepting the next connection.
                 StartAccept(args);
 
-                if (OnClientConnected(client))
+                if (acceptError != SocketError.Success || accepted == null)
                 {
-                    lock (_clients)
-                    {
-                        _clients.Add(client);
-                    }
+                    CloseRefused(accepted);
+                    return;
                 }
-                else
+
+                IPAddress address;
+                try
                 {
+                    address = ((IPEndPoint)accepted.RemoteEndPoint).Address;
+                }
+                catch (Exception)
+                {
+                    CloseRefused(accepted);
+                    return;
+                }
+
+                // Refuse before a client object and its receive buffer exist.
+                if (!HasCapacityFor(address))
+                {
+                    log.Debug("Refused connection from {0}: connection limit reached", address);
+                    CloseRefused(accepted);
+                    return;
+                }
+
+                IClient client = CreateClient(address);
+                ClientBase clientBase = client as ClientBase;
+                if (clientBase != null)
+                {
+                    clientBase.AcceptedAddress = address;
+                }
+
+                // Tracked before any I/O starts, so a disconnect racing the accept still finds and removes it.
+                client.TcpSocket = accepted;
+                lock (_clients)
+                {
+                    _clients.Add(client);
+                }
+
+                client.BeginReceive();
+
+                if (!OnClientConnected(client))
+                {
+                    RemoveClient(client);
                     client.Dispose();
                 }
             }
@@ -599,6 +677,111 @@ namespace Cell.Core
 #else
                 LogManager.GetLogger(CellDef.CORE_LOG_FNAME).FatalException(Resources.FatalAsyncAccept, e);
 #endif
+            }
+        }
+
+        private static void CloseRefused(Socket socket)
+        {
+            if (socket == null)
+            {
+                return;
+            }
+
+            try
+            {
+                socket.Close(0);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private bool HasCapacityFor(IPAddress address)
+        {
+            int total = MaxConnections;
+            int perAddress = IPAddress.IsLoopback(address) ? 0 : MaxConnectionsPerAddress;
+            if (total <= 0 && perAddress <= 0)
+            {
+                return true;
+            }
+
+            lock (_clients)
+            {
+                if (total > 0 && _clients.Count >= total)
+                {
+                    return false;
+                }
+
+                if (perAddress > 0)
+                {
+                    int sameAddress = 0;
+                    foreach (IClient existing in _clients)
+                    {
+                        ClientBase existingBase = existing as ClientBase;
+                        if (existingBase != null && address.Equals(existingBase.AcceptedAddress)
+                            && ++sameAddress >= perAddress)
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        // Drops connections that never authenticated in time.
+        private void SweepClients(object state)
+        {
+            try
+            {
+                if (!_running)
+                {
+                    return;
+                }
+
+                int timeout = AdmissionTimeoutSeconds;
+                if (timeout <= 0)
+                {
+                    return;
+                }
+
+                List<IClient> stale = null;
+                lock (_clients)
+                {
+                    foreach (IClient client in _clients)
+                    {
+                        ClientBase clientBase = client as ClientBase;
+                        if (clientBase == null)
+                        {
+                            continue;
+                        }
+
+                        if (!clientBase.IsAdmitted && clientBase.SecondsSinceAccept > timeout)
+                        {
+                            if (stale == null)
+                            {
+                                stale = new List<IClient>();
+                            }
+
+                            stale.Add(client);
+                        }
+                    }
+                }
+
+                if (stale == null)
+                {
+                    return;
+                }
+
+                foreach (IClient client in stale)
+                {
+                    DisconnectClient(client, true);
+                }
+            }
+            catch (Exception e)
+            {
+                log.Warn("Client sweep failed: {0}", e);
             }
         }
 

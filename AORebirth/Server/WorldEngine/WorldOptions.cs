@@ -41,6 +41,9 @@ namespace WorldEngine
 
         public required string Token { get; init; }
 
+        /// <summary>When set, only a caller presenting it may use the Session (login) service.</summary>
+        public string LoginToken { get; init; } = string.Empty;
+
         /// <summary>0 when the admin API is off.</summary>
         public int AdminPort { get; init; }
 
@@ -72,6 +75,13 @@ namespace WorldEngine
                 throw new InvalidOperationException(
                     "World listens on " + listen + " but " + WorldChannel.TokenVariable + " is not set; a non-loopback World needs a token.");
 
+            string loginToken = Environment.GetEnvironmentVariable(WorldChannel.LoginTokenVariable) ?? string.Empty;
+            if (loginToken.Length > 0 && loginToken.Length < 24)
+                throw new InvalidOperationException(WorldChannel.LoginTokenVariable + " must be at least 24 characters.");
+            if (loginToken.Length > 0 && loginToken == token)
+                throw new InvalidOperationException(WorldChannel.LoginTokenVariable + " must differ from "
+                    + WorldChannel.TokenVariable + ": every engine holds that one.");
+
             int adminPort = settings?.AdminPort ?? 0;
             IPAddress adminAddress = IPAddress.Loopback;
             string adminToken = Environment.GetEnvironmentVariable(AdminTokenVariable) ?? string.Empty;
@@ -100,6 +110,7 @@ namespace WorldEngine
                 Heartbeat = TimeSpan.FromMilliseconds(WorldSettings.ResolveHeartbeatMilliseconds(settings)),
                 HandoffLifetime = TimeSpan.FromSeconds(ResolveHandoffSeconds()),
                 Token = token,
+                LoginToken = loginToken,
                 AdminPort = adminPort,
                 AdminAddress = adminAddress,
                 AdminToken = adminToken,

@@ -43,7 +43,7 @@ backup_dir="$backup_root/mybb-launch-public-$stamp"
 mkdir -p "$backup_dir"
 chmod 700 "$backup_dir"
 
-docker exec -i -e MYSQL_PWD="$db_pass" "$mysql_container" \
+MYSQL_PWD="$db_pass" docker exec -i -e MYSQL_PWD "$mysql_container" \
   mysqldump --no-tablespaces -h "$db_host" -u "$db_user" "$db_name" \
   > "$backup_dir/${db_name}.sql"
 tar -C "$forum_shared" -czf "$backup_dir/forum-shared.tar.gz" \
@@ -287,7 +287,7 @@ print(f"UPDATE {prefix}stats SET numthreads=(SELECT COUNT(*) FROM {prefix}thread
 print("COMMIT;")
 PY
 
-docker exec -i -e MYSQL_PWD="$db_pass" "$mysql_container" \
+MYSQL_PWD="$db_pass" docker exec -i -e MYSQL_PWD "$mysql_container" \
   mysql -h "$db_host" -u "$db_user" "$db_name" < "$sql_file"
 rm -f "$sql_file"
 

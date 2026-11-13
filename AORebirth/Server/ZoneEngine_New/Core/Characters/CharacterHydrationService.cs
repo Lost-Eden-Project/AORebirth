@@ -109,11 +109,14 @@ namespace ZoneEngine_New.Core.Characters
             _logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "Character hydrated id={0} stats={1} items={2} nanos={3}",
+                    "Character hydrated id={0} stats={1} items={2} nanos={3} perks={4} research={5} buffs={6}",
                     characterId,
                     result.Stats.Count,
                     result.Items.Count,
-                    result.UploadedNanoIds.Count));
+                    result.UploadedNanoIds.Count,
+                    result.TrainedPerkIds.Count,
+                    result.Research.Count,
+                    result.ActiveNanos.Count));
 
             return result;
         }

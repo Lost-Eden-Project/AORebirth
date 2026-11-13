@@ -188,6 +188,14 @@
       "properties": {
         "maxWalkFactor": {
           "type": "number"
+        },
+        "indoorRangePercent": {
+          "type": "number",
+          "minimum": 0
+        },
+        "outdoorRangePercent": {
+          "type": "number",
+          "minimum": 0
         }
       },
       "additionalProperties": false

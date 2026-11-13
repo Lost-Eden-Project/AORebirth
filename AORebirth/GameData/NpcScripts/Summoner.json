@@ -8,7 +8,7 @@
       "ChancePercent": 50,
       "Do": [
         { "If": { "HasTarget": false, "Goto": "idle" } },
-        { "CastNano": { "Nano": 286237, "Target": "RandomHostile", "MinDistance": 10, "Warp": "ToSelf" } },
+        { "CastNano": { "Nano": 286237, "Target": "RandomHostile", "MinDistance": 10, "Warp": "ToSelf", "NoNanoCost": true } },
         { "Label": "idle" }
       ]
     }

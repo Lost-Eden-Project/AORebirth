@@ -1,6 +1,6 @@
 param(
     [string]$Username = "Mike",
-    [string]$Password = "123456",
+    [string]$Password = $env:AOREBIRTH_SMOKE_PASSWORD,
     [string]$CharacterTitle = "Mikedoc",
     [int]$LoginTimeoutSeconds = 75,
     [int]$SmokeTimeoutSeconds = 120,

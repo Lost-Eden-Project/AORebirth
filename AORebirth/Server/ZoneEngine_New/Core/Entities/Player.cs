@@ -445,7 +445,7 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>
         /// Moves this player to <paramref name="landing"/> on its current playfield, as a LineTeleport lift does: the motor
         /// is warped (path and speed dropped), the client snaps in place from an intrazone N3Teleport without unloading
-        /// the zone, and observers see a full stop at the landing.
+        /// the zone, and observers see a full stop at the landing. Every /follow the jump breaks ends first.
         /// </summary>
         public void TeleportWithinPlayfield(Vector3 landing)
         {
@@ -453,6 +453,7 @@ namespace ZoneEngine_New.Core.Entities
             if (Playfield is not Playfield playfield)
                 return;
 
+            EndFollowsBrokenByTeleport(playfield);
             Motor.Warp(landing);
             Session?.SendIntrazoneTeleport(landing, Rotation, playfield.ClientPlayfieldId);
             playfield.GetRequiredService<PlayfieldLocality>().Announce(this, new CharDCMoveMessage
@@ -469,6 +470,44 @@ namespace ZoneEngine_New.Core.Entities
                 AuxA = 0,
                 AuxB = 0
             });
+        }
+
+        /// <summary>
+        /// A /follow is walked by every client that sees the follower, straight at the target's position. After an
+        /// in-zone jump (a mission lift onto another floor) that position is somewhere the follower cannot walk to, so the
+        /// follower would run off toward it. This player's own follow and every follow of this player end here: the
+        /// server's copy stops, and the FollowStop goes out the way the follow ack does, to every client that sees the
+        /// follower, the follower included.
+        /// </summary>
+        void EndFollowsBrokenByTeleport(Playfield playfield)
+        {
+            PlayfieldLocality locality = playfield.GetRequiredService<PlayfieldLocality>();
+            if (Motor.FollowTarget != null)
+                StopFollowForEveryone(this, locality);
+
+            foreach (Player follower in playfield.GetRequiredService<DynelRegistry>().PlayerEntities())
+            {
+                if (ReferenceEquals(follower.Motor.FollowTarget, this))
+                    StopFollowForEveryone(follower, locality);
+            }
+        }
+
+        static void StopFollowForEveryone(Player follower, PlayfieldLocality locality)
+        {
+            follower.Motor.EndFollow();
+            var at = new SmokeLounge.AOtomation.Messaging.GameData.Vector3
+            {
+                X = follower.Position.xf, Y = follower.Position.yf, Z = follower.Position.zf
+            };
+            locality.Announce(
+                follower,
+                new FollowTargetMessage
+                {
+                    Identity = follower.Identity,
+                    Unknown = 0,
+                    Info = new FollowStopInfo { Coordinates = at, ConfirmCoordinates = at }
+                },
+                includeSelf: true);
         }
 
         /// <summary>

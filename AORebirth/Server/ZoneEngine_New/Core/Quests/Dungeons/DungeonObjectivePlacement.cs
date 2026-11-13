@@ -10,7 +10,8 @@ using Vector3 = AORebirth.Core.Vector.Vector3;
 
 /// <summary>
 /// Chooses a reproducible objective point from the original district positions in connected placed rooms: the boss
-/// room when the layout reserves one (a multi-floor dungeon's top floor), else the room farthest from the entrance.
+/// room when the layout reserves one (a multi-floor dungeon's top floor), else the room farthest from the entrance, or
+/// one of the <see cref="DungeonLayout.ObjectiveRoomChoices"/> farthest.
 /// </summary>
 internal static class DungeonObjectivePlacement
 {
@@ -74,10 +75,31 @@ internal static class DungeonObjectivePlacement
         {
             if (layout.BossRoomIndex is int unreachable)
                 logger.Warn("Dungeon boss room " + unreachable + " has no reachable spawn point; objective falls back to the farthest room");
+            if (layout.ObjectiveRoomChoices > 1)
+                return SelectAmongFarthest(candidates, layout, out roomIndex, out position);
             int farthest = candidates.Max(row => row.Distance);
             choices = candidates.Where(row => row.Distance == farthest).ToArray();
         }
         var selected = choices[new Random(unchecked(layout.Seed * 15485863)).Next(choices.Length)];
+        roomIndex = selected.Room;
+        position = new Vector3(selected.Position.X, selected.Position.Y, selected.Position.Z);
+        return true;
+    }
+
+    /// <summary>
+    /// One of the <see cref="DungeonLayout.ObjectiveRoomChoices"/> rooms farthest from the entrance (ties in room order),
+    /// then one of its points, both from the layout seed.
+    /// </summary>
+    static bool SelectAmongFarthest(List<(int Room, int Distance, System.Numerics.Vector3 Position)> candidates, DungeonLayout layout,
+        out int roomIndex, out Vector3 position)
+    {
+        int[] rooms = candidates.Select(row => (row.Room, row.Distance)).Distinct()
+            .OrderByDescending(row => row.Distance).ThenBy(row => row.Room)
+            .Take(layout.ObjectiveRoomChoices).Select(row => row.Room).ToArray();
+        var random = new Random(unchecked(layout.Seed * 15485863));
+        int room = rooms[random.Next(rooms.Length)];
+        var points = candidates.Where(row => row.Room == room).ToArray();
+        var selected = points[random.Next(points.Length)];
         roomIndex = selected.Room;
         position = new Vector3(selected.Position.X, selected.Position.Y, selected.Position.Z);
         return true;

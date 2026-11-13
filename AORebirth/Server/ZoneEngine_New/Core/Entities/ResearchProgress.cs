@@ -14,6 +14,10 @@ namespace ZoneEngine_New.Core.Entities
     {
         readonly object _gate = new();
         readonly Dictionary<int, int> _remaining = new();
+        // Rows the next save takes out of storage: only tiers this session finished or dropped on purpose.
+        readonly HashSet<int> _removed = new();
+        // A GM clear: the next save makes storage exactly the rows.
+        bool _replaceAll;
         bool _dirty;
 
         public bool IsDirty
@@ -65,9 +69,16 @@ namespace ZoneEngine_New.Core.Entities
                     return;
 
                 if (remaining > 0)
+                {
                     _remaining[researchId] = remaining;
+                    _removed.Remove(researchId);
+                }
                 else
+                {
                     _remaining.Remove(researchId);
+                    _removed.Add(researchId);
+                }
+
                 _dirty = true;
             }
         }
@@ -81,6 +92,8 @@ namespace ZoneEngine_New.Core.Entities
                     return;
 
                 _remaining.Clear();
+                _removed.Clear();
+                _replaceAll = true;
                 _dirty = true;
             }
         }
@@ -93,33 +106,52 @@ namespace ZoneEngine_New.Core.Entities
                 foreach (int researchId in _remaining.Keys.Where(trained.Contains).ToArray())
                 {
                     _remaining.Remove(researchId);
+                    _removed.Add(researchId);
                     _dirty = true;
                 }
             }
         }
 
-        /// <summary>The rows to persist, or null when nothing changed since the last take.</summary>
-        public ResearchProgressRecord[]? TakeDirty()
+        /// <summary>
+        /// What to persist, or null when nothing changed since the last take: the rows to have in storage and the tiers
+        /// to take out of it. Storage only ever loses a row this session finished or dropped, so progress that was
+        /// loaded short can never erase what the character has stored.
+        /// </summary>
+        public ResearchChanges? TakeDirty()
         {
             lock (_gate)
             {
                 if (!_dirty)
                     return null;
 
+                var changes = new ResearchChanges(
+                    _remaining.OrderBy(pair => pair.Key).Select(pair => new ResearchProgressRecord(pair.Key, pair.Value)).ToArray(),
+                    _removed.Order().ToArray(),
+                    _replaceAll);
                 _dirty = false;
-                return _remaining.OrderBy(pair => pair.Key)
-                    .Select(pair => new ResearchProgressRecord(pair.Key, pair.Value)).ToArray();
+                _replaceAll = false;
+                _removed.Clear();
+                return changes;
             }
         }
 
-        /// <summary>A failed write leaves the progress dirty; the next take re-reads the current rows.</summary>
-        public void RestoreDirty(ResearchProgressRecord[]? snapshot)
+        /// <summary>A failed write leaves the progress dirty and its removals pending; the next take re-reads the current rows.</summary>
+        public void RestoreDirty(ResearchChanges? changes)
         {
-            if (snapshot == null)
+            if (changes == null)
                 return;
 
             lock (_gate)
+            {
                 _dirty = true;
+                _replaceAll |= changes.ReplaceAll;
+                foreach (int researchId in changes.Removed)
+                {
+                    // In progress again since the failed write: it stays.
+                    if (!_remaining.ContainsKey(researchId))
+                        _removed.Add(researchId);
+                }
+            }
         }
     }
 }

@@ -30,6 +30,10 @@ PATTERNS = (
         ),
     ),
     ("XML password", re.compile(r"(?i)<(?:password|mysqlpassword)>\s*([^<]+?)\s*</")),
+    (
+        "PowerShell password default",
+        re.compile(r"(?i)\$\w*(?:password|passwd|pwd|secret)\w*\s*=\s*[\"']([^\"'$\r\n]+)[\"']"),
+    ),
 )
 
 

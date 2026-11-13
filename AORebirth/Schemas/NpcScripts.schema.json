@@ -225,7 +225,8 @@
                 "MinDistance": { "type": "integer", "minimum": 0, "maximum": 40, "default": 0, "description": "RandomHostile only: players closer than this (edge to edge, metres) are not picked." },
                 "MaxDistance": { "type": "integer", "minimum": 1, "maximum": 40, "default": 40, "description": "RandomNearby only: NPCs farther than this (edge to edge, metres) are not picked." },
                 "Hashes": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string", "minLength": 1 }, "description": "RandomNearby (required): pick only NPCs spawned with one of these NPC template hashes." },
-                "Warp": { "type": "string", "enum": ["ToSelf"], "description": "Move the recipient to the NPC's feet (and a player's living pets with it) when the nano lands. Needs a Target other than Self or Playfield." }
+                "Warp": { "type": "string", "enum": ["ToSelf"], "description": "Move the recipient to the NPC's feet (and a player's living pets with it) when the nano lands. Needs a Target other than Self or Playfield." },
+                "NoNanoCost": { "type": "boolean", "default": false, "description": "Cast without needing or spending the NPC's nano. Requirements, recharge and target legality still apply." }
               }
             }
           ]
@@ -328,7 +329,7 @@
       "properties": {
         "Playfield": { "type": "integer" },
         "Hash": { "type": "string", "minLength": 1 },
-        "Feature": { "type": "string", "enum": ["NoCombat", "NoMove", "Wander", "Guard", "Boss", "Social", "Summoner", "SpawnsExitDevice"] },
+        "Feature": { "type": "string", "enum": ["NoCombat", "NoMove", "Wander", "Guard", "Boss", "Social", "Summoner", "SpawnsExitDevice", "NoXp", "HealsSpawner"] },
         "SpawnPoint": { "type": "string", "pattern": "^[^@\\s]+@-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?(#[0-9]+)?$" },
         "NpcKey": { "type": "string", "minLength": 1 },
         "Args": {

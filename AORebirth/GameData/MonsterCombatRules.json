@@ -167,7 +167,8 @@
   },
   "RGCO": {
     "Features": [
-      "NoMove"
+      "NoMove",
+      "HealsSpawner"
     ]
   },
   "ATDE": {

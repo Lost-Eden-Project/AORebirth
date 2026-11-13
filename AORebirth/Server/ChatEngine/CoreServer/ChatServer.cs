@@ -121,6 +121,12 @@ namespace ChatEngine.CoreServer
                 this.Channels.Add(this.staticChannels[i]);
             }
 
+            // A connection has this long to log in; one address and one slow reader can only hold so much.
+            this.MaxConnections = 8192;
+            this.MaxConnectionsPerAddress = ResolveMaxConnectionsPerAddress(32);
+            this.AdmissionTimeoutSeconds = 30;
+            this.MaxClientSendQueueBytes = 2 * 1024 * 1024;
+
             this.ClientConnected += this.ClientConnectedToChat;
             this.ClientDisconnected += this.OnClientDisconnect;
 
@@ -832,8 +838,7 @@ namespace ChatEngine.CoreServer
         {
             Client client1 = (Client)client;
 
-            Random rand = new Random();
-            string wireServerSalt = CreateWireServerSalt(rand);
+            string wireServerSalt = CreateWireServerSalt();
 
             client1.ServerSalt = FormatServerSalt(Encoding.ASCII.GetBytes(wireServerSalt));
             client1.Send(AuthenticationSeed.Create(wireServerSalt));
@@ -861,18 +866,25 @@ namespace ChatEngine.CoreServer
             return builder.ToString();
         }
 
-        internal static string CreateWireServerSalt(Random rand)
-        {
-            if (rand == null)
-            {
-                throw new ArgumentNullException("rand");
-            }
+        private static readonly System.Security.Cryptography.RandomNumberGenerator SaltRandom =
+            System.Security.Cryptography.RandomNumberGenerator.Create();
 
+        /// <summary>The login seed must be unpredictable, or a captured login key could be replayed against it.</summary>
+        internal static string CreateWireServerSalt()
+        {
             const string alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             char[] salt = new char[0x20];
+            byte[] random = new byte[1];
             for (int i = 0; i < salt.Length; i++)
             {
-                salt[i] = alphabet[rand.Next(alphabet.Length)];
+                // Reject values past the last whole multiple of the alphabet so every character is equally likely.
+                do
+                {
+                    SaltRandom.GetBytes(random);
+                }
+                while (random[0] >= 248);
+
+                salt[i] = alphabet[random[0] % alphabet.Length];
             }
 
             return new string(salt);

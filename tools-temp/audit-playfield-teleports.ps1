@@ -3,7 +3,7 @@ param(
     [string]$Database = "cellao_codex_clean",
     [string]$MysqlExe = "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe",
     [string]$MysqlUser = "cellaodbuser",
-    [string]$MysqlPassword = "1Guiness4828!",
+    [string]$MysqlPassword = $env:AOREBIRTH_MYSQL_PASSWORD,
     [string]$MarkdownOutput = "C:\Users\Mike\Documents\Cellao-Clean\docs\playfield-teleport-audit.md",
     [string]$TeleportCsvOutput = "C:\Users\Mike\Documents\Cellao-Clean\tools-temp\playfield-teleport-audit.csv",
     [string]$WallCsvOutput = "C:\Users\Mike\Documents\Cellao-Clean\tools-temp\playfield-wall-exit-audit.csv"
@@ -137,7 +137,9 @@ ORDER BY playfield,Id;
 $oldErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 try {
-    $rawRows = & $MysqlExe "-u$MysqlUser" "-p$MysqlPassword" $Database --batch --raw --skip-column-names -e $teleportQuery 2>$null
+    # Through the environment, not the command line, where any local process could read it.
+    $env:MYSQL_PWD = $MysqlPassword
+    $rawRows = & $MysqlExe "-u$MysqlUser" $Database --batch --raw --skip-column-names -e $teleportQuery 2>$null
     if ($LASTEXITCODE -ne 0) {
         throw "mysql exited with code $LASTEXITCODE"
     }

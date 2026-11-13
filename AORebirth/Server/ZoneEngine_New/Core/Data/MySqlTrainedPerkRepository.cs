@@ -21,7 +21,12 @@ namespace ZoneEngine_New.Core.Data
             return Run(() => _persistence.LoadTrainedPerks(characterId).ToArray());
         }
 
-        public void Save(int characterId, IReadOnlyList<int> perkIds)
-            => Run(() => _persistence.SaveTrainedPerks(characterId, perkIds.ToArray()));
+        public void Save(int characterId, TrainedPerkChanges changes)
+        {
+            if (changes.ReplaceAll)
+                Run(() => _persistence.SaveTrainedPerks(characterId, changes.Trained.ToArray()));
+            else
+                Run(() => _persistence.SaveTrainedPerkChanges(characterId, changes.Trained.ToArray(), changes.Removed.ToArray()));
+        }
     }
 }

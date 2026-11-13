@@ -12,8 +12,23 @@ namespace WorldEngine.Services
     using WorldEngine.State;
 
     /// <summary>LoginEngine's calls. LoginEngine has already checked credentials and that the character is the account's.</summary>
-    public sealed class SessionService(WorldState state, ILogger<SessionService> log) : Session.SessionBase
+    public sealed class SessionService(WorldState state, WorldOptions options, ILogger<SessionService> log) : Session.SessionBase
     {
+        readonly byte[] _loginToken = System.Text.Encoding.UTF8.GetBytes(options.LoginToken);
+
+        /// <summary>
+        /// These calls mint zone tickets on the caller's word that the account logged in, so the shared engine token
+        /// is not enough: with a login token configured, the caller must hold it.
+        /// </summary>
+        void RequireLoginServer(ServerCallContext context)
+        {
+            if (_loginToken.Length == 0) return;
+            string? presented = context.RequestHeaders.GetValue(AORebirth.World.Contracts.WorldChannel.LoginTokenHeader);
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(presented ?? string.Empty);
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(bytes, _loginToken))
+                throw new RpcException(new Status(StatusCode.PermissionDenied, "login server credential required"));
+        }
+
         static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(8);
 
         /// <summary>
@@ -24,10 +39,14 @@ namespace WorldEngine.Services
         static readonly TimeSpan HandoffHookTimeout = TimeSpan.FromSeconds(3);
 
         public override Task<BeginLoginReply> BeginLogin(BeginLoginRequest request, ServerCallContext context)
-            => Task.FromResult(new BeginLoginReply { Generation = state.BeginLogin(RequireAccount(request.Account)) });
+        {
+            RequireLoginServer(context);
+            return Task.FromResult(new BeginLoginReply { Generation = state.BeginLogin(RequireAccount(request.Account)) });
+        }
 
         public override async Task<SelectCharacterReply> SelectCharacter(SelectCharacterRequest request, ServerCallContext context)
         {
+            RequireLoginServer(context);
             RequireAccount(request.Account);
             SelectCharacterReply reply = state.SelectCharacter(request, out ServiceInstance? target);
             if (reply.Accepted && target is { HasHandoffHook: true })
@@ -77,6 +96,7 @@ namespace WorldEngine.Services
 
         public override async Task<DeleteReply> ReleaseForDelete(DeleteRequest request, ServerCallContext context)
         {
+            RequireLoginServer(context);
             RequireAccount(request.Account);
             WorldState.DeleteStep step = state.BeginDelete(request.CharacterId, out ServiceInstance? owner);
             if (step == WorldState.DeleteStep.AskOwner && owner != null)
@@ -112,6 +132,7 @@ namespace WorldEngine.Services
 
         public override Task<Ack> CompleteDelete(DeleteRequest request, ServerCallContext context)
         {
+            RequireLoginServer(context);
             RequireAccount(request.Account);
             state.CompleteDelete(request.CharacterId);
             return Task.FromResult(new Ack { Ok = true });

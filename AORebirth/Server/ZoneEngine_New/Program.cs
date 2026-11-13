@@ -432,6 +432,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, WeatherCommand>();
             services.AddSingleton<IGmCommand, AnnounceCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
+            services.AddSingleton<IGmCommand, ClearShopStockCommand>(); // TEMP: remove once shops are fixed.
             services.AddSingleton<IGmCommand, VisibilityCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();

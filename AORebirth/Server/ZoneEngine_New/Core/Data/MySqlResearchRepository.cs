@@ -23,9 +23,15 @@ namespace ZoneEngine_New.Core.Data
                 .ToArray());
         }
 
-        public void Save(int characterId, IReadOnlyList<ResearchProgressRecord> research)
-            => Run(() => _persistence.SaveResearch(characterId, research
+        public void Save(int characterId, ResearchChanges changes)
+        {
+            PersistedResearchData[] rows = changes.Rows
                 .Select(v => new PersistedResearchData { ResearchId = v.ResearchId, RemainingXp = v.RemainingXp })
-                .ToArray()));
+                .ToArray();
+            if (changes.ReplaceAll)
+                Run(() => _persistence.SaveResearch(characterId, rows));
+            else
+                Run(() => _persistence.SaveResearchChanges(characterId, rows, changes.Removed.ToArray()));
+        }
     }
 }

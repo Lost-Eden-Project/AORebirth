@@ -131,20 +131,35 @@ namespace ZoneEngine_New.Core.Ai
         public static bool IsProximityHostile(int breedHostility) => breedHostility > 0;
 
         /// <summary>
-        /// Unprovoked aggro range from the NPC's own stats: ProximityRangeIndoors (484) on every playfield, indoor or
-        /// outdoor (the outdoor range is not used). <see cref="ProximityAggroRange"/> when the NPC has none.
+        /// Unprovoked aggro range from the NPC's own stats: ProximityRangeIndoors (484) on an indoor playfield,
+        /// ProximityRangeOutdoors (454) outdoors, scaled by Gameplay.json proximityAggro.indoorRangePercent /
+        /// outdoorRangePercent. <see cref="ProximityAggroRange"/> (unscaled) when the NPC has none.
         /// </summary>
-        public static float ProximityAggroRangeFor(ZoneEngine_New.Core.Entities.StatCollection stats)
-        {
-            int range = stats.GetOrZero(CharacterStat.ProximityRangeIndoors);
-            return range > 0 ? range : ProximityAggroRange;
-        }
+        public static float ProximityAggroRangeFor(
+            ZoneEngine_New.Core.Entities.StatCollection stats,
+            bool indoor,
+            ZoneEngine_New.Core.Configuration.GameplayProximityAggro? rules)
+            => ScaledProximityRange(
+                stats.GetOrZero(indoor ? CharacterStat.ProximityRangeIndoors : CharacterStat.ProximityRangeOutdoors),
+                indoor,
+                rules);
 
         /// <summary>Same, read through <paramref name="stats"/>.</summary>
-        public static float ProximityAggroRangeFor(Func<CharacterStat, int> stats)
+        public static float ProximityAggroRangeFor(
+            Func<CharacterStat, int> stats,
+            bool indoor,
+            ZoneEngine_New.Core.Configuration.GameplayProximityAggro? rules)
+            => ScaledProximityRange(
+                stats(indoor ? CharacterStat.ProximityRangeIndoors : CharacterStat.ProximityRangeOutdoors),
+                indoor,
+                rules);
+
+        static float ScaledProximityRange(int range, bool indoor, ZoneEngine_New.Core.Configuration.GameplayProximityAggro? rules)
         {
-            int range = stats(CharacterStat.ProximityRangeIndoors);
-            return range > 0 ? range : ProximityAggroRange;
+            if (range <= 0)
+                return ProximityAggroRange;
+            float percent = rules == null ? 100f : indoor ? rules.IndoorRangePercent : rules.OutdoorRangePercent;
+            return range * percent / 100f;
         }
 
         /// <summary>

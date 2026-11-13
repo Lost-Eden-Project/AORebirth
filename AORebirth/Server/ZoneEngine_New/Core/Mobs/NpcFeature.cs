@@ -56,5 +56,12 @@ namespace ZoneEngine_New.Core.Mobs
         /// Pets never give kill XP, with or without it.
         /// </summary>
         NoXp,
+
+        /// <summary>
+        /// Its friendly nanos (heals and buffs) go only on the NPC that spawned it (a Regeneration Conduit healing
+        /// Master of Biological Metamorphoses): never on itself or any other NPC. With that NPC dead or gone it casts
+        /// none of them. Hostile nanos and summons are unchanged.
+        /// </summary>
+        HealsSpawner,
     }
 }
