@@ -113,5 +113,8 @@ namespace AORebirth.Modules.World
 
         /// <summary><see cref="IZoneActions.AccountSanctions"/> (module API 1.8).</summary>
         public const string ReadSanctions = "read-sanctions";
+
+        /// <summary><see cref="IZoneModuleContext.RegisterMissionRollHook"/> (module API 1.10).</summary>
+        public const string RollMissions = "roll-missions";
     }
 }

@@ -170,7 +170,7 @@ public sealed partial class QuestService
     /// token for their side. With nothing behind it the dungeon does not roll and sends no chance line.
     /// </summary>
     bool HasGatedReward(Player player, PlayerQuest quest, MissionTokenRewardPolicy policy)
-        => (quest.Template.Reward?.Xp ?? 0) > 0
+        => (quest.Template.Reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0) > 0
             || RewardItemsFor(player, quest).Count > 0
             || (policy.AwardsTokens && policy.SidedItems.ContainsKey(player.Stats.GetOrZero(CharacterStat.Side)));
 

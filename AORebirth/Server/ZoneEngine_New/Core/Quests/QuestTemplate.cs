@@ -372,6 +372,16 @@ namespace ZoneEngine_New.Core.Quests
 
         public int Xp { get; set; }
 
+        /// <summary>
+        /// XP by the holder's level in place of <see cref="Xp"/> (a mission roll module's): entry 0 is level 1, and a level
+        /// past the end uses the last entry. Null: <see cref="Xp"/> for everyone.
+        /// </summary>
+        public int[]? XpByLevel { get; set; }
+
+        /// <summary>The XP a holder at <paramref name="level"/> is shown and paid.</summary>
+        public int XpFor(int level)
+            => Math.Max(0, XpByLevel is { Length: > 0 } table ? table[Math.Clamp(level, 1, table.Length) - 1] : Xp);
+
         /// <summary>Alternative item sets; one record is given, all its items together.</summary>
         public List<List<QuestRewardItem>>? Records { get; set; }
     }

@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.9**.
+The current version is **1.10**.
 
 ## Loading
 
@@ -45,6 +45,7 @@ The current version is **1.9**.
 | 1.7 | `PlayerInfo.TeamId`, `TeamLeader` and `OrgId`; the `server.shutdown` and `server.shutdown-abort` operations |
 | 1.8 | Account sanctions: the `account.suspend` and `account.unban` operations, `account.ban` recorded as a sanction, `Actions.AccountSanctions`, the `read-sanctions` capability |
 | 1.9 | `PlayerMovementCorrected` adds `Distance`, `Allowed`, `MaxSpeed`, `SinceLastAccepted` and `RefusedMoves`, and the `Height` reason; the `Speed` and `Bounds` reasons are raised |
+| 1.10 | `RegisterMissionRollHook` (mission terminal offers and accepts), the `roll-missions` capability |
 
 ## Context members
 
@@ -56,6 +57,7 @@ The current version is **1.9**.
 | `RegisterGmCommand` | Adds a `.name` GM command. Only during `Initialize` (see below). |
 | `RegisterMessageObserver` | Watches N3 messages of the types it names (or all of them, 1.6), inbound, outbound or both. Only during `Initialize` (see below). |
 | `RegisterVisibilityObserver` | Told when a client is told an entity exists and when it stops (1.6). Only during `Initialize` (see below). |
+| `RegisterMissionRollHook` | Rolls mission terminal offers and decides what accepting one gives (1.10). Only during `Initialize`; only one module may register one (see Mission rolls). |
 | `Clock` | The clock every timestamp is on (1.6, see below). |
 | `Events` | Gameplay events (see below). |
 | `Knubot` | `Check(id, json)`, `Reload()`, `OverrideDirectory` (the `AO_REBIRTH_KNUBOT_PATH` folder). |
@@ -153,6 +155,7 @@ The `Capabilities` entry in Modules.json is optional.
 | `observe-chat` | `PlayerSpoke` without the text (1.6) |
 | `read-chat-text` | the text of `PlayerSpoke` (1.6) |
 | `read-sanctions` | `Actions.AccountSanctions` (1.8) |
+| `roll-missions` | `RegisterMissionRollHook` (1.10) |
 | an operation's name | `Actions.Invoke` of that operation (1.5), for example `player.teleport` |
 
 The operations that replace older actions are also granted by the older name: `refresh-npc` grants `npc.refresh`,
@@ -434,3 +437,45 @@ between NPCs are left out to keep the volume down.
 - `server.shutdown` and `server.shutdown-abort` drive the engine's own timed shutdown (the `.shutdown` GM command), so a
   module's countdown and a GM's are the same one: either can replace or cancel the other. Each needs its own name as a
   capability. They shut down this zone instance only.
+
+## Mission rolls (1.10)
+
+Mission terminals are run by the module that registers an `IMissionRollHook` (`AORebirth.Modules.Missions`). Without
+one, a terminal answers "This mission terminal is out of service." Both methods run on the player's playfield tick and
+must return quickly. A hook that throws refuses that roll or accept.
+
+- **`Roll(MissionRollRequest)`** gets the roller (character, level, profession, breed, side, team), the terminal and
+  its playfield, the difficulty slider as sent and the six sliders as -100 to 100. It returns
+  `MissionRollResult.Of(offers, message?)` (at most 5 are shown) or `MissionRollResult.Refuse(message)`.
+- **A `MissionOffer`** is both what the window shows and the mission accepting it gives: a generated quest with its
+  own ACG dungeon, the same inputs as a Quests.json quest's `Dungeon` (`Kind`, `Title`, `Description`, `Quality`,
+  `Credits`, `Experience` (or `ExperienceByLevel`: XP by the holder's current level, which the offer, each team holder's journal and the payout use), `RewardItems` by item hash, `IconId`, `Team`, `LifetimeHours`, `Objective` hashes and
+  `Dungeon`: entrance playfield and instance, floors, style, population, level spreads, tokens, chests, mob loot).
+  Before it is shown the engine checks it, picks its entrance when none is named and resolves the reward item ids;
+  accepting uses that same entrance and those items. An unusable offer is left out with a warning naming its `Key`.
+- **`Accept(MissionAcceptRequest)`** is called only for an offer this hook made to that player, still offered, with
+  the player at the terminal. The request carries the offer as shown. It returns a `MissionAcceptDecision`:
+  `GiveOffered()`, `Give(otherMission)`, `GiveQuest(hash, quality?)` (a Quests.json quest), `Handled()` (the module
+  did it itself) or `Refuse(message)`. Every decision takes an optional chat message.
+- An offer is used once: after any decision except `Refuse`, or a give that fails (full inventory, no dungeon), it is
+  gone. The next roll replaces the player's offers.
+
+```csharp
+public sealed class Missions : IZoneModule, IMissionRollHook
+{
+    public void Initialize(IZoneModuleContext context) => context.RegisterMissionRollHook(this);
+    public void Shutdown() { }
+
+    public MissionRollResult Roll(MissionRollRequest request) => MissionRollResult.Of(new[]
+    {
+        new MissionOffer
+        {
+            Key = "kill-1", Kind = MissionKind.KillPerson, Title = "Clear the outpost",
+            Description = "Terminate the leader.", Quality = Math.Min(request.Level, 250), Credits = 500 * request.Level,
+            Experience = 1000 * request.Level, Dungeon = new MissionDungeon { Playfield = 505 }
+        }
+    });
+
+    public MissionAcceptDecision Accept(MissionAcceptRequest request) => MissionAcceptDecision.GiveOffered();
+}
+```

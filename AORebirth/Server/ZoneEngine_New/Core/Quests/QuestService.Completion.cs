@@ -387,7 +387,7 @@ public sealed partial class QuestService
                     NotifyPending(player, quest, uniqueConflict: refusal is GrantRefusal.UniqueHeld or GrantRefusal.UniqueRepeated);
                     return;
                 }
-                int xpReward = Math.Max(0, reward?.Xp ?? 0);
+                int xpReward = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0;
                 var values = new Dictionary<CharacterStat, int>();
                 if (reward?.Credits > 0)
                     values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
@@ -588,7 +588,7 @@ public sealed partial class QuestService
                 }
                 // XP is awarded after the commit through the ordinary XP path (caps, research share, level-ups) and
                 // persists with the next save; only cash and mission bits are durable parts of the reward transaction.
-                int xpReward = rewardLost ? 0 : Math.Max(0, reward?.Xp ?? 0);
+                int xpReward = rewardLost ? 0 : reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0;
                 var values = new Dictionary<CharacterStat, int>();
                 if (reward?.Credits > 0)
                     values[CharacterStat.Cash] = Characters.CashLimit.Clamp(

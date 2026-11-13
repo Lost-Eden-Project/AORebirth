@@ -69,5 +69,12 @@ namespace AORebirth.Modules
         /// <see cref="IZoneModule.Initialize"/>; several modules may each register several. Needs <c>observe-visibility</c>.
         /// </summary>
         void RegisterVisibilityObserver(IVisibilityObserver observer, VisibilitySubscription subscription);
+
+        /// <summary>
+        /// Installs the hook that rolls mission terminal offers and decides what accepting one gives (module API 1.10).
+        /// Only during <see cref="IZoneModule.Initialize"/>, and only one module may register one; a second registration
+        /// fails that module's startup. Needs <c>roll-missions</c>.
+        /// </summary>
+        void RegisterMissionRollHook(Missions.IMissionRollHook hook);
     }
 }

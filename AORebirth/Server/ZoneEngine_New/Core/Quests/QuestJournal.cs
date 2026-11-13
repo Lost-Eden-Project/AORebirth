@@ -204,7 +204,7 @@ namespace ZoneEngine_New.Core.Quests
                 UnknownId1 = new Identity { Type = IdentityType.CanbeAffected, Instance = 0 },
                 RewardDescriptorVersion = 6,
                 CashReward = reward?.Credits ?? 0,
-                ExperienceReward = reward?.Xp ?? 0,
+                ExperienceReward = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0,
                 Unknown9 = 0x3F1,
                 Unknown10 = 0x3F1,
                 MissionItemData = RewardItems(player, quest),
@@ -326,7 +326,7 @@ namespace ZoneEngine_New.Core.Quests
         /// seconds since; the expiry is that plus the quest's remaining seconds. Before any GameTime, the same UTC
         /// seconds the next one will carry.
         /// </summary>
-        static uint ClientExpiry(Player player, DateTime expiresUtc, DateTime nowUtc)
+        internal static uint ClientExpiry(Player player, DateTime expiresUtc, DateTime nowUtc)
         {
             if (expiresUtc <= nowUtc)
                 return 0;
@@ -431,7 +431,7 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>Retail cuts a longer title to 28 characters and "..." ("Talk to the ICC Bio-Inspecto...", HYIY).</summary>
-        static string ShortName(string name)
+        internal static string ShortName(string name)
             => name.Length <= MaxShortInfoLength ? name : name[..(MaxShortInfoLength - 3)] + "...";
 
         static string LongInfo(QuestTemplate template)
@@ -470,7 +470,7 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>A 4-character hash ("LE01") as the big-endian int retail sends in identity instances.</summary>
-        static int FourCc(string? hash)
+        internal static int FourCc(string? hash)
         {
             if (string.IsNullOrEmpty(hash))
                 return 0;

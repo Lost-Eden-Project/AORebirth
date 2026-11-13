@@ -158,6 +158,29 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// success, else the reason.
         /// </summary>
         string? AssignTemplate(Player player, QuestTemplate source, int? requestedQuality)
+            => Assign(player, source, requestedQuality, rolled: false);
+
+        /// <summary>
+        /// Gives a mission a module rolled at a terminal (<paramref name="mission"/> has a <see cref="QuestTemplate.Dungeon"/>
+        /// with its entrance already chosen) exactly as a Quests.json dungeon quest is given, except that the copy keeps
+        /// its own <see cref="QuestReward.Records"/> instead of paying by a QuestRewards.json hash. Returns null on
+        /// success, else the reason.
+        /// </summary>
+        internal string? AssignRolledMission(Player player, QuestTemplate mission)
+            => Assign(player, mission, requestedQuality: null, rolled: true);
+
+        /// <summary>
+        /// The entrance an offer shows and accepting it uses: <paramref name="entrance"/> on <paramref name="playfield"/>, or
+        /// one of its entrances at random when null. False when there is none.
+        /// </summary>
+        internal bool TryResolveEntrance(int playfield, uint? entrance, out MissionEntrancePlacement placement,
+            out MissionDestinationWorldPosition? worldPosition)
+            => TryPickEntrance(new QuestDungeonTemplate { Playfield = playfield, Entrance = entrance }, out placement, out worldPosition);
+
+        /// <summary>How long an accepted mission lasts when its quest names no lifetime (DungeonGeneration.json).</summary>
+        internal int AcceptedLifetimeSeconds => _layouts.AcceptedLifetimeSeconds;
+
+        string? Assign(Player player, QuestTemplate source, int? requestedQuality, bool rolled)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(source);
@@ -167,7 +190,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             // The roster is frozen with the mission: only these can be given it, now or by "Update team members".
             int[]? roster = source.IsTeamScope && player.Playfield?.GetService<Teams.TeamService>()?.GetImmediateTeam(player) is { } team
                 && team.MemberIds.Count > 1 ? team.MemberIds.ToArray() : null;
-            string? refused = AssignTemplateLocked(player, source, requestedQuality, roster, out string questId);
+            string? refused = AssignTemplateLocked(player, source, requestedQuality, roster, rolled, out string questId);
             if (refused != null)
                 return refused;
 
@@ -358,7 +381,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             }
         }
 
-        string? AssignTemplateLocked(Player player, QuestTemplate source, int? requestedQuality, int[]? teamRoster, out string questId)
+        string? AssignTemplateLocked(Player player, QuestTemplate source, int? requestedQuality, int[]? teamRoster, bool rolled,
+            out string questId)
         {
             QuestOwnerType ownerType = teamRoster != null ? QuestOwnerType.Team : QuestOwnerType.Character;
             questId = string.Empty;
@@ -408,12 +432,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 DateTime expires = source.ExpiresAfterHours is int hours and > 0
                     ? now.AddHours(hours)
                     : now.AddSeconds(_layouts.AcceptedLifetimeSeconds);
-                return Establish(player, questId, ownerType, parameters, CopyTemplate(source, questId), input.IsMultiFloor, input.Style,
+                return Establish(player, questId, ownerType, parameters, CopyTemplate(source, questId, rolled), input.IsMultiFloor, input.Style,
                     source.Objective, input.ObjectiveLevelFor(quality), input.AwardsTokens, population, input.MobLevelPercent,
                     // The quest's own chests and tables; a quest naming none gets no chests and no extra NPC drops.
                     input.Chests, input.MobLoot ?? [], now, expires, (quest, characterRow, key, sourceItem) =>
                         _store.TryAssignDungeonQuest(player.Identity.Instance, quest, characterRow, key, sourceItem),
-                    "Mission acceptance is unavailable right now.", "template=" + source.Hash, entrance.DisplayName);
+                    "Mission acceptance is unavailable right now.", (rolled ? "rolled=" : "template=") + source.Hash, entrance.DisplayName);
             }
         }
 
@@ -465,13 +489,18 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// The Quests.json quest as its generated copy: the copy's own id, the source hash, and no dungeon inputs, waypoint
         /// or objective of its own (the dungeon's entrance and bound objective replace them).
         /// </summary>
-        static QuestTemplate CopyTemplate(QuestTemplate source, string questId)
+        /// <summary>
+        /// The generated copy of <paramref name="source"/>. A Quests.json quest's copy keeps its hash in
+        /// <see cref="QuestTemplate.TemplateHash"/> and pays by it; a <paramref name="rolled"/> mission has none and pays
+        /// its own stored records.
+        /// </summary>
+        static QuestTemplate CopyTemplate(QuestTemplate source, string questId, bool rolled)
         {
             QuestTemplate copy = System.Text.Json.JsonSerializer.Deserialize<QuestTemplate>(
                 System.Text.Json.JsonSerializer.Serialize(source, QuestTemplate.JsonOptions), QuestTemplate.JsonOptions)
                 ?? throw new InvalidOperationException("Quest template could not be copied.");
             copy.Hash = questId;
-            copy.TemplateHash = source.Hash;
+            copy.TemplateHash = rolled ? null : source.Hash;
             copy.Dungeon = null;
             copy.Waypoint = null;
             copy.Waypoints = null;

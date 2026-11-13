@@ -390,6 +390,7 @@ namespace ZoneEngine_New
                 AORebirth.Core.GameData.GameDataPaths.ResolveRuntimeRoot()));
             services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.DungeonLayoutGenerator>();
             services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>();
+            services.AddSingleton<ZoneEngine_New.Core.Modules.ModuleMissionRolls>();
 
             //NPC scripts (GameData/NpcScripts)
             services.AddSingleton<ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog>();
@@ -470,6 +471,7 @@ namespace ZoneEngine_New
             AddMessageHandler<OrgClientMessageHandler>(services);
             AddMessageHandler<TeamChatMessageHandler>(services);
             AddMessageHandler<QuestAlternativeMessageHandler>(services);
+            AddMessageHandler<CreateQuestMessageHandler>(services);
             AddMessageHandler<QuestMessageHandler>(services);
             AddMessageHandler<GiveQuestToMemberMessageHandler>(services);
             AddMessageHandler<PetCommandMessageHandler>(services);

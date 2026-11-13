@@ -4,7 +4,7 @@ namespace ZoneEngine_New.Core.Entities
 
     using ZoneEngine_New.Core.Inventory;
 
-    /// <summary>Playfield mission terminal. Offer/roll UI is not implemented yet.</summary>
+    /// <summary>Playfield mission terminal. Its offers come from the mission roll module (ModuleMissionRolls).</summary>
     public sealed class MissionTerminal : StaticDynel
     {
         public const int LiveIdentityType = 0x0000DAC1;
