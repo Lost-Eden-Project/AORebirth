@@ -34,6 +34,15 @@ namespace ZoneEngine_New.Core.Entities
 
         public ItemTemplate Template { get; }
 
+        /// <summary>
+        /// The item template low id this object reads as for stat 702 (Item Template ID) when an item use's criteria
+        /// test it as the selected target. An interpolated template at its top QL carries the high record's id.
+        /// </summary>
+        public virtual int ItemTemplateLowId => Template.Id;
+
+        /// <summary>The QL this object reads as for stat 54 (Level) when an item use's criteria test it as the selected target.</summary>
+        public virtual int ItemQuality => Template.Quality;
+
         /// <summary>Instance-local name from authored state-entry actions; shared templates remain immutable.</summary>
         public string? RuntimeName { get; set; }
 

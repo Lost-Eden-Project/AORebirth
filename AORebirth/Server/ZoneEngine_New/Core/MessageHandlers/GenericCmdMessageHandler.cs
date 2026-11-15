@@ -436,6 +436,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return false;
 
             ItemTemplate? template = null;
+            bool questUsed = false;
             if (playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel) && dynel is StaticDynel staticDynel)
             {
                 if (staticDynel.Playfield == null
@@ -443,6 +444,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     || staticDynel.Playfield.Identity.Instance != player.Playfield.Identity.Instance
                     || staticDynel.GetEdgeDistanceTo(player) > LootableDynel.OpenRange)
                     return false;
+
+                // EscortItem steps take their item from the main inventory only. Nothing is consumed: the world item
+                // stays for every other holder of the step.
+                questUsed = sourceSlot.Type == IdentityType.Inventory
+                    && playfield.GetService<Quests.QuestService>()?.OnItemUsedOnWorldItem(player, source, staticDynel) == true;
+                // Completing a step can hand out items, so the used item is looked up again before any functions run.
+                if (questUsed && (!player.Inventory.TryGetUseItem(sourceSlot, out Item current) || !ReferenceEquals(current, source)
+                    || source.Locked))
+                    return true;
 
                 template = staticDynel.Template;
             }
@@ -457,11 +467,11 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (template == null)
                 return false;
             if (!template.SpellList.ContainsKey(EventType.OnUseItemOn))
-                return false;
+                return questUsed;
             if (!template.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.UseItemOnItem))
-                return false;
+                return questUsed;
 
-            return template.ExecuteSpells(
+            return questUsed | template.ExecuteSpells(
                 EventType.OnUseItemOn,
                 player,
                 _inventoryRepository,

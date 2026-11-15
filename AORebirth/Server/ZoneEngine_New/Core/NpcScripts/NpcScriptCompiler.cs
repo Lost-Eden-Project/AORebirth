@@ -297,6 +297,24 @@ public sealed class NpcScriptCompiler
                 if (!TryGetRange(element, "EveryMs", out filter, out filter2) || filter < MinWaitMs)
                     ctx.Error("Timer needs EveryMs >= " + MinWaitMs + " (a number or [min, max])");
                 break;
+            case NpcScriptTrigger.Dialog:
+                if (element.TryGetProperty("Event", out JsonElement eventElement)
+                    && (eventElement.ValueKind != JsonValueKind.Number || !eventElement.TryGetInt32(out filter) || filter < 1))
+                {
+                    ctx.Error("Dialog: Event must be a whole number >= 1 (omit it for any event)");
+                    filter = 0;
+                }
+
+                break;
+            case NpcScriptTrigger.Signal:
+                if (element.TryGetProperty("Event", out JsonElement signalElement)
+                    && (signalElement.ValueKind != JsonValueKind.Number || !signalElement.TryGetInt32(out filter) || filter < 1))
+                {
+                    ctx.Error("Signal: Event must be a whole number >= 1 (omit it for any event)");
+                    filter = 0;
+                }
+
+                break;
             case NpcScriptTrigger.AddDied:
                 filter = -1;
                 if (element.TryGetProperty("Tag", out JsonElement tagElement))
@@ -437,6 +455,10 @@ public sealed class NpcScriptCompiler
 
             case "CastNano":
                 CompileCastNano(value, ctx);
+                return;
+
+            case "Signal":
+                CompileSignal(value, ctx);
                 return;
 
             case "Despawn":
@@ -1061,6 +1083,70 @@ public sealed class NpcScriptCompiler
 
     /// <summary>Longest CastNano RandomNearby Hashes list.</summary>
     public const int MaxCastHashList = 16;
+
+    /// <summary>Largest Signal Radius in metres.</summary>
+    public const int MaxSignalRadius = 100;
+
+    /// <summary>
+    /// <c>{ "Hash": "COUI" | ["COUI", "CTUI"], "Radius": 1..100, "Event": N >= 1 }</c>: raises Signal event N on
+    /// the living NPCs within Radius whose spawn or template hash is listed. Hash is required, so a signal never
+    /// reaches every bystander in the cell.
+    /// </summary>
+    void CompileSignal(JsonElement value, ProgramContext ctx)
+    {
+        if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty("Hash", out JsonElement hashElement))
+        {
+            ctx.Error("Signal: an object with Hash, Radius and Event");
+            return;
+        }
+
+        var hashes = new List<string>();
+        if (hashElement.ValueKind == JsonValueKind.String)
+        {
+            hashes.Add((hashElement.GetString() ?? string.Empty).Trim());
+        }
+        else if (hashElement.ValueKind == JsonValueKind.Array
+                 && hashElement.GetArrayLength() >= 1 && hashElement.GetArrayLength() <= MaxCastHashList)
+        {
+            foreach (JsonElement item in hashElement.EnumerateArray())
+                hashes.Add(item.ValueKind == JsonValueKind.String ? (item.GetString() ?? string.Empty).Trim() : string.Empty);
+        }
+        else
+        {
+            ctx.Error("Signal: Hash is an NPC template hash or a list of 1.." + MaxCastHashList);
+            return;
+        }
+
+        var unique = new List<string>(hashes.Count);
+        foreach (string hash in hashes)
+        {
+            if (!_gameData.HasMobTemplate(hash))
+            {
+                ctx.Error("Signal: Hash: no NPC template for hash '" + hash + "'");
+                return;
+            }
+
+            if (!unique.Contains(hash))
+                unique.Add(hash);
+        }
+
+        int radius = GetInt(value, "Radius", -1);
+        if (radius < 1 || radius > MaxSignalRadius)
+        {
+            ctx.Error("Signal: Radius must be 1.." + MaxSignalRadius + " metres");
+            return;
+        }
+
+        int signalEvent = GetInt(value, "Event", 0);
+        if (signalEvent < 1)
+        {
+            ctx.Error("Signal: Event must be a whole number >= 1");
+            return;
+        }
+
+        ctx.HashLists.Add(unique.ToArray());
+        ctx.Ops.Add(new ScriptOp(ScriptOpCode.Signal, ctx.HashLists.Count - 1, radius, signalEvent));
+    }
 
     static bool ParseNanoId(JsonElement element, out int id)
     {

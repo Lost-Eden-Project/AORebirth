@@ -253,19 +253,21 @@ namespace ZoneEngine_New.Core.Inventory
             Identity slotIdentity,
             IInventoryRepository inventoryRepository,
             IItemBuilder items,
-            Character? target = null)
+            Character? target = null,
+            Dynel? selectedDynel = null)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(inventoryRepository);
             ArgumentNullException.ThrowIfNull(items);
 
             // The user is the source: Fightingtarget functions resolve through it and damage is credited to it.
+            // A selected world object (UseTargetRules.TryResolveSelectedDynel) is what OnTarget criteria leaves read.
             if (!Definition.ExecuteOnUseSpells(
                     target ?? player,
                     inventoryRepository,
                     items,
                     source: player,
-                    criteria: new SpellCriteria { Subject = this, SubjectSlot = slotIdentity }))
+                    criteria: new SpellCriteria { Subject = this, SubjectSlot = slotIdentity, SelectedDynel = selectedDynel }))
                 return false;
             AnnounceUsed(player, slotIdentity, target ?? player);
             if (Can(CanFlags.Consume))

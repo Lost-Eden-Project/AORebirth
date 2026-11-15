@@ -180,6 +180,13 @@ namespace ZoneEngine_New.Core.Inventory
 
         public Identity SubjectSlot { get; init; }
 
+        /// <summary>
+        /// The world object (statel, item dynel) the user had selected when using an item. Set, OnTarget and
+        /// OnFightingTarget criteria leaves read it (<see cref="UseTargetRules.SelectedDynelStat"/>) instead of the
+        /// event target: the Novictalized crystals' "OnTarget, 702 == 227466" tests the selected Incarnator.
+        /// </summary>
+        public Dynel? SelectedDynel { get; init; }
+
         /// <summary>Test hook. Production rolls <see cref="RollMin"/> through <see cref="RollMaxInclusive"/>.</summary>
         public Func<int>? NextRoll { get; init; }
 

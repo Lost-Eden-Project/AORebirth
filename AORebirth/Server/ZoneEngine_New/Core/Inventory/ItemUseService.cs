@@ -150,6 +150,13 @@ namespace ZoneEngine_New.Core.Inventory
                 useTarget.SyncCharState();
             }
 
+            // A world object selected for an item whose OnUse criteria test the target (Incarnator crystals) is what
+            // those criteria read; it must be within the reach of using it directly. Out of reach refuses as that use does.
+            if (!UseTargetRules.TryResolveSelectedDynel(player, item.Definition, can, out Dynel? selectedDynel,
+                    out UseTargetRules.Failure selectedFailure))
+                return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, TargetRefusal(selectedFailure),
+                    "selected dynel reach", player.Target);
+
             // An item used on someone else is ItemUseOn for modules.
             PlayerActionKind kind = ReferenceEquals(useTarget, player) ? PlayerActionKind.ItemUse : PlayerActionKind.ItemUseOn;
 
@@ -196,13 +203,14 @@ namespace ZoneEngine_New.Core.Inventory
                 string.Format(CultureInfo.InvariantCulture, "slot={0}:{1} low={2} instanceId={3} target={4}",
                     slot.Type, slot.Instance, item.LowId, instanceId, useTarget.Identity.Instance),
                 () => RevalidateInventory(player, slot, item, instanceId)
+                    ?? RevalidateSelectedDynel(selectedDynel)
                     ?? UseTargetRules.Revalidate(player, can, useTarget) switch
                     {
                         null => null,
                         UseTargetRules.Failure.NoFightingTarget => UseTargetRules.LostFightingTarget,
                         { } failure => "target " + failure
                     },
-                () => item.ExecuteUse(player, slot, _inventoryRepository, _items, useTarget),
+                () => item.ExecuteUse(player, slot, _inventoryRepository, _items, useTarget, selectedDynel),
                 lockTarget: locked => item.Locked = locked,
                 ResolveDelayCentiseconds(item))
             {
@@ -624,6 +632,14 @@ namespace ZoneEngine_New.Core.Inventory
                 return "use gates failed";
             return null;
         }
+
+        /// <summary>A selected world object the item's criteria read must still be there when the use completes.</summary>
+        string? RevalidateSelectedDynel(Dynel? selected)
+            => selected == null
+                || (_playfield.GetRequiredService<DynelRegistry>().TryGet(selected.Identity, out Dynel? current)
+                    && ReferenceEquals(current, selected))
+                ? null
+                : "dynel gone";
 
         string? RevalidateDynel(Player player, StaticDynel dynel)
         {

@@ -62,7 +62,13 @@ public enum KnubotEffectPhase
     /// Opens a window; changes nothing the player holds. Not applied with the others: it opens when the line's
     /// text reaches it (<c>Hold on... {delay 3}{shop}</c>), as the script reads.
     /// </summary>
-    Window
+    Window,
+
+    /// <summary>
+    /// Raised on the NPC when the line's text reaches it. Like a grant it belongs to the line once the line is chosen:
+    /// a chat that ends first still raises it when the text would have reached it.
+    /// </summary>
+    Event
 }
 
 /// <summary>
@@ -490,6 +496,31 @@ public sealed record KnubotTeleport(int PlayfieldId, float X, float Y, float Z) 
 
     public override bool Apply(KnubotContext context, KnubotEffectServices services)
         => ItemUseFunctions.TeleportTo(context.Player, PlayfieldId, new AORebirth.Core.Vector.Vector3(X, Y, Z));
+}
+
+/// <summary>
+/// <c>{npcevent N}</c>: raises event N on the NPC's own script (an NpcScripts <c>On: "Dialog"</c> handler with
+/// <c>Event: N</c>, or one with no Event) when the text reaches it, whether or not the chat is still open by then
+/// (<see cref="KnubotService"/>). The dialog keeps the quest and trade steps; the script does what the NPC does.
+/// </summary>
+public sealed record KnubotNpcEvent(int Event) : KnubotEffect
+{
+    public override KnubotEffectPhase Phase => KnubotEffectPhase.Event;
+
+    public override bool Check(KnubotContext context, KnubotPlan plan, KnubotEffectServices services) => true;
+
+    /// <summary>Raised by <see cref="Raise"/> when the text reaches it, never with the line's grants.</summary>
+    public override bool Apply(KnubotContext context, KnubotEffectServices services) => true;
+
+    /// <summary>Raises the event on the NPC while it is alive on <paramref name="playfield"/>; false when it is gone.</summary>
+    public bool Raise(NpcCharacter npc, Playfield.Playfield playfield)
+    {
+        if (npc.IsDead || !ReferenceEquals(npc.Playfield, playfield))
+            return false;
+
+        npc.Scripts?.Raise(NpcScripts.NpcScriptTrigger.Dialog, Event);
+        return true;
+    }
 }
 
 /// <summary>Main-inventory item helpers shared by conditions and effects.</summary>

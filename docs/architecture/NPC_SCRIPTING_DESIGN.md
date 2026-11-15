@@ -247,9 +247,10 @@ resolution, and a script that despawns or moves the NPC from inside them would c
 | `NanoEnded` / `NanoLanded` | `NanoRuntime.ExecuteBuffEnd` / buff applied, on the NPC | nano id (0 = any) |
 | `Timer` | runner: a handler with `On: "Timer", "EveryMs": [min,max]` re-arms itself via `_wakeAtMs`; the only polling trigger and it polls nothing | - |
 | `Used` | `NpcCharacter.TryUse` | - |
+| `Dialog` | `KnubotService` when a line's text reaches `{npcevent N}` (also after the chat ended, when the text would have reached it) | event N (`Event`, 0 = any) |
 | `DialogueOpened` / `DialogueClosed` | `KnubotService` conversation start / end | - |
 | `PlayerNear` | `NpcBrain.ScanProximity`, which already runs every think for aggro; adds one distance check against the handler's radius only when subscribed | radius (m) |
-| `Signal` | another runner's `Signal` verb | signal name index |
+| `Signal` | another runner's `Signal` verb | event N (`Event`, 0 = any) |
 
 Adding a trigger: one enum member, one `Scripts?.Raise(...)` line at the hook, one row here.
 
@@ -272,7 +273,7 @@ Instant unless marked blocking. Operands are constants or `$Param` slots.
 | `SetStat` stat, value | `Stats.Set(..., dirty: true)` for pose / flags style spawn states | stat by `CharacterStat` name only |
 | `SetVar` / `AddVar` / `If` var op value, `Goto` | 8 int slots, compiled predicates | `If` also supports `Health <`, `HasTarget`, `PlayersNear r`, `Chance p` |
 | `Random` [blocks] | jump to one block, equal or weighted: a block is an op list (weight 1) or `{ "Weight": 1..10000, "Do": [ops] }` | compiled to jump table; weighted tables also carry running totals |
-| `Signal` name, radius | `Raise(Signal)` on scripted NPCs in own + adjacent cells within radius (`PlayfieldLocality.CollectNearby`) | multi-NPC scenes |
+| `Signal` `Hash`, `Radius`, `Event` | `Raise(Signal, Event)` on living scripted NPCs (not itself, not pets) whose spawn or template hash is in `Hash`, within `Radius` m edge to edge (`PlayfieldLocality.CollectNearby`, ring grown to the radius); does not block, receivers start on their own tick | multi-NPC scenes; `Hash` required, `Radius` 1..100 |
 | `ReleaseMovement` | gives movement back to patrol / wander / idle without ending the handler | |
 | `SetHome` `Here` or point | re-posts the NPC: `brain.Home` (leash, return, wander anchor) becomes the point. While a `WalkTo`/`RunTo` (or a brain patrol leg) is under way the brain's distance leash measures from the walk's target (`NpcBrain.LeashAnchor`), not the spawn, so a march or patrol may go beyond the 70 m leash range | |
 | `Restart` trigger | re-enter a handler (used by `Reset` to resume a route) | |
@@ -428,7 +429,7 @@ bytecode, bindings and args, validation), `NpcScriptCatalog.cs` (folder load, in
 project and `SharedBuild/source-inventory`.
 
 In: triggers `Spawned`, `Arrived`, `Stuck`, `HealthBelow`, `Death`, `Reset`, `CombatStart`, `CombatEnd`,
-`NanoEnded`, `Timer` (`EveryMs`), `Used`, `AddDied` (2026-11-08: optional `Tag`, `DelayMs`); verbs `Wait`, `WalkTo`/`RunTo` (object form `To` + `Direct` for a straight-line step off the navmesh), `Emote` (optional `DurationMs`), `Say`,
+`NanoEnded`, `Timer` (`EveryMs`), `Used`, `AddDied` (2026-11-08: optional `Tag`, `DelayMs`), `Dialog` (2026-11-15: optional `Event`, from the Knubot tag `{npcevent N}`); verbs `Wait`, `WalkTo`/`RunTo` (object form `To` + `Direct` for a straight-line step off the navmesh), `Emote` (optional `DurationMs`), `Say`,
 `SpawnWorldItem`, `SpawnNpc` (2026-11-06: circle spawns, lifetimes, owner-bound despawn, `$NpcHash` params), `Gfx` (anchors `On: Self`, `At`, `Offset`, `From`/`To`),
 `CastNano` (2026-11-06: `Self`/`Target`/`RandomHostile` with `MinDistance`, `Warp: "ToSelf"` on landing), `Despawn`, `SetStat`, `SetVar`/`AddVar`,
 `If` (jumps to its `Goto` label when the condition holds), `Goto`/`Label`, `Random` (2026-11-08: `{ Weight, Do }` blocks), `Restart`, `ReleaseMovement`, `SetHome`,
@@ -467,7 +468,14 @@ The shipped `Summoner.json` binds `Feature: "Summoner"`: in a fight, every 20 to
 hostile player more than 10 m away and warps them to its feet. Listing `Summoner` under a hash's `Features` in
 `MonsterCombatRules.json` is all a monster needs.
 
-Not yet: `Face`, `Signal`, `PlayerNear`, `DialogueOpened`/`Closed`, `NanoLanded`, the gfx category table, hot reload
+`Signal` (2026-11-15, Biomare Foreman's containment pods): `{ "Signal": { "Hash": ["COUI", "CTUI"], "Radius": 40,
+"Event": 1 } }` raises trigger `Signal` with event 1 on every living NPC of the instance within 40 m (edge to edge)
+whose spawn or template hash is listed, never the signaller or a pet. It does not block and nothing runs inside it:
+each receiver's chain picks its `On: "Signal"` handler (`Event` filter, omitted for any) as for any trigger and starts
+it on its own tick, so its `Emote`, `SpawnNpc` (from its position) and `Despawn` (a death for its spawn point's
+respawn) act on the receiver. A receiver already running a handler drops the signal unless the handler `Interrupts`.
+
+Not yet: `Face`, `PlayerNear`, `DialogueOpened`/`Closed`, `NanoLanded`, the gfx category table, hot reload
 of a running NPC's program (the catalog reloads; NPCs pick the new program up when they respawn).
 
 Adjustments from the design above: the runner holds a walk while the brain is busy and re-requests it when free,

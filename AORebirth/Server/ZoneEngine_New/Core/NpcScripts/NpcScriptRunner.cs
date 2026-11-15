@@ -273,6 +273,8 @@ public sealed class NpcScriptRunner
             case NpcScriptTrigger.Stuck:
                 return handler.Filter < 0 || handler.Filter == arg;
             case NpcScriptTrigger.NanoEnded:
+            case NpcScriptTrigger.Dialog:
+            case NpcScriptTrigger.Signal:
                 return handler.Filter == 0 || handler.Filter == arg;
             default:
                 return true;
@@ -591,6 +593,10 @@ public sealed class NpcScriptRunner
 
                 case ScriptOpCode.SpawnNpc:
                     DoSpawnNpc(op, now);
+                    break;
+
+                case ScriptOpCode.Signal:
+                    DoSignal(op);
                     break;
 
                 case ScriptOpCode.CastNano:
@@ -1433,6 +1439,42 @@ public sealed class NpcScriptRunner
 
         nearby.Clear();
         return chosen;
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // Signal
+    // ----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Raises Signal event C on the op's receivers: living NPCs from the locality query (the cell ring grows with the
+    /// radius, <see cref="PlayfieldLocality"/>) other than this one and never a player's pet, within B metres edge to
+    /// edge, whose spawn hash or template hash is in the op's hash list. Each receiver's chain picks its handler as for
+    /// any trigger and starts it on its own next tick, so nothing runs inside this op and two NPCs signalling each
+    /// other cannot recurse. A Death handler may signal; any other handler stops once the NPC is dead.
+    /// </summary>
+    void DoSignal(ScriptOp op)
+    {
+        Playfield? playfield = _npc.Playfield;
+        if (playfield == null || (_npc.IsDead && !InDeathHandler) || op.A < 0 || op.A >= _program.HashLists.Length)
+            return;
+
+        string[] hashes = _program.HashLists[op.A];
+        List<NpcCharacter> nearby = _nearby ??= new List<NpcCharacter>();
+        playfield.GetRequiredService<PlayfieldLocality>().CollectNearby(_npc, op.B, nearby);
+        for (int i = 0; i < nearby.Count; i++)
+        {
+            NpcCharacter other = nearby[i];
+            if (ReferenceEquals(other, _npc) || other.IsDead || other.Pet != null || other.Scripts == null)
+                continue;
+            if (Array.IndexOf(hashes, other.SpawnHash) < 0 && Array.IndexOf(hashes, other.MobTemplate?.Hash) < 0)
+                continue;
+            if (_npc.GetEdgeDistanceTo(other) > op.B)
+                continue;
+
+            other.Scripts.Raise(NpcScriptTrigger.Signal, op.C);
+        }
+
+        nearby.Clear();
     }
 
     void ClearPendingWarp()

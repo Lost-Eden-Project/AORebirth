@@ -508,6 +508,42 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
+        /// <paramref name="player"/> used <paramref name="item"/> (from the main inventory, in use range; the caller checks)
+        /// on <paramref name="target"/>: active EscortItem steps whose <see cref="QuestObjective.SpecItem"/> hash covers the
+        /// item and whose <see cref="QuestObjective.WorldItem"/> hash covers the target complete. Both items stay where they
+        /// are. True when one completed.
+        /// </summary>
+        public bool OnItemUsedOnWorldItem(Player player, Item item, StaticDynel target)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(item);
+            ArgumentNullException.ThrowIfNull(target);
+            if (player.Playfield?.GetService<IGameData>() is not IGameData gameData)
+                return false;
+
+            int targetLowId = target.ItemTemplateLowId;
+            int targetHighId = target is WorldItem worldItem ? worldItem.HighId : targetLowId;
+            List<PlayerQuest>? found = null;
+            foreach (PlayerQuest quest in GetLog(player).Quests.Values)
+            {
+                if (quest.IsActive
+                    && string.Equals(quest.Template.Action, QuestTemplate.EscortItemAction, StringComparison.Ordinal)
+                    && !RequiresBoundObjective(quest)
+                    && quest.Template.Objective.SpecItem is { Length: > 0 } specItem
+                    && quest.Template.Objective.WorldItem is { Length: > 0 } worldItemHash
+                    && HashHolds(gameData, specItem, item.LowId, item.HighId)
+                    && HashHolds(gameData, worldItemHash, targetLowId, targetHighId))
+                    (found ??= new List<PlayerQuest>()).Add(quest);
+            }
+
+            if (found == null)
+                return false;
+
+            CompleteAll(player, found);
+            return true;
+        }
+
+        /// <summary>
         /// A tradeskill combine made <paramref name="result"/>: active Assemble quests whose
         /// <see cref="QuestObjective.SpecItem"/> hash covers that item complete.
         /// </summary>
@@ -545,7 +581,9 @@ namespace ZoneEngine_New.Core.Quests
         /// <summary>Template ids each item hash covers (all its leaf families), resolved once per hash.</summary>
         readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<int>> _itemHashIds = new(StringComparer.Ordinal);
 
-        bool HashHolds(IGameData gameData, string hash, Item item)
+        bool HashHolds(IGameData gameData, string hash, Item item) => HashHolds(gameData, hash, item.LowId, item.HighId);
+
+        bool HashHolds(IGameData gameData, string hash, int lowId, int highId)
         {
             if (string.IsNullOrEmpty(hash))
                 return false;
@@ -559,7 +597,7 @@ namespace ZoneEngine_New.Core.Quests
                     set.UnionWith(leaf.TemplateIds);
                 return set;
             });
-            return ids.Contains(item.LowId) || ids.Contains(item.HighId);
+            return ids.Contains(lowId) || ids.Contains(highId);
         }
 
         List<PlayerQuest>? FindActiveOn(Player player, NpcCharacter npc, string action)

@@ -1,5 +1,8 @@
 namespace ZoneEngine_New.Core.Inventory
 {
+    using System;
+    using System.Collections.Generic;
+
     using AORebirth.Enums;
 
     using SmokeLounge.AOtomation.Messaging.GameData;
@@ -182,6 +185,61 @@ namespace ZoneEngine_New.Core.Inventory
                     break;
             }
         }
+
+        /// <summary>
+        /// The world object an item's OnUse criteria test: when <paramref name="template"/> is not character-targeted
+        /// (no hostile or friendly Can flag), an OnUse function's criteria have an OnTarget / OnFightingTarget selector,
+        /// and the user has a world dynel that is not a character selected (Novictalized Notum Crystal 231431 used with
+        /// an Incarnator selected). Null with <see cref="Failure.None"/> when the use keeps its usual target. False with
+        /// <see cref="Failure.OutOfRange"/> when that object is beyond the reach of using it directly.
+        /// </summary>
+        public static bool TryResolveSelectedDynel(Player user, ItemTemplate template, CanFlags can, out Dynel? selected,
+            out Failure failure)
+        {
+            ArgumentNullException.ThrowIfNull(user);
+            ArgumentNullException.ThrowIfNull(template);
+
+            selected = null;
+            failure = Failure.None;
+            Identity target = user.Target;
+            if (IsHostileTargeted(can) || AppliesToFriendly(can) || target.Instance == 0 || target == user.Identity
+                || user.Playfield == null || !OnUseCriteriaReadTarget(template)
+                || !user.Playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel)
+                || dynel is null or Character)
+                return true;
+
+            // Same reach as a Use on the object itself (StaticDynel.CanBeginUse).
+            if (!ReferenceEquals(dynel.Playfield, user.Playfield) || dynel.GetEdgeDistanceTo(user) > LootableDynel.OpenRange)
+            {
+                failure = Failure.OutOfRange;
+                return false;
+            }
+
+            selected = dynel;
+            return true;
+        }
+
+        /// <summary>
+        /// A selected world object's value for a criteria leaf: stat 702 (Item Template ID) is its item template's low id,
+        /// stat 54 (Level) its QL, any other stat its own value (Unset when it has none, as a character's).
+        /// </summary>
+        public static int SelectedDynelStat(Dynel dynel, CharacterStat stat)
+        {
+            ArgumentNullException.ThrowIfNull(dynel);
+
+            return stat switch
+            {
+                CharacterStat.ACGItemTemplateID when dynel is StaticDynel item => item.ItemTemplateLowId,
+                CharacterStat.Level when dynel is StaticDynel item => item.ItemQuality,
+                _ => dynel.Stats.Get(stat)
+            };
+        }
+
+        /// <summary>True when an OnUse function's criteria aim a check at the target (an OnTarget / OnFightingTarget selector).</summary>
+        static bool OnUseCriteriaReadTarget(ItemTemplate template)
+            => template.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells)
+                && spells.Exists(spell => spell.Requirements.Exists(requirement
+                    => (Operator)requirement.Operator is Operator.OnTarget or Operator.OnFightingTarget));
 
         /// <summary>The user's selected living character other than themselves, or null.</summary>
         static Character? SelectedCharacter(Player user)

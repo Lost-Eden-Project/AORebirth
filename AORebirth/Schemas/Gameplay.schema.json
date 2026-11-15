@@ -160,6 +160,11 @@
         "guardDefaultRadius": {
           "type": "number"
         },
+        "radiusPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
         "threatOnlyRadiusPercent": {
           "type": "number",
           "minimum": 0,

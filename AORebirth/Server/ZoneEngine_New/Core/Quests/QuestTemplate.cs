@@ -36,6 +36,13 @@ namespace ZoneEngine_New.Core.Quests
         /// </summary>
         public const string EquipAction = "Equip";
 
+        /// <summary>
+        /// Finished by using the <see cref="QuestObjective.SpecItem"/> item, from the main inventory, on a world item of the
+        /// <see cref="QuestObjective.WorldItem"/> hash within use range. Neither item is taken, so every holder of the
+        /// step can use their own item on the same world item (Theresa Cameron's Encrypted Datacube).
+        /// </summary>
+        public const string EscortItemAction = "EscortItem";
+
         public static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true,

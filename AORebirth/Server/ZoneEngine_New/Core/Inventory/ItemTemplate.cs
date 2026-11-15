@@ -620,13 +620,18 @@ namespace ZoneEngine_New.Core.Inventory
             target = ResolveApplyOn(target, source, spell);
             Character applyOn = target;
             Identity usedFrom = criteria.SubjectSlot;
+            // An item used with a world object selected tests that object with its OnTarget leaves (Incarnator crystals).
+            Dynel? selected = criteria.SelectedDynel;
             if (!skipRequirements && !ItemTemplate.MeetsRequirements(
                     spell.Requirements,
                     new RequirementSubject(stat => criteria.Resolve(stat, id => applyOn.Stats.Get(id)),
                         WithUseLocation(applyOn.ResolveRequirement, usedFrom)),
                     new RequirementSubject(stat => user.Stats.Get(stat), WithUseLocation(user.ResolveRequirement, usedFrom)),
-                    new RequirementSubject(stat => eventTarget.Stats.Get(stat),
-                        WithUseLocation(eventTarget.ResolveRequirement, usedFrom))))
+                    selected != null
+                        ? new RequirementSubject(stat => UseTargetRules.SelectedDynelStat(selected, stat),
+                            WithUseLocation(null, usedFrom))
+                        : new RequirementSubject(stat => eventTarget.Stats.Get(stat),
+                            WithUseLocation(eventTarget.ResolveRequirement, usedFrom))))
                 return false;
 
             if (spell.Is(FunctionType.Modify) || spell.Is(FunctionType.ScalingModify) || spell.Is(FunctionType.Skill)

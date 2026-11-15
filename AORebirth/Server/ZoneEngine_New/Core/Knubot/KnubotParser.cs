@@ -12,7 +12,7 @@ using ZoneEngine_New.Core.Inventory;
 /// <summary>
 /// Turns line text into ordered pieces and effects. Tags:
 /// text <c>{name}</c> <c>{npc}</c> <c>{itemref LOW HIGH QL}</c> <c>{emote}…{/emote}</c> <c>{delay SECONDS}</c>;
-/// effects (applied when the text reaches them) <c>{givequest HASH}</c> <c>{completequest HASH}</c> <c>{spawn ITEMHASH QL|level [count]}</c> <c>{take ITEMHASH [count]}</c> <c>{shop}</c> <c>{opentrade}</c> <c>{givebuff NANOID}</c> <c>{useitem ITEMID}</c> <c>{teleport X Y Z PLAYFIELD}</c>; flow <c>{goto LINE}</c> <c>{close [SECONDS]}</c>.
+/// effects (applied when the text reaches them) <c>{givequest HASH}</c> <c>{completequest HASH}</c> <c>{spawn ITEMHASH QL|level [count]}</c> <c>{take ITEMHASH [count]}</c> <c>{shop}</c> <c>{opentrade}</c> <c>{givebuff NANOID}</c> <c>{useitem ITEMID}</c> <c>{teleport X Y Z PLAYFIELD}</c>; <c>{npcevent N}</c> (raises Dialog event N on the NPC's script); flow <c>{goto LINE}</c> <c>{close [SECONDS]}</c>.
 /// <c>{{</c> and <c>}}</c> write literal braces. Reply text allows only the text tags without delay.
 /// </summary>
 public static class KnubotParser
@@ -261,6 +261,16 @@ public static class KnubotParser
                     }
 
                     Effect(new KnubotTeleport(tpPlayfield, tpX, tpY, tpZ));
+                    break;
+
+                case "npcevent":
+                    if (words.Length != 2 || !KnubotCondition.TryPositive(words[1], out int npcEvent))
+                    {
+                        errors.Add("expected {npcevent N} with a whole number N >= 1: {" + body + "}");
+                        break;
+                    }
+
+                    Effect(new KnubotNpcEvent(npcEvent));
                     break;
 
                 case "goto":

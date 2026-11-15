@@ -27,7 +27,18 @@ public enum NpcScriptTrigger
     /// One of this runner's SpawnNpc adds was killed (not despawned) while the owner lives. Filter = tag id or -1 for
     /// any add, Filter2 = delay ms. Queued rather than dropped while another handler runs.
     /// </summary>
-    AddDied = 11
+    AddDied = 11,
+
+    /// <summary>
+    /// The NPC's Knubot dialog reached a <c>{npcevent N}</c> tag (raised whether or not the chat is still open).
+    /// Filter = event N, or 0 for any.
+    /// </summary>
+    Dialog = 12,
+
+    /// <summary>
+    /// Another NPC's <see cref="ScriptOpCode.Signal"/> named this NPC. Filter = event N, or 0 for any.
+    /// </summary>
+    Signal = 13
 }
 
 /// <summary>One compiled verb. Operand meanings per code are documented on <see cref="ScriptOp"/>.</summary>
@@ -112,7 +123,14 @@ public enum ScriptOpCode : byte
     /// Plays a gfx on the NPC as a GfxEffect function effect (a SpellList, as retail plays the Fresh Recruit's hatch
     /// flash 43232), not a GfxTrigger. A = gfx id value ref.
     /// </summary>
-    GfxEffect
+    GfxEffect,
+
+    /// <summary>
+    /// Raises <see cref="NpcScriptTrigger.Signal"/> event C on every living NPC of the same playfield instance (never
+    /// this one or a player's pet) within B metres, edge to edge, whose spawn or template hash is in
+    /// <see cref="NpcScriptProgram.HashLists"/>[A]. Does not block; each receiver starts its handler on its own tick.
+    /// </summary>
+    Signal
 }
 
 /// <summary>Who a <see cref="ScriptOpCode.CastNano"/> lands on.</summary>
@@ -333,7 +351,7 @@ public sealed class NpcScriptProgram
     /// <summary>The nano lists of <see cref="ScriptOpCode.CastNano"/> ops given an array: nano id value refs.</summary>
     public int[][] NanoLists { get; }
 
-    /// <summary>NPC hash filters of <see cref="NpcScriptTarget.RandomNearby"/> casts (ordinal).</summary>
+    /// <summary>NPC hash filters of <see cref="NpcScriptTarget.RandomNearby"/> casts and <see cref="ScriptOpCode.Signal"/> ops (ordinal).</summary>
     public string[][] HashLists { get; }
 
     public uint TriggerMask { get; }

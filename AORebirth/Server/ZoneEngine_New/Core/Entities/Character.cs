@@ -4112,9 +4112,11 @@ namespace ZoneEngine_New.Core.Entities
                 // 28735 family, capture 2026-10-06T18:44:27Z).
                 if (spell.Is(FunctionType.Shouldermesh) && IsBodySlot(slot))
                     worn.Add(page, slot, 0, WithPosition(mesh, LeftShoulderPosition), kind);
-                // A pad that fits either shoulder may also show on the other one (its side's "double" toggle); one
-                // made for one side only stays on its side.
-                else if (StacksWornMeshes && ShoulderSlotPosition(slot) is int shoulder && mesh.Position == shoulder
+                // A Shouldermesh pad that fits either shoulder may also show on the other one (its side's "double"
+                // toggle); one made for one side only stays on its side. Shoulder-slot BackMesh props (Wen-Wens,
+                // Floating Ghost Light 293162, parrots, torches) are authored for one side and keep a single mesh.
+                else if (StacksWornMeshes && spell.Is(FunctionType.Shouldermesh)
+                         && ShoulderSlotPosition(slot) is int shoulder && mesh.Position == shoulder
                          && FitsBothShoulders(item))
                 {
                     int other = shoulder == RightShoulderPosition ? LeftShoulderPosition : RightShoulderPosition;

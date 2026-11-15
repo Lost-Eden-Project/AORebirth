@@ -32,6 +32,10 @@ namespace ZoneEngine_New.Core.Entities
 
         public int Quality { get; }
 
+        public override int ItemTemplateLowId => LowId;
+
+        public override int ItemQuality => Quality;
+
         /// <summary>
         /// Who may pick it up besides anyone at all: None for a world spawn (Carbonrich Rock), the dropping player for a
         /// dropped item. Pickup also needs the template's Carry flag (<see cref="CanBePickedUpBy"/>).

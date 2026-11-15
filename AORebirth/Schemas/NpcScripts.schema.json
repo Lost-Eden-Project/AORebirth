@@ -42,7 +42,7 @@
   "$defs": {
     "trigger": {
       "type": "string",
-      "enum": ["Spawned", "Arrived", "Stuck", "HealthBelow", "Death", "Reset", "CombatStart", "CombatEnd", "NanoEnded", "Timer", "Used", "AddDied"]
+      "enum": ["Spawned", "Arrived", "Stuck", "HealthBelow", "Death", "Reset", "CombatStart", "CombatEnd", "NanoEnded", "Timer", "Used", "AddDied", "Dialog", "Signal"]
     },
     "vector3": {
       "type": "array",
@@ -231,6 +231,23 @@
             }
           ]
         },
+        "Signal": {
+          "type": "object",
+          "description": "Raises Signal event Event on every living NPC of the same playfield instance (never this one or a player's pet) within Radius metres, edge to edge, whose spawn or template hash is in Hash. Does not block; each receiver starts its On: Signal handler on its own next tick, as from any trigger (Emote, SpawnNpc from its position, Despawn counting as its death). A receiver already running a handler drops it unless that Signal handler Interrupts. A Death handler may signal.",
+          "additionalProperties": false,
+          "required": ["Hash", "Radius", "Event"],
+          "properties": {
+            "Hash": {
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string", "minLength": 1 } }
+              ],
+              "description": "NPC template hash(es) the receivers were spawned with or resolve to."
+            },
+            "Radius": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Metres, edge to edge, from the signalling NPC." },
+            "Event": { "type": "integer", "minimum": 1, "description": "The event number the receivers' On: Signal handlers filter on." }
+          }
+        },
         "Despawn": { "type": "boolean", "description": "The NPC leaves the world as a GM despawn would." },
         "SetStat": {
           "type": "object",
@@ -314,6 +331,7 @@
         "EveryMs": { "$ref": "#/$defs/range", "description": "Timer: period in ms (at least 100), re-armed after each run." },
         "Tag": { "type": "string", "minLength": 1, "maxLength": 32, "description": "AddDied: only adds whose SpawnNpc carried this Tag; omit for any add. Must match a SpawnNpc Tag in the same program." },
         "DelayMs": { "type": "integer", "minimum": 0, "maximum": 3600000, "default": 0, "description": "AddDied: the handler starts this long after the kill, without holding the NPC's other handlers meanwhile." },
+        "Event": { "type": "integer", "minimum": 1, "description": "Dialog: only the Knubot {npcevent N} with this N; Signal: only a Signal verb with this Event. Omit for any event." },
         "Once": { "type": "boolean", "default": false },
         "CooldownMs": { "type": "integer", "minimum": 0, "default": 0 },
         "ChancePercent": { "type": "integer", "minimum": 0, "maximum": 100, "default": 100 },

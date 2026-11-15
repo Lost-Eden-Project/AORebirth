@@ -39,10 +39,18 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     readonly ConcurrentDictionary<int, Conversation> _sessions = new();
     readonly ConditionalWeakTable<Player, HashSet<string>> _met = new();
 
+    /// <summary>
+    /// <c>{npcevent N}</c> tags of chats that ended before their text reached them, each raised when it would have
+    /// been reached. Locked; ticked by the NPC's playfield.
+    /// </summary>
+    readonly List<DetachedEvent> _detachedEvents = new();
+
+    readonly record struct DetachedEvent(long DueMs, NpcCharacter Npc, Playfield Playfield, KnubotNpcEvent Event);
+
     public KnubotCatalog Catalog => catalog;
 
     /// <summary>
-    /// One queued step, in the order written: a packet, a window the text has reached, or the end of a line (its
+    /// One queued step, in the order written: a packet, a window or npcevent the text has reached, or the end of a line (its
     /// replies, goto or close). Each waits <see cref="DelayMilliseconds"/> after the previous one. A line's takes and
     /// grants are never queued: they are all applied when it is chosen, so a chat that ends mid-line drops only text
     /// and windows, which change nothing the player holds.
@@ -384,6 +392,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
 
     public void Tick(Playfield playfield)
     {
+        RaiseDetachedEvents(playfield);
         foreach (Conversation conversation in _sessions.Values)
         {
             if (!ReferenceEquals(conversation.Playfield, playfield))
@@ -425,6 +434,38 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
             if (ReferenceEquals(conversation.Playfield, playfield))
                 lock (conversation.Player.PersistenceGate) Remove(conversation);
         }
+
+        lock (_detachedEvents)
+            _detachedEvents.RemoveAll(entry => ReferenceEquals(entry.Playfield, playfield));
+    }
+
+    /// <summary>Raises the due <c>{npcevent}</c> tags of ended chats on this playfield.</summary>
+    void RaiseDetachedEvents(Playfield playfield)
+    {
+        List<DetachedEvent>? due = null;
+        lock (_detachedEvents)
+        {
+            if (_detachedEvents.Count == 0)
+                return;
+
+            long now = _milliseconds();
+            for (int i = _detachedEvents.Count - 1; i >= 0; i--)
+            {
+                DetachedEvent entry = _detachedEvents[i];
+                if (!ReferenceEquals(entry.Playfield, playfield) || entry.DueMs > now)
+                    continue;
+
+                (due ??= new List<DetachedEvent>()).Add(entry);
+                _detachedEvents.RemoveAt(i);
+            }
+        }
+
+        if (due == null)
+            return;
+
+        // Collected newest first; raised in the order written.
+        for (int i = due.Count - 1; i >= 0; i--)
+            due[i].Event.Raise(due[i].Npc, playfield);
     }
 
     /// <summary>
@@ -538,8 +579,8 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
     }
 
     /// <summary>
-    /// One AppendText per run of spoken or emote text; a delay starts a new packet held back that long. A window is
-    /// queued where it was written; any other effect piece is already applied (<see cref="Say"/>) and takes no place
+    /// One AppendText per run of spoken or emote text; a delay starts a new packet held back that long. A window or
+    /// npcevent is queued where it was written; any other effect piece is already applied (<see cref="Say"/>) and takes no place
     /// in the queue. Text is sent as written: the
     /// client joins packets without a separator, so line breaks are the author's \n. Returns a delay left over
     /// after the last piece.
@@ -571,7 +612,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
                     delay += pause.Milliseconds;
                     break;
 
-                case KnubotEffectPiece { Effect.Phase: KnubotEffectPhase.Window } window:
+                case KnubotEffectPiece { Effect.Phase: KnubotEffectPhase.Window or KnubotEffectPhase.Event } window:
                     Flush();
                     conversation.Packets.Enqueue(Outgoing.Open(window.Effect, line, chain, delay));
                     delay = 0;
@@ -633,6 +674,8 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
 
             if (next.Window == null)
                 Finish(conversation, next.Line!, next.Chain);
+            else if (next.Window is KnubotNpcEvent npcEvent)
+                npcEvent.Raise(conversation.Npc, conversation.Playfield);
             else if (!OpenWindow(conversation, next.Window, next.Line!, next.Chain))
                 return;
         }
@@ -679,9 +722,33 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
         // Every chat ends here: the NPC may walk on (NpcBrain.IsHeldByConversation).
         if (_sessions.TryRemove(new KeyValuePair<int, Conversation>(conversation.Player.Identity.Instance, conversation)))
             conversation.Npc.Brain?.EndConversation(conversation.Player);
+        DetachEvents(conversation);
         conversation.Packets.Clear();
         conversation.Replies = [];
         effects.Trades.EndKnubot(conversation.Player, conversation.Npc, 0, "chat closed");
+    }
+
+    /// <summary>
+    /// Keeps the <c>{npcevent}</c> tags still queued in an ending chat, each due when <see cref="Pump"/> would have
+    /// reached it: the line was chosen, so its events stand like its grants.
+    /// </summary>
+    void DetachEvents(Conversation conversation)
+    {
+        long now = _milliseconds();
+        long at = conversation.LastSentAt;
+        List<DetachedEvent>? detached = null;
+        foreach (Outgoing next in conversation.Packets)
+        {
+            int wait = next.Body != null ? Math.Max(PacketPacingMilliseconds, next.DelayMilliseconds) : next.DelayMilliseconds;
+            long due = Math.Max(now, at + wait);
+            if (next.Body != null || next.DelayMilliseconds > 0)
+                at = due;
+            if (next.Window is KnubotNpcEvent npcEvent)
+                (detached ??= new List<DetachedEvent>()).Add(new DetachedEvent(due, conversation.Npc, conversation.Playfield, npcEvent));
+        }
+
+        if (detached != null)
+            lock (_detachedEvents) _detachedEvents.AddRange(detached);
     }
 
     KnubotContext Context(Conversation conversation)
