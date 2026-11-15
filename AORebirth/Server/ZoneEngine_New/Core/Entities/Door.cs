@@ -195,8 +195,8 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// A Break and Enter item used on the locked door: it unlocks and opens for everyone nearby (the client's
-        /// unlock result does both).
+        /// A Break and Enter item used on the locked door: it unlocks and opens for everyone nearby, through the
+        /// unlock action result and a DoorStatusUpdate.
         /// </summary>
         public BreakAndEnterResult TryBreakAndEnter(Player player, int pickRating)
         {
@@ -215,6 +215,9 @@ namespace ZoneEngine_New.Core.Entities
             Playfield.WorldAccess.Instance?.InvalidateLineOfSight();
             Playfield.GetRequiredService<PlayfieldLocality>().Announce(this,
                 BreakAndEnterActions.Result(Identity, player.Identity, BreakAndEnterActions.Unlocked), includeSelf: true);
+            // The action result alone leaves the stock client's door locked ("It is locked" on the next use): the status
+            // update unlocks and opens it for everyone who has the door.
+            AnnounceStatus();
             return BreakAndEnterResult.Unlocked;
         }
 

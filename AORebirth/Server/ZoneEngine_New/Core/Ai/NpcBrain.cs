@@ -728,7 +728,10 @@ namespace ZoneEngine_New.Core.Ai
             // The caller's spawn point AssistanceRadius is how far its call carries: a boss with a wide radius pulls in
             // its retinue, but a retinue mob with a short one does not reach the boss beside it.
             int callRadius = SpawnAssistanceRadius();
-            playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc, rules.SearchRadius, _nearbyNpcs);
+            // A mission dungeon's population scales how far the call carries (its HelpRangePercent).
+            float helpScale = playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon ? dungeon.HelpRangeScale : 1f;
+            playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc,
+                rules.SearchRadius * Math.Max(1f, helpScale), _nearbyNpcs);
             _helpers.Clear();
             for (int i = 0; i < _nearbyNpcs.Count; i++)
             {
@@ -747,7 +750,7 @@ namespace ZoneEngine_New.Core.Ai
                     continue;
 
                 double distance = Npc.GetEdgeDistanceTo(other);
-                if (distance > rules.RadiusFor(callRadius, npcAttacker, guards, threatOnly) ||!ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
+                if (distance > rules.RadiusFor(callRadius, npcAttacker, guards, threatOnly) * helpScale || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
                     continue;
                 if (rules.RequireLineOfSight && !other.HasLineOfSightTo(Npc))
                     continue;
@@ -839,7 +842,9 @@ namespace ZoneEngine_New.Core.Ai
                 _nearbyPlayers.Clear();
             }
 
-            if (guard || hated != null)
+            // A mission dungeon's NPCs are one population: none defends a player against another (a guard-flagged
+            // mission mob would turn on the objective) or attacks a family it hates.
+            if ((guard || hated != null) && Npc.Playfield is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield)
             {
                 // Its own list: answering a call for help below collects into _nearbyNpcs.
                 locality.CollectNearby(Npc, range, _scanNpcs);
@@ -993,14 +998,16 @@ namespace ZoneEngine_New.Core.Ai
 
         /// <summary>
         /// This NPC's unprovoked aggro range on its playfield: the indoor or outdoor proximity stat (no metadata counts as
-        /// indoor, as elsewhere in the zone engine), scaled by Gameplay.json proximityAggro.
+        /// indoor, as elsewhere in the zone engine), scaled by Gameplay.json proximityAggro, and in a mission dungeon by its
+        /// population's AggroRangePercent.
         /// </summary>
         float ProximityRange()
         {
             var playfield = Npc.Playfield;
             bool indoor = playfield?.MetaData?.IsIndoor ?? true;
             var rules = playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.ProximityAggro;
-            return NpcAiRules.ProximityAggroRangeFor(Npc.Stats, indoor, rules);
+            float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats, indoor, rules);
+            return playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon ? range * dungeon.AggroRangeScale : range;
         }
 
         /// <summary>
