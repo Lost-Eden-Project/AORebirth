@@ -153,7 +153,7 @@ namespace AORebirth.Modules.Missions
         /// <summary>A team mission: a roller in a team shares it with teammates on the same playfield.</summary>
         public bool Team { get; init; }
 
-        /// <summary>Hours the accepted mission lasts; null takes DungeonGeneration.json's accepted lifetime.</summary>
+        /// <summary>Hours the accepted mission lasts; null takes the mission definition's, else DungeonGeneration.json's.</summary>
         public int? LifetimeHours { get; init; }
 
         public MissionObjective Objective { get; init; } = new();
@@ -177,80 +177,23 @@ namespace AORebirth.Modules.Missions
         public string? Tool { get; init; }
     }
 
-    /// <summary>The mission dungeon's inputs, as in a Quests.json quest's <c>Dungeon</c>.</summary>
+    /// <summary>The offer's mission: a GameData/Missions/Missions.json definition (entrances, lifetime, token reward, dungeon).</summary>
     public sealed class MissionDungeon
     {
-        /// <summary>Playfield of the entrance the dungeon is reached through.</summary>
+        /// <summary>The mission definition's name.</summary>
+        public string Mission { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Playfield of the entrance; 0 picks one of the mission's playfields when the offer is made, a different one for
+        /// each offer of a roll while there are enough.
+        /// </summary>
         public int Playfield { get; init; }
 
         /// <summary>
-        /// MissionEntrance instance on <see cref="Playfield"/>; null picks one at random when the offer is made. The offer
-        /// shows that entrance and accepting it uses that entrance.
+        /// MissionEntrance instance on the playfield; null takes the mission's, else one at random when the offer is made.
+        /// The offer shows that entrance and accepting it uses that entrance.
         /// </summary>
         public uint? Entrance { get; init; }
-
-        /// <summary>Several floors ending in a boss floor, instead of one.</summary>
-        public bool MultiFloor { get; init; }
-
-        /// <summary>ACG building style; null picks one of the generation profile's styles.</summary>
-        public int? Style { get; init; }
-
-        /// <summary>Population level spread, 0 to 90 percent either side of the quality.</summary>
-        public int MobLevelPercent { get; init; }
-
-        /// <summary>Percent added to the quality for the objective NPC's level, -90 to 400.</summary>
-        public int ObjectiveLevelPercent { get; init; }
-
-        /// <summary>
-        /// The objective stands in one of this many rooms farthest from the entrance, picked at random (1 to 10; 1: the
-        /// farthest). A multi-floor dungeon's objective stays in its boss room.
-        /// </summary>
-        public int ObjectiveRoomChoices { get; init; } = 1;
-
-        /// <summary>NPC hashes for the ordinary population; null takes DungeonGeneration.json's.</summary>
-        public IReadOnlyList<string>? Npcs { get; init; }
-
-        /// <summary>Whether kills pay DungeonGeneration.json's sided mission token reward.</summary>
-        public bool AwardsTokens { get; init; } = true;
-
-        /// <summary>The dungeon's chests; null: none.</summary>
-        public MissionChests? Chests { get; init; }
-
-        /// <summary>Loot rows added to every NPC that dies in the dungeon; null or empty: none.</summary>
-        public IReadOnlyList<MissionLootRow>? MobLoot { get; init; }
-    }
-
-    /// <summary>A mission dungeon's chests, as in a Quests.json quest's <c>Dungeon.Chests</c>.</summary>
-    public sealed class MissionChests
-    {
-        public bool Enabled { get; init; } = true;
-
-        /// <summary>Chests per eligible room; null keeps the engine default.</summary>
-        public double? RoomDensity { get; init; }
-
-        /// <summary>How far the chest count varies either way, 0 to 1; null keeps the engine default.</summary>
-        public double? CountVariationFraction { get; init; }
-
-        /// <summary>What the chests hold, rolled at the mission quality. Null or empty: no chests.</summary>
-        public IReadOnlyList<MissionLootRow>? LootTable { get; init; }
-    }
-
-    /// <summary>One NPC-style loot table row (NpcTemplates.json loot rows).</summary>
-    public sealed class MissionLootRow
-    {
-        public string Hash { get; init; } = string.Empty;
-
-        public int Repeats { get; init; } = 1;
-
-        /// <summary>Percent, 1 to 100.</summary>
-        public int Chance { get; init; } = 100;
-
-        public int LevelMod { get; init; }
-
-        public bool IgnoreLevel { get; init; }
-
-        /// <summary>Percent of the mission quality the row's quality centres on, 1 to 1000.</summary>
-        public int QualityPercent { get; init; } = 100;
     }
 
     /// <summary>A reward item, by ItemTemplates.json hash and quality.</summary>

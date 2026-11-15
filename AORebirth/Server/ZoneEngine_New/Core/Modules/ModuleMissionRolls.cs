@@ -129,9 +129,16 @@ namespace ZoneEngine_New.Core.Modules
             DateTime nowUtc = DateTime.UtcNow;
             using (Metrics.TickStallWatch.Enter("mission.roll.freeze", player.Identity.Instance))
             {
+                var usedPlayfields = new HashSet<int>();
+                var sliders = new MissionSliderSettings
+                {
+                    GoodBad = input.Sliders.GoodBad, OrderChaos = input.Sliders.OrderChaos, OpenHidden = input.Sliders.OpenHidden,
+                    PhysicalMystical = input.Sliders.PhysicalMystical, HeadOnStealth = input.Sliders.HeadOnStealth,
+                    MoneyExperience = input.Sliders.MoneyExperience
+                };
                 foreach (MissionOffer offer in offered.Take(MissionRollResult.MaxOffers))
                 {
-                    if (!TryFreeze(offer, out FrozenOffer? frozen, out string problem))
+                    if (!TryFreeze(offer, usedPlayfields, sliders, out FrozenOffer? frozen, out string problem))
                     {
                         _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Module {0} mission offer '{1}' left out: {2}",
                             _modules.MissionRollHookOwner, offer?.Key, problem));
@@ -269,7 +276,7 @@ namespace ZoneEngine_New.Core.Modules
                     refused = _dungeons.AssignRolledMission(player, offer.Mission);
                     break;
                 case MissionAcceptKind.Give:
-                    if (!TryFreeze(decision.Mission, out FrozenOffer? replacement, out string problem))
+                    if (!TryFreeze(decision.Mission, new HashSet<int>(), offer.Mission.Dungeon?.Sliders, out FrozenOffer? replacement, out string problem))
                     {
                         _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Module {0} mission '{1}' for offer '{2}' unusable: {3}",
                             owner, decision.Mission?.Key, offer.Shown.Key, problem));
@@ -313,7 +320,8 @@ namespace ZoneEngine_New.Core.Modules
         /// Checks <paramref name="offer"/> and freezes it: the entrance it shows (and accepting uses), the reward item ids
         /// and the generated quest it gives. False with the reason when it is unusable.
         /// </summary>
-        bool TryFreeze(MissionOffer? offer, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out FrozenOffer? frozen, out string problem)
+        bool TryFreeze(MissionOffer? offer, HashSet<int> usedPlayfields, MissionSliderSettings? sliders,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out FrozenOffer? frozen, out string problem)
         {
             frozen = null;
             problem = string.Empty;
@@ -333,12 +341,23 @@ namespace ZoneEngine_New.Core.Modules
                 return Fail("ExperienceByLevel needs at most " + MaxExperienceLevels + " entries, none negative", out problem);
             if (offer.LifetimeHours is <= 0)
                 return Fail("LifetimeHours must be positive", out problem);
-            if (offer.Dungeon is not { } dungeon || dungeon.Playfield <= 0)
-                return Fail("no Dungeon.Playfield", out problem);
-            if (!_dungeons.TryResolveEntrance(dungeon.Playfield, dungeon.Entrance, out MissionEntrancePlacement entrance,
+            if (offer.Dungeon is not { } dungeon || string.IsNullOrWhiteSpace(dungeon.Mission))
+                return Fail("no Dungeon.Mission", out problem);
+            if (_dungeons.Mission(dungeon.Mission) is not MissionDefinition definition)
+                return Fail("Dungeon.Mission '" + dungeon.Mission + "' is not in Missions.json", out problem);
+            if (dungeon.Playfield < 0)
+                return Fail("Dungeon.Playfield cannot be negative", out problem);
+            // The mission's dungeon must resolve now, so an offer the player sees can be accepted.
+            if (_dungeons.DungeonProblem(definition, offer.Quality) is string unresolved)
+                return Fail("mission " + dungeon.Mission + " dungeon: " + unresolved, out problem);
+            // The offer's own playfield, else one of the mission's that no earlier offer of this roll took while there are enough.
+            int playfield = dungeon.Playfield > 0 ? dungeon.Playfield : PickPlayfield(definition.Playfields!, usedPlayfields);
+            uint? entranceInstance = dungeon.Playfield > 0 ? dungeon.Entrance : dungeon.Entrance ?? definition.Entrance;
+            if (!_dungeons.TryResolveEntrance(playfield, entranceInstance, out MissionEntrancePlacement entrance,
                     out MissionDestinationWorldPosition? worldPosition))
                 return Fail(string.Format(CultureInfo.InvariantCulture, "no mission entrance {0} on playfield {1}",
-                    dungeon.Entrance?.ToString(CultureInfo.InvariantCulture) ?? "(any)", dungeon.Playfield), out problem);
+                    entranceInstance?.ToString(CultureInfo.InvariantCulture) ?? "(any)", playfield), out problem);
+            usedPlayfields.Add(playfield);
 
             var rewardItems = new List<QuestRewardItem>(offer.RewardItems?.Count ?? 0);
             foreach (MissionRewardItem item in offer.RewardItems ?? [])
@@ -351,21 +370,30 @@ namespace ZoneEngine_New.Core.Modules
 
             var type = (MissionRollType)(int)offer.Kind;
             int iconId = offer.IconId is int icon and > 0 ? icon : DungeonMissionTypes.Icon(type);
-            QuestTemplate mission = Template(offer, entrance.IdentityInstance, rewardItems, iconId);
+            QuestTemplate mission = Template(offer, playfield, entrance.IdentityInstance, rewardItems, iconId, sliders);
             if (mission.Dungeon!.Problem(mission.Action) is string dungeonProblem)
                 return Fail(dungeonProblem, out problem);
 
-            double lifetimeHours = offer.LifetimeHours ?? Math.Max(1, _dungeons.AcceptedLifetimeSeconds / 3600.0);
-            frozen = new FrozenOffer(WithEntrance(offer, entrance.IdentityInstance), mission, type, rewardItems, entrance, worldPosition,
+            double lifetimeHours = offer.LifetimeHours ?? definition.LifetimeHours ?? Math.Max(1, _dungeons.AcceptedLifetimeSeconds / 3600.0);
+            frozen = new FrozenOffer(WithEntrance(offer, playfield, entrance.IdentityInstance), mission, type, rewardItems, entrance, worldPosition,
                 lifetimeHours);
             return true;
+        }
+
+        /// <summary>A random playfield of <paramref name="playfields"/> not in <paramref name="used"/>, else any.</summary>
+        static int PickPlayfield(int[] playfields, HashSet<int> used)
+        {
+            int[] free = playfields.Where(playfield => !used.Contains(playfield)).ToArray();
+            int[] pool = free.Length > 0 ? free : playfields;
+            return pool[RandomNumberGenerator.GetInt32(pool.Length)];
         }
 
         /// <summary>The log name of an offer's quest: the module and its key.</summary>
         string ModuleKey(MissionOffer offer) => (_modules.MissionRollHookOwner ?? "module") + ":" + offer.Key;
 
         /// <summary>The generated quest an offer gives: a Quests.json-shaped quest with its dungeon and its own reward.</summary>
-        QuestTemplate Template(MissionOffer offer, uint entrance, List<QuestRewardItem> rewardItems, int iconId)
+        QuestTemplate Template(MissionOffer offer, int playfield, uint entrance, List<QuestRewardItem> rewardItems, int iconId,
+            MissionSliderSettings? sliders)
         {
             MissionDungeon dungeon = offer.Dungeon;
             MissionObjective objective = offer.Objective ?? new MissionObjective();
@@ -399,41 +427,17 @@ namespace ZoneEngine_New.Core.Modules
                 },
                 Dungeon = new QuestDungeonTemplate
                 {
-                    Floors = dungeon.MultiFloor ? QuestDungeonTemplate.MultiFloor : QuestDungeonTemplate.SingleFloor,
+                    Mission = dungeon.Mission,
                     Quality = offer.Quality,
-                    Style = dungeon.Style,
-                    Playfield = dungeon.Playfield,
+                    Playfield = playfield,
                     Entrance = entrance,
-                    MobLevelPercent = dungeon.MobLevelPercent,
-                    ObjectiveLevelPercent = dungeon.ObjectiveLevelPercent,
-                    ObjectiveRoomChoices = dungeon.ObjectiveRoomChoices,
-                    Npcs = dungeon.Npcs?.ToArray(),
-                    AwardsTokens = dungeon.AwardsTokens,
-                    Chests = dungeon.Chests == null ? null : new QuestDungeonChests
-                    {
-                        Enabled = dungeon.Chests.Enabled,
-                        RoomDensity = dungeon.Chests.RoomDensity,
-                        CountVariationFraction = dungeon.Chests.CountVariationFraction,
-                        LootTable = Rows(dungeon.Chests.LootTable)
-                    },
-                    MobLoot = Rows(dungeon.MobLoot)
+                    Sliders = sliders
                 }
             };
         }
 
-        static List<MobItemTableEntry>? Rows(IReadOnlyList<MissionLootRow>? rows)
-            => rows?.Select(row => new MobItemTableEntry
-            {
-                Hash = row?.Hash ?? string.Empty,
-                Repeats = row?.Repeats ?? 0,
-                Chance = row?.Chance ?? 0,
-                LevelMod = row?.LevelMod ?? 0,
-                IgnoreLevel = row?.IgnoreLevel ?? false,
-                QualityPercent = row?.QualityPercent ?? 0
-            }).ToList();
-
         /// <summary>The offer as shown, with the entrance it showed.</summary>
-        static MissionOffer WithEntrance(MissionOffer offer, uint entrance) => new()
+        static MissionOffer WithEntrance(MissionOffer offer, int playfield, uint entrance) => new()
         {
             Key = offer.Key,
             Kind = offer.Kind,
@@ -450,17 +454,9 @@ namespace ZoneEngine_New.Core.Modules
             Objective = offer.Objective,
             Dungeon = new MissionDungeon
             {
-                Playfield = offer.Dungeon.Playfield,
-                Entrance = entrance,
-                MultiFloor = offer.Dungeon.MultiFloor,
-                Style = offer.Dungeon.Style,
-                MobLevelPercent = offer.Dungeon.MobLevelPercent,
-                ObjectiveLevelPercent = offer.Dungeon.ObjectiveLevelPercent,
-                ObjectiveRoomChoices = offer.Dungeon.ObjectiveRoomChoices,
-                Npcs = offer.Dungeon.Npcs,
-                AwardsTokens = offer.Dungeon.AwardsTokens,
-                Chests = offer.Dungeon.Chests,
-                MobLoot = offer.Dungeon.MobLoot
+                Mission = offer.Dungeon.Mission,
+                Playfield = playfield,
+                Entrance = entrance
             }
         };
 

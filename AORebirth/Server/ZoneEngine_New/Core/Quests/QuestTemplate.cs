@@ -201,95 +201,40 @@ namespace ZoneEngine_New.Core.Quests
     }
 
     /// <summary>
-    /// A Quests.json quest's dungeon inputs (<see cref="QuestTemplate.Dungeon"/>). The mission type follows the quest's
-    /// Action; the floor count and floor size come from the DungeonGeneration.json profile for the floor mode and quality.
+    /// A quest's dungeon (<see cref="QuestTemplate.Dungeon"/>): the mission it is (a GameData/Missions/Missions.json
+    /// definition: entrances, lifetime, token reward and the dungeon) and its quality. The mission type follows the
+    /// quest's Action.
     /// </summary>
     public sealed class QuestDungeonTemplate
     {
-        public const string SingleFloor = "Single";
-        public const string MultiFloor = "Multi";
-
-        /// <summary>"Single" (one floor) or "Multi" (several floors ending in a boss floor).</summary>
-        public string Floors { get; set; } = SingleFloor;
+        /// <summary>The mission definition's name.</summary>
+        public string Mission { get; set; } = string.Empty;
 
         /// <summary>
-        /// Fixed mission quality level (generation band, lock difficulty, the base of the mob and boss levels). The
-        /// dialog that gives the quest may set it instead (<c>{givequest HASH 150}</c>, <c>{givequest HASH level+12%}</c>);
-        /// with neither, the player's level.
+        /// Fixed mission quality level (lock difficulty, the base of the monster and objective levels). The dialog that
+        /// gives the quest may set it instead (<c>{givequest HASH 150}</c>, <c>{givequest HASH level+12%}</c>); with
+        /// neither, the player's level.
         /// </summary>
         public int? Quality { get; set; }
 
-        /// <summary>ACG building style; null picks one of the profile's styles.</summary>
-        public int? Style { get; set; }
-
-        /// <summary>Playfield of the entrance the dungeon is reached through.</summary>
+        /// <summary>The entrance's playfield, as a terminal offer showed it; 0: one of the mission's.</summary>
         public int Playfield { get; set; }
 
-        /// <summary>MissionEntrance instance on <see cref="Playfield"/>; null picks one of its entrances at random.</summary>
+        /// <summary>The MissionEntrance instance, as a terminal offer showed it; null: the mission's, else a random one.</summary>
         public uint? Entrance { get; set; }
 
-        /// <summary>
-        /// The ordinary population's level spread: each spawn rolls its level anywhere from that many percent under the
-        /// mission quality to that many over (the captured Alien Mothership spread is about 10). 0: all at the quality.
-        /// </summary>
-        public int MobLevelPercent { get; set; }
+        /// <summary>The terminal sliders a rolled mission came with; the mission's slider rules apply them. Null: none.</summary>
+        public Dungeons.MissionSliderSettings? Sliders { get; set; }
 
-        /// <summary>Percent added to the dungeon quality for the objective NPC's level: 25 puts the boss a quarter above its dungeon.</summary>
-        public int ObjectiveLevelPercent { get; set; }
-
-        /// <summary>
-        /// The objective stands in one of this many rooms farthest from the entrance, picked from the layout seed; 1: the
-        /// farthest. A multi-floor dungeon's objective stays in its boss room.
-        /// </summary>
-        public int ObjectiveRoomChoices { get; set; } = 1;
-
-        /// <summary>Most rooms <see cref="ObjectiveRoomChoices"/> may name.</summary>
-        public const int MaxObjectiveRoomChoices = 10;
-
-        /// <summary>
-        /// NPC hashes for the ordinary population instead of DungeonGeneration.json's. A hash with no NpcTemplates.json
-        /// entry is left out with a warning; when none is left the dungeon has only its objective.
-        /// </summary>
-        public string[]? Npcs { get; set; }
-
-        /// <summary>Whether the dungeon pays DungeonGeneration.json's sided mission token reward on its kills.</summary>
-        public bool AwardsTokens { get; set; } = true;
-
-        /// <summary>The dungeon's chests: whether it has any, how many, and what they hold. Null: no chests.</summary>
-        public QuestDungeonChests? Chests { get; set; }
-
-        /// <summary>
-        /// Loot table rows added to every NPC that dies in the dungeon, on top of its own NpcTemplates.json table:
-        /// the mission's own drops. Null or empty: none.
-        /// </summary>
-        public List<Mobs.MobItemTableEntry>? MobLoot { get; set; }
-
-        /// <summary>Lowest and highest level modifier accepted, as a percent.</summary>
-        const int MinPercent = -90;
-        const int MaxPercent = 400;
-
-        /// <summary>Widest population spread accepted (the low end never goes under 10% of the quality).</summary>
-        public const int MaxSpreadPercent = 90;
-
-        [JsonIgnore]
-        public bool IsMultiFloor => string.Equals(Floors, MultiFloor, StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>Highest mission quality: the generation profiles, chests and items go no further.</summary>
+        /// <summary>Highest mission quality: the chests, items and monster levels go no further.</summary>
         public const int MaxMissionQuality = 250;
 
         /// <summary>
         /// The mission quality: what the giving dialog <paramref name="requested"/>, else the fixed <see cref="Quality"/>,
-        /// else the player's level, at most <see cref="MaxMissionQuality"/> (a level 220 asking for level+53% gets 250,
-        /// not a mission no profile covers).
+        /// else the player's level, at most <see cref="MaxMissionQuality"/>.
         /// </summary>
         public int QualityFor(int? requested, int playerLevel)
             => Math.Clamp(requested ?? Quality ?? playerLevel, 1, MaxMissionQuality);
-
-        /// <summary>The objective NPC's level for a mission of <paramref name="quality"/>.</summary>
-        public int ObjectiveLevelFor(int quality) => Scale(quality, ObjectiveLevelPercent);
-
-        static int Scale(int quality, int percent)
-            => Math.Max(1, (int)Math.Round(quality * (100 + percent) / 100.0, MidpointRounding.AwayFromZero));
 
         /// <summary>The terminal mission type for an Action a dungeon can run, else null.</summary>
         public static int? MissionTypeFor(string? action) => action switch
@@ -301,64 +246,17 @@ namespace ZoneEngine_New.Core.Quests
             _ => null
         };
 
-        /// <summary>Why these inputs cannot make a dungeon for <paramref name="action"/>, or null when they can.</summary>
+        /// <summary>Why these inputs cannot make a dungeon for <paramref name="action"/>, or null (the mission resolves at acceptance).</summary>
         public string? Problem(string? action)
         {
             if (MissionTypeFor(action) == null)
                 return "Dungeon needs Action KillOne, TargetNpc, FindItem or UseItemOnItem, not " + (action ?? "(none)");
-            if (!string.Equals(Floors, SingleFloor, StringComparison.OrdinalIgnoreCase) && !IsMultiFloor)
-                return "Dungeon.Floors must be Single or Multi, not " + Floors;
-            if (Playfield <= 0)
-                return "Dungeon.Playfield is required";
-            if (Quality is <= 0 || Style is <= 0)
-                return "Dungeon.Quality and Dungeon.Style must be positive";
-            if (MobLevelPercent is < 0 or > MaxSpreadPercent)
-                return "Dungeon.MobLevelPercent must be between 0 and " + MaxSpreadPercent;
-            if (ObjectiveLevelPercent is < MinPercent or > MaxPercent)
-                return "Dungeon.ObjectiveLevelPercent must be between " + MinPercent + " and " + MaxPercent;
-            if (ObjectiveRoomChoices is < 1 or > MaxObjectiveRoomChoices)
-                return "Dungeon.ObjectiveRoomChoices must be between 1 and " + MaxObjectiveRoomChoices;
-            if (Npcs != null && (Npcs.Length == 0 || Array.Exists(Npcs, string.IsNullOrWhiteSpace)))
-                return "Dungeon.Npcs must name at least one NPC hash";
-            return Chests?.Problem();
-        }
-    }
-
-    /// <summary>
-    /// A Quests.json dungeon quest's chests (<see cref="QuestDungeonTemplate.Chests"/>). The count settings override the
-    /// code defaults on <see cref="Dungeons.MissionChestPolicy"/>; everything is frozen into the mission at acceptance.
-    /// </summary>
-    public sealed class QuestDungeonChests
-    {
-        /// <summary>False: the dungeon gets no chests, whatever its loot table.</summary>
-        public bool Enabled { get; set; } = true;
-
-        /// <summary>Chests per eligible room; null keeps <see cref="Dungeons.MissionChestPolicy.DefaultRoomDensity"/>.</summary>
-        public double? RoomDensity { get; set; }
-
-        /// <summary>How far the chest count varies either way, as a fraction; null keeps <see cref="Dungeons.MissionChestPolicy.DefaultCountVariationFraction"/>.</summary>
-        public double? CountVariationFraction { get; set; }
-
-        /// <summary>
-        /// What the chests hold, as an NPC loot table (Hash, Repeats, Chance, LevelMod) rolled at the mission quality.
-        /// Null or empty: no chests.
-        /// </summary>
-        public List<Mobs.MobItemTableEntry>? LootTable { get; set; }
-
-        /// <summary>The loot the mission freezes: the table when chests are enabled, else none.</summary>
-        [JsonIgnore]
-        public List<Mobs.MobItemTableEntry> EffectiveLoot => Enabled ? Mobs.MobItemTableEntry.Clone(LootTable) : [];
-
-        /// <summary>Why these chest settings are unusable, or null when they are fine.</summary>
-        public string? Problem()
-        {
-            if (RoomDensity is double density && !Dungeons.MissionChestPolicy.IsValidRoomDensity(density))
-                return "Dungeon.Chests.RoomDensity must be between 0 and " + Dungeons.MissionChestPolicy.MaxRoomDensity;
-            if (CountVariationFraction is double variation && !Dungeons.MissionChestPolicy.IsValidCountVariation(variation))
-                return "Dungeon.Chests.CountVariationFraction must be between 0 and 1";
-            if (LootTable != null && !LootTable.TrueForAll(Mobs.MobItemTableEntry.IsWellFormed))
-                return "Dungeon.Chests.LootTable rows need a Hash, Repeats of at least 1, Chance 1-100, LevelMod of at least 0 and QualityPercent 1-"
-                    + Mobs.MobItemTableEntry.MaxQualityPercent;
+            if (string.IsNullOrWhiteSpace(Mission))
+                return "Dungeon.Mission is required";
+            if (Playfield < 0)
+                return "Dungeon.Playfield cannot be negative";
+            if (Quality is <= 0)
+                return "Dungeon.Quality must be positive";
             return null;
         }
     }

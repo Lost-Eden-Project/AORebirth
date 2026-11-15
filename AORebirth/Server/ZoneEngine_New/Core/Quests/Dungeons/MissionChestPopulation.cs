@@ -29,7 +29,7 @@ public sealed class MissionChestPopulation
     readonly string _questId;
     readonly long _assigned;
     readonly QuestDungeonParameters _parameters;
-    readonly MissionChestPolicy? _policy;
+    readonly DungeonChestBlock _chests;
     readonly IItemBuilder _items;
     readonly IZoneLogger _logger;
     volatile bool _retired;
@@ -38,7 +38,7 @@ public sealed class MissionChestPopulation
     internal string? DeferredReason { get; private set; }
 
     public MissionChestPopulation(IMissionDao dao, int ownerId, string questId, long assigned,
-        QuestDungeonParameters parameters, MissionChestPolicy? policy, IItemBuilder items, IZoneLogger logger)
+        QuestDungeonParameters parameters, IItemBuilder items, IZoneLogger logger)
     {
         ArgumentNullException.ThrowIfNull(dao);
         ArgumentNullException.ThrowIfNull(parameters);
@@ -51,8 +51,7 @@ public sealed class MissionChestPopulation
         _questId = questId;
         _assigned = assigned;
         _parameters = parameters;
-        // The global policy with this mission's frozen count settings (the quest's overrides, else the code defaults).
-        _policy = policy?.ForMission(parameters.ChestRoomDensity, parameters.ChestCountVariationFraction);
+        _chests = parameters.Dungeon?.Chests ?? throw new ArgumentException("The mission has no resolved dungeon.", nameof(parameters));
         _items = items;
         _logger = logger;
     }
@@ -66,11 +65,9 @@ public sealed class MissionChestPopulation
         ArgumentNullException.ThrowIfNull(dungeon);
         if (_materialized || _retired)
             return true;
-        if (_policy == null)
-            return Defer("policy-unavailable");
         if (_parameters.Quality is < 1 or > QuestDungeonTemplate.MaxMissionQuality)
             return Defer("accepted-quality-unavailable");
-        if (_parameters.ChestLoot is not { Count: > 0 } chestLoot)
+        if (_chests.LootTable is not { Count: > 0 } chestLoot)
             return Defer("chest-loot-table-empty");
         IGameData data = world.GetRequiredService<IGameData>();
         IItemTemplateCatalog templates = world.GetRequiredService<IItemTemplateCatalog>();
@@ -79,8 +76,8 @@ public sealed class MissionChestPopulation
             return Defer("chest-collision-sphere-unavailable-or-invalid");
 
         // Placement is a function of the seed, so it is the same on every build of this dungeon.
-        IReadOnlyList<MissionChestSite> sites = _policy.RoomDensity > 0
-            ? MissionChestPlacement.Plan(world.ChestSites(dungeon, _policy), _policy, new Random(unchecked(world.Layout.Seed * 48271)))
+        IReadOnlyList<MissionChestSite> sites = _chests.Places
+            ? MissionChestPlacement.Plan(world.ChestSites(dungeon, _chests), _chests, new Random(unchecked(world.Layout.Seed * 48271)))
             : [];
 
         int[]? stored = ReadStored();
@@ -134,9 +131,12 @@ public sealed class MissionChestPopulation
         var registry = world.GetRequiredService<DynelRegistry>();
         var locality = world.GetRequiredService<PlayfieldLocality>();
         var heading = new Random(unchecked(world.Layout.Seed * 31 + 7));
+        // Which chests are locked comes from the seed too (the chest block's LockedChancePercent), at the mission quality.
+        var locks = new Random(unchecked(world.Layout.Seed * 7349 + 3));
         for (int index = 0; index < count; index++)
         {
-            var chest = new Chest(new Identity { Type = IdentityType.Container, Instance = stored[index] })
+            int lockDifficulty = locks.Next(100) < (_chests.LockedChancePercent ?? 0) ? Math.Max(1, _parameters.Quality) : 0;
+            var chest = new Chest(new Identity { Type = IdentityType.Container, Instance = stored[index] }, Chest.LootCapacity, lockDifficulty)
             {
                 Playfield = world,
                 Position = sites[index].Position,

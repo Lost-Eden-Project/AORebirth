@@ -23,12 +23,12 @@ public sealed record MissionChestSite(int RoomIndex, AORebirth.Core.Vector.Vecto
 /// </summary>
 public static class MissionChestPlacement
 {
-    /// <summary>Rooms a chest may stand in: not the entrance, start, main hall or a floor-transition room, and not a room the policy excludes by name.</summary>
-    public static HashSet<int> EligibleRooms(DungeonWorldLayout dungeon, DungeonLayout layout, string gameDataRoot, MissionChestPolicy policy)
+    /// <summary>Rooms a chest may stand in: not the entrance, start, main hall or a floor-transition room, and not a room the chest block excludes by name.</summary>
+    public static HashSet<int> EligibleRooms(DungeonWorldLayout dungeon, DungeonLayout layout, string gameDataRoot, DungeonChestBlock chests)
     {
         ArgumentNullException.ThrowIfNull(dungeon);
         ArgumentNullException.ThrowIfNull(layout);
-        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(chests);
         StyleRoomSet styles = StyleRoomSet.Load(gameDataRoot, layout.Generator.Style);
         var shapes = new Dictionary<int, RoomShape>();
         foreach (RoomShape shape in styles.All)
@@ -39,7 +39,7 @@ public static class MissionChestPlacement
             transitions.Add(link.From.RoomIndex);
             transitions.Add(link.To.RoomIndex);
         }
-        string[] excluded = policy.Placement?.ExcludedRoomNameParts ?? [];
+        string[] excluded = chests.ExcludedRooms ?? [];
         var eligible = new HashSet<int>();
         foreach (DungeonRoomPlacement placed in dungeon.Placements)
         {
@@ -54,13 +54,13 @@ public static class MissionChestPlacement
     }
 
     /// <summary>
-    /// Picks the chests' sites: the policy's count from the number of eligible rooms, spread one per room before any
+    /// Picks the chests' sites: the chest block's count from the number of eligible rooms, spread one per room before any
     /// room gets a second, in the seeded <paramref name="random"/>'s order.
     /// </summary>
-    public static IReadOnlyList<MissionChestSite> Plan(IReadOnlyList<MissionChestSite> sites, MissionChestPolicy policy, Random random)
+    public static IReadOnlyList<MissionChestSite> Plan(IReadOnlyList<MissionChestSite> sites, DungeonChestBlock chests, Random random)
     {
         ArgumentNullException.ThrowIfNull(sites);
-        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(chests);
         ArgumentNullException.ThrowIfNull(random);
         var byRoom = new List<List<MissionChestSite>>();
         var roomOrder = new Dictionary<int, List<MissionChestSite>>();
@@ -75,7 +75,7 @@ public static class MissionChestPlacement
             room.Add(site);
         }
         var result = new List<MissionChestSite>();
-        int wanted = policy.RollChestCount(byRoom.Count, random);
+        int wanted = chests.RollCount(byRoom.Count, random);
         if (wanted <= 0 || byRoom.Count == 0)
             return result;
         random.Shuffle(CollectionsMarshal.AsSpan(byRoom));

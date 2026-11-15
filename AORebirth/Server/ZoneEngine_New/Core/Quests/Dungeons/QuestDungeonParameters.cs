@@ -29,28 +29,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public MissionTokenRewardPolicy? TokenReward { get; set; }
 
         /// <summary>
-        /// A Quests.json dungeon quest's ordinary population (its Dungeon.Npcs that resolved when it was given), frozen so
-        /// the dungeon rebuilds the same; empty when none resolved. Null: DungeonGeneration.json's population.
+        /// The dungeon request resolved to its full values at acceptance (<see cref="DungeonPresets.Resolve"/>): layout,
+        /// population, chests and objective, so the dungeon rebuilds the same whatever the presets become later.
         /// </summary>
-        public string[]? PopulationNpcHashes { get; set; }
-
-        /// <summary>The ordinary population's level spread around <see cref="Quality"/>, in percent (a quest's Dungeon.MobLevelPercent); 0: none.</summary>
-        public int PopulationLevelSpreadPercent { get; set; }
-
-        /// <summary>The chests' item table (a quest's enabled Dungeon.Chests.LootTable), frozen at acceptance. Null or empty: no chests.</summary>
-        public System.Collections.Generic.List<Mobs.MobItemTableEntry>? ChestLoot { get; set; }
-
-        /// <summary>The quest's Dungeon.Chests.RoomDensity, frozen at acceptance; null: the code default.</summary>
-        public double? ChestRoomDensity { get; set; }
-
-        /// <summary>The quest's Dungeon.Chests.CountVariationFraction, frozen at acceptance; null: the code default.</summary>
-        public double? ChestCountVariationFraction { get; set; }
-
-        /// <summary>Rows every dungeon NPC's corpse rolls besides its own table (a quest's Dungeon.MobLoot), frozen at acceptance.</summary>
-        public System.Collections.Generic.List<Mobs.MobItemTableEntry>? MobLoot { get; set; }
-
-        /// <summary>How many of the rooms farthest from the entrance the objective may stand in (a quest's Dungeon.ObjectiveRoomChoices); 1 on older quests.</summary>
-        public int ObjectiveRoomChoices { get; set; } = 1;
+        public ResolvedDungeon? Dungeon { get; set; }
 
         public int OriginTerminalType { get; set; }
         public int OriginTerminalInstance { get; set; }
@@ -123,22 +105,19 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             try
             {
                 QuestDungeonParameters? parsed = JsonSerializer.Deserialize<QuestDungeonParameters>(json, JsonOptions);
-                if (parsed == null || parsed.GeneratorVersion <= 0 || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
+                // Only the current version: missions stored before the dungeon request existed are not rebuilt.
+                if (parsed == null || parsed.GeneratorVersion != DungeonLayoutGenerator.CurrentVersion
+                    || parsed.Dungeon == null || parsed.Dungeon.Problem() != null || parsed.LayoutPlan?.IsValid != true
+                    || parsed.IsTeam != parsed.LayoutPlan.BossFloor
+                    || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
                     || parsed.EntranceType != (int)IdentityType.MissionEntrance
                     || (parsed.ObjectiveItem != null && !parsed.ObjectiveItem.IsValid)
                     || (parsed.ObjectiveTool != null && (!parsed.ObjectiveTool.IsValid || !parsed.ObjectiveTool.IsSourceItem))
                     || (parsed.ObjectiveNpc != null && !parsed.ObjectiveNpc.IsValid)
                     || (parsed.TokenReward != null && !parsed.TokenReward.IsValid)
-                    || (parsed.PopulationNpcHashes != null && System.Array.Exists(parsed.PopulationNpcHashes, string.IsNullOrWhiteSpace))
-                    || parsed.PopulationLevelSpreadPercent is < 0 or > QuestDungeonTemplate.MaxSpreadPercent
-                    || parsed.ObjectiveRoomChoices is < 1 or > QuestDungeonTemplate.MaxObjectiveRoomChoices
-                    || (parsed.ChestRoomDensity is double density && !MissionChestPolicy.IsValidRoomDensity(density))
-                    || (parsed.ChestCountVariationFraction is double variation && !MissionChestPolicy.IsValidCountVariation(variation))
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
                     || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
-                    || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType)
-                    || (DungeonLayoutGenerator.IsPlanVersion(parsed.GeneratorVersion)
-                        && (parsed.LayoutPlan?.IsValid != true || parsed.IsTeam != parsed.LayoutPlan.BossFloor)))
+                    || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType))
                     return false;
 
                 parameters = parsed;

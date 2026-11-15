@@ -83,6 +83,12 @@ public sealed class QuestDungeonPlayfield : Playfield
 
     public DungeonLayout Layout { get; }
 
+    /// <summary>The population's scale on every monster's unprovoked aggro range here, as a factor (1: unchanged).</summary>
+    internal float AggroRangeScale => (Layout.Population.AggroRangePercent ?? 100) / 100f;
+
+    /// <summary>The population's scale on how far a monster's call for help carries here, as a factor (1: unchanged).</summary>
+    internal float HelpRangeScale => (Layout.Population.HelpRangePercent ?? 100) / 100f;
+
     /// <summary>The population's kill ledger; null for a dungeon with no quest run to record against (tests).</summary>
     public DungeonKills? Kills { get; }
 
@@ -184,8 +190,9 @@ public sealed class QuestDungeonPlayfield : Playfield
     /// The style playfield's Districts.json maps each template room (zone) to a district whose spawn points are in
     /// the style's world space; each placed room moves its district's points into the dungeon with the room's own
     /// transform, and they become ordinary hash spawn points of this playfield. Each room uses a random share of its
-    /// points, at least one, rolled from the dungeon seed so a rebuilt dungeon spawns in the same places. Quest dungeon
-    /// NPCs do not respawn once killed.
+    /// points (the population block's SpawnChancePercent), at least one, rolled from the dungeon seed so a rebuilt dungeon
+    /// spawns in the same places; a point that would put more than MaxGroup monsters within GroupRadius is skipped.
+    /// Quest dungeon NPCs do not respawn once killed.
     /// </summary>
     void AddDistrictSpawns(AORebirth.World.Collision.DungeonWorldLayout dungeon)
     {
@@ -228,15 +235,45 @@ public sealed class QuestDungeonPlayfield : Playfield
         (int Room, PlayfieldDistrictSpawnPoint Point)? target = _objectiveNpc != null || TargetHash == null
             ? null : PlaceTarget(dungeon, rooms, spawns);
 
-        DungeonPopulationPolicy population = Layout.Population;
-        if (!population.IsValid(GameData))
+        DungeonPopulationBlock population = Layout.Population;
+        if (population.Npcs is not { Length: > 0 } npcs)
         {
-            Logger.Warn("Quest dungeon " + QuestId + ": ordinary NPC policy is unavailable; no placeholder population selected");
+            Logger.Warn("Quest dungeon " + QuestId + ": the population names no NPCs; none spawn");
             return;
+        }
+
+        // Max group: every monster placed so far (the objective NPC and the kill target too); a point is skipped when
+        // MaxGroup monsters already stand within GroupRadius of it, counting the ones it would add.
+        int maxGroup = population.MaxGroup ?? int.MaxValue;
+        float groupRadius = population.GroupRadius ?? 0f;
+        var placedMonsters = new List<System.Numerics.Vector3>();
+        if (_objectiveNpc != null)
+            placedMonsters.Add(new System.Numerics.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z));
+        if (target is { } placedTarget && placedTarget.Point.Position is { Length: >= 3 } targetPosition)
+        {
+            AORebirth.World.Collision.DungeonRoomPlacement? targetRoom = null;
+            foreach (var room in rooms)
+                if (room.Placement.Index == placedTarget.Room)
+                    targetRoom = room.Placement;
+            if (targetRoom != null)
+                placedMonsters.Add(targetRoom.TransformTemplatePoint(
+                    new System.Numerics.Vector3(targetPosition[0], targetPosition[1], targetPosition[2])));
+        }
+        bool Crowded(System.Numerics.Vector3 at, int adding)
+        {
+            if (adding > maxGroup)
+                return true;
+            float radiusSquared = groupRadius * groupRadius;
+            int near = 0;
+            foreach (System.Numerics.Vector3 other in placedMonsters)
+                if (System.Numerics.Vector3.DistanceSquared(at, other) <= radiusSquared && ++near + adding > maxGroup)
+                    return true;
+            return false;
         }
 
         int added = 0;
         int skipped = 0;
+        int crowded = 0;
         foreach ((AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictEntry district, List<PlayfieldDistrictSpawnPoint> points) in rooms)
         {
             // The target's point is taken; the target counts as that room's NPC.
@@ -253,7 +290,7 @@ public sealed class QuestDungeonPlayfield : Playfield
             int wanted = 0;
             for (int i = 0; i < candidates.Count; i++)
             {
-                if (roll.Next(100) < population.SpawnPointChancePercent)
+                if (roll.Next(100) < (population.SpawnChancePercent ?? 0))
                     wanted++;
             }
 
@@ -268,8 +305,8 @@ public sealed class QuestDungeonPlayfield : Playfield
                 float[] position = point.Position;
                 System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
                     new System.Numerics.Vector3(position[0], position[1], position[2]));
-                string hash = population.RegularNpcHashes[roll.Next(population.RegularNpcHashes.Length)];
-                // A quest's spread rolls each spawn's own level; without one the whole population is at the quality.
+                string hash = npcs[roll.Next(npcs.Length)];
+                // The block's spread rolls each spawn's own level; without one the whole population is at the quality.
                 int populationLevel = population.RollLevel(roll, Quality);
                 string pointKey = "r" + placement.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     + "p" + Array.IndexOf(district.SpawnPoints!, point).ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -285,6 +322,14 @@ public sealed class QuestDungeonPlayfield : Playfield
                         skipped++;
                         continue;
                     }
+                }
+                if (Crowded(placed, branches?.Length ?? 1))
+                {
+                    crowded++;
+                    continue;
+                }
+                if (branches != null && Kills != null)
+                {
                     for (int branch = 0; branch < branches.Length; branch++)
                         Kills.RegisterSlot(DungeonKills.Slot(pointKey, branch));
                 }
@@ -297,6 +342,8 @@ public sealed class QuestDungeonPlayfield : Playfield
                         isBranchKilled: kills == null ? null : branch => kills.IsKilled(DungeonKills.Slot(pointKey, branch))))
                 {
                     _usedPoints.Add((placement.Index, Array.IndexOf(district.SpawnPoints!, point)));
+                    for (int monster = 0; monster < (branches?.Length ?? 1); monster++)
+                        placedMonsters.Add(placed);
                     placedInRoom++;
                     added++;
                 }
@@ -308,9 +355,10 @@ public sealed class QuestDungeonPlayfield : Playfield
             }
         }
 
-        Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped
+        Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped + " crowded=" + crowded
+            + " maxGroup=" + (population.MaxGroup?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-")
             + " requestedNpcLevel=" + Quality + (population.LevelSpreadPercent > 0 ? "±" + population.LevelSpreadPercent + "%" : string.Empty)
-            + " families=" + string.Join(",", population.RegularNpcHashes));
+            + " families=" + string.Join(",", npcs));
     }
 
     /// <summary>
@@ -343,10 +391,10 @@ public sealed class QuestDungeonPlayfield : Playfield
     /// Where chests may stand: every district spawn point in a chest-eligible room that the population, the kill target
     /// and the objective left free. Same order on every build, so the seeded chest plan is stable.
     /// </summary>
-    internal IReadOnlyList<MissionChestSite> ChestSites(AORebirth.World.Collision.DungeonWorldLayout dungeon, MissionChestPolicy policy)
+    internal IReadOnlyList<MissionChestSite> ChestSites(AORebirth.World.Collision.DungeonWorldLayout dungeon, DungeonChestBlock chests)
     {
         var sites = new List<MissionChestSite>();
-        HashSet<int> eligible = MissionChestPlacement.EligibleRooms(dungeon, Layout, GameData.RootPath, policy);
+        HashSet<int> eligible = MissionChestPlacement.EligibleRooms(dungeon, Layout, GameData.RootPath, chests);
         PlayfieldDistrictsData? districts = eligible.Count == 0 ? null : LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style, Logger);
         if (districts?.Districts == null)
             return sites;

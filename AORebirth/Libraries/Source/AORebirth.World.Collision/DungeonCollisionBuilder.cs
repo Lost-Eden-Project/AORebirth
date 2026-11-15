@@ -158,7 +158,7 @@ namespace AORebirth.World.Collision
             return new DungeonWorldLayout(
                 new PlayfieldCollisionSet(id, meshes, terrain: null),
                 bounds,
-                PlaceDoors(rooms, templates, bounds, catalog.TileSize),
+                PlaceDoors(rooms, templates, bounds, placements, catalog),
                 placements)
             {
                 SafePosition = placements.Count > 0 && catalog.Gnda.Length > 0 && catalog.Dcga.Length > 0
@@ -191,12 +191,13 @@ namespace AORebirth.World.Collision
 
         readonly struct DoorPoint
         {
-            public DoorPoint(int room, float x, float z, float y, int yaw)
+            public DoorPoint(int room, float x, float z, float y, float floorY, int yaw)
             {
                 Room = room;
                 X = x;
                 Z = z;
                 Y = y;
+                FloorY = floorY;
                 Yaw = yaw;
             }
 
@@ -206,7 +207,11 @@ namespace AORebirth.World.Collision
 
             public float Z { get; }
 
+            /// <summary>The room's placed height: which floor the doorway is on (<see cref="Meets"/>).</summary>
             public float Y { get; }
+
+            /// <summary>The door's height: the floor under the doorway (<see cref="DoorFloorY"/>).</summary>
+            public float FloorY { get; }
 
             public int Yaw { get; }
 
@@ -227,8 +232,11 @@ namespace AORebirth.World.Collision
             IReadOnlyList<DungeonRoomSpec> rooms,
             IReadOnlyList<StyleRoomTemplate> templates,
             IReadOnlyList<DungeonRoomBounds> bounds,
-            float tileSize)
+            IReadOnlyList<DungeonRoomPlacement> placements,
+            DungeonStyleCatalog catalog)
         {
+            float tileSize = catalog.TileSize;
+            bool heights = catalog.Gnda.Length > 0 && catalog.Dcga.Length > 0;
             var byRoom = new List<DoorPoint>[rooms.Count];
             for (int i = 0; i < rooms.Count; i++)
             {
@@ -236,6 +244,10 @@ namespace AORebirth.World.Collision
                 int facing = rooms[i].Facing & 3;
                 int w = template.NumTilesX;
                 int h = template.NumTilesZ;
+                float placedY = placements[i].Placed.Y;
+                float minHeight = heights
+                    ? DungeonRoomPlacer.ComputeYOffset(catalog.Gnda, catalog.Dcga, catalog.MapWidth, catalog.MapHeight, template, catalog.HeightScale)
+                    : 0f;
                 var points = new List<DoorPoint>(template.DoorPosRots.Count);
                 foreach (int posRot in template.DoorPosRots)
                 {
@@ -258,7 +270,8 @@ namespace AORebirth.World.Collision
                         _ => (h - v, u)
                     };
                     int yaw = (180 + (90 * ((rotation + facing) & 3))) % 360;
-                    points.Add(new DoorPoint(i, bounds[i].Min.X + (x * tileSize), bounds[i].Min.Z + (z * tileSize), bounds[i].Min.Y + 1f, yaw));
+                    float floorY = heights ? DoorFloorY(catalog, template, cx, cz, rotation, minHeight, placedY) : placedY;
+                    points.Add(new DoorPoint(i, bounds[i].Min.X + (x * tileSize), bounds[i].Min.Z + (z * tileSize), bounds[i].Min.Y + 1f, floorY, yaw));
                 }
 
                 byRoom[i] = points;
@@ -272,7 +285,7 @@ namespace AORebirth.World.Collision
             {
                 if (!MeetsAnyOther(byRoom, point))
                 {
-                    doors.Add(new DungeonDoorPlacement(OffsetAlongYaw(point.X, point.Y, point.Z, point.Yaw), point.Yaw, room: -1, linkedRoom: 0));
+                    doors.Add(new DungeonDoorPlacement(OffsetAlongYaw(point.X, point.FloorY, point.Z, point.Yaw), point.Yaw, room: -1, linkedRoom: 0));
                     break;
                 }
             }
@@ -289,7 +302,7 @@ namespace AORebirth.World.Collision
                             if (!point.Meets(other))
                                 continue;
 
-                            doors.Add(new DungeonDoorPlacement(OffsetAlongYaw(point.X, point.Y, point.Z, point.Yaw), point.Yaw, room: i, linkedRoom: j));
+                            doors.Add(new DungeonDoorPlacement(OffsetAlongYaw(point.X, point.FloorY, point.Z, point.Yaw), point.Yaw, room: i, linkedRoom: j));
                             paired = true;
                             break;
                         }
@@ -301,6 +314,62 @@ namespace AORebirth.World.Collision
             }
 
             return doors;
+        }
+
+        /// <summary>
+        /// The door's height, N3 <c>n3Room_t::GetDoorPosRot</c> (10010acf): the doorway point in the template's tile rect
+        /// (tile column / row times the tile size plus 1, moved 0.999 toward its side: 0 +z, 1 +x, 2 -z, 3 -x), the
+        /// tilemap's floor there (FUN_10017800) less the room's lowest floor, plus the room's placed height. The client
+        /// links a door to the room whose floor band holds it (<c>Door_t::LinkDoorToRooms</c>, 100800cb); at the room's
+        /// placed height a doorway on a raised floor is below that band and the door is removed.
+        /// </summary>
+        static float DoorFloorY(DungeonStyleCatalog catalog, StyleRoomTemplate template, int column, int row, int side,
+            float minHeight, float placedY)
+        {
+            float s = catalog.TileSize;
+            float x = (s * column) + 1f;
+            float z = (s * row) + 1f;
+            switch (side)
+            {
+                case 0: z += 0.999f; break;
+                case 1: x += 0.999f; break;
+                case 2: z -= 0.999f; break;
+                default: x -= 0.999f; break;
+            }
+
+            return TileFloor(catalog, (s * template.TileMinX) + x, (s * template.TileMinZ) + z) - minHeight + placedY;
+        }
+
+        /// <summary>
+        /// N3 FUN_10017800, indoor branch: 0 outside the map; the tile <c>(int)(x / s)</c>, <c>(int)(z / s)</c>; corners
+        /// from the floors at (x-1, z-1), (x, z-1), (x, z), (x-1, z), each index below 1 taken as 0; the height on the
+        /// plane of corners 0, 2, 3 when the point's x offset from corner 0 is at most its z offset, else 0, 1, 2.
+        /// </summary>
+        static float TileFloor(DungeonStyleCatalog catalog, float x, float z)
+        {
+            float s = catalog.TileSize;
+            int w = catalog.MapWidth, h = catalog.MapHeight;
+            if (x < 0f || s * w <= x || z < 0f || s * h <= z)
+                return 0f;
+
+            int tx = (int)(x / s), tz = (int)(z / s);
+            int xm = tx - 1 < 1 ? 0 : tx - 1;
+            int zm = tz - 1 < 1 ? 0 : tz - 1;
+            var c0 = new Vector3(tx * s, GroundFloor(catalog, xm, zm), tz * s);
+            var c1 = new Vector3(s + (tx * s), GroundFloor(catalog, tx, zm), tz * s);
+            var c2 = new Vector3(s + (tx * s), GroundFloor(catalog, tx, tz), s + (tz * s));
+            var c3 = new Vector3(tx * s, GroundFloor(catalog, xm, tz), s + (tz * s));
+
+            float dx = x - c0.X, dz = z - c0.Z;
+            Vector3 n = dx <= dz ? Vector3.Cross(c0 - c3, c0 - c2) : Vector3.Cross(c0 - c2, c0 - c1);
+            return (-((dx * n.X) + (dz * n.Z)) / n.Y) + c0.Y;
+        }
+
+        /// <summary>The tile's floor byte times the height scale (N3 FUN_10016454).</summary>
+        static float GroundFloor(DungeonStyleCatalog catalog, int x, int z)
+        {
+            int i = (z * catalog.MapWidth) + x;
+            return (uint)i < (uint)catalog.Gnda.Length ? catalog.Gnda[i] * catalog.HeightScale : 0f;
         }
 
         static bool MeetsAnyOther(List<DoorPoint>[] byRoom, in DoorPoint point)
