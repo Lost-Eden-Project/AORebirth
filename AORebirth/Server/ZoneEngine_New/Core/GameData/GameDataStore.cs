@@ -68,7 +68,7 @@ namespace ZoneEngine_New.Core.GameData
         private readonly Dictionary<int, int[]?> _exitProxyDoorAllowLists = new();
         private readonly Dictionary<int, int[]?> _dungeonExitDoors = new();
         private readonly Lock _exitProxySync = new();
-        private Dictionary<int, int[]>? _exitProxyDoorsByPlayfield;
+        private volatile Dictionary<int, int[]>? _exitProxyDoorsByPlayfield;
         private readonly TeleportDestinationCatalog? _teleportDestinations;
 
         public GameDataStore(IZoneLogger logger, TeleportDestinationCatalog? teleportDestinations = null)
@@ -377,6 +377,38 @@ namespace ZoneEngine_New.Core.GameData
             }
         }
 
+        /// <summary>
+        /// The playfield GameData reload: drops the cached playfield files of every playfield <paramref name="keep"/> does
+        /// not hold, so the next build of one reads them again from disk, then rebuilds the exit-proxy door index from
+        /// disk. A running playfield keeps what it was built from until it unloads or is reloaded. Reads every playfield's
+        /// Dynels.dat: never call it on a playfield tick.
+        /// </summary>
+        internal int ReleaseIdlePlayfieldCaches(IReadOnlySet<int> keep)
+        {
+            ArgumentNullException.ThrowIfNull(keep);
+            var cached = new HashSet<int>();
+            lock (_playfieldSync)
+            {
+                cached.UnionWith(_playfieldMetaData.Keys);
+                cached.UnionWith(_playfieldSpawns.Keys);
+                cached.UnionWith(_playfieldNpcs.Keys);
+                cached.UnionWith(_playfieldGeometry.Keys);
+                cached.UnionWith(_playfieldCharacterAppearanceOverrides.Keys);
+                cached.UnionWith(_exitProxyDoorAllowLists.Keys);
+                cached.UnionWith(_dungeonExitDoors.Keys);
+                cached.ExceptWith(keep);
+            }
+
+            foreach (int playfieldId in cached)
+                ReleasePlayfieldCache(playfieldId);
+
+            // Built aside and swapped in whole: playfields being built meanwhile keep reading the current index.
+            Dictionary<int, int[]> index = BuildExitProxyIndex();
+            lock (_exitProxySync)
+                _exitProxyDoorsByPlayfield = index;
+            return cached.Count;
+        }
+
         public IReadOnlyList<int> GetExitProxyDoorInstances(int playfieldId)
         {
             if (playfieldId <= 0)
@@ -386,6 +418,14 @@ namespace ZoneEngine_New.Core.GameData
             return _exitProxyDoorsByPlayfield!.TryGetValue(playfieldId, out int[]? doors)
                 ? doors
                 : [];
+        }
+
+        private void EnsureExitProxyIndex()
+        {
+            lock (_exitProxySync)
+            {
+                _exitProxyDoorsByPlayfield ??= BuildExitProxyIndex();
+            }
         }
 
         public bool TryGetTeleportLanding(
@@ -446,50 +486,41 @@ namespace ZoneEngine_New.Core.GameData
             }
         }
 
-        private void EnsureExitProxyIndex()
+        private Dictionary<int, int[]> BuildExitProxyIndex()
         {
-            lock (_exitProxySync)
+            Dictionary<int, HashSet<int>> collected = new();
+            if (!Directory.Exists(PlayfieldsPath))
+                return new Dictionary<int, int[]>();
+
+            foreach (string directory in Directory.EnumerateDirectories(PlayfieldsPath))
             {
-                if (_exitProxyDoorsByPlayfield != null)
-                    return;
+                string name = Path.GetFileName(directory);
+                if (!int.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sourcePlayfieldId)
+                    || sourcePlayfieldId <= 0)
+                    continue;
 
-                Dictionary<int, HashSet<int>> collected = new();
-                if (!Directory.Exists(PlayfieldsPath))
-                {
-                    _exitProxyDoorsByPlayfield = new Dictionary<int, int[]>();
-                    return;
-                }
-
-                foreach (string directory in Directory.EnumerateDirectories(PlayfieldsPath))
-                {
-                    string name = Path.GetFileName(directory);
-                    if (!int.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sourcePlayfieldId)
-                        || sourcePlayfieldId <= 0)
-                        continue;
-
-                    PlayfieldDynels? dynels = ReadPlayfieldDynels(sourcePlayfieldId);
-                    ExitProxyDoorCatalog.CollectFromDynels(dynels, collected, GetConfiguredExitProxyDoorInstances);
-                }
-
-                Dictionary<int, int[]> index = new(collected.Count);
-                int doorTotal = 0;
-                foreach (KeyValuePair<int, HashSet<int>> pair in collected)
-                {
-                    int[] doors = new int[pair.Value.Count];
-                    pair.Value.CopyTo(doors);
-                    Array.Sort(doors);
-                    index[pair.Key] = doors;
-                    doorTotal += doors.Length;
-                }
-
-                _exitProxyDoorsByPlayfield = index;
-                _logger.Info(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "GameData exit-proxy destinations playfields={0} doors={1}",
-                        index.Count,
-                        doorTotal));
+                PlayfieldDynels? dynels = ReadPlayfieldDynels(sourcePlayfieldId);
+                ExitProxyDoorCatalog.CollectFromDynels(dynels, collected, GetConfiguredExitProxyDoorInstances);
             }
+
+            Dictionary<int, int[]> index = new(collected.Count);
+            int doorTotal = 0;
+            foreach (KeyValuePair<int, HashSet<int>> pair in collected)
+            {
+                int[] doors = new int[pair.Value.Count];
+                pair.Value.CopyTo(doors);
+                Array.Sort(doors);
+                index[pair.Key] = doors;
+                doorTotal += doors.Length;
+            }
+
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "GameData exit-proxy destinations playfields={0} doors={1}",
+                    index.Count,
+                    doorTotal));
+            return index;
         }
 
         private void EnsureRootExists()

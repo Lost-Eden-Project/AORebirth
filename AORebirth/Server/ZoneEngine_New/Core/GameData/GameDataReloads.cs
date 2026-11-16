@@ -218,6 +218,22 @@ namespace ZoneEngine_New.Core.GameData
         }
     }
 
+    /// <summary>
+    /// GameData/Playfields: every playfield that is not running reads its files (Spawns.json, Npcs, metadata, Dynels.dat,
+    /// ExitProxyDoors.json, ...) from disk again the next time it is built, and the exit-proxy door index is rebuilt.
+    /// A running playfield keeps what it was built from until it unloads, or until <c>.playfield reload</c> rebuilds it.
+    /// </summary>
+    public sealed class PlayfieldsReload(Lazy<ZoneEngine_New.Core.Playfield.PlayfieldManager> playfields) : IReloadableGameData
+    {
+        public const string ReloadName = "Playfields";
+
+        public string Name => ReloadName;
+
+        public IReadOnlyList<string> Files { get; } = [GameDataPaths.PlayfieldsFolderName];
+
+        public GameDataReloadResult Reload() => playfields.Value.ReloadIdlePlayfieldData();
+    }
+
     /// <summary>GameData/Knubot plus its own AO_REBIRTH_KNUBOT_PATH overlay (<see cref="KnubotCatalog.Reload"/>).</summary>
     public sealed class KnubotReload(KnubotCatalog knubot) : IReloadableGameData
     {

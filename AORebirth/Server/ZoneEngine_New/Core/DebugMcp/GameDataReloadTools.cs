@@ -31,7 +31,7 @@ namespace ZoneEngine_New.Core.DebugMcp
         }
 
         [McpServerTool(Name = "gamedata_reload")]
-        [System.ComponentModel.Description("WRITE: reloads one GameData catalog from disk by name (e.g. NpcTemplates, ItemTemplates, MonsterCombatRules, NpcScripts, Knubot); an empty name lists the reloadable names. A file that fails to read keeps the old data. Spawned NPCs keep their template until they respawn. Needs DebugMcp AllowWrites.")]
+        [System.ComponentModel.Description("WRITE: reloads one GameData catalog from disk by name (e.g. NpcTemplates, ItemTemplates, MonsterCombatRules, NpcScripts, Knubot, Playfields); an empty name lists the reloadable names. A file that fails to read keeps the old data. Spawned NPCs keep their template until they respawn. Playfields takes effect the next time each playfield is built; running ones keep theirs until they unload or a GM runs .playfield reload. Needs DebugMcp AllowWrites.")]
         public string Reload(string name = "")
         {
             if (string.IsNullOrWhiteSpace(name))

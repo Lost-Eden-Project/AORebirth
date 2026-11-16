@@ -45,6 +45,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>When each quest dungeon was first seen empty (UTC ticks); absent while occupied or just requested.</summary>
         private readonly Dictionary<int, long> _dungeonEmptySince = new();
+
+        /// <summary>Playfields being reloaded in place (<see cref="TryStartReload"/>): the old instance, until it is disposed.</summary>
+        private readonly Dictionary<int, Playfield> _reloading = new();
         private readonly IZoneLogger _logger;
         private readonly IMessageRouter _router;
         private readonly PlayerHydrator _playerHydrator;
@@ -421,6 +424,38 @@ namespace ZoneEngine_New.Core.Playfield
                 retirement.GetAwaiter().GetResult();
             }
 
+            Playfield created = ConstructPlayfield(playfieldId);
+
+            lock (_sync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+
+                if (_playfields.TryGetValue(playfieldId, out Playfield? raced))
+                {
+                    created.Dispose();
+                    return raced;
+                }
+
+                _playfields[playfieldId] = created;
+
+                _logger.Info(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "PlayfieldManager created playfield {0}",
+                        playfieldId));
+            }
+
+            ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.start", playfieldId);
+            created.StartHeartbeat();
+            return created;
+        }
+
+        /// <summary>
+        /// Builds a new, unpublished, unstarted ordinary playfield (or proxy instance) for <paramref name="playfieldId"/>.
+        /// Off every tick and outside the manager lock.
+        /// </summary>
+        private Playfield ConstructPlayfield(int playfieldId)
+        {
             // Construct outside the manager lock. Playfield starts a heartbeat thread that may
             // call back into Register/Unregister/FindPlayer; holding _sync here deadlocks login.
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.construct", playfieldId);
@@ -490,30 +525,206 @@ namespace ZoneEngine_New.Core.Playfield
             }
 
             ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.build", playfieldId);
-            created.Build();
+            try
+            {
+                created.Build();
+            }
+            catch
+            {
+                created.Dispose();
+                throw;
+            }
+
+            return created;
+        }
+
+        /// <summary>
+        /// The playfield GameData reload (<see cref="GameData.PlayfieldsReload"/>): every playfield that is not running,
+        /// being built, being reloaded in place or waited on by a move reads its files from disk again the next time it
+        /// is built. Running playfields keep their data until they unload or <see cref="TryStartReload"/> replaces them.
+        /// Off every tick.
+        /// </summary>
+        internal AORebirth.Modules.Content.GameDataReloadResult ReloadIdlePlayfieldData()
+        {
+            const string name = GameData.PlayfieldsReload.ReloadName;
+            if (_gameData is not GameDataStore store)
+                return new(name, false, 0, ["this zone's GameData does not cache playfields"]);
+
+            var keep = new HashSet<int>();
+            lock (_sync)
+            {
+                foreach (Playfield playfield in _playfields.Values)
+                {
+                    keep.Add(playfield.Identity.Instance);
+                    keep.Add(playfield.ResourceId);
+                }
+
+                foreach (Playfield playfield in _reloading.Values)
+                {
+                    keep.Add(playfield.Identity.Instance);
+                    keep.Add(playfield.ResourceId);
+                }
+
+                keep.UnionWith(_building.Keys);
+                keep.UnionWith(_pendingMoveByCharacter.Values);
+            }
+
+            int released = store.ReleaseIdlePlayfieldCaches(keep);
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Playfield GameData reloaded: {0} cached playfields released, {1} running keep theirs until they unload",
+                released, keep.Count));
+            return new(name, true, released, []);
+        }
+
+        /// <summary>How long a reload in place waits for everyone to leave the old instance before disposing it.</summary>
+        internal static readonly TimeSpan ReloadDrainTimeout = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Starts replacing the running ordinary playfield <paramref name="old"/> with a fresh instance built from its
+        /// GameData read again from disk. The new instance is built off every tick and published under the same id; every
+        /// player on the old one is zone-transferred to where they stand (departure saves them first), and the old one is
+        /// disposed once they have left. Anyone still on it then (a link-dead character, a move that never departed) is
+        /// logged out and saved by that disposal. <paramref name="completed"/> gets the outcome on a background thread.
+        /// Null when the reload started; otherwise why it did not.
+        /// </summary>
+        internal string? TryStartReload(Playfield old, Action<string> completed)
+        {
+            ArgumentNullException.ThrowIfNull(old);
+            ArgumentNullException.ThrowIfNull(completed);
+            int id = old.Identity.Instance;
+            if (old is QuestDungeonPlayfield)
+                return "Quest dungeons cannot be reloaded.";
 
             lock (_sync)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
-
-                if (_playfields.TryGetValue(playfieldId, out Playfield? raced))
-                {
-                    created.Dispose();
-                    return raced;
-                }
-
-                _playfields[playfieldId] = created;
-
-                _logger.Info(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "PlayfieldManager created playfield {0}",
-                        playfieldId));
+                if (_disposed)
+                    return "The zone is shutting down.";
+                if (old.IsDisposed || !_playfields.TryGetValue(id, out Playfield? current) || !ReferenceEquals(current, old))
+                    return "Playfield " + id.ToString(CultureInfo.InvariantCulture) + " is not running here.";
+                if (!_reloading.TryAdd(id, old))
+                    return "Playfield " + id.ToString(CultureInfo.InvariantCulture) + " is already reloading.";
             }
 
-            ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.start", playfieldId);
+            _ = Task.Run(async () =>
+            {
+                string outcome;
+                try
+                {
+                    outcome = await ReloadInPlaceAsync(old).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, "Playfield reload failed playfield=" + id.ToString(CultureInfo.InvariantCulture));
+                    outcome = "Reload of playfield " + id.ToString(CultureInfo.InvariantCulture) + " failed: "
+                        + exception.GetBaseException().Message;
+                }
+                finally
+                {
+                    lock (_sync)
+                        _reloading.Remove(id);
+                }
+
+                try
+                {
+                    completed(outcome);
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, "Playfield reload report failed playfield=" + id.ToString(CultureInfo.InvariantCulture));
+                }
+            });
+            return null;
+        }
+
+        async Task<string> ReloadInPlaceAsync(Playfield old)
+        {
+            int id = old.Identity.Instance;
+            if (_gameData is GameDataStore store)
+            {
+                store.ReleasePlayfieldCache(id);
+                if (old.ResourceId != id)
+                    store.ReleasePlayfieldCache(old.ResourceId);
+            }
+
+            Playfield created = ConstructPlayfield(id);
+            bool published = false;
+            try
+            {
+                lock (_sync)
+                {
+                    if (!_disposed && !old.IsDisposed && _playfields.TryGetValue(id, out Playfield? current)
+                        && ReferenceEquals(current, old))
+                    {
+                        _playfields[id] = created;
+                        published = true;
+                    }
+                }
+            }
+            finally
+            {
+                if (!published)
+                    created.Dispose();
+            }
+
+            if (!published)
+                return "Playfield " + id.ToString(CultureInfo.InvariantCulture) + " stopped while it was rebuilding; nothing was reloaded.";
+
             created.StartHeartbeat();
-            return created;
+            _logger.Info(string.Format(CultureInfo.InvariantCulture, "Playfield {0} rebuilt from GameData; moving its players", id));
+
+            List<Player> movers;
+            lock (_sync)
+                movers = _playersByCharacterId.Values.Where(player => ReferenceEquals(player.Playfield, old)).ToList();
+
+            foreach (Player player in movers)
+                old.DispatchPlayerProjection(player, () => MoveToReloaded(player, old, created));
+
+            DateTime deadline = DateTime.UtcNow + ReloadDrainTimeout;
+            while (DateTime.UtcNow < deadline && IsDraining(old))
+                await Task.Delay(250).ConfigureAwait(false);
+
+            int leftBehind;
+            lock (_sync)
+                leftBehind = _playersByCharacterId.Values.Count(player => ReferenceEquals(player.Playfield, old));
+
+            // Same id stays loaded: no World unload and no metrics removal, the new instance owns both.
+            old.Dispose();
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Playfield {0} reloaded in place: players={1} loggedOutByDisposal={2}", id, movers.Count, leftBehind));
+
+            return string.Format(CultureInfo.InvariantCulture,
+                "Playfield {0} reloaded: {1} player(s) moved to the new instance{2}.", id, movers.Count - leftBehind,
+                leftBehind > 0
+                    ? string.Format(CultureInfo.InvariantCulture, ", {0} saved and logged out", leftBehind)
+                    : string.Empty);
+        }
+
+        /// <summary>On the old instance's tick: one player zones into the reloaded instance where they stand.</summary>
+        void MoveToReloaded(Player player, Playfield old, Playfield created)
+        {
+            if (!ReferenceEquals(player.Playfield, old) || player.Session is not IZoneSession session || session.IsTransferring)
+                return;
+
+            try
+            {
+                var landing = new AORebirth.Core.Vector.Vector3(player.Position.x, player.Position.y, player.Position.z);
+                session.TransferToPlayfield(created, landing, player.Rotation);
+            }
+            catch (Exception exception)
+            {
+                // The old instance's disposal saves and logs out whoever could not move.
+                _logger.Error(exception, "Playfield reload could not move character " + player.Identity.Instance.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        /// <summary>A player with a session is still on the old instance, or a move in or out of it is unfinished.</summary>
+        bool IsDraining(Playfield old)
+        {
+            if (old.HasTransfersInFlight)
+                return true;
+
+            lock (_sync)
+                return _playersByCharacterId.Values.Any(player => ReferenceEquals(player.Playfield, old) && player.Session != null);
         }
 
         /// <summary>
@@ -592,6 +803,7 @@ namespace ZoneEngine_New.Core.Playfield
                         .Where(playfield => playfield is not QuestDungeonPlayfield
                             && !playfield.IsDisposed
                             && !_building.ContainsKey(playfield.Identity.Instance)
+                            && !_reloading.ContainsKey(playfield.Identity.Instance)
                             && !pendingDestinations.Contains(playfield.Identity.Instance))
                         .ToList();
                 }
@@ -912,6 +1124,13 @@ namespace ZoneEngine_New.Core.Playfield
             lock (_sync)
             {
                 playfields = new List<Playfield>(_playfields.Values);
+                // An old instance mid-reload is no longer published but still holds players to save.
+                foreach (Playfield old in _reloading.Values)
+                {
+                    if (!playfields.Contains(old))
+                        playfields.Add(old);
+                }
+
                 _playfields.Clear();
                 _playersByCharacterId.Clear();
             }

@@ -410,6 +410,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.Quests.QuestRewardsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.QuestsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.TradeskillsReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.PlayfieldsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.NoKillXpFamilyCatalog>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NoKillXpFamiliesReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>();
@@ -432,6 +433,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, WeatherCommand>();
             services.AddSingleton<IGmCommand, AnnounceCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
+            services.AddSingleton<IGmCommand, PlayfieldCommand>();
             services.AddSingleton<IGmCommand, ClearShopStockCommand>(); // TEMP: remove once shops are fixed.
             services.AddSingleton<IGmCommand, VisibilityCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();

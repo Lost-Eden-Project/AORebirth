@@ -545,6 +545,9 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         internal bool IsDisposed => _disposed || _retiring;
+
+        /// <summary>A move into or out of this playfield has been scheduled and has not finished.</summary>
+        internal bool HasTransfersInFlight => !_incomingTransfers.IsEmpty || !_outgoingTransfers.IsEmpty;
         internal void NotifyTransportDisconnected(Player player, IZoneSession session)
             => _playfieldManager.Teams.OnTransportDisconnected(player, session);
         internal void RequireTransferTick()
