@@ -499,8 +499,8 @@ namespace ZoneEngine_New.Core.Ai
     /// <summary>
     /// Keeps the pet's charge (<see cref="PetAi.Charge"/>) healed: when the charge is hurt and a heal can land,
     /// the pet casts it and that is its action this tick. Otherwise it carries on with everything else. A heal
-    /// order whose target is out of heal range ends, and the pet goes back to its owner and its default duty; the
-    /// pet never runs off after a heal target.
+    /// order whose target is out of heal range waits for it to come back in range; the pet never runs off after a
+    /// heal target.
     /// </summary>
     sealed class PetTendNode : BehaviourNode
     {
@@ -525,11 +525,18 @@ namespace ZoneEngine_New.Core.Ai
                 case HealOrderResult.Cast:
                     _brain.StopPathing();
                     return _nodeState = NodeState.Success;
-                case HealOrderResult.OutOfRange:
                 case HealOrderResult.NoHeal:
-                    // Out of range of an ordered target (or no heal to give): back to the owner and default duty.
-                    // Out of range of the owner: following brings the pet back in range.
+                    // No heal to give an ordered target: back to the owner and default duty.
                     if (!ReferenceEquals(charge, pet.Owner))
+                        pet.EndHeal();
+                    return _nodeState = NodeState.Failure;
+                case HealOrderResult.OutOfRange:
+                    // Out of range: the order stands and the pet heals again once its target is back in range (bug
+                    // #464: one step out of range sent the pet back to healing its owner for good). Following the
+                    // owner is what brings the pet back in range. The order ends once the target has despawned from
+                    // the owner (gone out of the owner's visibility), with the target (PetAi.Charge), or on the
+                    // owner's next command.
+                    if (!ReferenceEquals(charge, pet.Owner) && !OwnerStillSees(pet, charge))
                         pet.EndHeal();
                     return _nodeState = NodeState.Failure;
                 case HealOrderResult.Blocked:
@@ -540,6 +547,15 @@ namespace ZoneEngine_New.Core.Ai
                     return _nodeState = NodeState.Failure;
             }
         }
+
+        /// <summary>
+        /// The heal target is still spawned on the owner's client. An NPC owner has no client view, so its pet keeps the
+        /// order until the target is gone from the playfield.
+        /// </summary>
+        bool OwnerStillSees(PetController pet, Character target)
+            => pet.Owner is not Player owner
+                || _brain.Npc.Playfield?.GetService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>() is not { } locality
+                || locality.IsVisibleTo(target, owner);
     }
 
     sealed class PetWaitNode : BehaviourNode

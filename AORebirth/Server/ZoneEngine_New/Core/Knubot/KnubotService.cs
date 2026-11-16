@@ -35,6 +35,27 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
 
     const int DefaultCloseSeconds = 3;
 
+    /// <summary>Characters of a closing line a player is given a second to read, on top of <see cref="DefaultCloseSeconds"/>.</summary>
+    const int ReadingCharactersPerSecond = 15;
+
+    const int MaxReadingCloseSeconds = 30;
+
+    /// <summary>
+    /// How long a line that ends the chat stays up when it names no CloseSeconds: long enough to read it (bug #219: a
+    /// long last line closed after the same 3 seconds as a short one).
+    /// </summary>
+    static int ReadingCloseSeconds(KnubotLine line)
+    {
+        int characters = 0;
+        foreach (KnubotPiece piece in line.Pieces)
+        {
+            if (piece is KnubotTextPiece text)
+                characters += text.Text.Length;
+        }
+
+        return Math.Min(DefaultCloseSeconds + characters / ReadingCharactersPerSecond, MaxReadingCloseSeconds);
+    }
+
     readonly Func<long> _milliseconds = milliseconds ?? (() => Environment.TickCount64);
     readonly ConcurrentDictionary<int, Conversation> _sessions = new();
     readonly ConditionalWeakTable<Player, HashSet<string>> _met = new();
@@ -558,7 +579,7 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
 
         if (line.CloseSeconds != null || visible.Length == 0)
         {
-            QueueClose(conversation, line.CloseSeconds ?? DefaultCloseSeconds);
+            QueueClose(conversation, line.CloseSeconds ?? ReadingCloseSeconds(line));
             return;
         }
 

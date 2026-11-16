@@ -94,10 +94,16 @@ namespace ZoneEngine_New.Core.Nanos
         /// </summary>
         protected override bool UserIsRecipient => _userIsRecipient;
 
+        /// <summary>Every function names the User or Wearer and none an opponent (see <see cref="UserIsRecipient"/>).</summary>
+        public bool ActsOnlyOnRunner => _userIsRecipient;
+
         /// <summary>
         /// True when an OnUse function is more than a one-shot launch: anything but casting another nano (CastNano,
         /// TeamCastNano, AreaCastNano, CastChance), summoning a pet or spawning an item or monster, or one of those
-        /// repeating or delayed on a timer (its ticks run from the NCU entry).
+        /// repeating or delayed on a timer (its ticks run from the NCU entry). A friendly nano's single Hit is a
+        /// one-shot too: it is done the moment it lands. Tap Vitae's team heal 248222 (Hit Health 1200-1500, TimeExist
+        /// 10 s, no IsBuff flag) carries an NCU cost of 999, so as an NCU entry it was refused on every target and never
+        /// healed (bugs #390, #445). Reads <see cref="IsHostile"/>, so it runs after that is set.
         /// </summary>
         bool HasEffectOfItsOwn()
         {
@@ -108,7 +114,8 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 bool launches = (FunctionType)spell.FunctionType is FunctionType.CastNano or FunctionType.TeamCastNano
                     or FunctionType.AreaCastNano or FunctionType.CastChance or FunctionType.SummonPet
-                    or FunctionType.SpawnItem or FunctionType.SpawnMonster2;
+                    or FunctionType.SpawnItem or FunctionType.SpawnMonster2
+                    || (!IsHostile && spell.Is(FunctionType.Hit));
                 if (!launches || (spell.TickCount > 1 && spell.TickInterval > 0) || Buff.IsDelayedOnce(spell))
                     return true;
             }

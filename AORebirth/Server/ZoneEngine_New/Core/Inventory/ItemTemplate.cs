@@ -237,7 +237,11 @@ namespace ZoneEngine_New.Core.Inventory
                 bool leafOnTarget = onTarget && !IsEventCriterion(requirement);
                 Func<CharacterStat, int> reader = leafOnTarget ? getTargetStat! : getStat;
                 if (!EvaluateLeaf(requirement, reader, leafOnTarget ? resolveTarget ?? resolve : resolve))
-                    unmet.Add(new UnmetRequirement(requirement, reader((CharacterStat)requirement.StatNumber), leafOnTarget));
+                {
+                    // As EvaluateLeaf reads it: a stat never set is 0, not the Unset sentinel (1234567890).
+                    int actual = StatCollection.Normalize(reader((CharacterStat)requirement.StatNumber));
+                    unmet.Add(new UnmetRequirement(requirement, actual, leafOnTarget));
+                }
                 if (requirement.ChildOperator != 0)
                     onTarget = false;
             }

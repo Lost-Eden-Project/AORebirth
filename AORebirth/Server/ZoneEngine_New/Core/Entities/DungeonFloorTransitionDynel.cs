@@ -46,7 +46,18 @@ public sealed class DungeonFloorTransitionDynel : StaticDynel
         if (player.IsDead || player.IsPersistenceQuarantined || player.Session == null
             || Playfield == null || !ReferenceEquals(player.Playfield, Playfield)
             || !CanBeginUse(player)) return false;
+
+        // A second click that reaches the server just after a ride would use the lift the player has just arrived on
+        // and take them straight back (bug #437).
+        long now = Environment.TickCount64;
+        if (now - player.LastFloorTransitionMs < ReuseLockoutMilliseconds)
+            return false;
+
+        player.LastFloorTransitionMs = now;
         player.TeleportWithinPlayfield(Landing);
         return true;
     }
+
+    /// <summary>How long after a ride a player cannot take another lift.</summary>
+    const long ReuseLockoutMilliseconds = 2000;
 }

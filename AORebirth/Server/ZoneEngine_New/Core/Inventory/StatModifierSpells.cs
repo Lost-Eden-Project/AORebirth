@@ -16,7 +16,13 @@ namespace ZoneEngine_New.Core.Inventory
     public static class StatModifierSpells
     {
         /// <param name="overEquipLevel">The source item's over-equipped level (<see cref="Inventory.OverEquip"/>); it scales Modify only.</param>
-        public static void Apply(IReadOnlyList<ItemSpell> spells, StatCollection stats, int overEquipLevel = 0)
+        /// <param name="resolve">
+        /// Answers the requirement leaves a stat cannot settle (HasPerk, worn items). A perk's tiers share one template and
+        /// tell their functions apart with them: Accumulator 210830 writes its proc under "HasPerk 101, Not". Without it
+        /// such a leaf fails closed.
+        /// </param>
+        public static void Apply(IReadOnlyList<ItemSpell> spells, StatCollection stats, int overEquipLevel = 0,
+            System.Func<ItemRequirement, bool?>? resolve = null)
         {
             if (spells == null || stats == null)
                 return;
@@ -33,7 +39,9 @@ namespace ZoneEngine_New.Core.Inventory
                     && !spell.Is(FunctionType.Modify) && !spell.Is(FunctionType.ScalingModify)
                     && !spell.Is(FunctionType.Skill))
                     continue;
-                if (!spell.MeetsRequirements(stats))
+                if (resolve == null
+                        ? !spell.MeetsRequirements(stats)
+                        : !ItemTemplate.MeetsRequirements(spell.Requirements, stat => stats.Get(stat), resolve))
                     continue;
                 if (canFly)
                 {

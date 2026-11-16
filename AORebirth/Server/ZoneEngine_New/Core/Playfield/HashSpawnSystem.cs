@@ -1116,9 +1116,14 @@ namespace ZoneEngine_New.Core.Playfield
             // is out with its owner, not idle here: the point stays awake until the charm ends and it comes home.
             // Nor is a living scripted NPC: its script keeps running with no player near (its own cell stays Cold, see
             // CellHeatScheduler), so it stays even when it has wandered out of the point's cell.
+            // Nor is a living member that is fighting or walking home from a fight: a rotation spawn can stand cells away
+            // from its primary point (Remur-Nefer REMU in 4311 fights at (256, 642), four cells from (215, 495)), and
+            // the home cell going to sleep took it out of the world mid-fight (bug #433).
             for (int i = 0; i < members.Length; i++)
             {
                 if (members[i] is NpcCharacter { Pet: not null } or NpcCharacter { Scripts: not null, IsDead: false })
+                    return;
+                if (members[i] is NpcCharacter { IsDead: false } npc && (npc.IsInCombat || npc.IsEvading))
                     return;
             }
 

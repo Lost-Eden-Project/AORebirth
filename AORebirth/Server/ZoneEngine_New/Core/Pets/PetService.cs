@@ -573,7 +573,8 @@ namespace ZoneEngine_New.Core.Pets
             {
                 PetController controller = pet.Pet!;
                 // An over-equipped pet ignores every command; its owner can still dismiss it or ask for a report.
-                if (controller.IsOverEquipped && command is not (PetCommandCode.Terminate or PetCommandCode.Report))
+                if (controller.IsOverEquipped
+                    && command is not (PetCommandCode.Terminate or PetCommandCode.Free or PetCommandCode.Report))
                     continue;
 
                 bool healPet = IsHealPet(controller.Type);
@@ -646,6 +647,12 @@ namespace ZoneEngine_New.Core.Pets
                     case PetCommandCode.Terminate:
                         Answer(owner, pet, command.ToString());
                         Dismiss(pet, "terminated by owner");
+                        break;
+                    case PetCommandCode.Free:
+                        // /pet free lets a charmed NPC go: its charm ends as a terminate ends it. A summoned pet is
+                        // not freed, it is terminated.
+                        if (controller.IsCharmed)
+                            Dismiss(pet, "freed by owner");
                         break;
                     case PetCommandCode.Report:
                         Report(owner, pet);

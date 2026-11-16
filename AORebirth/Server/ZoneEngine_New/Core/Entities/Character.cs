@@ -2188,11 +2188,13 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Out of a fight only recharges run: a bar that swung finishes recharging, and an attack bar waits (it charges
-        /// only against a target). A nano cast pauses it, as in a fight.
+        /// only against a target). A nano cast pauses it, as in a fight. So does a calm: a pacified character's weapon
+        /// clocks stop where they were, or every recharge would finish under the calm and its weapons would swing back
+        /// to back when the calm breaks (bug #512).
         /// </summary>
         void TickIdleRecharge(double deltaTime)
         {
-            if (IsCastingNano || IsStunned)
+            if (IsCastingNano || IsStunned || IsPacified)
                 return;
 
             foreach (CharacterWeapon weapon in Weapons.Values)

@@ -758,22 +758,26 @@ namespace ZoneEngine_New.Core.Nanos
             bool gmApply = false,
             bool areaSpread = false)
         {
+            bool ownPet = false;
             if (!gmApply)
             {
                 if (IsNoCombat(source) || IsNoCombat(target))
                     return false;
 
                 // An area spread never lands on its source; anything else it reaches must be one the source could attack.
-                if (spell.IsHostile && (areaSpread
+                // A hostile-flagged child landed on the source's own pet is the exception: Engineer Reconstruction 229119
+                // (MustBeCastersPet) casts its pet HoT 229110, flags 0x9C002, on the pet (bugs #406, #468).
+                ownPet = !areaSpread && IsOwnPet(source, target);
+                if (spell.IsHostile && !ownPet && (areaSpread
                         ? !NanoCastFunctions.IsCaughtByHostileArea(source, target)
                         : !IsHostileNanoTarget(source, target)))
                     return false;
 
-                if (spell.IsHostile && target.IsEvading)
+                if (spell.IsHostile && !ownPet && target.IsEvading)
                     return false;
 
                 // A proc or a nano's child resists by strain like a cast does.
-                if (spell.IsHostile && target.ResistsNanoStrain(spell.NanoStrain))
+                if (spell.IsHostile && !ownPet && target.ResistsNanoStrain(spell.NanoStrain))
                     return false;
 
                 // Team buffs, auras and other nanos a player's nano lands: helping a PvP-enabled player flags them.
@@ -809,10 +813,14 @@ namespace ZoneEngine_New.Core.Nanos
 
             SendNanoDuration(source, target, applied);
             ExecuteOnUseEffects(source, target, spell, skipPassiveModifiers: true, inventory, items);
-            if (spell.IsHostile && !gmApply)
+            // A pet given its owner's hostile-flagged buff does not turn on its owner.
+            if (spell.IsHostile && !gmApply && !ownPet)
                 OnDebuffLanded(source, target, applied);
             return true;
         }
+
+        static bool IsOwnPet(Character source, Character target)
+            => target is NpcCharacter { PetOwner: Character owner } && ReferenceEquals(owner, source);
 
         static void Complete(Character caster, PendingNanoCast cast, DateTime nowUtc)
         {

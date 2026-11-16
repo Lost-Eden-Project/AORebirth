@@ -5,6 +5,8 @@ namespace ZoneEngine_New.Core.Nanos
 
     using AORebirth.Enums;
 
+    using SmokeLounge.AOtomation.Messaging.GameData;
+
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
@@ -15,7 +17,10 @@ namespace ZoneEngine_New.Core.Nanos
     /// when a weapon hit connects with the holder. A proc lives on an active buff's OnUse (Ritualistic Touch 210353
     /// [25, 210341]), a worn item's OnWear (Ofab helmets' AddDefProc) or the swinging weapon's OnHit. A worn weapon's
     /// offensive procs only fire on that weapon's own hits. Each source rolls its own chance. A hostile proc nano lands
-    /// on the opponent (210341 drains the struck target); any other lands on the proc's owner.
+    /// on the opponent (210341 drains the struck target); any other lands on the proc's owner. So does a hostile-flagged
+    /// one whose every function names only the User or Wearer: LE research Ferocious Hits 266724 (+15 damage
+    /// modifiers) and Aesir Absorption 263362 (+50 AddAllDef) carry the flag but are the holder's own buffs, while every
+    /// hostile LE proc meant for the enemy names the Fightingtarget or Target.
     /// </summary>
     internal static class ProcRules
     {
@@ -68,7 +73,35 @@ namespace ZoneEngine_New.Core.Nanos
 
             if (kind == FunctionType.AddOffProc && weapon != null)
                 Add(weapon.SpellList, EventType.OnHit, kind, ref procs);
+            if (kind == FunctionType.AddOffProc)
+                AddStatProcs(holder, ref procs);
             return procs;
+        }
+
+        /// <summary>The four proc slots a character's stats hold: the nano (552-555) and its chance in percent (556-559).</summary>
+        static readonly (CharacterStat Nano, CharacterStat Chance)[] StatProcSlots =
+        [
+            (CharacterStat.ProcNano1, CharacterStat.ProcChance1),
+            (CharacterStat.ProcNano2, CharacterStat.ProcChance2),
+            (CharacterStat.ProcNano3, CharacterStat.ProcChance3),
+            (CharacterStat.ProcNano4, CharacterStat.ProcChance4),
+        ];
+
+        /// <summary>
+        /// Offensive procs written to the holder's proc slots rather than given as AddOffProc: a perk's OnWear or a
+        /// buff's ChangeVariable sets ProcNanoN and ProcChanceN (Keeper Sanctifier 210484: [553, 210478] [557, 13]; Trader
+        /// Accumulator 210830: [552, 210941] [556, 17]; MA Disharmony 211783: [552, 233816] [556, 50]). ProcInitiativeN
+        /// (539-542) is not read: what it does on live is not known.
+        /// </summary>
+        static void AddStatProcs(Character holder, ref List<(int Chance, int NanoId)>? procs)
+        {
+            foreach ((CharacterStat nanoStat, CharacterStat chanceStat) in StatProcSlots)
+            {
+                int nanoId = holder.Stats.GetOrZero(nanoStat);
+                int chance = holder.Stats.GetOrZero(chanceStat);
+                if (nanoId > 0 && chance > 0)
+                    (procs ??= new List<(int, int)>()).Add((Math.Min(chance, 100), nanoId));
+            }
         }
 
         static void Add(Dictionary<EventType, List<ItemSpell>> spellList, EventType eventType, FunctionType kind,
@@ -111,7 +144,8 @@ namespace ZoneEngine_New.Core.Nanos
                 if (template.Id != nanoId)
                     continue;
 
-                Character recipient = NanoSpell.From(template).IsHostile ? opponent : holder;
+                NanoSpell spell = NanoSpell.From(template);
+                Character recipient = spell.IsHostile && !spell.ActsOnlyOnRunner ? opponent : holder;
                 if (recipient.IsDead)
                     continue;
                 NanoRuntime.TryApplyImmediate(holder, recipient, nanoId, items, inventory, now);
