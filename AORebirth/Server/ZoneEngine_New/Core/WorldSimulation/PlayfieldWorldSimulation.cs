@@ -1074,6 +1074,11 @@
                 bool exit = ExitInstanceOf(d) > 0;
                 if (!exit && !_gameData.TryGetTeleportRoute(_playfieldId, (int)IdentityType.Door, unchecked((uint)d.IdentityInstance), out _, out _, out _))
                     continue;
+                // A door that teleports from its own vicinity pad (4001's C0000FA1, level-capped TeleportProxy2 into 4313)
+                // already zones by its own events: a route must not add a walk-in crossing that bypasses its criteria and
+                // beats the pad to every step.
+                if (!exit && PortalDoorLandingResolver.TryReadVicinityProxy(d, out _))
+                    continue;
 
                 float x = d.Position.X;
                 float y = d.Position.Y;
