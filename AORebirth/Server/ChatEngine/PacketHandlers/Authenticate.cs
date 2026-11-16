@@ -48,12 +48,10 @@ namespace ChatEngine.PacketHandlers
 
         private const int MaxLoginKeyLength = 4096;
 
-        // TEMPORARY - RE-ENABLE (set to true) WHEN THE FIXED LOST EDEN CLIENT IS DEPLOYED.
-        // Released Lost Eden clients encrypt the chat login key for Funcom's public key instead of ours
-        // (ChatLoginKey.cs ignores -server-key), so the server cannot decrypt it. While false, a game client whose
-        // key does not verify is still admitted on account name + character ownership alone: anyone who knows an
-        // account name and character id can chat as that character. Chat bots always need a valid key.
-        private const bool RequireGameClientLoginKey = false;
+        // A game client must prove the account password with a login key that decrypts with our key; without it,
+        // anyone who knows an account name and character id could chat as that character. Clients that encrypt
+        // the key for Funcom's public key (Lost Eden clients before the -server-key fix) are refused.
+        private const bool RequireGameClientLoginKey = true;
 
         #region Public Methods and Operators
 
