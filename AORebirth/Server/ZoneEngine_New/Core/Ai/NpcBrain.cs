@@ -283,10 +283,22 @@ namespace ZoneEngine_New.Core.Ai
         Vector3? _scriptedAnchor;
         ScriptMoveResult _scriptedResult;
 
+        /// <summary>Where a chained leg's route passes first: the end of the leg it took over from.</summary>
+        Vector3? _scriptedVia;
+
         public bool ScriptHoldsMovement => _scriptedDestination is not null;
 
         /// <summary>The held scripted walk goes straight to its point instead of along the navmesh.</summary>
         public bool ScriptMovesDirect => _scriptedDirect && _scriptedDestination is not null;
+
+        /// <summary>
+        /// The held leg is on its last segment, inside the distance where a following segment is planned (before the
+        /// body brakes into the end). A program that walks on from here chains its next leg onto this one, so the NPC
+        /// passes through the point instead of stopping at it.
+        /// </summary>
+        public bool ScriptMoveNearEnd =>
+            _scriptedDestination is not null && _followAnnounced && _segmentReachesDestination && Npc.Motor.HasPath
+            && Npc.Motor.RemainingPathMeters() <= ReplanRemainingMeters();
 
         /// <summary>
         /// Walk (or run) to <paramref name="destination"/>; the result is read with <see cref="ConsumeScriptMoveResult"/>.
@@ -302,24 +314,53 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             }
 
-            // A fresh leg: whatever path the body last finished (an earlier leg, a chase) must not count as this one's
-            // arrival, so the segment flags and any leftover motor path go first.
-            StopPathing();
+            // A leg asked for near the end of the one still held chains onto it: the body keeps its path (no stop is
+            // sent, no brake) and the new route runs through the old end, so the waypoint is passed, not cut. Any other
+            // leg is fresh: whatever path the body last finished (an earlier leg, a chase) must not count as this
+            // one's arrival, so the segment flags and any leftover motor path go first.
+            if (ScriptMoveNearEnd)
+            {
+                _scriptedVia = new Vector3(_segmentEnd.x, _segmentEnd.y, _segmentEnd.z);
+                _segmentReachesDestination = false;
+            }
+            else
+            {
+                _scriptedVia = null;
+                StopPathing();
+            }
+
+            // Plan the leg on this tick's think (the program runs before the brain) rather than up to a think later.
+            _thinkElapsed = Math.Max(_thinkElapsed, NpcAiRules.BrainThinkSeconds);
             // A shared script destination is spread per NPC so a group does not pile onto one point. A direct leg is
             // an exact off-mesh bridge (a ramp) and is walked as given.
             _scriptedDestination = direct
                 ? new Vector3(destination.x, destination.y, destination.z)
-                : NpcSpread.Destination(Npc, destination);
+                : SpreadOnMesh(destination);
             _scriptedRun = run;
             _scriptedDirect = direct;
             _scriptedAnchor = _scriptedDestination;
             _scriptedResult = ScriptMoveResult.None;
         }
 
+        /// <summary>
+        /// This NPC's spread of a script destination, or the destination itself when the spread falls off the mesh (past a
+        /// plateau edge, in a wall): no route ends there, so the NPC would stand where it is for good.
+        /// </summary>
+        Vector3 SpreadOnMesh(Vector3 destination)
+        {
+            Vector3 spread = NpcSpread.Destination(Npc, destination);
+            NavMeshPathfinder? finder = Npc.Playfield?.Pathfinder;
+            if (finder != null
+                && !finder.IsDestinationOnMesh(new System.Numerics.Vector3((float)spread.x, (float)spread.y, (float)spread.z)))
+                return new Vector3(destination.x, destination.y, destination.z);
+            return spread;
+        }
+
         /// <summary>The program gives movement back to patrol / wander / idle.</summary>
         public void ScriptReleaseMovement()
         {
             _scriptedAnchor = null;
+            _scriptedVia = null;
             if (_scriptedDestination is null)
                 return;
 
@@ -346,6 +387,7 @@ namespace ZoneEngine_New.Core.Ai
                 || (!Npc.Motor.HasPath && _followAnnounced && _segmentReachesDestination && HasReachedSegmentEnd()))
             {
                 _scriptedDestination = null;
+                _scriptedVia = null;
                 _scriptedResult = ScriptMoveResult.Arrived;
                 StopPathing();
                 return;
@@ -371,6 +413,7 @@ namespace ZoneEngine_New.Core.Ai
                 return;
 
             _scriptedDestination = null;
+            _scriptedVia = null;
             _scriptedResult = ScriptMoveResult.Interrupted;
             if (Npc.Motor.State == Movement.MovementState.Walk)
                 Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
@@ -1426,6 +1469,7 @@ namespace ZoneEngine_New.Core.Ai
                         {
                             _stuckWarps = 0;
                             _scriptedDestination = null;
+                            _scriptedVia = null;
                             _scriptedResult = ScriptMoveResult.Stuck;
                             StopPathing();
                             return;
@@ -1497,6 +1541,8 @@ namespace ZoneEngine_New.Core.Ai
             if (!Npc.Motor.HasPath)
                 return;
 
+            // The chained leg's route now runs through the old end; later replans start from the body.
+            _scriptedVia = null;
             if (!continuing)
                 ResetProgress(now);
             Vector3 segmentEnd = _pathScratch[_pathScratch.Count - 1];
@@ -1776,14 +1822,20 @@ namespace ZoneEngine_New.Core.Ai
             _routeScratch.Clear();
             Vector3 feet = Npc.Position;
             _routeScratch.Add(new Vector3(feet.x, feet.y, feet.z));
+            // A chained script leg first finishes the leg it took over from, then plans on from that end.
+            Vector3? via = _scriptedDestination is not null ? _scriptedVia : null;
+            if (via is Vector3 through)
+                _routeScratch.Add(new Vector3(through.x, through.y, through.z));
+
             if (ScriptMovesDirect)
             {
                 _routeScratch.Add(new Vector3(destination.x, destination.y, destination.z));
                 return;
             }
 
-            Vector3 startPos = HeightfieldOrSelf(feet);
-            if (_reachPathScratch.Count > 0
+            Vector3 startPos = HeightfieldOrSelf(via ?? feet);
+            if (via is null
+                && _reachPathScratch.Count > 0
                 && Vector3.Abs(destination - _reachCachePos) < NpcFollowTarget.MinAnnounceDeltaMeters
                 && Vector3.Abs(startPos - _reachCacheStart) < MovementConfig.PathArrivalRadius)
             {
@@ -1798,8 +1850,27 @@ namespace ZoneEngine_New.Core.Ai
                 // With a navmesh, no route means no walk: a straight line ran NPCs into walls and off ledges.
                 var start = new System.Numerics.Vector3((float)startPos.x, (float)startPos.y, (float)startPos.z);
                 var end = new System.Numerics.Vector3((float)destination.x, (float)destination.y, (float)destination.z);
-                if (PathDiag.TryFindPath(finder, start, end, _planScratch, PathDiag.Route) && _planScratch.Count > 0)
+                if (PathDiag.TryFindPath(finder, start, end, _planScratch, PathDiag.Route) && _planScratch.Count > 0
+                    // The search may snap an off-mesh start onto another island; only a route that begins at the
+                    // chained point carries on from it.
+                    && (via is null || PathEndsUnderNpc(start, _planScratch[0])))
+                {
                     AppendRoute(_planScratch);
+                    return;
+                }
+
+                // No route on from the chained point (a direct bridge ends off the mesh): never keep the bare
+                // body-to-point line, whose end would read as this leg's arrival. Plan from the body, as an unchained
+                // leg does; failing that, the old leg runs out and the next think plans from where it ends.
+                _routeScratch.RemoveRange(1, _routeScratch.Count - 1);
+                if (via is not null)
+                {
+                    Vector3 feetPos = HeightfieldOrSelf(feet);
+                    start = new System.Numerics.Vector3((float)feetPos.x, (float)feetPos.y, (float)feetPos.z);
+                    if (PathDiag.TryFindPath(finder, start, end, _planScratch, PathDiag.Route) && _planScratch.Count > 0)
+                        AppendRoute(_planScratch);
+                }
+
                 return;
             }
 

@@ -498,6 +498,17 @@ public sealed class NpcScriptRunner
                 return true;
         }
 
+        // Near the end of a leg that the next op walks on from: the program goes on now, so that leg chains onto this
+        // one and the NPC passes the point instead of braking to a stop and waiting out a poll and a think.
+        if (_moveDestination is not null && brain.ScriptMoveNearEnd && NextOpWalks())
+        {
+            _waiting = WaitKind.None;
+            _moveDestination = null;
+            _wakeAtMs = now;
+            Raise(NpcScriptTrigger.Arrived, _waitWaypoint);
+            return true;
+        }
+
         if (brain.ScriptHoldsMovement)
         {
             _wakeAtMs = now + ArrivePollMs;
@@ -519,6 +530,29 @@ public sealed class NpcScriptRunner
         }
 
         return true;
+    }
+
+    /// <summary>The op the running handler executes next is a walk (through any Gotos, as a patrol loop jumps back).</summary>
+    bool NextOpWalks()
+    {
+        if (_handler < 0)
+            return false;
+
+        ScriptOp[] ops = _program.Ops;
+        ScriptHandler handler = _program.Handlers[_handler];
+        int pc = _pc;
+        for (int hops = 0; hops < 4; hops++)
+        {
+            if (pc < handler.Start || pc >= handler.End)
+                return false;
+
+            ScriptOp op = ops[pc];
+            if (op.Code != ScriptOpCode.Goto)
+                return op.Code == ScriptOpCode.MoveTo;
+            pc = op.A;
+        }
+
+        return false;
     }
 
     void Execute(long now)
