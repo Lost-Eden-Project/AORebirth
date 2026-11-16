@@ -45,6 +45,19 @@ public sealed class MissionItemObjectiveBinding
             && QuestInstanceStat == other.QuestInstanceStat && WorldFlags == other.WorldFlags
             && WorldScalePercent == other.WorldScalePercent
             && MissionType == other.MissionType && IsSourceItem == other.IsSourceItem;
+
+    /// <summary>
+    /// The same accepted objective, wherever it was placed: as <see cref="SameAs"/> without the room and position. The
+    /// dungeon places the objective on its first build and keeps that in its own copy of the binding; the accepted
+    /// quest's copy keeps room 0 at the origin, so comparing placement made every pickup and repair fail.
+    /// </summary>
+    public bool SameObjectiveAs(MissionItemObjectiveBinding? other)
+        => other != null && string.Equals(QuestId, other.QuestId, StringComparison.Ordinal)
+            && OwnerId == other.OwnerId && IdentityType == other.IdentityType && Instance == other.Instance
+            && LowId == other.LowId && HighId == other.HighId && Quality == other.Quality
+            && QuestInstanceStat == other.QuestInstanceStat && WorldFlags == other.WorldFlags
+            && WorldScalePercent == other.WorldScalePercent
+            && MissionType == other.MissionType && IsSourceItem == other.IsSourceItem;
 }
 
 /// <summary>The catalog NPC and exact actor identity frozen with an accepted mission.</summary>

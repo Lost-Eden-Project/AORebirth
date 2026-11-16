@@ -1,31 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "dependencies": {
     "net10.0": {
-      "AODB": {
-        "type": "Transitive",
-        "resolved": "1.0.13",
-        "contentHash": "AMGoM+soZcmdQfq193EeULhf9+FQJGqz1A/Kucxlu3j2jARJtsqJj1mcy8NYHNIod/j1nRpDyhss3fZN9TkGMg==",
-        "dependencies": {
-          "StbImageSharp": "2.30.15",
-          "StbImageWriteSharp": "1.16.7"
-        }
-      },
-      "MathNet.Numerics": {
-        "type": "Transitive",
-        "resolved": "5.0.0",
-        "contentHash": "pg1W2VwaEQMAiTpGK840hZgzavnqjlCMTVSbtVCXVyT+7AX4mc1o89SPv4TBlAjhgCOo9c1Y+jZ5m3ti2YgGgA=="
-      },
-      "N3Lite": {
-        "type": "Transitive",
-        "resolved": "0.1.13",
-        "contentHash": "JSJMaUkVEAu7jMiXpQRoP5D59Z1ASZXO6aASz0daPlfr63lPoVX9NONjxNlJqGioM49DLiRaijxyLV8tUfdA5A=="
-      },
-      "StbImageSharp": {
-        "type": "Transitive",
-        "resolved": "2.30.15",
-        "contentHash": "7QqbupVhz2kcFUPTgMw4iHR9rYDHGundzzee19Mwmd1typ2Lnv8EVJcLJxlkeBM2+4ex0NwsMtdbGSJctp1XCQ=="
-      },
       "StbImageWriteSharp": {
         "type": "Transitive",
         "resolved": "1.16.7",
@@ -54,6 +30,34 @@
       },
       "SmokeLounge.AOtomation.Messaging": {
         "type": "Project"
+      },
+      "AODB": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.13, )",
+        "resolved": "1.0.13",
+        "contentHash": "AMGoM+soZcmdQfq193EeULhf9+FQJGqz1A/Kucxlu3j2jARJtsqJj1mcy8NYHNIod/j1nRpDyhss3fZN9TkGMg==",
+        "dependencies": {
+          "StbImageSharp": "2.30.15",
+          "StbImageWriteSharp": "1.16.7"
+        }
+      },
+      "MathNet.Numerics": {
+        "type": "CentralTransitive",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "pg1W2VwaEQMAiTpGK840hZgzavnqjlCMTVSbtVCXVyT+7AX4mc1o89SPv4TBlAjhgCOo9c1Y+jZ5m3ti2YgGgA=="
+      },
+      "N3Lite": {
+        "type": "CentralTransitive",
+        "requested": "[0.1.13, )",
+        "resolved": "0.1.13",
+        "contentHash": "JSJMaUkVEAu7jMiXpQRoP5D59Z1ASZXO6aASz0daPlfr63lPoVX9NONjxNlJqGioM49DLiRaijxyLV8tUfdA5A=="
+      },
+      "StbImageSharp": {
+        "type": "CentralTransitive",
+        "requested": "[2.30.15, )",
+        "resolved": "2.30.15",
+        "contentHash": "7QqbupVhz2kcFUPTgMw4iHR9rYDHGundzzee19Mwmd1typ2Lnv8EVJcLJxlkeBM2+4ex0NwsMtdbGSJctp1XCQ=="
       }
     }
   }

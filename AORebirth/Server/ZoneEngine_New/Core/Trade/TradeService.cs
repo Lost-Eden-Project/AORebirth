@@ -25,7 +25,7 @@ namespace ZoneEngine_New.Core.Trade
     /// many sessions at once. All mutation runs on the owning playfield's tick thread — the registry
     /// lock only protects lookups made from another playfield (transfer, shutdown).
     /// </summary>
-    public sealed class TradeService
+    public sealed partial class TradeService
     {
         /// <summary>Walking further than this from the trade anchor cancels the window.</summary>
         public const double RangeCancelDistance = LootableDynel.OpenRange;
@@ -39,6 +39,7 @@ namespace ZoneEngine_New.Core.Trade
         readonly IItemInstanceIdAllocator _ids;
         readonly InventoryFlushService _flush;
         readonly ITradePersistence _persistence;
+        readonly IccShopCatalog _iccShop;
 
         public TradeService(
             IZoneLogger logger,
@@ -47,8 +48,10 @@ namespace ZoneEngine_New.Core.Trade
             HashItemMinter minter,
             IItemInstanceIdAllocator ids,
             InventoryFlushService flush,
-            ITradePersistence persistence)
+            ITradePersistence persistence,
+            IccShopCatalog? iccShop = null)
         {
+            _iccShop = iccShop ?? IccShopCatalog.Empty;
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(gameData);
             ArgumentNullException.ThrowIfNull(catalog);
@@ -85,6 +88,10 @@ namespace ZoneEngine_New.Core.Trade
                 return false;
 
             if (player.IsDead || machine.Playfield == null)
+                return false;
+
+            // An ICC terminal is the client's own shop window (IccPurchase), never a stock shop.
+            if (_iccShop.IsTerminal(machine.Template.Id))
                 return false;
 
             NpcCharacter? owner = machine.OwnerNpc;

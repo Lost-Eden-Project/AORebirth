@@ -411,6 +411,7 @@ namespace ZoneEngine_New.Core.Modules
                     MissionKind.KillPerson => QuestTemplate.KillOneAction,
                     MissionKind.FindPerson => QuestTemplate.TargetNpcAction,
                     MissionKind.FindItem => QuestTemplate.FindItemAction,
+                    MissionKind.ReturnItem => QuestTemplate.ReturnItemAction,
                     _ => QuestTemplate.RepairAction
                 },
                 Objective = new QuestObjective

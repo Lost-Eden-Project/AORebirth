@@ -328,6 +328,11 @@ namespace SmokeLounge.AOtomation.Messaging.Messages
 
         OrgClient = 0x7f4b3108, 
 
-        VendingMachineFullUpdate = 0x7f544905, 
+        VendingMachineFullUpdate = 0x7f544905,
+
+        // Lost Eden's own, not stock's ("LEI" + n): the ICC Commendations shop.
+        IccPurchase = 0x4c454901,
+
+        IccPurchaseResult = 0x4c454902,
     }
 }

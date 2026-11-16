@@ -250,6 +250,51 @@ public sealed partial class QuestService
         UpsertFlag(transaction, key, flagKey, roll.Serialize(), now);
     }
 
+    /// <summary>
+    /// The ICC Commendations the mission pays <paramref name="player"/> (its frozen <see cref="MissionCommendations"/>
+    /// at its quality), with the completion bonus by the kill share: the reward roll's when there is one, else the
+    /// dungeon's ledger or its last checkpoint. 0 for a quest that pays none.
+    /// </summary>
+    int CommendationsFor(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
+        CharacterQuestCompletionSnapshotData stored, TokenRoll? roll)
+    {
+        if (quest.Source != QuestSource.Generated
+            || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var parameters)
+            || parameters.Commendations is not { } rule)
+            return 0;
+        (int killed, int total) = KillShare(transaction, player, quest, stored, parameters, roll);
+        return rule.For(parameters.Quality, killed, total);
+    }
+
+    /// <summary>
+    /// The share of its advertised credits and experience the mission pays <paramref name="player"/> (its frozen
+    /// <see cref="MissionRewardSplit"/> by the same kill share as the commendations); null for a quest without a split,
+    /// which pays as before.
+    /// </summary>
+    double? RewardFactorFor(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
+        CharacterQuestCompletionSnapshotData stored, TokenRoll? roll)
+    {
+        if (quest.Source != QuestSource.Generated
+            || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var parameters)
+            || parameters.Rewards is not { } split)
+            return null;
+        (int killed, int total) = KillShare(transaction, player, quest, stored, parameters, roll);
+        return split.Factor(killed, total);
+    }
+
+    /// <summary>The kill share: the reward roll's when there is one, else the dungeon's ledger or its last checkpoint.</summary>
+    (int Killed, int Total) KillShare(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
+        CharacterQuestCompletionSnapshotData stored, QuestDungeonParameters parameters, TokenRoll? roll)
+    {
+        if (roll != null)
+            return (roll.Killed, roll.Total);
+        if (player.Playfield is QuestDungeonPlayfield dungeon
+            && string.Equals(dungeon.QuestId, quest.QuestId, StringComparison.Ordinal) && dungeon.Kills is DungeonKills kills)
+            return kills.Chance();
+        return DungeonKills.ChanceOf(parameters, transaction.GetFlag(
+            new MissionKeyData(player.Identity.Instance, quest.QuestId), KillsFlag(stored.AssignedAtUtcTicks))?.Value);
+    }
+
     static TokenRoll? ReadTokenReward(IMissionDaoTransaction transaction, Player player,
         PlayerQuest quest, CharacterQuestCompletionSnapshotData stored)
     {

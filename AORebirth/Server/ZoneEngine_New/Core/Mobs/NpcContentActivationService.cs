@@ -49,7 +49,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
         foreach (var definition in playfieldContent.StandaloneShops)
         {
             if (_activated.Contains(definition.Key)) continue;
-            if (!WorldNpcFactory.TryCreateShop(definition.Vendor, catalog, out var shop, out string failure))
+            if (!WorldNpcFactory.TryCreateShop(definition.Vendor, catalog, out var shop, out string failure, allowEmptyStock: true))
             {
                 _unavailableVendorEndpoints[definition.Key] = failure;
                 continue;
@@ -70,7 +70,7 @@ internal sealed class NpcContentActivationService(Playfield playfield, DynelRegi
                 bound = existing;
                 bound.Position = shop.Position;
                 bound.Rotation = shop.Rotation;
-                if (!bound.Stock.IsConfiguredSnapshot)
+                if (!bound.Stock.IsConfiguredSnapshot && definition.Vendor.Stock.Length > 0)
                     bound.Stock.SetConfiguredSnapshot(ToStockSlots(definition.Vendor.Stock));
             }
             else

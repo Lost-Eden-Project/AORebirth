@@ -110,7 +110,11 @@ namespace AORebirth.Modules.Missions
         FindItem = 2,
 
         /// <summary>Use the supplied tool on the objective machine.</summary>
-        RepairMachine = 3
+        RepairMachine = 3,
+
+        /// <summary>Find the objective item, then use it on the terminal that issued the mission (the engine's
+        /// FindItemReturn). Module API 1.11.</summary>
+        ReturnItem = 4
     }
 
     /// <summary>

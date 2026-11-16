@@ -36,10 +36,10 @@ public static class WorldNpcFactory
         return npc;
     }
     public static bool TryCreateShop(WorldVendorDefinition definition, IItemTemplateCatalog catalog,
-        out VendingMachine shop, out string failure, Identity? optionalIdentity = null)
+        out VendingMachine shop, out string failure, Identity? optionalIdentity = null, bool allowEmptyStock = false)
     {
         shop = null!; failure = string.Empty;
-        PlayfieldNpcContentCatalog.RequireVendor(definition);
+        PlayfieldNpcContentCatalog.RequireVendor(definition, allowEmptyStock);
         if (!catalog.TryGet(definition.TemplateId, out var template))
         { failure = "Missing vendor template " + definition.TemplateId; return false; }
         foreach (var row in definition.Stock)
@@ -47,7 +47,9 @@ public static class WorldNpcFactory
             { failure = "Missing vendor item template at slot " + row.Slot; return false; }
         shop = new VendingMachine(optionalIdentity ?? new Identity
             { Type = IdentityType.VendingMachine, Instance = definition.InstanceId }, template);
-        shop.Stock.SetConfiguredSnapshot(definition.Stock.Select(row => new ShopStockSlot(row.LowId, row.HighId, row.Quality)).ToArray());
+        // A terminal with no stock (an ICC terminal) is left without one; TradeService never opens it as a shop.
+        if (definition.Stock.Length > 0)
+            shop.Stock.SetConfiguredSnapshot(definition.Stock.Select(row => new ShopStockSlot(row.LowId, row.HighId, row.Quality)).ToArray());
         return true;
     }
     public static bool TryAttachShop(NpcCharacter npc, WorldVendorDefinition definition, IItemTemplateCatalog catalog,

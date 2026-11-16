@@ -369,6 +369,9 @@ namespace ZoneEngine_New
             services.AddSingleton<IMissionDao>(provider => provider.GetRequiredService<MySqlMissionDao>());
             services.AddSingleton<InventoryMoveService>();
             services.AddSingleton<ITradePersistence, MySqlTradePersistence>();
+            services.AddSingleton(provider => IccShopCatalog.Load(
+                System.IO.Path.Combine(AORebirth.Core.GameData.GameDataPaths.ResolveRuntimeRoot(), IccShopCatalog.RelativePath),
+                provider.GetRequiredService<IZoneLogger>()));
             services.AddSingleton<TradeService>();
             services.AddSingleton<ZoneMessageCodec>();
 
@@ -462,6 +465,7 @@ namespace ZoneEngine_New
             AddMessageHandler<DropTemplateMessageHandler>(services);
             AddMessageHandler<ClientContainerAddItemMessageHandler>(services);
             AddMessageHandler<TradeMessageHandler>(services);
+            AddMessageHandler<IccPurchaseMessageHandler>(services);
             AddMessageHandler<KnuBotOpenChatWindowMessageHandler>(services);
             AddMessageHandler<KnuBotAnswerMessageHandler>(services);
             AddMessageHandler<KnuBotCloseChatWindowMessageHandler>(services);

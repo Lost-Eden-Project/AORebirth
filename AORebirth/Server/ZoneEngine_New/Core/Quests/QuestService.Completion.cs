@@ -111,7 +111,7 @@ public sealed partial class QuestService
                     if (world is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon
                         || dungeon.QuestId != quest.QuestId || dungeon.Identity.Instance != parameters.DungeonPlayfield
                         || destination is not MissionObjectiveItem machine
-                        || parameters.ObjectiveItem?.SameAs(machine.Binding) != true
+                        || parameters.ObjectiveItem?.SameObjectiveAs(machine.Binding) != true
                         || player.GetEdgeDistanceTo(machine) > LootableDynel.OpenRange)
                         return false;
                 }
@@ -260,7 +260,7 @@ public sealed partial class QuestService
                 || quest.Progress != 0
                 || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
                 || parameters.DungeonPlayfield != world.Identity.Instance
-                || parameters.ObjectiveItem?.SameAs(objective.Binding) != true
+                || parameters.ObjectiveItem?.SameObjectiveAs(objective.Binding) != true
                 || player.GetEdgeDistanceTo(objective) > LootableDynel.OpenRange
                 || !world.GetRequiredService<ZoneEngine_New.Core.Playfield.DynelRegistry>().TryGet(objective.Identity, out var current)
                 || !ReferenceEquals(current, objective))
@@ -285,7 +285,7 @@ public sealed partial class QuestService
                     // The world item is bound to the mission's owner: only they pick it up; teammates earn by sharing.
                     if (stored.Source != (int)QuestSource.Generated || stored.OwnerId != player.Identity.Instance
                         || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var durable)
-                        || durable.ObjectiveItem?.SameAs(objective.Binding) != true
+                        || durable.ObjectiveItem?.SameObjectiveAs(objective.Binding) != true
                         || durable.DungeonPlayfield != world.Identity.Instance)
                         throw new InvalidOperationException("Objective does not match the accepted mission.");
                     var request = new CharacterQuestEarnRequest
@@ -535,6 +535,8 @@ public sealed partial class QuestService
                 _flush.HardFlush(player);
                 // Earning is durable even when capacity, content availability or delivery fails later.
                 TokenRoll? tokenReward = null;
+                int commendations = 0;
+                double? rewardFactor = null;
                 var earned = _completionDao.Execute(player.Identity.Instance, null!, tx =>
                 {
                     var completion = RequireCompletion(tx);
@@ -551,6 +553,8 @@ public sealed partial class QuestService
                     if (result.Status is CharacterQuestCompletionStatus.Earned or CharacterQuestCompletionStatus.AlreadyEarned)
                     {
                         tokenReward = ReadTokenReward(tx, player, quest, result.Quest);
+                        commendations = CommendationsFor(tx, player, quest, result.Quest, tokenReward);
+                        rewardFactor = RewardFactorFor(tx, player, quest, result.Quest, tokenReward);
                     }
                     return result;
                 });
@@ -588,11 +592,23 @@ public sealed partial class QuestService
                 }
                 // XP is awarded after the commit through the ordinary XP path (caps, research share, level-ups) and
                 // persists with the next save; only cash and mission bits are durable parts of the reward transaction.
-                int xpReward = rewardLost ? 0 : reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0;
+                // A mission with a reward split (Missions.json Rewards) pays its credits and XP by the share cleared, and
+                // its XP no longer by the roll; one without pays as before.
+                int fullXp = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0;
+                int xpReward = rewardFactor is double xpShare
+                    ? (int)Math.Round(fullXp * xpShare, MidpointRounding.AwayFromZero)
+                    : rewardLost ? 0 : fullXp;
+                int credits = reward?.Credits ?? 0;
+                if (rewardFactor is double creditShare)
+                    credits = (int)Math.Round(credits * creditShare, MidpointRounding.AwayFromZero);
                 var values = new Dictionary<CharacterStat, int>();
-                if (reward?.Credits > 0)
+                if (credits > 0)
                     values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
-                        (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + reward.Credits);
+                        (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + credits);
+                // ICC Commendations pay on completion whatever the reward roll, as credits do.
+                if (commendations > 0)
+                    values[CharacterStat.Commendations] = (int)Math.Min(int.MaxValue,
+                        (long)player.Stats.GetOrZero(CharacterStat.Commendations, StatDetail.Base) + commendations);
                 if (rewardTemplate.MissionBit is int bit && MissionBits.IsValid(bit))
                 {
                     var (stat, mask) = MissionBits.Locate(bit);
@@ -655,6 +671,7 @@ public sealed partial class QuestService
                 QuestJournal.SendEnded(player, quest, CharacterActionType.MissionAccomplished);
                 QuestJournal.Delete(player, quest);
                 _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId
+                    + (commendations > 0 ? " commendations=" + commendations : string.Empty)
                     + (tokenReward == null ? string.Empty : " rewardWon=" + tokenReward.Won + " tokenItem=" + tokenReward.ItemId
                         + " tokenKills=" + tokenReward.Killed + "/" + tokenReward.Total));
                 if (!string.IsNullOrEmpty(rewardTemplate.NextStep) && _catalog.TryGet(rewardTemplate.NextStep, out _))

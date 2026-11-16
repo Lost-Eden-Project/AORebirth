@@ -28,6 +28,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>Absent on missions accepted before token rewards were enabled, and on quests that pay none.</summary>
         public MissionTokenRewardPolicy? TokenReward { get; set; }
 
+        /// <summary>The mission's ICC Commendations rule at acceptance (<see cref="MissionDefinition.Commendations"/>); null: none.</summary>
+        public MissionCommendations? Commendations { get; set; }
+
+        /// <summary>The mission's credits and experience split at acceptance (<see cref="MissionDefinition.Rewards"/>); null: none.</summary>
+        public MissionRewardSplit? Rewards { get; set; }
+
         /// <summary>
         /// The dungeon request resolved to its full values at acceptance (<see cref="DungeonPresets.Resolve"/>): layout,
         /// population, chests and objective, so the dungeon rebuilds the same whatever the presets become later.
@@ -115,6 +121,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     || (parsed.ObjectiveTool != null && (!parsed.ObjectiveTool.IsValid || !parsed.ObjectiveTool.IsSourceItem))
                     || (parsed.ObjectiveNpc != null && !parsed.ObjectiveNpc.IsValid)
                     || (parsed.TokenReward != null && !parsed.TokenReward.IsValid)
+                    || (parsed.Commendations != null && !parsed.Commendations.IsValid)
+                    || (parsed.Rewards != null && !parsed.Rewards.IsValid)
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
                     || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
                     || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType))
