@@ -166,7 +166,7 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// SkillLockModifier is a percent of the lock duration. The client floors it at -50.
-        /// Special-attack locks stay at the scripted duration.
+        /// Special-attack locks and the mission lift's Level lock stay at the scripted duration.
         /// </summary>
         int ScaleSkillLock(int statId, int durationSeconds)
         {
@@ -194,6 +194,7 @@ namespace ZoneEngine_New.Core.Entities
                 case CharacterStat.FullAuto:
                 case CharacterStat.ShadowBreedTemplate:
                 case CharacterStat.VisualFlags:
+                case CharacterStat.Level:
                     return true;
                 default:
                     return false;

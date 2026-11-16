@@ -48,16 +48,18 @@ public sealed class DungeonFloorTransitionDynel : StaticDynel
             || !CanBeginUse(player)) return false;
 
         // A second click that reaches the server just after a ride would use the lift the player has just arrived on
-        // and take them straight back (bug #437).
-        long now = Environment.TickCount64;
-        if (now - player.LastFloorTransitionMs < ReuseLockoutMilliseconds)
+        // and take them straight back (bug #437). As on retail, a ride locks the Level stat; the client shows its timer.
+        DateTime nowUtc = DateTime.UtcNow;
+        int levelStat = (int)CharacterStat.Level;
+        if (player.SkillLocks.IsLocked(levelStat, nowUtc))
             return false;
 
-        player.LastFloorTransitionMs = now;
+        int lockedSeconds = player.LockSkill(levelStat, ReuseLockoutSeconds, nowUtc);
+        player.ShowSkillLock(levelStat, ReuseLockoutSeconds, lockedSeconds);
         player.TeleportWithinPlayfield(Landing);
         return true;
     }
 
     /// <summary>How long after a ride a player cannot take another lift.</summary>
-    const long ReuseLockoutMilliseconds = 2000;
+    const int ReuseLockoutSeconds = 2;
 }

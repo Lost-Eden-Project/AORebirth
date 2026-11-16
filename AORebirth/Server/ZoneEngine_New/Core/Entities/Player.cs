@@ -443,12 +443,6 @@ namespace ZoneEngine_New.Core.Entities
         static bool IsTemplate(Item item, int itemId) => item.LowId == itemId || item.HighId == itemId;
 
         /// <summary>
-        /// When this player last rode a dungeon lift (<see cref="DungeonFloorTransitionDynel"/>), in
-        /// <see cref="Environment.TickCount64"/> milliseconds; far in the past until the first ride.
-        /// </summary>
-        internal long LastFloorTransitionMs { get; set; } = long.MinValue / 2;
-
-        /// <summary>
         /// Moves this player to <paramref name="landing"/> on its current playfield, as a LineTeleport lift does: the motor
         /// is warped (path and speed dropped), the client snaps in place from an intrazone N3Teleport without unloading
         /// the zone, and observers see a full stop at the landing. Every /follow the jump breaks ends first.
