@@ -19,7 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="AORebirth.Interfaces.ZoneNew.WinNet10.csproj" />
-    <PackageReference Include="LostEden.Protocol" Version="0.4.0" />
+    <PackageReference Include="LostEden.Protocol" Version="0.4.1" />
   </ItemGroup>
 
   <ItemGroup>

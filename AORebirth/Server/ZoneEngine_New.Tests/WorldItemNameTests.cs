@@ -28,7 +28,7 @@ namespace ZoneEngine_New.Tests
                 1);
 
             var body = (SimpleItemFullUpdateMessage)item.BuildSpawnMessage();
-            Assert.AreEqual(name + "\0", body.Name);
+            Assert.AreEqual(name, body.Name);
 
             byte[] packet = Serialize(body);
             byte[] ascii = Encoding.ASCII.GetBytes(name);

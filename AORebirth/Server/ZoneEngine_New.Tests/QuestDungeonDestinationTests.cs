@@ -268,7 +268,7 @@ public sealed class QuestDungeonDestinationTests
         f.Service.RestoreKeys(f.Player);
         var updates = f.Session.Sent.OfType<SimpleItemFullUpdateMessage>().ToArray();
         Assert.AreEqual(2, updates.Length);
-        Assert.IsTrue(updates.All(update => update.Name == "Mission key to " + f.Entrance.DisplayName + '\0'));
+        Assert.IsTrue(updates.All(update => update.Name == "Mission key to " + f.Entrance.DisplayName));
     }
 
     [TestMethod]

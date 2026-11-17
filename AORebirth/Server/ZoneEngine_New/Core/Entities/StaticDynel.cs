@@ -142,19 +142,11 @@ namespace ZoneEngine_New.Core.Entities
                 // The two bytes after the state machine: 0, then the byte the captures carry.
                 Unknown2 = (short)SimpleItemFullUpdateUnknown3,
                 Stats = BuildStats(),
-                // Client displays this as a C string. The length must include the trailing NUL,
-                // matching mission-key SimpleItemFullUpdate. Empty stays length 0.
-                Name = TerminateClientName(RuntimeName ?? Template.Name)
+                // Sent as a C string whose length counts the NUL the codec adds, as for a mission key. Empty stays
+                // length 0.
+                Name = RuntimeName ?? Template.Name ?? string.Empty
             };
             return message;
-        }
-
-        static string TerminateClientName(string? name)
-        {
-            if (string.IsNullOrEmpty(name))
-                return string.Empty;
-
-            return name[^1] == '\0' ? name : name + '\0';
         }
 
         void ApplyTemplateStats()

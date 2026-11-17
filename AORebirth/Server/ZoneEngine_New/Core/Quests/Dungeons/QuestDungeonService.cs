@@ -1609,7 +1609,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>
         /// The key's SimpleItemFullUpdate: its stats and its name, "Mission key to" the entrance, at
         /// <paramref name="placement"/> (the overflow slot for a new key, its inventory slot when renaming a held one).
-        /// The name's length prefix counts its trailing NUL; the writer does not add one.
+        /// The name goes out as a C string: the codec adds the NUL its length counts.
         /// </summary>
         static void SendKeyItem(Player player, Item key, string entranceName, int placement)
             => SendNamedMissionItem(player, key, KeyNamePrefix + entranceName, placement);
@@ -1640,7 +1640,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     Stat(CharacterStat.ACGItemTemplateID2, key.HighId),
                     Stat(CharacterStat.MultipleCount, key.StackCount)
                 ],
-                Name = name + '\0'
+                Name = name
             });
         }
 

@@ -13,6 +13,6 @@
   <!-- Room templates (Rooms.json + GNDA tilemap) come from the collision library's style catalog. -->
   <ItemGroup>
     <ProjectReference Include="../AORebirth.World.Collision/AORebirth.World.Collision.csproj" />
-    <PackageReference Include="LostEden.Protocol" Version="0.4.0" />
+    <PackageReference Include="LostEden.Protocol" Version="0.4.1" />
   </ItemGroup>
 </Project>
