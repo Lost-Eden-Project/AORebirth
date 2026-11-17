@@ -325,7 +325,8 @@ namespace ZoneEngine_New
                 () => provider.GetRequiredService<PlayfieldManager>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.Accounts.AccountSanctionService>(),
-                () => provider.GetRequiredService<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>()));
+                () => provider.GetRequiredService<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>(),
+                provider.GetRequiredService<ZoneEngine_New.Core.Modules.ModuleReloadables>()));
             services.AddSingleton<ZoneEngine_New.Core.Accounts.IAccountSanctionRepository, ZoneEngine_New.Core.Accounts.MySqlAccountSanctionRepository>();
             services.AddSingleton<ZoneEngine_New.Core.Accounts.AccountSanctionService>();
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
@@ -413,6 +414,8 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.PlayfieldsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.NoKillXpFamilyCatalog>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NoKillXpFamiliesReload>();
+            // Modules' own reloadables (module API 1.13), listed after the catalogs as <module id>/<name>.
+            services.AddSingleton<ZoneEngine_New.Core.Modules.ModuleReloadables>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>();
 
             //Commands

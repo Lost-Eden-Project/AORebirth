@@ -341,6 +341,19 @@ namespace ZoneEngine_New.Core.GameData
             return found;
         }
 
+        /// <summary>Stats Materialize takes from the nearest band instead of interpolating between two.</summary>
+        static readonly CharacterStat[] NearestBandStats =
+        {
+            CharacterStat.Breed,
+            CharacterStat.Mesh,
+            CharacterStat.Side,
+            CharacterStat.Fatness,
+            CharacterStat.Sex,
+            CharacterStat.HeadMesh,
+            CharacterStat.AnimSet,
+            CharacterStat.MonsterData
+        };
+
         public static MobTemplate Materialize(NpcLeaf leaf, int? desiredLevel, IReadOnlyCollection<NpcFeature>? ruleFeatures = null)
         {
             ArgumentNullException.ThrowIfNull(leaf);
@@ -362,6 +375,17 @@ namespace ZoneEngine_New.Core.GameData
             Dictionary<int, int> stats = InterpolateStats(low, high, t);
             if (nearest.CharacterFlags.HasValue)
                 stats[(int)CharacterStat.Flags] = nearest.CharacterFlags.Value;
+
+            // Appearance stats are ids or enums, never amounts: a value between two bands' names a different record or
+            // none (Cyborg Nanobiologist MonsterData 17643 -> 17647 lerped to 17644/17646, no record: invisible).
+            if (nearest.Stats != null)
+            {
+                foreach (CharacterStat stat in NearestBandStats)
+                {
+                    if (nearest.Stats.TryGetValue((int)stat, out int value))
+                        stats[(int)stat] = value;
+                }
+            }
 
             stats[(int)CharacterStat.Level] = level;
             bool isFallback = string.Equals(leaf.Hash, MobTemplate.FallbackHash, StringComparison.Ordinal);

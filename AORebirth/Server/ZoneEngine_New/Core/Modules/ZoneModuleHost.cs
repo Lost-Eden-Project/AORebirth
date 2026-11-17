@@ -36,6 +36,7 @@ namespace ZoneEngine_New.Core.Modules
         private readonly ZoneModuleActions _actions;
         private readonly ModuleMessageObservers _messages;
         private readonly ModuleMessageHandlers _messageHandlers;
+        private readonly ModuleReloadables _reloadables;
         private Dictionary<string, List<string>> _capabilities = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(string ModuleId, ModuleGmCommand Command)> _gmCommands = new();
         private readonly HashSet<string> _required = new(StringComparer.OrdinalIgnoreCase);
@@ -49,11 +50,13 @@ namespace ZoneEngine_New.Core.Modules
 
         private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, IZoneGameData gameData,
             Func<Playfield.PlayfieldManager> playfields, Func<ZoneEngine_New.Core.Accounts.AccountSanctionService>? accounts,
-            string? gameDataRoot, Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown)
+            string? gameDataRoot, Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown,
+            ModuleReloadables reloadables)
         {
             _logger = logger;
             _knubot = knubot;
             _gameData = gameData;
+            _reloadables = reloadables;
             Events = new ZoneModuleEvents(logger);
             World = new ZoneModuleWorld(playfields);
             _actions = new ZoneModuleActions(playfields, accounts, gameDataRoot, logger, shutdown);
@@ -81,14 +84,16 @@ namespace ZoneEngine_New.Core.Modules
             Func<Playfield.PlayfieldManager> playfields,
             Func<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>? gameData = null,
             Func<ZoneEngine_New.Core.Accounts.AccountSanctionService>? accounts = null,
-            Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown = null)
+            Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown = null,
+            ModuleReloadables? reloadables = null)
         {
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(knubot);
             ArgumentNullException.ThrowIfNull(playfields);
+            reloadables ??= new ModuleReloadables();
             var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot),
-                new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([]))), playfields,
-                accounts, gameDataRoot, shutdown);
+                new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([], reloadables))),
+                playfields, accounts, gameDataRoot, shutdown, reloadables);
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {
@@ -204,6 +209,7 @@ namespace ZoneEngine_New.Core.Modules
             Events.RemoveModule(moduleId);
             _messages.RemoveModule(moduleId);
             _messageHandlers.RemoveModule(moduleId);
+            _reloadables.RemoveModule(moduleId);
             _gmCommands.RemoveAll(x => string.Equals(x.ModuleId, moduleId, StringComparison.OrdinalIgnoreCase));
             if (string.Equals(_connectionFilterOwner, moduleId, StringComparison.OrdinalIgnoreCase))
             {
@@ -449,6 +455,16 @@ namespace ZoneEngine_New.Core.Modules
             _missionRollHookOwner = moduleId;
         }
 
+        private void RegisterReloadable(string moduleId, IModuleReloadable reloadable)
+        {
+            ArgumentNullException.ThrowIfNull(reloadable);
+            if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Reloadables can only be registered during Initialize.");
+            _reloadables.Add(moduleId, reloadable);
+            _logger.Info("Module " + moduleId + " reloadable " + moduleId + ModuleReloadables.Separator + reloadable.Name
+                + " files=" + string.Join(",", reloadable.Files ?? []));
+        }
+
         private sealed record LoadedModule(string Id, List<IZoneModule> Entries);
 
         private sealed class ZoneModuleContext : IZoneModuleContext
@@ -527,6 +543,8 @@ namespace ZoneEngine_New.Core.Modules
                 _gate.Require(ModuleCapabilities.HandleMessages);
                 _host.RegisterMessageHandler(ModuleId, messageType, handler);
             }
+
+            public void RegisterReloadable(IModuleReloadable reloadable) => _host.RegisterReloadable(ModuleId, reloadable);
         }
 
         private sealed class ModuleEventsView : IZoneEvents

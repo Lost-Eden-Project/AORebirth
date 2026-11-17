@@ -1081,7 +1081,8 @@ namespace ZoneEngine_New.Core.Trade
             }
 
             long finalCash = (long)player.Stats.GetOrZero(CharacterStat.Cash) + sellTotal - (payInCash ? buyTotal : 0);
-            long finalCurrency = payInCash ? 0 : (long)player.Stats.GetOrZero(currency) - buyTotal;
+            // The base value is the stored balance the purchase sets; a bonus on the currency is never spendable.
+            long finalCurrency = payInCash ? 0 : (long)player.Stats.GetOrZero(currency, StatDetail.Base) - buyTotal;
             if (finalCash < 0 || finalCurrency < 0)
             {
                 if (payInCash)

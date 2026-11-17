@@ -76,7 +76,9 @@ namespace ZoneEngine_New.Core.Playfield
                 Collision = new PlayfieldCollisionSet(
                     playfieldId > 0 ? playfieldId : layout.Collision.PlayfieldId,
                     meshes,
-                    existing.Terrain ?? layout.Collision.Terrain)
+                    existing.Terrain ?? layout.Collision.Terrain,
+                    water: existing.Water.Count > 0 ? existing.Water : layout.Collision.Water,
+                    roomWater: layout.Collision.RoomWater ?? existing.RoomWater)
             };
         }
     }

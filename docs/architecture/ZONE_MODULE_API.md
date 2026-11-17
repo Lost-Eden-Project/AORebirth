@@ -48,6 +48,7 @@ The current version is **1.10**.
 | 1.10 | `RegisterMissionRollHook` (mission terminal offers and accepts), the `roll-missions` capability |
 | 1.11 | `MissionKind.ReturnItem`; `MissionDungeon` names a GameData `Missions/Missions.json` mission (`Mission`) instead of carrying styles, floors, population and loot (the only 1.x change that removed members; MissionModule was its only consumer) |
 | 1.12 | `RegisterMessageHandler` (inbound N3 types the engine does not read), `Actions.SendMessage` (a module's own N3 message), the `player.purchase` and `player.stat-add` operations, `Events.MissionCompleted`; the `handle-messages` and `send-raw-messages` capabilities |
+| 1.13 | `RegisterReloadable` and `IModuleReloadable` (a module's own data, reloadable as `<module id>/<name>` beside the GameData catalogs) |
 
 ## Context members
 
@@ -61,6 +62,7 @@ The current version is **1.10**.
 | `RegisterVisibilityObserver` | Told when a client is told an entity exists and when it stops (1.6). Only during `Initialize` (see below). |
 | `RegisterMissionRollHook` | Rolls mission terminal offers and decides what accepting one gives (1.10). Only during `Initialize`; only one module may register one (see Mission rolls). |
 | `RegisterMessageHandler` | Handles inbound N3 messages of one type the engine has no reader for (1.12). Only during `Initialize`; one module per type (see Message handlers). |
+| `RegisterReloadable` | Makes the module's own data reloadable while the zone runs, as `<module id>/<name>` (1.13). Only during `Initialize`; needs no capability (see GameData reloads). |
 | `Clock` | The clock every timestamp is on (1.6, see below). |
 | `Events` | Gameplay events (see below). |
 | `Knubot` | `Check(id, json)`, `Reload()`, `OverrideDirectory` (the `AO_REBIRTH_KNUBOT_PATH` folder). |
@@ -209,6 +211,14 @@ on the selected NPC.
 | `ItemTemplates` | `ItemTemplates.json` | Items already minted or spawned keep their template. Reloads `Knubot` too, because Knubot item conditions resolve hashes when the scripts load. |
 | `Knubot` | `Knubot/` plus `AO_REBIRTH_KNUBOT_PATH` | Same as `Knubot.Reload()`. |
 
+**Module data (1.13).** A module registers its own files with `RegisterReloadable(IModuleReloadable)` during
+`Initialize`. Each is listed after the catalogs above as `<module id>/<name>` (for example `MissionModule/IccShop`)
+and reloads through every path a catalog does: `GameData.Reload`, the debug tools' `gamedata_reload`. The name is
+1-32 letters, digits, '-' or '_', unique within the module; a module name always holds the '/', so it never shadows a
+catalog. `Reload()` runs on a worker, one reload at a time, while the module's handlers keep running: it reads the
+files from the module folder again and swaps an immutable result in with one reference write, or keeps the old data
+and returns `Ok = false` with the reason. A module that fails to load or start takes its reloadables with it.
+
 Everything else stays load-once, including WaterExits, PetTypes, items.dat, playfield data, navmeshes, dungeon
 generation, Gameplay.json and Config.
 
@@ -307,8 +317,8 @@ engine additions and don't change the module API.
 | `account.unban` | account | `reason` (optional) | Lifts every active suspension and ban, and a pre-1.8 `login.Flags` ban. Fails when there is none (1.8). |
 | `server.shutdown` | none | `seconds` (1 to 86400), `message` (optional), `reason` (optional) | Shuts this zone instance down the normal way (players saved) after a countdown, as `.shutdown` does: every online player is told at the start and at the usual checkpoints (1 hour ... 1 second), with `message` after each line. Scheduling again replaces the countdown (1.7). |
 | `server.shutdown-abort` | none | `reason` (optional) | Cancels a scheduled shutdown and tells online players; fails when none is scheduled (1.7). |
-| `player.purchase` | character | `anchorType`, `anchor`, `lowId`, `highId`, `quality`, `stat`, `price` | Sells the player one item (`lowId`/`highId` at `quality`) for `price` of the stat `stat`, at the dynel `anchorType`:`anchor` (a terminal or NPC on the player's playfield within reach). The engine checks reach, that no trade or shop window is open, uniqueness and room, then saves the item and the new balance in one transaction before applying either. Refusals: `not_at_anchor`, `insufficient`, `no_room`, `unique_held`, `busy` (`PurchaseCodes`), else `failed`. What is for sale and at what price is the module's (1.12). |
-| `player.stat-add` | character | `stat`, `amount` | Adds `amount` (negative takes away) to the base value of the player's stat, kept at 0 or more (cash within its limit), sends it to the client and saves it with the character's next save, as experience is. The result's message is the new value (1.12). |
+| `player.purchase` | character | `anchorType`, `anchor`, `lowId`, `highId`, `quality`, `stat`, `price`; optional `anchorTemplates` | Sells the player one item (`lowId`/`highId` at `quality`) for `price` of the stat `stat`, at the dynel `anchorType`:`anchor` (a terminal, or an NPC that is not a pet, on the player's playfield within reach; never a player). With `anchorTemplates` (comma-separated item template ids) the anchor must be a terminal made from one of them. The engine checks the anchor and reach, that no trade or shop window is open, uniqueness and room, then saves the item and the new balance in one transaction before applying either. The balance is the stat's base value; a bonus on the currency is never spendable. Refusals: `not_at_anchor`, `insufficient`, `no_room`, `unique_held`, `busy` (`PurchaseCodes`), else `failed`. What is for sale and at what price is the module's (1.12). |
+| `player.stat-add` | character | `stat`, `amount` | Adds `amount` (negative takes away) to the base value of the player's stat, kept at 0 or more (cash within its limit), sends it to the client and stores it right after through the write-behind lane, ahead of any logout, zone change, trade or mission save. The result's message is the new value (1.12). |
 
 ## Account sanctions
 

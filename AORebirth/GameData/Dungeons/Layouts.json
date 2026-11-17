@@ -8,10 +8,10 @@
   },
   "rkTeam": {
     "Bands": [
-      { "Quality": [1, 24], "Styles": [324, 341], "Rooms": [8, 12], "Floors": 2 },
-      { "Quality": [25, 99], "Styles": [341], "Rooms": [9, 14], "Floors": 3 },
-      { "Quality": [100, 179], "Styles": [341], "Rooms": [9, 14], "Floors": 4 },
-      { "Quality": [180, 250], "Styles": [341], "Rooms": [10, 14], "Floors": 5 }
+      { "Quality": [1, 24], "Styles": [321, 324, 341, 351], "Rooms": [8, 12], "Floors": 2 },
+      { "Quality": [25, 99], "Styles": [321, 324, 341, 351], "Rooms": [9, 14], "Floors": 3 },
+      { "Quality": [100, 179], "Styles": [321, 324, 341, 351], "Rooms": [9, 14], "Floors": 4 },
+      { "Quality": [180, 250], "Styles": [321, 324, 341, 351], "Rooms": [10, 14], "Floors": 5 }
     ]
   },
   "mothership": {

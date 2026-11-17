@@ -53,6 +53,7 @@ namespace ZoneEngine_New.Core.Nanos
             }
 
             TickPeriodicEffects(character, nowUtc);
+            TickCancelAftermaths(character, nowUtc);
 
             List<Buff> expired = character.DrainExpiredBuffs(nowUtc);
             for (int i = 0; i < expired.Count; i++)
@@ -106,6 +107,77 @@ namespace ZoneEngine_New.Core.Nanos
         }
 
         /// <summary>
+        /// The owner cancelled <paramref name="buff"/> from NCU: its OnCancel functions run now, on the owner (Zazen
+        /// Stance 287559: "Cancelling the Zazen Stance exhausts your nanobots." and current nano set to 1). A function
+        /// with a TickCount repeats from the owner, as a buff's OnUse hit repeats from its NCU entry: the first
+        /// application now, the rest one TickInterval apart.
+        /// </summary>
+        static void ExecuteCancelSpells(Character owner, Buff buff, DateTime nowUtc)
+        {
+            if (owner.IsDead || owner.Playfield is not { } playfield
+                || !buff.SpellList.TryGetValue(EventType.OnCancel, out List<ItemSpell>? spells) || spells.Count == 0)
+                return;
+
+            buff.ExecuteSpells(
+                EventType.OnCancel,
+                owner,
+                playfield.GetRequiredService<IInventoryRepository>(),
+                playfield.GetRequiredService<IItemBuilder>(),
+                source: owner);
+
+            for (int i = 0; i < spells.Count; i++)
+            {
+                ItemSpell spell = spells[i];
+                if (spell.TickCount > 1 && spell.TickInterval > 0)
+                {
+                    (owner.CancelAftermaths ??= new()).Add(new CancelAftermath(
+                        buff, spell, spell.TickCount - 1, nowUtc.AddMilliseconds(spell.TickInterval * 10.0)));
+                }
+            }
+        }
+
+        /// <summary>Repeats of cancelled nanos' OnCancel functions due by <paramref name="nowUtc"/>; see <see cref="ExecuteCancelSpells"/>.</summary>
+        static void TickCancelAftermaths(Character character, DateTime nowUtc)
+        {
+            List<CancelAftermath>? aftermaths = character.CancelAftermaths;
+            if (aftermaths == null)
+                return;
+
+            if (character.IsDead || character.Playfield is not { } playfield)
+            {
+                character.CancelAftermaths = null;
+                return;
+            }
+
+            IInventoryRepository? inventory = null;
+            IItemBuilder? items = null;
+            // Walked by index and from a snapshot of the count: a repeat that cancels another nano adds to the list.
+            int count = aftermaths.Count;
+            for (int i = 0; i < count && !character.IsDead; i++)
+            {
+                CancelAftermath aftermath = aftermaths[i];
+                while (aftermath.Remaining > 0 && aftermath.NextUtc <= nowUtc && !character.IsDead)
+                {
+                    inventory ??= playfield.GetRequiredService<IInventoryRepository>();
+                    items ??= playfield.GetRequiredService<IItemBuilder>();
+                    aftermath.Remaining--;
+                    aftermath.NextUtc = aftermath.NextUtc.AddMilliseconds(aftermath.Spell.TickInterval * 10.0);
+                    aftermath.Nano.ExecutePeriodicSpell(character, character, aftermath.Spell, inventory, items);
+                }
+            }
+
+            if (character.IsDead)
+            {
+                character.CancelAftermaths = null;
+                return;
+            }
+
+            aftermaths.RemoveAll(static aftermath => aftermath.Remaining <= 0);
+            if (aftermaths.Count == 0 && ReferenceEquals(character.CancelAftermaths, aftermaths))
+                character.CancelAftermaths = null;
+        }
+
+        /// <summary>
         /// Death empties NCU, except the <see cref="NanoSpell.SurvivesDeath"/> (DontRemoveOnDeath) entries, and drops a
         /// cast in flight, ignoring CanCancel.
         /// </summary>
@@ -115,6 +187,7 @@ namespace ZoneEngine_New.Core.Nanos
 
             PendingNanoCast? cast = character.PendingCast;
             character.CancelNanoCast();
+            character.CancelAftermaths = null;
             if (cast != null)
                 CastResolved(character, cast, PlayerActionOutcome.Interrupted, detail: "caster died");
             List<Buff> removed = character.RemoveBuffs(static buff => !buff.SurvivesDeath);
@@ -683,6 +756,7 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 case BuffRemovalOutcome.Removed when removed != null:
                     AnnounceBuffRemoved(owner, removed);
+                    ExecuteCancelSpells(owner, removed, DateTime.UtcNow);
                     break;
 
                 case BuffRemovalOutcome.NotCancellable:

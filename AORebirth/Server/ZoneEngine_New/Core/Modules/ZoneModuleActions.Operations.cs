@@ -128,7 +128,7 @@ namespace ZoneEngine_New.Core.Modules
                 [Optional("reason", OperationValueType.String, "For the log.")],
                 Kick);
             Add(OperationNames.PlayerPurchase, TargetKind.Character,
-                "Sells the player one item for a stat at a terminal or NPC within reach; the item and the new balance are saved in one transaction.",
+                "Sells the player one item for a stat at a terminal or NPC (not a player or pet) within reach; the item and the new balance are saved in one transaction.",
                 [
                     Required("anchorType", OperationValueType.Int, "Identity type of the terminal or NPC sold at."),
                     Required("anchor", OperationValueType.Int, "Identity instance of the terminal or NPC sold at."),
@@ -136,11 +136,13 @@ namespace ZoneEngine_New.Core.Modules
                     Required("highId", OperationValueType.Int, "The item's high template id."),
                     Required("quality", OperationValueType.Int, "The item's quality."),
                     Required("stat", OperationValueType.Int, "The currency stat id."),
-                    Required("price", OperationValueType.Int, "How much of the stat, 0 or more.")
+                    Required("price", OperationValueType.Int, "How much of the stat, 0 or more."),
+                    Optional("anchorTemplates", OperationValueType.String,
+                        "Comma-separated item template ids: the anchor must be a terminal made from one of them.")
                 ],
                 Purchase);
             Add(OperationNames.PlayerStatAdd, TargetKind.Character,
-                "Adds an amount to the base value of the player's stat (kept at 0 or more), sent to the client and saved with the next save. The message is the new value.",
+                "Adds an amount to the base value of the player's stat (kept at 0 or more), sent to the client and stored right after, ahead of any logout, zone change, trade or mission save. The message is the new value.",
                 [
                     Required("stat", OperationValueType.Int, "The stat id."),
                     Required("amount", OperationValueType.Int, "What to add; negative takes away.")
@@ -266,6 +268,18 @@ namespace ZoneEngine_New.Core.Modules
             if (anchor == 0 || lowId <= 0 || highId <= 0 || quality <= 0 || price < 0 || !Enum.IsDefined(typeof(CharacterStat), stat))
                 return Task.FromResult(OperationResult.Fail(OperationCodes.BadArgs,
                     "An anchor, positive item ids and quality, a known stat and a price of 0 or more are needed."));
+            int[]? anchorTemplates = null;
+            if (args.TryGetString("anchorTemplates", out string templateList))
+            {
+                string[] parts = templateList.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                anchorTemplates = new int[parts.Length];
+                for (int i = 0; i < parts.Length; i++)
+                    if (!int.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out anchorTemplates[i]) || anchorTemplates[i] <= 0)
+                        return Task.FromResult(OperationResult.Fail(OperationCodes.BadArgs,
+                            "anchorTemplates must be positive item template ids separated by commas."));
+                if (anchorTemplates.Length == 0)
+                    return Task.FromResult(OperationResult.Fail(OperationCodes.BadArgs, "anchorTemplates names no template."));
+            }
 
             var anchorIdentity = new LostEden.Protocol.GameData.Identity
             {
@@ -276,7 +290,7 @@ namespace ZoneEngine_New.Core.Modules
                 if (player.Playfield is not Playfield playfield)
                     return OperationResult.Fail(OperationCodes.NotHere, "The player is not on a playfield.");
                 ZoneEngine_New.Core.Trade.PurchaseStatus status = playfield.GetRequiredService<ZoneEngine_New.Core.Trade.TradeService>()
-                    .BuyForStat(player, anchorIdentity, lowId, highId, quality, (CharacterStat)stat, price);
+                    .BuyForStat(player, anchorIdentity, lowId, highId, quality, (CharacterStat)stat, price, anchorTemplates);
                 return status switch
                 {
                     ZoneEngine_New.Core.Trade.PurchaseStatus.Bought => OperationResult.Success(),
@@ -308,6 +322,15 @@ namespace ZoneEngine_New.Core.Modules
                     : (int)Math.Clamp(sum, 0, int.MaxValue);
                 player.Stats.Set(characterStat, value, StatDetail.Base, dirty: true);
                 player.FlushDirtyStats();
+                // Stored now rather than at the next save, so a module's payout (a mission's commendations) is not lost
+                // to a crash; the write-behind lane runs it ahead of any logout, zone change, trade or mission save.
+                if (player.Playfield is Playfield playfield
+                    && playfield.GetService<ZoneEngine_New.Core.Characters.CharacterSnapshotService>() is { } snapshot)
+                {
+                    var record = new ZoneEngine_New.Core.Data.StatRecord { StatId = stat, StatValue = value };
+                    playfield.GetRequiredService<ZoneEngine_New.Core.Inventory.InventoryFlushService>()
+                        .Enqueue(player, () => snapshot.SyncStats(player, [record]));
+                }
                 _logger?.Info(string.Format(CultureInfo.InvariantCulture,
                     "Module operation player.stat-add character={0} stat={1} amount={2} value={3}",
                     player.Identity.Instance, stat, amount, value));

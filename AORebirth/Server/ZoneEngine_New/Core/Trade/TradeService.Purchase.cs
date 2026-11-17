@@ -3,6 +3,7 @@ namespace ZoneEngine_New.Core.Trade
     using System;
     using System.Collections.Generic;
     using System.Globalization;
+    using System.Linq;
 
     using AORebirth.Enums;
 
@@ -36,10 +37,12 @@ namespace ZoneEngine_New.Core.Trade
         /// <summary>
         /// Sells <paramref name="player"/> one item (<paramref name="lowId"/>/<paramref name="highId"/> at
         /// <paramref name="quality"/>) for <paramref name="price"/> of <paramref name="currency"/>, at
-        /// <paramref name="anchor"/> (a dynel on the player's playfield within <see cref="RangeCancelDistance"/>). On
-        /// the playfield tick.
+        /// <paramref name="anchor"/> (a terminal, or an NPC that is not a pet, on the player's playfield within
+        /// <see cref="RangeCancelDistance"/>; with <paramref name="anchorTemplates"/>, a terminal made from one of those
+        /// item templates). On the playfield tick.
         /// </summary>
-        public PurchaseStatus BuyForStat(Player player, Identity anchor, int lowId, int highId, int quality, CharacterStat currency, int price)
+        public PurchaseStatus BuyForStat(Player player, Identity anchor, int lowId, int highId, int quality, CharacterStat currency, int price,
+            IReadOnlyCollection<int>? anchorTemplates = null)
         {
             ArgumentNullException.ThrowIfNull(player);
             if (price < 0)
@@ -55,10 +58,12 @@ namespace ZoneEngine_New.Core.Trade
                 return PurchaseStatus.Busy;
 
             if (!player.Playfield.GetRequiredService<DynelRegistry>().TryGet(anchor, out Dynel? dynel) || dynel == null
-                || !ReferenceEquals(dynel.Playfield, player.Playfield) || player.GetEdgeDistanceTo(dynel) > RangeCancelDistance)
+                || !ReferenceEquals(dynel.Playfield, player.Playfield) || !IsShopAnchor(dynel, anchorTemplates)
+                || player.GetEdgeDistanceTo(dynel) > RangeCancelDistance)
                 return PurchaseStatus.NotAtAnchor;
 
-            int balance = player.Stats.GetOrZero(currency);
+            // The base value is what is stored and what is set below: a bonus on the currency is never spendable.
+            int balance = player.Stats.GetOrZero(currency, StatDetail.Base);
             if (balance < price)
                 return PurchaseStatus.Insufficient;
 
@@ -112,5 +117,14 @@ namespace ZoneEngine_New.Core.Trade
                 player.Identity.Instance, lowId, highId, quality, price, (int)currency, remaining, (int)anchor.Type, anchor.Instance));
             return PurchaseStatus.Bought;
         }
+
+        // A shop stands at a terminal or an NPC: never a player (the buyer itself is always in reach), a pet, a door or
+        // a corpse. Named templates admit only terminals made from them.
+        static bool IsShopAnchor(Dynel dynel, IReadOnlyCollection<int>? templates) => dynel switch
+        {
+            StaticDynel terminal => templates == null || templates.Contains(terminal.ItemTemplateLowId),
+            NpcCharacter npc => templates == null && npc.PetOwner == null,
+            _ => false
+        };
     }
 }

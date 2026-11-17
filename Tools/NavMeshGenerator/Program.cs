@@ -80,13 +80,16 @@ internal static class Program
                         continue;
                     }
 
-                    NavMeshBakeResult result = NavMeshBaker.Bake(collision, settings);
+                    IReadOnlyList<PlayfieldWaterEntry> water = NavMeshAreas.LoadPlayfieldWater(gameData, id);
+                    NavMeshBakeResult result = NavMeshBaker.Bake(collision, settings, water, options.Threads);
                     NavMeshFile.Write(output, result);
                     Console.WriteLine(
                         "BAKE playfield="
                         + id.ToString(CultureInfo.InvariantCulture)
                         + " triangles="
                         + result.SourceTriangles.ToString(CultureInfo.InvariantCulture)
+                        + " water="
+                        + water.Count.ToString(CultureInfo.InvariantCulture)
                         + " tiles="
                         + result.TileCount.ToString(CultureInfo.InvariantCulture));
                     baked++;
@@ -156,12 +159,16 @@ internal sealed class Options
 
     public bool Overwrite { get; init; }
 
+    /// <summary>Recast tile workers per bake; every logical core unless --threads says otherwise.</summary>
+    public int Threads { get; init; } = Environment.ProcessorCount;
+
     public static Options Parse(string[] args)
     {
         string gameData = "";
         string configPath = "";
         int? playfield = null;
         bool overwrite = false;
+        int threads = Environment.ProcessorCount;
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--overwrite")
@@ -193,6 +200,13 @@ internal sealed class Options
                 continue;
             }
 
+            if (args[i] == "--threads")
+            {
+                if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out threads) || threads <= 0)
+                    throw new ArgumentException("Expected a positive --threads count.");
+                continue;
+            }
+
             throw new ArgumentException("Unknown option " + args[i]);
         }
 
@@ -201,7 +215,8 @@ internal sealed class Options
             GameDataRoot = gameData,
             ConfigPath = configPath,
             PlayfieldId = playfield,
-            Overwrite = overwrite
+            Overwrite = overwrite,
+            Threads = threads
         };
     }
 }

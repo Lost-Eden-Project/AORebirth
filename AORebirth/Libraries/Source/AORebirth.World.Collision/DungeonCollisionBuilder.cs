@@ -6,6 +6,8 @@ namespace AORebirth.World.Collision
 
     using AODB.Common.RDBObjects;
 
+    using AORebirth.Core.GameData;
+
     using LostEden.Protocol.GameData;
 
     using Vector3 = System.Numerics.Vector3;
@@ -72,6 +74,7 @@ namespace AORebirth.World.Collision
             ArgumentNullException.ThrowIfNull(catalog);
             var rooms = new List<DungeonRoomBounds>(catalog.Rooms.Count);
             var meshes = new List<CollisionTriangleMesh>();
+            var water = new List<DungeonRoomWater>();
             for (int i = 0; i < catalog.Rooms.Count; i++)
             {
                 StyleRoomTemplate template = catalog.Rooms[i];
@@ -85,7 +88,8 @@ namespace AORebirth.World.Collision
                     i,
                     template.InstanceId,
                     meshes,
-                    rooms);
+                    rooms,
+                    water);
             }
 
             int id = playfieldId > 0 ? playfieldId : catalog.StyleId;
@@ -93,7 +97,7 @@ namespace AORebirth.World.Collision
             for (int i = 0; i < catalog.Rooms.Count; i++)
                 listed.Add(new KeyValuePair<int, IReadOnlyList<int>>(catalog.Rooms[i].InstanceId, catalog.Rooms[i].LinkedRooms));
             return new DungeonWorldLayout(
-                new PlayfieldCollisionSet(id, meshes, terrain: null),
+                new PlayfieldCollisionSet(id, meshes, terrain: null, roomWater: RoomWaterSet(rooms, water)),
                 rooms,
                 roomLinks: DungeonWorldLayout.SymmetricLinks(listed));
         }
@@ -115,6 +119,7 @@ namespace AORebirth.World.Collision
             var bounds = new List<DungeonRoomBounds>(rooms.Count);
             var templates = new List<StyleRoomTemplate>(rooms.Count);
             var placements = new List<DungeonRoomPlacement>(rooms.Count);
+            var water = new List<DungeonRoomWater>();
             int minFloor = DungeonRoomPlacer.MinFloor(rooms);
             for (int i = 0; i < rooms.Count; i++)
             {
@@ -151,12 +156,13 @@ namespace AORebirth.World.Collision
                     i,
                     i,
                     meshes,
-                    bounds);
+                    bounds,
+                    water);
             }
 
             int id = playfieldId > 0 ? playfieldId : catalog.StyleId;
             return new DungeonWorldLayout(
-                new PlayfieldCollisionSet(id, meshes, terrain: null),
+                new PlayfieldCollisionSet(id, meshes, terrain: null, roomWater: RoomWaterSet(bounds, water)),
                 bounds,
                 PlaceDoors(rooms, templates, bounds, placements, catalog),
                 placements)
@@ -397,7 +403,8 @@ namespace AORebirth.World.Collision
             int meshIndex,
             int cellId,
             List<CollisionTriangleMesh> meshes,
-            List<DungeonRoomBounds> rooms)
+            List<DungeonRoomBounds> rooms,
+            List<DungeonRoomWater> water)
         {
             rooms.Add(
                 DungeonRoomBounds.FromPlaced(
@@ -407,6 +414,11 @@ namespace AORebirth.World.Collision
                     facing,
                     catalog.TileSize,
                     floorHeight));
+
+            // The template's own water, asked in the placed room's frame: its origin and facing, as its surfaces are placed.
+            if (catalog.RoomWater.TryGetValue(template.InstanceId, out IReadOnlyList<PlayfieldWaterEntry>? roomWater)
+                && roomWater.Count > 0)
+                water.Add(new DungeonRoomWater(cellId, placed, facing, roomWater));
 
             if (catalog.Gnda.Length == 0 || catalog.Dcga.Length == 0)
                 return;
@@ -435,6 +447,9 @@ namespace AORebirth.World.Collision
 
             AppendRoomSurfaces(catalog, template, placed, facing, meshIndex, meshes);
         }
+
+        static DungeonRoomWaterSet? RoomWaterSet(IReadOnlyList<DungeonRoomBounds> rooms, List<DungeonRoomWater> water)
+            => water.Count > 0 ? new DungeonRoomWaterSet(rooms, water) : null;
 
         static StyleRoomTemplate LookupTemplate(DungeonStyleCatalog catalog, ushort roomId)
         {

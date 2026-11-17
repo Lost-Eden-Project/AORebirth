@@ -4,7 +4,10 @@ namespace AORebirth.World.Collision
     using System.Collections.Generic;
     using System.Numerics;
 
+    using AORebirth.Core.GameData;
+
     using N3Lite;
+    using N3Lite.Liquids;
     using N3Lite.Surfaces;
 
     /// <summary>
@@ -55,12 +58,14 @@ namespace AORebirth.World.Collision
                 return null;
 
             TilemapSurface? terrain = null;
+            TerrainTileHeightSource? terrainTiles = null;
             float cellSize = DefaultCellSize;
             float extentX = 0f;
             float extentZ = 0f;
             if (collision.Terrain != null && TerrainTileHeightSource.TryCreate(collision.Terrain, out TerrainTileHeightSource? tiles))
             {
                 terrain = new TilemapSurface(tiles!);
+                terrainTiles = tiles;
                 cellSize = CellSurface.TilesPerCell * tiles!.TileSize;
                 extentX = tiles.Width * tiles.TileSize;
                 extentZ = tiles.Height * tiles.TileSize;
@@ -91,13 +96,70 @@ namespace AORebirth.World.Collision
 
             if (terrain != null)
             {
+                // The liquid query files water by the tilemap's cells (TilemapSurface.ApplyLiquid), so a playfield with
+                // water but no static geometry still gets an (empty) cell grid over its terrain.
+                if (cells == null && collision.Water.Count > 0 && extentX > 0f && extentZ > 0f)
+                {
+                    int cellsX = Math.Max(1, (int)MathF.Ceiling(extentX / cellSize));
+                    int cellsZ = Math.Max(1, (int)MathF.Ceiling(extentZ / cellSize));
+                    cells = new CellSurface(cellsX, cellsZ, cellsX * cellSize, cellsZ * cellSize);
+                }
+
                 terrain.Child = cells;
+                terrain.Liquid = BuildLiquid(collision.Water, terrain, cells, terrainTiles!);
                 return new PlayfieldSurface(terrain, terrain, cells, triangles, populated, outside);
             }
 
-            return cells == null
-                ? null
-                : new PlayfieldSurface(cells, null, cells, triangles, populated, outside);
+            if (cells == null)
+                return null;
+
+            // Indoors each room carries its own water (the client's DungeonRoomSurface asks the point's room).
+            ISurface root = collision.RoomWater != null
+                ? new DungeonRoomLiquidSurface(cells, collision.RoomWater)
+                : cells;
+            return new PlayfieldSurface(root, null, cells, triangles, populated, outside);
+        }
+
+        /// <summary>
+        /// The playfield's liquid, built as the client builds it (LostEden.Core <c>PlayfieldLiquid.Build</c>, Gamecode
+        /// 100b84b9): the global water meshes read into triangles, each cut into collision triangles, every one filed
+        /// with the zones a one-zone sweep over it touches, then the playfield's height worked out. The zones are the
+        /// tilemap's cells, the same ids <see cref="TilemapSurface"/> asks by. Null without water or cells.
+        /// </summary>
+        static LiquidZones? BuildLiquid(
+            IReadOnlyList<PlayfieldWaterEntry> water,
+            TilemapSurface terrain,
+            CellSurface? cells,
+            TerrainTileHeightSource tiles)
+        {
+            if (water.Count == 0 || cells == null)
+                return null;
+
+            var meshes = new List<LiquidBuilder.Mesh>(water.Count);
+            for (int i = 0; i < water.Count; i++)
+            {
+                PlayfieldWaterEntry entry = water[i];
+                float[] floats = entry.Vertices ?? Array.Empty<float>();
+                var vertices = new List<Vec3>(floats.Length / 3);
+                for (int v = 0; v + 2 < floats.Length; v += 3)
+                    vertices.Add(new Vec3(floats[v], floats[v + 1], floats[v + 2]));
+
+                short[] triangles = entry.Triangles ?? Array.Empty<short>();
+                var indices = new List<int>(triangles.Length);
+                for (int t = 0; t < triangles.Length; t++)
+                    indices.Add((ushort)triangles[t]);
+
+                meshes.Add(new LiquidBuilder.Mesh(entry.Flags, vertices, indices));
+            }
+
+            var liquidTriangles = new List<LiquidTriangle>();
+            foreach (LiquidBuilder.MeshTriangle triangle in LiquidBuilder.ReadMeshes(meshes))
+                LiquidBuilder.Create(triangle, liquidTriangles);
+
+            var liquid = new LiquidZones(p => cells.GetCellIdFromPos(p), terrain);
+            liquid.AddWater(liquidTriangles, tiles.TileSize, tiles.Width, tiles.Height, CellSurface.TilesPerCell);
+            liquid.CalculateWaterHeightMax();
+            return liquid;
         }
 
         /// <summary>Cell size for playfields without a tilemap: stock's 10 tiles at the common scale 4.</summary>

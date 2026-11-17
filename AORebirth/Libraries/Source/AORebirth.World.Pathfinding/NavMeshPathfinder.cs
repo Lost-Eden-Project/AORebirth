@@ -62,7 +62,11 @@ namespace AORebirth.World.Pathfinding
 
         readonly NavMeshTileStreamer _streamer;
         readonly DtNavMeshQuery _query;
+        /// <summary>Path searches: water costs <see cref="NavMeshBuildSettings.WaterAreaCost"/> per metre.</summary>
         readonly DtQueryDefaultFilter _filter;
+
+        /// <summary>Reach floods: every area at 1, so a reach map's costs stay walk distance in metres.</summary>
+        readonly DtQueryDefaultFilter _distanceFilter = new();
         readonly RcVec3f _extents;
         readonly NavMeshIslands? _islands;
         readonly long[] _columnPolys = new long[MaxColumnPolys];
@@ -78,7 +82,7 @@ namespace AORebirth.World.Pathfinding
             Settings = settings;
             _streamer = streamer;
             _query = new DtNavMeshQuery(streamer.Mesh);
-            _filter = new DtQueryDefaultFilter();
+            _filter = new DtQueryDefaultFilter(0xFFFF, 0, NavMeshAreas.Costs(settings.WaterAreaCost));
             float pathHoriz = MathF.Max(settings.AgentRadius, PathQueryHorizontal);
             float pathVert = settings.AgentHeight + settings.AgentMaxClimb + PathQueryHorizontal;
             _extents = new RcVec3f(pathHoriz, pathVert, pathHoriz);
@@ -444,7 +448,7 @@ namespace AORebirth.World.Pathfinding
                 endRef,
                 endPt,
                 radius,
-                _filter,
+                _distanceFilter,
                 _reachRefs.AsSpan(0, capacity),
                 _reachParents.AsSpan(0, capacity),
                 _reachCosts.AsSpan(0, capacity),

@@ -1172,7 +1172,42 @@ namespace ZoneEngine_New.Core.Entities
                 if (IsClientSkillLock(statId))
                     ScheduleSpecialAvailable(statId, nowUtc + remaining);
             }
+
+            // The rebuilt client character has lost its Backstab flag.
+            _backstabUnlockSent = false;
+            UnlockBackstabIfEligible(requireInPlay: false);
         }
+
+        /// <summary>Whether this client character has been given Backstab (CharacterAction 0xB5) since it was built.</summary>
+        bool _backstabUnlockSent;
+
+        /// <summary>
+        /// CharacterAction 0xB5 with parameter 2 not 0 sets the client character's Backstab flag (Gamecode.dll 1005ea24
+        /// → 10068976); from then on a worn Sneak Attack weapon also offers Backstab (stat 489, 1009e84b / 1009c5c8).
+        /// Nothing on the client clears the flag until the character is rebuilt at login or zoning, so it is sent once,
+        /// when Sneak Attack first reaches what Backstab needs. Losing the skill later leaves the button and the server
+        /// refuses it (SpecialAttacks).
+        /// </summary>
+        void UnlockBackstabIfEligible(bool requireInPlay = true)
+        {
+            if (_backstabUnlockSent || !SpecialAttacks.HasBackstabSkill(this))
+                return;
+            if (Session == null || (requireInPlay && Session.State != SessionState.InPlay))
+                return;
+
+            _backstabUnlockSent = true;
+            Session.Send(new CharacterActionMessage
+            {
+                Identity = Identity,
+                Action = BackstabAvailableAction,
+                Target = Identity.None,
+                Parameter1 = 1,
+                Parameter2 = 1
+            });
+        }
+
+        /// <summary>CharacterAction 0xB5: Backstab available. LostEden.Protocol has no name for it.</summary>
+        const CharacterActionType BackstabAvailableAction = (CharacterActionType)0xB5;
 
         /// <summary>
         /// Skill locks the client shows as a cooldown. LastPerkResetTime has its own stat timer and the /stuck Stability
@@ -2545,6 +2580,7 @@ namespace ZoneEngine_New.Core.Entities
 
             SyncXpKillRange();
             SyncLastPerkResetTime();
+            UnlockBackstabIfEligible();
 
             // A buff or debuff that moves Martial Arts across a weapon's combined-attack requirement changes the stance;
             // only then are the weapons re-armed, so ordinary buffs keep their swing timers.

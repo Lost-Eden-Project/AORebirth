@@ -31,27 +31,46 @@ namespace ZoneEngine_New.Core.GameData
         GameDataReloadResult Reload();
     }
 
-    /// <summary>The registered reloadable catalogs, by name. One reload runs at a time.</summary>
+    /// <summary>
+    /// The registered reloadable catalogs, by name, then the modules' own reloadables (module API 1.13,
+    /// <c>&lt;module id&gt;/&lt;name&gt;</c>; a module name always holds the separator, so it never shadows a catalog).
+    /// One reload runs at a time.
+    /// </summary>
     public sealed class GameDataReloadRegistry
     {
         readonly Dictionary<string, IReloadableGameData> _byName = new(StringComparer.OrdinalIgnoreCase);
+        readonly string[] _names;
+        readonly ZoneEngine_New.Core.Modules.ModuleReloadables? _modules;
         readonly Lock _reloadLock = new();
 
-        public GameDataReloadRegistry(IEnumerable<IReloadableGameData> catalogs)
+        public GameDataReloadRegistry(IEnumerable<IReloadableGameData> catalogs,
+            ZoneEngine_New.Core.Modules.ModuleReloadables? modules = null)
         {
             ArgumentNullException.ThrowIfNull(catalogs);
             var names = new List<string>();
             foreach (IReloadableGameData catalog in catalogs)
             {
+                if (catalog.Name.Contains(ZoneEngine_New.Core.Modules.ModuleReloadables.Separator))
+                    throw new InvalidOperationException("A GameData catalog name cannot hold '"
+                        + ZoneEngine_New.Core.Modules.ModuleReloadables.Separator + "': " + catalog.Name + ".");
                 if (!_byName.TryAdd(catalog.Name, catalog))
                     throw new InvalidOperationException("Two reloadable GameData catalogs are named " + catalog.Name + ".");
                 names.Add(catalog.Name);
             }
 
-            Names = names;
+            _names = names.ToArray();
+            _modules = modules;
         }
 
-        public IReadOnlyList<string> Names { get; }
+        /// <summary>The catalogs, then the module reloadables registered so far.</summary>
+        public IReadOnlyList<string> Names
+        {
+            get
+            {
+                IReadOnlyList<string> modules = _modules?.Names ?? [];
+                return modules.Count == 0 ? _names : [.. _names, .. modules];
+            }
+        }
 
         /// <summary>
         /// Reloads <paramref name="name"/>. An unknown name, or a catalog that throws, reports a problem instead of
@@ -59,7 +78,11 @@ namespace ZoneEngine_New.Core.GameData
         /// </summary>
         public GameDataReloadResult Reload(string name)
         {
-            if (string.IsNullOrWhiteSpace(name) || !_byName.TryGetValue(name.Trim(), out IReloadableGameData? catalog))
+            IReloadableGameData? catalog = null;
+            string trimmed = name?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0
+                || (!_byName.TryGetValue(trimmed, out catalog) && _modules?.TryGet(trimmed, out catalog) != true)
+                || catalog == null)
             {
                 return new GameDataReloadResult(name ?? string.Empty, false, 0,
                     ["'" + name + "' is not reloadable; reloadable: " + string.Join(", ", Names)]);

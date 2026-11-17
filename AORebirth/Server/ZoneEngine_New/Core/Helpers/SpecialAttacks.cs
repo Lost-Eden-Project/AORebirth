@@ -27,7 +27,7 @@ namespace ZoneEngine_New.Core.Helpers
 
     /// <summary>
     /// Weapon special attacks requested by CharSecSpecAttack: Brawl, Fast Attack, Burst, Fling Shot, Aimed Shot,
-    /// Full Auto, Sneak Attack (which becomes Backstab for Shades and Adventurers) and Dimach.
+    /// Full Auto, Sneak Attack, Backstab and Dimach.
     /// Rules from AOWiki "Special Attack" and AO-Universe "Attack Rating, Weapon Damage and Special Attacks".
     /// </summary>
     public static class SpecialAttacks
@@ -49,15 +49,11 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>Burst fires up to three shots, each rolled on its own.</summary>
         const int BurstShots = 3;
 
-        /// <summary>
-        /// Backstab gates on Sneak Attack without nano buffs (equipment and implants count), by profession: usable,
-        /// gains the skill multiplier, can crit (AOWiki, AO-Universe Shade guide).
-        /// </summary>
-        sealed record BackstabGates(int Usable, int Multiplier, int Critical);
+        /// <summary>Backstab (stat 489) needs this much Sneak Attack, any profession.</summary>
+        const int BackstabMinSneakAttack = 100;
 
-        static readonly BackstabGates AdventurerBackstab = new(350, 540, 625);
-
-        static readonly BackstabGates ShadeBackstab = new(100, 235, 420);
+        /// <summary>Backstab locks for a flat 40 seconds.</summary>
+        const int BackstabRechargeSeconds = 40;
 
         /// <summary>What a queued special did on one try.</summary>
         public enum FireResult
@@ -134,6 +130,8 @@ namespace ZoneEngine_New.Core.Helpers
                 // client does, instead of queued and dropped without a word at fire time (bug #80).
                 if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out _))
                     return ClientFeedback.ActionNotAvailable;
+                if (special == CharacterStat.Backstab && !HasBackstabSkill(attacker))
+                    return ClientFeedback.ActionNotAvailable;
                 if (attacker.GetEdgeDistanceTo(target) > weapon.GetAttackRange())
                     return ClientFeedback.SpecialOutOfRange;
             }
@@ -144,14 +142,16 @@ namespace ZoneEngine_New.Core.Helpers
             return null;
         }
 
-        /// <summary>Aimed Shot or Sneak Attack the target would notice (a Sneak Attack that can backstab instead is fine).</summary>
+        /// <summary>
+        /// Aimed Shot or Sneak Attack the target would notice, or a Backstab from in front of the target or at a target
+        /// fighting the attacker.
+        /// </summary>
         static bool IsNoticedStealthStrike(Character attacker, Character target, CharacterStat special)
         {
-            bool noticed = !IsSneaking(attacker) || CanSee(target, attacker);
             return special switch
             {
-                CharacterStat.AimedShot => noticed,
-                CharacterStat.SneakAttack => noticed && !CanBackstab(attacker, target),
+                CharacterStat.AimedShot or CharacterStat.SneakAttack => !IsSneaking(attacker) || CanSee(target, attacker),
+                CharacterStat.Backstab => !IsBehindDistractedTarget(attacker, target),
                 _ => false
             };
         }
@@ -191,15 +191,20 @@ namespace ZoneEngine_New.Core.Helpers
             if (attacker.IsStunned || (WaitsForStandingStill(special) && attacker.Motor.IsMoving))
                 return FireResult.Waiting;
 
+            // Sneak Attack lost (a nano buff ran out) after the client was given Backstab: refused, as at queue time.
+            if (special == CharacterStat.Backstab && !HasBackstabSkill(attacker))
+            {
+                ClientFeedback.Send(attacker, ClientFeedback.ActionNotAvailable);
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Requirements, "sneak attack too low");
+            }
+
             if (IsNoticedStealthStrike(attacker, target, special))
             {
                 ClientFeedback.Send(attacker, ClientFeedback.SpecialTargetAware);
                 return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Target, "target aware");
             }
 
-            // Sneak Attack from stealth on an unaware target; otherwise a Shade or Adventurer behind a target that
-            // someone else is fighting backstabs it, without needing stealth.
-            bool backstab = special == CharacterStat.SneakAttack && (!IsSneaking(attacker) || CanSee(target, attacker));
+            bool backstab = special == CharacterStat.Backstab;
 
             if (!TryPickWeapon(attacker, canFlag, out CharacterWeapon weapon, out int slot))
                 return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Requirements, "no weapon for it");
@@ -244,7 +249,7 @@ namespace ZoneEngine_New.Core.Helpers
 
             // Retail order (Full Auto capture 2026-10-22): SpecialUsed first, then the hit's own messages (FullAuto
             // rounds feedback, SpecialAttackInfo), then the target's health.
-            int seconds = RechargeSeconds(attacker, special, specialItem ?? weapon.DamageItem, backstab);
+            int seconds = RechargeSeconds(attacker, special, specialItem ?? weapon.DamageItem);
             using (ModuleCooldowns.During(PlayerActionKind.SpecialAttack, (int)special))
                 attacker.LockSkill((int)special, seconds, now);
             attacker.ScheduleSpecialAvailable((int)special, now.AddSeconds(seconds));
@@ -331,7 +336,7 @@ namespace ZoneEngine_New.Core.Helpers
                 bullets = -1;
                 roundsFired = 0;
             }
-            else if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack)
+            else if (special is CharacterStat.AimedShot or CharacterStat.SneakAttack or CharacterStat.Backstab)
             {
                 result = RollStealthStrike(attacker, target, item, special, backstab);
                 bullets = AttackInfoRules.UsesMeleeAmmo(item) ? -1 : 1;
@@ -470,32 +475,24 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         /// <summary>
-        /// Aimed Shot and Sneak Attack always hit; Backstab rolls to hit with Sneak Attack as its attack rating. All
-        /// three ignore armour and start from the weapon's max damage (max + crit bonus on a crit), times a random
-        /// multiplier rolled from the special's skill (StealthMultiplierTable), capped at 13000. Backstab only gains the
-        /// multiplier, and can only crit, once its unbuffed skill passes the profession's gates.
+        /// Aimed Shot and Sneak Attack always hit; Backstab hits as Sneak Attack does but rolls to hit first, with Sneak
+        /// Attack as its attack rating. All three ignore armour and start from the weapon's max damage (max + crit bonus
+        /// on a crit), times a random multiplier rolled from the skill (StealthMultiplierTable; Sneak Attack for
+        /// Backstab), capped at 13000.
         /// </summary>
         static DamageCalculator.DamageResult RollStealthStrike(
             Character attacker, Character target, Item? weapon, CharacterStat special, bool backstab)
         {
-            bool multiplied = true;
-            bool canCrit = true;
-            if (backstab && TryGetBackstabGates(attacker, out BackstabGates gates))
-            {
-                int skill = UnbuffedSneakAttack(attacker);
-                multiplied = skill >= gates.Multiplier;
-                canCrit = skill >= gates.Critical;
-            }
-
-            int specialSkill = Math.Max(0, attacker.Stats.GetOrZero(special));
+            CharacterStat strike = backstab ? CharacterStat.SneakAttack : special;
+            int specialSkill = Math.Max(0, attacker.Stats.GetOrZero(strike));
             DamageCalculator.DamageResult roll = DamageCalculator.CalculateFromWeapon(
-                attacker, target, weapon, special, alwaysHits: !backstab, canCrit: canCrit,
+                attacker, target, weapon, strike, alwaysHits: !backstab,
                 attackSkillOverride: backstab ? specialSkill : null);
             if (!roll.IsHit)
                 return roll;
 
             string? gameDataRoot = attacker.Playfield?.GetService<IGameData>()?.RootPath;
-            int multiplier = multiplied && gameDataRoot != null ? StealthMultiplierTable.Roll(gameDataRoot, specialSkill) : 1;
+            int multiplier = gameDataRoot != null ? StealthMultiplierTable.Roll(gameDataRoot, specialSkill) : 1;
             int damage = (int)Math.Min(StealthStrikeMaxDamage, (long)roll.Damage * multiplier);
             return new DamageCalculator.DamageResult(true, Math.Max(1, damage), roll.HitType);
         }
@@ -590,35 +587,20 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         /// <summary>
-        /// Backstab: a Shade or Adventurer with enough unbuffed Sneak Attack, standing behind a target that is fighting
-        /// someone else. It stops working as soon as the target turns on the attacker.
+        /// Enough Sneak Attack for Backstab. With a Sneak Attack weapon worn the client then offers it, once the server
+        /// has sent CharacterAction 0xB5 (Player.UnlockBackstabIfEligible).
         /// </summary>
-        static bool CanBackstab(Character attacker, Character target)
-        {
-            if (!TryGetBackstabGates(attacker, out BackstabGates gates) || UnbuffedSneakAttack(attacker) < gates.Usable)
-                return false;
+        public static bool HasBackstabSkill(Character attacker)
+            => attacker.Stats.GetOrZero(CharacterStat.SneakAttack) >= BackstabMinSneakAttack;
 
+        /// <summary>
+        /// Backstab's position rule: behind a target that is fighting someone else. It stops working as soon as the
+        /// target turns on the attacker. The server judges it; the client never works out "behind" itself.
+        /// </summary>
+        static bool IsBehindDistractedTarget(Character attacker, Character target)
+        {
             Identity fighting = target.FightingTarget;
             return fighting.Instance != 0 && fighting != attacker.Identity && IsBehind(attacker, target);
-        }
-
-        /// <summary>Sneak Attack without what active nano buffs add; equipment, implants and base skill stay.</summary>
-        static int UnbuffedSneakAttack(Character attacker)
-        {
-            int skill = attacker.Stats.GetOrZero(CharacterStat.SneakAttack);
-            foreach (Buff buff in attacker.Buffs)
-                skill -= StatModifierSpells.SumModify(buff.ModifierSpells, CharacterStat.SneakAttack);
-            return Math.Max(0, skill);
-        }
-
-        static bool TryGetBackstabGates(Character attacker, out BackstabGates gates)
-        {
-            switch ((Profession)attacker.Stats.GetOrZero(CharacterStat.Profession))
-            {
-                case Profession.Adventurer: gates = AdventurerBackstab; return true;
-                case Profession.Shade: gates = ShadeBackstab; return true;
-                default: gates = null!; return false;
-            }
         }
 
         /// <summary>True when <paramref name="attacker"/> is in the half-space behind <paramref name="target"/>'s facing.</summary>
@@ -653,7 +635,7 @@ namespace ZoneEngine_New.Core.Helpers
         /// weapon's AttackDelay / RechargeDelay; Burst and Full Auto delays are the weapon's BurstRecharge /
         /// FullAutoRecharge. All of those are centiseconds.
         /// </summary>
-        static int RechargeSeconds(Character attacker, CharacterStat special, Item? weapon, bool backstab)
+        static int RechargeSeconds(Character attacker, CharacterStat special, Item? weapon)
         {
             double attackSeconds = Centiseconds(weapon, CharacterStat.AttackDelay);
             double rechargeSeconds = Centiseconds(weapon, CharacterStat.RechargeDelay);
@@ -682,12 +664,13 @@ namespace ZoneEngine_New.Core.Helpers
                 case CharacterStat.AimedShot:
                     return AtLeast((rechargeSeconds * 40) - (3 * skill / 100.0), 10 + attackSeconds);
 
-                // 40 - skill / 150, minimum 10 seconds + Attack; Backstab is (40 - skill / 150) / 2.
+                // 40 - skill / 150, minimum 10 seconds + Attack.
                 case CharacterStat.SneakAttack:
-                {
-                    int seconds = AtLeast(40 - (skill / 150.0), 10 + attackSeconds);
-                    return backstab ? Math.Max(1, (int)((40 - (skill / 150.0)) / 2)) : seconds;
-                }
+                    return AtLeast(40 - (skill / 150.0), 10 + attackSeconds);
+
+                // Backstab: a flat 40 seconds.
+                case CharacterStat.Backstab:
+                    return BackstabRechargeSeconds;
 
                 // Dimach: the Dimach Item's own RechargeDelay (30 min Martial Artist, 8 min others, 5 min Keeper/Shade).
                 case CharacterStat.Dimach:
@@ -738,6 +721,8 @@ namespace ZoneEngine_New.Core.Helpers
                 case CharacterStat.AimedShot: flag = CanFlags.AimedShot; return true;
                 case CharacterStat.FullAuto: flag = CanFlags.FullAuto; return true;
                 case CharacterStat.SneakAttack: flag = CanFlags.SneakAttack; return true;
+                // Backstab comes with a Sneak Attack weapon (the client adds it beside Sneak Attack once given 0xB5).
+                case CharacterStat.Backstab: flag = CanFlags.SneakAttack; return true;
                 case CharacterStat.Dimach: flag = CanFlags.Dimach; return true;
                 default: flag = 0; return false;
             }

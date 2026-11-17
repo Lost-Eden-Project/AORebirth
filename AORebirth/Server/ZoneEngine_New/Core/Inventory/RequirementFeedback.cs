@@ -48,6 +48,13 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>"You must be behind the target!".</summary>
         const int MustBeBehindTarget = 164102084;
 
+        /// <summary>"This action requires that you have the first / second / third / fourth specialization completed!":
+        /// [Specialization BitAnd 1 / 2 / 4 / 8].</summary>
+        const int FirstSpecializationRequired = 160614526;
+        const int SecondSpecializationRequired = 16156542;
+        const int ThirdSpecializationRequired = 241952942;
+        const int FourthSpecializationRequired = 64711726;
+
         /// <summary>
         /// Sends the failing checks of <paramref name="actionType"/> as feedback. Does nothing when the
         /// requirements pass (the action was refused for another reason). Falls back to the client's
@@ -163,6 +170,10 @@ namespace ZoneEngine_New.Core.Inventory
                 case Operator.EqualTo when stat == CharacterStat.TargetFacing && requirement.Value == 1:
                     messageId = MustBeBehindTarget;
                     return true;
+                case Operator.BitAnd when !entry.OnTarget && stat == CharacterStat.Specialization
+                    && SpecializationLine(requirement.Value) is int specialization:
+                    messageId = specialization;
+                    return true;
                 case Operator.GreaterThan:
                     (messageId, args) = (StatAtLeast,
                         [whose, new ClientFeedback.TextReference(ClientFeedback.StatNameCategory, (int)stat), requirement.Value + 1]);
@@ -188,6 +199,17 @@ namespace ZoneEngine_New.Core.Inventory
                     return false;
             }
         }
+
+        /// <summary>The client's line for one specialization flag (Professor Dedlock's items set 1, 3, 7, 15); null for a
+        /// combined or unknown mask.</summary>
+        static int? SpecializationLine(int flag) => flag switch
+        {
+            1 => FirstSpecializationRequired,
+            2 => SecondSpecializationRequired,
+            4 => ThirdSpecializationRequired,
+            8 => FourthSpecializationRequired,
+            _ => null
+        };
 
         /// <summary>An enum value as words: MartialArtist becomes "Martial Artist".</summary>
         static string Spaced<T>(T value) where T : struct, Enum

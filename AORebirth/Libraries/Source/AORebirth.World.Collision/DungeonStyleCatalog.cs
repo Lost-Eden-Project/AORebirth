@@ -26,9 +26,11 @@ namespace AORebirth.World.Collision
             byte[] gnda,
             byte[] dcga,
             IReadOnlyList<StyleRoomTemplate> rooms,
-            IReadOnlyDictionary<int, byte[]> surfacePayloads)
+            IReadOnlyDictionary<int, byte[]> surfacePayloads,
+            IReadOnlyDictionary<int, IReadOnlyList<PlayfieldWaterEntry>>? roomWater = null)
         {
             StyleId = styleId;
+            RoomWater = roomWater ?? new Dictionary<int, IReadOnlyList<PlayfieldWaterEntry>>();
             Meta = meta;
             Gnda = gnda;
             Dcga = dcga;
@@ -47,6 +49,12 @@ namespace AORebirth.World.Collision
         public IReadOnlyList<StyleRoomTemplate> Rooms { get; }
 
         public IReadOnlyDictionary<int, byte[]> SurfacePayloads { get; }
+
+        /// <summary>
+        /// Each template room's own water (Water.dat entries with a room index, RoomTemplate.Water), in room space, by
+        /// <see cref="StyleRoomTemplate.InstanceId"/>. Empty when the style has none.
+        /// </summary>
+        public IReadOnlyDictionary<int, IReadOnlyList<PlayfieldWaterEntry>> RoomWater { get; }
 
         public int MapWidth => Meta.Width;
 
@@ -111,8 +119,42 @@ namespace AORebirth.World.Collision
                 gnda,
                 dcga,
                 rooms,
-                ReadSurfaces(gameDataRoot, styleId));
+                ReadSurfaces(gameDataRoot, styleId),
+                ReadRoomWater(gameDataRoot, styleId));
             return true;
+        }
+
+        /// <summary>Water.dat's room water grouped by room index; a missing or unreadable file is no water.</summary>
+        static IReadOnlyDictionary<int, IReadOnlyList<PlayfieldWaterEntry>> ReadRoomWater(string gameDataRoot, int styleId)
+        {
+            var map = new Dictionary<int, IReadOnlyList<PlayfieldWaterEntry>>();
+            string waterPath = Path.Combine(gameDataRoot, GameDataPaths.PlayfieldWaterRelativePath(styleId));
+            if (!File.Exists(waterPath))
+                return map;
+
+            List<PlayfieldWaterEntry> entries;
+            try
+            {
+                entries = PlayfieldWaterDat.Parse(File.ReadAllBytes(waterPath), out _);
+            }
+            catch
+            {
+                return map;
+            }
+
+            var grouped = new Dictionary<int, List<PlayfieldWaterEntry>>();
+            foreach (PlayfieldWaterEntry entry in entries)
+            {
+                if (entry.RoomIndex < 0)
+                    continue;
+                if (!grouped.TryGetValue(entry.RoomIndex, out List<PlayfieldWaterEntry>? list))
+                    grouped[entry.RoomIndex] = list = new List<PlayfieldWaterEntry>();
+                list.Add(entry);
+            }
+
+            foreach (KeyValuePair<int, List<PlayfieldWaterEntry>> pair in grouped)
+                map[pair.Key] = pair.Value;
+            return map;
         }
 
         static bool TryReadMetaData(string gameDataRoot, int styleId, out PlayfieldMetaData? meta)

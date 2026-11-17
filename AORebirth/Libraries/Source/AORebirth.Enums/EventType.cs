@@ -12,6 +12,12 @@ namespace AORebirth.Enums
         OnEnemyInVicinity = 25,
         OnEnter = 16,
         OnFailure = 27,
+
+        /// <summary>
+        /// The owner cancelled the nano from NCU (our name; the client data has none). Zazen Stance 287559 sets current
+        /// nano to 1 ten times a second apart; the Mongo's nanos (95698...) set Health to 1.
+        /// </summary>
+        OnCancel = 28,
         OnFriendlyInVicinity = 24,
         OnHit = 5,
         OnOpen = 18,

@@ -52,7 +52,9 @@ namespace AORebirth.World.Pathfinding
             return new PlayfieldCollisionSet(
                 playfieldId > 0 ? playfieldId : dungeon.PlayfieldId,
                 meshes,
-                existing.Terrain ?? dungeon.Terrain);
+                existing.Terrain ?? dungeon.Terrain,
+                water: existing.Water.Count > 0 ? existing.Water : dungeon.Water,
+                roomWater: dungeon.RoomWater ?? existing.RoomWater);
         }
     }
 }

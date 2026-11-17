@@ -96,7 +96,30 @@ namespace AORebirth.World.Collision
 
             AppendCellSurfaces(gameDataRoot, playfieldId, meshes, teleportals);
 
-            return new PlayfieldCollisionSet(playfieldId, meshes, terrain, teleportals);
+            return new PlayfieldCollisionSet(playfieldId, meshes, terrain, teleportals, LoadGlobalWater(gameDataRoot, playfieldId));
+        }
+
+        /// <summary>
+        /// The playfield-wide water in Water.dat (RDBPlayfield.GlobalWaterData, room index -1), which the client builds
+        /// its liquid surface query from. Room water is template-local and left out. Soft-skips a missing or unreadable
+        /// file: water must not cost the playfield its collision.
+        /// </summary>
+        static IReadOnlyList<PlayfieldWaterEntry> LoadGlobalWater(string gameDataRoot, int playfieldId)
+        {
+            string waterPath = Path.Combine(gameDataRoot, GameDataPaths.PlayfieldWaterRelativePath(playfieldId));
+            if (!File.Exists(waterPath))
+                return Array.Empty<PlayfieldWaterEntry>();
+
+            try
+            {
+                List<PlayfieldWaterEntry> entries = PlayfieldWaterDat.Parse(File.ReadAllBytes(waterPath), out _);
+                entries.RemoveAll(entry => entry.RoomIndex >= 0);
+                return entries;
+            }
+            catch
+            {
+                return Array.Empty<PlayfieldWaterEntry>();
+            }
         }
 
         /// <summary>

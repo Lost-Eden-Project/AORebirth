@@ -48,6 +48,12 @@ namespace AORebirth.World.Pathfinding
 
         public float DetailSampleMaxError { get; init; } = 1f;
 
+        /// <summary>
+        /// Path cost per metre through water (<see cref="NavMeshAreas.Water"/>) relative to dry ground. A query-time
+        /// value: NPCs still path through water, but take a dry way round when it is at most this many times longer.
+        /// </summary>
+        public float WaterAreaCost { get; init; } = 3f;
+
         public static NavMeshBuildSettings CreateDefault() => new();
 
         public static string DefaultPathBesideGameData(string gameDataRoot)
@@ -123,6 +129,9 @@ namespace AORebirth.World.Pathfinding
                 throw new ArgumentOutOfRangeException(nameof(TileSizeVoxels));
             if (VertsPerPoly < 3)
                 throw new ArgumentOutOfRangeException(nameof(VertsPerPoly));
+            // Below 1 the A* distance heuristic overestimates and searches stop finding the cheapest route.
+            if (!(WaterAreaCost >= 1f))
+                throw new ArgumentOutOfRangeException(nameof(WaterAreaCost));
         }
     }
 }

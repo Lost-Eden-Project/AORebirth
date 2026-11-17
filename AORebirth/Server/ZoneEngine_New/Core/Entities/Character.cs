@@ -190,6 +190,7 @@ namespace ZoneEngine_New.Core.Entities
                 case CharacterStat.Brawl:
                 case CharacterStat.Dimach:
                 case CharacterStat.SneakAttack:
+                case CharacterStat.Backstab:
                 case CharacterStat.FastAttack:
                 case CharacterStat.Burst:
                 case CharacterStat.FlingShot:
@@ -2153,22 +2154,31 @@ namespace ZoneEngine_New.Core.Entities
             int breed = Stats.GetOrZero(CharacterStat.Breed);
             bool sitting = Stats.GetOrZero(CharacterStat.CurrentMovementMode) == (int)MovementState.Sit;
 
-            // Sitting: 1.5x the Body Development bonus and a one second shorter health tick.
-            TickOneRegen(
-                ref _healRegenElapsed,
-                deltaTime,
-                PassiveRegenCalculator.ComputeHealthDelta(
-                    breed,
-                    Stats.GetOrZero(CharacterStat.BodyDevelopment),
-                    Stats.GetOrZero(CharacterStat.HealDelta),
-                    sitting),
-                IsRestingPet
-                    ? PetRestHealIntervalSeconds
-                    : PassiveRegenCalculator.ComputeHealthIntervalSeconds(
-                        Stats.GetOrZero(CharacterStat.Stamina),
+            // A monster (not a pet) gets no natural health regen while it is fighting: its HealDelta is MaxHealth/120,
+            // which at the 2 s floor of a high-Stamina mob outheals a team. The tick starts over when the fight ends.
+            if (IsFightingMonster)
+            {
+                _healRegenElapsed = 0;
+            }
+            else
+            {
+                // Sitting: 1.5x the Body Development bonus and a one second shorter health tick.
+                TickOneRegen(
+                    ref _healRegenElapsed,
+                    deltaTime,
+                    PassiveRegenCalculator.ComputeHealthDelta(
+                        breed,
+                        Stats.GetOrZero(CharacterStat.BodyDevelopment),
+                        Stats.GetOrZero(CharacterStat.HealDelta),
                         sitting),
-                CharacterStat.Health,
-                CharacterStat.MaxHealth);
+                    IsRestingPet
+                        ? PetRestHealIntervalSeconds
+                        : PassiveRegenCalculator.ComputeHealthIntervalSeconds(
+                            Stats.GetOrZero(CharacterStat.Stamina),
+                            sitting),
+                    CharacterStat.Health,
+                    CharacterStat.MaxHealth);
+            }
 
             // Sitting: 1.5x the Nano Pool bonus; the nano tick keeps its standing rate.
             TickOneRegen(
@@ -2193,6 +2203,9 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>A pet heals every second while it has no fighting target, even if something is attacking it.</summary>
         bool IsRestingPet => this is NpcCharacter { PetOwner: not null } && FightingTarget.Instance == 0;
+
+        /// <summary>A monster (an NPC that is no one's pet) in combat.</summary>
+        bool IsFightingMonster => this is NpcCharacter { PetOwner: null } && IsInCombat;
 
         void TickOneRegen(
             ref double elapsed,
@@ -2250,8 +2263,9 @@ namespace ZoneEngine_New.Core.Entities
 
         void TickWeapons(double deltaTime)
         {
-            // A nano cast or a stun pauses both the swing and the recharge; they resume where they were.
-            if (IsCastingNano || IsStunned)
+            // A nano cast or a stun pauses both the swing and the recharge; they resume where they were. So does a calm
+            // that left the fighting target in place until the next think (a calm without NpcWipeHateList, bug #512).
+            if (IsCastingNano || IsStunned || IsPacified)
                 return;
 
             // Full bars waiting on range or LOS still Tick so they swing the moment they can.
@@ -2987,6 +3001,12 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Cast bar in flight, or null when idle.</summary>
         public PendingNanoCast? PendingCast { get; private set; }
 
+        /// <summary>
+        /// Repeats still due from a cancelled nano's OnCancel functions (its NCU entry, which would carry them, is gone).
+        /// Null while there are none. Driven by <see cref="NanoRuntime"/>.
+        /// </summary>
+        internal List<CancelAftermath>? CancelAftermaths { get; set; }
+
         public bool IsCastingNano => PendingCast != null;
 
         /// <summary>
@@ -3457,6 +3477,9 @@ namespace ZoneEngine_New.Core.Entities
             return expired;
         }
 
+        /// <summary>Whether a calm was running at the last buff change; a calm landing is the change to true.</summary>
+        bool _pacified;
+
         void OnBuffsChanged()
         {
             SyncUsedNcu();
@@ -3466,6 +3489,12 @@ namespace ZoneEngine_New.Core.Entities
             // during the stun, and the client could stay in the cast animation after it.
             if (IsStunned && !wasStunned)
                 NanoRuntime.InterruptCast(this);
+            // A calm landing loses the attack that was charging, as a nano cast does: after the calm the weapons charge a
+            // full attack again instead of releasing the held one with the next swing (bug #512).
+            bool wasPacified = _pacified;
+            _pacified = IsPacified;
+            if (_pacified && !wasPacified)
+                ResetChargingAttacks();
             // A root or stun holds the character the moment it lands, not when the queued rebase gets to it: the body
             // would otherwise keep running on the last held input while its client already stands still.
             if (IsRooted)

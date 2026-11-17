@@ -83,5 +83,13 @@ namespace AORebirth.Modules
         /// capability. Throws for a type the engine reads itself or another module already handles.
         /// </summary>
         void RegisterMessageHandler(int messageType, IModuleMessageHandler handler);
+
+        /// <summary>
+        /// Makes the module's own data reloadable while the zone runs (module API 1.13), listed and reloaded as
+        /// <c>&lt;module id&gt;/&lt;Name&gt;</c> beside the GameData catalogs (<see cref="IZoneGameData.Reloadable"/>).
+        /// Only during <see cref="IZoneModule.Initialize"/>; needs no capability (reloading it, from another module,
+        /// needs <c>gamedata-reload</c>). Throws for an invalid name or one the module already registered.
+        /// </summary>
+        void RegisterReloadable(IModuleReloadable reloadable);
     }
 }

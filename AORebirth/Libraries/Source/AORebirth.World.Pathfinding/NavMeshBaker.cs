@@ -4,6 +4,7 @@ namespace AORebirth.World.Pathfinding
     using System.Collections.Generic;
     using System.IO;
 
+    using AORebirth.Core.GameData;
     using AORebirth.World.Collision;
 
     using DotRecast.Recast;
@@ -17,7 +18,17 @@ namespace AORebirth.World.Pathfinding
         const int WalkablePolyFlags = 1;
         const int MaxPolysPerTile = 32768;
 
-        public static NavMeshBakeResult Bake(PlayfieldCollisionSet collision, NavMeshBuildSettings? settings = null)
+        /// <summary>
+        /// Bakes <paramref name="collision"/>. Walkable ground under any of <paramref name="water"/>'s surfaces becomes
+        /// <see cref="NavMeshAreas.Water"/>, so searches price it by <see cref="NavMeshBuildSettings.WaterAreaCost"/>.
+        /// Tiles build on <paramref name="threads"/> workers; 1 or less builds them on the calling thread, which is what
+        /// the engine's own bakes use so they never compete with the tick for cores.
+        /// </summary>
+        public static NavMeshBakeResult Bake(
+            PlayfieldCollisionSet collision,
+            NavMeshBuildSettings? settings = null,
+            IReadOnlyList<PlayfieldWaterEntry>? water = null,
+            int threads = 1)
         {
             ArgumentNullException.ThrowIfNull(collision);
             settings ??= NavMeshBuildSettings.CreateDefault();
@@ -34,9 +45,11 @@ namespace AORebirth.World.Pathfinding
 
             vertices = PadVerticalBounds(vertices, settings);
             var geom = new RcSampleInputGeomProvider(vertices, triangles);
+            if (water != null)
+                AddWaterVolumes(geom, water);
             RcConfig config = CreateConfig(settings);
             var builder = new RcBuilder();
-            List<RcBuilderResult> tiles = builder.BuildTiles(geom, config, keepInterResults: false, buildAll: true, threads: 0);
+            List<RcBuilderResult> tiles = builder.BuildTiles(geom, config, keepInterResults: false, buildAll: true, threads: threads);
 
             var navParams = new DtNavMeshParams
             {
@@ -96,7 +109,10 @@ namespace AORebirth.World.Pathfinding
         }
 
         public static NavMeshBakeResult Bake(string gameDataRoot, int playfieldId, NavMeshBuildSettings? settings = null)
-            => Bake(PlayfieldCollisionResolver.Resolve(gameDataRoot, playfieldId), settings);
+            => Bake(
+                PlayfieldCollisionResolver.Resolve(gameDataRoot, playfieldId),
+                settings,
+                NavMeshAreas.LoadPlayfieldWater(gameDataRoot, playfieldId));
 
         public static NavMeshBakeResult Bake(
             string gameDataRoot,
@@ -106,6 +122,45 @@ namespace AORebirth.World.Pathfinding
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
             ArgumentNullException.ThrowIfNull(generator);
             return Bake(DungeonCollisionBuilder.Build(gameDataRoot, generator), settings);
+        }
+
+        /// <summary>
+        /// One convex volume per water triangle, from below the whole mesh up to that triangle's surface: every walkable
+        /// span under it is marked water, while a bridge or shore above the surface stays ground.
+        /// </summary>
+        static void AddWaterVolumes(RcSampleInputGeomProvider geom, IReadOnlyList<PlayfieldWaterEntry> water)
+        {
+            float floor = geom.GetMeshBoundsMin().Y - 1f;
+            var area = new RcAreaModification(NavMeshAreas.Water);
+            for (int w = 0; w < water.Count; w++)
+            {
+                float[]? v = water[w].Vertices;
+                short[]? tri = water[w].Triangles;
+                if (v == null || tri == null)
+                    continue;
+
+                for (int i = 0; i + 2 < tri.Length; i += 3)
+                {
+                    int a = tri[i] * 3, b = tri[i + 1] * 3, c = tri[i + 2] * 3;
+                    if (a < 0 || b < 0 || c < 0 || a + 2 >= v.Length || b + 2 >= v.Length || c + 2 >= v.Length)
+                        continue;
+
+                    // Edge-on to the ground (a wall of the water volume) covers no column.
+                    float cross = ((v[b] - v[a]) * (v[c + 2] - v[a + 2])) - ((v[b + 2] - v[a + 2]) * (v[c] - v[a]));
+                    if (MathF.Abs(cross) < 1e-4f)
+                        continue;
+
+                    float surface = MathF.Max(v[a + 1], MathF.Max(v[b + 1], v[c + 1]));
+                    if (surface <= floor)
+                        continue;
+
+                    geom.AddConvexVolume(
+                        [v[a], v[a + 1], v[a + 2], v[b], v[b + 1], v[b + 2], v[c], v[c + 1], v[c + 2]],
+                        floor,
+                        surface,
+                        area);
+                }
+            }
         }
 
         static float[] PadVerticalBounds(float[] vertices, NavMeshBuildSettings settings)

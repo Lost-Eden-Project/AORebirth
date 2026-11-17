@@ -188,7 +188,9 @@ namespace ZoneEngine_New.Core.Nanos
         /// <paramref name="caster"/>. A self-cast team nano names its caster (User / Wearer); one aimed at a
         /// Target, such as 90449 (child 90445), buffs that target's team. Without a team only that character
         /// gets it. The caster's own pets count as its side of the team: when the caster receives the child, so
-        /// do its living pets on its playfield (<see cref="ApplyTeamNano"/>).
+        /// do its living pets on its playfield (<see cref="ApplyTeamNano"/>). Each member must meet the child's own
+        /// ToUse criteria: Jury-rigged NCU Analyzer 163081's child 163006 needs Level &gt; 49, so a lower-level teammate
+        /// is skipped while the rest of the team still gets it.
         /// </summary>
         static bool TeamCastNano(
             Character caster,
@@ -200,11 +202,13 @@ namespace ZoneEngine_New.Core.Nanos
         {
             if (!spell.TryReadInt(0, out int nanoId) || nanoId <= 0)
                 return false;
+            if (!TryResolveChild(items, nanoId, out NanoSpell? child) || child == null)
+                return false;
 
             if (recipient is not Player player)
             {
                 if (!recipient.IsDead)
-                    ApplyTeamNano(caster, recipient, nanoId, items, inventory, nowUtc);
+                    ApplyTeamNano(caster, recipient, child, items, inventory, nowUtc);
                 return true;
             }
 
@@ -216,7 +220,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (team == null || manager == null)
             {
                 if (!player.IsDead)
-                    ApplyTeamNano(caster, player, nanoId, items, inventory, nowUtc);
+                    ApplyTeamNano(caster, player, child, items, inventory, nowUtc);
                 return true;
             }
 
@@ -231,26 +235,29 @@ namespace ZoneEngine_New.Core.Nanos
                     && (!ReferenceEquals(mate.Playfield, playfield) || locality == null || !locality.IsVisibleTo(mate, player)))
                     continue;
 
-                ApplyTeamNano(caster, mate, nanoId, items, inventory, nowUtc);
+                ApplyTeamNano(caster, mate, child, items, inventory, nowUtc);
             }
 
             return true;
         }
 
         /// <summary>
-        /// Applies a team nano's child to one team member. When that member is the caster, the caster's living
-        /// pets on its playfield get it too: a team buff originating from a pet owner covers its pets, while a
-        /// teammate's pets stay with their own owner.
+        /// Applies a team nano's child to one team member that meets the child's ToUse criteria. When that member is
+        /// the caster, the caster's living pets on its playfield that meet them get it too: a team buff originating
+        /// from a pet owner covers its pets, while a teammate's pets stay with their own owner. A caster below the
+        /// child's criteria still passes it on to its pets.
         /// </summary>
         static void ApplyTeamNano(
             Character caster,
             Character member,
-            int nanoId,
+            NanoSpell child,
             IItemBuilder items,
             IInventoryRepository inventory,
             DateTime nowUtc)
         {
-            NanoRuntime.TryApplyImmediate(caster, member, nanoId, items, inventory, nowUtc);
+            int nanoId = child.Id;
+            if (MeetsTeamChildRequirements(child, member))
+                NanoRuntime.TryApplyImmediate(caster, member, nanoId, items, inventory, nowUtc);
             if (!ReferenceEquals(member, caster) || caster.OwnedPets.Count == 0)
                 return;
 
@@ -260,9 +267,15 @@ namespace ZoneEngine_New.Core.Nanos
             {
                 if (pet.IsDead || !ReferenceEquals(pet.Playfield, caster.Playfield))
                     continue;
+                if (!MeetsTeamChildRequirements(child, pet))
+                    continue;
                 NanoRuntime.TryApplyImmediate(caster, pet, nanoId, items, inventory, nowUtc);
             }
         }
+
+        /// <summary>A team nano's child reads its ToUse criteria from the member it would land on.</summary>
+        static bool MeetsTeamChildRequirements(NanoSpell child, Character member)
+            => child.MeetsActionRequirements(stat => member.Stats.Get(stat), ActionType.ToUse, member.ResolveRequirement);
 
         static bool PlayfieldNano(
             Character caster,

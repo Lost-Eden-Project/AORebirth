@@ -227,7 +227,7 @@ namespace ZoneEngine_New.Core.Helpers
             defenseRating = ResolveDefenseRating(target, nano);
             double hitPercentage = HitPercentage(attackRating, defenseRating, aggDef: 0);
             landChancePercent = (int)Math.Round(Math.Clamp(hitPercentage, 0, 1) * 100);
-            return NextDouble() <= hitPercentage;
+            return NextDouble() < hitPercentage;
         }
 
         /// <summary>
@@ -281,19 +281,25 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         static bool ResolveHit(int attackRating, int defenseRating, int aggDef)
-            => NextDouble() <= HitPercentage(attackRating, defenseRating, aggDef);
+            => NextDouble() < HitPercentage(attackRating, defenseRating, aggDef);
 
         /// <summary>
-        /// Hit chance = 1 / sqrt(2) x AR / DR + AggDef / 500, held to 0..1. AR is the attack rating (attack skills + Add
-        /// All Off.), DR the defense rating (defense skills + Add All Def.), AggDef the defender's aggressive/defensive
-        /// bar, -100 (fully defensive, harder to hit) to 100. Equal ratings at AggDef 0 hit about 71% of the time; AR at
-        /// sqrt(2) x DR or more always hits. A DR under 1 counts as 1.
+        /// Hit chance = 70% + (AR - DR) / (DR + |AR - DR|) + AggDef / 500, held to 0..1. AR is the attack rating (attack
+        /// skills + Add All Off.), DR the defense rating (defense skills + Add All Def.), AggDef the defender's
+        /// aggressive/defensive bar, -100 (fully defensive, harder to hit) to 100. The middle term is a soft S-curve of
+        /// (AR - DR) / DR: it depends only on the AR/DR ratio, runs from -0.5 at AR 0 to toward +1, and equal leads and
+        /// deficits move it equally. At AggDef 0, equal ratings hit 70% of the time, AR at 1.43 x DR or more always
+        /// hits, and AR near 0 still hits 20% (0% against a fully defensive bar). A negative AR counts as 0 and a DR
+        /// under 1 counts as 1, so the denominator is always at least 1.
         /// </summary>
         static double HitPercentage(int attackRating, int defenseRating, int aggDef)
         {
-            double ratio = Math.Max(0, attackRating) / (Math.Sqrt(2) * Math.Max(1, defenseRating));
+            double attack = Math.Max(0, attackRating);
+            double defense = Math.Max(1, defenseRating);
+            double lead = attack - defense;
+            double rating = lead / (defense + Math.Abs(lead));
             double aggression = Math.Clamp(aggDef, NanoDelayCalculator.AggDefMin, NanoDelayCalculator.AggDefMax) / 500.0;
-            return Math.Clamp(ratio + aggression, 0, 1);
+            return Math.Clamp(0.7 + rating + aggression, 0, 1);
         }
 
         static bool TryGetArmorStat(int rawDamageType, out CharacterStat armorStat)

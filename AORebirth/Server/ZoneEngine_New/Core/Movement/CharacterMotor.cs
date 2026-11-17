@@ -71,6 +71,10 @@ namespace ZoneEngine_New.Core.Movement
             _move.FlagsSet += flag => SetCharacterFlag(flag, true);
             _move.FlagsCleared += flag => SetCharacterFlag(flag, false);
             _move.Core.JumpStarted += () => Jumped?.Invoke();
+            // Deep liquid under the body (the surface's water, as the client's): queued during the step and applied
+            // after it, as LostEden.Core's N3CharVehicle raises LiquidChanged at its step's end.
+            _move.Core.EnteredLiquid += () => _liquidChanges.Add(true);
+            _move.Core.LeftLiquid += () => _liquidChanges.Add(false);
             // Status.LastSpeedMode starts at Walk inside the package; a fresh body is a standing runner.
             _move.ApplyStatus(RulesStatus.Fields.Default, (int)MovementState.Run);
         }
@@ -865,8 +869,8 @@ namespace ZoneEngine_New.Core.Movement
         /// height plus <see cref="MovementConfig.ClientHeightBufferMeters"/> above the floor under it, or above where the
         /// character last stood; after <see cref="MovementConfig.ClientAirborneGraceSeconds"/> of airtime that second
         /// allowance shrinks at <see cref="MovementConfig.ClientAirborneCeilingDecay"/>. Not judged: a GM, a flyer or a
-        /// character that may fly (flight authority), a swimmer (the server has no water to measure against; swim speed is
-        /// the cost of claiming it), and a position with no collision under it at all (missing geometry, as
+        /// character that may fly (flight authority), a swimmer (the server's body enters Swim from the playfield's water
+        /// as the client's does, <see cref="ApplyLiquidChanges"/>), and a position with no collision under it at all (missing geometry, as
         /// <see cref="HoldOverVoid"/>). A refused move is pulled back like a speed refusal.
         /// </summary>
         bool IsPlausibleClientHeight(Player player, Playfield? playfield, float x, float y, float z, DateTime now)
@@ -1209,6 +1213,7 @@ namespace ZoneEngine_New.Core.Movement
             else
                 TickAtAltitude(dt);
 
+            ApplyLiquidChanges();
             _character.Position = ToVector3(_sim.Position);
             PullHeading();
             BreakCastOnFollowMove();
@@ -1216,6 +1221,39 @@ namespace ZoneEngine_New.Core.Movement
             if (_npc != null && _npc.HasFollowTarget && _npc.FollowQueue.Count == 0
                 && _sim.Speed <= VehicleSim.MovingSpeedEpsilon)
                 ClearPath();
+        }
+
+        readonly List<bool> _liquidChanges = new();
+
+        /// <summary>
+        /// LostEden.Core <c>Character.OnLiquidChanged</c>: into deep liquid a player's MechData (662) is cleared and the
+        /// movement status takes SwitchToSwim; out of it LeaveSwim. The client switches itself and sends nothing, so
+        /// without this the server held a swimmer in Run: its body sank and its height check pulled the client back.
+        /// </summary>
+        void ApplyLiquidChanges()
+        {
+            for (int i = 0; i < _liquidChanges.Count; i++)
+            {
+                bool entered = _liquidChanges[i];
+                if (entered && _character is Player && _character.Stats.GetOrZero(CharacterStat.MechData) != 0)
+                    _character.Stats.Set(CharacterStat.MechData, 0, StatDetail.Base, dirty: true);
+
+                MovementAction action = entered ? MovementAction.SwitchToSwim : MovementAction.LeaveSwim;
+                if (IsPlayer)
+                {
+                    // The client's ApplyStatusAction: only what the status accepts, without the controls' gates.
+                    if (!_move.Status.Accepts((int)action))
+                        continue;
+                    _move.Apply((int)action);
+                    SyncModeStats();
+                }
+                else if (entered || _move.State == (int)MovementState.Swim)
+                {
+                    ApplyNpcAction(action);
+                }
+            }
+
+            _liquidChanges.Clear();
         }
 
         /// <summary>No ground to find: the step's horizontal travel only, the body landed where it was.</summary>
