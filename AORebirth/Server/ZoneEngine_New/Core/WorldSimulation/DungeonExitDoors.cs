@@ -8,7 +8,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
     using AORebirth.Core.GameData;
 
-    using IdentityType = SmokeLounge.AOtomation.Messaging.GameData.IdentityType;
+    using IdentityType = LostEden.Protocol.GameData.IdentityType;
 
     /// <summary>
     /// A dungeon's exits as the client finds them (Door_t::LinkDoorToRooms, Gamecode.dll 0x1007fea8): each door is

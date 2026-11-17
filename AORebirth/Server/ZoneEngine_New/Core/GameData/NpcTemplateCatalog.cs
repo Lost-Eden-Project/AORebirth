@@ -5,7 +5,8 @@ namespace ZoneEngine_New.Core.GameData
     using System.Text.Json;
     using System.Text.Json.Serialization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
+    using TextureOverride = LostEden.Protocol.GameData.SimpleCharInfo.TextureOverride;
 
     using ZoneEngine_New.Core.Mobs;
 

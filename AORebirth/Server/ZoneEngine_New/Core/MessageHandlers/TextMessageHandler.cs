@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Chat;
     using ZoneEngine_New.Core.Commands;
@@ -41,7 +41,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (player == null)
                 return;
 
-            string? text = message.Message?.Text;
+            string? text = message.Text;
             if (string.IsNullOrEmpty(text))
                 return;
 

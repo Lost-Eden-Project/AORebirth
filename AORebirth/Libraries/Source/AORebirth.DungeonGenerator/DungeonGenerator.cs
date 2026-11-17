@@ -5,7 +5,8 @@ namespace AORebirth.DungeonGenerator
 
     using AORebirth.World.Collision;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol;
+    using LostEden.Protocol.GameData;
 
     /// <summary>What to build.</summary>
     public sealed class DungeonGenerationRequest
@@ -67,9 +68,25 @@ namespace AORebirth.DungeonGenerator
     {
         public required DungeonGenerationRequest Request { get; init; }
 
-        public required AcgBuildingGeneratorData Generator { get; init; }
+        public required AcgBuildingGenerator Generator { get; init; }
+
+        /// <summary>The ACG entrance (0xC7A1) the building is entered from: the inline identity it is sent under.</summary>
+        public required Identity Identity { get; init; }
 
         public required IReadOnlyList<PlacedRoom> Rooms { get; init; }
+
+        /// <summary>
+        /// The generator as one ACGBuildingGeneratorData_t blob: <see cref="Identity"/>, the object version (1) and the
+        /// generator's body. Stable for a layout, so it keys caches (the dungeon navmesh) across restarts.
+        /// </summary>
+        public byte[] GeneratorBlob()
+        {
+            var writer = new PacketWriter(64 + Generator.Rooms.Count * 6);
+            writer.WriteIdentity(Identity);
+            writer.WriteInt32(1);
+            Generator.Write(writer);
+            return writer.ToArray();
+        }
 
         public int GridWidth { get; init; }
 
@@ -207,36 +224,35 @@ namespace AORebirth.DungeonGenerator
             if (request.DescendingFloors)
                 ordered = ordered.Select(room => new PlacedRoom(room.Shape, -room.Floor,
                     room.BlockX, room.BlockZ, room.Rotation)).ToList();
-            var infos = new BuildingRoomInfo[ordered.Count];
+            var infos = new AcgRoom[ordered.Count];
             for (int i = 0; i < infos.Length; i++)
             {
                 PlacedRoom room = ordered[i];
-                infos[i] = new BuildingRoomInfo
+                infos[i] = new AcgRoom
                 {
-                    RoomId = (ushort)room.Shape.RoomId,
+                    RoomIndex = (ushort)room.Shape.RoomId,
                     Floor = (sbyte)room.Floor,
                     GridX = (byte)room.BlockX,
                     // The client's grid z counts down from the far edge: world block z = height - gridZ - depth.
                     GridZ = (byte)(grid - room.BlockZ - room.BlocksZ),
-                    Facing = (byte)room.Rotation
+                    Rotation = (byte)room.Rotation
                 };
             }
 
-            var generator = new AcgBuildingGeneratorData
+            var identity = new Identity((IdentityType)0xC7A1, request.BuildingInstance);
+            var generator = new AcgBuildingGenerator
             {
-                Identity = new Identity { Type = (IdentityType)0xC7A1, Instance = request.BuildingInstance },
-                DbObjectVersion = 1,
-                Version = 3,
+                Version = AcgBuildingGenerator.CurrentVersion,
                 Width = (ushort)grid,
                 Height = (ushort)grid,
                 // The field is client floor separation. Existing requests retain the side-by-side multi-floor policy;
                 // captured team layouts use an explicit separation supplied by the editable generation policy.
-                RoomsPerFloor = (ushort)(request.FloorHeight > 0 ? request.FloorHeight : request.FloorCount > 1 ? 0 : 64),
-                Style = request.StyleId,
+                FloorHeight = (ushort)(request.FloorHeight > 0 ? request.FloorHeight : request.FloorCount > 1 ? 0 : 64),
+                TemplatePlayfield = request.StyleId,
                 AmbientRed = 100,
                 AmbientGreen = 100,
                 AmbientBlue = 100,
-                Rooms = infos
+                Rooms = new List<AcgRoom>(infos)
             };
 
             PlacedRoom entrance = ordered[0];
@@ -247,10 +263,10 @@ namespace AORebirth.DungeonGenerator
             int minFloor = ordered.Min(room => room.Floor);
             if (request.DescendingFloors)
             {
-                if (generator.RoomsPerFloor == 0)
+                if (generator.FloorHeight == 0)
                     spawn.X += (entrance.Floor - minFloor) * (grid * DungeonRoomPlacer.BlockWorldSize + 100);
                 else
-                    spawn.Y += (entrance.Floor - minFloor) * generator.RoomsPerFloor;
+                    spawn.Y += (entrance.Floor - minFloor) * generator.FloorHeight;
             }
 
             var transitions = new List<DungeonFloorTransition>();
@@ -272,15 +288,15 @@ namespace AORebirth.DungeonGenerator
 
             DungeonTransitionEndpoint Endpoint(int index, DungeonTransitionRoom role, bool toBoss)
             {
-                BuildingRoomInfo info = infos[index];
-                var spec = new DungeonRoomSpec { RoomId = info.RoomId, Floor = info.Floor,
-                    GridX = info.GridX, GridZ = info.GridZ, Facing = info.Facing };
+                AcgRoom info = infos[index];
+                var spec = new DungeonRoomSpec { RoomId = info.RoomIndex, Floor = info.Floor,
+                    GridX = info.GridX, GridZ = info.GridZ, Facing = info.Rotation };
                 var template = ordered[index].Shape.Template;
-                Vector3 placed = DungeonRoomPlacer.Place(template, spec, 2f, grid, grid, generator.RoomsPerFloor, minFloor);
+                Vector3 placed = DungeonRoomPlacer.Place(template, spec, 2f, grid, grid, generator.FloorHeight, minFloor);
                 Vector3 position = placed + DungeonRoomPlacer.RotateY(role.LocalPosition,
-                    (info.Facing - template.TemplateFacing) & 3);
-                DungeonRoomBounds bounds = DungeonRoomBounds.FromPlaced(index, template, placed, info.Facing,
-                    2f, generator.RoomsPerFloor);
+                    (info.Rotation - template.TemplateFacing) & 3);
+                DungeonRoomBounds bounds = DungeonRoomBounds.FromPlaced(index, template, placed, info.Rotation,
+                    2f, generator.FloorHeight);
                 int localX = (int)MathF.Floor(position.X / DungeonRoomPlacer.BlockWorldSize);
                 int localZ = (int)MathF.Floor(position.Z / DungeonRoomPlacer.BlockWorldSize);
                 if (!bounds.Contains(position) || !ordered[index].Cells.Contains((localX, localZ)))
@@ -294,6 +310,7 @@ namespace AORebirth.DungeonGenerator
             {
                 Request = request,
                 Generator = generator,
+                Identity = identity,
                 Rooms = ordered,
                 GridWidth = grid,
                 GridHeight = grid,

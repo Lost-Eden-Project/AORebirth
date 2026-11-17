@@ -43,7 +43,7 @@ namespace ZoneEngine_New.Tests
 
             Assert.AreEqual(0, npc.BuildWeaponInstanceMessages().Count);
 
-            SpecialAttack[] specials = npc.BuildSpecialAttackWeaponMessage().Specials;
+            SpecialAttackInfo[] specials = npc.BuildSpecialAttackWeaponMessage().Specials;
             Assert.AreEqual(3, specials.Length);
             Assert.AreEqual(121567, specials[0].Unknown1);
             Assert.AreEqual(121569, specials[2].Unknown1);

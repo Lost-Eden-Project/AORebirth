@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using AORebirth.Core.GameData;
 using AORebirth.DungeonGenerator;
 using AORebirth.World.Collision;
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
@@ -29,7 +29,7 @@ public static class MissionChestPlacement
         ArgumentNullException.ThrowIfNull(dungeon);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(chests);
-        StyleRoomSet styles = StyleRoomSet.Load(gameDataRoot, layout.Generator.Style);
+        StyleRoomSet styles = StyleRoomSet.Load(gameDataRoot, layout.Generator.TemplatePlayfield);
         var shapes = new Dictionary<int, RoomShape>();
         foreach (RoomShape shape in styles.All)
             shapes[shape.RoomId] = shape;

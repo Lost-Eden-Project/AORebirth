@@ -46,6 +46,8 @@ The current version is **1.10**.
 | 1.8 | Account sanctions: the `account.suspend` and `account.unban` operations, `account.ban` recorded as a sanction, `Actions.AccountSanctions`, the `read-sanctions` capability |
 | 1.9 | `PlayerMovementCorrected` adds `Distance`, `Allowed`, `MaxSpeed`, `SinceLastAccepted` and `RefusedMoves`, and the `Height` reason; the `Speed` and `Bounds` reasons are raised |
 | 1.10 | `RegisterMissionRollHook` (mission terminal offers and accepts), the `roll-missions` capability |
+| 1.11 | `MissionKind.ReturnItem`; `MissionDungeon` names a GameData `Missions/Missions.json` mission (`Mission`) instead of carrying styles, floors, population and loot (the only 1.x change that removed members; MissionModule was its only consumer) |
+| 1.12 | `RegisterMessageHandler` (inbound N3 types the engine does not read), `Actions.SendMessage` (a module's own N3 message), the `player.purchase` and `player.stat-add` operations, `Events.MissionCompleted`; the `handle-messages` and `send-raw-messages` capabilities |
 
 ## Context members
 
@@ -58,6 +60,7 @@ The current version is **1.10**.
 | `RegisterMessageObserver` | Watches N3 messages of the types it names (or all of them, 1.6), inbound, outbound or both. Only during `Initialize` (see below). |
 | `RegisterVisibilityObserver` | Told when a client is told an entity exists and when it stops (1.6). Only during `Initialize` (see below). |
 | `RegisterMissionRollHook` | Rolls mission terminal offers and decides what accepting one gives (1.10). Only during `Initialize`; only one module may register one (see Mission rolls). |
+| `RegisterMessageHandler` | Handles inbound N3 messages of one type the engine has no reader for (1.12). Only during `Initialize`; one module per type (see Message handlers). |
 | `Clock` | The clock every timestamp is on (1.6, see below). |
 | `Events` | Gameplay events (see below). |
 | `Knubot` | `Check(id, json)`, `Reload()`, `OverrideDirectory` (the `AO_REBIRTH_KNUBOT_PATH` folder). |
@@ -156,6 +159,8 @@ The `Capabilities` entry in Modules.json is optional.
 | `read-chat-text` | the text of `PlayerSpoke` (1.6) |
 | `read-sanctions` | `Actions.AccountSanctions` (1.8) |
 | `roll-missions` | `RegisterMissionRollHook` (1.10) |
+| `handle-messages` | `RegisterMessageHandler` (1.12) |
+| `send-raw-messages` | `Actions.SendMessage` (1.12) |
 | an operation's name | `Actions.Invoke` of that operation (1.5), for example `player.teleport` |
 
 The operations that replace older actions are also granted by the older name: `refresh-npc` grants `npc.refresh`,
@@ -250,14 +255,14 @@ These names are guaranteed (ZoneEngine_New.Tests `ModuleMessageApiTests` locks t
 
 | Message | Names |
 |---|---|
-| `CharDCMove` | `Identity`, `MoveType`, `Coordinates.X`, `Coordinates.Y`, `Coordinates.Z`, `Heading.X`, `Heading.Y`, `Heading.Z`, `Heading.W`, `AuxA`, `AuxB`, `Unknown1` |
+| `CharDCMove` | `Identity`, `MoveType`, `Position.X`, `Position.Y`, `Position.Z`, `Heading.X`, `Heading.Y`, `Heading.Z`, `Heading.W`, `DeltaTime`, `Unknown2`, `Unknown3` (1.12; the earlier `Coordinates.*`, `Unknown1`, `AuxA` and `AuxB` still resolve to these, `AuxA`/`AuxB` now as ints) |
 | `Attack` | `Identity`, `Target`, `Action` |
 | `StopFight` | `Identity`, `Unknown1` |
 | `CastNanoSpell` | `Identity`, `NanoId`, `Target`, `Caster` |
 | `CharacterAction` | `Identity`, `Action`, `Target`, `Parameter1`, `Parameter2` |
-| `GenericCmd` | `Identity`, `Action`, `Count`, `User`, `Target[0]` |
+| `GenericCmd` | `Identity`, `Action`, `Count`, `User`, `Target`, `Source` (1.12; the earlier `Target[0]` still resolves to `Target`) |
 | `LookAt` | `Identity`, `Target` |
-| `FollowTarget` | `Identity`, `Info.MoveType`, `Info.Target` (only a follow of a target), `Info.Flag` (only a follow stop) |
+| `FollowTarget` | `Identity`, `Type`, `Unknown1` (the move type), `Info.Target`, `Info.Unknown1`..`Info.Unknown4` (only a follow of a target), `Info.Waypoints[n].X` (only an NPC path) (1.12; the earlier `Info.MoveType` still resolves to `Unknown1`; a stop is a target follow with move type 21, so `Info.Flag` is gone) |
 | `CharSecSpecAttack` | `Identity`, `Target`, `Stat` (1.6) |
 | `GenericCmd` (1.6) | `Temp1` (the accept or deny reply) |
 | `Feedback` | `Identity`, `MessageId` (1.6) |
@@ -302,6 +307,8 @@ engine additions and don't change the module API.
 | `account.unban` | account | `reason` (optional) | Lifts every active suspension and ban, and a pre-1.8 `login.Flags` ban. Fails when there is none (1.8). |
 | `server.shutdown` | none | `seconds` (1 to 86400), `message` (optional), `reason` (optional) | Shuts this zone instance down the normal way (players saved) after a countdown, as `.shutdown` does: every online player is told at the start and at the usual checkpoints (1 hour ... 1 second), with `message` after each line. Scheduling again replaces the countdown (1.7). |
 | `server.shutdown-abort` | none | `reason` (optional) | Cancels a scheduled shutdown and tells online players; fails when none is scheduled (1.7). |
+| `player.purchase` | character | `anchorType`, `anchor`, `lowId`, `highId`, `quality`, `stat`, `price` | Sells the player one item (`lowId`/`highId` at `quality`) for `price` of the stat `stat`, at the dynel `anchorType`:`anchor` (a terminal or NPC on the player's playfield within reach). The engine checks reach, that no trade or shop window is open, uniqueness and room, then saves the item and the new balance in one transaction before applying either. Refusals: `not_at_anchor`, `insufficient`, `no_room`, `unique_held`, `busy` (`PurchaseCodes`), else `failed`. What is for sale and at what price is the module's (1.12). |
+| `player.stat-add` | character | `stat`, `amount` | Adds `amount` (negative takes away) to the base value of the player's stat, kept at 0 or more (cash within its limit), sends it to the client and saves it with the character's next save, as experience is. The result's message is the new value (1.12). |
 
 ## Account sanctions
 
@@ -479,3 +486,35 @@ public sealed class Missions : IZoneModule, IMissionRollHook
     public MissionAcceptDecision Accept(MissionAcceptRequest request) => MissionAcceptDecision.GiveOffered();
 }
 ```
+
+## Message handlers (1.12)
+
+A server with a client of its own can add messages of its own. `RegisterMessageHandler(messageType, handler)`
+(`handle-messages`) makes the module the reader of one inbound N3 type: a type the engine has no reader for (a type
+in the engine's `N3MessageType` is refused), and that no other module took.
+
+- **Where it runs.** `Handle(in ModuleMessage)` on the player's playfield tick, once the session is in play, in wire
+  order with the player's other messages. It must return quickly and not block; an operation it invokes runs on the
+  tick after it returns, so it awaits the task from a continuation, never inline.
+- **What it gets.** `SessionId`, `CharacterId`, `PlayfieldId`, `MessageType`, the N3 header's `Identity` (as the client
+  wrote it; the engine does not check it), `Timestamp` (when the bytes were read) and `Body`: the bytes after the N3
+  header, as the message's wire layout lays them out, big-endian. Valid only during the call.
+- **Failures.** A handler that throws is logged; after ten failures in a row it is removed and the type is dropped.
+  One slower than 2 ms is reported, at most once a minute.
+- **Observers and counts** see the message like any other: `MessageCounts` counts it, an `AllTypes` observer gets it.
+
+`Actions.SendMessage(characterId, messageType, body)` (`send-raw-messages`) sends the character an N3 message of a
+module's own type: the engine writes the packet header and the N3 header (the type, the character's identity, the byte
+1) and appends `body` as given, at most 8163 bytes. False when the character is not in play on this instance.
+
+The engine reads neither message; the client library that defines them is the layout's authority (Lost Eden's are in
+`LostEden.Protocol.Extensions`).
+
+## Mission completion (1.12)
+
+`Events.MissionCompleted` is raised on the player's playfield tick after a mission's reward is committed and paid:
+`CharacterId`, `PlayfieldId`, `QuestId`, `Generated` (a terminal mission or a Quests.json dungeon quest), `Title`,
+`Quality` (0 for an ordinary quest), `Killed`/`Total` (a generated mission's dungeon kill share; 0/0 when unknown),
+`Credits` and `Experience` the engine paid after any completion split, `RewardWon` (the reward roll; null without one)
+and `Timestamp`. What a module pays on top (Lost Eden's ICC Commendations, through `player.stat-add`) is its own and
+is saved with the character's next save, as experience is.

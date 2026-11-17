@@ -4,14 +4,14 @@ namespace ZoneEngine_New.Core.Network
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.MessageHandlers;
 
     public interface IMessageRouter
     {
-        void Route(Message message, IZoneSession session);
+        void Route(MessageBody body, IZoneSession session);
     }
 
     /// <summary>
@@ -42,12 +42,12 @@ namespace ZoneEngine_New.Core.Network
             }
         }
 
-        public void Route(Message message, IZoneSession session)
+        public void Route(MessageBody body, IZoneSession session)
         {
-            if (message?.Body == null)
+            if (body == null)
                 return;
 
-            Type bodyType = message.Body.GetType();
+            Type bodyType = body.GetType();
             if (!_handlers.TryGetValue(bodyType, out IMessageHandler? handler))
             {
                 _logger.Warn(
@@ -61,7 +61,7 @@ namespace ZoneEngine_New.Core.Network
 
             try
             {
-                handler.Handle(message.Body, session);
+                handler.Handle(body, session);
             }
             catch (Exception exception) when (RecordFailure(exception, bodyType, session))
             {

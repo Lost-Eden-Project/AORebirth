@@ -10,11 +10,12 @@ namespace ZoneEngine_New.Core.Modules
     using AORebirth.Modules.Network;
     using AORebirth.Modules.World;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Network;
 
-    using Identity = SmokeLounge.AOtomation.Messaging.GameData.Identity;
+    using Identity = LostEden.Protocol.GameData.Identity;
 
     /// <summary>
     /// <see cref="IMessageFields"/> over one parsed message. One reader per connection direction is reused for every
@@ -34,6 +35,24 @@ namespace ZoneEngine_New.Core.Modules
 
         static readonly ConcurrentDictionary<(Type Root, string Path, Kind Kind), Delegate?> Compiled = new();
         static readonly ConcurrentDictionary<(Type Type, string Member), MemberInfo?> Members = new();
+
+        /// <summary>
+        /// The names the module API guaranteed before the engine's messages came from LostEden.Protocol (module API
+        /// 1.12), each on the path the message has now, so a module reading a documented name keeps reading it.
+        /// </summary>
+        static readonly Dictionary<(Type Root, string Path), string> LegacyPaths = new()
+        {
+            [(typeof(CharDCMoveMessage), "Coordinates.X")] = "Position.X",
+            [(typeof(CharDCMoveMessage), "Coordinates.Y")] = "Position.Y",
+            [(typeof(CharDCMoveMessage), "Coordinates.Z")] = "Position.Z",
+            [(typeof(CharDCMoveMessage), "Unknown1")] = "DeltaTime",
+            [(typeof(CharDCMoveMessage), "AuxA")] = "Unknown2",
+            [(typeof(CharDCMoveMessage), "AuxB")] = "Unknown3",
+            [(typeof(GenericCmdMessage), "Target[0]")] = "Target",
+            // The move type is the byte after the info type, as it was in the old Info; a stop is a target follow
+            // with move type 21, so a stop's Info.Flag no longer exists.
+            [(typeof(FollowTargetMessage), "Info.MoveType")] = "Unknown1"
+        };
 
         object? _body;
         byte[]? _packet;
@@ -76,7 +95,8 @@ namespace ZoneEngine_New.Core.Modules
                 _packet = null;
                 try
                 {
-                    _body = _codec.Deserialize(packet)?.Body;
+                    LostEden.Protocol.DecodedMessage decoded = _codec.Deserialize(packet);
+                    _body = decoded.ReadFailed ? null : decoded.Body;
                 }
                 catch (Exception)
                 {
@@ -95,6 +115,8 @@ namespace ZoneEngine_New.Core.Modules
                 return false;
 
             Type root = body.GetType();
+            if (LegacyPaths.TryGetValue((root, name), out string? current))
+                name = current;
             Delegate? accessor = Compiled.GetOrAdd((root, name, kind), key => Compile(key.Root, key.Path, key.Kind));
             try
             {
@@ -166,7 +188,7 @@ namespace ZoneEngine_New.Core.Modules
                     return Expression.New(
                         typeof(EntityRef).GetConstructor([typeof(int), typeof(int)])!,
                         Expression.Convert(Expression.Convert(Expression.Property(value, nameof(Identity.Type)),
-                            Enum.GetUnderlyingType(typeof(SmokeLounge.AOtomation.Messaging.GameData.IdentityType))), typeof(int)),
+                            Enum.GetUnderlyingType(typeof(LostEden.Protocol.GameData.IdentityType))), typeof(int)),
                         Expression.Property(value, nameof(Identity.Instance)));
                 case Kind.String:
                     return type == typeof(string) ? value : null;

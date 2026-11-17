@@ -1,6 +1,6 @@
 namespace ZoneEngine_New.Core.Playfield
 {
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>Playfield host contract. World construction belongs in <see cref="Build"/>.</summary>
     public interface IPlayfield

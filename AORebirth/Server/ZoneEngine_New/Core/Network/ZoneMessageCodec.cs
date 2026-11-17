@@ -1,58 +1,51 @@
 namespace ZoneEngine_New.Core.Network
 {
     using System;
-    using System.IO;
+    using System.Buffers.Binary;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Serialization;
-
-    using MessagingStreamWriter = SmokeLounge.AOtomation.Messaging.Serialization.StreamWriter;
+    using LostEden.Protocol;
+    using LostEden.Protocol.Messages;
 
     /// <summary>
-    /// Thin wrapper around AOtomation MessageSerializer.
+    /// The engine's face on the LostEden.Protocol codec: one packet in, its header and body out; a body with a sender
+    /// and receiver back to the exact bytes of one packet. One instance serves every session: the codec keeps no state
+    /// between calls while message reuse stays off, and it must stay off, since a decoded body is queued to a playfield
+    /// tick and kept.
     /// </summary>
     public sealed class ZoneMessageCodec
     {
-        private readonly MessageSerializer _serializer = new MessageSerializer();
-        private readonly SerializerResolver _bodyResolver = new SerializerResolverBuilder<MessageBody>().Build();
-        private readonly SmokeLounge.AOtomation.Messaging.Serialization.Serializers.HeaderSerializer _headerSerializer =
-            new SmokeLounge.AOtomation.Messaging.Serialization.Serializers.HeaderSerializer();
+        /// <summary>The message id every zone packet starts with.</summary>
+        public const ushort PacketMessageId = 0xDFDF;
 
-        public Message? Deserialize(byte[] buffer)
+        private readonly MessageCodec _codec = new MessageCodec();
+
+        [ThreadStatic]
+        private static PacketWriter? _writer;
+
+        /// <summary>
+        /// The packet's header and body. A null body is a type without a reader; <see cref="DecodedMessage.ReadFailed"/>
+        /// is a body the reader rejected (short, or a count past its limit), which the client would drop too.
+        /// </summary>
+        public DecodedMessage Deserialize(byte[] packet)
         {
-            ArgumentNullException.ThrowIfNull(buffer);
+            ArgumentNullException.ThrowIfNull(packet);
 
-            using MemoryStream stream = new MemoryStream(buffer);
-            return _serializer.Deserialize(stream);
+            return _codec.Decode(packet);
         }
 
-        public byte[] Serialize(Message message)
-        {
-            ArgumentNullException.ThrowIfNull(message);
-
-            using MemoryStream stream = new MemoryStream();
-            _serializer.Serialize(stream, message);
-            return stream.ToArray();
-        }
-
+        /// <summary>
+        /// The packet for <paramref name="body"/>, exactly as long as its header says: the session pads plaintext
+        /// frames itself and the zlib stream carries no padding.
+        /// </summary>
         public byte[] Serialize(MessageBody body, int sender, int receiver)
         {
             ArgumentNullException.ThrowIfNull(body);
 
-            Message message = new Message
-            {
-                Body = body,
-                Header = new Header
-                {
-                    MessageId = 0xDFDF,
-                    PacketType = body.PacketType,
-                    Unknown = 0x0001,
-                    Sender = sender,
-                    Receiver = receiver
-                }
-            };
-
-            return Serialize(message);
+            PacketWriter writer = _writer ??= new PacketWriter(4096);
+            writer.Reset();
+            _codec.Encode(body, new MessageHeader(body.PacketType, sender, receiver, PacketMessageId), writer);
+            int length = BinaryPrimitives.ReadUInt16BigEndian(writer.WrittenSpan.Slice(MessageHeader.SizeOffset));
+            return writer.WrittenSpan.Slice(0, length).ToArray();
         }
     }
 }

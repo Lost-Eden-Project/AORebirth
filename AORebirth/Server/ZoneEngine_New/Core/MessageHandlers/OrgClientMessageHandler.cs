@@ -2,10 +2,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages.OrgServerMessages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -106,7 +105,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     if (forms.Forms.TryGetValue(org.GovernmentForm, out GoverningForm? form))
                         SendRef(session, player, OrgChatText.RanksReply(form.Name, form.Ranks));
                     return;
-                case OrgClientCommand.Tax when string.IsNullOrEmpty(message.CommandArgs):
+                case OrgClientCommand.Tax when string.IsNullOrEmpty((message.IOrgClientMessage as OrgClientCommandArgsMessage)?.CommandArgs):
                     SendRef(session, player, OrgChatText.WithInt(OrgChatRefs.TaxValue, org.Tax));
                     return;
                 case OrgClientCommand.Bank:
@@ -137,21 +136,25 @@ namespace ZoneEngine_New.Core.MessageHandlers
             }
             bool sameOrg = player.Organization?.Id == org.Id;
 
-            session.Send(new OrgInfoMessage
+            session.Send(new OrgServerMessage
             {
                 Identity = player.Identity,
+                OrgServerMessageType = OrgServerMessageType.OrgInfo,
                 Organization = new Identity { Type = IdentityType.Organization, Instance = org.Id },
-                OrganizationName = org.Name ?? string.Empty,
-                Description = org.Description ?? string.Empty,
-                Objective = org.Objective ?? string.Empty,
-                History = org.History ?? string.Empty,
-                GoverningForm = _gameData.GoverningForms.GetFormName(org.GovernmentForm),
-                LeaderName = org.LeaderName ?? string.Empty,
-                Rank = sameOrg
-                    ? _gameData.GoverningForms.GetRankName(
-                        org.GovernmentForm, target.Stats.GetOrZero(CharacterStat.ClanLevel, StatDetail.Base))
-                    : string.Empty,
-                Unknown3 = Array.Empty<object>()
+                IOrgServerMessage = new OrganizationInfo
+                {
+                    OrganizationName = org.Name ?? string.Empty,
+                    Description = org.Description ?? string.Empty,
+                    Objective = org.Objective ?? string.Empty,
+                    History = org.History ?? string.Empty,
+                    GoverningForm = _gameData.GoverningForms.GetFormName(org.GovernmentForm),
+                    LeaderName = org.LeaderName ?? string.Empty,
+                    Rank = sameOrg
+                        ? _gameData.GoverningForms.GetRankName(
+                            org.GovernmentForm, target.Stats.GetOrZero(CharacterStat.ClanLevel, StatDetail.Base))
+                        : string.Empty,
+                    ControlledAreas = []
+                }
             });
         }
     }

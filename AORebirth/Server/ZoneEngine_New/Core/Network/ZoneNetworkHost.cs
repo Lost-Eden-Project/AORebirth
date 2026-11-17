@@ -164,7 +164,8 @@ namespace ZoneEngine_New.Core.Network
                         _dispatcher,
                         _logger,
                         filter,
-                        _modules?.MessageObservers);
+                        _modules?.MessageObservers,
+                        _modules?.MessageHandlers);
 
                     _acceptedAt[sessionId] = Environment.TickCount64;
                     _sessions[sessionId] = session;

@@ -1,20 +1,17 @@
 namespace ZoneEngine_New.Core.Teams
 {
-    using System.Buffers.Binary;
     using System.Collections.Generic;
-    using System.IO;
-    using System.Text;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
+    using TeamMember = LostEden.Protocol.Messages.N3Messages.FullCharacterMessage.TeamMember;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Network;
 
     public sealed partial class TeamService
     {
-        const int FullCharacterInTeam = 1;
-        const int FullCharacterInRaid = 2;
-        const int RaidTeamLists = 6;
+        const int RaidTeamLists = FullCharacterMessage.RaidTeamCount;
         const int RaidGroupSize = 6;
 
         /// <summary>The rows a FullCharacter listed for one session: member → raid list (-1 in an ordinary team).</summary>
@@ -24,33 +21,37 @@ namespace ZoneEngine_New.Core.Teams
         /// FullCharacter's team block (Gamecode.dll FUN_10073ba7), read every time the client enters a playfield. Live sends
         /// it filled (capture 2026-10-27T15:40:05Z: flags 3, the leader 50000:71A9545B, raid team 0, then six lists with
         /// the two members in the first), and the client rebuilds its team and raid windows from it; sent empty, a zone
-        /// dropped the raid. <paramref name="flags"/>: bit 0 in a team, bit 1 a raid. Empty when not in a team.
+        /// dropped the raid. Fills <paramref name="message"/>'s TeamFlags (bit 0 in a team, bit 1 a raid), TeamLeader,
+        /// Teams and RaidGroupIndex; they stay empty when the viewer is not in a team.
         /// </summary>
-        public byte[] BuildFullCharacterTeam(Player viewer, out int flags)
+        public void FillFullCharacterTeam(Player viewer, FullCharacterMessage message)
         {
             lock (_sync)
             {
-                flags = 0;
+                message.TeamFlags = 0;
+                message.TeamLeader = Identity.None;
+                message.Teams = [];
+                message.RaidGroupIndex = 0;
                 int viewerId = viewer.Identity.Instance;
                 if (!_membership.TryGetValue(viewerId, out Team? team) || viewer.Session == null)
                 {
                     _fullCharacterRosters.Remove(viewerId);
-                    return [];
+                    return;
                 }
 
-                flags = FullCharacterInTeam | (team.IsRaid ? FullCharacterInRaid : 0);
+                message.InTeam = true;
+                message.InRaid = team.IsRaid;
                 // The rows this block lists are what the client shows after it; the roster publish sends no second
                 // TeamMember for them (the original client adds rows without checking for duplicates, Gamecode 1006624f).
                 var listed = new Dictionary<int, int>();
-                using var stream = new MemoryStream();
                 // Live 20261104T005758Z zoning: another raid subgroup has no ordinary-team leader in this field.
-                WriteIdentity(stream, !team.IsRaid || RaidListOf(team, viewerId) == RaidListOf(team, team.Leader)
-                    ? CharacterIdentity(team.Leader) : Identity.None);
+                message.TeamLeader = !team.IsRaid || RaidListOf(team, viewerId) == RaidListOf(team, team.Leader)
+                    ? CharacterIdentity(team.Leader) : Identity.None;
                 if (!team.IsRaid)
                 {
-                    WriteMembers(stream, viewer, team.Members, -1, listed);
+                    message.Teams = [Members(viewer, team.Members, -1, listed)];
                     _fullCharacterRosters[viewerId] = new FullCharacterRoster(viewer.Session, team.Id, false, listed);
-                    return stream.ToArray();
+                    return;
                 }
 
                 // A member without a raid team is listed with the first, as live lists an unsorted raid.
@@ -60,11 +61,12 @@ namespace ZoneEngine_New.Core.Teams
                 foreach (int id in team.Members)
                     lists[RaidListOf(team, id)].Add(id);
 
-                WriteInt(stream, RaidListOf(team, viewerId));
+                message.RaidGroupIndex = RaidListOf(team, viewerId);
+                var teams = new TeamMember[RaidTeamLists][];
                 for (int i = 0; i < lists.Length; i++)
-                    WriteMembers(stream, viewer, lists[i], i, listed);
+                    teams[i] = Members(viewer, lists[i], i, listed);
+                message.Teams = teams;
                 _fullCharacterRosters[viewerId] = new FullCharacterRoster(viewer.Session, team.Id, true, listed);
-                return stream.ToArray();
             }
         }
 
@@ -101,56 +103,33 @@ namespace ZoneEngine_New.Core.Teams
         }
 
         /// <summary>
-        /// A 3F1 count, then per member: Identity, short-length name, int organization, byte side, short level, short
-        /// profession. The client drops the whole packet for an entry that is not 50000-typed, has no name, a side above 7,
-        /// a level above 999 or a profession above 15 (FUN_101260bd), so a member without a known row is left out. Only
-        /// the viewer's own organization and side are read here: other members' stats belong to their own playfield.
+        /// One list of the block: per member its identity, name, organization, side, level and profession. The client
+        /// drops the whole packet for an entry that is not 50000-typed, has no name, a side above 7, a level above 999 or
+        /// a profession above 15 (FUN_101260bd), so a member without a known row is left out. Only the viewer's own
+        /// organization and side are read here: other members' stats belong to their own playfield.
         /// </summary>
-        void WriteMembers(MemoryStream stream, Player viewer, List<int> members, int raidIndex, Dictionary<int, int> listed)
+        TeamMember[] Members(Player viewer, List<int> members, int raidIndex, Dictionary<int, int> listed)
         {
-            var rows = new List<(int Id, MemberData Data)>();
+            var rows = new List<TeamMember>();
             foreach (int id in members)
             {
-                if (TryLevel(id, out _) && DataOf(id) is { Name.Length: > 0 } data)
-                {
-                    rows.Add((id, data));
-                    listed[id] = raidIndex;
-                }
-            }
+                if (!TryLevel(id, out _) || DataOf(id) is not { Name.Length: > 0 } data)
+                    continue;
 
-            WriteInt(stream, (rows.Count + 1) * 0x3F1);
-            foreach ((int id, MemberData data) in rows)
-            {
+                listed[id] = raidIndex;
                 bool self = id == viewer.Identity.Instance;
-                WriteIdentity(stream, CharacterIdentity(id));
-                byte[] name = Encoding.Latin1.GetBytes(data.Name);
-                WriteShort(stream, (short)name.Length);
-                stream.Write(name);
-                WriteInt(stream, self ? viewer.Stats.GetOrZero(CharacterStat.Clan) : 0);
-                stream.WriteByte((byte)(self ? System.Math.Clamp(viewer.Stats.GetOrZero(CharacterStat.Side), 0, 7) : 0));
-                WriteShort(stream, (short)data.Level);
-                WriteShort(stream, (short)data.Profession);
+                rows.Add(new TeamMember
+                {
+                    Identity = CharacterIdentity(id),
+                    Name = data.Name,
+                    Unknown1 = self ? viewer.Stats.GetOrZero(CharacterStat.Clan) : 0,
+                    Unknown2 = (byte)(self ? System.Math.Clamp(viewer.Stats.GetOrZero(CharacterStat.Side), 0, 7) : 0),
+                    Level = (short)data.Level,
+                    Profession = (short)data.Profession
+                });
             }
-        }
 
-        static void WriteIdentity(MemoryStream stream, Identity identity)
-        {
-            WriteInt(stream, (int)identity.Type);
-            WriteInt(stream, identity.Instance);
-        }
-
-        static void WriteInt(MemoryStream stream, int value)
-        {
-            System.Span<byte> bytes = stackalloc byte[4];
-            BinaryPrimitives.WriteInt32BigEndian(bytes, value);
-            stream.Write(bytes);
-        }
-
-        static void WriteShort(MemoryStream stream, short value)
-        {
-            System.Span<byte> bytes = stackalloc byte[2];
-            BinaryPrimitives.WriteInt16BigEndian(bytes, value);
-            stream.Write(bytes);
+            return rows.ToArray();
         }
     }
 }

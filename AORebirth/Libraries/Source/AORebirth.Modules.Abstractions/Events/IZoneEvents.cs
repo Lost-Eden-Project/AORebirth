@@ -80,6 +80,12 @@ namespace AORebirth.Modules.Events
 
         /// <summary>A hit or miss involving at least one player was resolved (1.6).</summary>
         event Action<CombatResolvedEvent> CombatResolved;
+
+        /// <summary>
+        /// A player completed a mission and its reward was committed (1.12). Raised on the player's playfield tick after
+        /// the engine paid the mission's own credits, experience and items; what a module pays on top is its own.
+        /// </summary>
+        event Action<MissionCompletedEvent> MissionCompleted;
     }
 
     public sealed class PlayerPlayfieldEvent
@@ -177,6 +183,43 @@ namespace AORebirth.Modules.Events
         public bool KilledByPlayer { get; init; }
 
         /// <summary>When the engine raised it, on <see cref="IZoneClock"/> (1.6).</summary>
+        public long Timestamp { get; init; }
+    }
+
+    /// <summary>A player completed a mission (module API 1.12).</summary>
+    public sealed class MissionCompletedEvent
+    {
+        public int CharacterId { get; init; }
+
+        public int PlayfieldId { get; init; }
+
+        /// <summary>The quest's id in the player's journal.</summary>
+        public string QuestId { get; init; } = string.Empty;
+
+        /// <summary>True for a generated mission (a terminal roll's offer, or a Quests.json quest with a dungeon); false for an ordinary quest.</summary>
+        public bool Generated { get; init; }
+
+        /// <summary>The mission's title as the journal showed it.</summary>
+        public string Title { get; init; } = string.Empty;
+
+        /// <summary>The mission's quality (level); 0 for a quest without one.</summary>
+        public int Quality { get; init; }
+
+        /// <summary>Of a generated mission's dungeon population, how many were killed and how many there were; 0/0 when unknown.</summary>
+        public int Killed { get; init; }
+
+        public int Total { get; init; }
+
+        /// <summary>The credits the engine paid, after any completion split.</summary>
+        public int Credits { get; init; }
+
+        /// <summary>The experience the engine awarded, after any completion split.</summary>
+        public int Experience { get; init; }
+
+        /// <summary>Whether the mission's reward roll was won; null for a mission without one.</summary>
+        public bool? RewardWon { get; init; }
+
+        /// <summary>When the engine raised it, on <see cref="IZoneClock"/>.</summary>
         public long Timestamp { get; init; }
     }
 }

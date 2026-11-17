@@ -8,7 +8,7 @@ namespace ZoneEngine_New.Core.Commands
     using AORebirth.Core.GameData;
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using Quaternion = AORebirth.Core.Vector.Quaternion;
     using Vector3 = AORebirth.Core.Vector.Vector3;

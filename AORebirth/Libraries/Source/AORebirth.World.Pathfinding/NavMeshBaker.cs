@@ -10,7 +10,7 @@ namespace AORebirth.World.Pathfinding
     using DotRecast.Recast.Geom;
     using DotRecast.Detour;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     public static class NavMeshBaker
     {
@@ -100,7 +100,7 @@ namespace AORebirth.World.Pathfinding
 
         public static NavMeshBakeResult Bake(
             string gameDataRoot,
-            AcgBuildingGeneratorData generator,
+            AcgBuildingGenerator generator,
             NavMeshBuildSettings? settings = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);

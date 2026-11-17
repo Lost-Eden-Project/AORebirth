@@ -2,6 +2,12 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "LostEden.Protocol": {
+        "type": "Direct",
+        "requested": "[0.4.0, )",
+        "resolved": "0.4.0",
+        "contentHash": "mjf1HJK7wbLJmjCUvaYpOZ5/Cx/BtTc418mWkal58wqlrPFS6jPkacSOFULAfAW/lGUq6FIePtAxZpvVV+pwSA=="
+      },
       "AODB": {
         "type": "Transitive",
         "resolved": "1.0.13",
@@ -35,8 +41,8 @@
         "type": "Project",
         "dependencies": {
           "AORebirth.Interfaces": "[1.0.0, )",
-          "MathNet.Numerics": "[5.0.0, )",
-          "SmokeLounge.AOtomation.Messaging": "[1.0.0, )"
+          "LostEden.Protocol": "[0.4.0, )",
+          "MathNet.Numerics": "[5.0.0, )"
         }
       },
       "AORebirth.Interfaces": {
@@ -47,13 +53,10 @@
         "dependencies": {
           "AODB": "[1.0.13, )",
           "AORebirth.Core": "[1.0.0, )",
+          "LostEden.Protocol": "[0.4.0, )",
           "N3Lite": "[0.1.13, )",
-          "SmokeLounge.AOtomation.Messaging": "[1.0.0, )",
           "StbImageSharp": "[2.30.15, )"
         }
-      },
-      "SmokeLounge.AOtomation.Messaging": {
-        "type": "Project"
       }
     }
   }

@@ -8,7 +8,7 @@ namespace ZoneEngine_New.Core.World
 
     using AORebirth.World.Contracts.V1;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Entities;
@@ -232,13 +232,12 @@ namespace ZoneEngine_New.Core.World
         }
 
         static void Tell(Player player, string text)
-            => player.Session?.Send(new SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChatTextMessage
+            => player.Session?.Send(new LostEden.Protocol.Messages.N3Messages.ChatTextMessage
             {
                 Identity = player.Identity,
                 Text = text,
                 Unknown1 = 0,
-                Unknown2 = 0,
-                Unknown3 = 0
+                Unknown2 = 0
             });
     }
 

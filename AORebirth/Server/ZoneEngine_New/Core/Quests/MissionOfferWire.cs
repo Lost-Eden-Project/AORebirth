@@ -3,8 +3,9 @@ namespace ZoneEngine_New.Core.Quests
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using WireQuestReward = LostEden.Protocol.GameData.QuestReward;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility.GameData.Missions;
 
@@ -12,41 +13,42 @@ namespace ZoneEngine_New.Core.Quests
     using ZoneEngine_New.Core.Quests.Dungeons;
 
     /// <summary>
-    /// Mission terminal offers: the QuestAlternative response and its QuestInfo entries. Laid out from the 13 captured
+    /// Mission terminal offers: the QuestAlternative response and its mission entries. Laid out from the 13 captured
     /// retail roll responses (65 offers, all five kinds) that were GameData/Missions/RollBodies.json before b2966d0f.
-    /// Every captured offer carries the same header values (version 15, reward descriptor 6, reward hash 1364414290,
-    /// Unknown16 2880, Unknown20 6, Unknown26 3), the terminal in Unknown5, one quest action and empty lists. The action
-    /// is the journal's per kind (DungeonGeneration.json MissionTypes: kill 1, find person 16, find item 15, repair 8)
-    /// and names its objective by NpcHash four-character code: kill and find person in Unknown2, find item in Action,
-    /// repair the tool in Action and the machine in Unknown1. UnknownHash15 is the client-clock Unix expiry, as in the
-    /// journal; the waypoint is the entrance (playfield type 0x9C50, the world offsets, the local position).
-    /// The protocol values live here; the offer's content comes from the module that rolled it.
+    /// Every captured offer carries the same header values (quest version 15, reward version 6, reward Unknown0C
+    /// 1364414290, Unknown74 2880, UnknownA8 6, UnknownD4 3), the terminal as Identity38, one quest action and empty
+    /// lists. The action is the journal's per kind (DungeonGeneration.json MissionTypes: kill 1, find person 16, find
+    /// item 15, repair 8) and names its objective by MobHash four-character code: kill and find person in Identity14,
+    /// find item in Identity04, repair the tool in Identity04 and the machine in Identity0C. ExpiryTime is the
+    /// client-clock Unix expiry, as in the journal; the waypoint is the entrance (playfield type 0x9C50, the world
+    /// offsets, the local position). The protocol values live here; the offer's content comes from the module that
+    /// rolled it.
     /// </summary>
     internal static class MissionOfferWire
     {
-        /// <summary>The fixed ShortInfo field holds 31 characters and its terminator.</summary>
+        /// <summary>The fixed name field holds 31 characters and its terminator.</summary>
         const int TitleLength = 31;
 
         const int OfferVersion = 15;
 
         const int RewardDescriptorVersion = 6;
 
-        /// <summary>Captured on every offer; its meaning is unknown.</summary>
+        /// <summary>Captured on every offer (the reward's Unknown0C); its meaning is unknown.</summary>
         const int RewardHash = 1364414290;
 
-        /// <summary>Captured on every offer (Unknown16): 48 hours in minutes, the captured offers' stated time limit.</summary>
+        /// <summary>Captured on every offer (Unknown74): 48 hours in minutes, the captured offers' stated time limit.</summary>
         const int OfferMinutes = 2880;
 
         const byte ResponseVersion = 4;
 
-        /// <summary>Captured on every response (Unknown5); its meaning is unknown.</summary>
-        const byte ResponseUnknown5 = 3;
+        /// <summary>Captured on every response (the originator byte); its meaning is unknown.</summary>
+        const MissionScope ResponseScope = (MissionScope)3;
 
         /// <summary>
-        /// Unknown22 per kind: one captured value each (retail's ranged 3002-3036 repair, 3052-3081 find item, 3102-3134
+        /// UnknownB0 per kind: one captured value each (retail's ranged 3002-3036 repair, 3052-3081 find item, 3102-3134
         /// find person, 3141-3195 kill). Its meaning is unknown; a value from the kind's own range is sent.
         /// </summary>
-        static int CapturedUnknown22(MissionRollType type) => type switch
+        static int CapturedUnknownB0(MissionRollType type) => type switch
         {
             MissionRollType.KillPerson => 3141,
             MissionRollType.FindPerson => 3102,
@@ -55,78 +57,75 @@ namespace ZoneEngine_New.Core.Quests
         };
 
         /// <summary>One offer, everything already checked and resolved by the caller.</summary>
-        internal static QuestInfo Offer(Player player, int instance, Identity terminal, MissionRollType type, string title,
+        internal static MissionInfo Offer(Player player, int instance, Identity terminal, MissionRollType type, string title,
             string description, int quality, int credits, int experience, IReadOnlyList<QuestRewardItem> rewardItems, int iconId,
             QuestObjective objective, MissionEntrancePlacement entrance, MissionDestinationWorldPosition? worldPosition,
             DateTime expiresUtc)
         {
-            var items = new QuestItemShort[rewardItems.Count];
-            for (int i = 0; i < items.Length; i++)
-                items[i] = new QuestItemShort
+            var items = new List<AcgItem>(rewardItems.Count);
+            for (int i = 0; i < rewardItems.Count; i++)
+                items.Add(new AcgItem
                 {
                     LowId = rewardItems[i].Id, HighId = rewardItems[i].HighId ?? rewardItems[i].Id, Quality = Math.Max(1, rewardItems[i].Quality)
-                };
+                });
 
-            return new QuestInfo
+            var quest = new Quest
             {
-                QuestIdentity = new Identity { Type = IdentityType.Mission, Instance = instance },
-                Unknown1 = OfferVersion,
+                Identity = new Identity(IdentityType.Mission, instance),
+                Version = OfferVersion,
                 // Padded with spaces, not NULs: the client reads the title up to its terminator, so an early NUL would
                 // shift every field after it.
-                ShortInfo = QuestJournal.ShortName(title).PadRight(TitleLength),
-                // Retail's description length counts its terminator; the serializer writes the string as given.
-                Info = description.EndsWith('\0') ? description : description + '\0',
-                Unknown5 = Copy(terminal),
-                RewardDescriptorVersion = RewardDescriptorVersion,
-                CashReward = credits,
-                ExperienceReward = experience,
-                UnknownIdentities1 = [],
-                UnknownIdentities2 = [],
-                ItemRewards = items,
-                UnknownHash = RewardHash,
-                Quality = quality,
-                Unknown14 = new Identity(),
-                MissionIconId = iconId,
-                Unknown16 = OfferMinutes,
-                QuestActions = [Action(player, type, objective, entrance, worldPosition, expiresUtc)],
-                Unknown17 = [],
-                Unknown18 = [],
-                Unknown19 = [],
-                CharInfos = [],
-                Unknown20 = 6,
-                UnknownIdentities20 = [],
-                Unknown22 = CapturedUnknown22(type),
-                Unknown23 = new Identity(),
-                QuestIdentities = [],
-                Unknown26 = 3,
-                FactionInfo = []
+                Name = QuestJournal.ShortName(title).PadRight(TitleLength),
+                // Retail's description length counts its terminator; the codec writes the string as given.
+                Description = description.EndsWith('\0') ? description : description + '\0',
+                Identity38 = terminal,
+                Reward = new WireQuestReward
+                {
+                    Version = RewardDescriptorVersion,
+                    Cash = credits,
+                    Experience = experience,
+                    Items = items,
+                    Unknown0C = RewardHash,
+                    Unknown10 = quality
+                },
+                Icon = iconId,
+                Unknown74 = OfferMinutes,
+                Actions = [Action(player, type, objective, entrance, worldPosition, expiresUtc)],
+                UnknownA8 = 6,
+                UnknownB0 = CapturedUnknownB0(type),
+                UnknownD4 = 3,
+                IdentitiesD8 = []
             };
+            return new MissionInfo { Quest = quest };
         }
 
         /// <summary>The roll response: the request's sliders and terminal back, with the offers.</summary>
-        internal static QuestAlternativeMessage Response(Player player, QuestAlternativeMessage request, QuestInfo[] offers)
+        internal static QuestAlternativeMessage Response(Player player, QuestAlternativeMessage request, MissionInfo[] offers)
             => new()
             {
-                Identity = Copy(player.Identity),
-                VersionId = ResponseVersion,
-                LevelSlider = request.LevelSlider,
-                GoodBadSlider = request.GoodBadSlider,
-                OrderChaosSlider = request.OrderChaosSlider,
-                OpenHiddenSlider = request.OpenHiddenSlider,
-                PhysicalMysticalSlider = request.PhysicalMysticalSlider,
-                HeadOnStealthSlider = request.HeadOnStealthSlider,
-                MoneyExperienceSlider = request.MoneyExperienceSlider,
+                Identity = player.Identity,
+                Version = ResponseVersion,
+                MissionSliders = new MissionSliders
+                {
+                    Difficulty = request.MissionSliders.Difficulty,
+                    GoodBad = request.MissionSliders.GoodBad,
+                    OrderChaos = request.MissionSliders.OrderChaos,
+                    OpenHidden = request.MissionSliders.OpenHidden,
+                    PhysicalMystical = request.MissionSliders.PhysicalMystical,
+                    HeadonStealth = request.MissionSliders.HeadonStealth,
+                    CreditsXp = request.MissionSliders.CreditsXp
+                },
                 // Retail sends a different value per roll here; its meaning is unknown.
-                Unknown4 = System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MaxValue),
-                Unknown5 = ResponseUnknown5,
-                MissionTerminalIdentity = Copy(request.MissionTerminalIdentity),
-                QuestInfos = offers
+                Seed = System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MaxValue),
+                Scope = ResponseScope,
+                Terminal = request.Terminal,
+                MissionDetails = offers
             };
 
-        static QuestActionList Action(Player player, MissionRollType type, QuestObjective objective, MissionEntrancePlacement entrance,
+        static QuestActionInfo Action(Player player, MissionRollType type, QuestObjective objective, MissionEntrancePlacement entrance,
             MissionDestinationWorldPosition? worldPosition, DateTime expiresUtc)
         {
-            Identity action = new(), slot1 = new(), slot2 = new();
+            Identity action = default, slot1 = default, slot2 = default;
             switch (type)
             {
                 case MissionRollType.KillPerson:
@@ -142,36 +141,28 @@ namespace ZoneEngine_New.Core.Quests
                     break;
             }
 
-            return new QuestActionList
+            return new QuestActionInfo
             {
-                Version = DungeonMissionTypes.Action(type),
-                Action = action,
-                Unknown1 = slot1,
-                Unknown2 = slot2,
-                Unknown3 = new Identity(),
-                Unknown4 = new Identity(),
-                Unknown9 = new Identity(),
-                Unknown14 = new Identity(),
-                UnknownHash15 = unchecked((int)QuestJournal.ClientExpiry(player, expiresUtc, DateTime.UtcNow)),
-                Unknown17 = new Identity(),
-                // An entrance no terminal offer was ever captured at has no WorldPos; the journal sends the same fallback.
-                Playfield = new Identity
+                Type = DungeonMissionTypes.Action(type),
+                Identity04 = action,
+                Identity0C = slot1,
+                Identity14 = slot2,
+                ExpiryTime = QuestJournal.ClientExpiry(player, expiresUtc, DateTime.UtcNow),
+                WorldPos = new QuestWorldPos
                 {
-                    Type = (IdentityType)(worldPosition == null ? QuestJournal.WaypointPlayfieldType : unchecked((int)worldPosition.PlayfieldIdentityType)),
-                    Instance = entrance.PlayfieldId
-                },
-                Unknown18 = worldPosition?.WorldOffsetX ?? QuestJournal.WaypointUnknown,
-                Unknown19 = worldPosition?.WorldOffsetZ ?? QuestJournal.WaypointUnknown,
-                X = entrance.LocalX,
-                Y = entrance.LocalY,
-                Z = entrance.LocalZ
+                    // An entrance no terminal offer was ever captured at has no WorldPos; the journal sends the same fallback.
+                    Playfield = new Identity(
+                        (IdentityType)(worldPosition == null ? QuestJournal.WaypointPlayfieldType : unchecked((int)worldPosition.PlayfieldIdentityType)),
+                        entrance.PlayfieldId),
+                    X = worldPosition?.WorldOffsetX ?? QuestJournal.WaypointUnknown,
+                    Z = worldPosition?.WorldOffsetZ ?? QuestJournal.WaypointUnknown,
+                    Offset = new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ)
+                }
             };
         }
 
         /// <summary>An objective hash as retail names it in an offer; none when the objective is chosen at acceptance.</summary>
         static Identity Hash(string? hash)
-            => string.IsNullOrEmpty(hash) ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = QuestJournal.FourCc(hash) };
-
-        static Identity Copy(Identity value) => new() { Type = value.Type, Instance = value.Instance };
+            => string.IsNullOrEmpty(hash) ? default : new Identity(IdentityType.MobHash, QuestJournal.FourCc(hash));
     }
 }

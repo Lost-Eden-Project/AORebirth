@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.Helpers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// Nano point cost after <c>NPCostModifier</c> (stat 318, "% Add. Nano Cost"): the percent added to the cost, so a

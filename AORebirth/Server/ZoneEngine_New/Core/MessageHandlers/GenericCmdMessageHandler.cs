@@ -6,9 +6,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -117,15 +117,20 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
 
                 case GenericCmdAction.UseItemOnItem:
+                    if (message.Source is not { } source)
+                    {
+                        Deny(session, message, player, "missing item slot");
+                        break;
+                    }
                     // An item is never used on itself.
-                    if (message.Target is { Length: >= 2 } && message.Target[0] == message.Target[1])
+                    if (source == message.Target)
                     {
                         Deny(session, message, player, "item used on itself");
                         break;
                     }
-                    if (message.Target is { Length: >= 2 } && _dungeons != null)
+                    if (_dungeons != null)
                     {
-                        bool committed = _dungeons.TryUseGeneratedMissionItem(player, message.Target[0], message.Target[1], out bool handled);
+                        bool committed = _dungeons.TryUseGeneratedMissionItem(player, source, message.Target, out bool handled);
                         if (handled)
                         {
                             // Retail action 5 acknowledges the original source slot and exact target unchanged.
@@ -136,9 +141,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                             break;
                         }
                     }
-                    if (message.Target is { Length: >= 2 }
-                        && TryGetBreakAndEnter(player, playfield, message.Target[0], message.Target[1], out IBreakAndEnterTarget lockable,
-                            out Item pick))
+                    if (TryGetBreakAndEnter(player, playfield, source, message.Target, out IBreakAndEnterTarget lockable, out Item pick))
                     {
                         // A pick that opens the lock gets "Lockpicking successful." from the server (the client has no
                         // success text of its own) and the ack; a failed pick (0x65, "Lockpicking failed.") is refused.
@@ -146,7 +149,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         {
                             case BreakAndEnterResult.Unlocked:
                                 ClientFeedback.Send(player, ClientFeedback.LockpickingSuccessful);
-                                Acknowledge(session, message, message.Target[1]);
+                                Acknowledge(session, message, message.Target);
                                 break;
                             case BreakAndEnterResult.Failed:
                                 Deny(session, message);
@@ -156,28 +159,25 @@ namespace ZoneEngine_New.Core.MessageHandlers
                                 break;
                         }
                     }
-                    else if (message.Target is { Length: >= 2 }
-                        && _dungeons?.TryDuplicate(player, message.Target[0], message.Target[1]) == true)
-                        Acknowledge(session, message, message.Target[1]);
-                    else if (message.Target is { Length: >= 2 }
-                        && TryReloadFromDrop(player, message.Target[0], message.Target[1], out bool reloaded))
+                    else if (_dungeons?.TryDuplicate(player, source, message.Target) == true)
+                        Acknowledge(session, message, message.Target);
+                    else if (TryReloadFromDrop(player, source, message.Target, out bool reloaded))
                     {
                         // Ammo dropped on a worn gun (N3Msg_UseItemOnItem, client checks 1006940f): Reload answers it.
                         if (reloaded)
-                            Acknowledge(session, message, message.Target[1]);
+                            Acknowledge(session, message, message.Target);
                         else
                             Deny(session, message);
                     }
-                    else if (message.Target is { Length: >= 2 }
-                        && TryUseItemOnItem(player, playfield, message.Target[0], message.Target[1]))
-                        Acknowledge(session, message, message.Target[1]);
-                    else if (message.Target is { Length: >= 2 } && _tradeskills != null
-                        && _tradeskills.TryCombineDrag(player, message.Target[0], message.Target[1]) is var combine
+                    else if (TryUseItemOnItem(player, playfield, source, message.Target))
+                        Acknowledge(session, message, message.Target);
+                    else if (_tradeskills != null
+                        && _tradeskills.TryCombineDrag(player, source, message.Target) is var combine
                         && combine != Tradeskills.TradeskillService.CombineOutcome.NoRecipe)
                     {
                         // A tradeskill recipe: combined, or refused with its own feedback.
                         if (combine == Tradeskills.TradeskillService.CombineOutcome.Combined)
-                            Acknowledge(session, message, message.Target[1]);
+                            Acknowledge(session, message, message.Target);
                         else
                             Deny(session, message);
                     }
@@ -185,9 +185,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
 
                 case GenericCmdAction.UseItemOnCharacter:
-                    if (message.Target is not { Length: >= 2 })
+                    if (message.Source is not { } itemSlot)
                         Deny(session, message, player, "missing item slot or target character");
-                    else if (TryUseItemOnCharacter(player, playfield, message.Target[0], message.Target[1], out string refusal))
+                    else if (TryUseItemOnCharacter(player, playfield, itemSlot, message.Target, out string refusal))
                         Acknowledge(session, message, Identity.None);
                     else
                         Deny(session, message, player, refusal);
@@ -209,9 +209,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
         void HandleUse(GenericCmdMessage message, IZoneSession session, Player player, Playfield playfield)
         {
-            Identity target = message.Target != null && message.Target.Length > 0
-                ? message.Target[0]
-                : Identity.None;
+            Identity target = message.Target;
 
             player.Logger.Info(
                 string.Format(
@@ -221,7 +219,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     target.Type,
                     (int)target.Type,
                     target.Instance,
-                    message.Target?.Length ?? 0));
+                    message.Source.HasValue ? 2 : 1));
 
             switch (target.Type)
             {
@@ -538,16 +536,14 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
         static string FormatTargets(GenericCmdMessage message)
         {
-            if (message.Target == null || message.Target.Length == 0)
-                return "(none)";
-
+            Identity[] identities = message.Source is { } source ? [source, message.Target] : [message.Target];
             var text = new StringBuilder();
-            for (int i = 0; i < message.Target.Length; i++)
+            for (int i = 0; i < identities.Length; i++)
             {
                 if (i > 0)
                     text.Append("; ");
 
-                Identity id = message.Target[i];
+                Identity id = identities[i];
                 text.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "[{0}] {1}({2}/0x{2:X}) inst={3}",
@@ -719,12 +715,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
         internal static GenericCmdMessage Reply(GenericCmdMessage message, Identity targetOverride, int temp1, bool corpseUse = false)
         {
-            Identity[] targets = message.Target != null
-                ? (Identity[])message.Target.Clone()
-                : [];
-
-            if (targetOverride != Identity.None && targets.Length > 0)
-                targets[0] = targetOverride;
+            // The override replaces the first identity the client sent: the item slot when there is one, else the target.
+            Identity? source = message.Source;
+            Identity target = message.Target;
+            if (targetOverride != Identity.None)
+            {
+                if (source.HasValue)
+                    source = targetOverride;
+                else
+                    target = targetOverride;
+            }
 
             return new GenericCmdMessage
             {
@@ -734,7 +734,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 Action = message.Action,
                 Temp4 = corpseUse ? 1 : message.Temp4,
                 User = message.User,
-                Target = targets,
+                Source = source,
+                Target = target,
                 Unknown = 0
             };
         }

@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Nanos
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Inventory;

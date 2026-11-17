@@ -1,0 +1,10 @@
+{
+  // Named populations over Defaults.json: which NPC templates (by hash) fill the rooms and how. Mix/Styles/Kinds
+  // draw from Dungeons/Families.json instead of Npcs when that file exists.
+  "rubika": {
+    "Npcs": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"]
+  },
+  "mothership": {
+    "Npcs": ["ARZWEH"]
+  }
+}

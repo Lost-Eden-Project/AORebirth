@@ -1,0 +1,32 @@
+{
+  "_comment": "Every dungeon field, fully set: what a mission's dungeon request gets for every field it and its presets leave out. Presets (Layouts.json, Population.json, Chests.json, Objectives.json) start from these values; a Missions.json request may name a preset per block or write a block in place.",
+  "Layout": {
+    "Styles": [321, 324, 341, 351],
+    "Rooms": [9, 16],
+    "Floors": 1,
+    "FloorHeight": 64,
+    "LockedDoorChancePercent": 0
+  },
+  "Population": {
+    "Npcs": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"],
+    "SpawnChancePercent": 35,
+    "LevelSpreadPercent": 10,
+    "MaxGroup": 4,
+    "GroupRadius": 8.0,
+    "AggroRangePercent": 100,
+    "HelpRangePercent": 100,
+    "Loot": []
+  },
+  "Chests": {
+    "Enabled": true,
+    "RoomDensity": 0.3,
+    "CountVariation": 0.25,
+    "LockedChancePercent": 0,
+    "ExcludedRooms": ["hallway", "corridor", "endblock", "entrance", "startroom", "stair", "elevator", "ramp", "vent", "checkpoint", "passage", "intersection", "foyaer", "foyer"],
+    "LootTable": []
+  },
+  "Objective": {
+    "RoomChoices": 1,
+    "LevelPercent": 20
+  }
+}

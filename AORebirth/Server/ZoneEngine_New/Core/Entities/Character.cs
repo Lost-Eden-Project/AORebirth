@@ -10,8 +10,11 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using ActiveNano = LostEden.Protocol.GameData.SimpleCharInfo.ActiveNano;
+    using MovementAction = ZoneEngine_New.Core.Movement.MovementAction;
+    using TextureOverride = LostEden.Protocol.GameData.SimpleCharInfo.TextureOverride;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -27,8 +30,8 @@ namespace ZoneEngine_New.Core.Entities
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Teams;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
     using ModuleHooks = ZoneEngine_New.Core.Modules.ModuleHooks;
     using ModuleClock = ZoneEngine_New.Core.Modules.ModuleClock;
     using ModuleCooldowns = ZoneEngine_New.Core.Modules.ModuleCooldowns;
@@ -902,13 +905,13 @@ namespace ZoneEngine_New.Core.Entities
                 Identity = Identity,
                 Unknown = 0,
                 Level = level,
-                Ip = Math.Max(0, AvailableIp),
-                Xp = Stats.GetOrZero(CharacterStat.XP),
-                LastSaveXp = lastSaveXp,
+                AvailableIp = Math.Max(0, AvailableIp),
+                CurrentXp = Stats.GetOrZero(CharacterStat.XP),
+                LastLevelXp = lastSaveXp,
                 NextLevelXp = nextLevelXp,
-                Unknown1 = 0,
-                Unknown2 = xpKillRange,
-                LastXp = lastGain
+                IpResetPointsGained = 0,
+                XpKillRange = xpKillRange,
+                LastAwardedXp = lastGain
             };
         }
 
@@ -1065,7 +1068,7 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>XP award group: the player's team, or the player alone. Team keys sit above every player instance.</summary>
         static long AwardGroupOf(int instance, Playfield playfield, DynelRegistry registry)
         {
-            if (registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = instance }, out Dynel? dynel)
+            if (registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = instance }, out Dynel? dynel)
                 && dynel is Player player
                 && playfield.GetService<TeamService>()?.GetTeam(player) is TeamSnapshot team)
                 return (1L << 32) | (uint)team.TeamId;
@@ -1259,7 +1262,7 @@ namespace ZoneEngine_New.Core.Entities
                 int memberId = team.MemberIds[i];
                 if (memberId == killer.Identity.Instance)
                     continue;
-                if (!registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = memberId }, out Dynel? dynel)
+                if (!registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = memberId }, out Dynel? dynel)
                     || dynel is not Player mate || mate.IsDead)
                     continue;
                 if (Distance3D(mate) > TeamShareRange)
@@ -1673,7 +1676,7 @@ namespace ZoneEngine_New.Core.Entities
 
         public virtual SpecialAttackWeaponMessage BuildSpecialAttackWeaponMessage()
         {
-            SpecialAttack[] specials = BuildSpecialAttacks();
+            SpecialAttackInfo[] specials = BuildSpecialAttacks();
             var message = new SpecialAttackWeaponMessage
             {
                 Identity = Identity,
@@ -1690,9 +1693,9 @@ namespace ZoneEngine_New.Core.Entities
             return message;
         }
 
-        SpecialAttack[] BuildSpecialAttacks()
+        SpecialAttackInfo[] BuildSpecialAttacks()
         {
-            var specials = new List<SpecialAttack>();
+            var specials = new List<SpecialAttackInfo>();
             bool maat = false;
             bool brawl = false;
             bool dimach = false;
@@ -1707,7 +1710,7 @@ namespace ZoneEngine_New.Core.Entities
                     Weapons.Count));
 
             // NPC template weapons: emit live-shaped low/high/tag entries first so AttackInfo
-            // Unknown6 can match SpecialAttack.Unknown3. The swing bound to the visible hand weapon shows as that weapon
+            // Unknown6 can match SpecialAttackInfo.Unknown3. The swing bound to the visible hand weapon shows as that weapon
             // and is not listed; the rest go highest wire slot first (retail ICC Shuttle Guard SAW: HVJP, VQHW, KLGZ,
             // PQEA for wire slots 4..1, capture 2026-10-22T19:18Z).
             var npcWeapons = new List<KeyValuePair<WeaponSlot, CharacterWeapon>>(Weapons);
@@ -1723,7 +1726,7 @@ namespace ZoneEngine_New.Core.Entities
                     ? "SIW1"
                     : armed.SawTagName;
                 specials.Add(
-                    new SpecialAttack
+                    new SpecialAttackInfo
                     {
                         Unknown1 = item.LowId,
                         Unknown2 = item.HighId > 0 ? item.HighId : item.LowId,
@@ -1861,14 +1864,14 @@ namespace ZoneEngine_New.Core.Entities
 
         void LogSpecialAttackWeapon(SpecialAttackWeaponMessage message)
         {
-            SpecialAttack[] specials = message.Specials ?? [];
+            SpecialAttackInfo[] specials = message.Specials ?? [];
             var names = new StringBuilder();
             for (int i = 0; i < specials.Length; i++)
             {
                 if (i > 0)
                     names.Append(',');
 
-                SpecialAttack special = specials[i];
+                SpecialAttackInfo special = specials[i];
                 names.Append(special.Unknown4);
                 names.Append('(');
                 names.Append(special.Unknown1);
@@ -1923,9 +1926,9 @@ namespace ZoneEngine_New.Core.Entities
                 LogUtil.Debug(DebugInfoDetail.Engine, message);
         }
 
-        static SpecialAttack CreateSpecialAttack(int lowId, int highId, CharacterStat skill, string name)
+        static SpecialAttackInfo CreateSpecialAttack(int lowId, int highId, CharacterStat skill, string name)
         {
-            return new SpecialAttack
+            return new SpecialAttackInfo
             {
                 Unknown1 = lowId,
                 Unknown2 = highId,
@@ -2051,33 +2054,73 @@ namespace ZoneEngine_New.Core.Entities
             TickStallWatch.Stage("dynel.flush", instance);
             base.Tick(deltaTime);
 
-            // After this tick's flush, so observers end the tick on the full max (the flush carries only the base).
-            SyncObserverMaxNano();
+            // After this tick's flush, so observers end the tick on the full values (the flush carries only the bases).
+            SyncObserverVitals();
         }
 
-        /// <summary>The full MaxNanoEnergy last announced to the characters observing this one; -1 until announced.</summary>
+        /// <summary>
+        /// What the characters observing this one hold for its MaxHealth and MaxNanoEnergy: the full value the observer
+        /// sync last announced, or the base a later flush sent them. -1 until either has happened.
+        /// </summary>
+        int _observerMaxHealth = -1;
         int _observerMaxNano = -1;
 
         /// <summary>
-        /// Keeps observers' nano bars for this character current: announces its full MaxNanoEnergy (221), with gear and
-        /// buff bonuses, to everyone who has it spawned whenever it differs from what was last announced. The dirty stat
-        /// flush sends only the base, and an NPC's max (from its template) is never dirty at all. CurrentNano needs no
-        /// sync here: it has no bonus, so the dirty flush already carries it. Never sent to the character itself, whose
-        /// client derives its own full max from the base.
+        /// The full Health the observer sync last announced while Health carried a bonus; -1 while observers hold the
+        /// value the flush sent (with no bonus that is already the full value, and the sync leaves Health alone).
         /// </summary>
-        void SyncObserverMaxNano()
+        int _observerHealth = -1;
+
+        protected override void OnStatsFlushed(GameTuple<Stat, int>[] flushed)
         {
+            foreach (GameTuple<Stat, int> stat in flushed)
+            {
+                switch ((CharacterStat)stat.Value1)
+                {
+                    case CharacterStat.MaxHealth: _observerMaxHealth = (int)stat.Value2; break;
+                    case CharacterStat.MaxNanoEnergy: _observerMaxNano = (int)stat.Value2; break;
+                    case CharacterStat.Health: _observerHealth = -1; break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Keeps observers' health and nano bars for this character (target, team, raid windows, nameplate) current:
+        /// whenever what they hold differs from the full value, with gear and buff bonuses, announces the full
+        /// MaxHealth (1) and MaxNanoEnergy (221), and Health (27) when it carries a bonus, to everyone who has it
+        /// spawned. Observers show a stat as last sent, while the dirty flush sends only the base (and only when the base
+        /// changes; an NPC's max from its template is never dirty at all), so after a flush that carried one of these, or
+        /// a buff, debuff or item change on it, observers would otherwise keep a base or stale value. Never sent to the
+        /// character itself, whose client derives its own full values from the base. CurrentNano carries no bonus: the
+        /// dirty flush already sends its full value.
+        /// </summary>
+        internal void SyncObserverVitals()
+        {
+            int maxHealth = Math.Max(0, Stats.GetOrZero(CharacterStat.MaxHealth));
             int maxNano = Math.Max(0, Stats.GetOrZero(CharacterStat.MaxNanoEnergy));
-            if (maxNano == _observerMaxNano
+            bool healthHasBonus = Stats.GetOrZero(CharacterStat.Health, StatDetail.Bonus) != 0;
+            int health = Math.Max(0, Stats.GetOrZero(CharacterStat.Health));
+            bool sendMaxHealth = maxHealth != _observerMaxHealth;
+            bool sendMaxNano = maxNano != _observerMaxNano;
+            bool sendHealth = (healthHasBonus || _observerHealth >= 0) && health != _observerHealth;
+            if (!(sendMaxHealth || sendMaxNano || sendHealth)
                 || Playfield?.GetService<PlayfieldLocality>() is not { } locality)
                 return;
 
-            locality.Announce(this, new StatMessage
-            {
-                Identity = Identity,
-                Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.MaxNanoEnergy, Value2 = (uint)maxNano }]
-            });
+            var stats = new GameTuple<Stat, int>[(sendMaxHealth ? 1 : 0) + (sendMaxNano ? 1 : 0) + (sendHealth ? 1 : 0)];
+            int index = 0;
+            if (sendMaxHealth)
+                stats[index++] = new((Stat)CharacterStat.MaxHealth, maxHealth);
+            if (sendHealth)
+                stats[index++] = new((Stat)CharacterStat.Health, health);
+            if (sendMaxNano)
+                stats[index] = new((Stat)CharacterStat.MaxNanoEnergy, maxNano);
+
+            locality.Announce(this, Network.StatMessages.For(Identity, stats));
+            _observerMaxHealth = maxHealth;
             _observerMaxNano = maxNano;
+            if (sendHealth)
+                _observerHealth = healthHasBonus ? health : -1;
         }
 
         /// <summary>
@@ -2095,10 +2138,10 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Stats =
-                [
-                    new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.CurrentNano, Value2 = (uint)nano },
-                    new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.MaxNanoEnergy, Value2 = (uint)maxNano }
-                ]
+                {
+                    Network.StatMessages.Pair(CharacterStat.CurrentNano, nano),
+                    Network.StatMessages.Pair(CharacterStat.MaxNanoEnergy, maxNano)
+                }
             };
         }
 
@@ -2297,9 +2340,9 @@ namespace ZoneEngine_New.Core.Entities
                         Unknown = (byte)(IsPlayer ? 1 : 0),
                         Unknown1 = -1,
                         Unknown2 = attackInfoSlot,
-                        Unknown3 = Identity,
-                        Unknown4 = target.Identity,
-                        Unknown5 = 0
+                        Attacker = Identity,
+                        Defender = target.Identity,
+                        Unknown3 = 0
                     });
                 Modules.ModuleHooks.CombatResolved(this, target, AutoAttackSource, 0,
                     target.IsEvading ? AORebirth.Modules.Events.CombatResult.Evaded : AORebirth.Modules.Events.CombatResult.Miss,
@@ -2329,12 +2372,12 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     Identity = Identity,
                     Target = target.Identity,
-                    Unknown1 = damage,
-                    Unknown2 = roundsLeft ?? AttackInfoRules.ResolveAmmoCount(characterWeapon, weapon, IsPlayer),
-                    Unknown3 = attackInfoSlot,
-                    Unknown4 = killingHit ? 4 : 0,
-                    Unknown5 = (int)result.HitType,
-                    Unknown6 = AttackInfoRules.ResolveWeaponInstance(characterWeapon, weapon, IsPlayer)
+                    Amount = damage,
+                    AmmoCount = roundsLeft ?? AttackInfoRules.ResolveAmmoCount(characterWeapon, weapon, IsPlayer),
+                    WeaponSlot = attackInfoSlot,
+                    Unk1 = killingHit ? 4 : 0,
+                    HitType = (LostEden.Protocol.GameData.HitType)(int)result.HitType,
+                    WeaponInstance = AttackInfoRules.ResolveWeaponInstance(characterWeapon, weapon, IsPlayer)
                 });
             // Weapon/unarmed auto-attacks stay AttackInfo-only. HealthDamage is for Hit/nano/status.
 
@@ -2455,7 +2498,7 @@ namespace ZoneEngine_New.Core.Entities
                 if (absorbed > 0)
                 {
                     SpendAbsorb(layer, absorbed);
-                    Cell?.Announce(new AbsorbMessage { Identity = Identity, Amount = absorbed, DamageType = damageType });
+                    Cell?.Announce(new AbsorbMessage { Identity = Identity, Amount = absorbed, DmgType = (Stat)damageType });
                     damage -= absorbed;
                 }
             }
@@ -2581,12 +2624,12 @@ namespace ZoneEngine_New.Core.Entities
             var message = new HealthDamageMessage
             {
                 Identity = Identity,
-                Unknown1 = targetHealthAfter,
-                Unknown2 = signedAmount,
-                Unknown3 = signedAmount < 0 ? damageTypeStat : 0,
-                Unknown4 = 0,
+                TargetHp = targetHealthAfter,
+                Amount = signedAmount,
+                Stat = (Stat)(signedAmount < 0 ? damageTypeStat : 0),
+                Unk1 = 0,
                 Target = source?.Identity ?? Identity,
-                Unknown5 = 0
+                Unk2 = 0
             };
 
             if (Cell != null)
@@ -2611,8 +2654,8 @@ namespace ZoneEngine_New.Core.Entities
                 new SocialActionCmdMessage
                 {
                     Identity = Identity,
-                    CommandState = SocialActionExecuteState,
-                    CommandRef = 0,
+                    Verification = SocialActionExecuteState,
+                    Command = 0,
                     Action = action
                 });
 
@@ -2633,8 +2676,8 @@ namespace ZoneEngine_New.Core.Entities
                     "SocialActionCmd character={0} identity={1} state={2} ref={3} action={4}({5}) result={6}",
                     Identity.Instance,
                     request.Identity,
-                    request.CommandState,
-                    request.CommandRef,
+                    request.Verification,
+                    request.Command,
                     request.Action,
                     (int)request.Action,
                     dropped ?? "relayed"));
@@ -2644,14 +2687,14 @@ namespace ZoneEngine_New.Core.Entities
             DateTime nowUtc = DateTime.UtcNow;
 
             _lastSocialActionUtc = nowUtc;
-            _lastSocialActionRef = request.CommandRef;
+            _lastSocialActionRef = request.Command;
             _hasRelayedSocialRef = true;
             AnnounceSocialAction(
                 new SocialActionCmdMessage
                 {
                     Identity = Identity,
-                    CommandState = SocialActionExecuteState,
-                    CommandRef = request.CommandRef,
+                    Verification = SocialActionExecuteState,
+                    Command = request.Command,
                     Action = request.Action
                 });
             return true;
@@ -2669,7 +2712,7 @@ namespace ZoneEngine_New.Core.Entities
                 return "anim-out-of-range";
 
             // The sender also reflects our echo of its own command, with the same ref.
-            if (_hasRelayedSocialRef && request.CommandRef == _lastSocialActionRef)
+            if (_hasRelayedSocialRef && request.Command == _lastSocialActionRef)
                 return "reflected-echo";
 
             if ((nowUtc - _lastSocialActionUtc).TotalMilliseconds < SocialActionMinIntervalMilliseconds)
@@ -3554,7 +3597,7 @@ namespace ZoneEngine_New.Core.Entities
                 int remaining = buff.RemainingCentiseconds(nowUtc);
                 nanos[i] = new ActiveNano
                 {
-                    NanoIdentity = new Identity
+                    Identity = new Identity
                     {
                         Type = IdentityType.NanoProgram,
                         Instance = buff.Id
@@ -3619,12 +3662,12 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     Identity = Identity,
                     Unknown = 0x00,
-                    MoveType = (byte)MovementAction.FullStop,
+                    MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)MovementAction.FullStop,
                     Heading = new MsgQuaternion { X = Rotation.xf, Y = Rotation.yf, Z = Rotation.zf, W = Rotation.wf },
-                    Coordinates = new MsgVector3 { X = Position.xf, Y = Position.yf, Z = Position.zf },
-                    Unknown1 = 0,
-                    AuxA = 0,
-                    AuxB = 0
+                    Position = new MsgVector3 { X = Position.xf, Y = Position.yf, Z = Position.zf },
+                    DeltaTime = 0,
+                    Unknown2 = 0,
+                    Unknown3 = 0
                 },
                 this);
         }
@@ -3666,12 +3709,12 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     Identity = Identity,
                     Unknown = 0x01,
-                    MoveType = (byte)action,
+                    MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)action,
                     Heading = new MsgQuaternion { X = Rotation.xf, Y = Rotation.yf, Z = Rotation.zf, W = Rotation.wf },
-                    Coordinates = new MsgVector3 { X = Position.xf, Y = Position.yf, Z = Position.zf },
-                    Unknown1 = 0,
-                    AuxA = 0,
-                    AuxB = 0
+                    Position = new MsgVector3 { X = Position.xf, Y = Position.yf, Z = Position.zf },
+                    DeltaTime = 0,
+                    Unknown2 = 0,
+                    Unknown3 = 0
                 });
 
         /// <summary>
@@ -4315,15 +4358,6 @@ namespace ZoneEngine_New.Core.Entities
             if (overrideTextureId > 0 && overrideTextureId < LowestTextureRecordId)
                 overrideTextureId = 0;
 
-            if (ItemBehaviorContent.Current.TryResolveWornMeshOverride(
-                    item,
-                    meshId,
-                    overrideTextureId,
-                    out int resolvedOverrideTextureId))
-            {
-                overrideTextureId = resolvedOverrideTextureId;
-            }
-
             mesh = new Mesh
             {
                 Position = (byte)position,
@@ -4609,28 +4643,28 @@ namespace ZoneEngine_New.Core.Entities
 
             int flags = item.Flags > 0 ? item.Flags : 0x403;
             int multipleCount = item.StackCount > 0 ? item.StackCount : 1;
-            var stats = new List<GameTuple<CharacterStat, uint>>
+            var stats = new List<GameTuple<Stat, int>>
             {
-                StatTuple(CharacterStat.Flags, (uint)flags),
-                StatTuple(CharacterStat.StaticInstance, (uint)item.LowId),
-                StatTuple(CharacterStat.ACGItemLevel, (uint)item.Quality),
-                StatTuple(CharacterStat.ACGItemTemplateID, (uint)item.LowId),
-                StatTuple(CharacterStat.ACGItemTemplateID2, (uint)item.HighId),
-                StatTuple(CharacterStat.MultipleCount, (uint)multipleCount),
-                StatTuple(CharacterStat.Energy, energy)
+                StatTuple(CharacterStat.Flags, flags),
+                StatTuple(CharacterStat.StaticInstance, item.LowId),
+                StatTuple(CharacterStat.ACGItemLevel, item.Quality),
+                StatTuple(CharacterStat.ACGItemTemplateID, item.LowId),
+                StatTuple(CharacterStat.ACGItemTemplateID2, item.HighId),
+                StatTuple(CharacterStat.MultipleCount, multipleCount),
+                StatTuple(CharacterStat.Energy, unchecked((int)energy))
             };
 
             int attackDelay = item.GetStat(CharacterStat.AttackDelay);
             if (attackDelay > 0)
-                stats.Add(StatTuple(CharacterStat.AttackDelay, (uint)attackDelay));
+                stats.Add(StatTuple(CharacterStat.AttackDelay, attackDelay));
 
             int rechargeDelay = item.GetStat(CharacterStat.RechargeDelay);
             if (rechargeDelay > 0)
-                stats.Add(StatTuple(CharacterStat.RechargeDelay, (uint)rechargeDelay));
+                stats.Add(StatTuple(CharacterStat.RechargeDelay, rechargeDelay));
 
             int damageType = item.GetStat(CharacterStat.DamageType);
             if (damageType > 0)
-                stats.Add(StatTuple(CharacterStat.DamageType, (uint)damageType));
+                stats.Add(StatTuple(CharacterStat.DamageType, damageType));
 
             return new WeaponItemFullUpdateMessage
             {
@@ -4640,26 +4674,27 @@ namespace ZoneEngine_New.Core.Entities
                     Instance = weaponInstanceId
                 },
                 Unknown = 0,
-                Unknown1 = 0x0b,
+                Version = 0x0b,
                 Owner = new Identity
                 {
-                    Type = IdentityType.CanbeAffected,
+                    Type = IdentityType.SimpleChar,
                     Instance = Identity.Instance
                 },
-                PlayfieldId = playfieldId,
+                Playfield = playfieldId,
                 StateMachine = new Identity
                 {
                     Type = (IdentityType)0x000F424F,
                     Instance = 0
                 },
-                Unknown2 = (short)(0x0100 | (equipmentSlot & 0xff)),
+                // The two bytes after the state machine: the inventory id, then the slot.
+                InventoryId = 0x01,
+                CurrBodyLocation = (byte)(equipmentSlot & 0xff),
                 Stats = stats.ToArray(),
-                Unknown3 = 0
+                Blob = []
             };
         }
 
-        static GameTuple<CharacterStat, uint> StatTuple(CharacterStat stat, uint value)
-            => new() { Value1 = stat, Value2 = value };
+        static GameTuple<Stat, int> StatTuple(CharacterStat stat, int value) => new((Stat)stat, value);
 
         /// <summary>
         /// Builds an AppearanceUpdate from current textures, meshes, and visual flags.
@@ -4708,35 +4743,27 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Unknown = n3Unknown,
-                Type = type,
-                Info = new CharacterInfoPacket
+                Info = new InfoPacket
                 {
+                    Flags = (byte)type,
                     Unknown1 = 0x01,
-                    Profession = (Profession)profession,
-                    Level = ClampToByte(level),
+                    Profession = ClampToByte(profession),
+                    ProfessionLevel = ClampToByte(level),
                     TitleLevel = ClampToByte(Stats.GetOrOne(CharacterStat.TitleLevel)),
-                    VisualProfession = (Profession)visualProfession,
+                    VisualProfession = ClampToByte(visualProfession),
                     // Retail GUI.dll divides this field by 100 before formatting "%.02f%%".
-                    SideXp = IsPlayer ? checked((short)Math.Round(SideXpBonusPercent * 100, MidpointRounding.AwayFromZero)) : (short)0,
+                    SideXpBonus = IsPlayer ? checked((ushort)Math.Round(SideXpBonusPercent * 100, MidpointRounding.AwayFromZero)) : (ushort)0,
                     Health = health,
                     MaxHealth = maxHealth,
-                    BreedHostility = 0,
+                    Taunt = 0,
+                    Clan = 0,
                     FirstName = firstName ?? string.Empty,
                     LastName = lastName ?? string.Empty,
-                    LegacyTitle = string.Empty,
-                    PvpTitle = string.Empty,
-                    CityPlayfieldId = 0,
+                    TitleName = string.Empty,
+                    Info = string.Empty,
                     InvadersKilled = Stats.GetOrZero(CharacterStat.InvadersKilled),
                     KilledByInvaders = Stats.GetOrZero(CharacterStat.KilledByInvaders),
-                    AiLevel = Stats.GetOrZero(CharacterStat.AlienLevel),
-                    PvpDuelWins = 0,
-                    PvpDuelLoses = 0,
-                    PvpProfessionDuelLoses = 0,
-                    PvpSoloKills = 0,
-                    PvpTeamKills = 0,
-                    PvpSoloScore = 0,
-                    PvpTeamScore = 0,
-                    PvpDuelScore = 0
+                    AlienLevel = Stats.GetOrZero(CharacterStat.AlienLevel)
                 }
             };
         }
@@ -4766,7 +4793,7 @@ namespace ZoneEngine_New.Core.Entities
             }
             if (Stats.TryGetValue(CharacterStat.GmLevel, out int gmLevel) && gmLevel > 0)
             {
-                flags &= ~(int)CharacterFlags.NpcStyleFlag28;
+                flags &= ~(int)CharacterFlags.Unknown9;
                 flags |= (int)CharacterFlags.HasBlueName;
             }
             return flags;
@@ -4827,7 +4854,7 @@ namespace ZoneEngine_New.Core.Entities
                 Identity = Identity,
                 Version = 58,
                 PlayfieldId = playfieldId,
-                Coordinates = coordinates,
+                Position = coordinates,
                 Heading = heading,
                 Appearance = new Appearance
                 {
@@ -4852,13 +4879,17 @@ namespace ZoneEngine_New.Core.Entities
                 VisibleTitle = (byte)(_wearRobe ? 1 : 0),
                 RunSpeedBase = (short)runSpeedBase,
                 Flags2 = 0,
-                Unknown2 = 0,
+                ScfuUnk2 = 0,
                 ActiveNanos = BuildActiveNanos(),
-                Waypoints = Motor.CopyRemainingWaypoints(),
+                Waypoints = WaypointList(Motor.CopyRemainingWaypoints()),
                 TextureOverrides = CopyTextureOverrides(),
                 Textures = BuildTextures(isNpc),
                 Meshes = BuildMeshes(headMesh)
             };
+
+            // Flags the content does not imply (ScfuWire.Finalize derives the rest from what the message holds).
+            var additional = SimpleCharFullUpdateFlags.None;
+            var suppressed = SimpleCharFullUpdateFlags.None;
 
             // A pet names its master in the SCFU owner field (Flags2 0x4, HasOwner): the client reads that instance
             // (Gamecode.dll 0x100797d5, into SimpleChar+0x318) and applies it as PetMaster (196) when non-zero
@@ -4866,8 +4897,8 @@ namespace ZoneEngine_New.Core.Entities
             // raid member as friendly (N3Msg_GetCloseTarget 0x1001c49a); without it a teammate's pet tabs as hostile.
             if (!StatCollection.IsUnset(petMasterInstance) && petMasterInstance != 0)
             {
-                scfu.Flags2 |= 0x4;
-                scfu.OwnerInstance = petMasterInstance;
+                scfu.Flags2 |= ScfuFlags2.HasOwner;
+                scfu.Owner = new Identity(IdentityType.SimpleChar, petMasterInstance);
             }
 
             if (FightingTarget.Instance != 0)
@@ -4877,23 +4908,23 @@ namespace ZoneEngine_New.Core.Entities
                 // SAW sent when the fight started) shows it attacking (retail ICC Peacekeeper on Doley, capture
                 // 2026-10-28T13:37:48Z: RMVI, THCQ).
                 if (isNpc)
-                    scfu.AttackWeapons = BuildSpecialAttacks();
+                    scfu.WeaponPairs = WeaponPairs(BuildSpecialAttacks());
             }
 
             if (isNpc)
             {
-                scfu.CharacterInfo = new SimpleNpcInfo
+                scfu.CharacterInfo = new SimpleCharInfo.NPCInfo
                 {
                     Family = (short)npcFamily,
                     LosHeight = (short)losHeight
                 };
 
-                scfu.AdditionalFlags |= SimpleCharFullUpdateFlags.UnknownDataFlag;
-                scfu.SuppressedFlags |= SimpleCharFullUpdateFlags.UnknownFlag2;
+                additional |= SimpleCharFullUpdateFlags.UnknownDataFlag;
+                suppressed |= SimpleCharFullUpdateFlags.UnknownFlag2;
             }
             else
             {
-                var pcInfo = new SimplePcInfo
+                var pcInfo = new SimpleCharInfo.PlayerInfo
                 {
                     CurrentNano = (uint)Stats.GetOrZero(CharacterStat.CurrentNano),
                     // Live zoning SCFU restores the subgroup identity before FullCharacter loads its roster.
@@ -4947,7 +4978,7 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             scfu.Health = displayMaxHealth;
-            scfu.HealthDamage = displayMaxHealth - displayCurrentHealth;
+            int healthDamage = displayMaxHealth - displayCurrentHealth;
 
             if (Playfield?.GetService<IGameData>()
                     ?.TryGetPlayfieldCharacterAppearanceOverride(playfieldId, out uint appearanceMonsterData) == true)
@@ -4964,21 +4995,46 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             scfu.MonsterScale = (short)monsterScale;
-            scfu.MovementStatus = Motor.BuildMovementStatus();
+            scfu.UnkMovementStatus = Motor.BuildMovementStatus().ToBytes();
 
             if (!StatCollection.IsUnset(petMasterInstance) && petMasterInstance != 0)
             {
-                scfu.AdditionalFlags = SimpleCharFullUpdateFlags.UnknownFlag6
+                additional = SimpleCharFullUpdateFlags.UnknownFlag6
                     | SimpleCharFullUpdateFlags.IsPet
                     | SimpleCharFullUpdateFlags.UnknownDataFlag;
             }
 
             if (!StatCollection.IsUnset(headMesh) && headMesh != 0)
             {
-                scfu.HeadMesh = (uint)headMesh;
+                scfu.HeadMesh = headMesh;
             }
 
+            ScfuWire.Finalize(scfu, healthDamage, additional, suppressed);
             return scfu;
+        }
+
+        static List<MsgVector3>? WaypointList(MsgVector3[] points) => points.Length == 0 ? null : new List<MsgVector3>(points);
+
+        /// <summary>
+        /// The SAW attack weapons as the SCFU's weapon pair list carries them: three ints and the four-character code as
+        /// the big-endian int its bytes make.
+        /// </summary>
+        static SimpleCharInfo.WeaponPair[] WeaponPairs(SpecialAttackInfo[] specials)
+        {
+            var pairs = new SimpleCharInfo.WeaponPair[specials.Length];
+            for (int i = 0; i < pairs.Length; i++)
+            {
+                SpecialAttackInfo special = specials[i];
+                pairs[i] = new SimpleCharInfo.WeaponPair
+                {
+                    Unknown1 = special.Unknown1,
+                    Unknown2 = special.Unknown2,
+                    Unknown3 = special.Unknown3,
+                    Unknown4 = Quests.QuestJournal.FourCc(special.Unknown4)
+                };
+            }
+
+            return pairs;
         }
 
         internal TextureOverride[]? CopyTextureOverrides()
@@ -4992,8 +5048,8 @@ namespace ZoneEngine_New.Core.Entities
                 TextureOverride entry = overrides[i];
                 copy[i] = new TextureOverride
                 {
-                    Material = entry.Material,
-                    Texture = entry.Texture,
+                    Name = entry.Name,
+                    TextureId = entry.TextureId,
                     Unknown1 = entry.Unknown1,
                     Unknown2 = entry.Unknown2
                 };

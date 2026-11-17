@@ -6,10 +6,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using AORebirth.Interfaces.Persistence.Missions;
     using System.Threading.Tasks;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
+    using LostEden.Protocol.Messages.SystemMessages;
 
     using Utility.Config;
 

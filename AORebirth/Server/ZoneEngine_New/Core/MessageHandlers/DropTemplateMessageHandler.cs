@@ -1,8 +1,8 @@
 namespace ZoneEngine_New.Core.MessageHandlers;
 
 using System;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;

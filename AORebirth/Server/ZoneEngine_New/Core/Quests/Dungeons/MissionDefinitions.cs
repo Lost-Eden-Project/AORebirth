@@ -14,6 +14,30 @@ using ZoneEngine_New.Core.Logging;
 /// its kills pay the token reward, and what the dungeon is made of. GameData/Missions/Missions.json,
 /// <c>{ "name": { definition } }</c>; a terminal or a quest only names one.
 /// </summary>
+/// <summary>
+/// How a mission pays its credits and experience: <see cref="CompletionPercent"/> of them for the objective, the rest by
+/// the share of the dungeon's population killed (the kill share the reward roll uses). With a split
+/// the experience no longer depends on the reward roll; the reward items still do. Frozen into the accepted mission.
+/// </summary>
+public sealed class MissionRewardSplit
+{
+    public int CompletionPercent { get; set; } = 100;
+
+    /// <summary>The share of the advertised credits and experience paid with <paramref name="killed"/> of <paramref name="total"/> killed.</summary>
+    public double Factor(int killed, int total)
+    {
+        double share = total > 0 ? Math.Clamp((double)killed / total, 0, 1) : 0;
+        double completion = Math.Clamp(CompletionPercent, 0, 100) / 100.0;
+        return completion + (1 - completion) * share;
+    }
+
+    internal string? Problem() => CompletionPercent is < 0 or > 100 ? "CompletionPercent must be 0-100" : null;
+
+    internal bool IsValid => Problem() == null;
+
+    public MissionRewardSplit Clone() => new() { CompletionPercent = CompletionPercent };
+}
+
 public sealed class MissionDefinition
 {
     /// <summary>Playfields with ACG entrances; a mission picks one, then a random entrance on it.</summary>
@@ -39,10 +63,16 @@ public sealed class MissionDefinition
     /// </summary>
     public Dictionary<string, MissionSliderRule>? Sliders { get; set; }
 
+    /// <summary>How the credits and experience pay by the share cleared (<see cref="MissionRewardSplit"/>); null: in full
+    /// on completion, experience by the reward roll.</summary>
+    public MissionRewardSplit? Rewards { get; set; }
+
     internal string? Problem()
     {
         if (Playfields is not { Length: > 0 } || Playfields.Any(p => p <= 0))
             return "Playfields must list at least one playfield";
+        if (Rewards?.Problem() is string rewards)
+            return "Rewards: " + rewards;
         if (Entrance != null && Playfields.Length != 1)
             return "Entrance needs exactly one playfield";
         if (LifetimeHours is <= 0)

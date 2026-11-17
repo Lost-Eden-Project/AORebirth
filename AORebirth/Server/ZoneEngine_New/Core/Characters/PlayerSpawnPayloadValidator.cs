@@ -6,8 +6,8 @@ namespace ZoneEngine_New.Core.Characters
     using System.Linq;
     using System.Reflection;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
 
@@ -58,12 +58,12 @@ namespace ZoneEngine_New.Core.Characters
             var errors = new List<string>();
             RejectSentinels(spawn, "scfu", errors, new HashSet<object>(ReferenceEqualityComparer.Instance));
             RejectSentinels(full, "full", errors, new HashSet<object>(ReferenceEqualityComparer.Instance));
-            if (spawn.Identity != full.Identity || spawn.Identity.Type != IdentityType.CanbeAffected || spawn.Identity.Instance <= 0)
+            if (spawn.Identity != full.Identity || spawn.Identity.Type != IdentityType.SimpleChar || spawn.Identity.Instance <= 0)
                 errors.Add("identity-invalid");
             if (spawn.PlayfieldId.GetValueOrDefault() <= 0 || string.IsNullOrWhiteSpace(spawn.Name)) errors.Add("identity-state-missing");
             if (spawn.CharacterFlags.HasFlag(CharacterFlags.Tower) || spawn.ScfuTowerUnk != 0)
                 errors.Add("ordinary-player-tower");
-            if (spawn.CharacterInfo is not SimplePcInfo pc)
+            if (spawn.CharacterInfo is not SimpleCharInfo.PlayerInfo pc)
                 errors.Add("ordinary-player-info-shape");
             else
             {

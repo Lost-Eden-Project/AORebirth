@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     using System.Linq;
     using System.Text.Json;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Logging;
@@ -15,11 +15,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     /// <summary>
-    /// A generated dungeon layout: the generator the client builds the building from, the arrival point, the seed it
-    /// came from (door states roll from it), the style's doors (null when the style has none configured) and the
-    /// mission's resolved population and objective.
+    /// A generated dungeon layout: the generator the client builds the building from and the ACG entrance identity it
+    /// is sent under, the generator blob that keys caches, the arrival point, the seed it came from (door states roll
+    /// from it), the style's doors (null when the style has none configured) and the mission's resolved population
+    /// and objective.
     /// </summary>
-    public sealed record DungeonLayout(AcgBuildingGeneratorData Generator, byte[] GeneratorPayload, Vector3 Spawn, int Seed, DungeonDoorStyle? Doors)
+    public sealed record DungeonLayout(AcgBuildingGenerator Generator, Identity Entrance, byte[] GeneratorPayload, Vector3 Spawn, int Seed, DungeonDoorStyle? Doors)
     {
         public IReadOnlyList<AORebirth.DungeonGenerator.DungeonFloorTransition> FloorTransitions { get; init; } = [];
 
@@ -100,7 +101,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsValid => SidedItems != null && SidedItems.Count == 2
             && SidedItems.TryGetValue((int)Side.Clan, out int clan) && clan > 0
-            && SidedItems.TryGetValue((int)Side.Omni, out int omni) && omni > 0 && clan != omni
+            && SidedItems.TryGetValue((int)Side.OmniTek, out int omni) && omni > 0 && clan != omni
             && ItemQuality > 0;
 
         /// <summary>The reward-chance line for <paramref name="percent"/>; null when there is no usable FeedbackText.</summary>
@@ -357,7 +358,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     for (int attempt = 0; attempt < RoomSearchAttempts; attempt++)
                     {
                         plan.FloorSize = size;
-                        int perFloor = Generate(plan, seed, parameters.EntranceInstance).Generator.Rooms.Length / floors;
+                        int perFloor = Generate(plan, seed, parameters.EntranceInstance).Generator.Rooms.Count / floors;
                         int miss = perFloor < lowest ? lowest - perFloor : perFloor > highest ? perFloor - highest : 0;
                         if (best == null || miss < best.Value.Miss)
                             best = (seed, size, miss);
@@ -420,7 +421,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 var result = Generate(plan, parameters.Seed, parameters.EntranceInstance);
                 DungeonDoorStyle? doors = _doorStyles.TryGetValue(plan.StyleId, out var style)
                     ? style with { LockedChancePercent = plan.LockedDoorChancePercent } : null;
-                layout = new DungeonLayout(result.Generator, result.Generator.ToByteArray(),
+                layout = new DungeonLayout(result.Generator, result.Identity, result.GeneratorBlob(),
                     new Vector3(result.Spawn.X, result.Spawn.Y, result.Spawn.Z), parameters.Seed, doors)
                 {
                     FloorTransitions = result.Transitions, BossRoomIndex = result.BossRoomIndex,

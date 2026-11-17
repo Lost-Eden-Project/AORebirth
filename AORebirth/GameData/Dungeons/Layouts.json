@@ -1,0 +1,27 @@
+{
+  // Named layouts over Defaults.json. Bands change the layout by mission quality; a banded layout needs a band for
+  // every quality 1-250.
+  "rkSolo": {
+    "Styles": [321, 324, 341, 351],
+    "Rooms": [9, 16],
+    "Floors": 1
+  },
+  "rkTeam": {
+    "Bands": [
+      { "Quality": [1, 24], "Styles": [324, 341], "Rooms": [8, 12], "Floors": 2 },
+      { "Quality": [25, 99], "Styles": [341], "Rooms": [9, 14], "Floors": 3 },
+      { "Quality": [100, 179], "Styles": [341], "Rooms": [9, 14], "Floors": 4 },
+      { "Quality": [180, 250], "Styles": [341], "Rooms": [10, 14], "Floors": 5 }
+    ]
+  },
+  "mothership": {
+    "Styles": [386],
+    "FloorHeight": 128,
+    "Bands": [
+      { "Quality": [1, 24], "Rooms": [8, 12], "Floors": 2 },
+      { "Quality": [25, 99], "Rooms": [9, 14], "Floors": 3 },
+      { "Quality": [100, 179], "Rooms": [9, 14], "Floors": 4 },
+      { "Quality": [180, 250], "Rooms": [10, 14], "Floors": 5 }
+    ]
+  }
+}

@@ -3,8 +3,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using System;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -39,7 +39,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     || message.Identity.Instance != player.Identity.Instance))
                 return;
 
-            if (message.Coordinates != null && LogUtil.HasDetail(DebugInfoDetail.Network))
+            if (message.Position != null && LogUtil.HasDetail(DebugInfoDetail.Network))
             {
                 LogUtil.Debug(
                     DebugInfoDetail.Network,
@@ -49,9 +49,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         player.Identity.Instance,
                         player.Playfield?.Identity.Instance,
                         message.MoveType,
-                        message.Coordinates.X,
-                        message.Coordinates.Y,
-                        message.Coordinates.Z));
+                        message.Position.X,
+                        message.Position.Y,
+                        message.Position.Z));
             }
 
             // Only once the client says it is in play (CharInPlay): a client still loading a zone reports where it
@@ -60,7 +60,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
 
             // A rooted move is rewritten to the held position: keep what the client reported for a correction event.
-            SmokeLounge.AOtomation.Messaging.GameData.Vector3? reported = message.Coordinates;
+            LostEden.Protocol.GameData.Vector3 reported = message.Position;
             bool accepted = player.Motor.Consume(message);
 
             // Rooted but the client moved, or farther than the character could have travelled: snap it back in place
@@ -68,7 +68,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if ((player.Motor.RootCorrectionDue || player.Motor.JumpCorrectionDue) && player.Playfield != null)
             {
                 session.SendIntrazoneTeleport(player.Position, player.Rotation, player.Playfield.ClientPlayfieldId);
-                if (reported != null)
                 {
                     AORebirth.Modules.Events.MovementCorrection reason = player.Motor.RootCorrectionDue
                         ? AORebirth.Modules.Events.MovementCorrection.Rooted
@@ -84,7 +83,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         player.Motor.RootCorrectionDue ? 0 : player.Motor.TakeRefusedMoves());
                 }
             }
-            else if (player.Motor.BoundsRefusalDue && reported != null)
+            else if (player.Motor.BoundsRefusalDue)
             {
                 // Outside the playfield: refused, not pulled back, but a module tracking violations is told.
                 Modules.ModuleHooks.MovementCorrected(player,

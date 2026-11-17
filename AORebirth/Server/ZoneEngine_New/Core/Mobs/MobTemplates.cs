@@ -4,7 +4,8 @@ namespace ZoneEngine_New.Core.Mobs
     using System.Collections.Generic;
     using System.Text.Json;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
+    using TextureOverride = LostEden.Protocol.GameData.SimpleCharInfo.TextureOverride;
 
     public sealed class MobItemTableEntry
     {

@@ -3,8 +3,8 @@ namespace ZoneEngine_New.Core.Entities
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     public enum StatDetail
     {
@@ -207,22 +207,18 @@ namespace ZoneEngine_New.Core.Entities
         /// Takes ownership of all dirty stats (latest base values) and clears the dirty set.
         /// The client applies gear/buff modifiers and derives full values itself.
         /// </summary>
-        public GameTuple<CharacterStat, uint>[] DrainDirty()
+        public GameTuple<Stat, int>[] DrainDirty()
         {
             if (_dirty.Count == 0)
                 return [];
 
-            var drained = new List<GameTuple<CharacterStat, uint>>(_dirty.Count);
+            var drained = new List<GameTuple<Stat, int>>(_dirty.Count);
             foreach (CharacterStat stat in _dirty)
             {
                 if (IsServerOnly(stat))
                     continue;
 
-                drained.Add(new GameTuple<CharacterStat, uint>
-                {
-                    Value1 = stat,
-                    Value2 = (uint)WireValue(stat)
-                });
+                drained.Add(new GameTuple<Stat, int>((Stat)stat, WireValue(stat)));
             }
 
             _dirty.Clear();

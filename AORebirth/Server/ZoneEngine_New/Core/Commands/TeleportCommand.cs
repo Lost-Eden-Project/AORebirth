@@ -10,8 +10,7 @@ namespace ZoneEngine_New.Core.Commands
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Playfield;
 
-    using CharacterStat = SmokeLounge.AOtomation.Messaging.GameData.CharacterStat;
-    using IdentityType = SmokeLounge.AOtomation.Messaging.GameData.IdentityType;
+    using IdentityType = LostEden.Protocol.GameData.IdentityType;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     public sealed class TeleportCommand : IGmCommand

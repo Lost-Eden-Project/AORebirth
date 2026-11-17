@@ -73,7 +73,7 @@ public sealed class PlayfieldNpcContentCatalog
                 throw new InvalidDataException("Invalid or duplicate standalone shop definition.");
 
             RequireTransform(shop.Position, shop.Rotation, shop.Key);
-            RequireVendor(shop.Vendor);
+            RequireVendor(shop.Vendor, allowEmptyStock: true);
             if (!shopIdentities.Add(shop.Vendor.InstanceId))
                 throw new InvalidDataException("Duplicate playfield shop identity.");
         }
@@ -86,10 +86,14 @@ public sealed class PlayfieldNpcContentCatalog
             || rotation.All(v => v == 0)) throw new InvalidDataException("Invalid playfield NPC transform: " + key);
     }
 
-    internal static void RequireVendor(WorldVendorDefinition vendor)
+    /// <summary>
+    /// A vendor's identity, template and stock rows. <paramref name="allowEmptyStock"/>: a standalone terminal may have
+    /// no stock (an ICC terminal, whose shop is the client's own window); an NPC's shop always has some.
+    /// </summary>
+    internal static void RequireVendor(WorldVendorDefinition vendor, bool allowEmptyStock = false)
     {
         if (vendor == null || vendor.InstanceId <= 0 || vendor.TemplateId <= 0 || vendor.Stock == null
-            || vendor.Stock.Length == 0 || vendor.Stock.Where((row, index) => row == null || row.Slot != index
+            || (vendor.Stock.Length == 0 && !allowEmptyStock) || vendor.Stock.Where((row, index) => row == null || row.Slot != index
                 || row.LowId <= 0 || row.HighId <= 0 || row.Quality <= 0).Any())
             throw new InvalidDataException("Invalid vendor identity, template or stock.");
     }

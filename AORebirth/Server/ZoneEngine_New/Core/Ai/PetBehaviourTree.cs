@@ -8,7 +8,7 @@ namespace ZoneEngine_New.Core.Ai
     using GroveGames.BehaviourTree.Nodes.Composites;
     using GroveGames.BehaviourTree.Nodes.Decorators;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Metrics;
@@ -454,7 +454,7 @@ namespace ZoneEngine_New.Core.Ai
             // Pulled back mid-attack: the order is over; the pet drops its target and goes back to what it did before.
             if (pet.Mode == PetMode.Attack)
                 pet.EndAttack();
-            _brain.SetCurrentTarget(SmokeLounge.AOtomation.Messaging.GameData.Identity.None);
+            _brain.SetCurrentTarget(LostEden.Protocol.GameData.Identity.None);
 
             _brain.StopFighting();
             _brain.WarpTo(PetAi.FollowPoint(_brain));

@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.Playfield
 {
     using System.Threading.Channels;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Network;
 
@@ -83,7 +83,7 @@ namespace ZoneEngine_New.Core.Playfield
                             gameplay.Session.Player?.Identity.Instance ?? 0);
                         // Module events this message causes carry its receive time as RequestTimestamp.
                         using (Modules.ModuleRequest.Begin(gameplay.ReceivedAt))
-                            router.Route(new Message { Body = gameplay.Body }, gameplay.Session);
+                            router.Route(gameplay.Body, gameplay.Session);
                         break;
                 }
             }

@@ -167,6 +167,32 @@ namespace AORebirth.Modules.World
 
         /// <summary>The operation ran and could not complete.</summary>
         public const string Failed = "failed";
+
+        /// <summary>The operation was refused by a rule; <see cref="OperationResult.Message"/> says which (module API 1.12).</summary>
+        public const string Refused = "refused";
+    }
+
+    /// <summary>
+    /// The <see cref="OperationResult.Code"/>s of <see cref="OperationNames.PlayerPurchase"/> besides <see cref="OperationCodes.Ok"/>,
+    /// <see cref="OperationCodes.NotHere"/>, <see cref="OperationCodes.BadArgs"/> and <see cref="OperationCodes.Failed"/>
+    /// (module API 1.12).
+    /// </summary>
+    public static class PurchaseCodes
+    {
+        /// <summary>The anchor is not on the player's playfield, or the player is too far from it.</summary>
+        public const string NotAtAnchor = "not_at_anchor";
+
+        /// <summary>The player has less of the currency stat than the price.</summary>
+        public const string Insufficient = "insufficient";
+
+        /// <summary>The item does not fit in the player's inventory.</summary>
+        public const string NoRoom = "no_room";
+
+        /// <summary>The item is unique and the player already holds one.</summary>
+        public const string UniqueHeld = "unique_held";
+
+        /// <summary>The player has a trade or shop window open.</summary>
+        public const string Busy = "busy";
     }
 
     /// <summary>Names of the operations this engine registers (module API 1.5).</summary>
@@ -214,5 +240,20 @@ namespace AORebirth.Modules.World
 
         /// <summary>Cancels a scheduled shutdown and tells players (module API 1.7); fails when none is scheduled.</summary>
         public const string ServerShutdownAbort = "server.shutdown-abort";
+
+        /// <summary>
+        /// Sells the character one item for a stat (module API 1.12): <c>anchorType</c> and <c>anchor</c> (the identity
+        /// of the terminal or NPC sold at, which must be within reach), <c>lowId</c>, <c>highId</c> and <c>quality</c>
+        /// (the item), <c>stat</c> (the currency stat id) and <c>price</c> (how much of it, 0 or more). The item and the
+        /// new balance are saved in one transaction, then delivered. Refusals are the <see cref="PurchaseCodes"/>.
+        /// </summary>
+        public const string PlayerPurchase = "player.purchase";
+
+        /// <summary>
+        /// Adds <c>amount</c> (positive or negative) to the base value of the character's stat <c>stat</c> (module API
+        /// 1.12), kept at 0 or more (cash within its limit), sent to the client and saved with the character's next
+        /// save. The result's message is the new value.
+        /// </summary>
+        public const string PlayerStatAdd = "player.stat-add";
     }
 }

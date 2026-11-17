@@ -26,9 +26,8 @@
     using EventType = AORebirth.Enums.EventType;
     using AoVector3 = AORebirth.Core.Vector.Vector3;
     using AoQuaternion = AORebirth.Core.Vector.Quaternion;
-    using CharacterStat = SmokeLounge.AOtomation.Messaging.GameData.CharacterStat;
-    using IdentityType = SmokeLounge.AOtomation.Messaging.GameData.IdentityType;
-    using Identity = SmokeLounge.AOtomation.Messaging.GameData.Identity;
+    using IdentityType = LostEden.Protocol.GameData.IdentityType;
+    using Identity = LostEden.Protocol.GameData.Identity;
     using PlayfieldType = ZoneEngine_New.Core.Playfield.Playfield;
 
     /// <summary>A resolved zone transition: where it goes, and which trigger produced it.</summary>
@@ -1227,7 +1226,7 @@
 
         void TellExitDestinationUnknown(Player player, ZoneTriggerVolume door)
         {
-            player.Session?.Send(new SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChatTextMessage
+            player.Session?.Send(new LostEden.Protocol.Messages.N3Messages.ChatTextMessage
             {
                 Identity = player.Identity,
                 Text = "This exit's destination is unknown (door "
@@ -1699,7 +1698,7 @@
             try
             {
                 playfield.GetService<Quests.Dungeons.QuestDungeonService>()?.TryEnter(
-                    player, new SmokeLounge.AOtomation.Messaging.GameData.Identity { Type = IdentityType.MissionEntrance, Instance = entrance.DynelInstance });
+                    player, new LostEden.Protocol.GameData.Identity { Type = IdentityType.ACGEntrance, Instance = entrance.DynelInstance });
             }
             catch (Exception exception)
             {
@@ -1716,7 +1715,7 @@
             for (int i = 0; i < dynels.Dynels.Count; i++)
             {
                 PlayfieldDynel d = dynels.Dynels[i];
-                if (d.IdentityType != (int)IdentityType.MissionEntrance)
+                if (d.IdentityType != (int)IdentityType.ACGEntrance)
                     continue;
 
                 float x = d.Position.X;

@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.Accounts
     using System.Threading;
     using System.Threading.Tasks;
 
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
@@ -252,7 +252,7 @@ namespace ZoneEngine_New.Core.Accounts
 
                     player.Session.Send(new ChatTextMessage
                     {
-                        Identity = player.Identity, Text = text, Unknown1 = 0, Unknown2 = 0, Unknown3 = 0
+                        Identity = player.Identity, Text = text, Unknown1 = 0, Unknown2 = 0
                     });
                     _logger.Info(string.Format(CultureInfo.InvariantCulture,
                         "Account sanction removes character={0} account={1}", player.Identity.Instance, account));

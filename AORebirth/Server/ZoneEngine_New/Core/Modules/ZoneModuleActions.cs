@@ -6,9 +6,9 @@ namespace ZoneEngine_New.Core.Modules
 
     using AORebirth.Modules.World;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -77,7 +77,7 @@ namespace ZoneEngine_New.Core.Modules
                     return false;
                 session.Send(new ChatTextMessage
                 {
-                    Identity = player.Identity, Text = text, Unknown1 = 0, Unknown2 = 0, Unknown3 = 0
+                    Identity = player.Identity, Text = text, Unknown1 = 0, Unknown2 = 0
                 });
                 return true;
             });
@@ -91,6 +91,22 @@ namespace ZoneEngine_New.Core.Modules
                 ClientFeedback.Send(player, feedbackId);
                 return true;
             });
+
+        /// <summary>A module's own N3 message (module API 1.12): the engine's headers, the body as given.</summary>
+        public Task<bool> SendMessage(int characterId, int messageType, ReadOnlyMemory<byte> body)
+        {
+            if (body.Length > ZoneEngine_New.Core.Network.ModuleRawMessage.MaxBodyLength)
+                throw new ArgumentOutOfRangeException(nameof(body), "A module message body is at most "
+                    + ZoneEngine_New.Core.Network.ModuleRawMessage.MaxBodyLength + " bytes.");
+            return OnPlayer(characterId, player =>
+            {
+                if (player.Session is not { } session || player.Playfield is not Playfield playfield)
+                    return false;
+                session.Send(ZoneEngine_New.Core.Network.ModuleRawMessage.Encode(messageType, player.Identity,
+                    playfield.ClientPlayfieldId, player.Identity.Instance, body.Span));
+                return true;
+            });
+        }
 
         /// <summary>
         /// Sends <paramref name="instance"/>'s spawn extras again to its observers, with an explicit HasKnubotData 0 when it
@@ -119,7 +135,7 @@ namespace ZoneEngine_New.Core.Modules
         internal static bool RespawnOnTick(Playfield playfield, int instance)
         {
             playfield.RequireTick();
-            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = instance };
+            var identity = new Identity { Type = IdentityType.SimpleChar, Instance = instance };
             if (!playfield.GetRequiredService<DynelRegistry>().TryGet(identity, out Dynel? dynel)
                 || dynel is not NpcCharacter npc || !ReferenceEquals(npc.Playfield, playfield))
                 return false;
@@ -130,7 +146,7 @@ namespace ZoneEngine_New.Core.Modules
         internal static bool RefreshOnTick(Playfield playfield, int instance)
         {
             playfield.RequireTick();
-            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = instance };
+            var identity = new Identity { Type = IdentityType.SimpleChar, Instance = instance };
             if (!playfield.GetRequiredService<DynelRegistry>().TryGet(identity, out Dynel? dynel)
                 || dynel is not NpcCharacter npc
                 || !ReferenceEquals(npc.Playfield, playfield))

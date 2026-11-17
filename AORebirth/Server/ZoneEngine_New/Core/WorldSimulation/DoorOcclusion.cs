@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
     using N3Lite;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Playfield;

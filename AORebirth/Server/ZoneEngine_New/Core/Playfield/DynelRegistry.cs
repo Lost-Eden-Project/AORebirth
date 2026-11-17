@@ -5,7 +5,8 @@ namespace ZoneEngine_New.Core.Playfield
     using System.Linq;
     using System.Threading;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
+    using ZoneEngine_New.Core.Helpers;
 
     using ZoneEngine_New.Core.Entities;
 
@@ -57,7 +58,7 @@ namespace ZoneEngine_New.Core.Playfield
                 throw new InvalidOperationException("This zone instance has used up its NPC identity range.");
             return new Identity
             {
-                Type = IdentityType.CanbeAffected,
+                Type = IdentityType.SimpleChar,
                 Instance = instance
             };
         }

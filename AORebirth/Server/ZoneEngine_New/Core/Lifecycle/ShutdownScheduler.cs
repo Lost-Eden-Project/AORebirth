@@ -4,7 +4,7 @@ namespace ZoneEngine_New.Core.Lifecycle
     using System.Globalization;
     using System.Threading;
 
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -173,8 +173,7 @@ namespace ZoneEngine_New.Core.Lifecycle
                         Identity = player.Identity,
                         Text = text,
                         Unknown1 = 0,
-                        Unknown2 = 0,
-                        Unknown3 = 0
+                        Unknown2 = 0
                     });
                     session.Send(CenterScreenAnnouncement.Build(player.Identity, text));
                 });

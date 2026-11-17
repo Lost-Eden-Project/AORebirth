@@ -159,6 +159,12 @@ namespace ZoneEngine_New.Core.Modules
             return actions.AccountSanctions(account, limit);
         }
 
+        public Task<bool> SendMessage(int characterId, int messageType, ReadOnlyMemory<byte> body)
+        {
+            gate.Require(ModuleCapabilities.SendRawMessages);
+            return actions.SendMessage(characterId, messageType, body);
+        }
+
         public IReadOnlyList<OperationDescriptor> Operations
             => actions.Operations.Select(x => x with { Granted = gate.AllowsOperation(x.Name) }).ToArray();
 

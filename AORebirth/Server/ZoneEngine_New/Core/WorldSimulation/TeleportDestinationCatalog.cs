@@ -9,7 +9,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
     using AODB.Common.Enums;
     using AODB.Common.RDBObjects;
     using AORebirth.Core.GameData;
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
     using ZoneEngine_New.Core.Logging;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;

@@ -6,7 +6,7 @@ using System.Globalization;
 
 using AORebirth.Enums;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;

@@ -2,8 +2,8 @@ namespace ZoneEngine_New.Core.Entities;
 
 using System;
 using System.Linq;
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages.N3Messages;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Playfield;
@@ -54,15 +54,15 @@ public sealed class MissionObjectiveItem : WorldItem
             {
                 var owned = player.Inventory.Inventory.Content.Single(pair => pair.Value.Identity == Identity);
                 // Both retained pickup traces acknowledge the original world identity, with a zero target and placement.
-                player.Session.Send(new ContainerAddItemMessage
+                player.Session.Send(new ContainerAddItem
                 {
-                    Identity = player.Identity, SourceContainer = Identity, Target = Identity.None, TargetPlacement = 0
+                    Identity = player.Identity, Source = Identity, Target = Identity.None, Slot = 0
                 });
                 var ownedUpdate = (SimpleItemFullUpdateMessage)BuildSpawnMessage();
-                ownedUpdate.Identitytype = (int)player.Identity.Type;
-                ownedUpdate.Instance = player.Identity.Instance;
-                ownedUpdate.Unknown2 = 1;
-                ownedUpdate.Unknown3 = checked((byte)owned.Key);
+                ownedUpdate.OwnerType = (int)player.Identity.Type;
+                ownedUpdate.OwnerInstance = player.Identity.Instance;
+                // The two bytes after the state machine: the inventory id (1), then the slot.
+                ownedUpdate.Unknown2 = (short)((1 << 8) | checked((byte)owned.Key));
                 player.Session.Send(ownedUpdate);
                 var locality = dungeon.GetRequiredService<PlayfieldLocality>();
                 locality.UnregisterDynel(this, transferredTo: player);
@@ -84,24 +84,24 @@ public sealed class MissionObjectiveItem : WorldItem
 
     protected override bool OnUse(Player player) => false;
 
-    protected override GameTuple<CharacterStat, uint>[] BuildStats()
+    protected override GameTuple<Stat, int>[] BuildStats()
     {
         var stats = base.BuildStats();
         if (Binding.WorldFlags.HasValue)
-            foreach (var stat in stats)
-                if (stat.Value1 == CharacterStat.Flags)
-                    stat.Value2 = Binding.WorldFlags.Value;
+            for (int i = 0; i < stats.Length; i++)
+                if (stats[i].Value1 == (Stat)CharacterStat.Flags)
+                    stats[i].Value2 = unchecked((int)Binding.WorldFlags.Value);
         if (Binding.QuestInstanceStat > 0)
         {
             Array.Resize(ref stats, stats.Length + 1);
-            stats[^1] = new() { Value1 = CharacterStat.QuestInstance, Value2 = (uint)Binding.QuestInstanceStat };
+            stats[^1] = new((Stat)CharacterStat.QuestInstance, Binding.QuestInstanceStat);
         }
         // Static dynel Scale is a percentage. Keep this world-only override out of
         // the parented inventory update built after the committed pickup.
         if (!_collected && Binding.WorldScalePercent is int scale)
         {
             Array.Resize(ref stats, stats.Length + 1);
-            stats[^1] = new() { Value1 = CharacterStat.Scale, Value2 = (uint)scale };
+            stats[^1] = new((Stat)CharacterStat.Scale, scale);
         }
         return stats;
     }

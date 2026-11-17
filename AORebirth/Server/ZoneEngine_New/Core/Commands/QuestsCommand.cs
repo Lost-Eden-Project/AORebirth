@@ -4,8 +4,10 @@ namespace ZoneEngine_New.Core.Commands
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using QuestReward = ZoneEngine_New.Core.Quests.QuestReward;
+    using MovementAction = ZoneEngine_New.Core.Movement.MovementAction;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility.GameData.Missions;
 
@@ -16,8 +18,8 @@ namespace ZoneEngine_New.Core.Commands
     using ZoneEngine_New.Core.Quests;
     using ZoneEngine_New.Core.Quests.Dungeons;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     /// <summary>
@@ -284,8 +286,8 @@ namespace ZoneEngine_New.Core.Commands
                     var inside = new List<string>();
                     foreach (Player player in loaded.GetRequiredService<DynelRegistry>().PlayerEntities())
                         inside.Add(Safe(player.Name));
-                    rows.Add(Row("Loaded", "yes, style " + loaded.Layout.Generator.Style.ToString(CultureInfo.InvariantCulture)
-                        + ", " + (loaded.Layout.Generator.Rooms?.Length ?? 0).ToString(CultureInfo.InvariantCulture) + " rooms, "
+                    rows.Add(Row("Loaded", "yes, style " + loaded.Layout.Generator.TemplatePlayfield.ToString(CultureInfo.InvariantCulture)
+                        + ", " + (loaded.Layout.Generator.Rooms?.Count ?? 0).ToString(CultureInfo.InvariantCulture) + " rooms, "
                         + (inside.Count == 0 ? "empty" : "inside: " + string.Join(", ", inside))));
                 }
                 else
@@ -676,12 +678,12 @@ namespace ZoneEngine_New.Core.Commands
             {
                 Identity = self.Identity,
                 Unknown = 0x00,
-                MoveType = (byte)MovementAction.FullStop,
+                MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)MovementAction.FullStop,
                 Heading = new MsgQuaternion { X = self.Rotation.xf, Y = self.Rotation.yf, Z = self.Rotation.zf, W = self.Rotation.wf },
-                Coordinates = new MsgVector3 { X = self.Position.xf, Y = self.Position.yf, Z = self.Position.zf },
-                Unknown1 = 0,
-                AuxA = 0,
-                AuxB = 0
+                Position = new MsgVector3 { X = self.Position.xf, Y = self.Position.yf, Z = self.Position.zf },
+                DeltaTime = 0,
+                Unknown2 = 0,
+                Unknown3 = 0
             }, includeSelf: true);
         }
 

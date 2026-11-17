@@ -10,9 +10,9 @@ namespace ZoneEngine_New.Core.Playfield
 
     using Microsoft.Extensions.DependencyInjection;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Ai;
     using ZoneEngine_New.Core.Characters;
@@ -156,7 +156,7 @@ namespace ZoneEngine_New.Core.Playfield
             ArgumentNullException.ThrowIfNull(template);
             ArgumentNullException.ThrowIfNull(position);
             if (fixedIdentity is { } acceptedIdentity
-                && (acceptedIdentity.Type != IdentityType.CanbeAffected || acceptedIdentity.Instance <= 0))
+                && (acceptedIdentity.Type != IdentityType.SimpleChar || acceptedIdentity.Instance <= 0))
                 throw new ArgumentException("A fixed NPC identity must be a positive SimpleChar identity.", nameof(fixedIdentity));
 
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("spawn.stats", 0);
@@ -843,7 +843,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             Identity identity = new Identity
             {
-                Type = IdentityType.CanbeAffected,
+                Type = IdentityType.SimpleChar,
                 Instance = characterId
             };
 
@@ -1202,14 +1202,7 @@ namespace ZoneEngine_New.Core.Playfield
                 {
                     Identity = player.Identity,
                     Unknown = 1,
-                    Stats =
-                    [
-                        new GameTuple<CharacterStat, uint>
-                        {
-                            Value1 = CharacterStat.SocialStatus,
-                            Value2 = (uint)player.Stats.GetOrZero(CharacterStat.SocialStatus, StatDetail.Base)
-                        }
-                    ]
+                    Stats = { new((Stat)CharacterStat.SocialStatus, (uint)player.Stats.GetOrZero(CharacterStat.SocialStatus, StatDetail.Base)) }
                 });
 
             // Capture 20260623-042326: Clan then ClanLevel as separate Stat messages (Unknown=0).
@@ -1220,20 +1213,13 @@ namespace ZoneEngine_New.Core.Playfield
                 {
                     Identity = player.Identity,
                     Unknown = 0,
-                    Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.Clan, Value2 = (uint)clanId }]
+                    Stats = { new((Stat)CharacterStat.Clan, (uint)clanId) }
                 });
                 session.Send(new StatMessage
                 {
                     Identity = player.Identity,
                     Unknown = 0,
-                    Stats =
-                    [
-                        new GameTuple<CharacterStat, uint>
-                        {
-                            Value1 = CharacterStat.ClanLevel,
-                            Value2 = (uint)player.Stats.GetOrZero(CharacterStat.ClanLevel, StatDetail.Base)
-                        }
-                    ]
+                    Stats = { new((Stat)CharacterStat.ClanLevel, (uint)player.Stats.GetOrZero(CharacterStat.ClanLevel, StatDetail.Base)) }
                 });
             }
         }
@@ -1252,14 +1238,14 @@ namespace ZoneEngine_New.Core.Playfield
                 new PlayfieldAllTowersMessage
                 {
                     Identity = playfieldIdentity,
-                    Unknown1 = []
+                    TowerInfo = []
                 });
             session.Send(
                 new PlayfieldAllCitiesMessage
                 {
                     Identity = playfieldIdentity,
                     Unknown = 0,
-                    Payload = []
+                    Unknown1 = 0
                 });
             session.Send(player.BuildSpecialAttackWeaponMessage());
         }
@@ -1403,7 +1389,7 @@ namespace ZoneEngine_New.Core.Playfield
 
             session.Send(
                 _playfield.CreatePlayfieldAnarchyFMessage(
-                    new SmokeLounge.AOtomation.Messaging.GameData.Vector3
+                    new LostEden.Protocol.GameData.Vector3
                     {
                         X = onFloor.xf,
                         Y = onFloor.yf,

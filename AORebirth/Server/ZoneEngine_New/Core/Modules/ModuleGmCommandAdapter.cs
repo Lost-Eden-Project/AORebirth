@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Modules
     using AORebirth.Modules.Commands;
     using AORebirth.Modules.World;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Commands;
     using ZoneEngine_New.Core.Logging;

@@ -32,7 +32,7 @@ namespace ZoneEngine_New.Tests
                 wireSlot: 1,
                 sawHash: "AZUS");
 
-            SpecialAttack[] specials = npc.BuildSpecialAttackWeaponMessage().Specials;
+            SpecialAttackInfo[] specials = npc.BuildSpecialAttackWeaponMessage().Specials;
 
             Assert.AreEqual(2, specials.Length);
             Assert.AreEqual(201059, specials[0].Unknown1);
@@ -105,7 +105,7 @@ namespace ZoneEngine_New.Tests
             player.ArmFromItemForTests(WeaponSlot.MainHand, fist);
             player.Weapons[WeaponSlot.MainHand].IsSyntheticFist = true;
 
-            SpecialAttack[] specials = player.BuildSpecialAttackWeaponMessage().Specials;
+            SpecialAttackInfo[] specials = player.BuildSpecialAttackWeaponMessage().Specials;
             CollectionAssert.AreEquivalent(
                 new[] { "MAAT", "BRAW", "DIIT" },
                 specials.Select(s => s.Unknown4).ToArray());
@@ -142,7 +142,7 @@ namespace ZoneEngine_New.Tests
                 new StubItemBuilder());
             player.ArmFromItemForTests(WeaponSlot.MainHand, fist);
 
-            SpecialAttack[] specials = player.BuildSpecialAttackWeaponMessage().Specials;
+            SpecialAttackInfo[] specials = player.BuildSpecialAttackWeaponMessage().Specials;
             CollectionAssert.AreEquivalent(
                 new[] { "MAAT", "BRAW", "DIIT" },
                 specials.Select(s => s.Unknown4).ToArray());

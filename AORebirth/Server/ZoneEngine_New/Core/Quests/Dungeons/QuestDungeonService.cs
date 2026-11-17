@@ -12,8 +12,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     using AORebirth.Enums;
     using AORebirth.Interfaces.Persistence.Missions;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility.GameData.Missions;
 
@@ -445,6 +445,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     BuildingHighId = worldPosition?.WorldOffsetZ ?? QuestJournal.WaypointUnknown,
                     MissionType = missionType,
                     Quality = quality,
+                    Rewards = mission.Rewards?.Clone(),
                     MissionIconId = source.IconId is int icon and > 0 ? icon : _layouts.Icon((MissionRollType)missionType),
                     TeamOwnerId = teamRoster != null ? player.Identity.Instance : 0,
                     TeamRoster = teamRoster
@@ -479,7 +480,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             var candidates = new List<MissionEntrancePlacement>();
             foreach (MissionEntrancePlacement placement in _entrances.GetPlacementsForPlayfield(playfield))
             {
-                if (placement.IdentityType == (uint)IdentityType.MissionEntrance
+                if (placement.IdentityType == (uint)IdentityType.ACGEntrance
                     && (entranceInstance == null || placement.IdentityInstance == entranceInstance))
                     candidates.Add(placement);
             }
@@ -657,7 +658,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public bool TryEnter(Player player, Identity target)
         {
             ArgumentNullException.ThrowIfNull(player);
-            if (target.Type != IdentityType.MissionEntrance
+            if (target.Type != IdentityType.ACGEntrance
                 || !_entrances.TryGetByIdentity(unchecked((uint)target.Type), unchecked((uint)target.Instance), out MissionEntrancePlacement entrance))
                 return false;
 
@@ -1577,13 +1578,13 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 return;
 
             SendNamedMissionItem(player, item, name, OverflowSlot);
-            player.Session.Send(new ContainerAddItemMessage
+            player.Session.Send(new ContainerAddItem
             {
                 Identity = player.Identity,
                 Unknown = 0,
-                SourceContainer = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
+                Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
                 Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
-                TargetPlacement = OverflowSlot
+                Slot = OverflowSlot
             });
             player.Session.Send(KeyTemplateAction(player, item, TemplateActionType.Overflow,
                 new Identity { Type = IdentityType.OverflowWindow, Instance = 0 }, 0, 0));
@@ -1618,26 +1619,26 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             if (player.Session == null || player.Playfield == null)
                 return;
 
-            static GameTuple<CharacterStat, uint> Stat(CharacterStat id, uint value) => new() { Value1 = id, Value2 = value };
+            static GameTuple<Stat, int> Stat(CharacterStat id, int value) => new((Stat)id, value);
             player.Session.Send(new SimpleItemFullUpdateMessage
             {
                 Identity = key.Identity,
                 Unknown = 0,
-                MsgVersion = 0x0B,
-                Identitytype = (int)player.Identity.Type,
-                Instance = player.Identity.Instance,
-                Playfield = player.Playfield.ClientPlayfieldId,
-                Unknown1 = new Identity { Type = (IdentityType)0xF424F, Instance = 0 },
-                Unknown2 = 0x71,
-                Unknown3 = (byte)placement,
+                Unknown1 = 0x0B,
+                OwnerType = (int)player.Identity.Type,
+                OwnerInstance = player.Identity.Instance,
+                PlayfieldId = player.Playfield.ClientPlayfieldId,
+                StateMachine = new Identity { Type = (IdentityType)0xF424F, Instance = 0 },
+                // The two bytes after the state machine: the inventory id 0x71, then the slot.
+                Unknown2 = (short)((0x71 << 8) | (byte)placement),
                 Stats =
                 [
-                    Stat(CharacterStat.Flags, unchecked((uint)key.GetStat(CharacterStat.Flags))),
-                    Stat(CharacterStat.StaticInstance, (uint)key.LowId),
-                    Stat(CharacterStat.ACGItemLevel, (uint)key.Quality),
-                    Stat(CharacterStat.ACGItemTemplateID, (uint)key.LowId),
-                    Stat(CharacterStat.ACGItemTemplateID2, (uint)key.HighId),
-                    Stat(CharacterStat.MultipleCount, (uint)key.StackCount)
+                    Stat(CharacterStat.Flags, key.GetStat(CharacterStat.Flags)),
+                    Stat(CharacterStat.StaticInstance, key.LowId),
+                    Stat(CharacterStat.ACGItemLevel, key.Quality),
+                    Stat(CharacterStat.ACGItemTemplateID, key.LowId),
+                    Stat(CharacterStat.ACGItemTemplateID2, key.HighId),
+                    Stat(CharacterStat.MultipleCount, key.StackCount)
                 ],
                 Name = name + '\0'
             });

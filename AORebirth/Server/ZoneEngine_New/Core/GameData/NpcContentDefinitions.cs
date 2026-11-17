@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.GameData;
 using System.Collections.Generic;
 using System.Text.Json;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 
 public sealed class WorldNpcDefinition
 {

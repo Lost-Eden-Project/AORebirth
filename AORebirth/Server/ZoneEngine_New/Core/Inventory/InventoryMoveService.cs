@@ -6,8 +6,8 @@ namespace ZoneEngine_New.Core.Inventory
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -108,7 +108,7 @@ namespace ZoneEngine_New.Core.Inventory
                     CompletePending(pending);
         }
 
-        public void Handle(Player player, ClientMoveItemToInventoryMessage message)
+        public void Handle(Player player, ClientMoveItemToInventory message)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(message);
@@ -122,7 +122,7 @@ namespace ZoneEngine_New.Core.Inventory
             HandleMove(player, message);
         }
 
-        void HandleMove(Player player, ClientMoveItemToInventoryMessage message)
+        void HandleMove(Player player, ClientMoveItemToInventory message)
         {
             if (!player.Inventory.IsHydrated || player.Session == null || player.Playfield == null)
                 return;
@@ -135,7 +135,7 @@ namespace ZoneEngine_New.Core.Inventory
                         "ClientMoveItemToInventory rejected during pending equip char={0} source={1} target={2}",
                         player.Identity.Instance,
                         message.SourceContainer,
-                        message.TargetPlacement));
+                        message.Slot));
                 return;
             }
 
@@ -152,7 +152,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             // Looted to the automatic marker: stock picks a stack to join before it looks for a free slot, so a full
             // inventory still takes the join.
-            if (lootSource != null && message.TargetPlacement == LootAutoPlacement && !AutoConsumedItems.IsAutoConsumed(item)
+            if (lootSource != null && message.Slot == LootAutoPlacement && !AutoConsumedItems.IsAutoConsumed(item)
                 && TryFindLootJoinTarget(player.Inventory.Inventory, item, out int joinSlot, out Item joinTarget))
             {
                 if (TryJoinLoot(player, sourcePage, sourceSlot, item, lootSource, joinSlot, joinTarget))
@@ -162,7 +162,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             bool sourceIsWear = sourcePage.Identity.Type.IsWearPage();
             if (!player.Inventory.TryResolveTargetSlot(
-                    message.TargetPlacement,
+                    message.Slot,
                     out Container destPage,
                     out int destSlot,
                     out bool destIsWear))
@@ -172,7 +172,7 @@ namespace ZoneEngine_New.Core.Inventory
                         CultureInfo.InvariantCulture,
                         "ClientMoveItemToInventory unresolved target char={0} target={1}",
                         player.Identity.Instance,
-                        message.TargetPlacement));
+                        message.Slot));
                 return;
             }
 
@@ -218,8 +218,8 @@ namespace ZoneEngine_New.Core.Inventory
             // Original chest takes 1105/1106 and 1141/1142 echo the automatic bag marker (0x6F). Corpse loot that reaches
             // here found no stack to join (that path returned above), so it names the physical slot it landed in: the new
             // client places a looted item only from a real slot. Ownership uses the slot ApplyMove committed.
-            int acknowledgementPlacement = lootSource is Chest && message.TargetPlacement == LootAutoPlacement
-                ? message.TargetPlacement : destSlot;
+            int acknowledgementPlacement = lootSource is Chest && message.Slot == LootAutoPlacement
+                ? message.Slot : destSlot;
             SendAck(player, message.SourceContainer, player.Identity, acknowledgementPlacement);
 
             // Looted auto-consumed items (Null flag + Can Consume) are used as they land.
@@ -227,7 +227,7 @@ namespace ZoneEngine_New.Core.Inventory
                 AutoConsumedItems.ConsumeLanded(player, destSlot, item, _actions);
         }
 
-        public void Handle(Player player, ClientContainerAddItemMessage message)
+        public void Handle(Player player, ClientContainerAddItem message)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(message);
@@ -473,7 +473,7 @@ namespace ZoneEngine_New.Core.Inventory
             return item.Definition != null && item.Definition.ItemType == (int)IdentityType.Backpack;
         }
 
-        bool IsBlockedByPending(Player player, ClientMoveItemToInventoryMessage message)
+        bool IsBlockedByPending(Player player, ClientMoveItemToInventory message)
         {
             lock (_gate)
             {
@@ -502,7 +502,7 @@ namespace ZoneEngine_New.Core.Inventory
                 }
 
                 if (player.Inventory.TryResolveTargetSlot(
-                        message.TargetPlacement,
+                        message.Slot,
                         out Container destPage,
                         out int destSlot,
                         out _))
@@ -817,7 +817,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Target = Identity.None,
                     Parameter1 = 0,
                     Parameter2 = slot,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
         }
 
@@ -836,7 +836,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Target = target,
                     Parameter1 = 0,
                     Parameter2 = slot,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
         }
 
@@ -1177,12 +1177,12 @@ namespace ZoneEngine_New.Core.Inventory
         static void SendAck(Player player, Identity sourceContainer, Identity target, int targetPlacement)
         {
             player.Session?.Send(
-                new ContainerAddItemMessage
+                new ContainerAddItem
                 {
                     Identity = player.Identity,
-                    SourceContainer = sourceContainer,
+                    Source = sourceContainer,
                     Target = target,
-                    TargetPlacement = targetPlacement,
+                    Slot = targetPlacement,
                     Unknown = 0
                 });
         }

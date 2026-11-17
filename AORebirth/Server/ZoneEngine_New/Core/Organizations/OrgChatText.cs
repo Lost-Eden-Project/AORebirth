@@ -2,8 +2,8 @@ namespace ZoneEngine_New.Core.Organizations
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     /// <summary>
     /// Catalog references the retail server sends for /org replies (captures 20261031 and 20261101, see
@@ -32,6 +32,7 @@ namespace ZoneEngine_New.Core.Organizations
     public static class OrgChatText
     {
         // Captured retail framing of every ref text: Unknown1 0x10, Unknown2 0, Unknown3 1.
+        /// <summary>The first of the two bytes after a ref line's text (the message's short).</summary>
         const byte RefFlags = 0x10;
         const int RefTrailer = 1;
 
@@ -76,17 +77,15 @@ namespace ZoneEngine_New.Core.Organizations
         {
             Identity = recipient,
             Text = "Organization info updated.",
-            Unknown1 = RefFlags,
-            Unknown2 = 0,
-            Unknown3 = 0
+            Unknown1 = (short)(RefFlags << 8),
+            Unknown2 = 0
         };
         public static ChatTextMessage Message(Identity recipient, string text) => new()
         {
             Identity = recipient,
             Text = text,
-            Unknown1 = RefFlags,
-            Unknown2 = 0,
-            Unknown3 = RefTrailer
+            Unknown1 = (short)(RefFlags << 8),
+            Unknown2 = RefTrailer
         };
     }
 }

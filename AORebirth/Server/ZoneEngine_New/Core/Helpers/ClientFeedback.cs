@@ -2,8 +2,8 @@ namespace ZoneEngine_New.Core.Helpers
 {
     using System.Text;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
 
@@ -270,7 +270,7 @@ namespace ZoneEngine_New.Core.Helpers
                 Unknown = 1,
                 Unknown1 = unknown1,
                 Unknown2 = 0,
-                FormattedMessage = FormatText(messageId, args)
+                Message = FormatText(messageId, args)
             });
         }
 

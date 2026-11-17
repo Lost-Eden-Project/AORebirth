@@ -250,6 +250,7 @@ namespace ZoneEngine_New.Core.Quests
             QuestTemplate.TargetNpcAction => 1,
             QuestTemplate.FindItemAction => 2,
             QuestTemplate.RepairAction => 3,
+            QuestTemplate.ReturnItemAction => 4,
             _ => null
         };
 
@@ -257,7 +258,7 @@ namespace ZoneEngine_New.Core.Quests
         public string? Problem(string? action)
         {
             if (MissionTypeFor(action) == null)
-                return "Dungeon needs Action KillOne, TargetNpc, FindItem or UseItemOnItem, not " + (action ?? "(none)");
+                return "Dungeon needs Action KillOne, TargetNpc, FindItem, FindItem2 or UseItemOnItem, not " + (action ?? "(none)");
             if (string.IsNullOrWhiteSpace(Mission))
                 return "Dungeon.Mission is required";
             if (Playfield < 0)

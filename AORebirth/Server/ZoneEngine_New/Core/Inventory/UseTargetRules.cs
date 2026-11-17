@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Inventory
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -250,7 +250,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             DynelRegistry registry = user.Playfield.GetRequiredService<DynelRegistry>();
             if (!registry.TryGet(selected, out Dynel? dynel)
-                && !registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = selected.Instance }, out dynel))
+                && !registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = selected.Instance }, out dynel))
                 return null;
 
             return dynel is Character character && !character.IsDead ? character : null;

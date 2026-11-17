@@ -2,9 +2,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Network;
@@ -52,14 +52,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (message.Identity.Instance != 0 && message.Identity.Instance != player.Identity.Instance)
                 return;
 
-            if (message.Info is FollowStopInfo)
+            if (message.Target is not { } request)
+                return;
+
+            // A target follow with no target is the client's stop.
+            if (request.Target.Instance == 0 && request.Target.Type == 0)
             {
                 player.Motor.EndFollow();
                 return;
             }
-
-            if (message.Info is not FollowTargetInfo request)
-                return;
 
             Identity target = request.Target;
             if (target.Instance == 0 || target.Instance == player.Identity.Instance)
@@ -83,16 +84,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 {
                     Identity = player.Identity,
                     Unknown = 0,
-                    Info = new FollowTargetInfo
+                    Unknown1 = 0,
+                    Info = new FollowTargetMessage.TargetInfo
                     {
-                        FollowInfoType = 2,
-                        MoveType = 0,
                         Target = followed.Identity,
-                        Dummy = AckDummy,
-                        Dummy1 = AckDummy1,
-                        X = 0f,
-                        Y = 0f,
-                        Z = 0f
+                        // The captured bytes after the target (0x40, 0x20000000, then three zero floats), as the client's
+                        // four ints cut them.
+                        Unknown1 = (AckDummy << 24) | (int)((uint)AckDummy1 >> 8),
+                        Unknown2 = (AckDummy1 & 0xFF) << 24,
+                        Unknown3 = 0,
+                        Unknown4 = 0
                     }
                 },
                 includeSelf: true);

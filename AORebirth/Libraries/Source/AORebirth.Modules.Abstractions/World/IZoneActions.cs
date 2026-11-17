@@ -1,5 +1,6 @@
 namespace AORebirth.Modules.World
 {
+    using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
 
@@ -54,6 +55,15 @@ namespace AORebirth.Modules.World
         /// <c>read-sanctions</c>.
         /// </summary>
         Task<IReadOnlyList<AccountSanctionInfo>> AccountSanctions(string account, int limit = 20);
+
+        /// <summary>
+        /// Sends the character an N3 message of <paramref name="messageType"/> with <paramref name="body"/> as its body
+        /// (module API 1.12): the engine writes the packet header and the N3 header (the type, the character's identity,
+        /// one byte) and appends the body as given, big-endian fields in the message's own wire layout. For a server's own
+        /// message types its client reads; the engine does not check the body. False when the character is not in play on
+        /// this instance. Needs <c>send-raw-messages</c>.
+        /// </summary>
+        Task<bool> SendMessage(int characterId, int messageType, ReadOnlyMemory<byte> body);
     }
 
     /// <summary>
@@ -116,5 +126,11 @@ namespace AORebirth.Modules.World
 
         /// <summary><see cref="IZoneModuleContext.RegisterMissionRollHook"/> (module API 1.10).</summary>
         public const string RollMissions = "roll-missions";
+
+        /// <summary><see cref="IZoneModuleContext.RegisterMessageHandler"/> (module API 1.12).</summary>
+        public const string HandleMessages = "handle-messages";
+
+        /// <summary><see cref="IZoneActions.SendMessage"/> (module API 1.12).</summary>
+        public const string SendRawMessages = "send-raw-messages";
     }
 }

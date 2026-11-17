@@ -1,6 +1,6 @@
 namespace ZoneEngine_New.Core.Network
 {
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Playfield;
@@ -49,8 +49,6 @@ namespace ZoneEngine_New.Core.Network
             => throw new System.NotSupportedException("This session does not support an intrazone teleport.");
 
         void Send(byte[] packet);
-
-        void Send(Message message);
 
         void Send(MessageBody body);
 

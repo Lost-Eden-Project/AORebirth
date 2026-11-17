@@ -1,6 +1,6 @@
 namespace ZoneEngine_New.Core.Inventory
 {
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// A worn-item slot on Weapons, Armor, Implant, or Social.

@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Inventory.Dat
 
     using MsgPack;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     internal static class DatItemMapper
     {

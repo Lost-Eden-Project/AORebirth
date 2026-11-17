@@ -7,7 +7,11 @@ namespace AORebirth.Database.Domain.Characters
     using System.Linq;
     using System.Text;
     using AORebirth.Interfaces.Persistence.Characters;
+#if AOREBIRTH_ZONE_NEW
+    using LostEden.Protocol.GameData;
+#else
     using SmokeLounge.AOtomation.Messaging.GameData;
+#endif
 
     /// <summary>Storage for full NewEngine hydration and its existing atomic save boundaries.</summary>
     public sealed partial class MySqlCharacterPersistenceDao : ICharacterPersistenceDao
@@ -162,7 +166,7 @@ namespace AORebirth.Database.Domain.Characters
             if (characterId <= 0) return new List<CharacterStatData>();
             return Query("SELECT StatId,StatValue FROM stats WHERE Type=@Type AND Instance=@Instance",
                 r => new CharacterStatData { StatId = r.GetInt32(0), StatValue = r.GetInt32(1) },
-                "@Type", (int)IdentityType.CanbeAffected, "@Instance", characterId);
+                "@Type", (int)IdentityType.SimpleChar, "@Instance", characterId);
         }
 
         public PersistedOrganizationData LoadOrganization(int organizationId)
@@ -220,7 +224,7 @@ namespace AORebirth.Database.Domain.Characters
                     + "AND m.StatId=@Clan AND m.StatValue=@Id SET r.StatValue=@Lowest "
                     + "WHERE r.Type=@Type AND r.StatId=@Level AND r.Instance<>@Leader",
                     "@Clan", (int)CharacterStat.Clan, "@Id", organizationId, "@Lowest", lowestRank,
-                    "@Type", (int)IdentityType.CanbeAffected, "@Level", (int)CharacterStat.ClanLevel,
+                    "@Type", (int)IdentityType.SimpleChar, "@Level", (int)CharacterStat.ClanLevel,
                     "@Leader", leaderId);
                 return 0;
             });
@@ -485,7 +489,7 @@ namespace AORebirth.Database.Domain.Characters
                 var sql = new StringBuilder("INSERT INTO stats (Type,Instance,StatId,StatValue) VALUES ");
                 var parameters = new object[4 + count * 4];
                 parameters[0] = "@Type";
-                parameters[1] = (int)IdentityType.CanbeAffected;
+                parameters[1] = (int)IdentityType.SimpleChar;
                 parameters[2] = "@Instance";
                 parameters[3] = characterId;
                 for (int i = 0; i < count; i++)

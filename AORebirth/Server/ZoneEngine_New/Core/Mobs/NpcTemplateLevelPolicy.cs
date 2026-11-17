@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.Mobs
 {
     using System;
     using System.Collections.Generic;
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// A resolved template must contain stats for the selected level. Generic

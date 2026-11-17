@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Metrics
     using System.Globalization;
     using System.IO;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Commands;
     using ZoneEngine_New.Core.Entities;

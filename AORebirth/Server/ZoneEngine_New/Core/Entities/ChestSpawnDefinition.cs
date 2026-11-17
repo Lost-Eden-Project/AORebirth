@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.Entities
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>Appearance fields of a positioned ChestFullUpdate; never a loot definition.</summary>
     public sealed class ChestSpawnDefinition

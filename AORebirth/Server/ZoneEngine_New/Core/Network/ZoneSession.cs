@@ -17,10 +17,10 @@ namespace ZoneEngine_New.Core.Network
     using AORebirth.Database.Dao;
     using AORebirth.Modules.Network;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
+    using LostEden.Protocol.Messages.SystemMessages;
 
     using Utility;
     using Utility.Config;
@@ -29,8 +29,8 @@ namespace ZoneEngine_New.Core.Network
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Playfield;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     public sealed class ZoneSession : IZoneSession, IGameTimeSession, IAsyncDisposable
@@ -69,6 +69,8 @@ namespace ZoneEngine_New.Core.Network
         private readonly ArrayBufferWriter<byte>? _filteredOutbound;
         // Module message observers; null when no module observes messages. Each loop reuses its own field reader.
         private readonly Modules.ModuleMessageObservers? _observers;
+        // Module message handlers (module API 1.12); null when no module handles an N3 type of its own.
+        private readonly Modules.ModuleMessageHandlers? _moduleHandlers;
         private readonly Modules.MessageFieldReader? _inboundFields;
         private readonly Modules.MessageFieldReader? _outboundFields;
         // A client that stops reading must not make the server hold its traffic forever. Far above anything a
@@ -106,8 +108,10 @@ namespace ZoneEngine_New.Core.Network
             ZoneMessageDispatcher dispatcher,
             IZoneLogger logger,
             IConnectionFilter? filter = null,
-            Modules.ModuleMessageObservers? observers = null)
+            Modules.ModuleMessageObservers? observers = null,
+            Modules.ModuleMessageHandlers? moduleHandlers = null)
         {
+            _moduleHandlers = moduleHandlers;
             ArgumentNullException.ThrowIfNull(socket);
             ArgumentNullException.ThrowIfNull(codec);
             ArgumentNullException.ThrowIfNull(dispatcher);
@@ -264,23 +268,6 @@ namespace ZoneEngine_New.Core.Network
             {
                 Interlocked.Add(ref _queuedSendBytes, -packet.Length);
             }
-        }
-
-        public void Send(Message message)
-        {
-            if (message == null)
-            {
-                return;
-            }
-
-            if (_closed)
-            {
-                LogSendDropped(message.Body?.GetType().Name ?? "Message");
-                return;
-            }
-
-            LogNetworkMessage("Sent", message.Body);
-            Send(_codec.Serialize(message));
         }
 
         public void Send(MessageBody body)
@@ -568,7 +555,7 @@ namespace ZoneEngine_New.Core.Network
                 Unknown4 = 0,
                 Unknown5 = 0,
                 Playfield2 = new Identity { Type = IdentityType.Playfield3, Instance = destinationKey },
-                Payload = new byte[8]
+                Unknown6 = 0
             };
         }
 
@@ -580,11 +567,6 @@ namespace ZoneEngine_New.Core.Network
             AORebirth.Core.Vector.Quaternion heading)
         {
             const IdentityType livePlayfieldProxyType = (IdentityType)0x0000C79E;
-
-            byte[] payload = new byte[12];
-            BinaryPrimitives.WriteSingleBigEndian(payload.AsSpan(0, 4), landing.xf);
-            BinaryPrimitives.WriteSingleBigEndian(payload.AsSpan(4, 4), landing.yf);
-            BinaryPrimitives.WriteSingleBigEndian(payload.AsSpan(8, 4), landing.zf);
 
             return new N3TeleportMessage
             {
@@ -619,7 +601,7 @@ namespace ZoneEngine_New.Core.Network
                 Unknown4 = 0,
                 Unknown5 = 0,
                 Playfield2 = Identity.None,
-                Payload = payload
+                Unknown6 = 0
             };
         }
 
@@ -815,13 +797,28 @@ namespace ZoneEngine_New.Core.Network
 
                         try
                         {
-                            Message? message = _codec.Deserialize(packet);
-                            if (message?.Body == null)
+                            // A type a module handles (module API 1.12) has no codec reader: it is kept as bytes and
+                            // routed like any other body, so the module runs it on the playfield tick in wire order.
+                            if (_moduleHandlers != null && ModuleRawMessage.TryCreate(packet, _moduleHandlers, received,
+                                    out ModuleRawMessage raw, out MessageHeader rawHeader))
                             {
+                                LogNetworkMessage("Received", raw);
+                                CountMessage((int)raw.N3MessageType, inbound: true);
+                                if (_observers != null)
+                                    ObserveInbound(raw, packet, received);
+                                _dispatcher.Dispatch(raw, rawHeader, this, received);
+                                continue;
+                            }
+
+                            LostEden.Protocol.DecodedMessage decoded = _codec.Deserialize(packet);
+                            if (decoded.Body == null || decoded.ReadFailed)
+                            {
+                                // A type without a reader, or a body the reader rejected (the client drops those too).
                                 _logger.Warn(
                                     string.Format(
                                         CultureInfo.InvariantCulture,
-                                        "Unknown or empty zone message id={0} ({0:X8}) from {1} length={2} bytes={3}",
+                                        "{0} zone message id={1} ({1:X8}) from {2} length={3} bytes={4}",
+                                        decoded.ReadFailed ? "Malformed" : "Unknown or empty",
                                         TryReadN3MessageId(packet),
                                         RemoteEndPoint(),
                                         packet.Length,
@@ -830,12 +827,13 @@ namespace ZoneEngine_New.Core.Network
                                 continue;
                             }
 
-                            LogNetworkMessage("Received", message.Body);
-                            if (message.Body is N3Message counted)
+                            MessageBody body = decoded.Body;
+                            LogNetworkMessage("Received", body);
+                            if (body is N3Message counted)
                                 CountMessage((int)counted.N3MessageType, inbound: true);
                             if (_observers != null)
-                                ObserveInbound(message.Body, packet, received);
-                            _dispatcher.Dispatch(message, this, received);
+                                ObserveInbound(body, packet, received);
+                            _dispatcher.Dispatch(body, decoded.Header, this, received);
                         }
                         catch (Exception exception)
                         {

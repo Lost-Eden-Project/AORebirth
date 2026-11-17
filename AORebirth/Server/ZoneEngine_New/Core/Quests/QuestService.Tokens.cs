@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using AORebirth.Interfaces.Persistence.Missions;
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Helpers;
 using ZoneEngine_New.Core.Playfield;
@@ -167,11 +167,13 @@ public sealed partial class QuestService
 
     /// <summary>
     /// True when the reward roll has something to decide for <paramref name="player"/>: the quest's XP or items, or a
-    /// token for their side. With nothing behind it the dungeon does not roll and sends no chance line.
+    /// token for their side. With nothing behind it the dungeon does not roll and sends no chance line. Items count by
+    /// configuration, not by resolving them: a reward item that no longer resolves neither throws on the kill tick nor
+    /// skips the roll (which would pay the reward ungated once the data is fixed); its delivery stays pending instead.
     /// </summary>
     bool HasGatedReward(Player player, PlayerQuest quest, MissionTokenRewardPolicy policy)
         => (quest.Template.Reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0) > 0
-            || RewardItemsFor(player, quest).Count > 0
+            || HasRewardItems(player, quest)
             || (policy.AwardsTokens && policy.SidedItems.ContainsKey(player.Stats.GetOrZero(CharacterStat.Side)));
 
     static void UpsertFlag(IMissionDaoTransaction tx, MissionKeyData key, string flagKey, string value, long now)
@@ -248,6 +250,36 @@ public sealed partial class QuestService
         bool token = won && sided;
         var roll = new TokenRoll(killed, total, won, token ? itemId : 0, token ? policy.ItemQuality : 0);
         UpsertFlag(transaction, key, flagKey, roll.Serialize(), now);
+    }
+
+    /// <summary>
+    /// A generated mission's quality and kill share at completion, with the share of its advertised credits and experience
+    /// it pays (its frozen <see cref="MissionRewardSplit"/>; null for a mission without a split, which pays as before).
+    /// Null for a quest that is not a generated mission.
+    /// </summary>
+    internal sealed record MissionShare(int Quality, int Killed, int Total, double? Factor);
+
+    MissionShare? ShareFor(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
+        CharacterQuestCompletionSnapshotData stored, TokenRoll? roll)
+    {
+        if (quest.Source != QuestSource.Generated
+            || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var parameters))
+            return null;
+        (int killed, int total) = KillShare(transaction, player, quest, stored, parameters, roll);
+        return new MissionShare(parameters.Quality, killed, total, parameters.Rewards?.Factor(killed, total));
+    }
+
+    /// <summary>The kill share: the reward roll's when there is one, else the dungeon's ledger or its last checkpoint.</summary>
+    (int Killed, int Total) KillShare(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
+        CharacterQuestCompletionSnapshotData stored, QuestDungeonParameters parameters, TokenRoll? roll)
+    {
+        if (roll != null)
+            return (roll.Killed, roll.Total);
+        if (player.Playfield is QuestDungeonPlayfield dungeon
+            && string.Equals(dungeon.QuestId, quest.QuestId, StringComparison.Ordinal) && dungeon.Kills is DungeonKills kills)
+            return kills.Chance();
+        return DungeonKills.ChanceOf(parameters, transaction.GetFlag(
+            new MissionKeyData(player.Identity.Instance, quest.QuestId), KillsFlag(stored.AssignedAtUtcTicks))?.Value);
     }
 
     static TokenRoll? ReadTokenReward(IMissionDaoTransaction transaction, Player player,

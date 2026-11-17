@@ -11,8 +11,8 @@ using AORebirth.Core.GameData;
 
 using AORebirth.Interfaces.Persistence.Shops;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages.N3Messages;
 
 using Utility.GameData.Missions;
 
@@ -200,7 +200,7 @@ public sealed class QuestDungeonPlayfield : Playfield
         if (placements.Count == 0)
             return;
 
-        PlayfieldDistrictsData? districts = LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style, Logger);
+        PlayfieldDistrictsData? districts = LoadStyleDistricts(GameData.RootPath, Layout.Generator.TemplatePlayfield, Logger);
         if (districts?.Districts == null)
             return;
 
@@ -395,7 +395,7 @@ public sealed class QuestDungeonPlayfield : Playfield
     {
         var sites = new List<MissionChestSite>();
         HashSet<int> eligible = MissionChestPlacement.EligibleRooms(dungeon, Layout, GameData.RootPath, chests);
-        PlayfieldDistrictsData? districts = eligible.Count == 0 ? null : LoadStyleDistricts(GameData.RootPath, Layout.Generator.Style, Logger);
+        PlayfieldDistrictsData? districts = eligible.Count == 0 ? null : LoadStyleDistricts(GameData.RootPath, Layout.Generator.TemplatePlayfield, Logger);
         if (districts?.Districts == null)
             return sites;
         var byIndex = new Dictionary<int, PlayfieldDistrictEntry>();
@@ -693,16 +693,21 @@ public sealed class QuestDungeonPlayfield : Playfield
         base.OnDispose();
     }
 
-    /// <summary>The captured ACG PlayfieldAnarchyF shape: building identity plus the generator the client builds from.</summary>
+    /// <summary>
+    /// The captured ACG PlayfieldAnarchyF shape: the building's entrance identity as the playfield, and the generator
+    /// the client builds from inline under that identity.
+    /// </summary>
     public override PlayfieldAnarchyFMessage CreatePlayfieldAnarchyFMessage(Vector3 coordinates) => new()
     {
         Identity = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
         CharacterCoordinates = coordinates,
-        PlayfieldId1 = Layout.Generator.Identity,
+        PlayfieldId1 = Layout.Entrance,
         Unknown3 = 0,
-        Unknown4 = 0,
-        PlayfieldId2 = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
-        GeneratorPayload = Layout.GeneratorPayload,
+        SG = 0,
+        ProxyId = new Identity { Type = IdentityType.Playfield2, Instance = Identity.Instance },
+        InlineIdentity = Layout.Entrance,
+        InlineVersion = 1,
+        BuildingGenerator = Layout.Generator,
         PlayfieldX = -1,
         PlayfieldZ = -1
     };

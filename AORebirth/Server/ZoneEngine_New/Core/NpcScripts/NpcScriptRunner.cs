@@ -5,8 +5,8 @@ using System.Collections.Generic;
 
 using AORebirth.Enums;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages.N3Messages;
 
 using ZoneEngine_New.Core.Ai;
 using ZoneEngine_New.Core.Chat;
@@ -19,7 +19,7 @@ using ZoneEngine_New.Core.Nanos;
 using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Playfield.Locality;
 
-using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 using Vector3 = AORebirth.Core.Vector.Vector3;
 
 /// <summary>
@@ -864,8 +864,8 @@ public sealed class NpcScriptRunner
         _npc.Cell?.Announce(new SocialActionCmdMessage
         {
             Identity = _npc.Identity,
-            CommandState = 1,
-            CommandRef = 0,
+            Verification = 1,
+            Command = 0,
             Action = (SocialAction)anim
         });
     }
@@ -926,13 +926,10 @@ public sealed class NpcScriptRunner
         _npc.Cell.Announce(new SpellListMessage
         {
             Identity = _npc.Identity,
-            NanoEffects = Array.Empty<NanoEffect>(),
-            Character = _npc.Identity,
-            GfxEffect = new SpellListGfxEffect
-            {
-                Effect = new Identity { Type = (IdentityType)GfxEffectFunctionType, Instance = System.Threading.Interlocked.Increment(ref _setEffectInstance) },
-                Gfx = gfx
-            }
+            Spells = [Effect(SpellFunction.GfxEffect, (SpellPropertyOperator.Value, gfx))],
+            Source = Identity.None,
+            Unknown1 = _npc.Identity,
+            Name = string.Empty
         });
     }
 
@@ -949,15 +946,24 @@ public sealed class NpcScriptRunner
         _npc.Cell.Announce(new SpellListMessage
         {
             Identity = _npc.Identity,
-            NanoEffects = Array.Empty<NanoEffect>(),
-            Character = _npc.Identity,
-            SetStat = new SpellListSetStat
-            {
-                Effect = new Identity { Type = (IdentityType)SetFunctionType, Instance = System.Threading.Interlocked.Increment(ref _setEffectInstance) },
-                Stat = (int)stat,
-                Value = value
-            }
+            Spells = [Effect(SpellFunction.Set, (SpellPropertyOperator.Stat, (int)stat), (SpellPropertyOperator.Value, value))],
+            Source = Identity.None,
+            Unknown1 = _npc.Identity,
+            Name = string.Empty
         });
+    }
+
+    /// <summary>
+    /// One spell of a SpellList as retail sends these effects (Fresh Recruit hatch, capture 2026-11-09): the function,
+    /// a fresh instance, no criteria, the common Duration 1, then the arguments given; every other argument 0.
+    /// </summary>
+    static SpellData Effect(SpellFunction function, params (SpellPropertyOperator Property, int Value)[] arguments)
+    {
+        var spell = new SpellData { Function = function, Unknown1 = System.Threading.Interlocked.Increment(ref _setEffectInstance), Version = SpellFormats.Version };
+        spell.Properties[SpellPropertyOperator.Duration] = 1;
+        foreach ((SpellPropertyOperator property, int value) in arguments)
+            spell.Properties[property] = value;
+        return spell;
     }
 
     void DoGfx(ScriptOp op)

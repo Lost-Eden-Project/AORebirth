@@ -4,8 +4,8 @@ namespace ZoneEngine_New.Core.Chat
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
@@ -29,18 +29,20 @@ namespace ZoneEngine_New.Core.Chat
             ArgumentNullException.ThrowIfNull(speaker);
             ArgumentNullException.ThrowIfNull(message);
 
-            ChatMessage? chat = message.Message;
-            if (chat == null || string.IsNullOrEmpty(chat.Text))
+            string text = message.Text;
+            if (string.IsNullOrEmpty(text))
                 return;
 
-            Modules.ModuleHooks.PlayerSpoke(speaker, chat.Type switch
+            // The byte after the text is the chat type: say 0, whisper 1, shout 2.
+            var type = (ChatMessageType)(byte)message.Range;
+            Modules.ModuleHooks.PlayerSpoke(speaker, type switch
             {
                 ChatMessageType.Say => AORebirth.Modules.Events.ChatChannelKind.Say,
                 ChatMessageType.Shout => AORebirth.Modules.Events.ChatChannelKind.Shout,
                 ChatMessageType.Whisper => AORebirth.Modules.Events.ChatChannelKind.Whisper,
                 _ => AORebirth.Modules.Events.ChatChannelKind.Other
-            }, chat.Text);
-            Send(speaker, chat.Type, chat.Text, senderName: null);
+            }, text);
+            Send(speaker, type, text, senderName: null);
         }
 
         /// <summary>

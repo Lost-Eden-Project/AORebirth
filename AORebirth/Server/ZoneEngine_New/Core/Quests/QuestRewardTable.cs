@@ -11,7 +11,7 @@ namespace ZoneEngine_New.Core.Quests
     using AORebirth.Core.GameData;
     using AORebirth.Modules.Content;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.GameData;
@@ -56,6 +56,27 @@ namespace ZoneEngine_New.Core.Quests
         public int Count => _rewards.Count;
 
         public bool Has(string? rewardHash) => !string.IsNullOrEmpty(rewardHash) && _rewards.ContainsKey(rewardHash);
+
+        /// <summary>
+        /// True when <paramref name="rewardHash"/> has an entry <paramref name="player"/> meets, so the reward pays items.
+        /// Decided from the table alone, without resolving them: never throws, and an item hash that stopped resolving
+        /// still counts, so a broken item cannot lift the reward roll that gates it.
+        /// </summary>
+        public bool HasItemsFor(string? rewardHash, Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            if (string.IsNullOrEmpty(rewardHash) || !_rewards.TryGetValue(rewardHash, out RewardTable? table))
+                return false;
+
+            foreach (RewardEntry entry in table.Entries)
+            {
+                if (entry.Items.Length > 0 && (entry.Requirements.Length == 0
+                    || ItemTemplate.MeetsRequirements(entry.Requirements, stat => player.Stats.Get(stat))))
+                    return true;
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// The items <paramref name="rewardHash"/> gives <paramref name="player"/> now, as template ids and QL: the first

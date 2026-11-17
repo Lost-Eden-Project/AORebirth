@@ -76,5 +76,12 @@ namespace AORebirth.Modules
         /// fails that module's startup. Needs <c>roll-missions</c>.
         /// </summary>
         void RegisterMissionRollHook(Missions.IMissionRollHook hook);
+
+        /// <summary>
+        /// Handles inbound N3 messages of <paramref name="messageType"/>, a type the engine has no reader for (module API
+        /// 1.12). Only during <see cref="IZoneModule.Initialize"/>; one handler per type; needs the <c>handle-messages</c>
+        /// capability. Throws for a type the engine reads itself or another module already handles.
+        /// </summary>
+        void RegisterMessageHandler(int messageType, IModuleMessageHandler handler);
     }
 }

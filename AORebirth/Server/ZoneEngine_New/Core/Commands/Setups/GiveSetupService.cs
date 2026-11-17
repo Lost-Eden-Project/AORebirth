@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 using AORebirth.Enums;
 using AORebirth.Modules.Events;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
@@ -365,7 +365,7 @@ public sealed class GiveSetupService(
 
         foreach (Profession value in Enum.GetValues<Profession>())
         {
-            if (value is not (Profession.None or Profession.Monster) && Normalize(value.ToString()) == wanted)
+            if (value is not (Profession.Unknown or Profession.Monster) && Normalize(value.ToString()) == wanted)
                 return value;
         }
 

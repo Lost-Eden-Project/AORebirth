@@ -2,9 +2,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -38,7 +38,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 || message.Identity != player.Identity)
                 return;
 
-            switch (message.Stat)
+            switch ((CharacterStat)message.Stat)
             {
                 case CharacterStat.PersonalResearchLevel:
                     player.SetPersonalResearchShare(message.Value);
@@ -70,14 +70,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
             => new()
             {
                 Identity = player.Identity,
-                Stats =
-                [
-                    new GameTuple<CharacterStat, uint>
-                    {
-                        Value1 = CharacterStat.AggDef,
-                        Value2 = unchecked((uint)value)
-                    }
-                ]
+                Stats = { StatMessages.Pair(CharacterStat.AggDef, value) }
             };
     }
 }

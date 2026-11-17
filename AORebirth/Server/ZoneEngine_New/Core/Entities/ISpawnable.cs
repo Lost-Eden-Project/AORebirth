@@ -1,6 +1,6 @@
 namespace ZoneEngine_New.Core.Entities
 {
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     public interface ISpawnable
     {

@@ -1,7 +1,7 @@
 namespace ZoneEngine_New.Core.Playfield
 {
     using System;
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Network;

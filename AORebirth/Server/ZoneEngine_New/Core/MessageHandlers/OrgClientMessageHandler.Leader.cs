@@ -5,8 +5,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
     using AORebirth.Interfaces.Persistence.Characters;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -40,7 +40,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
             }
 
-            string args = (message.CommandArgs ?? string.Empty).Trim();
+            string args = ((message.IOrgClientMessage as OrgClientCommandArgsMessage)?.CommandArgs ?? string.Empty).Trim();
             try
             {
                 switch (message.Command)

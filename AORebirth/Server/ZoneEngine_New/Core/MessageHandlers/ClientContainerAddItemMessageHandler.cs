@@ -2,14 +2,14 @@ namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Network;
 
-    public sealed class ClientContainerAddItemMessageHandler : IMessageHandler<ClientContainerAddItemMessage>
+    public sealed class ClientContainerAddItemMessageHandler : IMessageHandler<ClientContainerAddItem>
     {
         private readonly InventoryMoveService _moves;
 
@@ -19,14 +19,14 @@ namespace ZoneEngine_New.Core.MessageHandlers
             _moves = moves;
         }
 
-        public Type MessageBodyType => typeof(ClientContainerAddItemMessage);
+        public Type MessageBodyType => typeof(ClientContainerAddItem);
 
         public void Handle(MessageBody body, IZoneSession session)
         {
-            Handle((ClientContainerAddItemMessage)body, session);
+            Handle((ClientContainerAddItem)body, session);
         }
 
-        public void Handle(ClientContainerAddItemMessage message, IZoneSession session)
+        public void Handle(ClientContainerAddItem message, IZoneSession session)
         {
             ArgumentNullException.ThrowIfNull(message);
             ArgumentNullException.ThrowIfNull(session);

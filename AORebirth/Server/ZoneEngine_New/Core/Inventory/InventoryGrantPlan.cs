@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Inventory
     using System.Linq;
     using System.Threading;
     using AORebirth.Modules.Events;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.Messages.N3Messages;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Modules;
@@ -153,9 +153,9 @@ namespace ZoneEngine_New.Core.Inventory
         /// </summary>
         public IReadOnlyList<ItemInstanceRecord> ParkedRows()
         {
-            var parking = new SmokeLounge.AOtomation.Messaging.GameData.Identity
+            var parking = new LostEden.Protocol.GameData.Identity
             {
-                Type = SmokeLounge.AOtomation.Messaging.GameData.IdentityType.OverflowWindow, Instance = _player.Identity.Instance
+                Type = LostEden.Protocol.GameData.IdentityType.OverflowWindow, Instance = _player.Identity.Instance
             };
             return _items.Select(item => item.ToRecord(parking, item.InstanceId, item.StackCount)).ToArray();
         }

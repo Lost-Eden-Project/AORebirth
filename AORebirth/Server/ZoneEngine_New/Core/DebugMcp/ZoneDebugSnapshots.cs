@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.DebugMcp
     using System;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
 

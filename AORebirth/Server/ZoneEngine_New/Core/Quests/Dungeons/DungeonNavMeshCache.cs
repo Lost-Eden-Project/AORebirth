@@ -158,7 +158,7 @@ public sealed class DungeonNavMeshCache
             byte[] bytes = NavMeshFile.ToBytes(result);
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Dungeon navmesh baked seed={0} rooms={1} triangles={2} tiles={3} bytes={4} elapsedMs={5} key={6}",
-                layout.Seed, layout.Generator.Rooms?.Length ?? 0, result.SourceTriangles, result.TileCount, bytes.Length,
+                layout.Seed, layout.Generator.Rooms?.Count ?? 0, result.SourceTriangles, result.TileCount, bytes.Length,
                 Stopwatch.GetElapsedTime(started).TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture), key[..12]));
             return bytes;
         }

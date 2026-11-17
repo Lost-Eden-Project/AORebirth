@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using AORebirth.Interfaces.Persistence.Characters;
 using AORebirth.World.Contracts.V1;
 
-using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
+using LostEden.Protocol.Messages.SystemMessages;
 
 using ZoneEngine_New.Core.World;
 

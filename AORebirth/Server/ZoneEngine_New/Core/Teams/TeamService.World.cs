@@ -9,13 +9,13 @@ namespace ZoneEngine_New.Core.Teams
 
     using Grpc.Core;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Playfield.Locality;
 
-    using Identity = SmokeLounge.AOtomation.Messaging.GameData.Identity;
+    using Identity = LostEden.Protocol.GameData.Identity;
 
     /// <summary>
     /// World mode: every team change is a World command; World pushes each team's new state to every instance with a
@@ -39,7 +39,7 @@ namespace ZoneEngine_New.Core.Teams
                         target = CharacterIdentity(id);
                     }
 
-                    if (target.Type != IdentityType.CanbeAffected || target.Instance <= 0 || target == player.Identity)
+                    if (target.Type != IdentityType.SimpleChar || target.Instance <= 0 || target == player.Identity)
                     {
                         Error(player, "Team invite target is not available.");
                         return;
@@ -47,8 +47,8 @@ namespace ZoneEngine_New.Core.Teams
 
                     WorldInvite(player, target.Instance, null, confirmed: message.Parameter2 == 1);
                     break;
+                case CharacterActionType.TeamEvent:
                 case CharacterActionType.TeamRequestReply:
-                case CharacterActionType.ClientTeamInviteReply:
                     if (message.Parameter2 is 1 or 0 or 20)
                         WorldCommand(player, message.Parameter2 == 1 ? TeamOp.TeamAccept : TeamOp.TeamDecline,
                             message.Target == Identity.None ? 0 : message.Target.Instance);
@@ -57,7 +57,7 @@ namespace ZoneEngine_New.Core.Teams
                     WorldCommand(player, TeamOp.TeamLeave);
                     break;
                 case CharacterActionType.TeamKickMember:
-                    if (message.Target.Type != IdentityType.CanbeAffected)
+                    if (message.Target.Type != IdentityType.SimpleChar)
                     {
                         Feedback(player, "Feedback_NeedToBeTeamLeader");
                         return;
@@ -66,7 +66,7 @@ namespace ZoneEngine_New.Core.Teams
                     WorldCommand(player, TeamOp.TeamKick, message.Target.Instance);
                     break;
                 case CharacterActionType.TransferLeader:
-                    if (message.Target.Type != IdentityType.CanbeAffected)
+                    if (message.Target.Type != IdentityType.SimpleChar)
                     {
                         Error(player, "Team leadership transfer target is not available or you are not the leader.");
                         return;
@@ -75,7 +75,7 @@ namespace ZoneEngine_New.Core.Teams
                     WorldCommand(player, TeamOp.TeamPromote, message.Target.Instance);
                     break;
                 // This is server-to-client leadership state, never invite acceptance.
-                case CharacterActionType.AcceptTeamRequest:
+                case CharacterActionType.TeamLeaderChanged:
                     break;
             }
         }
@@ -135,7 +135,7 @@ namespace ZoneEngine_New.Core.Teams
                     {
                         Identity targetIdentity = CharacterIdentity(target.CharacterId);
                         string conflictName = conflict != null && !string.IsNullOrEmpty(conflict.Name) ? conflict.Name : "the team";
-                        Send(inviter, Action(inviter, tooHigh ? CharacterActionType.TeamInviteAck : CharacterActionType.TeamInviteTooLow,
+                        Send(inviter, Action(inviter, tooHigh ? CharacterActionType.TeamInviteTargetLevelTooHigh : CharacterActionType.TeamInviteTargetLevelTooLow,
                             targetIdentity));
                         Send(inviter, new ChatTextMessage
                         {
@@ -373,7 +373,7 @@ namespace ZoneEngine_New.Core.Teams
                 if (!invited.SamePlayfield || !_players.TryGetValue(invited.Inviter.CharacterId, out Player? inviterPlayer)
                     || !ReferenceEquals(inviterPlayer.Playfield, invitee.Playfield)
                     || invitee.Playfield?.GetService<PlayfieldLocality>()?.IsVisibleTo(inviterPlayer, invitee) != true)
-                    Send(invitee, new TeamInviteMessage { Identity = invitee.Identity, Unknown = 1, Inviter = inviter, Name = invited.Inviter.Name });
+                    Send(invitee, new TeamInviteMessage { Identity = invitee.Identity, Unknown = 1, Requestor = inviter, Name = invited.Inviter.Name });
                 Send(invitee, Action(invitee, CharacterActionType.TeamRequestInvite, inviter));
             }
         }
@@ -388,14 +388,7 @@ namespace ZoneEngine_New.Core.Teams
                 Send(viewer, new StatMessage
                 {
                     Identity = CharacterIdentity(subject.CharacterId),
-                    Stats =
-                    [
-                        new GameTuple<CharacterStat, uint>
-                        {
-                            Value1 = CharacterStat.Level,
-                            Value2 = (uint)Math.Clamp(subject.Level, 1, 220)
-                        }
-                    ]
+                    Stats = { new((Stat)CharacterStat.Level, (uint)Math.Clamp(subject.Level, 1, 220)) }
                 });
             }
         }
@@ -405,7 +398,7 @@ namespace ZoneEngine_New.Core.Teams
             lock (_sync)
             {
                 if (!_players.TryGetValue(declined.Inviter, out Player? inviter) || !Owns(inviter)) return;
-                Send(inviter, Action(inviter, CharacterActionType.TeamRequestReply, CharacterIdentity(declined.Invitee), 0, 20));
+                Send(inviter, Action(inviter, CharacterActionType.TeamEvent, CharacterIdentity(declined.Invitee), 0, 20));
             }
         }
 
@@ -418,34 +411,26 @@ namespace ZoneEngine_New.Core.Teams
             {
                 Identity = CharacterIdentity(card.CharacterId),
                 Unknown = 0,
-                Type = InfoPacketType.Character,
-                Info = new CharacterInfoPacket
+                Info = new InfoPacket
                 {
+                    Flags = (byte)InfoPacketType.Character,
                     Unknown1 = 0x01,
-                    Profession = (Profession)visual,
-                    Level = (byte)Math.Clamp(card.Level, 0, byte.MaxValue),
+                    Profession = (byte)visual,
+                    ProfessionLevel = (byte)Math.Clamp(card.Level, 0, byte.MaxValue),
                     TitleLevel = (byte)Math.Clamp(Math.Max(1, card.TitleLevel), 0, byte.MaxValue),
-                    VisualProfession = (Profession)visual,
-                    SideXp = (short)Math.Clamp(card.SideXp, short.MinValue, short.MaxValue),
+                    VisualProfession = (byte)visual,
+                    SideXpBonus = (ushort)Math.Clamp(card.SideXp, 0, ushort.MaxValue),
                     Health = maxHealth,
                     MaxHealth = maxHealth,
-                    BreedHostility = 0,
+                    Taunt = 0,
+                    Clan = 0,
                     FirstName = card.FirstName ?? string.Empty,
                     LastName = card.LastName ?? string.Empty,
-                    LegacyTitle = string.Empty,
-                    PvpTitle = string.Empty,
-                    CityPlayfieldId = 0,
+                    TitleName = string.Empty,
+                    Info = string.Empty,
                     InvadersKilled = card.InvadersKilled,
                     KilledByInvaders = card.KilledByInvaders,
-                    AiLevel = card.AiLevel,
-                    PvpDuelWins = 0,
-                    PvpDuelLoses = 0,
-                    PvpProfessionDuelLoses = 0,
-                    PvpSoloKills = 0,
-                    PvpTeamKills = 0,
-                    PvpSoloScore = 0,
-                    PvpTeamScore = 0,
-                    PvpDuelScore = 0
+                    AlienLevel = card.AiLevel
                 }
             };
         }

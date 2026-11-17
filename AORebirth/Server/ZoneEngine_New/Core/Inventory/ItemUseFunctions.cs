@@ -9,8 +9,9 @@ namespace ZoneEngine_New.Core.Inventory
     using AORebirth.Core.GameData;
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using MovementAction = ZoneEngine_New.Core.Movement.MovementAction;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -25,8 +26,8 @@ namespace ZoneEngine_New.Core.Inventory
     using ZoneEngine_New.Core.Playfield.Locality;
     using ZoneEngine_New.Core.WorldSimulation;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
     using CombatResult = AORebirth.Modules.Events.CombatResult;
     using CombatSource = AORebirth.Modules.Events.CombatSource;
     using Quaternion = AORebirth.Core.Vector.Quaternion;
@@ -937,8 +938,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Identity = player.Identity,
                     Text = text,
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 });
             return true;
         }
@@ -1164,7 +1164,7 @@ namespace ZoneEngine_New.Core.Inventory
                 {
                     Identity = player.Identity,
                     Unknown = 0x00,
-                    MoveType = (byte)MovementAction.FullStop,
+                    MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)MovementAction.FullStop,
                     Heading = new MsgQuaternion
                     {
                         X = player.Rotation.xf,
@@ -1172,15 +1172,15 @@ namespace ZoneEngine_New.Core.Inventory
                         Z = player.Rotation.zf,
                         W = player.Rotation.wf
                     },
-                    Coordinates = new MsgVector3
+                    Position = new MsgVector3
                     {
                         X = landing.xf,
                         Y = landing.yf,
                         Z = landing.zf
                     },
-                    Unknown1 = 0,
-                    AuxA = 0,
-                    AuxB = 0
+                    DeltaTime = 0,
+                    Unknown2 = 0,
+                    Unknown3 = 0
                 },
                 includeSelf: false);
         }
@@ -1447,7 +1447,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Target = player.Identity,
                     Parameter1 = (int)IdentityType.NanoProgram,
                     Parameter2 = nanoId,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
             return true;
         }
@@ -1463,8 +1463,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Identity = player.Identity,
                     Text = "You already know that nano program.",
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 });
         }
 

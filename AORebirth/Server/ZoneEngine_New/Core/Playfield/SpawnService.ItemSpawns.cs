@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Playfield
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Ai;
     using ZoneEngine_New.Core.Entities;

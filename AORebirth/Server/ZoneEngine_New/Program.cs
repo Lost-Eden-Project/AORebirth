@@ -464,6 +464,7 @@ namespace ZoneEngine_New
             AddMessageHandler<DropTemplateMessageHandler>(services);
             AddMessageHandler<ClientContainerAddItemMessageHandler>(services);
             AddMessageHandler<TradeMessageHandler>(services);
+            AddMessageHandler<ModuleRawMessageHandler>(services);
             AddMessageHandler<KnuBotOpenChatWindowMessageHandler>(services);
             AddMessageHandler<KnuBotAnswerMessageHandler>(services);
             AddMessageHandler<KnuBotCloseChatWindowMessageHandler>(services);

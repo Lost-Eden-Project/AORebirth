@@ -2,9 +2,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -46,7 +46,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Target, out Dynel? dynel)
                 || dynel is not Character target || target.IsDead)
             {
-                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.SpecialAttack, message.Stat,
+                Modules.ModuleHooks.ActionAttempted(player, AORebirth.Modules.Events.PlayerActionKind.SpecialAttack, (int)message.Stat,
                     AORebirth.Modules.Events.PlayerActionOutcome.Refused, AORebirth.Modules.Events.ActionRefusal.Target,
                     target: message.Target, detail: "no living target");
                 return;

@@ -1,7 +1,7 @@
 namespace ZoneEngine_New.Core.Entities;
 
 using System;
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 using ZoneEngine_New.Core.Inventory;
 using Vector3 = AORebirth.Core.Vector.Vector3;
 
@@ -24,7 +24,7 @@ public sealed class DungeonFloorTransitionDynel : StaticDynel
     /// The retail lift spawn carries only these six stats (capture_mangohip_lifts, Platform 1 and Button packets):
     /// the template's flags and identity, not its mesh/placement/animation stats.
     /// </summary>
-    protected override GameTuple<CharacterStat, uint>[] BuildStats()
+    protected override GameTuple<Stat, int>[] BuildStats()
     {
         int flags = Template.Stats.TryGetValue(CharacterStat.Flags, out int templateFlags) ? templateFlags : 0;
         return
@@ -38,8 +38,7 @@ public sealed class DungeonFloorTransitionDynel : StaticDynel
         ];
     }
 
-    static GameTuple<CharacterStat, uint> Stat(CharacterStat stat, int value)
-        => new() { Value1 = stat, Value2 = (uint)value };
+    static GameTuple<Stat, int> Stat(CharacterStat stat, int value) => new((Stat)stat, value);
 
     protected override bool OnUse(Player player)
     {

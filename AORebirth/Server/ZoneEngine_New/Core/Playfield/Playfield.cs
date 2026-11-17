@@ -15,8 +15,8 @@ namespace ZoneEngine_New.Core.Playfield
 
     using Microsoft.Extensions.DependencyInjection;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Data;
@@ -379,17 +379,17 @@ namespace ZoneEngine_New.Core.Playfield
                 CharacterCoordinates = characterCoordinates,
                 PlayfieldId1 = new Identity
                 {
-                    Type = IdentityType.Playfield1,
+                    Type = IdentityType.PlayfieldProxy,
                     Instance = ClientPlayfieldId
                 },
                 // Mission / apartment / private-city PlayfieldId1 overrides not wired yet.
-                // Unknown3 / Unknown4 org-building overrides not wired yet.
-                PlayfieldId2 = new Identity
+                // Unknown3 / SG org-building overrides not wired yet.
+                ProxyId = new Identity
                 {
                     Type = IdentityType.Playfield2,
                     Instance = ClientPlayfieldId
                 },
-                // GeneratorPayload — ACG generator layouts not wired yet (Identity 0:0 written).
+                // No inline object: the identity 0:0 is written (QuestDungeonPlayfield sends the ACG generator).
                 PlayfieldX = playfieldX,
                 PlayfieldZ = playfieldZ
             };

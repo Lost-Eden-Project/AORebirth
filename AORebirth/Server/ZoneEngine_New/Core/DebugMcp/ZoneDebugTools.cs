@@ -10,7 +10,7 @@ namespace ZoneEngine_New.Core.DebugMcp
 
     using ModelContextProtocol.Server;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
@@ -246,7 +246,7 @@ namespace ZoneEngine_New.Core.DebugMcp
                 return Error(error!);
 
             DynelRegistry registry = playfield!.GetRequiredService<DynelRegistry>();
-            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = instance };
+            var identity = new Identity { Type = IdentityType.SimpleChar, Instance = instance };
             if (!registry.TryGet(identity, out Dynel? dynel) || dynel is not NpcCharacter npc)
                 return Error("NPC not found.");
 

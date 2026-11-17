@@ -5,15 +5,15 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Inventory;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 
     /// <summary>
     /// Playfield-placed world object backed by a reference-only interpolated item template.
@@ -132,25 +132,20 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Unknown = 0,
-                MsgVersion = SimpleItemFullUpdateMsgVersion,
-                Identitytype = 0,
-                Instance = 0,
-                Coordinate = coordinate,
-                Heading = heading,
-                Playfield = Playfield != null ? Playfield.ClientPlayfieldId : 0,
-                Unknown1 = new Identity
-                {
-                    Type = (IdentityType)SimpleItemFullUpdateUnknown1Type,
-                    Instance = 0
-                },
-                Unknown2 = 0,
-                Unknown3 = SimpleItemFullUpdateUnknown3,
+                Unknown1 = SimpleItemFullUpdateMsgVersion,
+                OwnerType = 0,
+                OwnerInstance = 0,
+                Position = coordinate,
+                Rotation = heading,
+                PlayfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0,
+                StateMachine = new Identity((IdentityType)SimpleItemFullUpdateUnknown1Type, 0),
+                // The two bytes after the state machine: 0, then the byte the captures carry.
+                Unknown2 = (short)SimpleItemFullUpdateUnknown3,
                 Stats = BuildStats(),
                 // Client displays this as a C string. The length must include the trailing NUL,
                 // matching mission-key SimpleItemFullUpdate. Empty stays length 0.
                 Name = TerminateClientName(RuntimeName ?? Template.Name)
             };
-            message.Owner = Identity.None;
             return message;
         }
 
@@ -172,17 +167,12 @@ namespace ZoneEngine_New.Core.Entities
             Stats.Set(CharacterStat.StaticInstance, Template.Id);
         }
 
-        protected virtual GameTuple<CharacterStat, uint>[] BuildStats()
+        protected virtual GameTuple<Stat, int>[] BuildStats()
         {
-            var stats = new List<GameTuple<CharacterStat, uint>>();
+            var stats = new List<GameTuple<Stat, int>>();
             foreach ((CharacterStat stat, int _, int _, int full) in Stats.GetEntries())
             {
-                stats.Add(
-                    new GameTuple<CharacterStat, uint>
-                    {
-                        Value1 = stat,
-                        Value2 = (uint)full
-                    });
+                stats.Add(new GameTuple<Stat, int>((Stat)stat, full));
             }
 
             return stats.ToArray();

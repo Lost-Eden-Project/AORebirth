@@ -1022,7 +1022,7 @@ namespace ZoneEngine_New.Core.Playfield
                 Action<NpcCharacter>? configure = null;
                 GameplayWander? wander = point.Wanders ? _playfield.GetService<GameplaySettings>()?.Wander : null;
                 // A body that cannot move (plants, towers, turrets) stays exactly on its point.
-                bool immobile = templates[i].Stats.TryGetValue((int)SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.MonsterData,
+                bool immobile = templates[i].Stats.TryGetValue((int)CharacterStat.MonsterData,
                         out int monsterData)
                     && _gameData.TryGetMonsterFeatures(monsterData, out int features)
                     && MonsterBodyFeatures.IsImmobile(features);

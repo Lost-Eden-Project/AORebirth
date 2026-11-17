@@ -8,7 +8,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
     using AORebirth.Core.Vector;
     using AORebirth.World.Collision;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.Messages;
 
     using Utility;
 

@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
 using AORebirth.Enums;
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.GameData;
 

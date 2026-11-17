@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.Logging
     using NLog.Config;
     using NLog.Targets;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using Utility;
 

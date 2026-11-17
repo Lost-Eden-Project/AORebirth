@@ -4,8 +4,8 @@ namespace ZoneEngine_New.Core.Helpers
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     /// <summary>
     /// Builds the center-screen announcement: an <see cref="ApplySpellsMessage"/> holding one inline 53247 spell
@@ -33,20 +33,17 @@ namespace ZoneEngine_New.Core.Helpers
             if (text.Length > MaxTextLength)
                 text = text.Substring(0, MaxTextLength);
 
-            var spell = new InlineSpell
+            var spell = new AppliedSpell
             {
                 FunctionType = (int)FunctionType.CenterScreenNotification,
                 Header2 = 0,
                 Version = FormatVersion,
-                Arguments =
-                [
-                    InlineSpellArgument.Of(1),
-                    InlineSpellArgument.Of(0),
-                    InlineSpellArgument.Of(TargetSelf),
-                    InlineSpellArgument.Of(-1),
-                    InlineSpellArgument.Of(text),
-                    InlineSpellArgument.Of(RangeOwnCharacter),
-                ]
+                Hits = 1,
+                Delay = 0,
+                Target = TargetSelf,
+                Stat35 = -1,
+                Text = text,
+                Range = RangeOwnCharacter
             };
 
             return new ApplySpellsMessage

@@ -5,8 +5,8 @@ namespace ZoneEngine_New.Core.Inventory
     using System.Linq;
     using AORebirth.Enums;
     using AORebirth.Modules.Events;
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Logging;
@@ -51,7 +51,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Parameter1 = 0, Parameter2 = 0
                 });
             }
-            else if (message.Action == CharacterActionType.Split)
+            else if (message.Action == CharacterActionType.SplitItem)
             {
                 // The client already split locally; an echoed 0x34 would split it a second time.
                 if (TryResolveStackSlot(player, message.Target, out _, out _, out Item item))

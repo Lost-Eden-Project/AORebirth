@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.Nanos
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// A cast bar in flight. Completion is a UTC deadline so a long tick cannot stretch it,

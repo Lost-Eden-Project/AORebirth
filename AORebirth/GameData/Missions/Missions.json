@@ -1,0 +1,68 @@
+{
+  // Mission definitions, by name. A mission terminal's module (MissionModule config.json Missions) and a Quests.json
+  // dungeon quest (Dungeon.Mission) name one. Playfields: where the entrance may be (Entrance pins one on a single
+  // playfield). LifetimeHours: how long an accepted mission lasts (null: DungeonGeneration.json
+  // AcceptedLifetimeSeconds). AwardsTokens: whether kills roll the token reward. Rewards.CompletionPercent: the
+  // share of the credits and XP paid for the objective alone, the rest by the share of the population killed.
+  // Sliders: dungeon fields the terminal's sliders move (Left -100, Middle 0, Right 100). Dungeon: a Dungeons/
+  // preset name or block per slot (Layout, Population, Chests, Objective).
+  "rkSolo": {
+    "Playfields": [505, 540, 545, 550, 551, 560, 565, 566, 567, 570, 585, 586, 590, 595, 600, 605, 610, 615, 620, 625, 630, 635, 640, 646, 647, 650, 655, 665, 670, 685, 687, 695, 696, 700, 705, 710, 716, 717, 735, 740, 750, 760, 790, 791, 795, 800],
+    "LifetimeHours": 48,
+    "AwardsTokens": true,
+    "Rewards": { "CompletionPercent": 60 },
+    "Sliders": {
+      "OpenHidden": {
+        "Left": { "Layout.LockedDoorChancePercent": 0, "Chests.LockedChancePercent": 0 },
+        "Middle": { "Layout.LockedDoorChancePercent": 10, "Chests.LockedChancePercent": 10 },
+        "Right": { "Layout.LockedDoorChancePercent": 35, "Chests.LockedChancePercent": 40 }
+      },
+      "HeadOnStealth": {
+        "Left": { "Population.AggroRangePercent": 130, "Population.HelpRangePercent": 130, "Population.SpawnChancePercent": 45 },
+        "Middle": { "Population.AggroRangePercent": 100, "Population.HelpRangePercent": 100, "Population.SpawnChancePercent": 35 },
+        "Right": { "Population.AggroRangePercent": 70, "Population.HelpRangePercent": 70, "Population.SpawnChancePercent": 25 }
+      }
+    },
+    "Dungeon": {
+      "Layout": "rkSolo",
+      "Population": "rubika",
+      "Chests": "none",
+      "Objective": "boss"
+    }
+  },
+  "rkTeam": {
+    "Playfields": [505, 540, 545, 550, 551, 560, 565, 566, 567, 570, 585, 586, 590, 595, 600, 605, 610, 615, 620, 625, 630, 635, 640, 646, 647, 650, 655, 665, 670, 685, 687, 695, 696, 700, 705, 710, 716, 717, 735, 740, 750, 760, 790, 791, 795, 800],
+    "LifetimeHours": 48,
+    "AwardsTokens": true,
+    "Rewards": { "CompletionPercent": 60 },
+    "Sliders": {
+      "OpenHidden": {
+        "Left": { "Layout.LockedDoorChancePercent": 0, "Chests.LockedChancePercent": 0 },
+        "Middle": { "Layout.LockedDoorChancePercent": 10, "Chests.LockedChancePercent": 10 },
+        "Right": { "Layout.LockedDoorChancePercent": 35, "Chests.LockedChancePercent": 40 }
+      },
+      "HeadOnStealth": {
+        "Left": { "Population.AggroRangePercent": 130, "Population.HelpRangePercent": 130, "Population.SpawnChancePercent": 45 },
+        "Middle": { "Population.AggroRangePercent": 100, "Population.HelpRangePercent": 100, "Population.SpawnChancePercent": 35 },
+        "Right": { "Population.AggroRangePercent": 70, "Population.HelpRangePercent": 70, "Population.SpawnChancePercent": 25 }
+      }
+    },
+    "Dungeon": {
+      "Layout": "rkTeam",
+      "Population": "rubika",
+      "Chests": "none",
+      "Objective": "boss"
+    }
+  },
+  "alienMothership": {
+    "Playfields": [4364],
+    "Entrance": 3221229836,
+    "AwardsTokens": true,
+    "Dungeon": {
+      "Layout": "mothership",
+      "Population": "mothership",
+      "Chests": "mothership",
+      "Objective": "mothership"
+    }
+  }
+}

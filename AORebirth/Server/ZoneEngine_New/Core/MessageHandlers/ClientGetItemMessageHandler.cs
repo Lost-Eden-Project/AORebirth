@@ -1,8 +1,8 @@
 namespace ZoneEngine_New.Core.MessageHandlers;
 
 using System;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
@@ -13,7 +13,7 @@ using ZoneEngine_New.Core.Playfield;
 /// Retail world-item pickup. An accepted mission objective owns its own eligibility and atomic transfer; any other world
 /// item (a world spawn, a player's drop) goes through <see cref="WorldItemTransfers.TryPickup"/>.
 /// </summary>
-public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemMessage>
+public sealed class ClientGetItemMessageHandler : IMessageHandler<PickUpMessage>
 {
     readonly InventoryActionService _inventoryActions;
 
@@ -22,11 +22,11 @@ public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemM
         _inventoryActions = inventoryActions ?? throw new ArgumentNullException(nameof(inventoryActions));
     }
 
-    public Type MessageBodyType => typeof(ClientGetItemMessage);
+    public Type MessageBodyType => typeof(PickUpMessage);
 
-    public void Handle(MessageBody body, IZoneSession session) => Handle((ClientGetItemMessage)body, session);
+    public void Handle(MessageBody body, IZoneSession session) => Handle((PickUpMessage)body, session);
 
-    public void Handle(ClientGetItemMessage message, IZoneSession session)
+    public void Handle(PickUpMessage message, IZoneSession session)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(session);
@@ -37,9 +37,9 @@ public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemM
             return;
 
         IZoneLogger? logger = playfield.GetService<IZoneLogger>();
-        if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Identity1, out Dynel? dynel))
+        if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Target, out Dynel? dynel))
         {
-            logger?.Warn($"Pickup target unavailable actor={message.Identity} target={message.Identity1} playfield={playfield.Identity.Instance}");
+            logger?.Warn($"Pickup target unavailable actor={message.Identity} target={message.Target} playfield={playfield.Identity.Instance}");
             return;
         }
 
@@ -47,7 +47,7 @@ public sealed class ClientGetItemMessageHandler : IMessageHandler<ClientGetItemM
         {
             double distance = objective.GetEdgeDistanceTo(player);
             bool collected = playfield is QuestDungeonPlayfield && objective.TryPickup(player);
-            logger?.Info($"Mission pickup actor={message.Identity} target={message.Identity1} quest={objective.Binding.QuestId} edgeDistance={distance} collected={collected}");
+            logger?.Info($"Mission pickup actor={message.Identity} target={message.Target} quest={objective.Binding.QuestId} edgeDistance={distance} collected={collected}");
             return;
         }
 

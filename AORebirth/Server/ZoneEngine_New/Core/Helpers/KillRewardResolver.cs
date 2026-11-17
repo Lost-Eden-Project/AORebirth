@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.Helpers
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     public enum AwardCredit
     {

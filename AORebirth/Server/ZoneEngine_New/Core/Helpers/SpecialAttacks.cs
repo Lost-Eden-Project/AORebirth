@@ -5,8 +5,8 @@ namespace ZoneEngine_New.Core.Helpers
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -233,7 +233,7 @@ namespace ZoneEngine_New.Core.Helpers
                     Identity = requester.Identity,
                     Unknown = requestHeader,
                     Target = target.Identity,
-                    Stat = (int)special
+                    Stat = (Stat)special
                 });
 
             // Firing any special gives the attacker away. A special that opens the fight keeps stealth until here
@@ -353,9 +353,9 @@ namespace ZoneEngine_New.Core.Helpers
                     Identity = attacker.Identity,
                     Unknown1 = -1,
                     Unknown2 = slot,
-                    Unknown3 = attacker.Identity,
-                    Unknown4 = target.Identity,
-                    Unknown5 = (int)special
+                    Attacker = attacker.Identity,
+                    Defender = target.Identity,
+                    Unknown3 = (int)special
                 });
                 ModuleHooks.CombatResolved(attacker, target, CombatSource.Special, (int)special,
                     result.IsHit ? CombatResult.Evaded : CombatResult.Miss, 0, 0);
@@ -425,17 +425,17 @@ namespace ZoneEngine_New.Core.Helpers
             // bullets through the FullAuto message instead.
             if (special == CharacterStat.FullAuto)
                 bullets = 0;
-            attacker.Cell?.Announce(new SpecialAttackInfo
+            attacker.Cell?.Announce(new SpecialAttackInfoMessage
             {
                 Identity = attacker.Identity,
                 Unknown = 0,
                 // Retail Brawl (capture 2026-10-01): slot 0, ammo -1; the Brawl Item is not a hand weapon.
-                Unknown1 = special == CharacterStat.Brawl ? 0 : slot,
-                Unknown2 = damage,
-                Unknown3 = bullets,
+                EquipSlot = (LostEden.Protocol.GameData.EquipSlot)(special == CharacterStat.Brawl ? 0 : slot),
+                Amount = damage,
+                AmmoCount = bullets,
                 Target = target.Identity,
-                Unknown4 = (int)special,
-                Unknown5 = target.IsDead ? 4 : 0
+                Stat = (Stat)special,
+                Unk1 = target.IsDead ? 4 : 0
             });
         }
 

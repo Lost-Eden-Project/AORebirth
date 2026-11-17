@@ -8,7 +8,8 @@ namespace ZoneEngine_New.Core.Ai
 
     using AORebirth.World.Pathfinding;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
+    using ZoneEngine_New.Core.Helpers;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Metrics;
@@ -16,7 +17,7 @@ namespace ZoneEngine_New.Core.Ai
     using ZoneEngine_New.Core.Playfield;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 
     /// <summary>How a scripted walk ended, read once by the program's runner.</summary>
     public enum ScriptMoveResult

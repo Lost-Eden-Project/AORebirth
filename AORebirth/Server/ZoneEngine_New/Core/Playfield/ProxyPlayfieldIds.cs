@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Playfield
 
     using AODB.Common.RDBObjects;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.WorldSimulation;

@@ -4,7 +4,7 @@ namespace ZoneEngine_New.Core.Helpers
     using System.Linq;
     using ZoneEngine_New.Core.Inventory;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// Resolves the skill-scaled unarmed items: the Martial Arts fist (profession + MA skill) and the

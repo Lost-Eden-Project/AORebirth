@@ -1,0 +1,21 @@
+{
+  // Named chest blocks over Defaults.json. A dungeon gets chests only with Enabled true, a RoomDensity above 0 and a
+  // LootTable with rows (NPC-style loot rows: Hash, Repeats, Chance, LevelMod, optional IgnoreLevel and
+  // QualityPercent).
+  "none": {
+    "Enabled": false
+  },
+  "mothership": {
+    "Enabled": true,
+    "RoomDensity": 2.0,
+    "LootTable": [
+      { "Hash": "LEALRARE", "Repeats": 3, "Chance": 1, "LevelMod": 0, "IgnoreLevel": true },
+      { "Hash": "LEALTS", "Repeats": 3, "Chance": 24, "LevelMod": 0, "IgnoreLevel": true },
+      { "Hash": "LEALEQ", "Repeats": 1, "Chance": 8, "LevelMod": 0, "IgnoreLevel": true },
+      { "Hash": "LEALCOM", "Repeats": 1, "Chance": 80, "LevelMod": 10 },
+      { "Hash": "LEALCLUMP", "Repeats": 1, "Chance": 30, "LevelMod": 10 },
+      { "Hash": "LEALSOC", "Repeats": 1, "Chance": 1, "LevelMod": 0, "IgnoreLevel": true },
+      { "Hash": "LEALCRU", "Repeats": 1, "Chance": 5, "LevelMod": 0, "IgnoreLevel": true, "QualityPercent": 50 }
+    ]
+  }
+}

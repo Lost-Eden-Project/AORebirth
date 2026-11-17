@@ -12,8 +12,10 @@ namespace ZoneEngine_New.Core.Modules
     using AORebirth.Modules.Missions;
     using AORebirth.Modules.World;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using MissionSliders = AORebirth.Modules.Missions.MissionSliders;
+    using QuestReward = ZoneEngine_New.Core.Quests.QuestReward;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility.GameData.Missions;
 
@@ -99,10 +101,10 @@ namespace ZoneEngine_New.Core.Modules
                 PlayfieldId = playfield.Identity.Instance,
                 Terminal = ModuleHooks.Entity(terminal.Identity),
                 TerminalPosition = new WorldPosition(terminal.Position.xf, terminal.Position.yf, terminal.Position.zf),
-                Difficulty = request.LevelSlider,
-                Sliders = new MissionSliders(Slider(request.GoodBadSlider), Slider(request.OrderChaosSlider),
-                    Slider(request.OpenHiddenSlider), Slider(request.PhysicalMysticalSlider), Slider(request.HeadOnStealthSlider),
-                    Slider(request.MoneyExperienceSlider)),
+                Difficulty = request.MissionSliders.Difficulty,
+                Sliders = new MissionSliders(Slider(request.MissionSliders.GoodBad), Slider(request.MissionSliders.OrderChaos),
+                    Slider(request.MissionSliders.OpenHidden), Slider(request.MissionSliders.PhysicalMystical), Slider(request.MissionSliders.HeadonStealth),
+                    Slider(request.MissionSliders.CreditsXp)),
                 Timestamp = RequestTime(now)
             };
 
@@ -124,7 +126,7 @@ namespace ZoneEngine_New.Core.Modules
                 _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Module {0} rolled {1} mission offers; only the first {2} are shown.",
                     _modules.MissionRollHookOwner, offered.Count, MissionRollResult.MaxOffers));
 
-            var infos = new List<QuestInfo>(MissionRollResult.MaxOffers);
+            var infos = new List<MissionInfo>(MissionRollResult.MaxOffers);
             var offers = new Dictionary<int, FrozenOffer>(MissionRollResult.MaxOffers);
             DateTime nowUtc = DateTime.UtcNow;
             using (Metrics.TickStallWatch.Enter("mission.roll.freeze", player.Identity.Instance))
@@ -411,6 +413,7 @@ namespace ZoneEngine_New.Core.Modules
                     MissionKind.KillPerson => QuestTemplate.KillOneAction,
                     MissionKind.FindPerson => QuestTemplate.TargetNpcAction,
                     MissionKind.FindItem => QuestTemplate.FindItemAction,
+                    MissionKind.ReturnItem => QuestTemplate.ReturnItemAction,
                     _ => QuestTemplate.RepairAction
                 },
                 Objective = new QuestObjective

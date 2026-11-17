@@ -37,7 +37,7 @@ internal static class DungeonObjectivePlacement
     {
         roomIndex = -1;
         position = new Vector3();
-        var districts = QuestDungeonPlayfield.LoadStyleDistricts(gameDataRoot, layout.Generator.Style, logger);
+        var districts = QuestDungeonPlayfield.LoadStyleDistricts(gameDataRoot, layout.Generator.TemplatePlayfield, logger);
         if (districts?.Districts == null)
             return false;
 

@@ -8,8 +8,8 @@ namespace ZoneEngine_New.Core.Quests
     using AORebirth.Database.Domain.Quests;
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -388,13 +388,6 @@ namespace ZoneEngine_New.Core.Quests
 
             string id = CreateGenerated(template, expiresAtUtc, QuestOwnerType.Character, player.Identity.Instance, acgBuildingGeneratorJson);
             return Assign(player, GetLog(player), id, QuestSource.Generated, template, expiresAtUtc, acgBuildingGeneratorJson);
-        }
-
-        /// <summary>Generated quest that owns an ACG building: the generator data is stored with the quest.</summary>
-        public PlayerQuest AssignGenerated(Player player, QuestTemplate template, DateTime expiresAtUtc, AcgBuildingGeneratorData acgBuildingGenerator)
-        {
-            ArgumentNullException.ThrowIfNull(acgBuildingGenerator);
-            return AssignGenerated(player, template, expiresAtUtc, JsonSerializer.Serialize(acgBuildingGenerator));
         }
 
         /// <summary>

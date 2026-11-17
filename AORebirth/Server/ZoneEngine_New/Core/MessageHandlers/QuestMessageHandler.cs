@@ -1,9 +1,9 @@
 namespace ZoneEngine_New.Core.MessageHandlers;
 
 using System;
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 using ZoneEngine_New.Core.Network;
 
 public sealed class QuestMessageHandler(Quests.QuestService quests) : IMessageHandler<QuestMessage>
@@ -14,8 +14,8 @@ public sealed class QuestMessageHandler(Quests.QuestService quests) : IMessageHa
     {
         var player = session.Player;
         if (session.State != SessionState.InPlay || player == null || player.IsPersistenceQuarantined || player.IsDead
-            || !message.Identity.Equals(player.Identity) || message.Action != QuestAction.Delete || (int)message.Mission.Type != 0xDAC3) return;
+            || !message.Identity.Equals(player.Identity) || message.Version != 1 || (int)message.Quest.Type != 0xDAC3) return;
         // Quests.json and generated quests (accepted missions) are the only journal entries a player can delete.
-        quests.TryAbandon(player, message.Mission.Instance);
+        quests.TryAbandon(player, message.Quest.Instance);
     }
 }

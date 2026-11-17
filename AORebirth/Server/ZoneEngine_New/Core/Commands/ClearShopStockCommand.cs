@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.Commands
 
     using MySqlConnector;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;

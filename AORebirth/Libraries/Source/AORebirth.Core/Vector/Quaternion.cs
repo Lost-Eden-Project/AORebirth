@@ -39,6 +39,15 @@ namespace AORebirth.Core.Vector
 {
     #region Usings ...
 
+    // The wire library this build talks to: the zone engine uses LostEden.Protocol, the other engines SmokeLounge.
+#if AOREBIRTH_ZONE_NEW
+
+    using WireData = LostEden.Protocol.GameData;
+#else
+
+    using WireData = SmokeLounge.AOtomation.Messaging.GameData;
+#endif
+
     using System;
 
     using AORebirth.Interfaces;
@@ -471,9 +480,9 @@ namespace AORebirth.Core.Vector
         /// </param>
         /// <returns>
         /// </returns>
-        public static implicit operator SmokeLounge.AOtomation.Messaging.GameData.Quaternion(Quaternion q)
+        public static implicit operator WireData.Quaternion(Quaternion q)
         {
-            return new SmokeLounge.AOtomation.Messaging.GameData.Quaternion() { X = q.xf, Y = q.yf, Z = q.zf, W = q.wf };
+            return new WireData.Quaternion() { X = q.xf, Y = q.yf, Z = q.zf, W = q.wf };
         }
 
         /// <summary>
@@ -482,7 +491,7 @@ namespace AORebirth.Core.Vector
         /// </param>
         /// <returns>
         /// </returns>
-        public static implicit operator Quaternion(SmokeLounge.AOtomation.Messaging.GameData.Quaternion q)
+        public static implicit operator Quaternion(WireData.Quaternion q)
         {
             return new Quaternion(q.X, q.Y, q.Z, q.W);
         }

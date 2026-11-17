@@ -2,15 +2,15 @@ namespace ZoneEngine_New.Core.Entities
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Trade;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 
     /// <summary>
     /// A shop. Either placed directly by Dynels.dat, or attached to an <see cref="NpcCharacter"/>
@@ -159,20 +159,21 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Unknown = 0,
-                TypeIdentifier = FullUpdateTypeIdentifier,
-                NpcIdentity = owner != null ? owner.Identity : Identity.None,
-                Coordinates = owner != null ? owner.Position : coordinate,
-                Heading = owner != null ? owner.Rotation : heading,
+                Unknown1 = FullUpdateTypeIdentifier,
+                OwnerType = owner != null ? (int)owner.Identity.Type : 0,
+                OwnerInstance = owner?.Identity.Instance ?? 0,
+                Position = owner != null ? (MsgVector3)owner.Position : coordinate,
+                Rotation = owner != null ? (MsgQuaternion)owner.Rotation : heading,
                 PlayfieldId = Playfield != null ? Playfield.ClientPlayfieldId : 0,
-                Unknown4 = FullUpdateUnknown4,
-                Unknown5 = FullUpdateUnknown5,
-                Unknown6 = FullUpdateUnknown6,
+                StateMachine = new Identity((IdentityType)FullUpdateUnknown4, FullUpdateUnknown5),
+                Unknown4 = FullUpdateUnknown6,
                 Stats = BuildStats(),
-                Unknown7 = (Template.Name ?? string.Empty) + "\0",
-                Unknown8 = FullUpdateUnknown8,
-                Unknown9 = FullUpdateUnknown9,
-                Unknown10 = Array.Empty<Identity>(),
-                Unknown11 = FullUpdateUnknown11
+                // The byte block after the stats: the machine's name as a C string.
+                UnknownData = System.Text.Encoding.Latin1.GetBytes((Template.Name ?? string.Empty) + "\0"),
+                Unknown7 = FullUpdateUnknown8,
+                Unknown8 = FullUpdateUnknown9,
+                UnknownArray = Array.Empty<Identity>(),
+                Unknown9 = FullUpdateUnknown11
             };
         }
     }

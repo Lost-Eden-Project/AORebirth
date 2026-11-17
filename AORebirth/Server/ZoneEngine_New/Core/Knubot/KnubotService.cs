@@ -9,9 +9,9 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.Logging;
@@ -792,12 +792,12 @@ public sealed class KnubotService(KnubotCatalog catalog, KnubotEffectServices ef
 
     static KnuBotAppendTextMessage Append(Conversation conversation, string text, int kind) => new()
     {
-        Identity = conversation.Player.Identity, Target = conversation.Npc.Identity, Unknown1 = 2, Unknown2 = kind, Text = text
+        Identity = conversation.Player.Identity, Target = conversation.Npc.Identity, Unknown1 = 2, Kind = kind, Text = text
     };
 
     static KnuBotCloseChatWindowMessage CloseMessage(Conversation conversation, int seconds) => new()
     {
-        Identity = conversation.Player.Identity, Target = conversation.Npc.Identity, Unknown = 0, Unknown1 = 2, Seconds = seconds, Unknown3 = 0
+        Identity = conversation.Player.Identity, Target = conversation.Npc.Identity, Unknown = 0, Unknown1 = 2, Seconds = seconds, Text = string.Empty
     };
 
     bool TryConversation(IZoneSession transport, Identity target, out Conversation conversation)

@@ -4,8 +4,8 @@ namespace ZoneEngine_New.Core.Pets
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Ai;
     using ZoneEngine_New.Core.Entities;
@@ -735,11 +735,10 @@ namespace ZoneEngine_New.Core.Pets
                 Identity = pet.Identity,
                 Unknown = 0,
                 Kind = 3,
-                Flag = 0,
+                Flag = false,
                 Name = name,
-                Unknown1 = Identity.None,
-                Unknown2 = 0,
-                Unknown3 = 0
+                Other = Identity.None,
+                Value = 0
             });
         }
 
@@ -955,9 +954,9 @@ namespace ZoneEngine_New.Core.Pets
         }
 
         static void SendAddPet(Player owner, NpcCharacter pet)
-            => owner.Session?.Send(new AddPetMessage { Identity = owner.Identity, PetIdentity = pet.Identity });
+            => owner.Session?.Send(new AddPetMessage { Identity = owner.Identity, Pet = pet.Identity });
 
         static void SendRemovePet(Player owner, NpcCharacter pet)
-            => owner.Session?.Send(new RemovePetMessage { Identity = owner.Identity, PetIdentity = pet.Identity });
+            => owner.Session?.Send(new RemovePetMessage { Identity = owner.Identity, Pet = pet.Identity });
     }
 }

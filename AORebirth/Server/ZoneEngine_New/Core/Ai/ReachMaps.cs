@@ -1,6 +1,8 @@
 namespace ZoneEngine_New.Core.Ai
 {
     using System;
+
+    using ZoneEngine_New.Core.Helpers;
     using System.Collections.Generic;
 
     using AORebirth.World.Pathfinding;

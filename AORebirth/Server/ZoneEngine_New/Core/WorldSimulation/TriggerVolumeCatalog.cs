@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
     using ZoneEngine_New.Core.Entities;
 
-    using Identity = SmokeLounge.AOtomation.Messaging.GameData.Identity;
+    using Identity = LostEden.Protocol.GameData.Identity;
     using EventType = AORebirth.Enums.EventType;
 
     using Quaternion = AORebirth.Core.Vector.Quaternion;

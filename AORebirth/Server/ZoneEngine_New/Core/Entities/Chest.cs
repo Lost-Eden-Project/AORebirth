@@ -2,9 +2,9 @@ namespace ZoneEngine_New.Core.Entities
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Inventory;
@@ -65,24 +65,25 @@ namespace ZoneEngine_New.Core.Entities
             ChestSpawnDefinition definition = SpawnDefinition
                 ?? throw new InvalidOperationException("Chest appearance has not been configured.");
             definition.Validate();
-            var stats = new GameTuple<CharacterStat, uint>[definition.Stats.Length];
+            var stats = new GameTuple<Stat, int>[definition.Stats.Length];
             for (int i = 0; i < stats.Length; i++)
-                stats[i] = new GameTuple<CharacterStat, uint>
+                stats[i] = new GameTuple<Stat, int>
                 {
-                    Value1 = (CharacterStat)definition.Stats[i].StatId,
-                    Value2 = definition.Stats[i].Value
+                    Value1 = (Stat)definition.Stats[i].StatId,
+                    Value2 = unchecked((int)definition.Stats[i].Value)
                 };
 
             // Retail mission-20261011-004128-b8e7bf2e, ordinal 480: positioned common prefix,
             // empty optional blob, lockable marker/list and chest marker; contents are a separate packet.
-            return new ChestItemFullUpdateMessage
+            return new ChestFullUpdateMessage
             {
                 Identity = Identity,
                 Unknown = 0,
                 Unknown1 = 11,
-                Owner = Identity.None,
-                Coordinate = Position,
-                Heading = Rotation,
+                OwnerType = 0,
+                OwnerInstance = 0,
+                Position = (LostEden.Protocol.GameData.Vector3)Position,
+                Rotation = (LostEden.Protocol.GameData.Quaternion)Rotation,
                 PlayfieldId = Playfield?.ClientPlayfieldId ?? 0,
                 StateMachine = new Identity
                 {
@@ -91,7 +92,7 @@ namespace ZoneEngine_New.Core.Entities
                 },
                 Unknown5 = definition.HeaderStatBytes,
                 Stats = stats,
-                Unknown6 = 0,
+                UnknownData = [],
                 Unknown7 = 2,
                 Unknown8 = definition.LockableValue,
                 UnknownArray = [],

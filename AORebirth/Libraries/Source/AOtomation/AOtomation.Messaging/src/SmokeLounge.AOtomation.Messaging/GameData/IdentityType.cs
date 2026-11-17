@@ -49,6 +49,9 @@ namespace SmokeLounge.AOtomation.Messaging.GameData
 
         CanbeAffected = 0x0000C350,
 
+        /// <summary>The same type by the client's name (shared persistence code compiled against either protocol library uses it).</summary>
+        SimpleChar = 0x0000C350,
+
         CityController = 0x0000C418,
 
         Terminal = 0x0000C73D,

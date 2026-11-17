@@ -2,8 +2,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 {
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Entities;
 

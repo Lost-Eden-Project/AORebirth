@@ -7,8 +7,8 @@ namespace ZoneEngine_New.Core.Inventory
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -216,10 +216,10 @@ namespace ZoneEngine_New.Core.Inventory
                 Unknown = 1,
                 // The slot as the client named it: a bag's stack by its packed Backpack identity.
                 AmmoSlot = ammo == null ? Identity.None : usedSlot,
-                Weapon = item.WeaponInstanceIdentity ?? item.Identity,
-                AmmoStackCount = ammo?.StackCount ?? 0,
-                ClipCount = rounds + take,
-                RemoveAmmoStack = ammo is { StackCount: 0 } ? 1 : 0
+                WeaponIdentity = item.WeaponInstanceIdentity ?? item.Identity,
+                AmmoCount = ammo?.StackCount ?? 0,
+                WeaponAmmoCount = rounds + take,
+                RemoveAmmo = ammo is { StackCount: 0 }
             });
             return ReloadResult.Reloaded;
         }

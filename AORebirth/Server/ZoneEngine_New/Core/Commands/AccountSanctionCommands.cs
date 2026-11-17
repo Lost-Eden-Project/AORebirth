@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Commands
     using System.Linq;
     using System.Threading.Tasks;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Accounts;
     using ZoneEngine_New.Core.Entities;

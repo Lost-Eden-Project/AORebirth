@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons;
 
 using System;
 using System.Text.Json.Serialization;
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 
 /// <summary>The accepted mission's exact world item, independent of its advertised reward.</summary>
 public sealed class MissionItemObjectiveBinding
@@ -27,13 +27,13 @@ public sealed class MissionItemObjectiveBinding
     [JsonIgnore]
     public bool IsValid => !string.IsNullOrWhiteSpace(QuestId) && OwnerId > 0
         && MissionType is 2 or 3 or 4 && (!IsSourceItem || MissionType == 3)
-        && IdentityType == (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.Terminal
+        && IdentityType == (int)LostEden.Protocol.GameData.IdentityType.Terminal
         && Instance > 0 && LowId > 0 && HighId > 0 && Quality > 0 && RoomIndex >= 0
         && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z) && QuestInstanceStat >= 0
         && (WorldScalePercent == null || WorldScalePercent > 0);
 
     [JsonIgnore]
-    public Identity Identity => new() { Type = (SmokeLounge.AOtomation.Messaging.GameData.IdentityType)IdentityType, Instance = Instance };
+    public Identity Identity => new() { Type = (LostEden.Protocol.GameData.IdentityType)IdentityType, Instance = Instance };
 
     public bool SameAs(MissionItemObjectiveBinding? other)
         => other != null && string.Equals(QuestId, other.QuestId, StringComparison.Ordinal)
@@ -45,6 +45,19 @@ public sealed class MissionItemObjectiveBinding
             && QuestInstanceStat == other.QuestInstanceStat && WorldFlags == other.WorldFlags
             && WorldScalePercent == other.WorldScalePercent
             && MissionType == other.MissionType && IsSourceItem == other.IsSourceItem;
+
+    /// <summary>
+    /// The same accepted objective, wherever it was placed: as <see cref="SameAs"/> without the room and position. The
+    /// dungeon places the objective on its first build and keeps that in its own copy of the binding; the accepted
+    /// quest's copy keeps room 0 at the origin, so comparing placement made every pickup and repair fail.
+    /// </summary>
+    public bool SameObjectiveAs(MissionItemObjectiveBinding? other)
+        => other != null && string.Equals(QuestId, other.QuestId, StringComparison.Ordinal)
+            && OwnerId == other.OwnerId && IdentityType == other.IdentityType && Instance == other.Instance
+            && LowId == other.LowId && HighId == other.HighId && Quality == other.Quality
+            && QuestInstanceStat == other.QuestInstanceStat && WorldFlags == other.WorldFlags
+            && WorldScalePercent == other.WorldScalePercent
+            && MissionType == other.MissionType && IsSourceItem == other.IsSourceItem;
 }
 
 /// <summary>The catalog NPC and exact actor identity frozen with an accepted mission.</summary>
@@ -52,7 +65,7 @@ public sealed class MissionNpcObjectiveBinding
 {
     public string QuestId { get; set; } = string.Empty;
     public int OwnerId { get; set; }
-    public int IdentityType { get; set; } = (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.CanbeAffected;
+    public int IdentityType { get; set; } = (int)LostEden.Protocol.GameData.IdentityType.SimpleChar;
     public int Instance { get; set; }
     public string NpcHash { get; set; } = string.Empty;
     public int Quality { get; set; }
@@ -64,11 +77,11 @@ public sealed class MissionNpcObjectiveBinding
     public int MissionType { get; set; }
 
     [JsonIgnore]
-    public Identity Identity => new() { Type = (SmokeLounge.AOtomation.Messaging.GameData.IdentityType)IdentityType, Instance = Instance };
+    public Identity Identity => new() { Type = (LostEden.Protocol.GameData.IdentityType)IdentityType, Instance = Instance };
 
     [JsonIgnore]
     public bool IsValid => !string.IsNullOrWhiteSpace(QuestId) && OwnerId > 0
-        && IdentityType == (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.CanbeAffected
+        && IdentityType == (int)LostEden.Protocol.GameData.IdentityType.SimpleChar
         && Instance > 0 && !string.IsNullOrWhiteSpace(NpcHash) && Quality > 0 && RoomIndex >= 0
         && MissionType is 0 or 1 && float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z)
         && (ScalePercent == null || ScalePercent > 0);

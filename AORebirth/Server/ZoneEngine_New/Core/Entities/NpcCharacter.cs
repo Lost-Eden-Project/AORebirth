@@ -6,9 +6,9 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Ai;
     using ZoneEngine_New.Core.GameData;
@@ -140,7 +140,7 @@ namespace ZoneEngine_New.Core.Entities
             ArgumentNullException.ThrowIfNull(controller);
             Pet = controller;
             Stats.Set(CharacterStat.Flags,
-                GetClientCharacterFlags() | (int)CharacterFlags.IsPet,
+                GetClientCharacterFlags() | (int)CharacterFlags.Pet,
                 StatDetail.Base, dirty: true);
         }
 
@@ -148,7 +148,7 @@ namespace ZoneEngine_New.Core.Entities
         {
             Pet = null;
             Stats.Set(CharacterStat.Flags,
-                GetClientCharacterFlags() & ~(int)CharacterFlags.IsPet,
+                GetClientCharacterFlags() & ~(int)CharacterFlags.Pet,
                 StatDetail.Base, dirty: true);
         }
 
@@ -344,7 +344,7 @@ namespace ZoneEngine_New.Core.Entities
         internal StatMessage BuildKnubotDataMessage(uint value) => new()
         {
             Identity = Identity,
-            Stats = [new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.HasKnubotData, Value2 = value }]
+            Stats = { new((Stat)CharacterStat.HasKnubotData, value) }
         };
 
         void SetCharacterFlag(CharacterFlags flag, bool set)

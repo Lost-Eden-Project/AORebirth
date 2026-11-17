@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.Characters
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.GameData;
@@ -30,14 +30,14 @@ namespace ZoneEngine_New.Core.Characters
         /// IP must cover the whole packet, which is charged once; otherwise nothing is written.
         /// Bases already above a cap may stay where they are but not rise.
         /// </summary>
-        public static bool TryTrain(Player player, IReadOnlyList<GameTuple<CharacterStat, uint>>? pairs, SkillCatalog catalog)
+        public static bool TryTrain(Player player, IReadOnlyList<GameTuple<Stat, uint>>? pairs, SkillCatalog catalog)
             => TryTrain(player, pairs, catalog, out _);
 
         /// <inheritdoc cref="TryTrain(Player, IReadOnlyList{GameTuple{CharacterStat, uint}}?, SkillCatalog)"/>
         /// <param name="rejection">Why the packet was refused, with the numbers behind it; null when trained.</param>
         public static bool TryTrain(
             Player player,
-            IReadOnlyList<GameTuple<CharacterStat, uint>>? pairs,
+            IReadOnlyList<GameTuple<Stat, uint>>? pairs,
             SkillCatalog catalog,
             out string? rejection)
         {
@@ -56,16 +56,14 @@ namespace ZoneEngine_New.Core.Characters
             var abilityRaises = new Dictionary<CharacterStat, int>();
             var skillRaises = new List<(CharacterStat Skill, int Target)>();
             long cost = 0;
-            foreach (GameTuple<CharacterStat, uint> pair in pairs)
+            foreach (GameTuple<Stat, uint> pair in pairs)
             {
-                if (pair == null)
-                    return Reject(out rejection, $"null pair");
                 if (pair.Value2 > MaxBase)
-                    return Reject(out rejection, $"{pair.Value1} target {pair.Value2} above {MaxBase}");
-                if (!seen.Add(pair.Value1))
-                    return Reject(out rejection, $"{pair.Value1} sent twice");
+                    return Reject(out rejection, $"{(CharacterStat)pair.Value1} target {pair.Value2} above {MaxBase}");
+                if (!seen.Add((CharacterStat)pair.Value1))
+                    return Reject(out rejection, $"{(CharacterStat)pair.Value1} sent twice");
 
-                CharacterStat stat = pair.Value1;
+                CharacterStat stat = (CharacterStat)pair.Value1;
                 int target = (int)pair.Value2;
                 int current = CurrentBase(stats, stat);
                 if (target < current)
@@ -99,8 +97,8 @@ namespace ZoneEngine_New.Core.Characters
             if (cost > ip)
                 return Reject(out rejection, $"cost {cost} exceeds ip {ip} (short {cost - ip})");
 
-            foreach (GameTuple<CharacterStat, uint> pair in pairs)
-                stats.Set(pair.Value1, (int)pair.Value2, StatDetail.Base);
+            foreach (GameTuple<Stat, uint> pair in pairs)
+                stats.Set((CharacterStat)pair.Value1, (int)pair.Value2, StatDetail.Base);
             stats.Set(CharacterStat.UsedIP, stats.GetOrZero(CharacterStat.UsedIP, StatDetail.Base) + (int)cost, StatDetail.Base);
             player.RebaseStats();
             return true;
@@ -250,7 +248,7 @@ namespace ZoneEngine_New.Core.Characters
         /// Diagnostic view of a request: each pair as current->target with its own IP price ("?" when it
         /// cannot be priced). At most <see cref="MaxPairs"/> pairs are described.
         /// </summary>
-        public static string DescribeRequest(Player player, IReadOnlyList<GameTuple<CharacterStat, uint>>? pairs, SkillCatalog catalog)
+        public static string DescribeRequest(Player player, IReadOnlyList<GameTuple<Stat, uint>>? pairs, SkillCatalog catalog)
         {
             if (pairs == null)
                 return string.Empty;
@@ -261,19 +259,13 @@ namespace ZoneEngine_New.Core.Characters
             var parts = new List<string>(Math.Min(pairs.Count, MaxPairs));
             for (int i = 0; i < pairs.Count && i < MaxPairs; i++)
             {
-                GameTuple<CharacterStat, uint> pair = pairs[i];
-                if (pair == null)
-                {
-                    parts.Add("null");
-                    continue;
-                }
-
-                int current = CurrentBase(stats, pair.Value1);
+                GameTuple<Stat, uint> pair = pairs[i];
+                int current = CurrentBase(stats, (CharacterStat)pair.Value1);
                 string price = pair.Value2 <= MaxBase
-                    && catalog.TryGetRaiseCost(breed, profession, pair.Value1, current, (int)pair.Value2, out long cost)
+                    && catalog.TryGetRaiseCost(breed, profession, (CharacterStat)pair.Value1, current, (int)pair.Value2, out long cost)
                         ? cost.ToString(System.Globalization.CultureInfo.InvariantCulture)
                         : "?";
-                parts.Add(FormattableString.Invariant($"{pair.Value1} {current}->{pair.Value2} cost {price}"));
+                parts.Add(FormattableString.Invariant($"{(CharacterStat)pair.Value1} {current}->{pair.Value2} cost {price}"));
             }
 
             return string.Join(", ", parts);
@@ -289,19 +281,19 @@ namespace ZoneEngine_New.Core.Characters
         /// Server bases for the trainable ids the client asked about, plus remaining IP. Sent after
         /// both accepted and rejected packets so the client's trainer never keeps an unpaid value.
         /// </summary>
-        public static GameTuple<CharacterStat, uint>[] BuildReply(Player player, IReadOnlyList<GameTuple<CharacterStat, uint>>? pairs)
+        public static GameTuple<Stat, uint>[] BuildReply(Player player, IReadOnlyList<GameTuple<Stat, uint>>? pairs)
         {
-            var reply = new List<GameTuple<CharacterStat, uint>>();
+            var reply = new List<GameTuple<Stat, uint>>();
             var seen = new HashSet<CharacterStat>();
             if (pairs != null)
             {
-                foreach (GameTuple<CharacterStat, uint> pair in pairs)
+                foreach (GameTuple<Stat, uint> pair in pairs)
                 {
                     if (reply.Count == MaxPairs)
                         break;
-                    if (pair == null || !(SkillCatalog.IsAbility(pair.Value1) || SkillCatalog.IsSkill(pair.Value1)) || !seen.Add(pair.Value1))
+                    if (!(SkillCatalog.IsAbility((CharacterStat)pair.Value1) || SkillCatalog.IsSkill((CharacterStat)pair.Value1)) || !seen.Add((CharacterStat)pair.Value1))
                         continue;
-                    reply.Add(Tuple(pair.Value1, CurrentBase(player.Stats, pair.Value1)));
+                    reply.Add(Tuple((CharacterStat)pair.Value1, CurrentBase(player.Stats, (CharacterStat)pair.Value1)));
                 }
             }
 
@@ -314,7 +306,6 @@ namespace ZoneEngine_New.Core.Characters
                 ? value
                 : SkillCatalog.SkillFloor;
 
-        static GameTuple<CharacterStat, uint> Tuple(CharacterStat stat, int value)
-            => new() { Value1 = stat, Value2 = (uint)value };
+        static GameTuple<Stat, uint> Tuple(CharacterStat stat, int value) => new((Stat)stat, (uint)value);
     }
 }

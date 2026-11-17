@@ -3,7 +3,7 @@ namespace ZoneEngine_New.Core.Commands
     using System;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Playfield;
@@ -51,7 +51,7 @@ namespace ZoneEngine_New.Core.Commands
 
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             if (!registry.TryGet(target, out Dynel? dynel)
-                && !registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = target.Instance }, out dynel))
+                && !registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = target.Instance }, out dynel))
             {
                 GmCommandFeedback.Send(context.Session, player, "Unknown target.");
                 return;

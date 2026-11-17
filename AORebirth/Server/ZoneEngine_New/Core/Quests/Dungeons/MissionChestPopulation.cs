@@ -8,7 +8,7 @@ using System.Linq;
 using AORebirth.Enums;
 using AORebirth.Interfaces.Persistence.Missions;
 using AORebirth.World.Collision;
-using SmokeLounge.AOtomation.Messaging.GameData;
+using LostEden.Protocol.GameData;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;

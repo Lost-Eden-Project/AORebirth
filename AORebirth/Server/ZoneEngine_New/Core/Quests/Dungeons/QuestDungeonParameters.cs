@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 {
     using System.Text.Json;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// What a quest stores to recreate its dungeon (generatedquests.AcgBuildingGeneratorJson): the layout seed and
@@ -27,6 +27,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         /// <summary>Absent on missions accepted before token rewards were enabled, and on quests that pay none.</summary>
         public MissionTokenRewardPolicy? TokenReward { get; set; }
+
+        /// <summary>The mission's credits and experience split at acceptance (<see cref="MissionDefinition.Rewards"/>); null: none.</summary>
+        public MissionRewardSplit? Rewards { get; set; }
 
         /// <summary>
         /// The dungeon request resolved to its full values at acceptance (<see cref="DungeonPresets.Resolve"/>): layout,
@@ -62,7 +65,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public int DungeonPlayfield { get; set; }
 
         /// <summary>Defaults to the implicit MissionEntrance type used by older stored dungeon parameters.</summary>
-        public int EntranceType { get; set; } = (int)IdentityType.MissionEntrance;
+        public int EntranceType { get; set; } = (int)IdentityType.ACGEntrance;
 
         /// <summary>MissionEntrance (0xDAC6) instance bits, stored in the protocol's signed integer representation.</summary>
         public int EntranceInstance { get; set; }
@@ -110,11 +113,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     || parsed.Dungeon == null || parsed.Dungeon.Problem() != null || parsed.LayoutPlan?.IsValid != true
                     || parsed.IsTeam != parsed.LayoutPlan.BossFloor
                     || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
-                    || parsed.EntranceType != (int)IdentityType.MissionEntrance
+                    || parsed.EntranceType != (int)IdentityType.ACGEntrance
                     || (parsed.ObjectiveItem != null && !parsed.ObjectiveItem.IsValid)
                     || (parsed.ObjectiveTool != null && (!parsed.ObjectiveTool.IsValid || !parsed.ObjectiveTool.IsSourceItem))
                     || (parsed.ObjectiveNpc != null && !parsed.ObjectiveNpc.IsValid)
                     || (parsed.TokenReward != null && !parsed.TokenReward.IsValid)
+                    || (parsed.Rewards != null && !parsed.Rewards.IsValid)
                     || (parsed.ObjectiveItem != null && parsed.ObjectiveItem.MissionType != parsed.MissionType)
                     || (parsed.ObjectiveTool != null && parsed.MissionType != 3)
                     || (parsed.ObjectiveNpc != null && parsed.ObjectiveNpc.MissionType != parsed.MissionType))

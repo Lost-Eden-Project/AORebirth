@@ -1,7 +1,7 @@
 namespace ZoneEngine_New.Core.Entities
 {
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     /// <summary>
     /// Something a Break and Enter item (CanFlags.BreakAndEnter, e.g. Lock Pick 95577) can open: doors and chests now,
@@ -54,9 +54,9 @@ namespace ZoneEngine_New.Core.Entities
         {
             Identity = target,
             Unknown = 0,
-            ActionCode = 1,
-            ActionIdentity = code,
-            Target = actor
+            Version = 1,
+            Code = code,
+            Actor = actor
         };
     }
 }

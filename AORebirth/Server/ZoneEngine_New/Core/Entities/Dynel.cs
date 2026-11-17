@@ -5,9 +5,9 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Core.Vector;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Playfield.Locality;
@@ -178,17 +178,21 @@ namespace ZoneEngine_New.Core.Entities
 
         public void FlushDirtyStats()
         {
-            GameTuple<CharacterStat, uint>[] dirtyStats = Stats.DrainDirty();
+            GameTuple<Stat, int>[] dirtyStats = Stats.DrainDirty();
             if (dirtyStats.Length == 0)
                 return;
 
-            var message = new StatMessage
-            {
-                Identity = Identity,
-                Stats = dirtyStats
-            };
+            StatMessage message = Network.StatMessages.For(Identity, dirtyStats);
 
             Playfield?.GetRequiredService<PlayfieldLocality>().Announce(this, message, includeSelf: true);
+            OnStatsFlushed(dirtyStats);
+        }
+
+        /// <summary>
+        /// The stat values a flush just sent to this dynel and everyone observing it (the wire values, i.e. the bases).
+        /// </summary>
+        protected virtual void OnStatsFlushed(GameTuple<Stat, int>[] flushed)
+        {
         }
     }
 }

@@ -196,9 +196,9 @@ namespace ZoneEngine_New.Core.Accounts
                     new
                     {
                         Account = login.Username,
-                        Type = (int)SmokeLounge.AOtomation.Messaging.GameData.IdentityType.CanbeAffected,
-                        LevelStat = (int)SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.Level,
-                        ProfessionStat = (int)SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.Profession
+                        Type = (int)LostEden.Protocol.GameData.IdentityType.SimpleChar,
+                        LevelStat = (int)CharacterStat.Level,
+                        ProfessionStat = (int)CharacterStat.Profession
                     })
                 .Select(row => new AccountCharacter(row.Id, row.Name, row.Level, row.Profession, row.PlayfieldId, row.Online != 0))
                 .ToArray();

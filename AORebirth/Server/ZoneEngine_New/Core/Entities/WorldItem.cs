@@ -4,9 +4,9 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Inventory;
 
@@ -57,7 +57,7 @@ namespace ZoneEngine_New.Core.Entities
             return (can & CanFlags.Carry) != 0 && (Owner.Instance == 0 || Owner == player.Identity);
         }
 
-        protected override GameTuple<CharacterStat, uint>[] BuildStats()
+        protected override GameTuple<Stat, int>[] BuildStats()
         {
             int flags = Template.Stats.TryGetValue(CharacterStat.Flags, out int templateFlags) ? templateFlags : 0;
             return
@@ -71,7 +71,6 @@ namespace ZoneEngine_New.Core.Entities
             ];
         }
 
-        static GameTuple<CharacterStat, uint> Stat(CharacterStat stat, int value)
-            => new() { Value1 = stat, Value2 = (uint)value };
+        static GameTuple<Stat, int> Stat(CharacterStat stat, int value) => new((Stat)stat, value);
     }
 }

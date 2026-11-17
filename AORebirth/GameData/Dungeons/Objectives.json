@@ -1,0 +1,12 @@
+{
+  // Named objective blocks over Defaults.json: how far from the entrance the objective stands (RoomChoices farthest
+  // rooms) and how strong an objective NPC is (LevelPercent over the mission quality).
+  "boss": {
+    "RoomChoices": 1,
+    "LevelPercent": 20
+  },
+  "mothership": {
+    "RoomChoices": 1,
+    "LevelPercent": 5
+  }
+}

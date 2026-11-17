@@ -5,7 +5,11 @@ namespace AORebirth.Database.Domain.Characters
     using System.Globalization;
     using System.Linq;
     using AORebirth.Interfaces.Persistence.Characters;
+#if AOREBIRTH_ZONE_NEW
+    using LostEden.Protocol.GameData;
+#else
     using SmokeLounge.AOtomation.Messaging.GameData;
+#endif
 
     public sealed partial class MySqlCharacterPersistenceDao : IDailyLoginClaimDao
     {

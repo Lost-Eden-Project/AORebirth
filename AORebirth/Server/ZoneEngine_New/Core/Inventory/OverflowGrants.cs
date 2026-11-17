@@ -6,8 +6,8 @@ namespace ZoneEngine_New.Core.Inventory
 
     using AORebirth.Modules.Events;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Entities;
@@ -45,7 +45,7 @@ namespace ZoneEngine_New.Core.Inventory
             Container overflow = player.Inventory.Overflow;
             InventoryUpdateMessage window = overflow.BuildInventoryUpdateMessage(player.Identity, player.Identity, WindowPlacement);
             int highest = overflow.Content.Count == 0 ? -1 : overflow.Content.Keys.Max();
-            window.NumberOfSlots = Math.Max(WindowSlots, highest + 1);
+            window.Unknown1 = Math.Max(WindowSlots, highest + 1);
             player.Session.Send(window);
         }
 
@@ -57,13 +57,13 @@ namespace ZoneEngine_New.Core.Inventory
         public static void SendFromTrade(Player player, int tradeSlot, int overflowSlot)
         {
             ArgumentNullException.ThrowIfNull(player);
-            player.Session?.Send(new ContainerAddItemMessage
+            player.Session?.Send(new ContainerAddItem
             {
                 Identity = player.Identity,
                 Unknown = 0,
-                SourceContainer = new Identity { Type = IdentityType.KnuBotTradeWindow, Instance = tradeSlot },
+                Source = new Identity { Type = IdentityType.KnuBotTradeWindow, Instance = tradeSlot },
                 Target = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
-                TargetPlacement = overflowSlot
+                Slot = overflowSlot
             });
         }
 
@@ -95,13 +95,13 @@ namespace ZoneEngine_New.Core.Inventory
                 Unknown3 = 0,
                 Unknown4 = 0
             });
-            player.Session.Send(new ContainerAddItemMessage
+            player.Session.Send(new ContainerAddItem
             {
                 Identity = player.Identity,
                 Unknown = 0,
-                SourceContainer = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
+                Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
                 Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
-                TargetPlacement = NextFreeSlotMarker
+                Slot = NextFreeSlotMarker
             });
         }
 
@@ -128,7 +128,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Target = new Identity { Type = IdentityType.OverflowWindow, Instance = slot },
                     Parameter1 = 0,
                     Parameter2 = 0,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
             }
 

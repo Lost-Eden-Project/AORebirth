@@ -3,9 +3,9 @@ namespace ZoneEngine_New.Core.Entities
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Playfield.Locality;
 
@@ -78,16 +78,15 @@ namespace ZoneEngine_New.Core.Entities
 
         public override MessageBody BuildSpawnMessage()
         {
-            static GameTuple<CharacterStat, uint> Stat(CharacterStat id, uint value) => new() { Value1 = id, Value2 = value };
+            static GameTuple<Stat, int> Stat(CharacterStat id, int value) => new((Stat)id, value);
             return new DoorFullUpdateMessage
             {
                 Identity = Identity,
                 Unknown = 0,
-                MsgVersion = 0x0B,
-                Identitytype = 0,
-                Instance = 0,
-                Coordinate = new SmokeLounge.AOtomation.Messaging.GameData.Vector3(Position.xf, Position.yf, Position.zf),
-                Heading = new SmokeLounge.AOtomation.Messaging.GameData.Quaternion
+                Version = 0x0B,
+                Owner = Identity.None,
+                Position = new LostEden.Protocol.GameData.Vector3(Position.xf, Position.yf, Position.zf),
+                Rotation = new LostEden.Protocol.GameData.Quaternion
                 {
                     X = Rotation.xf,
                     Y = Rotation.yf,
@@ -95,13 +94,13 @@ namespace ZoneEngine_New.Core.Entities
                     W = Rotation.wf
                 },
                 Playfield = Playfield?.ClientPlayfieldId ?? 0,
-                Unknown1 = new Identity { Type = (IdentityType)0xF424F, Instance = 1 },
-                Unknown2 = 0,
-                Unknown3 = 0x6F,
+                StateMachine = new Identity { Type = (IdentityType)0xF424F, Instance = 1 },
+                InventoryId = 0,
+                CurrBodyLocation = 0x6F,
                 Stats =
                 [
-                    Stat(CharacterStat.Flags, unchecked((uint)Flags)),
-                    Stat(CharacterStat.StaticInstance, (uint)TemplateId),
+                    Stat(CharacterStat.Flags, Flags),
+                    Stat(CharacterStat.StaticInstance, TemplateId),
                     Stat(CharacterStat.ACGItemLevel, 0),
                     Stat(CharacterStat.ACGItemTemplateID, 0),
                     Stat(CharacterStat.ACGItemTemplateID2, 0),
@@ -111,14 +110,14 @@ namespace ZoneEngine_New.Core.Entities
                     Stat(CharacterStat.ExternalDoorInstance, 0),
                     Stat(CharacterStat.AccessKey, 0),
                     Stat(CharacterStat.DoorFlags, 0),
-                    .. (IsLocked && LockDifficulty > 0 ? [Stat(CharacterStat.LockDifficulty, (uint)LockDifficulty)] : Array.Empty<GameTuple<CharacterStat, uint>>())
+                    .. (IsLocked && LockDifficulty > 0 ? [Stat(CharacterStat.LockDifficulty, LockDifficulty)] : Array.Empty<GameTuple<Stat, int>>())
                 ],
-                Name = string.Empty,
-                Unknown4 = 2,
-                Unknown5 = 50,
+                Blob = [],
+                Version2 = 2,
+                Unknown3 = 50,
                 Identities = [],
-                Unknown6 = 2,
-                Unknown7 = RoomLink
+                Version3 = 2,
+                DoorValue = RoomLink
             };
         }
 
@@ -161,12 +160,12 @@ namespace ZoneEngine_New.Core.Entities
         {
             Identity = door,
             Unknown = 0,
-            Unknown1 = 2,
-            Unknown2 = (byte)(locked ? 1 : 0),
-            Unknown3 = (byte)(open ? 1 : 0),
-            Unknown4 = 0,
-            Unknown5 = (byte)(closeInhibit ? 1 : 0),
-            Unknown6 = []
+            Version = 2,
+            FlagA = (byte)(locked ? 1 : 0),
+            Open = (byte)(open ? 1 : 0),
+            Unknown195 = 0,
+            FlagC = (byte)(closeInhibit ? 1 : 0),
+            Identities = []
         };
 
         /// <summary>

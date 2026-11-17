@@ -6,7 +6,7 @@ namespace AORebirth.World.Collision
 
     using AODB.Common.RDBObjects;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using Vector3 = System.Numerics.Vector3;
 
@@ -15,7 +15,7 @@ namespace AORebirth.World.Collision
     /// </summary>
     public static class DungeonCollisionBuilder
     {
-        public static PlayfieldCollisionSet Build(string gameDataRoot, AcgBuildingGeneratorData generator)
+        public static PlayfieldCollisionSet Build(string gameDataRoot, AcgBuildingGenerator generator)
             => BuildLayout(gameDataRoot, generator).Collision;
 
         public static PlayfieldCollisionSet Build(
@@ -55,15 +55,15 @@ namespace AORebirth.World.Collision
             return layout.Rooms.Count > 0;
         }
 
-        public static DungeonWorldLayout BuildLayout(string gameDataRoot, AcgBuildingGeneratorData generator)
+        public static DungeonWorldLayout BuildLayout(string gameDataRoot, AcgBuildingGenerator generator)
         {
             ArgumentNullException.ThrowIfNull(generator);
             return BuildLayout(
-                DungeonStyleCatalog.Load(gameDataRoot, generator.Style),
+                DungeonStyleCatalog.Load(gameDataRoot, generator.TemplatePlayfield),
                 MapRooms(generator.Rooms),
                 generator.Width,
                 generator.Height,
-                generator.RoomsPerFloor,
+                generator.FloorHeight,
                 playfieldId: 0);
         }
 
@@ -499,22 +499,22 @@ namespace AORebirth.World.Collision
             }
         }
 
-        static DungeonRoomSpec[] MapRooms(BuildingRoomInfo[]? source)
+        static DungeonRoomSpec[] MapRooms(List<AcgRoom>? source)
         {
-            if (source == null || source.Length == 0)
+            if (source == null || source.Count == 0)
                 return Array.Empty<DungeonRoomSpec>();
 
-            var rooms = new DungeonRoomSpec[source.Length];
-            for (int i = 0; i < source.Length; i++)
+            var rooms = new DungeonRoomSpec[source.Count];
+            for (int i = 0; i < source.Count; i++)
             {
-                BuildingRoomInfo room = source[i] ?? new BuildingRoomInfo();
+                AcgRoom room = source[i] ?? new AcgRoom();
                 rooms[i] = new DungeonRoomSpec
                 {
-                    RoomId = room.RoomId,
+                    RoomId = room.RoomIndex,
                     Floor = room.Floor,
                     GridX = room.GridX,
                     GridZ = room.GridZ,
-                    Facing = room.Facing
+                    Facing = room.Rotation
                 };
             }
 

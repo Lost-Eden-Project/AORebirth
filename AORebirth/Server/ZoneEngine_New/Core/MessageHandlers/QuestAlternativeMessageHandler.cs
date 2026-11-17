@@ -1,8 +1,8 @@
 namespace ZoneEngine_New.Core.MessageHandlers
 {
     using System;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Modules;
     using ZoneEngine_New.Core.Network;
@@ -23,8 +23,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 || !ReferenceEquals(player.Session, session) || player.IsPersistenceQuarantined
                 || player.Playfield is not { } playfield || message.Identity != player.Identity)
                 return;
-            if (message.QuestInfos?.Length > 0 || (int)message.MissionTerminalIdentity.Type != MissionTerminal.LiveIdentityType
-                || !playfield.GetRequiredService<DynelRegistry>().TryGet(message.MissionTerminalIdentity, out var dynel)
+            if (message.MissionDetails?.Length > 0 || (int)message.Terminal.Type != MissionTerminal.LiveIdentityType
+                || !playfield.GetRequiredService<DynelRegistry>().TryGet(message.Terminal, out var dynel)
                 || dynel is not MissionTerminal terminal || terminal.GetEdgeDistanceTo(player) > LootableDynel.OpenRange)
                 return;
             rolls.Roll(player, playfield, terminal, message, session);

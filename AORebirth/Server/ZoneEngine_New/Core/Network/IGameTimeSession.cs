@@ -4,8 +4,8 @@ namespace ZoneEngine_New.Core.Network
     using System.Globalization;
     using System.Threading;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Configuration;
 
@@ -106,7 +106,8 @@ namespace ZoneEngine_New.Core.Network
                 Unknown1 = reading.TimeOfDay,
                 Unknown2 = reading.DayPeriod,
                 Unknown3 = reading.Day,
-                Unknown4 = WireServerTime(reading.ServerSeconds)
+                // The server time rides as the bits of the float retail sends in this int.
+                Unknown4 = BitConverter.SingleToInt32Bits(WireServerTime(reading.ServerSeconds))
             };
 
         public static int UnixSeconds(DateTime utc)

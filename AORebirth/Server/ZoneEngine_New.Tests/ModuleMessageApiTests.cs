@@ -9,13 +9,13 @@ using AORebirth.Modules.World;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 
 using ZoneEngine_New.Core.Modules;
 
-using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 
 /// <summary>
 /// Module API 1.5: the message observer's guaranteed field names (ZONE_MODULE_API.md lists the same set) and the
@@ -46,26 +46,34 @@ public sealed class ModuleMessageApiTests
         var reader = Reader(new CharDCMoveMessage
         {
             Identity = Self,
-            MoveType = 7,
-            Coordinates = new MsgVector3 { X = 1.5f, Y = 2.5f, Z = 3.5f },
+            MoveType = (MovementAction)7,
+            Position = new MsgVector3 { X = 1.5f, Y = 2.5f, Z = 3.5f },
             Heading = new Quaternion { X = 0.1f, Y = 0.2f, Z = 0.3f, W = 0.9f },
-            Unknown1 = 42,
-            AuxA = 4.5f,
-            AuxB = 5.5f
+            DeltaTime = 42,
+            Unknown2 = 4,
+            Unknown3 = 5
         });
 
         AssertIdentity(reader, "Identity", Self);
         AssertInt(reader, "MoveType", 7);
-        AssertFloat(reader, "Coordinates.X", 1.5f);
-        AssertFloat(reader, "Coordinates.Y", 2.5f);
-        AssertFloat(reader, "Coordinates.Z", 3.5f);
+        AssertFloat(reader, "Position.X", 1.5f);
+        AssertFloat(reader, "Position.Y", 2.5f);
+        AssertFloat(reader, "Position.Z", 3.5f);
         AssertFloat(reader, "Heading.X", 0.1f);
         AssertFloat(reader, "Heading.Y", 0.2f);
         AssertFloat(reader, "Heading.Z", 0.3f);
         AssertFloat(reader, "Heading.W", 0.9f);
-        AssertFloat(reader, "AuxA", 4.5f);
-        AssertFloat(reader, "AuxB", 5.5f);
+        AssertInt(reader, "DeltaTime", 42);
+        AssertInt(reader, "Unknown2", 4);
+        AssertInt(reader, "Unknown3", 5);
+
+        // The names guaranteed before 1.12 still read.
+        AssertFloat(reader, "Coordinates.X", 1.5f);
+        AssertFloat(reader, "Coordinates.Y", 2.5f);
+        AssertFloat(reader, "Coordinates.Z", 3.5f);
         AssertInt(reader, "Unknown1", 42);
+        AssertFloat(reader, "AuxA", 4f);
+        AssertFloat(reader, "AuxB", 5f);
     }
 
     [TestMethod]
@@ -98,13 +106,14 @@ public sealed class ModuleMessageApiTests
 
         var use = Reader(new GenericCmdMessage
         {
-            Identity = Self, Action = (GenericCmdAction)3, Count = 1, User = Self, Target = [Other]
+            Identity = Self, Action = (GenericCmdAction)3, Count = 1, User = Self, Target = Other
         });
         AssertIdentity(use, "Identity", Self);
         AssertInt(use, "Action", 3);
         AssertInt(use, "Count", 1);
         AssertIdentity(use, "User", Self);
-        AssertIdentity(use, "Target[0]", Other);
+        AssertIdentity(use, "Target", Other);
+        AssertIdentity(use, "Target[0]", Other); // The name guaranteed before 1.12.
         Assert.IsFalse(use.TryGetIdentity("Target[1]", out _), "An index past the end reads nothing.");
 
         var look = Reader(new LookAtMessage { Identity = Self, Target = Other });
@@ -139,21 +148,20 @@ public sealed class ModuleMessageApiTests
         var follow = Reader(new FollowTargetMessage
         {
             Identity = Self,
-            Info = new FollowTargetInfo { MoveType = 2, Target = Other }
+            Unknown1 = 2,
+            Info = new FollowTargetMessage.TargetInfo { Target = Other, Unknown1 = 9 }
         });
         AssertIdentity(follow, "Identity", Self);
-        AssertInt(follow, "Info.MoveType", 2);
+        AssertInt(follow, "Type", (int)FollowTargetType.Target);
+        AssertInt(follow, "Unknown1", 2);
+        AssertInt(follow, "Info.MoveType", 2); // The name guaranteed before 1.12: the move type byte.
         AssertIdentity(follow, "Info.Target", Other);
-        Assert.IsFalse(follow.TryGetInt("Info.Flag", out _), "Only a follow stop has Info.Flag.");
+        AssertInt(follow, "Info.Unknown1", 9);
+        Assert.IsFalse(follow.TryGetInt("Info.Flag", out _), "A stop is a target follow with move type 21; there is no Info.Flag.");
 
-        var stop = Reader(new FollowTargetMessage
-        {
-            Identity = Self,
-            Info = new FollowStopInfo { MoveType = 3, Flag = 1, Coordinates = new MsgVector3(), ConfirmCoordinates = new MsgVector3() }
-        });
-        AssertInt(stop, "Info.MoveType", 3);
-        AssertInt(stop, "Info.Flag", 1);
-        Assert.IsFalse(stop.TryGetIdentity("Info.Target", out _), "A follow stop has no Info.Target.");
+        var path = Reader(new FollowTargetMessage { Identity = Self, Info = new FollowTargetMessage.PathInfo() });
+        AssertInt(path, "Type", (int)FollowTargetType.NpcPath);
+        Assert.IsFalse(path.TryGetIdentity("Info.Target", out _), "An NPC path has no Info.Target.");
     }
 
     [TestMethod]

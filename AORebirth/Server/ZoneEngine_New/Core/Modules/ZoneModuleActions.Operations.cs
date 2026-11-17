@@ -13,7 +13,6 @@ namespace ZoneEngine_New.Core.Modules
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Playfield;
 
-    using CharacterStat = SmokeLounge.AOtomation.Messaging.GameData.CharacterStat;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     /// <summary>
@@ -128,6 +127,25 @@ namespace ZoneEngine_New.Core.Modules
                 "Logs the player out as a client logout does, with the normal logout save.",
                 [Optional("reason", OperationValueType.String, "For the log.")],
                 Kick);
+            Add(OperationNames.PlayerPurchase, TargetKind.Character,
+                "Sells the player one item for a stat at a terminal or NPC within reach; the item and the new balance are saved in one transaction.",
+                [
+                    Required("anchorType", OperationValueType.Int, "Identity type of the terminal or NPC sold at."),
+                    Required("anchor", OperationValueType.Int, "Identity instance of the terminal or NPC sold at."),
+                    Required("lowId", OperationValueType.Int, "The item's low template id."),
+                    Required("highId", OperationValueType.Int, "The item's high template id."),
+                    Required("quality", OperationValueType.Int, "The item's quality."),
+                    Required("stat", OperationValueType.Int, "The currency stat id."),
+                    Required("price", OperationValueType.Int, "How much of the stat, 0 or more.")
+                ],
+                Purchase);
+            Add(OperationNames.PlayerStatAdd, TargetKind.Character,
+                "Adds an amount to the base value of the player's stat (kept at 0 or more), sent to the client and saved with the next save. The message is the new value.",
+                [
+                    Required("stat", OperationValueType.Int, "The stat id."),
+                    Required("amount", OperationValueType.Int, "What to add; negative takes away.")
+                ],
+                StatAdd);
             if (_accounts != null)
             {
                 AddAccount(OperationNames.AccountBan,
@@ -233,6 +251,67 @@ namespace ZoneEngine_New.Core.Modules
                 return moving
                     ? OperationResult.Success()
                     : OperationResult.Fail(OperationCodes.Failed, "The player is already changing playfield.");
+            }, OperationResult.Fail(OperationCodes.NotHere, "The player is not in play here."));
+        }
+
+        Task<OperationResult> Purchase(OperationTarget target, OperationArgs args)
+        {
+            args.TryGetInt("anchorType", out int anchorType);
+            args.TryGetInt("anchor", out int anchor);
+            args.TryGetInt("lowId", out int lowId);
+            args.TryGetInt("highId", out int highId);
+            args.TryGetInt("quality", out int quality);
+            args.TryGetInt("stat", out int stat);
+            args.TryGetInt("price", out int price);
+            if (anchor == 0 || lowId <= 0 || highId <= 0 || quality <= 0 || price < 0 || !Enum.IsDefined(typeof(CharacterStat), stat))
+                return Task.FromResult(OperationResult.Fail(OperationCodes.BadArgs,
+                    "An anchor, positive item ids and quality, a known stat and a price of 0 or more are needed."));
+
+            var anchorIdentity = new LostEden.Protocol.GameData.Identity
+            {
+                Type = (LostEden.Protocol.GameData.IdentityType)anchorType, Instance = anchor
+            };
+            return OnPlayer(target.Id, player =>
+            {
+                if (player.Playfield is not Playfield playfield)
+                    return OperationResult.Fail(OperationCodes.NotHere, "The player is not on a playfield.");
+                ZoneEngine_New.Core.Trade.PurchaseStatus status = playfield.GetRequiredService<ZoneEngine_New.Core.Trade.TradeService>()
+                    .BuyForStat(player, anchorIdentity, lowId, highId, quality, (CharacterStat)stat, price);
+                return status switch
+                {
+                    ZoneEngine_New.Core.Trade.PurchaseStatus.Bought => OperationResult.Success(),
+                    ZoneEngine_New.Core.Trade.PurchaseStatus.NotAtAnchor => OperationResult.Fail(PurchaseCodes.NotAtAnchor, "The player is not at the anchor."),
+                    ZoneEngine_New.Core.Trade.PurchaseStatus.Insufficient => OperationResult.Fail(PurchaseCodes.Insufficient, "The player cannot afford it."),
+                    ZoneEngine_New.Core.Trade.PurchaseStatus.NoRoom => OperationResult.Fail(PurchaseCodes.NoRoom, "The item does not fit."),
+                    ZoneEngine_New.Core.Trade.PurchaseStatus.UniqueHeld => OperationResult.Fail(PurchaseCodes.UniqueHeld, "The player already holds that unique item."),
+                    ZoneEngine_New.Core.Trade.PurchaseStatus.Busy => OperationResult.Fail(PurchaseCodes.Busy, "The player has a trade or shop window open."),
+                    _ => OperationResult.Fail(OperationCodes.Failed, "The purchase was not saved.")
+                };
+            }, OperationResult.Fail(OperationCodes.NotHere, "The player is not in play here."));
+        }
+
+        Task<OperationResult> StatAdd(OperationTarget target, OperationArgs args)
+        {
+            args.TryGetInt("stat", out int stat);
+            args.TryGetInt("amount", out int amount);
+            if (amount == 0 || !Enum.IsDefined(typeof(CharacterStat), stat))
+                return Task.FromResult(OperationResult.Fail(OperationCodes.BadArgs, "A known stat and a non-zero amount are needed."));
+
+            var characterStat = (CharacterStat)stat;
+            return OnPlayer(target.Id, player =>
+            {
+                if (player.Playfield == null || player.IsPersistenceQuarantined)
+                    return OperationResult.Fail(OperationCodes.NotHere, "The player is not on a playfield.");
+                long sum = (long)player.Stats.GetOrZero(characterStat, StatDetail.Base) + amount;
+                int value = characterStat == CharacterStat.Cash
+                    ? ZoneEngine_New.Core.Characters.CashLimit.Clamp(sum)
+                    : (int)Math.Clamp(sum, 0, int.MaxValue);
+                player.Stats.Set(characterStat, value, StatDetail.Base, dirty: true);
+                player.FlushDirtyStats();
+                _logger?.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Module operation player.stat-add character={0} stat={1} amount={2} value={3}",
+                    player.Identity.Instance, stat, amount, value));
+                return OperationResult.Success(value.ToString(CultureInfo.InvariantCulture));
             }, OperationResult.Fail(OperationCodes.NotHere, "The player is not in play here."));
         }
 

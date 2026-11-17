@@ -4,8 +4,8 @@ namespace ZoneEngine_New.Core.Network
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.SystemMessages;
 
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.MessageHandlers;
@@ -31,19 +31,17 @@ namespace ZoneEngine_New.Core.Network
             _logger = logger;
         }
 
-        public void Dispatch(Message message, IZoneSession session) => Dispatch(message, session, 0);
-
+        /// <param name="header">The packet's header: the zone login is admitted only in its exact envelope.</param>
         /// <param name="receivedAt">When the receive loop read it; module events the message causes carry it.</param>
-        public void Dispatch(Message message, IZoneSession session, long receivedAt)
+        public void Dispatch(MessageBody body, in MessageHeader header, IZoneSession session, long receivedAt)
         {
-            if (message?.Body == null)
+            if (body == null)
                 return;
 
-            MessageBody body = message.Body;
             if (ConnectionScoped.Contains(body.GetType()))
             {
                 var login = (ZoneLoginMessage)body;
-                if (message.Header == null || message.Header.Size != 32 || message.Header.Sender != login.CharacterId || message.Header.Receiver != 2)
+                if (header.Length != 32 || header.Sender != login.CharacterId || header.Receiver != 2)
                 {
                     _logger.Warn("Zone admission rejected: reason=invalid_handoff_envelope");
                     session.Close();

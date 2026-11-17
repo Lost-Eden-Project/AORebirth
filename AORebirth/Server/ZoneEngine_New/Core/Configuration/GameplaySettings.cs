@@ -523,7 +523,7 @@ namespace ZoneEngine_New.Core.Configuration
             if (damage <= 0 || MaxHitPercent >= 100 || !IsPvp(source, target))
                 return damage;
 
-            int maxHealth = target.Stats.GetOrZero(SmokeLounge.AOtomation.Messaging.GameData.CharacterStat.MaxHealth);
+            int maxHealth = target.Stats.GetOrZero(CharacterStat.MaxHealth);
             if (maxHealth <= 0)
                 return damage;
 

@@ -34,6 +34,7 @@ namespace ZoneEngine_New.Core.Modules
             ItemMoved = new HandlerList<ItemMovedEvent>("ItemMoved", logger);
             PlayerSpoke = new HandlerList<PlayerSpokeEvent>("PlayerSpoke", logger);
             CombatResolved = new HandlerList<CombatResolvedEvent>("CombatResolved", logger);
+            MissionCompleted = new HandlerList<MissionCompletedEvent>("MissionCompleted", logger);
             Visibility = new ModuleVisibilityObservers(logger);
         }
 
@@ -75,8 +76,12 @@ namespace ZoneEngine_New.Core.Modules
 
         public HandlerList<CombatResolvedEvent> CombatResolved { get; }
 
+        // Module API 1.12
+        public HandlerList<MissionCompletedEvent> MissionCompleted { get; }
+
         internal void RemoveModule(string moduleId)
         {
+            MissionCompleted.RemoveModule(moduleId);
             NpcKilled.RemoveModule(moduleId);
             PlayerDied.RemoveModule(moduleId);
             PlayerEnteredPlayfield.RemoveModule(moduleId);

@@ -1,9 +1,9 @@
 namespace ZoneEngine_New.Core.MessageHandlers;
 
 using System;
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 using ZoneEngine_New.Core.Modules;
 using ZoneEngine_New.Core.Network;
 
@@ -16,8 +16,8 @@ public sealed class CreateQuestMessageHandler(ModuleMissionRolls rolls) : IMessa
     {
         if (session.State != SessionState.InPlay || session.Player is not { } player || !ReferenceEquals(player.Session, session)
             || player.IsDead || player.IsPersistenceQuarantined || message.Identity != player.Identity
-            || message.QuestIdentity.Type != IdentityType.Mission)
+            || message.MissionId.Type != IdentityType.Mission)
             return;
-        rolls.Accept(player, message.QuestIdentity, session);
+        rolls.Accept(player, message.MissionId, session);
     }
 }

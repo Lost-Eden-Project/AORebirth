@@ -3,7 +3,8 @@ namespace ZoneEngine_New.Core.Ai
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
+    using ZoneEngine_New.Core.Helpers;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
@@ -171,7 +172,7 @@ namespace ZoneEngine_New.Core.Ai
             if (npcSide == (int)Side.Neutral)
                 return false;
 
-            if (npcSide == (int)Side.Clan || npcSide == (int)Side.Omni)
+            if (npcSide == (int)Side.Clan || npcSide == (int)Side.OmniTek)
                 return targetSide != npcSide && targetSide != (int)Side.Neutral;
 
             return true;
@@ -179,8 +180,8 @@ namespace ZoneEngine_New.Core.Ai
 
         /// <summary>Clan against Omni, either way round.</summary>
         public static bool IsOpposingFaction(int npcSide, int targetSide)
-            => (npcSide == (int)Side.Clan && targetSide == (int)Side.Omni)
-               || (npcSide == (int)Side.Omni && targetSide == (int)Side.Clan);
+            => (npcSide == (int)Side.Clan && targetSide == (int)Side.OmniTek)
+               || (npcSide == (int)Side.OmniTek && targetSide == (int)Side.Clan);
 
         /// <summary>
         /// A new target must be within <see cref="NearbyRange"/>, or the longest weapon reach

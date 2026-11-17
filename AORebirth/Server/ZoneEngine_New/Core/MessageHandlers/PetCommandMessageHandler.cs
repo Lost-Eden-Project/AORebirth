@@ -1,9 +1,9 @@
 namespace ZoneEngine_New.Core.MessageHandlers;
 
 using System;
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages;
+using LostEden.Protocol.Messages.N3Messages;
 using ZoneEngine_New.Core.Network;
 using ZoneEngine_New.Core.Pets;
 
@@ -25,10 +25,10 @@ public sealed class PetCommandMessageHandler : IMessageHandler<PetCommandMessage
         if (session.State != SessionState.InPlay || player == null || player.IsDead || player.Playfield == null
             || player.IsPersistenceQuarantined || !message.Identity.Equals(player.Identity))
             return;
-        if (!Enum.IsDefined(typeof(PetCommandCode), message.Unknown2))
+        if (!Enum.IsDefined(typeof(PetCommandCode), (int)message.Command))
             return;
 
-        Identity[] pets = message.Identities ?? [];
-        player.Playfield.GetRequiredService<PetService>().Command(player, (PetCommandCode)message.Unknown2, pets, message.Name);
+        Identity[] pets = message.Pets == null ? [] : Array.ConvertAll(message.Pets, static pet => pet.Identity);
+        player.Playfield.GetRequiredService<PetService>().Command(player, (PetCommandCode)(int)message.Command, pets, message.Text);
     }
 }

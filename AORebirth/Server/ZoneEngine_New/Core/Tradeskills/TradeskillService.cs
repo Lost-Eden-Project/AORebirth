@@ -8,8 +8,8 @@ namespace ZoneEngine_New.Core.Tradeskills
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Helpers;
@@ -344,12 +344,12 @@ namespace ZoneEngine_New.Core.Tradeskills
                         Count = result.StackCount, Action = TemplateActionType.Overflow,
                         Placement = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 }
                     });
-                    player.Session?.Send(new ContainerAddItemMessage
+                    player.Session?.Send(new ContainerAddItem
                     {
                         Identity = player.Identity,
-                        SourceContainer = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
+                        Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
                         Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
-                        TargetPlacement = OverflowNextFreeSlot
+                        Slot = OverflowNextFreeSlot
                     });
                 });
             if (!committed)

@@ -12,6 +12,12 @@
           "StbImageWriteSharp": "1.16.7"
         }
       },
+      "LostEden.Protocol": {
+        "type": "Direct",
+        "requested": "[0.4.0, )",
+        "resolved": "0.4.0",
+        "contentHash": "mjf1HJK7wbLJmjCUvaYpOZ5/Cx/BtTc418mWkal58wqlrPFS6jPkacSOFULAfAW/lGUq6FIePtAxZpvVV+pwSA=="
+      },
       "N3Lite": {
         "type": "Direct",
         "requested": "[0.1.13, )",
@@ -38,14 +44,11 @@
         "type": "Project",
         "dependencies": {
           "AORebirth.Interfaces": "[1.0.0, )",
-          "MathNet.Numerics": "[5.0.0, )",
-          "SmokeLounge.AOtomation.Messaging": "[1.0.0, )"
+          "LostEden.Protocol": "[0.4.0, )",
+          "MathNet.Numerics": "[5.0.0, )"
         }
       },
       "AORebirth.Interfaces": {
-        "type": "Project"
-      },
-      "SmokeLounge.AOtomation.Messaging": {
         "type": "Project"
       }
     }

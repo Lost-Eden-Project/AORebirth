@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Helpers
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
@@ -100,12 +100,12 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         /// <summary>
-        /// A blue-named NPC (Flags stat bit <see cref="SmokeLounge.AOtomation.Messaging.GameData.CharacterFlags.HasBlueName"/>):
+        /// A blue-named NPC (Flags stat bit <see cref="LostEden.Protocol.GameData.CharacterFlags.HasBlueName"/>):
         /// the friendly, non-combat NPCs (receptionists, recruiters, vendors, quest givers). They are not attackable.
         /// </summary>
         public static bool IsBlueNameNpc(int flags)
             => !Entities.StatCollection.IsUnset(flags)
-               && (flags & (int)SmokeLounge.AOtomation.Messaging.GameData.CharacterFlags.HasBlueName) != 0;
+               && (flags & (int)LostEden.Protocol.GameData.CharacterFlags.HasBlueName) != 0;
 
         /// <summary>
         /// True when the only reason <see cref="CanAttack"/> fails is that the target player is not PvP-flagged.

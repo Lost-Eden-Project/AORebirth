@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.Playfield
 
     using AORebirth.Interfaces.Persistence.Shops;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Data;

@@ -4,8 +4,8 @@ namespace ZoneEngine_New.Core.Movement
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using AORebirth.World.Pathfinding;
 
@@ -21,8 +21,8 @@ namespace ZoneEngine_New.Core.Movement
 
     using Quaternion = AORebirth.Core.Vector.Quaternion;
     using Vector3 = AORebirth.Core.Vector.Vector3;
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
     using CharMovement = N3Lite.AORules.CharMovement;
     using CharMovementRules = N3Lite.AORules.CharMovementRules;
     using MovementStats = N3Lite.AORules.MovementStats;
@@ -94,7 +94,7 @@ namespace ZoneEngine_New.Core.Movement
 
         bool Jumping => _sim.JumpHeight != 0f;
 
-        public CharMovementStatus BuildMovementStatus()
+        public MovementStatusBlock BuildMovementStatus()
             => IsPlayer ? BuildPlayerMovementStatus() : BuildNpcMovementStatus();
 
         /// <summary>
@@ -104,7 +104,7 @@ namespace ZoneEngine_New.Core.Movement
         /// 0x1A float goes out only while a translation is held, since on a standing player it set the client running
         /// at login.
         /// </summary>
-        CharMovementStatus BuildPlayerMovementStatus()
+        MovementStatusBlock BuildPlayerMovementStatus()
         {
             RulesStatus.Fields f = _move.Status.Current;
             if (HasPath)
@@ -118,7 +118,7 @@ namespace ZoneEngine_New.Core.Movement
             bool moving = f.FwdState == RulesStatus.Active || f.StrafeState == RulesStatus.Active;
             ComputeSpawnVelocity(forward, backward, out float velocityX, out float velocityY, out float velocityZ);
 
-            return new CharMovementStatus
+            return new MovementStatusBlock
             {
                 VelocityX = velocityX,
                 VelocityY = velocityY,
@@ -140,12 +140,12 @@ namespace ZoneEngine_New.Core.Movement
         }
 
         /// <summary>An NPC moves only along its follow path, which shows as forward; no velocity block.</summary>
-        CharMovementStatus BuildNpcMovementStatus()
+        MovementStatusBlock BuildNpcMovementStatus()
         {
             int mode = _move.State;
             bool forward = HasPath && mode != (int)MovementState.Sit;
             int lastSpeed = mode is (int)MovementState.Walk or (int)MovementState.Run ? mode : _move.LastSpeedMode;
-            return new CharMovementStatus
+            return new MovementStatusBlock
             {
                 Header = 0,
                 ModeId = (byte)mode,
@@ -229,7 +229,7 @@ namespace ZoneEngine_New.Core.Movement
             {
                 Identity = _character.Identity,
                 Unknown = 0,
-                MoveType = (byte)action,
+                MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)action,
                 Heading = new MsgQuaternion
                 {
                     X = rotation.xf,
@@ -237,15 +237,15 @@ namespace ZoneEngine_New.Core.Movement
                     Z = rotation.zf,
                     W = rotation.wf
                 },
-                Coordinates = new MsgVector3
+                Position = new MsgVector3
                 {
                     X = position.xf,
                     Y = position.yf,
                     Z = position.zf
                 },
-                Unknown1 = 0,
-                AuxA = 0,
-                AuxB = 0
+                DeltaTime = 0,
+                Unknown2 = 0,
+                Unknown3 = 0
             };
         }
 
@@ -978,14 +978,13 @@ namespace ZoneEngine_New.Core.Movement
         {
             RootCorrectionDue = false;
             Vector3 held = _character.Position;
-            if (message.Coordinates != null)
             {
                 // A root or stun holds the body where it stands, not where it hangs: one landing mid-jump or mid-fall
                 // leaves the held point in the air while the client keeps falling. Judging that drop as drift pulled the
                 // client back up every pull-back interval for the whole stun. So drift is horizontal only, and the held
                 // body comes down with the client (never up), no lower than the floor.
-                double dx = message.Coordinates.X - held.x;
-                double dz = message.Coordinates.Z - held.z;
+                double dx = message.Position.X - held.x;
+                double dz = message.Position.Z - held.z;
                 DateTime now = DateTime.UtcNow;
                 // The client is held where the server holds the body, so its next free move is measured from there.
                 AccrueMoveBudget(now);
@@ -1000,7 +999,7 @@ namespace ZoneEngine_New.Core.Movement
                         _lastAcceptedMoveUtc == default ? 0f : (float)Math.Max(0.0, (now - _lastAcceptedMoveUtc).TotalSeconds));
                 }
 
-                float reportedY = message.Coordinates.Y;
+                float reportedY = message.Position.Y;
                 if (reportedY < held.yf)
                 {
                     Playfield? playfield = _character.Playfield;
@@ -1017,11 +1016,11 @@ namespace ZoneEngine_New.Core.Movement
                     }
                 }
 
-                message.Coordinates = new MsgVector3(held.xf, held.yf, held.zf);
+                message.Position = new MsgVector3(held.xf, held.yf, held.zf);
             }
 
             MovementAction action = RootedAction((MovementAction)message.MoveType);
-            message.MoveType = (byte)action;
+            message.MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)action;
 
             ClearPath();
             _sim.Halt();
@@ -1045,12 +1044,9 @@ namespace ZoneEngine_New.Core.Movement
         bool TryAcceptClientPosition(CharDCMoveMessage message)
         {
             // Playfield XZ is gated below; the distance since the last accepted move by IsPlausibleClientMove.
-            if (message.Coordinates == null)
-                return true;
-
-            float x = message.Coordinates.X;
-            float y = message.Coordinates.Y;
-            float z = message.Coordinates.Z;
+            float x = message.Position.X;
+            float y = message.Position.Y;
+            float z = message.Position.Z;
 
             Playfield? playfield = _character.Playfield;
             if (playfield != null)
@@ -1099,7 +1095,9 @@ namespace ZoneEngine_New.Core.Movement
                 && y < (float)floor.y)
             {
                 y = (float)floor.y;
-                message.Coordinates.Y = y;
+                MsgVector3 corrected = message.Position;
+                corrected.Y = y;
+                message.Position = corrected;
             }
 
             _character.Position = new Vector3(x, y, z);

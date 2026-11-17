@@ -8,9 +8,12 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using EquipSlot = ZoneEngine_New.Core.Inventory.EquipSlot;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
+    using Perk = LostEden.Protocol.Messages.N3Messages.FullCharacterMessage.Perk;
+    using LockEntry = LostEden.Protocol.Messages.N3Messages.FullCharacterMessage.LockEntry;
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Configuration;
@@ -460,15 +463,15 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Unknown = 0x00,
-                MoveType = (byte)Movement.MovementAction.FullStop,
-                Heading = new SmokeLounge.AOtomation.Messaging.GameData.Quaternion
+                MoveType = (LostEden.Protocol.GameData.MovementAction)(byte)Movement.MovementAction.FullStop,
+                Heading = new LostEden.Protocol.GameData.Quaternion
                 {
                     X = Rotation.xf, Y = Rotation.yf, Z = Rotation.zf, W = Rotation.wf
                 },
-                Coordinates = new SmokeLounge.AOtomation.Messaging.GameData.Vector3 { X = landing.xf, Y = landing.yf, Z = landing.zf },
-                Unknown1 = 0,
-                AuxA = 0,
-                AuxB = 0
+                Position = new LostEden.Protocol.GameData.Vector3 { X = landing.xf, Y = landing.yf, Z = landing.zf },
+                DeltaTime = 0,
+                Unknown2 = 0,
+                Unknown3 = 0
             });
         }
 
@@ -495,7 +498,7 @@ namespace ZoneEngine_New.Core.Entities
         static void StopFollowForEveryone(Player follower, PlayfieldLocality locality)
         {
             follower.Motor.EndFollow();
-            var at = new SmokeLounge.AOtomation.Messaging.GameData.Vector3
+            var at = new LostEden.Protocol.GameData.Vector3
             {
                 X = follower.Position.xf, Y = follower.Position.yf, Z = follower.Position.zf
             };
@@ -505,7 +508,17 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     Identity = follower.Identity,
                     Unknown = 0,
-                    Info = new FollowStopInfo { Coordinates = at, ConfirmCoordinates = at }
+                    // A stop, as live sends one: a target follow with no target (move type 21), the position in the ints
+                    // after it.
+                    Unknown1 = 21,
+                    Info = new FollowTargetMessage.TargetInfo
+                    {
+                        Target = default,
+                        Unknown1 = 0,
+                        Unknown2 = BitConverter.SingleToInt32Bits(at.X),
+                        Unknown3 = BitConverter.SingleToInt32Bits(at.Y),
+                        Unknown4 = BitConverter.SingleToInt32Bits(at.Z)
+                    }
                 },
                 includeSelf: true);
         }
@@ -582,7 +595,7 @@ namespace ZoneEngine_New.Core.Entities
             {
                 if (memberId == Identity.Instance)
                     continue;
-                if (registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = memberId }, out Dynel? dynel)
+                if (registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = memberId }, out Dynel? dynel)
                     && dynel is Player mate && InCombatWithPets(mate))
                     return true;
             }
@@ -949,9 +962,9 @@ namespace ZoneEngine_New.Core.Entities
             Session.Send(new PerkUpdateMessage
             {
                 Identity = Identity,
-                Unknown1 = researchId,
-                Unknown2 = goal,
-                Unknown3 = Math.Max(0, remaining)
+                PerkId = researchId,
+                Goal = goal,
+                Remaining = Math.Max(0, remaining)
             });
         }
 
@@ -972,8 +985,8 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Unknown1 = 1,
-                Entries = PerkCatalog.GrantedToAll
-                    .Select(researchId => new ResearchUpdateEntry { ResearchId = researchId })
+                ResearchLines = PerkCatalog.GrantedToAll
+                    .Select(researchId => new ResearchLine { ResearchId = researchId })
                     .ToArray()
             });
         }
@@ -983,7 +996,7 @@ namespace ZoneEngine_New.Core.Entities
             => Session?.Send(new StatMessage
             {
                 Identity = Identity,
-                Stats = [new GameTuple<CharacterStat, uint> { Value1 = stat, Value2 = unchecked((uint)value) }]
+                Stats = { Network.StatMessages.Pair(stat, value) }
             });
 
         /// <summary>
@@ -1169,24 +1182,24 @@ namespace ZoneEngine_New.Core.Entities
             => statId is not ((int)CharacterStat.LastPerkResetTime or (int)CharacterStat.Stability);
 
         /// <summary>
-        /// FullCharacter's skill lock list (the first FullCharacterSub2 array): per running lock 1, Identity (0, stat id),
+        /// FullCharacter's skill lock list (the first LockEntry array): per running lock 1, Identity (0, stat id),
         /// the seconds it was locked for, the seconds left. Live after a Dimach and a zone change: 1, (0, 144), 1800, 1798
         /// (capture 2026-10-14T00:26:23Z); retail sends no SpecialUsed for it again.
         /// </summary>
-        FullCharacterSub2[] BuildSkillLockEntries()
+        LockEntry[] BuildSkillLockEntries()
         {
-            var entries = new List<FullCharacterSub2>();
+            var entries = new List<LockEntry>();
             foreach ((int statId, int duration, int remaining) in SkillLocks.ActiveWithDuration(DateTime.UtcNow))
             {
                 if (!IsClientSkillLock(statId))
                     continue;
 
-                entries.Add(new FullCharacterSub2
+                entries.Add(new LockEntry
                 {
                     Unknown1 = 1,
-                    Unknown2 = new Identity { Type = (IdentityType)0, Instance = statId },
-                    Unknown3 = duration,
-                    Unknown4 = remaining
+                    Locked = new Identity { Type = (IdentityType)0, Instance = statId },
+                    Duration = duration,
+                    Remaining = remaining
                 });
             }
 
@@ -1194,22 +1207,22 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// FullCharacter's nano line lock list (the third FullCharacterSub2 array): per running lock 1, Identity (1,
+        /// FullCharacter's nano line lock list (the third LockEntry array): per running lock 1, Identity (1,
         /// nano strain), the seconds it was locked for, the seconds left. Live after a Lesser Healing Touch and a zone
         /// change: 1, (1, 951), 8, 5 (capture 2026-10-17T01:38:54Z). The client only times the lines it cast itself, so
         /// this is how a lock survives zoning and login on its side.
         /// </summary>
-        FullCharacterSub2[] BuildNanoLineLockEntries()
+        LockEntry[] BuildNanoLineLockEntries()
         {
-            var entries = new List<FullCharacterSub2>();
+            var entries = new List<LockEntry>();
             foreach ((int strain, int duration, int remaining) in NanoLineLocks.ActiveWithDuration(DateTime.UtcNow))
             {
-                entries.Add(new FullCharacterSub2
+                entries.Add(new LockEntry
                 {
                     Unknown1 = 1,
-                    Unknown2 = new Identity { Type = (IdentityType)1, Instance = strain },
-                    Unknown3 = duration,
-                    Unknown4 = remaining
+                    Locked = new Identity { Type = (IdentityType)1, Instance = strain },
+                    Duration = duration,
+                    Remaining = remaining
                 });
             }
 
@@ -1251,23 +1264,23 @@ namespace ZoneEngine_New.Core.Entities
             };
 
         /// <summary>
-        /// FullCharacter perk map (Gamecode.dll 0x10053ac9 / 0x10052b7d): per trained perk the key id, then
-        /// version marker 0xFFFFFF00, the perk id and a value the client keeps only for research perks.
+        /// FullCharacter perk map (Gamecode.dll 0x10053ac9 / 0x10052b7d): per trained perk the key id (SkillId), then
+        /// the version marker 0xFFFFFF00, the perk id and a value the client keeps only for research perks.
         /// </summary>
-        public PerkMapEntry[] BuildPerkMap()
+        public Perk[] BuildPerkMap()
         {
             // Research tiers in progress ride along with the research XP they still need: the client keeps that value
             // only for research (0x10052b7d) and treats a research entry as researched only at 0.
             var entries = TrainedPerks.Snapshot()
-                .Select(perkId => new PerkMapEntry { Key = perkId, Marker = PerkMapEntry.VersionZero, PerkId = perkId })
+                .Select(perkId => new Perk { SkillId = perkId, Marker = Perk.VersionZero, PerkId = perkId })
                 .ToList();
             foreach ((int researchId, int remaining) in Research.Snapshot())
             {
                 if (remaining > 0 && !TrainedPerks.Contains(researchId))
-                    entries.Add(new PerkMapEntry
+                    entries.Add(new Perk
                     {
-                        Key = researchId,
-                        Marker = PerkMapEntry.VersionZero,
+                        SkillId = researchId,
+                        Marker = Perk.VersionZero,
                         PerkId = researchId,
                         Value = remaining
                     });
@@ -2467,7 +2480,7 @@ namespace ZoneEngine_New.Core.Entities
                     Target = Identity.None,
                     Parameter1 = DeathRespawnActionParameter1,
                     Parameter2 = DeathRespawnActionParameter2,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
         }
 
@@ -2520,11 +2533,7 @@ namespace ZoneEngine_New.Core.Entities
                     new StatMessage
                     {
                         Identity = Identity,
-                        Stats = [new GameTuple<CharacterStat, uint>
-                        {
-                            Value1 = CharacterStat.MonsterData,
-                            Value2 = unchecked((uint)currentShape),
-                        }],
+                        Stats = { Network.StatMessages.Pair(CharacterStat.MonsterData, currentShape) },
                     }, includeSelf: true);
 
             if (!_inFullRebase)
@@ -3346,7 +3355,7 @@ namespace ZoneEngine_New.Core.Entities
                 InfoPacketType.Character,
                 FirstName,
                 LastName);
-            var info = (CharacterInfoPacket)message.Info;
+            InfoPacket info = message.Info;
             Logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,
@@ -3355,7 +3364,7 @@ namespace ZoneEngine_New.Core.Entities
                     Name ?? string.Empty,
                     info.FirstName,
                     info.LastName,
-                    info.Level,
+                    info.ProfessionLevel,
                     (int)info.Profession,
                     info.Health,
                     info.MaxHealth));
@@ -3373,16 +3382,16 @@ namespace ZoneEngine_New.Core.Entities
             var message = new FullCharacterMessage
             {
                 Identity = Identity,
-                MsgVersion = 26,
+                Version = 26,
                 InventorySlots = [.. Inventory.BuildInventorySlots()],
                 UploadedNanoIds = [.. UploadedNanoIds],
                 Unknown2 = [],
                 Unknown3 = 1,
-                Unknown4 = BuildSkillLockEntries(),
-                UnknownI2 = 1,
-                Unknown5 = [],
-                UnknownI3 = 1,
-                Unknown6 = BuildNanoLineLockEntries()
+                SkillLocks = BuildSkillLockEntries(),
+                Unknown5 = 1,
+                Unknown6 = [],
+                Unknown7 = 1,
+                NanoLineLocks = BuildNanoLineLockEntries()
             };
 
             message.Stats1 = BuildFullCharacterIntStats(stats, FullCharacterStats1);
@@ -3390,14 +3399,13 @@ namespace ZoneEngine_New.Core.Entities
             message.Stats3 = BuildFullCharacterByteStats(stats, FullCharacterStats3);
             message.Stats4 = BuildFullCharacterShortStats(stats, FullCharacterStats4);
 
-            message.Unknown9 = 0;
+            message.AbsorbStats = [];
             // The client rebuilds its team and raid windows from this on every playfield it enters.
-            int teamFlags = 0;
-            message.TeamData = Playfield?.GetService<Teams.TeamService>()?.BuildFullCharacterTeam(this, out teamFlags) ?? [];
-            message.Unknown10 = teamFlags;
-            message.Unknown11 = [];
+            message.Teams = [];
+            Playfield?.GetService<Teams.TeamService>()?.FillFullCharacterTeam(this, message);
+            message.UnknownIdentities = [];
             message.Unknown12 = [];
-            message.Unknown13 = BuildPerkMap();
+            message.Perks = BuildPerkMap();
 
             LogFullCharacterInventory(message);
             return message;
@@ -3432,25 +3440,25 @@ namespace ZoneEngine_New.Core.Entities
             CharacterStat.LastPerkResetTime,
         ];
 
-        static GameTuple<int, uint>[] BuildFullCharacterIntStats(StatCollection stats, CharacterStat[] ids)
+        static GameTuple<int, int>[] BuildFullCharacterIntStats(StatCollection stats, CharacterStat[] ids)
         {
             // These are counted (stat id, value) arrays. Absent optional stats are omitted;
             // an explicit stored zero remains distinct from an absent value. Stats in ZeroWhenUnsetStats are
             // always sent, as 0 when unset.
             ids = ids.Where(id => stats.TryGetValue(id, out _) || ZeroWhenUnsetStats.Contains(id)
                                   || stats.WireValueOverride?.Invoke(id) != null).ToArray();
-            var tuples = new GameTuple<int, uint>[ids.Length];
+            var tuples = new GameTuple<int, int>[ids.Length];
             for (int i = 0; i < ids.Length; i++)
             {
                 CharacterStat id = ids[i];
-                tuples[i] = new GameTuple<int, uint>
+                tuples[i] = new GameTuple<int, int>
                 {
                     Value1 = (int)id,
                     Value2 = stats.WireValueOverride?.Invoke(id) is int overridden
-                        ? (uint)overridden
+                        ? overridden
                         : ZeroWhenUnsetStats.Contains(id)
-                            ? (uint)stats.GetOrZero(id)
-                            : (uint)RequireWireStat(stats, id)
+                            ? stats.GetOrZero(id)
+                            : RequireWireStat(stats, id)
                 };
             }
 

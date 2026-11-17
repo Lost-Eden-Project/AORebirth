@@ -4,8 +4,9 @@ namespace ZoneEngine_New.Core.Quests
     using System.Collections.Generic;
     using System.Text;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using WireQuestReward = LostEden.Protocol.GameData.QuestReward;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using AORebirth.Core.GameData;
     using ZoneEngine_New.Core.Entities;
@@ -153,11 +154,10 @@ namespace ZoneEngine_New.Core.Quests
             {
                 Identity = player.Identity,
                 Unknown = 0,
-                Action = QuestAction.Delete,
-                Unknown1 = 0,
-                Mission = new Identity { Type = IdentityType.Mission, Instance = JournalInstance(quest.QuestId) },
-                Unknown2 = 0,
-                Unknown3 = 0
+                Version = 1,
+                Action = 0,
+                Quest = new Identity { Type = IdentityType.Mission, Instance = JournalInstance(quest.QuestId) },
+                Other = default
             });
         }
 
@@ -195,52 +195,54 @@ namespace ZoneEngine_New.Core.Quests
 
             var entry = new Quest
             {
-                QuestId = new Identity { Type = IdentityType.Mission, Instance = journalInstance },
+                Identity = new Identity { Type = IdentityType.Mission, Instance = journalInstance },
                 Version = 15,
                 Flags = flags,
-                ShortInfo = ShortName(string.IsNullOrEmpty(template.Title) ? template.Name : template.Title),
-                LongInfo = LongInfo(template),
+                Name = ShortName(string.IsNullOrEmpty(template.Title) ? template.Name : template.Title),
+                Description = LongInfo(template),
                 // Retail names the giver NPC here; Quests.json has no giver, so the instance stays 0.
-                UnknownId1 = new Identity { Type = IdentityType.CanbeAffected, Instance = 0 },
-                RewardDescriptorVersion = 6,
-                CashReward = reward?.Credits ?? 0,
-                ExperienceReward = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0,
-                Unknown9 = 0x3F1,
-                Unknown10 = 0x3F1,
-                MissionItemData = RewardItems(player, quest),
-                UnknownHash1 = reward?.Hash ?? string.Empty,
-                Unknown14 = 220,
-                UnknownId2 = Copy(player.Identity),
-                MissionIconId = isDungeon && dungeon.MissionIconId > 0 ? dungeon.MissionIconId
+                Identity38 = new Identity { Type = IdentityType.SimpleChar, Instance = 0 },
+                Reward = new WireQuestReward
+                {
+                    Version = 6,
+                    Cash = reward?.Credits ?? 0,
+                    Experience = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0,
+                    Items = RewardItems(player, quest),
+                    // Retail's four bytes here are the reward's four-character hash.
+                    Unknown0C = FourCc(reward?.Hash),
+                    Unknown10 = 220
+                },
+                Identity40 = Copy(player.Identity),
+                Icon = isDungeon && dungeon.MissionIconId > 0 ? dungeon.MissionIconId
                     : template.IconId is int icon and > 0 ? icon
                     : layout?.IconId ?? DefaultIconId,
-                Unknown20 = 7200,
-                Unknown21 = 7200,
-                QuestActions = layout == null ? [] : [Action(player, layout, template, quest, slot, isDungeon ? dungeon : null)],
-                PlayerIds = [Copy(player.Identity)],
-                UnknownArray1 = [slot],
-                UnknownArray2 = [],
-                CharacterInfos = [],
-                Unknown22 = 6,
-                PlayerIds2 = [Copy(player.Identity)],
-                Unknown23 = string.Equals(template.Action, QuestTemplate.KillMultipleAction, StringComparison.Ordinal)
+                Unknown70 = 7200,
+                Unknown74 = 7200,
+                Actions = layout == null ? [] : [Action(player, layout, template, quest, slot, isDungeon ? dungeon : null)],
+                Receivers = [Copy(player.Identity)],
+                Ints60 = [slot],
+                Ints50 = [],
+                Blocks = [],
+                UnknownA8 = 6,
+                Receivers2 = [Copy(player.Identity)],
+                Unknown4C = string.Equals(template.Action, QuestTemplate.KillMultipleAction, StringComparison.Ordinal)
                     ? template.RequiredCount : 0,
-                Unknown24 = template.QasInstance,
-                UnknownId3 = new Identity(),
+                UnknownB0 = template.QasInstance,
+                IdentityB4 = new Identity(),
                 // Original Find Person capture 20261011-215642, IN32: the exact person is also listed with flag 64.
-                QuestIdentities = isDungeon && dungeon.MissionType == (int)MissionRollType.FindPerson && dungeon.ObjectiveNpc != null
-                    ? [new QuestIdentity { Unknown1 = dungeon.ObjectiveNpc.Identity, Unknown2 = 64 }]
+                PairsC8 = isDungeon && dungeon.MissionType == (int)MissionRollType.FindPerson && dungeon.ObjectiveNpc != null
+                    ? [new KeyValuePair<Identity, int>(dungeon.ObjectiveNpc.Identity, 64)]
                     : [],
-                Unknown27 = 7,
-                FactionInfos = [],
-                Unknown28 = announce ? (byte)1 : (byte)0
+                UnknownD4 = 7,
+                IdentitiesD8 = []
             };
 
             return new QuestFullUpdateMessage
             {
                 Identity = Copy(player.Identity),
                 Unknown = 1,
-                Quests = [entry]
+                Quests = [entry],
+                Announce = announce
             };
         }
 
@@ -252,7 +254,7 @@ namespace ZoneEngine_New.Core.Quests
             Identity actionIdentity = objectiveItem?.Identity ?? new Identity();
             Identity destinationIdentity = new();
             Identity npcIdentity = template.IsFindItem || layout.TargetInSlot3 || !layout.NamesTarget
-                ? new Identity() : new Identity { Type = IdentityType.NpcHash, Instance = target };
+                ? new Identity() : new Identity { Type = IdentityType.MobHash, Instance = target };
             if (dungeon != null)
             {
                 switch ((MissionRollType)dungeon.MissionType)
@@ -287,7 +289,7 @@ namespace ZoneEngine_New.Core.Quests
 
             // Waypoint: the dungeon entrance for terminal missions, else the quest's captured live waypoint.
             QuestWaypoint? waypoint = dungeon == null && template.Waypoint is { Playfield: > 0 } w ? w : null;
-            SmokeLounge.AOtomation.Messaging.GameData.Vector3? waypointPoint = waypoint == null ? null : WaypointPoint(player, waypoint, template, layout.Version);
+            LostEden.Protocol.GameData.Vector3? waypointPoint = waypoint == null ? null : WaypointPoint(player, waypoint, template, layout.Version);
             if (waypointPoint == null)
                 waypoint = null;
             Identity waypointPlayfield = dungeon != null
@@ -295,28 +297,28 @@ namespace ZoneEngine_New.Core.Quests
                 : waypoint != null
                     ? new Identity { Type = (IdentityType)WaypointPlayfieldType, Instance = waypoint.Playfield }
                     : new Identity();
-            SmokeLounge.AOtomation.Messaging.GameData.Vector3? waypointPosition = dungeon != null
-                ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(dungeon.EntranceX, dungeon.EntranceY, dungeon.EntranceZ)
+            LostEden.Protocol.GameData.Vector3? waypointPosition = dungeon != null
+                ? new LostEden.Protocol.GameData.Vector3(dungeon.EntranceX, dungeon.EntranceY, dungeon.EntranceZ)
                 : waypointPoint;
 
             return new QuestActionInfo
             {
-                Version = layout.Version,
-                Action = actionIdentity,
-                UnknownId1 = destinationIdentity,
-                UnknownId2 = npcIdentity,
-                UnknownId3 = !template.IsFindItem && layout.TargetInSlot3 ? new Identity { Type = 0, Instance = target } : new Identity(),
-                UnknownId4 = new Identity(),
-                UnknownId5 = new Identity(),
-                UnknownId6 = new Identity(),
-                // Retail's four bytes here are the big-endian Unix time the quest expires.
-                UnknownHash1 = BigEndianChars(expiresOnClient),
-                UnknownId7 = new Identity { Type = (IdentityType)layout.SlotType, Instance = 0x18000000 | slot },
+                Type = layout.Version,
+                Identity04 = actionIdentity,
+                Identity0C = destinationIdentity,
+                Identity14 = npcIdentity,
+                Identity1C = !template.IsFindItem && layout.TargetInSlot3 ? new Identity { Type = 0, Instance = target } : new Identity(),
+                // The Unix time the quest expires, in the client's clock.
+                ExpiryTime = expiresOnClient,
+                Identity64 = new Identity { Type = (IdentityType)layout.SlotType, Instance = 0x18000000 | slot },
                 // Waypoint: playfield and position; a dungeon entrance also carries the entrance building's template pair.
-                PlayfieldId = waypointPlayfield,
-                Unknown10 = dungeon?.BuildingLowId ?? (waypoint != null ? WaypointUnknown : 0),
-                Unknown11 = dungeon?.BuildingHighId ?? (waypoint != null ? WaypointUnknown : 0),
-                Position = waypointPosition
+                WorldPos = new QuestWorldPos
+                {
+                    Playfield = waypointPlayfield,
+                    X = dungeon?.BuildingLowId ?? (waypoint != null ? WaypointUnknown : 0),
+                    Z = dungeon?.BuildingHighId ?? (waypoint != null ? WaypointUnknown : 0),
+                    Offset = waypointPosition ?? default
+                }
             };
         }
 
@@ -349,17 +351,17 @@ namespace ZoneEngine_New.Core.Quests
         /// <see cref="QuestWaypoint.Position"/>; null when it has neither. The target is <see cref="QuestWaypoint.Target"/>,
         /// or for an action live names a target on, the step's objective NPC.
         /// </summary>
-        static SmokeLounge.AOtomation.Messaging.GameData.Vector3? WaypointPoint(Player player, QuestWaypoint waypoint,
+        static LostEden.Protocol.GameData.Vector3? WaypointPoint(Player player, QuestWaypoint waypoint,
             QuestTemplate template, int actionVersion)
         {
             string? target = !string.IsNullOrEmpty(waypoint.Target) ? waypoint.Target
                 : TargetedActionVersions.Contains(actionVersion) ? template.Objective.Npc : null;
             if (!string.IsNullOrEmpty(target) && TryTargetPosition(player, waypoint.Playfield, target, out float x, out float z))
                 // Live sends whole-number x and z, and y as 0 (Alex Gibbs at 3520.79, 856.69 is sent as 3520, 856).
-                return new SmokeLounge.AOtomation.Messaging.GameData.Vector3(MathF.Truncate(x), 0, MathF.Truncate(z));
+                return new LostEden.Protocol.GameData.Vector3(MathF.Truncate(x), 0, MathF.Truncate(z));
 
             return waypoint.Position is { Length: 3 } position
-                ? new SmokeLounge.AOtomation.Messaging.GameData.Vector3(position[0], position[1], position[2])
+                ? new LostEden.Protocol.GameData.Vector3(position[0], position[1], position[2])
                 : null;
         }
 
@@ -450,7 +452,7 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>The reward items the journal shows: what completing the quest would pay this player now.</summary>
-        static MissionItemReward[] RewardItems(Player player, PlayerQuest quest)
+        static List<AcgItem> RewardItems(Player player, PlayerQuest quest)
         {
             IReadOnlyList<QuestRewardItem> shown;
             try
@@ -463,10 +465,10 @@ namespace ZoneEngine_New.Core.Quests
                 shown = [];
             }
 
-            var items = new List<MissionItemReward>(shown.Count);
+            var items = new List<AcgItem>(shown.Count);
             foreach (QuestRewardItem item in shown)
-                items.Add(new MissionItemReward { LowId = item.Id, HighId = item.HighId ?? item.Id, Ql = Math.Max(1, item.Quality) });
-            return items.ToArray();
+                items.Add(new AcgItem { LowId = item.Id, HighId = item.HighId ?? item.Id, Quality = Math.Max(1, item.Quality) });
+            return items;
         }
 
         /// <summary>A 4-character hash ("LE01") as the big-endian int retail sends in identity instances.</summary>
@@ -479,10 +481,6 @@ namespace ZoneEngine_New.Core.Quests
                 value = (value << 8) | (i < hash.Length ? (byte)hash[i] : 0);
             return value;
         }
-
-        /// <summary>Four bytes as the byte-per-char string the fixed 4-byte hash fields serialize.</summary>
-        static string BigEndianChars(uint value)
-            => new(new[] { (char)(value >> 24), (char)((value >> 16) & 0xFF), (char)((value >> 8) & 0xFF), (char)(value & 0xFF) });
 
         static string Capitalize(string text)
             => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];

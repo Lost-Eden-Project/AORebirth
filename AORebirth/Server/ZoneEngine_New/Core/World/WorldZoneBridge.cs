@@ -8,8 +8,8 @@ namespace ZoneEngine_New.Core.World
 
     using AORebirth.World.Contracts.V1;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -245,8 +245,7 @@ namespace ZoneEngine_New.Core.World
                     Identity = player.Identity,
                     Text = text,
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 }));
         }
     }

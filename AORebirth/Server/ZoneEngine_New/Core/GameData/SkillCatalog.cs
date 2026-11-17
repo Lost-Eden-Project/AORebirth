@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.GameData
 
     using AORebirth.Core.GameData;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using Utility;
 
@@ -185,7 +185,7 @@ namespace ZoneEngine_New.Core.GameData
             for (int i = 0; i < professions.Length; i++)
             {
                 professions[i] = Named<Profession>(skillCosts.Professions[i], GameDataPaths.SkillCostsFileName);
-                if (professions[i] is Profession.None or Profession.Monster || Array.IndexOf(professions, professions[i]) != i)
+                if (professions[i] is Profession.Unknown or Profession.Monster || Array.IndexOf(professions, professions[i]) != i)
                     throw Invalid(GameDataPaths.SkillCostsFileName, "profession " + professions[i]);
             }
 

@@ -8,8 +8,8 @@ namespace ZoneEngine_New.Core.Trade
     using AORebirth.Enums;
     using AORebirth.Modules.Events;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Helpers;
@@ -25,7 +25,7 @@ namespace ZoneEngine_New.Core.Trade
     /// many sessions at once. All mutation runs on the owning playfield's tick thread — the registry
     /// lock only protects lookups made from another playfield (transfer, shutdown).
     /// </summary>
-    public sealed class TradeService
+    public sealed partial class TradeService
     {
         /// <summary>Walking further than this from the trade anchor cancels the window.</summary>
         public const double RangeCancelDistance = LootableDynel.OpenRange;
@@ -1345,9 +1345,9 @@ namespace ZoneEngine_New.Core.Trade
                 || player.GetEdgeDistanceTo(session.Npc) > RangeCancelDistance)
                 return;
 
-            if (message.Action == KnuBotTradeAction.Add)
+            if ((KnuBotTradeAction)message.Unknown2 == KnuBotTradeAction.Add)
                 AddKnubotItem(player, session, session.InitiatorOffer, message.Container);
-            else if (message.Action == KnuBotTradeAction.Remove)
+            else if ((KnuBotTradeAction)message.Unknown2 == KnuBotTradeAction.Remove)
                 RemoveKnubotItem(player, session, session.InitiatorOffer, message.Container.Instance);
         }
 
@@ -1597,7 +1597,7 @@ namespace ZoneEngine_New.Core.Trade
                 Unknown1 = 2,
                 Target = npc.Identity,
                 Items = items,
-                Credits = credits
+                Unknown2 = credits
             };
 
         #endregion
@@ -1996,11 +1996,11 @@ namespace ZoneEngine_New.Core.Trade
 
         static void SendReturnToInventory(Player player, int tradeSlot)
             => player.Session?.Send(
-                new ContainerAddItemMessage
+                new ContainerAddItem
                 {
                     Identity = player.Identity,
                     Unknown = 0,
-                    SourceContainer = new Identity
+                    Source = new Identity
                     {
                         Type = IdentityType.KnuBotTradeWindow,
                         Instance = tradeSlot
@@ -2010,7 +2010,7 @@ namespace ZoneEngine_New.Core.Trade
                         Type = IdentityType.Inventory,
                         Instance = player.Identity.Instance
                     },
-                    TargetPlacement = NextFreeSlotMarker
+                    Slot = NextFreeSlotMarker
                 });
 
         /// <summary>
@@ -2053,17 +2053,17 @@ namespace ZoneEngine_New.Core.Trade
                     Unknown4 = 0
                 });
             player.Session.Send(
-                new ContainerAddItemMessage
+                new ContainerAddItem
                 {
                     Identity = player.Identity,
                     Unknown = 0,
-                    SourceContainer = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
+                    Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
                     Target = new Identity
                     {
                         Type = IdentityType.OverflowWindow,
                         Instance = player.Identity.Instance
                     },
-                    TargetPlacement = NextFreeSlotMarker
+                    Slot = NextFreeSlotMarker
                 });
         }
 
@@ -2072,10 +2072,7 @@ namespace ZoneEngine_New.Core.Trade
                 new StatMessage
                 {
                     Identity = player.Identity,
-                    Stats =
-                    [
-                        new GameTuple<CharacterStat, uint> { Value1 = CharacterStat.SocialStatus, Value2 = (uint)value }
-                    ]
+                    Stats = { new((Stat)CharacterStat.SocialStatus, (uint)value) }
                 });
 
         void SetCash(Player player, long cash)
@@ -2102,14 +2099,7 @@ namespace ZoneEngine_New.Core.Trade
                 new StatMessage
                 {
                     Identity = player.Identity,
-                    Stats =
-                    [
-                        new GameTuple<CharacterStat, uint>
-                        {
-                            Value1 = CharacterStat.Cash,
-                            Value2 = (uint)player.Stats.GetOrZero(CharacterStat.Cash)
-                        }
-                    ]
+                    Stats = { new((Stat)CharacterStat.Cash, (uint)player.Stats.GetOrZero(CharacterStat.Cash)) }
                 });
 
         static void TellTradeFailure(Player player, string failure)
@@ -2131,8 +2121,7 @@ namespace ZoneEngine_New.Core.Trade
                     Identity = player.Identity,
                     Text = text,
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 });
 
         #endregion

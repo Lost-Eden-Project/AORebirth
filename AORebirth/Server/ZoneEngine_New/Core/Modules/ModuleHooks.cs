@@ -7,7 +7,7 @@ namespace ZoneEngine_New.Core.Modules
     using AORebirth.Modules.Events;
     using AORebirth.Modules.World;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
@@ -284,6 +284,33 @@ namespace ZoneEngine_New.Core.Modules
         /// <summary>Whether anyone observes visibility on this playfield, to skip work on a busy path.</summary>
         public static bool WantsVisibility(Playfield? playfield)
             => playfield != null && Events(playfield) is { Visibility.HasObservers: true };
+
+        // ---- 1.12: missions ----
+
+        /// <summary>
+        /// <paramref name="player"/> completed <paramref name="quest"/> and its reward is committed. Call after the
+        /// engine's own payout, on the player's tick.
+        /// </summary>
+        public static void MissionCompleted(Playfield playfield, Player player, Quests.PlayerQuest quest, Quests.QuestTemplate template,
+            Quests.QuestService.MissionShare? share, int credits, int experience, bool? rewardWon)
+        {
+            if (Events(playfield) is { MissionCompleted.HasHandlers: true } events)
+                events.MissionCompleted.Raise(new MissionCompletedEvent
+                {
+                    CharacterId = player.Identity.Instance,
+                    PlayfieldId = playfield.Identity.Instance,
+                    QuestId = quest.QuestId,
+                    Generated = quest.Source == Quests.QuestSource.Generated,
+                    Title = template.Title ?? template.Name,
+                    Quality = share?.Quality ?? template.Dungeon?.Quality ?? 0,
+                    Killed = share?.Killed ?? 0,
+                    Total = share?.Total ?? 0,
+                    Credits = Math.Max(0, credits),
+                    Experience = Math.Max(0, experience),
+                    RewardWon = rewardWon,
+                    Timestamp = Now
+                });
+        }
 
         // ---- helpers ----
 

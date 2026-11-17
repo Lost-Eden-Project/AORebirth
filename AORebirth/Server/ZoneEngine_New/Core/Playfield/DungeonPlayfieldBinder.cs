@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Playfield
 
     using AORebirth.World.Collision;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Logging;
@@ -15,7 +15,7 @@ namespace ZoneEngine_New.Core.Playfield
         public static DungeonWorldLayout? TryBuild(
             string gameDataRoot,
             int playfieldId,
-            AcgBuildingGeneratorData? generator,
+            AcgBuildingGenerator? generator,
             IZoneLogger logger)
         {
             ArgumentNullException.ThrowIfNull(logger);

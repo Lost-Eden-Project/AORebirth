@@ -6,9 +6,9 @@ namespace ZoneEngine_New.Core.Nanos
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -1541,7 +1541,7 @@ namespace ZoneEngine_New.Core.Nanos
                     Target = Identity.None,
                     Parameter1 = landed ? 1 : 0,
                     Parameter2 = nanoId,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
 
         // Live IN InterruptNanoCasting: Parameter1=nanoId, Parameter2=reason (observed 7 / 4).
@@ -1559,7 +1559,7 @@ namespace ZoneEngine_New.Core.Nanos
                 Target = Identity.None,
                 Parameter1 = nanoId,
                 Parameter2 = reason,
-                Unknown2 = 0
+                Unknown2 = string.Empty
             };
 
             // Cast bar lives on the caster client; always deliver there first.
@@ -1637,8 +1637,8 @@ namespace ZoneEngine_New.Core.Nanos
             var message = new BuffMessage
             {
                 Identity = owner.Identity,
-                Action = 0,
-                NanoProgram = new Identity
+                Unknown1 = 0,
+                Buff = new Identity
                 {
                     Type = IdentityType.NanoProgram,
                     Instance = buff.Id
@@ -1677,7 +1677,7 @@ namespace ZoneEngine_New.Core.Nanos
                 },
                 Parameter1 = buff.Source.Instance,
                 Parameter2 = buff.RemainingCentiseconds(nowUtc),
-                Unknown2 = 0
+                Unknown2 = string.Empty
             };
 
             SessionOf(owner)?.Send(message);
@@ -1699,7 +1699,7 @@ namespace ZoneEngine_New.Core.Nanos
                 },
                 Parameter1 = caster.Identity.Instance,
                 Parameter2 = buff.DurationCentiseconds,
-                Unknown2 = 0
+                Unknown2 = string.Empty
             };
 
             SessionOf(caster)?.Send(message);
@@ -1839,8 +1839,7 @@ namespace ZoneEngine_New.Core.Nanos
                     Identity = caster.Identity,
                     Text = text,
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 });
         }
 

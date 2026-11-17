@@ -35,6 +35,7 @@ namespace ZoneEngine_New.Core.Modules
         private readonly List<LoadedModule> _modules = new();
         private readonly ZoneModuleActions _actions;
         private readonly ModuleMessageObservers _messages;
+        private readonly ModuleMessageHandlers _messageHandlers;
         private Dictionary<string, List<string>> _capabilities = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(string ModuleId, ModuleGmCommand Command)> _gmCommands = new();
         private readonly HashSet<string> _required = new(StringComparer.OrdinalIgnoreCase);
@@ -57,6 +58,7 @@ namespace ZoneEngine_New.Core.Modules
             World = new ZoneModuleWorld(playfields);
             _actions = new ZoneModuleActions(playfields, accounts, gameDataRoot, logger, shutdown);
             _messages = new ModuleMessageObservers(logger);
+            _messageHandlers = new ModuleMessageHandlers(logger);
         }
 
         public ZoneModuleEvents Events { get; }
@@ -68,6 +70,9 @@ namespace ZoneEngine_New.Core.Modules
 
         /// <summary>The message observers for new connections, or null when no module observes messages.</summary>
         public ModuleMessageObservers? MessageObservers => _messages.HasInbound || _messages.HasOutbound ? _messages : null;
+
+        /// <summary>The N3 types modules handle (module API 1.12); null when none does.</summary>
+        public ModuleMessageHandlers? MessageHandlers => _messageHandlers.Count != 0 ? _messageHandlers : null;
 
         public static ZoneModuleHost Load(
             string gameDataRoot,
@@ -198,6 +203,7 @@ namespace ZoneEngine_New.Core.Modules
         {
             Events.RemoveModule(moduleId);
             _messages.RemoveModule(moduleId);
+            _messageHandlers.RemoveModule(moduleId);
             _gmCommands.RemoveAll(x => string.Equals(x.ModuleId, moduleId, StringComparison.OrdinalIgnoreCase));
             if (string.Equals(_connectionFilterOwner, moduleId, StringComparison.OrdinalIgnoreCase))
             {
@@ -342,7 +348,7 @@ namespace ZoneEngine_New.Core.Modules
                 ModuleCapabilities.GameDataReload, ModuleCapabilities.RespawnNpc, ModuleCapabilities.ObserveMessages,
                 ModuleCapabilities.ReadSessions, ModuleCapabilities.ObserveActions, ModuleCapabilities.ObserveVisibility,
                 ModuleCapabilities.ObserveChat, ModuleCapabilities.ReadChatText, ModuleCapabilities.ReadSanctions,
-                ModuleCapabilities.RollMissions
+                ModuleCapabilities.RollMissions, ModuleCapabilities.HandleMessages, ModuleCapabilities.SendRawMessages
             };
             known.UnionWith(operations);
             var capabilities = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -416,6 +422,19 @@ namespace ZoneEngine_New.Core.Modules
                     "Module " + _handoffHookOwner + " already registered the handoff hook; only one is allowed.");
             _handoffHook = hook;
             _handoffHookOwner = moduleId;
+        }
+
+        private void RegisterMessageHandler(string moduleId, int messageType, IModuleMessageHandler handler)
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Message handlers can only be registered during Initialize.");
+            // The engine's own readers come first: a module cannot take over a message the engine handles.
+            if (Enum.IsDefined(typeof(LostEden.Protocol.Messages.N3MessageType), messageType))
+                throw new InvalidOperationException(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "Message type 0x{0:x8} ({1}) is read by the engine; a module may only handle a type the engine does not.",
+                    messageType, (LostEden.Protocol.Messages.N3MessageType)messageType));
+            _messageHandlers.Add(moduleId, messageType, handler);
         }
 
         private void RegisterMissionRollHook(string moduleId, IMissionRollHook hook)
@@ -501,6 +520,12 @@ namespace ZoneEngine_New.Core.Modules
             {
                 _gate.Require(ModuleCapabilities.RollMissions);
                 _host.RegisterMissionRollHook(ModuleId, hook);
+            }
+
+            public void RegisterMessageHandler(int messageType, IModuleMessageHandler handler)
+            {
+                _gate.Require(ModuleCapabilities.HandleMessages);
+                _host.RegisterMessageHandler(ModuleId, messageType, handler);
             }
         }
 
@@ -655,6 +680,12 @@ namespace ZoneEngine_New.Core.Modules
             {
                 add => _events.KnubotChatOpened.Add(_moduleId, value);
                 remove => _events.KnubotChatOpened.Remove(_moduleId, value);
+            }
+
+            public event Action<MissionCompletedEvent> MissionCompleted
+            {
+                add => _events.MissionCompleted.Add(_moduleId, value);
+                remove => _events.MissionCompleted.Remove(_moduleId, value);
             }
         }
 

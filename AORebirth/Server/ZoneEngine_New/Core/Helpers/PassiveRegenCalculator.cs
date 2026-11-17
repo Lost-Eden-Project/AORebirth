@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Core.Helpers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     /// <summary>
     /// Natural health/nano regeneration. Each delta is a breed base, plus a skill bonus of one per 100 points

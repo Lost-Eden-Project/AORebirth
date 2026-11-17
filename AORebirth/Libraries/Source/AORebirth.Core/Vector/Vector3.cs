@@ -33,6 +33,15 @@ namespace AORebirth.Core.Vector
 {
     #region Usings ...
 
+    // The wire library this build talks to: the zone engine uses LostEden.Protocol, the other engines SmokeLounge.
+#if AOREBIRTH_ZONE_NEW
+
+    using WireData = LostEden.Protocol.GameData;
+#else
+
+    using WireData = SmokeLounge.AOtomation.Messaging.GameData;
+#endif
+
     using System;
     using System.Globalization;
 
@@ -395,9 +404,9 @@ namespace AORebirth.Core.Vector
         /// </param>
         /// <returns>
         /// </returns>
-        public static implicit operator SmokeLounge.AOtomation.Messaging.GameData.Vector3(Vector3 c)
+        public static implicit operator WireData.Vector3(Vector3 c)
         {
-            return new SmokeLounge.AOtomation.Messaging.GameData.Vector3()
+            return new WireData.Vector3()
                    {
                        X = (float)c.x,
                        Y = (float)c.y,
@@ -411,7 +420,7 @@ namespace AORebirth.Core.Vector
         /// </param>
         /// <returns>
         /// </returns>
-        public static implicit operator Vector3(SmokeLounge.AOtomation.Messaging.GameData.Vector3 c)
+        public static implicit operator Vector3(WireData.Vector3 c)
         {
             return new Vector3(c.X, c.Y, c.Z);
         }

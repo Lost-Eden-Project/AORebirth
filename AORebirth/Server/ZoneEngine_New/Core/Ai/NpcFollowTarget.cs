@@ -3,13 +3,13 @@ namespace ZoneEngine_New.Core.Ai
     using System;
     using System.Collections.Generic;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Movement;
 
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     /// <summary>
@@ -65,20 +65,15 @@ namespace ZoneEngine_New.Core.Ai
             for (int i = 0; i < waypoints.Count; i++)
                 coordinates.Add(ToMsg(waypoints[i]));
 
+            var path = new FollowTargetMessage.PathInfo();
+            path.Waypoints.AddRange(coordinates);
             character.Cell?.Announce(
                 new FollowTargetMessage
                 {
                     Identity = character.Identity,
                     Unknown = 0,
-                    Info = new FollowCoordinateInfo
-                    {
-                        FollowInfoType = CoordinateInfoType,
-                        MoveMode = ResolveMoveMode(character),
-                        CoordinateCount = (byte)coordinates.Count,
-                        CurrentCoordinates = coordinates[0],
-                        EndCoordinates = coordinates[coordinates.Count - 1],
-                        Coordinates = coordinates
-                    }
+                    Unknown1 = ResolveMoveMode(character),
+                    Info = path
                 });
         }
 
@@ -91,15 +86,16 @@ namespace ZoneEngine_New.Core.Ai
                 {
                     Identity = character.Identity,
                     Unknown = 0,
-                    Info = new FollowPositionInfo
+                    // A stop: a target follow with no target; the client reads 0x40000000 and the position in the ints
+                    // after the identity.
+                    Unknown1 = RunMoveMode,
+                    Info = new FollowTargetMessage.TargetInfo
                     {
-                        FollowInfoType = 2,
-                        MoveType = RunMoveMode,
-                        Unknown1 = 0,
-                        Unknown2 = 0,
-                        Unknown3 = unchecked((int)0x40000000),
-                        Coordinates = ToMsg(position),
-                        Unknown4 = 0
+                        Target = default,
+                        Unknown1 = unchecked((int)0x40000000),
+                        Unknown2 = BitConverter.SingleToInt32Bits(ToMsg(position).X),
+                        Unknown3 = BitConverter.SingleToInt32Bits(ToMsg(position).Y),
+                        Unknown4 = BitConverter.SingleToInt32Bits(ToMsg(position).Z)
                     }
                 });
         }

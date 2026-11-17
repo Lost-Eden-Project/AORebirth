@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Characters
     using System.Collections.ObjectModel;
     using System.Linq;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;

@@ -33,6 +33,15 @@ namespace AORebirth.Core.Vector
 {
     #region Usings ...
 
+    // The wire library this build talks to: the zone engine uses LostEden.Protocol, the other engines SmokeLounge.
+#if AOREBIRTH_ZONE_NEW
+
+    using WireData = LostEden.Protocol.GameData;
+#else
+
+    using WireData = SmokeLounge.AOtomation.Messaging.GameData;
+#endif
+
     using System;
     using System.Globalization;
 
@@ -109,7 +118,7 @@ namespace AORebirth.Core.Vector
         /// </summary>
         /// <param name="vector3">
         /// </param>
-        public Coordinate(SmokeLounge.AOtomation.Messaging.GameData.Vector3 vector3)
+        public Coordinate(WireData.Vector3 vector3)
         {
             this.coordinate = new Vector3(0, 0, 0);
             this.Update(vector3.X, vector3.Y, vector3.Z);

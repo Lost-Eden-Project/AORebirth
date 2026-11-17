@@ -5,9 +5,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using AORebirth.Core.Textures;
-using SmokeLounge.AOtomation.Messaging.GameData;
-using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
-using SmokeLounge.AOtomation.Messaging.Messages;
+using LostEden.Protocol.GameData;
+using LostEden.Protocol.Messages.N3Messages;
+using LostEden.Protocol.Messages;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Inventory;
@@ -20,7 +20,7 @@ public static class WorldNpcFactory
     {
         ArgumentNullException.ThrowIfNull(definition);
         var npc = new ContentNpcCharacter(definition, optionalIdentity ?? new Identity
-            { Type = IdentityType.CanbeAffected, Instance = definition.InstanceId }, items)
+            { Type = IdentityType.SimpleChar, Instance = definition.InstanceId }, items)
         {
             Name = definition.Name, SpawnSource = SpawnSource.ContentPlacement,
             // Blue-named NPCs are friendly, non-combat NPCs and cannot be attacked.
@@ -36,10 +36,10 @@ public static class WorldNpcFactory
         return npc;
     }
     public static bool TryCreateShop(WorldVendorDefinition definition, IItemTemplateCatalog catalog,
-        out VendingMachine shop, out string failure, Identity? optionalIdentity = null)
+        out VendingMachine shop, out string failure, Identity? optionalIdentity = null, bool allowEmptyStock = false)
     {
         shop = null!; failure = string.Empty;
-        PlayfieldNpcContentCatalog.RequireVendor(definition);
+        PlayfieldNpcContentCatalog.RequireVendor(definition, allowEmptyStock);
         if (!catalog.TryGet(definition.TemplateId, out var template))
         { failure = "Missing vendor template " + definition.TemplateId; return false; }
         foreach (var row in definition.Stock)
@@ -47,7 +47,9 @@ public static class WorldNpcFactory
             { failure = "Missing vendor item template at slot " + row.Slot; return false; }
         shop = new VendingMachine(optionalIdentity ?? new Identity
             { Type = IdentityType.VendingMachine, Instance = definition.InstanceId }, template);
-        shop.Stock.SetConfiguredSnapshot(definition.Stock.Select(row => new ShopStockSlot(row.LowId, row.HighId, row.Quality)).ToArray());
+        // A terminal with no stock (an ICC terminal) is left without one; TradeService never opens it as a shop.
+        if (definition.Stock.Length > 0)
+            shop.Stock.SetConfiguredSnapshot(definition.Stock.Select(row => new ShopStockSlot(row.LowId, row.HighId, row.Quality)).ToArray());
         return true;
     }
     public static bool TryAttachShop(NpcCharacter npc, WorldVendorDefinition definition, IItemTemplateCatalog catalog,
@@ -86,7 +88,7 @@ public static class WorldNpcFactory
             var projection = packet.Deserialize<VendingMachineFullUpdateMessage>(new JsonSerializerOptions
                 { PropertyNameCaseInsensitive = true, IncludeFields = true })
                 ?? throw new InvalidOperationException("Invalid vendor companion packet.");
-            projection.Identity = shop.Identity; projection.NpcIdentity = Identity; projection.PlayfieldId = Playfield.ClientPlayfieldId;
+            projection.Identity = shop.Identity; projection.OwnerType = (int)Identity.Type; projection.OwnerInstance = Identity.Instance; projection.PlayfieldId = Playfield.ClientPlayfieldId;
             yield return projection;
             if (BuildKnubotStatMessage() is { } knubot) yield return knubot;
         }
@@ -94,15 +96,16 @@ public static class WorldNpcFactory
         {
             var result = base.BuildSpawnMessage(); var view = definition.Presentation;
             if (view.AppearanceValue is { } appearance) result.Appearance.Value = appearance;
-            if (view.Family is { } family) result.CharacterInfo = new SimpleNpcInfo { Family = family, LosHeight = view.LosHeight ?? 0 };
-            if (view.Flags is { } flags) { result.AdditionalFlags = (SimpleCharFullUpdateFlags)flags; result.SuppressedFlags = ~(SimpleCharFullUpdateFlags)flags; }
-            if (view.Flags2 is { } flags2) result.Flags2 = flags2;
-            if (view.Unknown1 != null) result.Unknown1 = view.Unknown1.ToArray();
-            if (view.Unknown2 is { } unknown2) result.Unknown2 = unknown2;
+            if (view.Family is { } family) result.CharacterInfo = new SimpleCharInfo.NPCInfo { Family = family, LosHeight = view.LosHeight ?? 0 };
+            if (view.Flags2 is { } flags2) result.Flags2 = (ScfuFlags2)flags2;
+            if (view.Unknown1 != null) result.UnkMovementStatus = view.Unknown1.ToArray();
+            if (view.Unknown2 is { } unknown2) result.ScfuUnk2 = unknown2;
             if (view.VisibleTitle is { } title) result.VisibleTitle = title;
             if (view.Textures != null) result.Textures = view.Textures.Select(t => new Texture { Place = t.Place, Id = t.Id, Unknown = t.Unknown }).ToArray();
             if (view.Meshes != null) result.Meshes = view.Meshes.Select(Clone).ToArray();
-            if (view.Waypoints != null) result.Waypoints = view.Waypoints.Select(p => new Vector3 { X = p.X, Y = p.Y, Z = p.Z }).ToArray();
+            if (view.Waypoints != null) result.Waypoints = view.Waypoints.Select(p => new Vector3 { X = p.X, Y = p.Y, Z = p.Z }).ToList();
+            // The flags follow the content changed above; a captured flag word supplies the behaviour bits.
+            ScfuWire.Refresh(result, view.Flags is { } flags ? (SimpleCharFullUpdateFlags)flags : null);
             return result;
         }
     }

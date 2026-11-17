@@ -4,9 +4,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using System.Collections.Generic;
     using System.Globalization;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using MovementAction = ZoneEngine_New.Core.Movement.MovementAction;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -23,8 +24,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Playfield.Locality;
     using ZoneEngine_New.Core.Quests;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 
     public sealed class CharacterActionMessageHandler : IMessageHandler<CharacterActionMessage>
     {
@@ -166,10 +167,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
         static StatMessage OwnStats(Player player, params (CharacterStat Stat, int Value)[] stats)
         {
-            var tuples = new GameTuple<CharacterStat, uint>[stats.Length];
-            for (int i = 0; i < stats.Length; i++)
-                tuples[i] = new GameTuple<CharacterStat, uint> { Value1 = stats[i].Stat, Value2 = unchecked((uint)stats[i].Value) };
-            return new StatMessage { Identity = player.Identity, Stats = tuples };
+            var message = new StatMessage { Identity = player.Identity };
+            foreach ((CharacterStat stat, int value) in stats)
+                message.Stats.Add(StatMessages.Pair(stat, value));
+            return message;
         }
 
         public void Handle(CharacterActionMessage message, IZoneSession session)
@@ -265,7 +266,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
 
                 case CharacterActionType.DeleteItem:
-                case CharacterActionType.Split:
+                case CharacterActionType.SplitItem:
                 case CharacterActionType.JoinItems:
                     _inventoryActions.Handle(player, message);
                     break;
@@ -461,7 +462,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     Target = Identity.None,
                     Parameter1 = 0,
                     Parameter2 = 0,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
         }
 
@@ -471,7 +472,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
             {
                 Identity = player.Identity,
                 Unknown = 0x00,
-                MoveType = moveType,
+                MoveType = (LostEden.Protocol.GameData.MovementAction)moveType,
                 Heading = new MsgQuaternion
                 {
                     X = player.Rotation.xf,
@@ -479,15 +480,15 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     Z = player.Rotation.zf,
                     W = player.Rotation.wf
                 },
-                Coordinates = new MsgVector3
+                Position = new MsgVector3
                 {
                     X = player.Position.xf,
                     Y = player.Position.yf,
                     Z = player.Position.zf
                 },
-                Unknown1 = 0,
-                AuxA = 0,
-                AuxB = 0
+                DeltaTime = 0,
+                Unknown2 = 0,
+                Unknown3 = 0
             };
         }
     }

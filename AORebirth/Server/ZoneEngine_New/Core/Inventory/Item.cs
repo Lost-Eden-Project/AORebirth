@@ -5,8 +5,8 @@ namespace ZoneEngine_New.Core.Inventory
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
@@ -423,7 +423,7 @@ namespace ZoneEngine_New.Core.Inventory
                     Target = new Identity { Type = pageType, Instance = placement },
                     Parameter1 = 0,
                     Parameter2 = 0,
-                    Unknown2 = 0
+                    Unknown2 = string.Empty
                 });
         }
 
@@ -542,9 +542,9 @@ namespace ZoneEngine_New.Core.Inventory
                 {
                     Identity = containerIdentity,
                     Unknown = 0,
-                    ActionCode = 1,
-                    ActionIdentity = OpenActionIdentity,
-                    Target = player.Identity
+                    Version = 1,
+                    Code = OpenActionIdentity,
+                    Actor = player.Identity
                 });
         }
 
@@ -565,9 +565,9 @@ namespace ZoneEngine_New.Core.Inventory
                 {
                     Identity = containerIdentity,
                     Unknown = 1,
-                    ActionCode = 1,
-                    ActionIdentity = CloseActionIdentity,
-                    Target = player.Identity
+                    Version = 1,
+                    Code = CloseActionIdentity,
+                    Actor = player.Identity
                 });
         }
     }

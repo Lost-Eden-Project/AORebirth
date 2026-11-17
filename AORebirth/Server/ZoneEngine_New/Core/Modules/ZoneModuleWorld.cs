@@ -9,7 +9,7 @@ namespace ZoneEngine_New.Core.Modules
 
     using AORebirth.Modules.World;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Playfield;
@@ -367,7 +367,7 @@ namespace ZoneEngine_New.Core.Modules
             {
                 if (now > watched.Value)
                     slot.CooldownWatch.TryRemove(watched);
-                else if (registry.TryGet(new Identity { Type = IdentityType.CanbeAffected, Instance = watched.Key }, out Dynel? dynel)
+                else if (registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = watched.Key }, out Dynel? dynel)
                          && dynel is Player watchedPlayer && ReferenceEquals(watchedPlayer.Playfield, playfield))
                     cooldowns[watched.Key] = ModuleCooldowns.Read(watchedPlayer);
             }
@@ -377,7 +377,7 @@ namespace ZoneEngine_New.Core.Modules
 
         static int? LiveStat(Playfield playfield, StatKey key)
         {
-            var identity = new Identity { Type = IdentityType.CanbeAffected, Instance = key.Instance };
+            var identity = new Identity { Type = IdentityType.SimpleChar, Instance = key.Instance };
             if (!playfield.GetRequiredService<DynelRegistry>().TryGet(identity, out Dynel? dynel)
                 || dynel is not Character character
                 || !ReferenceEquals(character.Playfield, playfield))

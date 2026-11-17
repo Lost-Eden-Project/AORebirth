@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Playfield
     using System.Globalization;
     using System.Threading;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using Utility;
 

@@ -4,8 +4,10 @@ namespace ZoneEngine_New.Core.Logging
     using System.Globalization;
     using System.Text;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using ActiveNano = LostEden.Protocol.GameData.SimpleCharInfo.ActiveNano;
+    using TextureOverride = LostEden.Protocol.GameData.SimpleCharInfo.TextureOverride;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using Utility;
 
@@ -22,8 +24,6 @@ namespace ZoneEngine_New.Core.Logging
             Line("Identity", FormatIdentity(scfu.Identity));
             Line("Version", scfu.Version);
             Line("Flags", scfu.Flags);
-            Line("AdditionalFlags", scfu.AdditionalFlags);
-            Line("SuppressedFlags", scfu.SuppressedFlags);
             Line("PlayfieldId", scfu.PlayfieldId);
             Line("FightingTarget", scfu.FightingTarget.HasValue ? FormatIdentity(scfu.FightingTarget.Value) : "null");
             Line(
@@ -31,14 +31,12 @@ namespace ZoneEngine_New.Core.Logging
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "({0},{1},{2})",
-                    scfu.Coordinates.X,
-                    scfu.Coordinates.Y,
-                    scfu.Coordinates.Z));
+                    scfu.Position.X,
+                    scfu.Position.Y,
+                    scfu.Position.Z));
             Line(
                 "Heading",
-                scfu.Heading == null
-                    ? "null"
-                    : string.Format(
+                string.Format(
                         CultureInfo.InvariantCulture,
                         "({0},{1},{2},{3})",
                         scfu.Heading.X,
@@ -70,8 +68,10 @@ namespace ZoneEngine_New.Core.Logging
             Line("MonsterScale", scfu.MonsterScale);
             Line("VisualFlags", scfu.VisualFlags);
             Line("VisibleTitle", scfu.VisibleTitle);
-            Line("Unknown1", FormatBytes(scfu.Unknown1));
-            CharMovementStatus move = scfu.MovementStatus;
+            Line("MovementBytes", FormatBytes(scfu.UnkMovementStatus));
+            Movement.MovementStatusBlock move = scfu.UnkMovementStatus is { Length: >= Movement.MovementStatusBlock.Size } movementBytes
+                ? Movement.MovementStatusBlock.FromBytes(movementBytes)
+                : default;
             Line(
                 "MovementStatus",
                 string.Format(
@@ -91,12 +91,12 @@ namespace ZoneEngine_New.Core.Logging
             Line("HeadMesh", scfu.HeadMesh);
             Line("RunSpeedBase", scfu.RunSpeedBase);
             Line("Flags2", scfu.Flags2);
-            Line("OwnerInstance", scfu.OwnerInstance);
-            Line("Unknown2", scfu.Unknown2);
-            Line("Unknown4", scfu.Unknown4);
+            Line("Owner", scfu.Owner.HasValue ? FormatIdentity(scfu.Owner.Value) : "null");
+            Line("ScfuUnk2", scfu.ScfuUnk2);
+            Line("Flags2Unknown", scfu.Flags2Unknown);
             Line("ScfuTowerUnk", scfu.ScfuTowerUnk);
-            Line("IsImmunePadding", scfu.IsImmunePadding);
-            Line("UnknownFlag3Padding", scfu.UnknownFlag3Padding);
+            Line("ImmuneUnknown", scfu.ImmuneUnknown);
+            Line("Flag3Unknown", scfu.Flag3Unknown);
             TextureOverride[] overrides = scfu.TextureOverrides ?? [];
             Line("TextureOverrides.Count", overrides.Length);
             for (int i = 0; i < overrides.Length; i++)
@@ -107,8 +107,8 @@ namespace ZoneEngine_New.Core.Logging
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "Material={0} Texture={1} Unknown1={2} Unknown2={3}",
-                        entry.Material,
-                        entry.Texture,
+                        entry.Name,
+                        entry.TextureId,
                         entry.Unknown1,
                         entry.Unknown2));
             }
@@ -124,15 +124,15 @@ namespace ZoneEngine_New.Core.Logging
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "{0} instance={1} t1={2} t2={3}",
-                        FormatIdentity(nano.NanoIdentity),
+                        FormatIdentity(nano.Identity),
                         nano.NanoInstance,
                         nano.Time1,
                         nano.Time2));
             }
 
-            Vector3[] waypoints = scfu.Waypoints ?? [];
-            Line("Waypoints.Count", waypoints.Length);
-            for (int i = 0; i < waypoints.Length; i++)
+            System.Collections.Generic.List<Vector3> waypoints = scfu.Waypoints ?? [];
+            Line("Waypoints.Count", waypoints.Count);
+            for (int i = 0; i < waypoints.Count; i++)
             {
                 Vector3 wp = waypoints[i];
                 Line(
@@ -172,20 +172,19 @@ namespace ZoneEngine_New.Core.Logging
             }
         }
 
-        private static void WriteCharacterInfo(SimpleCharacterInfo? info)
+        private static void WriteCharacterInfo(SimpleCharInfo? info)
         {
-            if (info is SimpleNpcInfo npc)
+            if (info is SimpleCharInfo.NPCInfo npc)
             {
                 Line("CharacterInfo.Type", "Npc");
                 Line("CharacterInfo.Family", npc.Family);
                 Line("CharacterInfo.LosHeight", npc.LosHeight);
-                Line("CharacterInfo.UnknownData", npc.UnknownData);
-                Line("CharacterInfo.UnknownData2", npc.UnknownData2);
-                Line("CharacterInfo.UnknownData3", npc.UnknownData3);
+                Line("CharacterInfo.Unknown1", npc.Unknown1);
+                Line("CharacterInfo.Unknown2", npc.Unknown2);
                 return;
             }
 
-            if (info is SimplePcInfo pc)
+            if (info is SimpleCharInfo.PlayerInfo pc)
             {
                 Line("CharacterInfo.Type", "Pc");
                 Line("CharacterInfo.CurrentNano", pc.CurrentNano);

@@ -2,8 +2,8 @@ namespace ZoneEngine_New.Core.Helpers
 {
     using System;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
 
@@ -62,18 +62,18 @@ namespace ZoneEngine_New.Core.Helpers
                 attacker.Cell?.Announce(new ReflectAttackMessage
                 {
                     Identity = attacker.Identity,
-                    Unknown1 = returned.Reflected,
+                    Amount = returned.Reflected,
                     Target = target.Identity,
-                    Unknown2 = 0
+                    Stat = 0
                 });
 
             if (returned.Shield > 0)
                 attacker.Cell?.Announce(new ShieldAttackMessage
                 {
                     Identity = attacker.Identity,
-                    Unknown1 = returned.Shield,
+                    Amount = returned.Shield,
                     Target = target.Identity,
-                    Unknown2 = 0
+                    Stat = 0
                 });
         }
 

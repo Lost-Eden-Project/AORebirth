@@ -3,9 +3,9 @@ namespace ZoneEngine_New.Core.Teams
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
     using ZoneEngine_New.Core.Chat;
     using ZoneEngine_New.Core.Helpers;
     using ZoneEngine_New.Core.Entities;
@@ -40,8 +40,13 @@ namespace ZoneEngine_New.Core.Teams
 
         // Updated only from that player's attach/refresh/stat-change callback on its owner tick.
         // Team operations on another playfield never enumerate or read this player's mutable Stats.
+        // Health and Nano are the current values (full, with bonuses); a remote member's row carries only its max values.
         private sealed record MemberData(string Name, int Level, int Profession, int MaxHealth,
-            int MaxNano, bool HasVitals, int Side);
+            int MaxNano, bool HasVitals, int Side)
+        {
+            public int Health { get; set; } = MaxHealth;
+            public int Nano { get; set; } = MaxNano;
+        }
 
         // Original client side text table 2005: 0 neutral, 1 clan, 2 omni, 7 mixed.
         private const int MixedTeamSide = 7;
@@ -107,7 +112,7 @@ namespace ZoneEngine_New.Core.Teams
             lock (_sync)
             {
                 if (_stopped) return;
-                if (player.Identity.Type != IdentityType.CanbeAffected || player.Identity.Instance <= 0)
+                if (player.Identity.Type != IdentityType.SimpleChar || player.Identity.Instance <= 0)
                     throw new ArgumentException("A team owner must be a character identity.", nameof(player));
                 // Every arrival (login, zone change, reconnect) attaches, so this tracks the live playfield.
                 PublishLftLocation(player);
@@ -127,10 +132,18 @@ namespace ZoneEngine_New.Core.Teams
                 Action<CharacterStat, int, int, bool> observer = (stat, _, _, _) =>
                 {
                     if (stat is not (CharacterStat.Level or CharacterStat.Profession or CharacterStat.MaxHealth
-                        or CharacterStat.MaxNanoEnergy or CharacterStat.Side)) return;
+                        or CharacterStat.MaxNanoEnergy or CharacterStat.Side
+                        or CharacterStat.Health or CharacterStat.CurrentNano)) return;
                     lock (_sync)
                     {
                         if (!Owns(player)) return;
+                        // Current vitals change every hit and regen tick: update the row in place.
+                        if (stat is CharacterStat.Health or CharacterStat.CurrentNano
+                            && _data.TryGetValue(player.Identity.Instance, out MemberData? row))
+                        {
+                            CaptureVitals(player, row);
+                            return;
+                        }
                         CaptureData(player);
                         if (stat is CharacterStat.Level or CharacterStat.Side) QueueTeamFacts(player.Identity.Instance);
                     }
@@ -391,10 +404,10 @@ namespace ZoneEngine_New.Core.Teams
         public bool TryHandle(Player player, CharacterActionMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
-            if (message.Action is not (CharacterActionType.TeamRequestInvite or CharacterActionType.TeamRequestReply
-                or CharacterActionType.ClientTeamInviteReply or CharacterActionType.LeaveTeam
+            if (message.Action is not (CharacterActionType.TeamRequestInvite or CharacterActionType.TeamEvent
+                or CharacterActionType.TeamRequestReply or CharacterActionType.LeaveTeam
                 or CharacterActionType.TeamKickMember or CharacterActionType.TransferLeader
-                or CharacterActionType.AcceptTeamRequest)) return false;
+                or CharacterActionType.TeamLeaderChanged)) return false;
             lock (_sync)
             {
                 if (!IsActive(player) || message.Identity != player.Identity) return true;
@@ -415,8 +428,8 @@ namespace ZoneEngine_New.Core.Teams
                         }
                         Invite(player, target, message.Parameter2 == 1);
                         break;
+                    case CharacterActionType.TeamEvent:
                     case CharacterActionType.TeamRequestReply:
-                    case CharacterActionType.ClientTeamInviteReply:
                         if (message.Parameter2 is 1 or 0 or 20)
                             Reply(player, message.Parameter2 == 1, message.Target);
                         break;
@@ -431,7 +444,7 @@ namespace ZoneEngine_New.Core.Teams
                         TransferLeadership(player, message.Target);
                         break;
                     // This is server-to-client leadership state, never invite acceptance.
-                    case CharacterActionType.AcceptTeamRequest:
+                    case CharacterActionType.TeamLeaderChanged:
                         break;
                 }
                 return true;
@@ -506,10 +519,10 @@ namespace ZoneEngine_New.Core.Teams
         public bool TryHandleRaidCmd(Player player, RaidCmdMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
-            return message.Command switch
+            return message.CommandType switch
             {
-                1 => ConvertToRaid(player),
-                4 => MoveRaidMember(player, message.TargetCharacterId, message.DestinationTeamIndex),
+                RaidCmdType.CreateRaid => ConvertToRaid(player),
+                RaidCmdType.MoveMember => MoveRaidMember(player, message.Unknown2, message.Unknown3),
                 _ => Error(player, "Unsupported raid command.")
             };
         }
@@ -554,7 +567,7 @@ namespace ZoneEngine_New.Core.Teams
 
         private bool Invite(Player inviter, Identity targetIdentity, bool confirmedRange)
         {
-            if (targetIdentity.Type != IdentityType.CanbeAffected || targetIdentity.Instance <= 0
+            if (targetIdentity.Type != IdentityType.SimpleChar || targetIdentity.Instance <= 0
                 || !_players.TryGetValue(targetIdentity.Instance, out Player? target) || !IsActive(target)
                 || ReferenceEquals(target, inviter)) return Error(inviter, "Team invite target is not available.");
             if (_membership.ContainsKey(target.Identity.Instance)) return Feedback(inviter, "Feedback_AlreadyTeamMember");
@@ -578,7 +591,7 @@ namespace ZoneEngine_New.Core.Teams
                         : "the team";
                     if (tooHigh)
                     {
-                        Send(inviter, Action(inviter, CharacterActionType.TeamInviteAck, target.Identity));
+                        Send(inviter, Action(inviter, CharacterActionType.TeamInviteTargetLevelTooHigh, target.Identity));
                         Send(inviter, new ChatTextMessage
                         {
                             Identity = inviter.Identity,
@@ -587,7 +600,7 @@ namespace ZoneEngine_New.Core.Teams
                     }
                     else
                     {
-                        Send(inviter, Action(inviter, CharacterActionType.TeamInviteTooLow, target.Identity));
+                        Send(inviter, Action(inviter, CharacterActionType.TeamInviteTargetLevelTooLow, target.Identity));
                         Send(inviter, new ChatTextMessage
                         {
                             Identity = inviter.Identity,
@@ -608,7 +621,7 @@ namespace ZoneEngine_New.Core.Teams
             if (!ReferenceEquals(inviter.Playfield, target.Playfield)
                 || target.Playfield?.GetService<PlayfieldLocality>()?.IsVisibleTo(inviter, target) != true)
                 Send(target, new TeamInviteMessage { Identity = target.Identity, Unknown = 1,
-                    Inviter = inviter.Identity, Name = _data[inviter.Identity.Instance].Name });
+                    Requestor = inviter.Identity, Name = _data[inviter.Identity.Instance].Name });
             Send(target, Action(target, CharacterActionType.TeamRequestInvite, inviter.Identity));
             return true;
         }
@@ -680,14 +693,7 @@ namespace ZoneEngine_New.Core.Teams
             Send(viewer, new StatMessage
             {
                 Identity = subject.Identity,
-                Stats =
-                [
-                    new GameTuple<CharacterStat, uint>
-                    {
-                        Value1 = CharacterStat.Level,
-                        Value2 = (uint)Math.Clamp(subjectLevel, 1, 220)
-                    }
-                ]
+                Stats = { new((Stat)CharacterStat.Level, (uint)Math.Clamp(subjectLevel, 1, 220)) }
             });
         }
 
@@ -773,7 +779,7 @@ namespace ZoneEngine_New.Core.Teams
             if (!accept)
             {
                 _declinedUntil[invitee.Identity.Instance] = _utcNow().AddSeconds(30);
-                Send(inviter, Action(inviter, CharacterActionType.TeamRequestReply, invitee.Identity, 0, 20));
+                Send(inviter, Action(inviter, CharacterActionType.TeamEvent, invitee.Identity, 0, 20));
                 return true;
             }
             bool created = team == null;
@@ -813,7 +819,7 @@ namespace ZoneEngine_New.Core.Teams
 
         private bool Kick(Player leader, Identity target)
         {
-            if (target.Type != IdentityType.CanbeAffected || target == leader.Identity
+            if (target.Type != IdentityType.SimpleChar || target == leader.Identity
                 || !_membership.TryGetValue(leader.Identity.Instance, out Team? team)
                 || team.Leader != leader.Identity.Instance || !team.Members.Contains(target.Instance))
                 return Feedback(leader, "Feedback_NeedToBeTeamLeader");
@@ -823,7 +829,7 @@ namespace ZoneEngine_New.Core.Teams
 
         private bool TransferLeadership(Player leader, Identity target)
         {
-            if (target.Type != IdentityType.CanbeAffected || target == leader.Identity
+            if (target.Type != IdentityType.SimpleChar || target == leader.Identity
                 || !_membership.TryGetValue(leader.Identity.Instance, out Team? team)
                 || team.Leader != leader.Identity.Instance || !team.Members.Contains(target.Instance)
                 || !IsActive(_players[target.Instance]))
@@ -977,14 +983,14 @@ namespace ZoneEngine_New.Core.Teams
                 SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
                 if (viewerId == team.Leader)
                 {
-                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamRequestReply, Identity.None, 0, 17))) return;
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamEvent, Identity.None, 0, 17))) return;
                     SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
                 }
                 if (TryLevel(viewer, out _) && !AnnounceNow(viewer, viewerId, team)) return;
                 _publishedRosters.TryGetValue(viewerId, out published);
                 if (viewerId == team.Leader)
                 {
-                    if (!SendNow(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, viewer.Identity,
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamLeaderChanged, viewer.Identity,
                         (int)IdentityType.TeamWindow, team.Id))) return;
                     SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
                 }
@@ -993,20 +999,20 @@ namespace ZoneEngine_New.Core.Teams
             {
                 if (team.ExplicitLeadershipTransfer)
                 {
-                    if (!SendNow(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, CharacterIdentity(team.Leader),
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamLeaderChanged, CharacterIdentity(team.Leader),
                         (int)IdentityType.TeamWindow, team.Id))) return;
                 }
                 else if (viewerId == team.Leader)
                 {
-                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamRequestReply, Identity.None, 0, 17))) return;
-                    if (!SendNow(viewer, Action(viewer, CharacterActionType.AcceptTeamRequest, viewer.Identity,
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamEvent, Identity.None, 0, 17))) return;
+                    if (!SendNow(viewer, Action(viewer, CharacterActionType.TeamLeaderChanged, viewer.Identity,
                         (int)IdentityType.TeamWindow, team.Id))) return;
                 }
             }
             // Established viewers must enter raid mode before an accumulated subgroup reassignment.
             if (!initialRoster && team.IsRaid && !published!.IsRaid)
             {
-                if (!SendNow(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Unknown1 = 0 })) return;
+                if (!SendNow(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Command = 0 })) return;
                 published.IsRaid = true;
                 // Original RaidIIR converts the existing ordinary-team rows to raid group zero in place.
                 foreach (int id in published.Members.Keys.ToArray())
@@ -1031,9 +1037,7 @@ namespace ZoneEngine_New.Core.Teams
                     MemberData? data = DataOf(id);
                     if (data is { HasVitals: true } && IsMemberVisibleTo(viewer, id))
                     {
-                        SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = CharacterIdentity(id),
-                            Unknown3 = data.MaxNano, Unknown4 = data.MaxNano,
-                            Unknown5 = data.MaxHealth, Unknown6 = data.MaxHealth });
+                        SendNow(viewer, MemberVitals(viewer, CharacterIdentity(id), data));
                     }
                     SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
                 }
@@ -1058,7 +1062,7 @@ namespace ZoneEngine_New.Core.Teams
                 published.ChatChannel = chatChannel;
             }
             if (team.IsRaid && !published.IsRaid
-                && SendNow(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Unknown1 = 0 }))
+                && SendNow(viewer, new RaidMessage { Identity = viewer.Identity, Unknown = 0, Command = 0 }))
             {
                 published.IsRaid = true;
             }
@@ -1078,9 +1082,9 @@ namespace ZoneEngine_New.Core.Teams
             MemberData data = DataOf(memberId)!;
             // Original RaidView interprets -1 as the viewer's current subgroup when handling a join signal.
             int raidTeamIndex = team.IsRaid ? RaidListOf(team, memberId) : -1;
-            if (!SendNow(viewer, new TeamMemberMessage { Identity = viewer.Identity, Unknown = 0, Member = CharacterIdentity(memberId),
-                Team = new Identity { Type = IdentityType.TeamWindow, Instance = ClientTeamId(team, memberId) }, Unknown4 = raidTeamIndex,
-                Level = level, Unknown5 = (short)data.Profession, Name = data.Name })) return false;
+            if (!SendNow(viewer, new TeamMemberMessage { Identity = viewer.Identity, Unknown = 0, Character = CharacterIdentity(memberId),
+                Team = new Identity { Type = IdentityType.TeamWindow, Instance = ClientTeamId(team, memberId) }, RaidGroupIndex = raidTeamIndex,
+                Unknown2 = level, Profession = (short)data.Profession, Name = data.Name })) return false;
             if (published == null)
             {
                 published = new PublishedRoster(team.Id);
@@ -1112,17 +1116,13 @@ namespace ZoneEngine_New.Core.Teams
             Identity target = CharacterIdentity(targetId);
             bool sendVitals = data.HasVitals && IsMemberVisibleTo(viewer, targetId);
             if (sendVitals)
-                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target,
-                    Unknown3 = data.MaxNano, Unknown4 = data.MaxNano,
-                    Unknown5 = data.MaxHealth, Unknown6 = data.MaxHealth });
+                SendNow(viewer, MemberVitals(viewer, target, data));
             SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
             // The captured move left group zero; later moves must remove from the member's actual old group.
             if (!RemovePublishedMemberNow(viewer, _publishedRosters[viewer.Identity.Instance], targetId)) return;
             if (!AnnounceNow(viewer, targetId, team)) return;
             if (sendVitals)
-                SendNow(viewer, new TeamMemberInfoMessage { Identity = viewer.Identity, Unknown = 0, Member = target,
-                    Unknown3 = data.MaxNano, Unknown4 = data.MaxNano,
-                    Unknown5 = data.MaxHealth, Unknown6 = data.MaxHealth });
+                SendNow(viewer, MemberVitals(viewer, target, data));
             SetStatNow(viewer, CharacterStat.SocialStatus, social, true);
         }
 
@@ -1212,8 +1212,7 @@ namespace ZoneEngine_New.Core.Teams
         private static void SetStatNow(Player player, CharacterStat stat, int value, bool send)
         {
             player.Stats.Set(stat, value);
-            if (send) SendNow(player, new StatMessage { Identity = player.Identity, Stats =
-                [new GameTuple<CharacterStat, uint> { Value1 = stat, Value2 = (uint)value }] });
+            if (send) SendNow(player, new StatMessage { Identity = player.Identity, Stats = { new((Stat)stat, (uint)value) } });
         }
 
         private static CharacterActionMessage Action(Player viewer, CharacterActionType action, Identity target,
@@ -1246,8 +1245,26 @@ namespace ZoneEngine_New.Core.Teams
             _data[player.Identity.Instance] = new MemberData(player.Name ?? player.FirstName,
                 player.Stats.GetOrZero(CharacterStat.Level), player.Stats.GetOrZero(CharacterStat.Profession),
                 health, nano, hasVitals, player.Stats.GetOrZero(CharacterStat.Side));
+            CaptureVitals(player, _data[player.Identity.Instance]);
         }
-        private static Identity CharacterIdentity(int id) => new() { Type = IdentityType.CanbeAffected, Instance = id };
+
+        private static void CaptureVitals(Player player, MemberData row)
+        {
+            row.Health = player.Stats.GetOrZero(CharacterStat.Health);
+            row.Nano = player.Stats.GetOrZero(CharacterStat.CurrentNano);
+        }
+
+        /// <summary>
+        /// A member's vitals for the viewer's team and raid windows. TeamMemberInfoIIR_t (handler 1007a7dd) reads them
+        /// as current nano, max nano, max health, current health; each is the full value, with gear and buff bonuses.
+        /// </summary>
+        private static TeamMemberInfoMessage MemberVitals(Player viewer, Identity member, MemberData data) => new()
+        {
+            Identity = viewer.Identity, Unknown = 0, Character = member,
+            CurrentNano = data.Nano, MaxNanoEnergy = data.MaxNano,
+            MaxHealth = data.MaxHealth, Health = data.Health
+        };
+        private static Identity CharacterIdentity(int id) => new() { Type = IdentityType.SimpleChar, Instance = id };
         private void CancelInvitations(int id)
         {
             foreach (int target in _invitations.Where(p => p.Key == id || p.Value.Inviter.Identity.Instance == id)

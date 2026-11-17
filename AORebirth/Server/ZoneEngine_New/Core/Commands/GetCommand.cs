@@ -5,7 +5,7 @@ namespace ZoneEngine_New.Core.Commands
     using System.Globalization;
     using System.Text;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;

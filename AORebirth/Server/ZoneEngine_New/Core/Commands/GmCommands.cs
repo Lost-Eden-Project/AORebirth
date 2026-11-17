@@ -5,8 +5,8 @@ namespace ZoneEngine_New.Core.Commands
     using System.Globalization;
     using System.Linq;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Network;
@@ -170,7 +170,7 @@ namespace ZoneEngine_New.Core.Commands
         }
 
         static Identity CanbeAffected(int instance)
-            => new Identity { Type = IdentityType.CanbeAffected, Instance = instance };
+            => new Identity { Type = IdentityType.SimpleChar, Instance = instance };
     }
 
     public interface IGmCommand
@@ -201,8 +201,7 @@ namespace ZoneEngine_New.Core.Commands
                     Identity = player.Identity,
                     Text = text,
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 });
         }
 

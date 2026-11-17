@@ -6,7 +6,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;

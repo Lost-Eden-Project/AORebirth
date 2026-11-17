@@ -7,16 +7,17 @@ namespace ZoneEngine_New.Core.Entities
 
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
-    using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+    using LostEden.Protocol.GameData;
+    using TextureOverride = LostEden.Protocol.GameData.SimpleCharInfo.TextureOverride;
+    using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Mobs;
     using ZoneEngine_New.Core.Teams;
 
-    using MsgQuaternion = SmokeLounge.AOtomation.Messaging.GameData.Quaternion;
-    using MsgVector3 = SmokeLounge.AOtomation.Messaging.GameData.Vector3;
+    using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
+    using MsgVector3 = LostEden.Protocol.GameData.Vector3;
 
     /// <summary>
     /// Corpse dynel left when a character dies. Holds rolled loot in <see cref="LootableDynel.Loot"/>.
@@ -38,11 +39,11 @@ namespace ZoneEngine_New.Core.Entities
 
         // A player's corpse, from live "Remains of Aagent" (female Nanomage, capture 2026-10-07T17:53:00Z, as seen by
         // another player): CanChangeClothes 1, DeadTimer 75, no cash, the body CAT mesh (5941, nanomage_female.cir),
-        // and its ItemAnimEffect differs from an NPC's in HeaderB, Unknown7, Unknown9 and MonsterData.
+        // and its ItemAnimEffect differs from an NPC's in the spell's second header int, AnimEffect, Sex and Breed.
         private const int PlayerDeadTimer = 75;
-        private const int PlayerAnimHeaderB = 0x3A24246F;
-        private const int PlayerAnimUnknown7 = 501;
-        private const int PlayerAnimUnknown9 = 3;
+        private const int PlayerAnimUnknown1 = 0x3A24246F;
+        private const int PlayerAnimEffect = 501;
+        private const int PlayerAnimSex = 3;
 
         private readonly bool _ownerIsPlayer;
         private readonly bool _ownerWoreRobe;
@@ -169,14 +170,13 @@ namespace ZoneEngine_New.Core.Entities
                 // itself, so it is told the real total.
                 player.Stats.Set(CharacterStat.Cash, current + taken, StatDetail.Base, dirty: true);
                 player.FlushDirtyStats();
-                player.Session?.Send(new SmokeLounge.AOtomation.Messaging.Messages.N3Messages.ChatTextMessage
+                player.Session?.Send(new LostEden.Protocol.Messages.N3Messages.ChatTextMessage
                 {
                     Identity = player.Identity,
                     Text = "You cannot carry more than "
                         + Characters.CashLimit.Max.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " credits.",
                     Unknown1 = 0,
-                    Unknown2 = 0,
-                    Unknown3 = 0
+                    Unknown2 = 0
                 });
                 return;
             }
@@ -327,7 +327,7 @@ namespace ZoneEngine_New.Core.Entities
             {
                 Identity = Identity,
                 Unknown = 0,
-                Unknown1 = 0x08,
+                Version = 8,
                 Unknown2 = 0x0B,
                 Owner = Identity.None,
                 Position = position,
@@ -336,15 +336,14 @@ namespace ZoneEngine_New.Core.Entities
                 StateMachine = Identity.None,
                 Unknown3 = 0x6F,
                 Stats = BuildStats(catMesh),
-                NameLength = Name.Length + 1,
-                Name = Name,
-                NameTerminator = 0,
+                // The name's length prefix counts its terminator; the codec writes the string as given.
+                Name = Name + '\0',
                 Unknown4 = 0x02,
                 Unknown5 = 0x32,
                 UnknownArray = [],
                 Unknown6 = 0x03,
-                AnimationEffects = _ownerIsPlayer ? BuildPlayerAnimationEffects() : BuildAnimationEffects(monsterData),
-                // Dead character identity (AOSharp IdentityType.Character == CanbeAffected).
+                Spells = _ownerIsPlayer ? BuildPlayerAnimationEffects() : BuildAnimationEffects(monsterData),
+                // The dead character.
                 UnknownIdentity = Owner,
                 Textures = OwnerTextures.Length > 0 ? OwnerTextures : BuildDefaultTextures(),
                 HasTextureOverrides = OwnerTextureOverrides.Length > 0 ? 1 : 0,
@@ -368,10 +367,10 @@ namespace ZoneEngine_New.Core.Entities
             return textures;
         }
 
-        GameTuple<CharacterStat, uint>[] BuildStats(int catMesh)
+        GameTuple<Stat, int>[] BuildStats(int catMesh)
         {
             // Live Remains CFU: CATMesh present, MonsterData absent; include zeroed companion stats.
-            List<GameTuple<CharacterStat, uint>> stats =
+            List<GameTuple<Stat, int>> stats =
             [
                 Tuple(CharacterStat.Flags, DefaultFlags),
                 Tuple(CharacterStat.StaticInstance, 0),
@@ -413,24 +412,34 @@ namespace ZoneEngine_New.Core.Entities
             return stats.ToArray();
         }
 
-        internal static AnimationEffect[] BuildAnimationEffects(int monsterData)
+        /// <summary>
+        /// The corpse's ItemAnimEffect spell, as the client reads a SpellData_t: no criteria, the common Duration 1
+        /// (Interval, ApplyOn and TargetList 0), then the function's own TargetType 0, TargetInstance 0, the AnimEffect,
+        /// AnimFlag 1, the Sex, the Breed (live's MonsterData field) and Radius 0.
+        /// </summary>
+        static SpellData ItemAnimEffect(int unknown1, int animEffect, int sex, int breed) => new()
         {
-            return
-            [
-                new AnimationEffect
-                {
-                    TypeId = (int)FunctionType.ItemAnimEffect,
-                    HeaderB = 0,
-                    HeaderC = 4,
-                    Duration = 0,
-                    Interval = 1,
-                    Unknown7 = 500,
-                    Unknown8 = 1,
-                    Unknown9 = 4,
-                    MonsterData = monsterData
-                }
-            ];
-        }
+            Function = SpellFunction.ItemAnimEffect,
+            Unknown1 = unknown1,
+            Version = SpellFormats.Version,
+            Criteria = [],
+            Properties = new Dictionary<SpellPropertyOperator, int>
+            {
+                [SpellPropertyOperator.Duration] = 1,
+                [SpellPropertyOperator.Interval] = 0,
+                [SpellPropertyOperator.ApplyOn] = 0,
+                [SpellPropertyOperator.TargetList] = 0,
+                [SpellPropertyOperator.TargetType] = 0,
+                [SpellPropertyOperator.TargetInstance] = 0,
+                [SpellPropertyOperator.AnimEffect] = animEffect,
+                [SpellPropertyOperator.AnimFlag] = 1,
+                [SpellPropertyOperator.Sex] = sex,
+                [SpellPropertyOperator.Breed] = breed,
+                [SpellPropertyOperator.Radius] = 0
+            }
+        };
+
+        internal static SpellData[] BuildAnimationEffects(int monsterData) => [ItemAnimEffect(0, 500, 4, monsterData)];
 
         /// <summary>
         /// The body CAT mesh of a player without MonsterData. The client picks the base body from Breed and Sex
@@ -466,27 +475,13 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// A player's corpse effect. Live's MonsterData field is 3 for a Nanomage whose Breed and Sex are both 3; it is
+        /// A player's corpse effect. Live's Breed argument is 3 for a Nanomage whose Breed and Sex are both 3; it is
         /// taken as the Breed until a capture of another breed tells them apart.
         /// </summary>
-        AnimationEffect[] BuildPlayerAnimationEffects()
+        SpellData[] BuildPlayerAnimationEffects()
         {
             SourceStats.TryGetValue(CharacterStat.Breed, out int breed);
-            return
-            [
-                new AnimationEffect
-                {
-                    TypeId = (int)FunctionType.ItemAnimEffect,
-                    HeaderB = PlayerAnimHeaderB,
-                    HeaderC = 4,
-                    Duration = 0,
-                    Interval = 1,
-                    Unknown7 = PlayerAnimUnknown7,
-                    Unknown8 = 1,
-                    Unknown9 = PlayerAnimUnknown9,
-                    MonsterData = breed
-                }
-            ];
+            return [ItemAnimEffect(PlayerAnimUnknown1, PlayerAnimEffect, PlayerAnimSex, breed)];
         }
 
         bool TryResolveCatMesh(out int catMesh)
@@ -537,13 +532,12 @@ namespace ZoneEngine_New.Core.Entities
                 SourceStats[CharacterStat.HeadMesh] = headMesh;
         }
 
-        void AddCopied(List<GameTuple<CharacterStat, uint>> stats, CharacterStat stat)
+        void AddCopied(List<GameTuple<Stat, int>> stats, CharacterStat stat)
         {
             if (SourceStats.TryGetValue(stat, out int value))
                 stats.Add(Tuple(stat, value));
         }
 
-        static GameTuple<CharacterStat, uint> Tuple(CharacterStat stat, int value) =>
-            new() { Value1 = stat, Value2 = (uint)value };
+        static GameTuple<Stat, int> Tuple(CharacterStat stat, int value) => new((Stat)stat, value);
     }
 }
