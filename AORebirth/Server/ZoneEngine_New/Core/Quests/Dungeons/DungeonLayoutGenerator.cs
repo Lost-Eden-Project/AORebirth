@@ -350,7 +350,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
                 if (layout.Rooms is [int lowest, int highest])
                 {
-                    // Planned floors run about two rooms per size step; start there and walk toward the range.
+                    // Planned floors run about two rooms per size step; start there and walk toward the range. Rooms are
+                    // counted over the floors that get rooms: a team dungeon's last floor is the boss room alone, and
+                    // averaged in it would hold the count under the range however big the other floors were.
                     int size = Math.Clamp((lowest + highest) / 4, AORebirth.DungeonGenerator.DungeonGenerator.MinFloorSize,
                         AORebirth.DungeonGenerator.DungeonGenerator.MaxFloorSize);
                     int seed = parameters.Seed;
@@ -358,13 +360,28 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     for (int attempt = 0; attempt < RoomSearchAttempts; attempt++)
                     {
                         plan.FloorSize = size;
-                        int perFloor = Generate(plan, seed, parameters.EntranceInstance).Generator.Rooms.Count / floors;
+                        AORebirth.DungeonGenerator.DungeonGenerationResult generated = Generate(plan, seed, parameters.EntranceInstance);
+                        int roomFloors = generated.BossRoomIndex == null ? floors : Math.Max(1, floors - 1);
+                        int perFloor = generated.Rooms.Count / roomFloors;
                         int miss = perFloor < lowest ? lowest - perFloor : perFloor > highest ? perFloor - highest : 0;
                         if (best == null || miss < best.Value.Miss)
                             best = (seed, size, miss);
                         if (miss == 0)
                             break;
-                        size = Math.Clamp(size + (perFloor < lowest ? 1 : -1), AORebirth.DungeonGenerator.DungeonGenerator.MinFloorSize,
+                        // Jump by the ratio of rooms wanted to rooms got, at least one size and at most eight (so an odd
+                        // layout cannot fling the size). One size at a time is not enough: a style with big rooms keeps
+                        // the same room count across many sizes (386 gives 6-8 a floor from size 5 to 12) and would spend
+                        // every attempt on that plateau. At the smallest or largest size with the count still outside the
+                        // range on that side, no further size can help.
+                        int direction = perFloor < lowest ? 1 : -1;
+                        if (size == (direction > 0 ? AORebirth.DungeonGenerator.DungeonGenerator.MaxFloorSize
+                                : AORebirth.DungeonGenerator.DungeonGenerator.MinFloorSize))
+                            break;
+                        int next = perFloor > 0
+                            ? (int)Math.Round(size * ((lowest + highest) / 2.0) / perFloor, MidpointRounding.AwayFromZero)
+                            : size + direction;
+                        next = direction > 0 ? Math.Clamp(next, size + 1, size + 8) : Math.Clamp(next, size - 8, size - 1);
+                        size = Math.Clamp(next, AORebirth.DungeonGenerator.DungeonGenerator.MinFloorSize,
                             AORebirth.DungeonGenerator.DungeonGenerator.MaxFloorSize);
                         seed = unchecked(seed * 31 + 0x2545F491) & int.MaxValue;
                     }

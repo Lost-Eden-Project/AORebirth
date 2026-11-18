@@ -82,11 +82,14 @@ namespace ZoneEngine_New.Core.Commands
                     try
                     {
                         AORebirth.World.Contracts.V1.ListOnlineReply reply = await _world.ListOnlineAsync().ConfigureAwait(false);
+                        // A character still entering holds a session with only its id; its name, level and
+                        // profession arrive once it has loaded, so it is left off until then.
                         online = reply.Characters
+                            .Where(character => !string.IsNullOrEmpty(character.Name))
                             .Where(character => showHidden || !Player.IsHiddenCharacter(character.CharacterId))
                             .Select(character => new Entry(
-                            string.IsNullOrEmpty(character.Name) ? character.CharacterId.ToString(CultureInfo.InvariantCulture) : character.Name,
-                            canTeleport && !string.IsNullOrEmpty(character.Name) && character.CharacterId != callerId,
+                            character.Name,
+                            canTeleport && character.CharacterId != callerId,
                             character.Level,
                             character.Profession)).ToList();
                     }
@@ -105,12 +108,11 @@ namespace ZoneEngine_New.Core.Commands
 
         List<Entry> LocalEntries(bool canTeleport, int callerId, bool showHidden)
             => _playfields.Value.SnapshotPlayers()
+                .Where(player => !string.IsNullOrEmpty(player.Name))
                 .Where(player => showHidden || !player.HiddenFromPlayers)
                 .Select(player => new Entry(
-                    string.IsNullOrEmpty(player.Name)
-                        ? player.Identity.Instance.ToString(CultureInfo.InvariantCulture)
-                        : player.Name,
-                    canTeleport && !string.IsNullOrEmpty(player.Name) && player.Identity.Instance != callerId,
+                    player.Name!,
+                    canTeleport && player.Identity.Instance != callerId,
                     player.Stats.GetOrZero(CharacterStat.Level),
                     player.Stats.GetOrZero(CharacterStat.Profession)))
                 .ToList();
