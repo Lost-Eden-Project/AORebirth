@@ -187,9 +187,9 @@ namespace ZoneEngine_New.Core.Modules
                         return null;
                     return Expression.New(
                         typeof(EntityRef).GetConstructor([typeof(int), typeof(int)])!,
-                        Expression.Convert(Expression.Convert(Expression.Property(value, nameof(Identity.Type)),
+                        Expression.Convert(Expression.Convert(Expression.PropertyOrField(value, nameof(Identity.Type)),
                             Enum.GetUnderlyingType(typeof(LostEden.Protocol.GameData.IdentityType))), typeof(int)),
-                        Expression.Property(value, nameof(Identity.Instance)));
+                        Expression.PropertyOrField(value, nameof(Identity.Instance)));
                 case Kind.String:
                     return type == typeof(string) ? value : null;
                 default:
