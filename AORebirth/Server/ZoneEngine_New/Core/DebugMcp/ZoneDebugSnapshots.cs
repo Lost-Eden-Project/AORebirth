@@ -130,9 +130,11 @@ namespace ZoneEngine_New.Core.DebugMcp
         public static string? EnumName<TEnum>(int value)
             where TEnum : struct, Enum
         {
-            if (!Enum.IsDefined(typeof(TEnum), value))
+            // As the enum's own underlying type: IsDefined throws for an int against a uint enum (Profession).
+            object typed = Enum.ToObject(typeof(TEnum), value);
+            if (!Enum.IsDefined(typeof(TEnum), typed))
                 return null;
-            return Enum.GetName(typeof(TEnum), value);
+            return Enum.GetName(typeof(TEnum), typed);
         }
 
         static void CopyPose(Dynel dynel, out double x, out double y, out double z, out double heading)

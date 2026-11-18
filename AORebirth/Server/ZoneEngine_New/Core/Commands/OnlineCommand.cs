@@ -163,7 +163,7 @@ namespace ZoneEngine_New.Core.Commands
 
         static string ProfessionName(int profession)
         {
-            if (profession <= 0 || !Enum.IsDefined(typeof(Profession), profession))
+            if (profession <= 0 || !Enum.IsDefined(typeof(Profession), (uint)profession))
                 return string.Format(CultureInfo.InvariantCulture, "Unknown ({0})", profession);
 
             string raw = ((Profession)profession).ToString();

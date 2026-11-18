@@ -190,7 +190,7 @@ namespace ZoneEngine_New.Core.Commands
                 };
                 foreach (AccountCharacter character in details.Characters)
                 {
-                    string profession = Enum.IsDefined(typeof(Profession), character.Profession)
+                    string profession = character.Profession >= 0 && Enum.IsDefined(typeof(Profession), (uint)character.Profession)
                         ? ((Profession)character.Profession).ToString()
                         : "profession " + character.Profession.ToString(CultureInfo.InvariantCulture);
                     lines.Add(string.Format(CultureInfo.InvariantCulture, "  {0} (id {1}) level {2} {3}, {4} playfield {5}",
