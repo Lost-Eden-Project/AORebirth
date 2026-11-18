@@ -36,7 +36,9 @@ public static class SchemaContract
         "20261025_character_pet_names.sql",
         "20261029_daily_login_claims.sql",
         "20261030_daily_login_character_scope.sql",
-        "20261102_account_sanctions.sql"
+        "20261102_account_sanctions.sql",
+        "20261117_organizations.sql",
+        "20261118_module_schema_migrations.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -57,7 +59,9 @@ public static class SchemaContract
         "generatedmissionbindings", "generatedmissionobservations", "generatedmissionartifacts", "generatedmissionobjects",
         "characterskilllocks", "characterquests", "generatedquests", "questdungeonkeys",
         "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames", "dailyloginclaims",
-        "account_sanctions"
+        "account_sanctions",
+        "org_organizations", "org_members", "org_votes", "org_vote_ballots",
+        "module_schema_migrations"
     });
 
     public static readonly IReadOnlyList<(string Table, string Columns)> UniqueKeys = Array.AsReadOnly(new[]
@@ -81,7 +85,10 @@ public static class SchemaContract
         ("characternanolinelocks", "CharacterId,NanoStrain"),
         ("characterpetnames", "CharacterId,PetType"),
         ("dailyloginclaims", "Id"), ("dailyloginclaims", "ClaimToken"), ("dailyloginclaims", "CharacterId,ClaimDateUtc"),
-        ("account_sanctions", "SanctionId")
+        ("account_sanctions", "SanctionId"),
+        ("org_organizations", "OrganizationId"), ("org_organizations", "Name"), ("org_members", "CharacterId"),
+        ("org_votes", "VoteId"), ("org_vote_ballots", "VoteId,CharacterId"),
+        ("module_schema_migrations", "ModuleId,MigrationName")
     });
 
     private static IReadOnlyList<ColumnRequirement> BuildColumns()
@@ -183,6 +190,22 @@ public static class SchemaContract
         Add("account_sanctions", "int", "AccountId", false);
         Add("account_sanctions", "datetime", "IssuedAtUtc EndsAtUtc LiftedAtUtc");
         Add("account_sanctions", "varchar", "IssuedBy Reason LiftedBy LiftReason");
+        Add("org_organizations", "int", "OrganizationId GoverningForm LeaderId", false);
+        Add("org_organizations", "varchar", "Name Description Objective History");
+        Add("org_organizations", "bigint", "Bank Version", false);
+        Add("org_organizations", "datetime", "CreatedAtUtc");
+        Add("org_members", "int", "CharacterId OrganizationId OrgRank", false);
+        Add("org_members", "datetime", "JoinedAtUtc");
+        Add("org_votes", "bigint", "VoteId", false);
+        Add("org_votes", "int", "OrganizationId StartedBy", false);
+        Add("org_votes", "varchar", "Question Choices StopReason");
+        Add("org_votes", "datetime", "StartedAtUtc OpensAtUtc EndsAtUtc ClosedAtUtc");
+        Add("org_vote_ballots", "bigint", "VoteId", false);
+        Add("org_vote_ballots", "int", "CharacterId Choice", false);
+        Add("org_vote_ballots", "datetime", "CastAtUtc");
+        Add("module_schema_migrations", "varchar", "ModuleId MigrationName");
+        Add("module_schema_migrations", "char", "Sha256");
+        Add("module_schema_migrations", "datetime", "AppliedAtUtc");
         Add("login", "int", "Id Flags");
         Add("login", "varchar", "Username");
         return result.AsReadOnly();

@@ -1086,7 +1086,14 @@ namespace ZoneEngine_New.Core.Playfield
             }
 
             ZoneEngine_New.Core.Metrics.WatchdogFeed.Sync(player);
+            PlayerRegistered?.Invoke(player);
         }
+
+        /// <summary>
+        /// A player became this instance's authoritative copy of its character (login, reconnect or arrival from another
+        /// instance). Raised on the registering thread; handlers must not block and dispatch onto the player's tick.
+        /// </summary>
+        public event Action<Player>? PlayerRegistered;
 
         public void UnregisterPlayer(Player player)
         {

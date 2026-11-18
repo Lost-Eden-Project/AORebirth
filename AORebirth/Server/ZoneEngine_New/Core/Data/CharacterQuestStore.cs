@@ -64,6 +64,9 @@ namespace ZoneEngine_New.Core.Data
         int PurgeEndedGeneratedQuests(long cutoffUtcTicks, int limit);
 
         void CloseCharacterQuests(string questId, int state, long nowUtcTicks);
+
+        /// <summary>One character's row, while still active and unearned; false when there was none to close.</summary>
+        bool CloseCharacterQuest(int characterId, string questId, int state, long nowUtcTicks) => false;
     }
 
     /// <summary>characterquests and generatedquests through the shared database library.</summary>
@@ -134,5 +137,8 @@ namespace ZoneEngine_New.Core.Data
 
         public void CloseCharacterQuests(string questId, int state, long nowUtcTicks)
             => Run(() => _dao.CloseCharacterQuests(questId, state, nowUtcTicks), _logger);
+
+        public bool CloseCharacterQuest(int characterId, string questId, int state, long nowUtcTicks)
+            => Run(() => _dao.CloseCharacterQuest(characterId, questId, state, nowUtcTicks), _logger);
     }
 }

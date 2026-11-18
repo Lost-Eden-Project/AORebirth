@@ -2002,14 +2002,21 @@ namespace ZoneEngine_New.Core.Entities
             if (Motor.State != MovementState.Sneak)
                 return;
 
+            // The motor announces StopSneaking once the mode has left sneak.
             Motor.ApplyAction(MovementAction.LeaveSneak);
+        }
+
+        /// <summary>
+        /// Tells everyone near, the sneaker's own client included, that sneak ended (StopSneaking). The motor calls it
+        /// whenever the mode leaves sneak, whatever took it out.
+        /// </summary>
+        internal void AnnounceStopSneaking() =>
             Cell?.Announce(new CharacterActionMessage
             {
                 Identity = Identity,
                 Action = CharacterActionType.StopSneaking,
                 Target = Identity.None
             });
-        }
 
         public void ResetAllWeaponAttacks()
         {
@@ -3727,7 +3734,12 @@ namespace ZoneEngine_New.Core.Entities
                 return;
             _clientFrozen = rooted;
             if (rooted)
+            {
+                // A root or stun ends sneak (bug #545). The client leaves Frozen for its walk/run gait, not sneak, so
+                // without this the server kept the player sneaking (hidden) after the root while the client walked.
+                BreakSneak();
                 SendSelfMove(session, MovementAction.FullStop);
+            }
             SendSelfMove(session, rooted ? MovementAction.SwitchToFrozen : MovementAction.LeaveFrozen);
         }
 

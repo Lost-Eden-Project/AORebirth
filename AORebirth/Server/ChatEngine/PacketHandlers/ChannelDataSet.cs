@@ -143,10 +143,12 @@ namespace ChatEngine.PacketHandlers
                     {
                         foreach (uint candidate in new[] { littleEndianId, bigEndianId })
                         {
-                            if (candidate != 0 && candidate < int.MaxValue
-                                && OrganizationDao.Instance.Get((int)candidate) != null)
+                            string organizationName = candidate != 0 && candidate < int.MaxValue
+                                ? OrganizationChannel.NameOf((int)candidate)
+                                : null;
+                            if (organizationName != null)
                             {
-                                orgChannel = new OrganizationChannel((int)candidate);
+                                orgChannel = new OrganizationChannel((int)candidate, organizationName);
                                 client.ChatServer().Channels.Add(orgChannel);
                                 break;
                             }
@@ -165,7 +167,7 @@ namespace ChatEngine.PacketHandlers
         #endregion
 
         // Any account can connect as a bot, so being one grants nothing: the character must belong to the
-        // organization (the same stat AddClientToChannels reads) or be a GM's.
+        // organization (org_members, as AddClientToChannels reads it) or be a GM's.
         private static bool MayJoinOrganization(Client client, uint organizationId)
         {
             if (client.Character.CharacterGMLevel > 0)
@@ -173,8 +175,7 @@ namespace ChatEngine.PacketHandlers
                 return true;
             }
 
-            int memberOf = AORebirth.Database.Dao.StatDao.Instance
-                .GetById(50000, (int)client.Character.CharacterId, 5).StatValue;
+            int memberOf = OrganizationChannel.MembershipOf((int)client.Character.CharacterId).OrganizationId;
             return memberOf > 0 && (uint)memberOf == organizationId;
         }
     }

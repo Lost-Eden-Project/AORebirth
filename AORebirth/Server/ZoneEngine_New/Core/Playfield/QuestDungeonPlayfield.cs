@@ -339,7 +339,8 @@ public sealed class QuestDungeonPlayfield : Playfield
                         useDistrictLevels: false, respawns: false, requestedLevel: populationLevel > 0 ? populationLevel : null,
                         frozenTemplates: branches,
                         onBranchSpawned: kills == null ? null : (actor, branch) => kills.Bind(actor, DungeonKills.Slot(pointKey, branch)),
-                        isBranchKilled: kills == null ? null : branch => kills.IsKilled(DungeonKills.Slot(pointKey, branch))))
+                        isBranchKilled: kills == null ? null : branch => kills.IsKilled(DungeonKills.Slot(pointKey, branch)),
+                        assistanceRadius: population.AssistanceRadius ?? 0, configure: population.ApplyTo))
                 {
                     _usedPoints.Add((placement.Index, Array.IndexOf(district.SpawnPoints!, point)));
                     for (int monster = 0; monster < (branches?.Length ?? 1); monster++)
@@ -459,12 +460,17 @@ public sealed class QuestDungeonPlayfield : Playfield
             throw new InvalidDataException("Accepted NPC objective template is unavailable.");
 
         int? objectiveScale = _objectiveNpc.ScalePercent;
+        // A kill objective is one of the population: as aggressive, and of the same clan, as the monsters around it.
+        // Any other objective NPC (one to find or talk to) keeps its template's temper.
+        bool fightsWithPopulation = _objectiveNpc.MissionType == 0;
         NpcCharacter npc = GetRequiredService<SpawnService>().SpawnMob(template,
             new AORebirth.Core.Vector.Vector3(_objectiveNpc.X, _objectiveNpc.Y, _objectiveNpc.Z),
             new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1), _objectiveNpc.Quality,
             SpawnSource.HashSpawn, spawnHash: _objectiveNpc.NpcHash,
             configure: actor =>
             {
+                if (fightsWithPopulation)
+                    Layout.Population.ApplyTo(actor);
                 // The policy percent scales the template's own size (Master of Time and Space is 600, a human 100);
                 // it is not an absolute Scale, or a large boss would shrink to a fifth of its catalog size.
                 if (objectiveScale is int scale)
@@ -515,7 +521,8 @@ public sealed class QuestDungeonPlayfield : Playfield
                 System.Numerics.Vector3 placed = placement.TransformTemplatePoint(
                     new System.Numerics.Vector3(point.Position[0], point.Position[1], point.Position[2]));
                 if (!spawns.AddPlacedDistrictPoint(TargetHash!, district, new AORebirth.Core.Vector.Vector3(placed.X, placed.Y, placed.Z),
-                        point.Radius, useDistrictLevels: false, respawns: false))
+                        point.Radius, useDistrictLevels: false, respawns: false,
+                        assistanceRadius: Layout.Population.AssistanceRadius ?? 0, configure: Layout.Population.ApplyTo))
                     continue;
                 _usedPoints.Add((placement.Index, Array.IndexOf(district.SpawnPoints!, point)));
 

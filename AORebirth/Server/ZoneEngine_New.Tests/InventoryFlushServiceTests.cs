@@ -185,7 +185,7 @@ namespace ZoneEngine_New.Tests
                 Research = [new ResearchProgressRecord(ResearchInProgress, 500)],
                 NanoLineLocks = [new SkillLockRecord()],
                 PetNames = [new PetNameRecord(1, "Rex")],
-                Organization = new OrganizationRecord(7, default, "Org", 21, "Researcher", 0, "", "", "")
+                Organization = new ZoneEngine_New.Core.Organizations.OrgMembershipRow(7, "Org", 0, 21, 3)
             };
 
             var moved = ZoneEngine_New.Core.MessageHandlers.ZoneLoginHandler.WithLoginPosition(

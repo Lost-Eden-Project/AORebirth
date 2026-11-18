@@ -22,7 +22,7 @@ namespace ZoneEngine_New.Core.Characters
         private readonly IResearchRepository? _research;
         private readonly INanoLineLockRepository? _nanoLineLocks;
         private readonly IPetNameRepository? _petNames;
-        private readonly IOrganizationRepository? _organizations;
+        private readonly ZoneEngine_New.Core.Organizations.IOrganizationStore? _organizations;
         private readonly IZoneLogger _logger;
 
         public CharacterHydrationService(
@@ -38,7 +38,7 @@ namespace ZoneEngine_New.Core.Characters
             IResearchRepository? research = null,
             INanoLineLockRepository? nanoLineLocks = null,
             IPetNameRepository? petNames = null,
-            IOrganizationRepository? organizations = null)
+            ZoneEngine_New.Core.Organizations.IOrganizationStore? organizations = null)
         {
             ArgumentNullException.ThrowIfNull(skillLocks);
             ArgumentNullException.ThrowIfNull(characters);
@@ -73,15 +73,13 @@ namespace ZoneEngine_New.Core.Characters
                 return null;
 
             var stats = RestoreLegacyDefaults(_stats.GetForCharacter(characterId));
-            int orgId = 0;
-            foreach (StatRecord stat in stats)
-                if (stat.StatId == 5) orgId = stat.StatValue;
 
             var result = new CharacterHydrationResult
             {
                 Character = character,
                 Stats = stats,
-                Organization = orgId > 0 ? _organizations?.GetById(orgId) : null,
+                // org_members is the authority; the stored Clan/ClanLevel stats are overwritten from it.
+                Organization = _organizations?.LoadMembership(characterId),
                 Items = _inventory.GetCarriedItems(characterId),
                 UploadedNanoIds = _uploadedNanos.GetForCharacter(characterId),
                 ActiveNanos = _activeNanos.GetForCharacter(characterId),

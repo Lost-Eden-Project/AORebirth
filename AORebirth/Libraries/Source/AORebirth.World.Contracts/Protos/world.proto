@@ -659,6 +659,8 @@ message ChatEvent {
     CharacterChatCommand to_character = 3;
     PresenceChanged presence = 4;
     OrganizationMessage organization = 5;
+    OrganizationMembership organization_membership = 6;
+    OrganizationRenamed organization_renamed = 7;
   }
 }
 
@@ -701,4 +703,19 @@ message PresenceChanged {
 message OrganizationMessage {
   int32 organization_id = 1;
   string text = 2;
+}
+
+// A character joined, left or was removed from an organization: ChatEngine moves it to that organization's channel
+// (organization_id 0: out of every organization channel and the Org Msg channel).
+message OrganizationMembership {
+  int32 character_id = 1;
+  int32 organization_id = 2;
+  // The organization's name, for a channel ChatEngine has not created yet; empty when organization_id is 0.
+  string organization_name = 3;
+}
+
+// An organization's channel takes its new name.
+message OrganizationRenamed {
+  int32 organization_id = 1;
+  string name = 2;
 }

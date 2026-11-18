@@ -664,30 +664,105 @@ namespace ChatEngine.CoreServer
             // character (TeamChatBridge); joining every existing team channel here put each new login into every
             // team's chat.
 
-            int characterId = (int)client.Character.CharacterId;
-            DBStats orgStat = StatDao.Instance.GetById(50000, characterId, 5);
-            int orgId = orgStat.StatValue;
-
+            // org_members is the authority for organization membership (not the Clan stat).
+            (int orgId, string orgName) = OrganizationChannel.MembershipOf((int)client.Character.CharacterId);
             if (orgId > 0)
             {
-                var org = OrganizationDao.Instance.Get(orgId);
-                if (org != null)
+                this.JoinOrganization(client, orgId, orgName);
+            }
+        }
+
+        /// <summary>Puts the client in its organization's channel (created on first use) and the Org Msg channel.</summary>
+        internal void JoinOrganization(Client client, int organizationId, string organizationName)
+        {
+            ChannelBase orgChannel;
+            lock (this.Channels)
+            {
+                orgChannel = this.Channels.FirstOrDefault(
+                    x => x is OrganizationChannel && x.ChannelId == (uint)organizationId);
+                if (orgChannel == null)
                 {
-                    ChannelBase orgChannel;
+                    orgChannel = new OrganizationChannel(organizationId, organizationName);
+                    this.Channels.Add(orgChannel);
+                }
+            }
+
+            orgChannel.AddClient(client);
+            this.orgMsgChannel.AddClient(client);
+        }
+
+        /// <summary>
+        /// Takes the client out of every organization channel but <paramref name="exceptOrganizationId"/>, closing their
+        /// tabs, and out of Org Msg when <paramref name="leaveOrgMsg"/>. An organization channel left empty is dropped.
+        /// </summary>
+        internal void LeaveOrganizations(Client client, uint exceptOrganizationId, bool leaveOrgMsg)
+        {
+            foreach (ChannelBase joined in client.Channels.ToArray())
+            {
+                bool organization = joined is OrganizationChannel && joined.ChannelId != exceptOrganizationId;
+                bool orgMsg = leaveOrgMsg && ReferenceEquals(joined, this.orgMsgChannel);
+                if (!organization && !orgMsg)
+                {
+                    continue;
+                }
+
+                joined.RemoveClient(client);
+                client.Channels.Remove(joined);
+                client.Send(ChannelLeave.Create(ChannelWireId(joined)));
+                if (organization && joined.SnapshotConnectedClients().Length == 0)
+                {
                     lock (this.Channels)
                     {
-                        orgChannel = this.Channels.FirstOrDefault(
-                            x => x is OrganizationChannel && x.ChannelId == (uint)orgId);
-                        if (orgChannel == null)
-                        {
-                            orgChannel = new OrganizationChannel(orgId);
-                            this.Channels.Add(orgChannel);
-                        }
+                        this.Channels.Remove(joined);
                     }
-
-                    orgChannel.AddClient(client);
-                    this.orgMsgChannel.AddClient(client);
                 }
+            }
+        }
+
+        private static byte[] ChannelWireId(ChannelBase channel)
+        {
+            return new[]
+            {
+                (byte)channel.channelType, (byte)(channel.ChannelId >> 24), (byte)(channel.ChannelId >> 16),
+                (byte)(channel.ChannelId >> 8), (byte)channel.ChannelId
+            };
+        }
+
+        /// <summary>A zone moved a character between organizations (World chat event).</summary>
+        private void ApplyOrganizationMembership(int characterId, int organizationId, string organizationName)
+        {
+            if (characterId <= 0 || !this.ConnectedClients.TryGetValue(unchecked((uint)characterId), out Client client))
+            {
+                return;
+            }
+
+            this.LeaveOrganizations(client, organizationId > 0 ? (uint)organizationId : 0, leaveOrgMsg: organizationId <= 0);
+            if (organizationId > 0)
+            {
+                this.JoinOrganization(client, organizationId, organizationName);
+            }
+        }
+
+        /// <summary>An organization was renamed: its members see the channel tab under the new name.</summary>
+        private void ApplyOrganizationRenamed(int organizationId, string name)
+        {
+            ChannelBase channel;
+            lock (this.Channels)
+            {
+                channel = this.Channels.FirstOrDefault(x => x is OrganizationChannel && x.ChannelId == (uint)organizationId);
+            }
+
+            if (channel == null || string.IsNullOrEmpty(name) || channel.ChannelName == name)
+            {
+                return;
+            }
+
+            channel.ChannelName = name;
+            foreach (IClient member in channel.SnapshotConnectedClients())
+            {
+                // The client names a tab from ChannelJoin only: close it and join again under the new name.
+                member.Send(ChannelLeave.Create(ChannelWireId(channel)));
+                member.Send(ChannelJoin.Create(channel, new byte[] { 0x00, 0x00 }));
             }
         }
 
@@ -755,6 +830,13 @@ namespace ChatEngine.CoreServer
                         break;
                     case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.Organization:
                         this.SendOrganizationMessage(chat.Organization.OrganizationId, chat.Organization.Text);
+                        break;
+                    case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.OrganizationMembership:
+                        this.ApplyOrganizationMembership(chat.OrganizationMembership.CharacterId,
+                            chat.OrganizationMembership.OrganizationId, chat.OrganizationMembership.OrganizationName);
+                        break;
+                    case AORebirth.World.Contracts.V1.ChatEvent.BodyOneofCase.OrganizationRenamed:
+                        this.ApplyOrganizationRenamed(chat.OrganizationRenamed.OrganizationId, chat.OrganizationRenamed.Name);
                         break;
                 }
             }

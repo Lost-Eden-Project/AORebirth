@@ -125,31 +125,6 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public long ExpiresAtUtcTicks { get; set; }
     }
 
-    /// <summary>One organizations row with its leader's character name (stats Clan = Id).</summary>
-    public sealed class PersistedOrganizationData
-    {
-        public int Id { get; set; }
-        public DateTime Creation { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public int LeaderId { get; set; }
-        public string LeaderName { get; set; } = string.Empty;
-        public int GovernmentForm { get; set; }
-        public string Description { get; set; } = string.Empty;
-        public string Objective { get; set; } = string.Empty;
-        public string History { get; set; } = string.Empty;
-        public long Tax { get; set; }
-        public long Bank { get; set; }
-    }
-
-    /// <summary>The editable text columns of the organizations table.</summary>
-    public enum OrganizationTextField
-    {
-        Name,
-        Description,
-        Objective,
-        History
-    }
-
     /// <summary>One /pet rename
     public sealed class PersistedPetNameData
     {

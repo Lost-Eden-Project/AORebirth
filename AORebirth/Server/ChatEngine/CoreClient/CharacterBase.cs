@@ -95,15 +95,7 @@ namespace ChatEngine.CoreClient
                 this.characterFirstName = character.FirstName;
                 this.characterLastName = character.LastName;
 
-                DBStats clan = StatDao.Instance.GetById(50000, (int)this.CharacterId, 5);
-                if (clan.StatValue > 0)
-                {
-                    DBOrganization org = OrganizationDao.Instance.Get(clan.StatValue);
-                    if (org != null)
-                    {
-                        this.orgName = org.Name;
-                    }
-                }
+                this.orgName = ChatEngine.Channels.OrganizationChannel.MembershipOf((int)this.CharacterId).Name;
 
                 success = true;
             }

@@ -154,8 +154,12 @@ namespace ZoneEngine_New.Core.Inventory
             // those criteria read; it must be within the reach of using it directly. Out of reach refuses as that use does.
             if (!UseTargetRules.TryResolveSelectedDynel(player, item.Definition, can, out Dynel? selectedDynel,
                     out UseTargetRules.Failure selectedFailure))
+            {
+                // Rho Signal Relay 284293 used on its beacon from afar: "You are too far away."
+                ClientFeedback.Send(player, "Feedback_TooFarAway");
                 return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, TargetRefusal(selectedFailure),
                     "selected dynel reach", player.Target);
+            }
 
             // An item used on someone else is ItemUseOn for modules.
             PlayerActionKind kind = ReferenceEquals(useTarget, player) ? PlayerActionKind.ItemUse : PlayerActionKind.ItemUseOn;

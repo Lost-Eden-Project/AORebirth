@@ -168,6 +168,37 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
+        /// A teammate finished this team mission while the player was not in its dungeon: their copy, already closed as
+        /// failed in the database (the quest store's CloseCharacterQuest), leaves the journal with no
+        /// reward. The dungeon's end is left to the holders who finish it, so this never evicts them.
+        /// </summary>
+        internal void DropTeamCopy(Player player, string questId)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            lock (player.PersistenceGate)
+            {
+                if (player.QuestLog is not { } log || !log.Quests.TryGetValue(questId, out PlayerQuest? quest)
+                    || !quest.IsActive || quest.IsRewardPending || !quest.Template.IsTeamScope)
+                    return;
+
+                quest.State = QuestState.Failed;
+                quest.SharedEarnPending = false;
+                QuestJournal.Delete(player, quest);
+                try
+                {
+                    RecordTemplateOutcome(player, quest);
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, "Recording quest " + quest.QuestId + " under its Quests.json hash failed");
+                }
+                ClientFeedback.Send(player, "Your team completed the mission without you.");
+                _logger.Info(string.Format(CultureInfo.InvariantCulture, "Team mission copy dropped char={0} quest={1}: not in the dungeon when it was completed",
+                    player.Identity.Instance, quest.QuestId));
+            }
+        }
+
+        /// <summary>
         /// The player deleted a journal entry. The client sends the delete request (QuestIIR_t, Gamecode.dll
         /// N3Msg_RemoveQuest) but leaves the entry until the server removes it. False when the id is not one of
         /// this player's active quests, so other quest systems can take it.

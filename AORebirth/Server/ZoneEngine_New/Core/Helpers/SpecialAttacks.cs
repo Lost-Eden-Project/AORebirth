@@ -143,14 +143,15 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         /// <summary>
-        /// Aimed Shot or Sneak Attack the target would notice, or a Backstab from in front of the target or at a target
-        /// fighting the attacker.
+        /// Aimed Shot or Sneak Attack an NPC target would notice, or a Backstab from in front of the target or at a target
+        /// fighting the attacker. Against a player target (PvP) Aimed Shot and Sneak Attack need no stealth.
         /// </summary>
         static bool IsNoticedStealthStrike(Character attacker, Character target, CharacterStat special)
         {
             return special switch
             {
-                CharacterStat.AimedShot or CharacterStat.SneakAttack => !IsSneaking(attacker) || CanSee(target, attacker),
+                CharacterStat.AimedShot or CharacterStat.SneakAttack =>
+                    target is not Player && (!IsSneaking(attacker) || CanSee(target, attacker)),
                 CharacterStat.Backstab => !IsBehindDistractedTarget(attacker, target),
                 _ => false
             };

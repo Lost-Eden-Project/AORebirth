@@ -35,6 +35,12 @@ namespace AORebirth.Modules
         IZoneClock Clock { get; }
 
         /// <summary>
+        /// The module's own database tables (module API 1.14). Reading it needs nothing; opening a connection needs the
+        /// <c>database</c> capability. A host older than 1.14 throws <see cref="System.NotSupportedException"/>.
+        /// </summary>
+        Data.IModuleDatabase Database => throw new System.NotSupportedException("The module database needs a module API 1.14 host.");
+
+        /// <summary>
         /// Reads Modules/&lt;Id&gt;/config.json (case-insensitive, comments allowed), or returns null when it is absent.
         /// </summary>
         T? GetConfig<T>() where T : class;

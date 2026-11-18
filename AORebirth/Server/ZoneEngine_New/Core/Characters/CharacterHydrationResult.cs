@@ -41,7 +41,8 @@ namespace ZoneEngine_New.Core.Characters
         public IReadOnlyList<PetNameRecord> PetNames { get; init; } = [];
 
         /// <summary>The organizations row for the character's Clan stat, or null when it has none.</summary>
-        public OrganizationRecord? Organization { get; init; }
+        /// <summary>The character's org_members row with its organization; null when it belongs to none.</summary>
+        public ZoneEngine_New.Core.Organizations.OrgMembershipRow? Organization { get; init; }
 
         public bool IsSpawnReady => CharacterHydrationValidator.Validate(this).IsValid;
     }

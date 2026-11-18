@@ -84,5 +84,11 @@ namespace ZoneEngine_New.Core.Modules
         /// Capabilities, or the module does not load.
         /// </summary>
         public List<string>? Operations { get; init; }
+
+        /// <summary>
+        /// Capabilities the module cannot work without (module API 1.14), e.g. <c>read-sessions</c>. Each must be a known
+        /// capability granted by Modules.json Capabilities, or the module does not load, before it initializes.
+        /// </summary>
+        public List<string>? Capabilities { get; init; }
     }
 }

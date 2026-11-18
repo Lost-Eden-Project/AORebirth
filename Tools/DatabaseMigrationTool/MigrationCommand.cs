@@ -13,9 +13,9 @@ public static class MigrationCommand
 {
     public static int Run(string[] args, Func<string?> connectionProvider, TextWriter output)
     {
-        if (!TryParse(args, out string operation, out string? expectedDatabase))
+        if (!TryParse(args, out string operation, out string? expectedDatabase, out string? modulesDirectory))
         {
-            output.WriteLine("USAGE: DatabaseMigrationTool init|status|validate|plan OR migrate --expected-database NAME --acknowledge-backup --acknowledge-engines-stopped. Connection comes only from AO_REBIRTH_MIGRATION_CONNECTION.");
+            output.WriteLine("USAGE: DatabaseMigrationTool init|status|validate|plan OR migrate --expected-database NAME --acknowledge-backup --acknowledge-engines-stopped, each but init optionally followed by --modules DIR (the zone's Modules folder: its modules' own migrations too). Connection comes only from AO_REBIRTH_MIGRATION_CONNECTION.");
             return 64;
         }
         try
@@ -45,22 +45,46 @@ public static class MigrationCommand
                  }
                  return 0;
              }
+            // Every module's shipped migrations are read and scope-checked before anything else: a module migration that
+            // reaches outside its own tables refuses the whole run.
+            IReadOnlyList<ModuleMigrations> modules = modulesDirectory == null ? Array.Empty<ModuleMigrations>() : DiscoverModules(modulesDirectory);
             var before = DatabaseSchemaReadiness.Check(builder.ConnectionString);
             WriteStatus(output, before);
-            if (operation is "status" or "validate") return before.IsCurrent ? 0 : 2;
+            if (operation is "status" or "validate")
+            {
+                bool modulesCurrent = WriteModuleStatus(builder.ConnectionString, modules, output, before);
+                return before.IsCurrent && modulesCurrent ? 0 : 2;
+            }
             foreach (string name in SchemaContract.MigrationNames)
                 output.WriteLine("MIGRATION=" + name + " SHA256=" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ReadScript(name)))).ToLowerInvariant());
-            output.WriteLine("PLAN: Stop all writers, verify recoverable backup, apply in listed order. Legacy item tables retained. No automatic reverse migration; legacy inventory becomes stale after NewEngine writes.");
-            if (operation == "plan") return before.State is SchemaState.DATABASE_UNREACHABLE or SchemaState.SCHEMA_INCOMPATIBLE ? 2 : 0;
-            if (before.IsCurrent) return 0;
-            if (before.State != SchemaState.SCHEMA_MIGRATION_REQUIRED) return 2;
+            foreach (ModuleMigrations module in modules)
+                foreach (ModuleMigration migration in module.Migrations)
+                    output.WriteLine("MODULE_MIGRATION=" + module.ModuleId + "/" + migration.Name + " SHA256=" + migration.Sha256);
+            output.WriteLine("PLAN: Stop all writers, verify recoverable backup, apply in listed order (server migrations, then each module's). Legacy item tables retained. No automatic reverse migration; legacy inventory becomes stale after NewEngine writes.");
+            if (operation == "plan")
+            {
+                bool modulesUsable = WriteModuleStatus(builder.ConnectionString, modules, output, before, pendingIsFine: true);
+                return before.State is SchemaState.DATABASE_UNREACHABLE or SchemaState.SCHEMA_INCOMPATIBLE || !modulesUsable ? 2 : 0;
+            }
+            if (before.State is not (SchemaState.SCHEMA_CURRENT or SchemaState.SCHEMA_MIGRATION_REQUIRED)) return 2;
+            if (before.IsCurrent && WriteModuleStatus(builder.ConnectionString, modules, TextWriter.Null, before)) return 0;
 
             using var connection = new MySqlConnection(builder.ConnectionString);
             connection.Open();
             using var acquire = new MySqlCommand("SELECT GET_LOCK(CONCAT(DATABASE(),':aorebirth-schema'),0)", connection);
             if (Convert.ToInt32(acquire.ExecuteScalar(), CultureInfo.InvariantCulture) != 1)
             { output.WriteLine("REFUSED: another migration operator holds the database migration lock."); return 2; }
-            try { Apply(connection, output); }
+            SchemaCheckResult after;
+            try
+            {
+                if (!before.IsCurrent) Apply(connection, output);
+                after = DatabaseSchemaReadiness.Check(builder.ConnectionString);
+                WriteStatus(output, after);
+                // Module tables only on a current server schema: the module ledger is one of its tables.
+                if (after.IsCurrent)
+                    foreach (ModuleMigrations module in modules)
+                        ApplyModule(connection, module, output);
+            }
             finally
             {
                 if (connection.State == System.Data.ConnectionState.Open)
@@ -69,9 +93,8 @@ public static class MigrationCommand
                     release.ExecuteScalar();
                 }
             }
-            var after = DatabaseSchemaReadiness.Check(builder.ConnectionString);
-            WriteStatus(output, after);
-            return after.IsCurrent ? 0 : 2;
+            bool modulesDone = WriteModuleStatus(builder.ConnectionString, modules, output, after);
+            return after.IsCurrent && modulesDone ? 0 : 2;
         }
         catch (MigrationRefusedException exception)
         {
@@ -89,6 +112,18 @@ public static class MigrationCommand
             output.WriteLine("MIGRATION_FAILED: " + exception);
             return 3;
         }
+    }
+
+    /// <summary>The arguments, with an optional trailing <c>--modules DIR</c> after any operation but init.</summary>
+    public static bool TryParse(string[] args, out string operation, out string? expectedDatabase, out string? modulesDirectory)
+    {
+        modulesDirectory = null;
+        if (args.Length >= 3 && args[^2] == "--modules" && args[0] != "init" && !string.IsNullOrWhiteSpace(args[^1]))
+        {
+            modulesDirectory = Path.GetFullPath(args[^1]);
+            args = args[..^2];
+        }
+        return TryParse(args, out operation, out expectedDatabase);
     }
 
     public static bool TryParse(string[] args, out string operation, out string? expectedDatabase)
@@ -241,6 +276,102 @@ public static class MigrationCommand
             }
             output.WriteLine("APPLIED=" + name);
         }
+    }
+
+    private sealed record ModuleMigrations(string ModuleId, IReadOnlyList<ModuleMigration> Migrations);
+
+    // Each module folder with a module.json and a Migrations folder: its id (which must name the folder, as the zone
+    // requires) and its migrations, scope-checked.
+    private static IReadOnlyList<ModuleMigrations> DiscoverModules(string directory)
+    {
+        if (!Directory.Exists(directory)) throw new MigrationRefusedException("The --modules folder does not exist.");
+        var modules = new List<ModuleMigrations>();
+        foreach (string folder in Directory.EnumerateDirectories(directory).Order(StringComparer.Ordinal))
+        {
+            string manifest = Path.Combine(folder, "module.json");
+            if (!File.Exists(manifest) || !Directory.Exists(Path.Combine(folder, ModuleSchema.MigrationsFolder))) continue;
+            string id = ReadModuleId(manifest);
+            if (!Equal(id, Path.GetFileName(folder)))
+                throw new MigrationRefusedException("Module folder " + Path.GetFileName(folder) + " holds module.json id '" + id + "'.");
+            try { modules.Add(new ModuleMigrations(id, ModuleSchema.Discover(folder, id))); }
+            catch (ModuleMigrationException exception) { throw new MigrationRefusedException(exception.Message); }
+        }
+        return modules;
+    }
+
+    private static string ReadModuleId(string manifest)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifest),
+            new System.Text.Json.JsonDocumentOptions { CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        foreach (var property in document.RootElement.EnumerateObject())
+            if (Equal(property.Name, "Id") && property.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                return property.Value.GetString()!;
+        throw new MigrationRefusedException(manifest + " names no module Id.");
+    }
+
+    // One line per module; true when every module is current (or, with pendingIsFine, at least not incompatible).
+    private static bool WriteModuleStatus(string connectionString, IReadOnlyList<ModuleMigrations> modules, TextWriter output,
+        SchemaCheckResult server, bool pendingIsFine = false)
+    {
+        if (modules.Count == 0) return true;
+        if (server.State is SchemaState.DATABASE_UNREACHABLE or SchemaState.SCHEMA_INCOMPATIBLE)
+        {
+            output.WriteLine("MODULES: not checked; the server schema is not usable.");
+            return false;
+        }
+        using var connection = new MySqlConnection(connectionString);
+        connection.Open();
+        bool usable = true;
+        foreach (ModuleMigrations module in modules)
+        {
+            ModuleSchemaStatus status = ModuleSchema.Evaluate(module.ModuleId, module.Migrations, ModuleSchema.ReadApplied(connection, module.ModuleId));
+            output.WriteLine("MODULE " + module.ModuleId + " " + status.State + ": " + status.Message);
+            if (status.State == ModuleSchemaState.Incompatible || (!pendingIsFine && !status.IsCurrent)) usable = false;
+        }
+        return usable;
+    }
+
+    // A module's pending migrations in order, each recorded once it ran. One that only changes rows runs in a single
+    // transaction with its ledger row; one with DDL cannot (MySQL commits each DDL statement), so as with the server's
+    // own migrations a failure part-way leaves it unrecorded for an operator to inspect.
+    private static void ApplyModule(MySqlConnection connection, ModuleMigrations module, TextWriter output)
+    {
+        var applied = ModuleSchema.ReadApplied(connection, module.ModuleId)
+            ?? throw new MigrationRefusedException("The module migration ledger is absent after the server migrations.");
+        ModuleSchemaStatus status = ModuleSchema.Evaluate(module.ModuleId, module.Migrations, applied);
+        if (status.State == ModuleSchemaState.Incompatible) throw new MigrationRefusedException(status.Message);
+        foreach (ModuleMigration migration in status.Pending)
+        {
+            if (migration.Statements.All(IsRowStatement))
+            {
+                using var transaction = connection.BeginTransaction();
+                foreach (string statement in migration.Statements) Execute(connection, statement, transaction);
+                MarkModule(connection, migration, transaction);
+                transaction.Commit();
+            }
+            else
+            {
+                foreach (string statement in migration.Statements) Execute(connection, statement);
+                MarkModule(connection, migration);
+            }
+            output.WriteLine("APPLIED=" + module.ModuleId + "/" + migration.Name);
+        }
+    }
+
+    private static bool IsRowStatement(string statement)
+    {
+        string first = statement.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries)[0];
+        return Equal(first, "INSERT") || Equal(first, "REPLACE") || Equal(first, "UPDATE") || Equal(first, "DELETE");
+    }
+
+    private static void MarkModule(MySqlConnection connection, ModuleMigration migration, MySqlTransaction? transaction = null)
+    {
+        using var command = new MySqlCommand("INSERT INTO " + ModuleSchema.LedgerTable
+            + " (ModuleId,MigrationName,Sha256,AppliedAtUtc) VALUES (@module,@name,@sha,UTC_TIMESTAMP(6))", connection, transaction);
+        command.Parameters.AddWithValue("@module", migration.ModuleId);
+        command.Parameters.AddWithValue("@name", migration.Name);
+        command.Parameters.AddWithValue("@sha", migration.Sha256);
+        command.ExecuteNonQuery();
     }
 
     private static bool Equal(string left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);

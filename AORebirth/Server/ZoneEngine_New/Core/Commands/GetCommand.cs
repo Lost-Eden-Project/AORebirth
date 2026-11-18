@@ -216,7 +216,7 @@ namespace ZoneEngine_New.Core.Commands
     internal static class GetStatsAomlBuilder
     {
         /// <summary>Popup body length before a GM listing is split into further links.</summary>
-        public const int DefaultMaxBodyLength = 4096;
+        public const int DefaultMaxBodyLength = 16384;
 
         public static IReadOnlyList<string> BuildChatLines(
             string subjectName,

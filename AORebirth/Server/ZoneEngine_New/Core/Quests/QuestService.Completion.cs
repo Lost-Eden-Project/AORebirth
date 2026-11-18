@@ -157,7 +157,7 @@ public sealed partial class QuestService
 
     /// <summary>
     /// A team mission's objective was earned by one holder: the dungeon service passes it on to the other holders
-    /// online on this zone instance (<see cref="EarnShared"/>). Raised on the earner's playfield, inside their gate.
+    /// online and inside the mission's dungeon (<see cref="EarnShared"/>). Raised on the earner's playfield, inside their gate.
     /// </summary>
     internal event Action<Player, PlayerQuest>? TeamObjectiveEarned;
 

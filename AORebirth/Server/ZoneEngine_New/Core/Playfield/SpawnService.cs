@@ -357,6 +357,13 @@ namespace ZoneEngine_New.Core.Playfield
         internal bool HasStaticTemplate(int templateId)
             => _services.GetRequiredService<IItemTemplateCatalog>().TryGet(templateId, out _);
 
+        /// <summary>The catalog QL of <paramref name="templateId"/>, or null when it is unknown or has none.</summary>
+        internal int? StaticTemplateQuality(int templateId)
+            => _services.GetRequiredService<IItemTemplateCatalog>().TryGet(templateId, out ItemTemplate template)
+                && template.Quality > 0
+                    ? template.Quality
+                    : null;
+
         /// <summary>
         /// Spawns one resolved item family as a world dynel. Returns null when the quality band cannot be selected.
         /// A <paramref name="lifetime"/> makes it temporary; null keeps it until despawned.

@@ -1412,11 +1412,13 @@ namespace ZoneEngine_New.Core.Movement
             }
 
             ISurface? surface = BindSurface();
+            bool wasSneaking = _move.State == (int)MovementState.Sneak;
             if (!_move.Act((int)action))
             {
                 LogRefusedAction(action, "movement rules");
                 return false;
             }
+
 
             switch (action)
             {
@@ -1440,8 +1442,19 @@ namespace ZoneEngine_New.Core.Movement
             }
 
             SyncModeStats();
+            // Only translation keeps a sneaker sneaking (bug #545). A mode switch (walk/run, fly, sit, ...) already left
+            // sneak in the rules and SyncModeStats announced it; anything else the rules take in sneak (a jump) breaks it.
+            if (wasSneaking && _move.State == (int)MovementState.Sneak && !KeepsSneak(action))
+                _character.BreakSneak();
             return true;
         }
+
+        /// <summary>The moves a sneaker can make and stay sneaking: walking, backing up, strafing, turning, stopping.</summary>
+        static bool KeepsSneak(MovementAction action) => action is >= MovementAction.ForwardStart
+                and <= MovementAction.TurnLeftStop
+            or MovementAction.FullStop
+            or MovementAction.SwitchToSneak
+            or MovementAction.LeaveSneak;
 
         /// <summary>An NPC's mode switches into the rules' states; its movement itself is the follow path.</summary>
         bool ApplyNpcAction(MovementAction action)
@@ -1570,10 +1583,15 @@ namespace ZoneEngine_New.Core.Movement
         void SyncModeStats()
         {
             int mode = _move.State;
-            if (_character.Stats.GetOrZero(CharacterStat.CurrentMovementMode) != mode)
+            int previous = _character.Stats.GetOrZero(CharacterStat.CurrentMovementMode);
+            if (previous != mode)
             {
                 _character.Stats.Set(CharacterStat.CurrentMovementMode, mode, StatDetail.Base, dirty: true);
                 _character.Stats.Set(CharacterStat.WaitState, mode == (int)MovementState.Sit ? 2 : 0, StatDetail.Base);
+                // Every way out of sneak tells the sneaker's client and those near (StopSneaking): a LeaveSneak, a
+                // walk/run toggle, a yalm switching the player into Fly, water switching it into Swim (bug #545).
+                if (previous == (int)MovementState.Sneak)
+                    _character.AnnounceStopSneaking();
             }
 
             if (mode != (int)MovementState.Fly)

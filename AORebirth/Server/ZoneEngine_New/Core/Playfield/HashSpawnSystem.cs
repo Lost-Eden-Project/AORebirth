@@ -172,6 +172,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         internal Func<int, bool>? IsBranchKilled { get; init; }
 
+        /// <summary>Runs on each NPC this point spawns before it is registered (a mission population's stat overrides).</summary>
+        internal Action<NpcCharacter>? Configure { get; init; }
+
         /// <summary>A one-shot point whose NPC was killed.</summary>
         internal bool Retired { get; set; }
 
@@ -590,10 +593,13 @@ namespace ZoneEngine_New.Core.Playfield
         /// NPC spawns once and never again after it is killed. An explicit requested level overrides district levels;
         /// otherwise, without district levels the template's level is kept. Optional frozen mission branches retain
         /// their supplied ordinals; killed branches still reserve this point without spawning replacements.
+        /// <paramref name="assistanceRadius"/> is the point's AssistanceRadius (how far its NPCs' calls for help carry, 0:
+        /// socialAggro's default), and <paramref name="configure"/> runs on each NPC it spawns before it is registered.
         /// </summary>
         internal bool AddPlacedDistrictPoint(string hash, PlayfieldDistrictEntry district, Vector3 centre, float radius,
             bool useDistrictLevels, bool respawns, int? requestedLevel = null, MobTemplate[]? frozenTemplates = null,
-            Action<NpcCharacter, int>? onBranchSpawned = null, Func<int, bool>? isBranchKilled = null)
+            Action<NpcCharacter, int>? onBranchSpawned = null, Func<int, bool>? isBranchKilled = null,
+            int assistanceRadius = 0, Action<NpcCharacter>? configure = null)
         {
             ArgumentNullException.ThrowIfNull(district);
             if (requestedLevel is <= 0)
@@ -636,7 +642,8 @@ namespace ZoneEngine_New.Core.Playfield
                 RespawnTime = DistrictRespawnSeconds(district),
                 AngleW = DistrictFacingWidthDegrees,
                 Position = [centre.xf, centre.yf, centre.zf],
-                Radius = radius
+                Radius = radius,
+                AssistanceRadius = Math.Max(0, assistanceRadius)
             };
             var point = new HashSpawnPoint(
                 hash,
@@ -652,7 +659,8 @@ namespace ZoneEngine_New.Core.Playfield
                 RespawnsAfterDeath = respawns,
                 FrozenTemplates = frozenTemplates == null ? null : (MobTemplate[])frozenTemplates.Clone(),
                 OnBranchSpawned = onBranchSpawned,
-                IsBranchKilled = isBranchKilled
+                IsBranchKilled = isBranchKilled,
+                Configure = configure
             };
             if (AllFrozenBranchesKilled(point))
             {
@@ -1019,7 +1027,7 @@ namespace ZoneEngine_New.Core.Playfield
 
                 Metrics.TickStallWatch.Stage("spawn.place", point.CellId);
                 PickSpawnTransform(point, out Vector3 position, out Quaternion heading);
-                Action<NpcCharacter>? configure = null;
+                Action<NpcCharacter>? configure = point.Configure;
                 GameplayWander? wander = point.Wanders ? _playfield.GetService<GameplaySettings>()?.Wander : null;
                 // A body that cannot move (plants, towers, turrets) stays exactly on its point.
                 bool immobile = templates[i].Stats.TryGetValue((int)CharacterStat.MonsterData,
@@ -1033,8 +1041,12 @@ namespace ZoneEngine_New.Core.Playfield
                     Vector3 anchor = point.Sites[0].Centre;
                     if (TryScatter(anchor, wander.Radius, out Vector3 scattered))
                         position = scattered;
-                    configure = npc => npc.Brain?.EnableWander(anchor, wander.Radius, wander.MinPauseSeconds,
-                        wander.MaxPauseSeconds);
+                    Action<NpcCharacter>? pointConfigure = point.Configure;
+                    configure = npc =>
+                    {
+                        pointConfigure?.Invoke(npc);
+                        npc.Brain?.EnableWander(anchor, wander.Radius, wander.MinPauseSeconds, wander.MaxPauseSeconds);
+                    };
                 }
 
                 NpcCharacter character = _spawnService.SpawnMob(
@@ -1071,11 +1083,17 @@ namespace ZoneEngine_New.Core.Playfield
             for (int i = 0; i < instances.Count; i++)
             {
                 PickSpawnTransform(point, out Vector3 position, out Quaternion heading);
+                // A one-template family stands at that template's own QL; the point's level range only picks within a
+                // QL-range family. TRRS points roll 1-200, but the Rho Signal Relay 284293 activates only a QL 1
+                // Teleport Ring 284431, its template QL.
+                int? instanceLevel = instances[i].TemplateIds.Length == 1
+                    ? _spawnService.StaticTemplateQuality(instances[i].TemplateIds[0]) ?? level
+                    : level;
                 StaticDynel? dynel = _spawnService.SpawnStaticInstance(
                     instances[i],
                     position,
                     heading,
-                    level,
+                    instanceLevel,
                     SpawnSource.HashSpawn,
                     instances[i].Hash);
                 if (dynel == null)

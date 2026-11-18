@@ -707,6 +707,21 @@ namespace AORebirth.Database.Domain.Quests
                     "@Id", flag.Id, "@Owner", owner, "@Quest", questId);
         }
 
+        /// <summary>
+        /// Marks <paramref name="characterId"/>'s row of <paramref name="questId"/> with <paramref name="state"/> while it is
+        /// still active and its objective unearned. False when there was no such row (already earned, ended or never held).
+        /// </summary>
+        public bool CloseCharacterQuest(int characterId, string questId, int state, long nowUtcTicks)
+        {
+            if (string.IsNullOrEmpty(questId))
+                return false;
+
+            return Transaction((c, t) => Execute(c, t,
+                "UPDATE characterquests SET State=@State,UpdatedAtUtcTicks=@Now WHERE CharacterId=@Character AND QuestId=@Quest "
+                + "AND State=1 AND (RequiredCount<=0 OR Progress<RequiredCount)",
+                "@State", state, "@Now", nowUtcTicks, "@Character", characterId, "@Quest", questId)) > 0;
+        }
+
         /// <summary>Marks every still-active character row of <paramref name="questId"/> with <paramref name="state"/>.</summary>
         public void CloseCharacterQuests(string questId, int state, long nowUtcTicks)
         {

@@ -112,6 +112,9 @@
   "UITR": {
     "Features": [
       "Guard"
+    ],
+    "IgnoresSides": [
+      "Clan"
     ]
   },
   "UOTP": {

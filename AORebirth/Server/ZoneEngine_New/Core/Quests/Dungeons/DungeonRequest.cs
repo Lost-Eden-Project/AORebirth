@@ -194,6 +194,24 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
     /// <summary>Percent of how far a monster's call for help carries (100: unchanged).</summary>
     public int? HelpRangePercent { get; set; }
 
+    /// <summary>
+    /// Every monster's Aggressiveness (BreedHostility, stat 204): above 0 it attacks players on sight, 0 only fights
+    /// back. Null: each template's own.
+    /// </summary>
+    public int? Aggressiveness { get; set; }
+
+    /// <summary>
+    /// Every monster's Clan (stat 5): with Gameplay.json socialAggro.sameClanOnly, monsters answer only their own clan's
+    /// calls for help, so one clan for the whole population makes them help each other. Null: each template's own.
+    /// </summary>
+    public int? Clan { get; set; }
+
+    /// <summary>
+    /// Every monster's AssistanceRadius: how far its call for help carries, before socialAggro's maxRadius and
+    /// radiusPercent and the population's <see cref="HelpRangePercent"/>. 0: socialAggro's defaultRadius.
+    /// </summary>
+    public int? AssistanceRadius { get; set; }
+
     public const int MaxSpreadPercent = 90;
     public const int MaxRangePercent = 400;
     public const int MaxKinds = 20;
@@ -212,8 +230,21 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
         Styles = Styles ?? under.Styles,
         Kinds = Kinds ?? under.Kinds,
         AggroRangePercent = AggroRangePercent ?? under.AggroRangePercent,
-        HelpRangePercent = HelpRangePercent ?? under.HelpRangePercent
+        HelpRangePercent = HelpRangePercent ?? under.HelpRangePercent,
+        Aggressiveness = Aggressiveness ?? under.Aggressiveness,
+        Clan = Clan ?? under.Clan,
+        AssistanceRadius = AssistanceRadius ?? under.AssistanceRadius
     };
+
+    /// <summary>Puts the population's Aggressiveness and Clan on one of its monsters (each left as the template's when unset).</summary>
+    internal void ApplyTo(Entities.NpcCharacter npc)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        if (Aggressiveness is int aggressiveness)
+            npc.Stats.Set(Characters.CharacterStat.BreedHostility, aggressiveness);
+        if (Clan is int clan)
+            npc.Stats.Set(Characters.CharacterStat.Clan, clan);
+    }
 
     /// <summary>One monster's level for a mission of <paramref name="quality"/>, from the room's seeded <paramref name="roll"/>.</summary>
     public int RollLevel(Random roll, int quality)
@@ -242,6 +273,8 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
             return "Population.Npcs must name at least one NPC hash (or Mix pick them)";
         if (AggroRangePercent is not (>= 0 and <= MaxRangePercent) || HelpRangePercent is not (>= 0 and <= MaxRangePercent))
             return "Population.AggroRangePercent and HelpRangePercent must be 0-" + MaxRangePercent;
+        if (Aggressiveness is < 0 || Clan is < 0 || AssistanceRadius is < 0)
+            return "Population.Aggressiveness, Clan and AssistanceRadius must be 0 or more";
         if (SpawnChancePercent is not (>= 0 and <= 100))
             return "Population.SpawnChancePercent must be 0-100";
         if (LevelSpreadPercent is not (>= 0 and <= MaxSpreadPercent))

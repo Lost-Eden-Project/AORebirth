@@ -32,8 +32,9 @@ namespace ZoneEngine_New.Core.GameData
         /// <summary>ComboNames.json: what a ComboNameGen item names its NPC.</summary>
         ComboNameCatalog ComboNames => ComboNameCatalog.Empty;
 
-        /// <summary>GoverningForms.json: organization governing form and rank names.</summary>
-        GoverningFormCatalog GoverningForms => GoverningFormCatalog.Empty;
+        /// <summary>Organizations.json and GoverningForms.json: the organization rules, forms and ranks.</summary>
+        ZoneEngine_New.Core.Organizations.OrganizationRules Organizations
+            => ZoneEngine_New.Core.Organizations.OrganizationRules.Disabled("No GameData store.");
 
         /// <summary>SpawnExclusions.json: hash spawn points that are not loaded.</summary>
         SpawnExclusionCatalog SpawnExclusions => SpawnExclusionCatalog.Empty;

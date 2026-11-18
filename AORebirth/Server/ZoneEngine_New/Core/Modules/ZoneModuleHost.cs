@@ -37,6 +37,7 @@ namespace ZoneEngine_New.Core.Modules
         private readonly ModuleMessageObservers _messages;
         private readonly ModuleMessageHandlers _messageHandlers;
         private readonly ModuleReloadables _reloadables;
+        private readonly string? _databaseConnection;
         private Dictionary<string, List<string>> _capabilities = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(string ModuleId, ModuleGmCommand Command)> _gmCommands = new();
         private readonly HashSet<string> _required = new(StringComparer.OrdinalIgnoreCase);
@@ -51,12 +52,13 @@ namespace ZoneEngine_New.Core.Modules
         private ZoneModuleHost(IZoneLogger logger, IKnubotScripts knubot, IZoneGameData gameData,
             Func<Playfield.PlayfieldManager> playfields, Func<ZoneEngine_New.Core.Accounts.AccountSanctionService>? accounts,
             string? gameDataRoot, Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown,
-            ModuleReloadables reloadables)
+            ModuleReloadables reloadables, string? databaseConnection)
         {
             _logger = logger;
             _knubot = knubot;
             _gameData = gameData;
             _reloadables = reloadables;
+            _databaseConnection = databaseConnection;
             Events = new ZoneModuleEvents(logger);
             World = new ZoneModuleWorld(playfields);
             _actions = new ZoneModuleActions(playfields, accounts, gameDataRoot, logger, shutdown);
@@ -85,7 +87,8 @@ namespace ZoneEngine_New.Core.Modules
             Func<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>? gameData = null,
             Func<ZoneEngine_New.Core.Accounts.AccountSanctionService>? accounts = null,
             Func<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>? shutdown = null,
-            ModuleReloadables? reloadables = null)
+            ModuleReloadables? reloadables = null,
+            string? databaseConnection = null)
         {
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(knubot);
@@ -93,7 +96,7 @@ namespace ZoneEngine_New.Core.Modules
             reloadables ??= new ModuleReloadables();
             var host = new ZoneModuleHost(logger, new ModuleKnubotScripts(knubot),
                 new ModuleGameData(gameData ?? (() => new ZoneEngine_New.Core.GameData.GameDataReloadRegistry([], reloadables))),
-                playfields, accounts, gameDataRoot, shutdown, reloadables);
+                playfields, accounts, gameDataRoot, shutdown, reloadables, databaseConnection);
             string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
             if (settingsPath == null)
             {
@@ -106,7 +109,7 @@ namespace ZoneEngine_New.Core.Modules
             HashSet<string> required = host._required;
             required.UnionWith(settings.Required);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            host._capabilities = LoadCapabilities(settings, logger, host._actions.Operations.Select(x => x.Name));
+            host._capabilities = host.LoadCapabilities(settings, logger, host._actions.Operations.Select(x => x.Name));
             logger.Info($"Modules: config={settingsPath} directory={modulesDirectory} enabled={settings.Enabled.Count}");
 
             foreach (string id in settings.Enabled)
@@ -286,6 +289,7 @@ namespace ZoneEngine_New.Core.Modules
             _capabilities.TryGetValue(manifest.Id, out List<string>? granted);
             var gate = new CapabilityGate(manifest.Id, granted, _logger);
             CheckOperations(manifest, gate);
+            ModuleDatabase.RequireCurrent(manifest.Id, moduleDirectory, gate, _databaseConnection);
             var moduleContext = new ZoneModuleContext(this, manifest.Id, moduleDirectory, gate);
             var entries = new List<IZoneModule>(entryTypes.Length);
             _initializing = manifest.Id;
@@ -343,19 +347,34 @@ namespace ZoneEngine_New.Core.Modules
                     throw new InvalidDataException("Module needs operation '" + operation
                         + "', which Config/Modules.json Capabilities does not grant it.");
             }
+
+            // The capabilities module.json says the module cannot work without (module API 1.14).
+            foreach (string capability in manifest.Capabilities ?? new List<string>())
+            {
+                if (!_knownCapabilities.Contains(capability))
+                    throw new InvalidDataException("Module needs capability '" + capability + "', which this engine does not know.");
+                if (!gate.Allows(capability))
+                    throw new InvalidDataException("Module needs capability '" + capability
+                        + "', which Config/Modules.json Capabilities does not grant it.");
+            }
         }
 
-        private static Dictionary<string, List<string>> LoadCapabilities(ModulesSettings settings, IZoneLogger logger,
+        // The capability names of this engine: the fixed ones below and every operation name.
+        private readonly HashSet<string> _knownCapabilities = new(StringComparer.OrdinalIgnoreCase);
+
+        private Dictionary<string, List<string>> LoadCapabilities(ModulesSettings settings, IZoneLogger logger,
             IEnumerable<string> operations)
         {
-            var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            HashSet<string> known = _knownCapabilities;
+            known.UnionWith(new[]
             {
                 ModuleCapabilities.ReadWorld, ModuleCapabilities.RefreshNpc, ModuleCapabilities.SendMessages,
                 ModuleCapabilities.GameDataReload, ModuleCapabilities.RespawnNpc, ModuleCapabilities.ObserveMessages,
                 ModuleCapabilities.ReadSessions, ModuleCapabilities.ObserveActions, ModuleCapabilities.ObserveVisibility,
                 ModuleCapabilities.ObserveChat, ModuleCapabilities.ReadChatText, ModuleCapabilities.ReadSanctions,
-                ModuleCapabilities.RollMissions, ModuleCapabilities.HandleMessages, ModuleCapabilities.SendRawMessages
-            };
+                ModuleCapabilities.RollMissions, ModuleCapabilities.HandleMessages, ModuleCapabilities.SendRawMessages,
+                ModuleCapabilities.Database
+            });
             known.UnionWith(operations);
             var capabilities = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach ((string id, List<string>? names) in settings.Capabilities ?? new Dictionary<string, List<string>>())
@@ -484,7 +503,10 @@ namespace ZoneEngine_New.Core.Modules
                 World = new GatedWorld(host.World, gate);
                 Actions = new GatedActions(host._actions, gate);
                 GameData = new GatedGameData(host._gameData, gate);
+                Database = new ModuleDatabase(moduleId, gate, host._databaseConnection);
             }
+
+            public AORebirth.Modules.Data.IModuleDatabase Database { get; }
 
             public IZoneWorld World { get; }
 

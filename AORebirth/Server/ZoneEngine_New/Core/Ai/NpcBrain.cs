@@ -861,23 +861,43 @@ namespace ZoneEngine_New.Core.Ai
         /// </summary>
         IReadOnlySet<int>? HatedFamilies()
         {
-            if (_hatedLookedUp)
-                return _hated;
-            _hatedLookedUp = true;
-            if (Pet == null && Npc.Playfield?.GetService<GameData.IGameData>()?.RootPath is string root && root.Length > 0)
-            {
-                var catalog = Mobs.MonsterCombatRulesCatalog.For(root);
-                if (catalog.TryGet(Npc.SpawnHash, out Mobs.MonsterCombatRules rules) && rules.HatedFamilies is { } bySpawn)
-                    _hated = bySpawn;
-                else if (catalog.TryGet(Npc.MobTemplate?.Hash, out rules))
-                    _hated = rules.HatedFamilies;
-            }
-
+            LookUpCombatRules();
             return _hated;
         }
 
+        /// <summary>
+        /// The sides this NPC never starts a fight with (GameData MonsterCombatRules.json "IgnoresSides", by its spawn
+        /// hash or its template's); null when none.
+        /// </summary>
+        IReadOnlySet<int>? IgnoredSides()
+        {
+            LookUpCombatRules();
+            return _ignoredSides;
+        }
+
+        /// <summary>Reads this NPC's MonsterCombatRules.json "Hates" and "IgnoresSides" once; the spawn hash's entry wins.</summary>
+        void LookUpCombatRules()
+        {
+            if (_combatRulesLookedUp)
+                return;
+            _combatRulesLookedUp = true;
+            if (Pet == null && Npc.Playfield?.GetService<GameData.IGameData>()?.RootPath is string root && root.Length > 0)
+            {
+                var catalog = Mobs.MonsterCombatRulesCatalog.For(root);
+                Mobs.MonsterCombatRules? bySpawn = catalog.TryGet(Npc.SpawnHash, out Mobs.MonsterCombatRules spawnRules) ? spawnRules : null;
+                Mobs.MonsterCombatRules? byTemplate = catalog.TryGet(Npc.MobTemplate?.Hash, out Mobs.MonsterCombatRules templateRules) ? templateRules : null;
+                _hated = bySpawn?.HatedFamilies ?? byTemplate?.HatedFamilies;
+                _ignoredSides = bySpawn?.IgnoredSides ?? byTemplate?.IgnoredSides;
+            }
+        }
+
+        /// <summary>This NPC's rules do not let it start a fight with <paramref name="target"/>'s side.</summary>
+        bool IgnoresSideOf(Character target)
+            => IgnoredSides() is { } ignored && ignored.Contains(target.Stats.GetOrZero(CharacterStat.Side));
+
         IReadOnlySet<int>? _hated;
-        bool _hatedLookedUp;
+        IReadOnlySet<int>? _ignoredSides;
+        bool _combatRulesLookedUp;
 
         /// <summary>The NPC this one was fighting started resetting and nobody else is left: reset as well.</summary>
         bool _resetForTargetReset;
@@ -897,6 +917,8 @@ namespace ZoneEngine_New.Core.Ai
             bool defend = guard && other.MobTemplate?.Has(Mobs.NpcFeature.Guard) != true && IsFightingAPlayer(other);
             bool hates = hated != null && hated.Contains(other.Stats.GetOrZero(CharacterStat.NPCFamily));
             if (!defend && !hates)
+                return;
+            if (IgnoresSideOf(other))
                 return;
             if (!ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(Npc, other) || Npc.GetEdgeDistanceTo(other) > range)
                 return;
@@ -942,6 +964,9 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             // A guard that is not hostile on its own only goes for the opposing faction.
             if (!hostile && !NpcAiRules.IsOpposingFaction(npcSide, playerSide))
+                return;
+            // MonsterCombatRules.json "IgnoresSides": e.g. an Omni guard that leaves Clans alone.
+            if (IgnoresSideOf(player))
                 return;
             if (guard && IsPvping(player))
                 return;
@@ -1042,14 +1067,34 @@ namespace ZoneEngine_New.Core.Ai
             // A target whose reach map was too costly to build means this fight cannot be judged: reset now rather
             // than search again (and stop players standing out of reach from farming a stuck mob).
             bool leash = _evading || _resetForUnreachable || (_resetForTargetReset && Hate.IsEmpty) || guardAwayFromPost
-                // A scripted march or a patrol leashes by distance from the point it is walking to, not from the spawn.
-                || NpcAiRules.ShouldLeash(Hate, LeashAnchor, Npc.Position, _isEngageable);
+                || NpcAiRules.ShouldLeash(Hate, DistanceLeashAnchor(), Npc.Position, _isEngageable);
             _resetForUnreachable = false;
             _resetForTargetReset = false;
             if (leash)
                 BeginEvade();
             _leashing = leash;
             return leash;
+        }
+
+        /// <summary>
+        /// Where this think's distance leash measures from. A scripted march or a patrol leashes from the point it is
+        /// walking to (<see cref="LeashAnchor"/>), but that point may lie past the leash range from where the walk
+        /// starts, and a reset puts the NPC back at <see cref="Home"/> rather than on its route. So: with nobody to
+        /// fight, the walk is no leash at all; in a fight, the nearer of the walk point and home counts. Measuring from
+        /// the walk point alone reset an NPC every think at its spawn, so it never walked on and healed off any damage
+        /// before it fought back.
+        /// </summary>
+        Vector3? DistanceLeashAnchor()
+        {
+            Vector3? walk = _scriptedAnchor ?? (PatrolEnabled ? PatrolAnchor : null);
+            if (walk is null)
+                return Home;
+            if (Hate.IsEmpty)
+                return null;
+            if (Home is not Vector3 home)
+                return walk;
+
+            return Vector3.Abs(Npc.Position - home) < Vector3.Abs(Npc.Position - walk) ? home : walk;
         }
 
         /// <summary>

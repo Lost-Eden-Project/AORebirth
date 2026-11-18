@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.10**.
+The current version is **1.14**.
 
 ## Loading
 
@@ -49,6 +49,7 @@ The current version is **1.10**.
 | 1.11 | `MissionKind.ReturnItem`; `MissionDungeon` names a GameData `Missions/Missions.json` mission (`Mission`) instead of carrying styles, floors, population and loot (the only 1.x change that removed members; MissionModule was its only consumer) |
 | 1.12 | `RegisterMessageHandler` (inbound N3 types the engine does not read), `Actions.SendMessage` (a module's own N3 message), the `player.purchase` and `player.stat-add` operations, `Events.MissionCompleted`; the `handle-messages` and `send-raw-messages` capabilities |
 | 1.13 | `RegisterReloadable` and `IModuleReloadable` (a module's own data, reloadable as `<module id>/<name>` beside the GameData catalogs) |
+| 1.14 | `Database` (`IModuleDatabase`): a module's own `mod_<id>_*` tables, created by migrations it ships and DatabaseMigrationTool applies; the `database` capability; module.json `Capabilities` (what the module cannot load without) |
 
 ## Context members
 
@@ -63,6 +64,7 @@ The current version is **1.10**.
 | `RegisterMissionRollHook` | Rolls mission terminal offers and decides what accepting one gives (1.10). Only during `Initialize`; only one module may register one (see Mission rolls). |
 | `RegisterMessageHandler` | Handles inbound N3 messages of one type the engine has no reader for (1.12). Only during `Initialize`; one module per type (see Message handlers). |
 | `RegisterReloadable` | Makes the module's own data reloadable while the zone runs, as `<module id>/<name>` (1.13). Only during `Initialize`; needs no capability (see GameData reloads). |
+| `Database` | The module's own tables: `TablePrefix`, `Table(name)`, `OpenAsync()` (1.14, see Module database). |
 | `Clock` | The clock every timestamp is on (1.6, see below). |
 | `Events` | Gameplay events (see below). |
 | `Knubot` | `Check(id, json)`, `Reload()`, `OverrideDirectory` (the `AO_REBIRTH_KNUBOT_PATH` folder). |
@@ -145,6 +147,10 @@ The `Capabilities` entry in Modules.json is optional.
 - **A module with an entry** may use only what it lists. Any other member throws `UnauthorizedAccessException`, and
   the engine logs a warning the first time.
 - **Unknown names** are ignored with a warning.
+- **module.json `Capabilities` (1.14)** lists what the module cannot work without, for example
+  `["read-sessions", "database"]`. Each must be a capability this engine knows and Modules.json grants, or the module
+  does not load. The check runs before `Initialize`, so a module never has to probe for a grant (and must not call
+  `World` during `Initialize`: the world view is not ready until the zone is built).
 
 | Capability | Grants |
 |---|---|
@@ -163,6 +169,7 @@ The `Capabilities` entry in Modules.json is optional.
 | `roll-missions` | `RegisterMissionRollHook` (1.10) |
 | `handle-messages` | `RegisterMessageHandler` (1.12) |
 | `send-raw-messages` | `Actions.SendMessage` (1.12) |
+| `database` | `Database.OpenAsync`, and shipping migrations at all (1.14) |
 | an operation's name | `Actions.Invoke` of that operation (1.5), for example `player.teleport` |
 
 The operations that replace older actions are also granted by the older name: `refresh-npc` grants `npc.refresh`,
@@ -528,3 +535,32 @@ The engine reads neither message; the client library that defines them is the la
 `Credits` and `Experience` the engine paid after any completion split, `RewardWon` (the reward roll; null without one)
 and `Timestamp`. What a module pays on top (Lost Eden's ICC Commendations, through `player.stat-add`) is its own and
 is saved with the character's next save, as experience is.
+
+## Module database (1.14)
+
+A module may own tables in the server database. It never touches the engine's tables (characters, items, accounts and
+the rest change only through `Actions`); its own are named `mod_<module id in lower case>_<name>`, for example
+`mod_missionmodule_icc_purchases`.
+
+- **Ids:** only a module whose id is a letter followed by letters and digits (at most 32) may own tables, so no two
+  modules' prefixes overlap.
+- **Migrations:** the module ships `Modules/<Id>/Migrations/NNNN_lower_case_name.sql`, applied in file-name order.
+  The zone never runs them. DatabaseMigrationTool does, with the server's own migrations and under the same backup,
+  engines-stopped and schema-lock rules: `status`, `validate`, `plan` and `migrate` take `--modules <Modules folder>`
+  (`Run-DatabaseMigration.bat` passes its `Modules` folder). Each applied migration is recorded in
+  `module_schema_migrations` (module id, file name, SHA-256 of the script with LF line endings).
+- **What a migration may do:** `CREATE`/`ALTER`/`DROP`/`TRUNCATE TABLE`, `CREATE`/`DROP INDEX`, `INSERT`, `REPLACE`,
+  `UPDATE` and `DELETE`, each on the module's own tables only. Table names are lower case (MySQL table names are
+  case-sensitive on Linux). Foreign keys may reference only the module's tables, and named constraints start with the
+  prefix (constraint names are unique across the database). The tool refuses the whole run when any statement does
+  anything else: qualified `db.table` names, `SELECT`, `JOIN`, `CREATE TABLE ... LIKE`, temporary tables, views,
+  routines, triggers, events, grants, users, locks, files, `SET` or executable `/*! */` comments. Write identifiers
+  that are SQL keywords in backticks. A migration that only changes rows runs in one transaction with its ledger row;
+  one with DDL cannot, because MySQL commits each DDL statement.
+- **Never edit an applied migration.** Ship the next number instead.
+- **At load:** a module that ships migrations needs the `database` capability. All of its migrations must be applied
+  with the hashes recorded, in order, and no applied migration may be missing from the module. Otherwise the module
+  does not load (zone startup fails when it is `Required`), and the log says which.
+- **At run time:** `Database.OpenAsync()` returns an open `DbConnection` from the module's own pool (at most 8
+  connections). Use it with ADO.NET and parameters, and dispose it. It throws on a playfield tick: event, GM command
+  and message handlers hand database work to another thread. `Database.Table(name)` gives the full table name.

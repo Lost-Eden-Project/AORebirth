@@ -93,7 +93,7 @@ namespace ZoneEngine_New.Core.GameData
             ReloadNpcTemplates();
             LoadMonsterWeapons();
             ComboNames = ComboNameCatalog.Load(RootPath, _logger);
-            GoverningForms = GoverningFormCatalog.Load(RootPath, _logger);
+            Organizations = ZoneEngine_New.Core.Organizations.OrganizationRules.Load(RootPath, _logger);
             SpawnExclusions = SpawnExclusionCatalog.Load(RootPath, _logger);
             ReloadHashItems();
             LoadVendingMachines();
@@ -108,7 +108,7 @@ namespace ZoneEngine_New.Core.GameData
 
         public ComboNameCatalog ComboNames { get; }
 
-        public GoverningFormCatalog GoverningForms { get; }
+        public ZoneEngine_New.Core.Organizations.OrganizationRules Organizations { get; }
 
         public SpawnExclusionCatalog SpawnExclusions { get; }
 

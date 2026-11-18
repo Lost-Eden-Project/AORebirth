@@ -101,6 +101,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>Other zone instances end their part of a dungeon: keys their players hold, the dungeon if they run it.</summary>
         const string DungeonEndedCommand = "dungeon.ended";
 
+        /// <summary>The instance holding a character drops their team mission copy, closed because the team finished without them.</summary>
+        const string TeamCopyDroppedCommand = "dungeon.team-copy-dropped";
+
         readonly ConcurrentDictionary<string, CachedDungeon> _dungeons = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<int, long> _lastRequest = new();
         readonly ConcurrentDictionary<int, string> _pendingRelease = new();
@@ -118,6 +121,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             _world = world;
             _commands = commands;
             _commands?.Register(DungeonEndedCommand, OnDungeonEndedElsewhere);
+            _commands?.Register(TeamCopyDroppedCommand, OnTeamCopyDroppedElsewhere);
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _entrances = entrances ?? throw new ArgumentNullException(nameof(entrances));
@@ -338,31 +342,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         }
 
         /// <summary>
-        /// World entry: a team mission whose objective another holder earned while this player was offline or on another
-        /// zone instance is earned now, with the team dungeon's kill chance (live here, else its owner's checkpoint).
-        /// </summary>
-        void CatchUpTeamMissions(Player player)
-        {
-            foreach (PlayerQuest quest in _quests.GetLog(player).Quests.Values.ToArray())
-            {
-                if (!quest.IsActive || quest.IsRewardPending || quest.Source != QuestSource.Generated || !quest.Template.IsTeamScope
-                    || !TryGetDungeon(quest.QuestId, out CachedDungeon dungeon)
-                    || !_store.HasOtherHolderEarned(quest.QuestId, player.Identity.Instance))
-                    continue;
-
-                (int Killed, int Total) chance = _playfields.Value.TryGetQuestDungeon(dungeon.Parameters.DungeonPlayfield, out QuestDungeonPlayfield live)
-                    && live.Kills is { } kills
-                    ? kills.Chance()
-                    : _quests.LoadDungeonKills(dungeon.OwnerId, quest.QuestId, dungeon.AssignedAtUtcTicks, dungeon.Parameters).Chance();
-                _logger.Info(string.Format(CultureInfo.InvariantCulture, "Team mission catch-up char={0} quest={1} chance={2}/{3}",
-                    player.Identity.Instance, quest.QuestId, chance.Killed, chance.Total));
-                _quests.EarnShared(player, quest.QuestId, chance);
-            }
-        }
-
-        /// <summary>
-        /// A team mission's objective was earned by one holder: every other holder online on this zone instance earns it
-        /// on their own playfield, with the team dungeon's kill chance as the earner saw it.
+        /// A team mission's objective was earned by one holder: every other holder online and inside this mission's
+        /// dungeon at that moment earns it too (its credits, experience, items and reward roll), with the team dungeon's
+        /// kill chance as the earner saw it. Every other holder, offline or anywhere else, loses their copy with no reward:
+        /// its row is closed as failed now, and an online holder's journal entry goes on their own tick.
         /// </summary>
         void OnTeamObjectiveEarned(Player earner, PlayerQuest quest)
         {
@@ -374,11 +357,40 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             string questId = quest.QuestId;
             foreach (int holder in _store.LoadActiveQuestHolders(questId))
             {
-                if (holder == earner.Identity.Instance || !playfields.FindPlayer(holder, out Player member)
-                    || member.Playfield is not Playfield at)
+                if (holder == earner.Identity.Instance)
                     continue;
-                at.DispatchPlayerProjection(member, () => _quests.EarnShared(member, questId, chance));
+                bool online = playfields.FindPlayer(holder, out Player member);
+                if (online && member.Playfield is QuestDungeonPlayfield at
+                    && string.Equals(at.QuestId, questId, StringComparison.Ordinal))
+                {
+                    at.DispatchPlayerProjection(member, () => _quests.EarnShared(member, questId, chance));
+                    continue;
+                }
+
+                // Closed before any holder's reward commits, so the dungeon ends with the last finisher (no eviction).
+                if (!_store.CloseCharacterQuest(holder, questId, (int)QuestState.Failed, DateTime.UtcNow.Ticks))
+                    continue;
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Team mission copy closed char={0} quest={1}: not in the mission dungeon (online={2})",
+                    holder, questId, online));
+                if (online && member.Playfield is Playfield elsewhere)
+                    elsewhere.DispatchPlayerProjection(member, () => _quests.DropTeamCopy(member, questId));
+                else if (!online && _commands != null)
+                    // Online on another zone instance: World routes it there; offline, nobody gets it and login loads the closed row.
+                    _ = _commands.ToCharacterAsync(holder, TeamCopyDroppedCommand,
+                        holder.ToString(CultureInfo.InvariantCulture), questId);
             }
+        }
+
+        /// <summary>Another zone instance closed this instance's player's team mission copy: take it out of their journal.</summary>
+        void OnTeamCopyDroppedElsewhere(AORebirth.World.Contracts.V1.InstanceCommand command)
+        {
+            if (command.Arguments.Count < 2
+                || !int.TryParse(command.Arguments[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int characterId))
+                return;
+            string questId = command.Arguments[1];
+            if (_playfields.Value.FindPlayer(characterId, out Player member) && member.Playfield is Playfield at)
+                at.DispatchPlayerProjection(member, () => _quests.DropTeamCopy(member, questId));
         }
 
         string? AssignTemplateLocked(Player player, QuestTemplate source, int? requestedQuality, int[]? teamRoster, bool rolled,
@@ -912,8 +924,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         /// <summary>
         /// World entry (login or zoning): re-sends each carried mission key with its dungeon's name, and retires
-        /// any whose dungeon is gone. One indexed read for all of the player's keys. Also catches up team missions a
-        /// teammate finished meanwhile.
+        /// any whose dungeon is gone. One indexed read for all of the player's keys. A team mission a teammate finished
+        /// meanwhile is not caught up: only holders inside its dungeon when it was earned share it.
         /// </summary>
         public void RestoreKeys(Player player)
         {
@@ -922,15 +934,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 if (player.IsPersistenceQuarantined || player.Session == null || !player.Inventory.IsHydrated)
                     return;
-
-                try
-                {
-                    CatchUpTeamMissions(player);
-                }
-                catch (Exception exception)
-                {
-                    _logger.Error(exception, "Team mission catch-up failed char=" + player.Identity.Instance);
-                }
 
                 List<Item> keys = CarriedKeys(player);
                 if (keys.Count == 0)
@@ -1564,10 +1567,13 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         const int OverflowSlot = 0x6F;
 
         /// <summary>
-        /// A new key, in the captured live order (capture 20260724-134055, the retired engine's
-        /// MissionKeyGrantService): SimpleItemFullUpdate creates the named key in the overflow window,
-        /// ContainerAddItem routes it through overflow, then TemplateAction Overflow and TemplateAction Use move it to
-        /// its inventory slot. The client only places an item it already knows, so the item update comes first.
+        /// A new granted mission item (key or repair source item): SimpleItemFullUpdate creates the named item in
+        /// the overflow window (the client takes the first free overflow placement), then ContainerAddItem moves
+        /// overflow placement 0 to the first free inventory slot. The client only places an item it already knows,
+        /// so the item update comes first. TemplateAction Use only plays the item's use animation; it moves nothing.
+        /// No TemplateAction Overflow is sent: the client adds a second, template-named copy at overflow placement 0
+        /// for it, and the next grant's ContainerAddItem then moves that copy into the inventory instead of the item
+        /// (capture 20260724-134055 had that order and the same glitch until zoning).
         /// </summary>
         static void SendKey(Player player, Item key, int slot, string entranceName)
             => SendGrantedMissionItem(player, key, slot, KeyNamePrefix + entranceName);
@@ -1586,8 +1592,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
                 Slot = OverflowSlot
             });
-            player.Session.Send(KeyTemplateAction(player, item, TemplateActionType.Overflow,
-                new Identity { Type = IdentityType.OverflowWindow, Instance = 0 }, 0, 0));
             player.Session.Send(KeyTemplateAction(player, item, TemplateActionType.Use,
                 new Identity { Type = IdentityType.Inventory, Instance = slot }, (int)player.Identity.Type, player.Identity.Instance));
         }

@@ -31,6 +31,12 @@ namespace ZoneEngine_New.Core.Chat
 
         /// <summary>Delivers a server-generated notice to the existing Org Msg channel.</summary>
         bool SendOrganizationMessage(int organizationId, string text);
+
+        /// <summary>Moves a character to an organization's chat channel; <paramref name="organizationId"/> 0 takes it out of every one.</summary>
+        bool SendOrganizationMembership(int characterId, int organizationId, string organizationName) => false;
+
+        /// <summary>Gives an organization's chat channel its new name.</summary>
+        bool SendOrganizationRenamed(int organizationId, string name) => false;
     }
 
     /// <summary>
@@ -102,6 +108,26 @@ namespace ZoneEngine_New.Core.Chat
                     Text = text
                 }
             });
+        }
+
+        public bool SendOrganizationMembership(int characterId, int organizationId, string organizationName)
+        {
+            if (characterId <= 0 || organizationId < 0) return false;
+            return Publish(new ChatEvent
+            {
+                OrganizationMembership = new OrganizationMembership
+                {
+                    CharacterId = characterId,
+                    OrganizationId = organizationId,
+                    OrganizationName = organizationId > 0 ? organizationName ?? string.Empty : string.Empty
+                }
+            });
+        }
+
+        public bool SendOrganizationRenamed(int organizationId, string name)
+        {
+            if (organizationId <= 0 || string.IsNullOrEmpty(name)) return false;
+            return Publish(new ChatEvent { OrganizationRenamed = new OrganizationRenamed { OrganizationId = organizationId, Name = name } });
         }
 
         public bool SendAnonymousVicinity(string text, IReadOnlyList<int> recipients, byte[]? blob = null)

@@ -197,24 +197,36 @@ namespace AORebirth.Database.Dao
         /// </param>
         private void DeleteOwnedData(int id, IDbConnection connection, IDbTransaction transaction)
         {
-            // TODO : move these two to their own DAOs
-
-            // remove this character from organisations
-            DBOrganization org = OrganizationDao.Instance.GetWhere(
-                new { LeaderId = id },
-                connection,
-                transaction).FirstOrDefault();
-            if (org != null)
+            // Organizations (org_members is the authority; see Migrations/20261117_organizations.sql). The character
+            // leaves its organization. A leader's organization goes to the member of the highest rank (lowest OrgRank,
+            // then the earliest to join); one left without members is deleted. Version moves so every zone reloads it.
+            // The organization row is locked first, as every zone transaction on an organization does.
+            int? organizationId = connection.ExecuteScalar<int?>(
+                "SELECT OrganizationId FROM org_members WHERE CharacterId=@Id", new { Id = id }, transaction);
+            if (organizationId != null
+                && connection.ExecuteScalar<int?>(
+                    "SELECT OrganizationId FROM org_organizations WHERE OrganizationId=@Org FOR UPDATE",
+                    new { Org = organizationId }, transaction) != null
+                && connection.Execute("DELETE FROM org_members WHERE CharacterId=@Id AND OrganizationId=@Org",
+                    new { Id = id, Org = organizationId }, transaction) > 0)
             {
-                // What to do if the leader deletes himself?
-                // Lets remove the org for now, later on should it switch to secondhighest char in org?
-                OrganizationDao.Instance.Delete(org.Id, connection, transaction);
-
-                // Remove the org's Stat from the other characters in the org too
-                StatDao.Instance.Delete(
-                    new { StatValue = org.Id, StatId = (int)StatIds.clan },
-                    connection,
-                    transaction);
+                int? successor = connection.ExecuteScalar<int?>(
+                    "SELECT CharacterId FROM org_members WHERE OrganizationId=@Org ORDER BY OrgRank, JoinedAtUtc, CharacterId LIMIT 1",
+                    new { Org = organizationId }, transaction);
+                if (successor == null)
+                {
+                    connection.Execute("DELETE FROM org_organizations WHERE OrganizationId=@Org", new { Org = organizationId }, transaction);
+                }
+                else
+                {
+                    connection.Execute(
+                        "UPDATE org_organizations SET LeaderId=IF(LeaderId=@Id, @Successor, LeaderId), Version=Version+1 WHERE OrganizationId=@Org",
+                        new { Id = id, Successor = successor, Org = organizationId }, transaction);
+                    connection.Execute(
+                        "UPDATE org_members m INNER JOIN org_organizations o ON o.OrganizationId=m.OrganizationId "
+                        + "SET m.OrgRank=0 WHERE m.CharacterId=@Successor AND o.LeaderId=@Successor",
+                        new { Successor = successor }, transaction);
+                }
             }
 
             // empty this characters inventory (items and instanced items)

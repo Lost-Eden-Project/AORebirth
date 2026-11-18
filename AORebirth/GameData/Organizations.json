@@ -1,0 +1,32 @@
+{
+  "DefaultGoverningForm": 0,
+  "Create": {
+    "TeamSize": 6,
+    "GmWithoutTeam": true
+  },
+  "Name": {
+    "MinLength": 4,
+    "MaxLength": 40,
+    "MinLetters": 3,
+    "AllowedPunctuation": " -'."
+  },
+  "MaxTextLength": 255,
+  "InviteMinRanksAboveLowest": 2,
+  "InteractionRange": 40,
+  "InvitationSeconds": 120,
+  "LeadershipConfirmSeconds": 30,
+  "BankCap": 4000000000,
+  "Votes": {
+    "MinMinutes": 2,
+    "MaxMinutes": 10080,
+    "MinChoices": 2,
+    "MaxChoices": 10,
+    "MaxQuestionLength": 120,
+    "MaxChoiceLength": 32,
+    "MinMinutesBetween": 30,
+    "OpenDelaySeconds": 5
+  },
+  "Texts": {
+    "LeadershipTransferConfirm": "Promote {0} again within {1} seconds to give them the leadership of the organization."
+  }
+}

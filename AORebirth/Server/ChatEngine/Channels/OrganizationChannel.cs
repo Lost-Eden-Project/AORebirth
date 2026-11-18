@@ -31,54 +31,59 @@
 
 namespace ChatEngine.Channels
 {
-    #region Usings ...
+    using System.Data;
+    using System.Linq;
 
-    using AORebirth.Database.Dao;
+    using AORebirth.Database;
 
-    using Utility;
-
-    #endregion
+    using Dapper;
 
     /// <summary>
+    /// One organization's chat channel (id = organization id). Membership comes from org_members, the only authority;
+    /// the zone that changes it moves characters in and out of channels (World chat events).
     /// </summary>
     public class OrganizationChannel : ChannelBase
     {
-        #region Constructors and Destructors
-
-        /// <summary>
-        /// </summary>
-        /// <param name="flags">
-        /// </param>
-        /// <param name="type">
-        /// </param>
-        /// <param name="id">
-        /// </param>
-        /// <param name="name">
-        /// </param>
-        public OrganizationChannel(ChannelFlags flags, ChannelType type, uint id, string name = "")
-            : base(flags, type, id, name)
-        {
-        }
-
-        /// <summary>
-        /// </summary>
-        /// <param name="orgId">
-        /// </param>
-        public OrganizationChannel(int orgId)
+        public OrganizationChannel(int organizationId, string name)
             : base(
                 ChannelFlags.NoInternational | ChannelFlags.GroupOnName,
                 ChannelType.Organization,
-                (uint)orgId,
-                ResolveOrganizationName(orgId))
+                (uint)organizationId,
+                name ?? string.Empty)
         {
         }
 
-        private static string ResolveOrganizationName(int orgId)
+        /// <summary>The character's organization id and name; (0, null) when it belongs to none. Blocking.</summary>
+        public static (int OrganizationId, string Name) MembershipOf(int characterId)
         {
-            var org = OrganizationDao.Instance.Get(orgId);
-            return org == null ? string.Empty : org.Name;
+            if (characterId <= 0)
+            {
+                return (0, null);
+            }
+
+            using (IDbConnection connection = Connector.GetConnection())
+            {
+                var row = connection.Query<(int, string)>(
+                    "SELECT o.OrganizationId, o.Name FROM org_members m INNER JOIN org_organizations o "
+                    + "ON o.OrganizationId=m.OrganizationId WHERE m.CharacterId=@Id",
+                    new { Id = characterId }).FirstOrDefault();
+                return row.Item1 > 0 ? row : (0, null);
+            }
         }
 
-        #endregion
+        /// <summary>The organization's name, or null when it does not exist. Blocking.</summary>
+        public static string NameOf(int organizationId)
+        {
+            if (organizationId <= 0)
+            {
+                return null;
+            }
+
+            using (IDbConnection connection = Connector.GetConnection())
+            {
+                return connection.Query<string>(
+                    "SELECT Name FROM org_organizations WHERE OrganizationId=@Id", new { Id = organizationId }).FirstOrDefault();
+            }
+        }
     }
 }

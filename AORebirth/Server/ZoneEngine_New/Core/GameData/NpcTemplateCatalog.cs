@@ -20,8 +20,51 @@ namespace ZoneEngine_New.Core.GameData
         static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true,
-            Converters = { new JsonStringEnumConverter() }
+            Converters = { new JsonStringEnumConverter(), new TextureOverrideJsonConverter() }
         };
+
+        /// <summary>
+        /// NpcTemplates.json writes an override as <c>{ "Material", "Texture", "Unknown1", "Unknown2" }</c>. The protocol
+        /// type names them Name and TextureId and keeps the ints as fields, which System.Text.Json skips, so without this
+        /// every override loaded with no material and texture 0.
+        /// </summary>
+        sealed class TextureOverrideJsonConverter : JsonConverter<TextureOverride>
+        {
+            public override TextureOverride Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType != JsonTokenType.StartObject)
+                    throw new JsonException("TextureOverride must be an object");
+
+                var result = new TextureOverride { Name = string.Empty };
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+                {
+                    string name = reader.GetString() ?? string.Empty;
+                    reader.Read();
+                    if (name.Equals("Material", StringComparison.OrdinalIgnoreCase) || name.Equals("Name", StringComparison.OrdinalIgnoreCase))
+                        result.Name = reader.GetString() ?? string.Empty;
+                    else if (name.Equals("Texture", StringComparison.OrdinalIgnoreCase) || name.Equals("TextureId", StringComparison.OrdinalIgnoreCase))
+                        result.TextureId = reader.GetInt32();
+                    else if (name.Equals("Unknown1", StringComparison.OrdinalIgnoreCase))
+                        result.Unknown1 = reader.GetInt32();
+                    else if (name.Equals("Unknown2", StringComparison.OrdinalIgnoreCase))
+                        result.Unknown2 = reader.GetInt32();
+                    else
+                        reader.Skip();
+                }
+
+                return result;
+            }
+
+            public override void Write(Utf8JsonWriter writer, TextureOverride value, JsonSerializerOptions options)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("Material", value.Name ?? string.Empty);
+                writer.WriteNumber("Texture", value.TextureId);
+                writer.WriteNumber("Unknown1", value.Unknown1);
+                writer.WriteNumber("Unknown2", value.Unknown2);
+                writer.WriteEndObject();
+            }
+        }
 
         readonly Dictionary<string, string[]> _families;
         readonly Dictionary<string, NpcLeaf> _leaves;

@@ -817,8 +817,11 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>/pet rename names per pet type; a summoned pet of that type takes its name (characterpetnames).</summary>
         public PetNames PetNames { get; } = new();
 
-        /// <summary>Organization row loaded at login for the Clan stat; null when the character has no organization.</summary>
-        public ZoneEngine_New.Core.Data.OrganizationRecord? Organization { get; set; }
+        /// <summary>
+        /// The organization this player shows (id and name), from org_members; null when it belongs to none. Set at login
+        /// and afterwards only on the player's tick by <see cref="ZoneEngine_New.Core.Organizations.OrganizationService"/>.
+        /// </summary>
+        public ZoneEngine_New.Core.Organizations.PlayerOrganization? Organization { get; set; }
 
         /// <summary>Login: the stored progress, minus any tier already trained (a crash between the two writes).</summary>
         public void LoadResearch(IEnumerable<ResearchProgressRecord> rows)

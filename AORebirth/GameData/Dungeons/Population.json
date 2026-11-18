@@ -1,8 +1,13 @@
 {
   // Named populations over Defaults.json: which NPC templates (by hash) fill the rooms and how. Mix/Styles/Kinds
-  // draw from Dungeons/Families.json instead of Npcs when that file exists.
+  // draw from Dungeons/Families.json instead of Npcs when that file exists. Aggressiveness (BreedHostility) and Clan
+  // replace every monster's own (and a kill objective's): one clan makes them answer each other's calls for help
+  // (Gameplay.json socialAggro.sameClanOnly), carried AssistanceRadius meters before socialAggro's caps and scale.
   "rubika": {
-    "Npcs": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"]
+    "Npcs": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"],
+    "Aggressiveness": 60,
+    "Clan": 900000,
+    "AssistanceRadius": 20
   },
   "mothership": {
     "Npcs": ["ARZWEH"]

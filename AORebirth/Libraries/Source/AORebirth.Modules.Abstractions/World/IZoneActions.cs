@@ -132,5 +132,8 @@ namespace AORebirth.Modules.World
 
         /// <summary><see cref="IZoneActions.SendMessage"/> (module API 1.12).</summary>
         public const string SendRawMessages = "send-raw-messages";
+
+        /// <summary><see cref="Data.IModuleDatabase.OpenAsync"/> and shipping migrations (module API 1.14).</summary>
+        public const string Database = "database";
     }
 }

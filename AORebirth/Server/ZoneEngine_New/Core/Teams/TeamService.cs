@@ -348,6 +348,30 @@ namespace ZoneEngine_New.Core.Teams
                     : null;
         }
 
+        /// <summary>One member of a team roster: name and Side stat (0 neutral, 1 clan, 2 omni) as this instance knows them.</summary>
+        public readonly record struct RosterMember(int CharacterId, string Name, int Side);
+
+        /// <summary>
+        /// The player's whole team with each member's name and side, remote members included (World mode mirrors them);
+        /// null when the player is in no team. A member whose row has not arrived yet has an empty name.
+        /// </summary>
+        public (int LeaderId, bool IsRaid, IReadOnlyList<RosterMember> Members)? GetRoster(Player player)
+        {
+            lock (_sync)
+            {
+                if (!Owns(player) || !_membership.TryGetValue(player.Identity.Instance, out Team? team))
+                    return null;
+                var members = new List<RosterMember>(team.Members.Count);
+                foreach (int id in team.Members)
+                {
+                    MemberData? data = DataOf(id);
+                    members.Add(new RosterMember(id, data?.Name ?? string.Empty, data?.Side ?? 0));
+                }
+
+                return (team.Leader, team.IsRaid, members.AsReadOnly());
+            }
+        }
+
         /// <summary>
         /// The player's immediate team: in a raid, only the members of its own raid group, which acts as an isolated
         /// team for team buffs, team heals and auras (the raid as a whole still shares XP and loot through

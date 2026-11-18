@@ -237,8 +237,11 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
 
                 case CharacterActionType.StopSneaking: //TODO: Wire in cooldown on sneak
-                    player.Motor.ApplyAction(MovementAction.LeaveSneak);
-                    AnnounceAction(player, CharacterActionType.StopSneaking);
+                    // Leaving sneak announces StopSneaking from the motor; a player not sneaking still gets the answer.
+                    if (player.Motor.State == MovementState.Sneak)
+                        player.Motor.ApplyAction(MovementAction.LeaveSneak);
+                    else
+                        AnnounceAction(player, CharacterActionType.StopSneaking);
                     break;
 
                 case CharacterActionType.CastNano:

@@ -122,6 +122,8 @@ namespace ZoneEngine_New
                 _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>();
                 // Starts the sweep that removes characters of accounts suspended or banned since they logged in.
                 _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Accounts.AccountSanctionService>();
+                // Hooks player registration and other instances' organization changes before any client connects.
+                rootServices.GetRequiredService<ZoneEngine_New.Core.Organizations.OrganizationService>().Start();
                 networkHost = rootServices.GetRequiredService<ZoneNetworkHost>();
                 networkHost.Start();
                 try
@@ -290,7 +292,8 @@ namespace ZoneEngine_New
             services.AddSingleton<IResearchRepository, MySqlResearchRepository>();
             services.AddSingleton<INanoLineLockRepository, MySqlNanoLineLockRepository>();
             services.AddSingleton<IPetNameRepository, MySqlPetNameRepository>();
-            services.AddSingleton<IOrganizationRepository, MySqlOrganizationRepository>();
+            services.AddSingleton<ZoneEngine_New.Core.Organizations.IOrganizationStore, ZoneEngine_New.Core.Organizations.MySqlOrganizationStore>();
+            services.AddSingleton<ZoneEngine_New.Core.Organizations.OrganizationService>();
             services.AddSingleton<ICharacterCoalesceCommit, MySqlCharacterCoalesceCommit>();
             services.AddSingleton<IItemInstanceIdAllocator, ItemInstanceIdAllocator>();
             services.AddSingleton<IItemTemplateCatalog, ItemTemplateCatalog>();
@@ -326,7 +329,8 @@ namespace ZoneEngine_New
                 () => provider.GetRequiredService<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.Accounts.AccountSanctionService>(),
                 () => provider.GetRequiredService<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>(),
-                provider.GetRequiredService<ZoneEngine_New.Core.Modules.ModuleReloadables>()));
+                provider.GetRequiredService<ZoneEngine_New.Core.Modules.ModuleReloadables>(),
+                MySqlConnectionSettings.GetRequiredConnectionString()));
             services.AddSingleton<ZoneEngine_New.Core.Accounts.IAccountSanctionRepository, ZoneEngine_New.Core.Accounts.MySqlAccountSanctionRepository>();
             services.AddSingleton<ZoneEngine_New.Core.Accounts.AccountSanctionService>();
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
