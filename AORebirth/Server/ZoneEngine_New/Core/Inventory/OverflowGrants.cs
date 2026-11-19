@@ -33,10 +33,11 @@ namespace ZoneEngine_New.Core.Inventory
 
         /// <summary>
         /// Client to server: the Lost Eden client's /overflow asks for its overflow window. CharacterAction with this
-        /// action id ("LEA" + 1, the Lost Eden CharacterAction range; the stock client never sends it), Identity = the
-        /// player, everything else 0. The client closes the window on zoning; this reopens it.
+        /// action id (50001, the Lost Eden CharacterAction range from 50000 up, far past any stock action; the stock
+        /// client never sends it), Identity = the player, everything else 0. The client closes the window on zoning;
+        /// this reopens it.
         /// </summary>
-        public const CharacterActionType OpenWindowAction = (CharacterActionType)0x4C454101;
+        public const CharacterActionType OpenWindowAction = (CharacterActionType)50001;
 
         /// <summary>The shortest gap between two honoured /overflow requests from one player.</summary>
         static readonly TimeSpan OpenRequestInterval = TimeSpan.FromSeconds(1);
