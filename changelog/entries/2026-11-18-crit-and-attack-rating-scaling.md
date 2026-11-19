@@ -1,0 +1,3 @@
+- Changed: Hit chance above 100% now raises your critical chance, by one sixth of the overflow. At a 150% hit chance you get about 8.3% extra crit chance.
+- Fixed: Setting your aggressive/defensive bar toward defensive now makes you harder to hit with weapons.
+- Changed: Above 1000 attack rating, each profession's damage now scales on its own live-measured curve until it reaches that profession's cap.

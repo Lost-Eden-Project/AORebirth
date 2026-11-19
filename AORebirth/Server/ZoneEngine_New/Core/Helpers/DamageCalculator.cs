@@ -8,6 +8,7 @@ namespace ZoneEngine_New.Core.Helpers
     using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.GameData;
     using ZoneEngine_New.Core.Inventory;
 
     /// <summary>
@@ -15,8 +16,6 @@ namespace ZoneEngine_New.Core.Helpers
     /// </summary>
     public static class DamageCalculator
     {
-        const float Post1000DamageReduction = 0.3f;
-
         static readonly Random SharedRandom = new();
         static readonly object RandomSync = new();
 
@@ -123,7 +122,9 @@ namespace ZoneEngine_New.Core.Helpers
             int defenseRating = ResolveDefenseRating(target, attackDefendSource);
             int cappedAttackRating = amsCap > 0 ? Math.Min(attackRating, amsCap) : attackRating;
 
-            if (!alwaysHits && !ResolveHit(attackRating, defenseRating, NormalizeStat(target.Stats.GetOrZero(CharacterStat.AggDef))))
+            // AggDef keeps its sign: a defensive bar (down to -100) makes the target harder to hit.
+            double hitChance = HitChance(attackRating, defenseRating, StatCollection.Normalize(target.Stats.GetOrZero(CharacterStat.AggDef)));
+            if (!alwaysHits && NextDouble() >= hitChance)
                 return new DamageResult(false, 0, HitType.Normal);
 
             int overrideType = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.DamageOverrideType));
@@ -148,23 +149,27 @@ namespace ZoneEngine_New.Core.Helpers
                 weaponMin = weaponMax;
             }
 
-            double multiplier = cappedAttackRating < 1000
-                ? 1 + (cappedAttackRating / 400.0)
-                : 3.5 + ((cappedAttackRating - 1000) * Post1000DamageReduction / 400.0);
+            // AR / 400 + 1 up to AR 1000, then the attacker's profession curve (GameData/ArMultipliers.json).
+            double multiplier = ArMultiplierTable.For(
+                attacker.Playfield?.GetService<IGameData>()?.RootPath,
+                attacker.Stats.GetOrZero(CharacterStat.Profession),
+                cappedAttackRating);
             int minDamage = (int)(weaponMin * multiplier + damageBonus);
             // AC/10 comes off the maximum once, never below the minimum.
             int maxDamage = Math.Max((int)((weaponMax * multiplier) + damageBonus - (targetArmorClass / 10.0)), minDamage);
 
             HitType hitType = HitType.Normal;
             bool isBurst = specialAttackStat == CharacterStat.Burst;
-            // Critical Increase is the crit percent: Character.BaseCriticalIncrease plus gear, buffs and perks.
-            double critChance = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.CriticalIncrease));
+            // Critical Increase is the crit percent: Character.BaseCriticalIncrease (the 3%) plus gear, buffs and perks.
+            // Hit chance past 100% adds a sixth of the overflow (live: 150% hit chance, +8.3% crit).
+            double critChance = NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.CriticalIncrease))
+                + (Math.Max(0, hitChance - 1) * 100 / 6);
             // PvP rules (Gameplay.json pvp.critChancePercent) scale the chance against a player.
             critChance = attacker.Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp
                 .ScaleCritChance(attacker, target, critChance) ?? critChance;
             // The target's Critical Decrease (stat 391, CritialResistance here) takes points off the chance.
             critChance -= NormalizeStat(target.Stats.GetOrZero(CharacterStat.CritialResistance));
-            if (canCrit && !isBurst && NextInt(0, 100) < critChance)
+            if (canCrit && !isBurst && NextDouble() * 100 < critChance)
             {
                 hitType = HitType.Critical;
                 // The weapon's crit bonus scales with the same attack rating multiplier as its damage, on top of the
@@ -280,11 +285,12 @@ namespace ZoneEngine_New.Core.Helpers
             return defenseRating + NormalizeStat(target.Stats.GetOrZero(CharacterStat.DMSModifier));
         }
 
-        static bool ResolveHit(int attackRating, int defenseRating, int aggDef)
-            => NextDouble() < HitPercentage(attackRating, defenseRating, aggDef);
+        static double HitPercentage(int attackRating, int defenseRating, int aggDef)
+            => Math.Clamp(HitChance(attackRating, defenseRating, aggDef), 0, 1);
 
         /// <summary>
-        /// Hit chance = 70% + (AR - DR) / (DR + |AR - DR|) + AggDef / 500, held to 0..1. AR is the attack rating (attack
+        /// Hit chance = 50% + (AR - DR) / (DR + |AR - DR|) + (AggDef + 100) / 500, not held to 100%: what lies past
+        /// 100% raises the crit chance (see <see cref="CalculateFromWeapon"/>). Never below 0. AR is the attack rating (attack
         /// skills + Add All Off.), DR the defense rating (defense skills + Add All Def.), AggDef the defender's
         /// aggressive/defensive bar, -100 (fully defensive, harder to hit) to 100. The middle term is a soft S-curve of
         /// (AR - DR) / DR: it depends only on the AR/DR ratio, runs from -0.5 at AR 0 to toward +1, and equal leads and
@@ -292,14 +298,14 @@ namespace ZoneEngine_New.Core.Helpers
         /// hits, and AR near 0 still hits 20% (0% against a fully defensive bar). A negative AR counts as 0 and a DR
         /// under 1 counts as 1, so the denominator is always at least 1.
         /// </summary>
-        static double HitPercentage(int attackRating, int defenseRating, int aggDef)
+        static double HitChance(int attackRating, int defenseRating, int aggDef)
         {
             double attack = Math.Max(0, attackRating);
             double defense = Math.Max(1, defenseRating);
             double lead = attack - defense;
             double rating = lead / (defense + Math.Abs(lead));
-            double aggression = Math.Clamp(aggDef, NanoDelayCalculator.AggDefMin, NanoDelayCalculator.AggDefMax) / 500.0;
-            return Math.Clamp(0.7 + rating + aggression, 0, 1);
+            double aggression = (Math.Clamp(aggDef, NanoDelayCalculator.AggDefMin, NanoDelayCalculator.AggDefMax) + 100) / 500.0;
+            return Math.Max(0, 0.5 + rating + aggression);
         }
 
         static bool TryGetArmorStat(int rawDamageType, out CharacterStat armorStat)
