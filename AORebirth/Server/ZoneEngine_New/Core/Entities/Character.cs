@@ -5004,31 +5004,11 @@ namespace ZoneEngine_New.Core.Entities
                 scfu.CharacterInfo = pcInfo;
             }
 
-            int displayMaxHealth = maxHealth;
-            int displayCurrentHealth = currentHealth;
-            if (maxHealth > ushort.MaxValue)
-            {
-                displayMaxHealth = ushort.MaxValue;
-                if (maxHealth > 0)
-                {
-                    displayCurrentHealth = (int)((long)currentHealth * ushort.MaxValue / maxHealth);
-                    if (displayCurrentHealth < 0)
-                    {
-                        displayCurrentHealth = 0;
-                    }
-                    else if (displayCurrentHealth > displayMaxHealth)
-                    {
-                        displayCurrentHealth = displayMaxHealth;
-                    }
-                }
-                else
-                {
-                    displayCurrentHealth = 0;
-                }
-            }
-
-            scfu.Health = displayMaxHealth;
-            int healthDamage = displayMaxHealth - displayCurrentHealth;
+            // The full MaxHealth: past 65535 ScfuWire drops HasSmallHealth and the field goes out as an Int32. Scaling it
+            // down to 65535 left observers at 65535 of the real MaxHealth the vitals sync sends next (a 200000 HP
+            // Vanguard Watcher showed 33% until targeted).
+            scfu.Health = Math.Max(0, maxHealth);
+            int healthDamage = scfu.Health - Math.Clamp(currentHealth, 0, scfu.Health);
 
             if (Playfield?.GetService<IGameData>()
                     ?.TryGetPlayfieldCharacterAppearanceOverride(playfieldId, out uint appearanceMonsterData) == true)

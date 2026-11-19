@@ -32,6 +32,29 @@ namespace ZoneEngine_New.Core.Inventory
         const int WindowPlacement = 0x6E;
 
         /// <summary>
+        /// Client to server: the Lost Eden client's /overflow asks for its overflow window. CharacterAction with this
+        /// action id ("LEA" + 1, the Lost Eden CharacterAction range; the stock client never sends it), Identity = the
+        /// player, everything else 0. The client closes the window on zoning; this reopens it.
+        /// </summary>
+        public const CharacterActionType OpenWindowAction = (CharacterActionType)0x4C454101;
+
+        /// <summary>The shortest gap between two honoured /overflow requests from one player.</summary>
+        static readonly TimeSpan OpenRequestInterval = TimeSpan.FromSeconds(1);
+
+        /// <summary>
+        /// The client asked for its overflow window (<see cref="OpenWindowAction"/>): it is sent again as it stands, even
+        /// empty, at most once per <see cref="OpenRequestInterval"/>.
+        /// </summary>
+        public static void OpenRequested(Player player, DateTime nowUtc)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            if (nowUtc - player.LastOverflowOpenUtc < OpenRequestInterval)
+                return;
+            player.LastOverflowOpenUtc = nowUtc;
+            SendWindow(player);
+        }
+
+        /// <summary>
         /// Opens (or refreshes) the client's overflow window with everything in it: InventoryUpdate of the overflow page,
         /// as retail sends after a declined trade's item lands there (BagIdentity = the player, slot number 0x6E).
         /// Without it the client never shows the window.

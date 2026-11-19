@@ -113,6 +113,9 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>When the server last put this player's session in play.</summary>
         internal DateTime InPlaySinceUtc { get; private set; }
 
+        /// <summary>When this player's client last asked for its overflow window (/overflow); throttles the request.</summary>
+        internal DateTime LastOverflowOpenUtc { get; set; }
+
         /// <summary>A client that never sends CharInPlay has its moves applied after this long anyway.</summary>
         const double ClientInPlayFallbackSeconds = 10.0;
 

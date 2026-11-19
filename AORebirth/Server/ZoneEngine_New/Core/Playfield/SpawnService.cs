@@ -1114,7 +1114,8 @@ namespace ZoneEngine_New.Core.Playfield
             // Zoning retains the client roster (capture 2026-10-06T16:36:31Z); reconcile only changes missed
             // during transfer. A fresh client needs the full initial roster instead.
             _playfieldManager.Teams.RefreshPlayer(player, preserveRoster: player.ZoneReconnectPending);
-            // A zoning client keeps its overflow window; a reconnecting one starts empty and gets it again.
+            // A reconnecting client starts with an empty overflow window and gets it again. A zoning client closes
+            // the window but keeps its contents; the player reopens it with /overflow (CharacterAction OpenOverflow).
             bool freshClient = !player.ZoneReconnectPending;
             player.ZoneReconnectPending = false;
 

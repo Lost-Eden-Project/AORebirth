@@ -1,0 +1,2 @@
+- Added: The /overflow command reopens your overflow window after zoning.
+- Fixed: Monsters with very high health, such as the Vanguard Watcher, no longer show the wrong health bar until you target them.

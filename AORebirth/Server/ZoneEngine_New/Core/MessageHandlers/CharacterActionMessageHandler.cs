@@ -303,6 +303,12 @@ namespace ZoneEngine_New.Core.MessageHandlers
                     break;
                 }
 
+                case OverflowGrants.OpenWindowAction:
+                    // Lost Eden client's /overflow: reopen the overflow window the client closed on zoning.
+                    if (message.Identity == player.Identity)
+                        OverflowGrants.OpenRequested(player, DateTime.UtcNow);
+                    break;
+
                 case CharacterActionType.Reload:
                     // Reload button / hotkey (Gamecode.dll special action 0x6E → 100697c0): names no ammo or weapon, so
                     // every worn gun tops up from the first stack of its ammo.
