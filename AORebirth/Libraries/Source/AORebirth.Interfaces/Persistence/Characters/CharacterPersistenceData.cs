@@ -132,6 +132,13 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public string Name { get; set; } = string.Empty;
     }
 
+    /// <summary>One name a player gave their own bag (characterbagnames), keyed by the bag's item instance.</summary>
+    public sealed class PersistedBagNameData
+    {
+        public int BagInstanceId { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
     /// <summary>One nano line cooldown: the locked nano strain (stat 75) and absolute UTC expiry.</summary>
     public sealed class PersistedNanoLineLockData
     {

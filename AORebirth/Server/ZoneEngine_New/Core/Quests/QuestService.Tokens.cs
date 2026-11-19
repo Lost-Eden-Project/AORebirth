@@ -43,6 +43,56 @@ public sealed partial class QuestService
 
     static string TokenRewardFlag(long assigned) => "token-reward:" + assigned.ToString(CultureInfo.InvariantCulture);
     static string KillsFlag(long assigned) => "kills:" + assigned.ToString(CultureInfo.InvariantCulture);
+    static string KillCreditFlag(long assigned) => "kill-credit:" + assigned.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Loads <paramref name="playerId"/>'s saved kill credit into the ledger (one read per player per dungeon load).
+    /// False when it could not be read: that kill credits them nothing, and the next one reads again, so a stored credit
+    /// is never overwritten by an empty one.
+    /// </summary>
+    bool LoadCredit(DungeonKills kills, int playerId)
+    {
+        string? checkpoint = null;
+        if (_completionDao != null)
+        {
+            try
+            {
+                checkpoint = _completionDao.Execute(playerId, tx =>
+                    tx.GetFlag(new MissionKeyData(playerId, kills.QuestId), KillCreditFlag(kills.AssignedAtTicks))?.Value);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Kill credit could not be read; this kill is not credited char=" + playerId + " quest=" + kills.QuestId);
+                return false;
+            }
+        }
+        kills.LoadCredit(playerId, checkpoint);
+        return true;
+    }
+
+    /// <summary>The same, inside <paramref name="player"/>'s own transaction.</summary>
+    static void LoadCredit(IMissionDaoTransaction transaction, DungeonKills kills, MissionKeyData key)
+    {
+        if (!kills.HasCredit(key.CharacterId))
+            kills.LoadCredit(key.CharacterId, transaction.GetFlag(key, KillCreditFlag(kills.AssignedAtTicks))?.Value);
+    }
+
+    /// <summary>
+    /// A player's own kill share away from the dungeon: their saved credit, or on a mission checkpointed before credit
+    /// was per player, the owner's old team-wide checkpoint.
+    /// </summary>
+    static (int Killed, int Total) SavedCredit(IMissionDaoTransaction transaction, MissionKeyData key,
+        QuestDungeonParameters parameters, long assigned)
+    {
+        string? credit = transaction.GetFlag(key, KillCreditFlag(assigned))?.Value;
+        if (string.IsNullOrEmpty(credit))
+        {
+            string? population = transaction.GetFlag(key, KillsFlag(assigned))?.Value;
+            if (DungeonKills.IsLegacyCheckpoint(population))
+                credit = population;
+        }
+        return DungeonKills.ChanceOf(parameters, credit);
+    }
 
     /// <summary>The dungeon's kill ledger, from its checkpoint when one was written; an untouched population otherwise.</summary>
     internal DungeonKills LoadDungeonKills(int ownerId, string questId, long assignedAtTicks, QuestDungeonParameters parameters)
@@ -64,39 +114,76 @@ public sealed partial class QuestService
             hasObjective: parameters.ObjectiveNpc != null, objectiveCounts: parameters.MissionType == 0, checkpoint);
     }
 
-    /// <summary>Writes the ledger's checkpoint when it changed since the last one. Runs when a dungeon unloads.</summary>
+    /// <summary>
+    /// Writes the ledger's checkpoint, and each player's changed kill credit under their own character, when they changed
+    /// since the last save. Runs when a dungeon unloads.
+    /// </summary>
     internal void SaveDungeonKills(DungeonKills kills)
     {
         ArgumentNullException.ThrowIfNull(kills);
-        if (_completionDao == null || !kills.Dirty)
+        if (_completionDao == null)
             return;
-        try
+        long now = _now().Ticks;
+        if (kills.Dirty)
         {
-            long now = _now().Ticks;
-            _completionDao.Execute(kills.OwnerId, tx =>
+            try
             {
-                UpsertFlag(tx, new MissionKeyData(kills.OwnerId, kills.QuestId), KillsFlag(kills.AssignedAtTicks), kills.Checkpoint(), now);
-                return true;
-            });
-            kills.MarkSaved();
+                _completionDao.Execute(kills.OwnerId, tx =>
+                {
+                    UpsertFlag(tx, new MissionKeyData(kills.OwnerId, kills.QuestId), KillsFlag(kills.AssignedAtTicks), kills.Checkpoint(), now);
+                    return true;
+                });
+                kills.MarkSaved();
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Dungeon kill checkpoint could not be saved quest=" + kills.QuestId);
+            }
         }
-        catch (Exception exception)
+        foreach (int playerId in kills.DirtyCredits.ToArray())
         {
-            _logger.Error(exception, "Dungeon kill checkpoint could not be saved quest=" + kills.QuestId);
+            try
+            {
+                _completionDao.Execute(playerId, tx =>
+                {
+                    UpsertFlag(tx, new MissionKeyData(playerId, kills.QuestId), KillCreditFlag(kills.AssignedAtTicks),
+                        kills.CreditCheckpoint(playerId), now);
+                    return true;
+                });
+                kills.MarkCreditSaved(playerId);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Kill credit could not be saved char=" + playerId + " quest=" + kills.QuestId);
+            }
         }
     }
 
     /// <summary>
-    /// A kill in a mission dungeon: marks the slot dead and tells the owner, or the owner's whole team, the reward
-    /// chance so far, whatever their side. The line comes from the chat server as an anonymous vicinity message
-    /// (yellow, as "All team members can loot these remains."); zone Feedback to the recipients in this dungeon when
-    /// the chat server cannot be reached. The owner only has to be in the dungeon, not near the kill.
+    /// A kill in a mission dungeon: marks the slot dead and credits it to the players with kill credit for it (the
+    /// killer and their nearby teammates, <paramref name="players"/>) who hold the mission. Each of them is told their
+    /// own reward chance so far, whatever their side. A teammate outside the dungeon, or not near the kill, gets neither
+    /// the credit nor the line. The line comes from the chat server as an anonymous vicinity message (yellow, as "All
+    /// team members can loot these remains."); zone Feedback when the chat server cannot be reached.
     /// </summary>
     internal void RecordDungeonKill(QuestDungeonPlayfield dungeon, NpcCharacter npc, IReadOnlyList<Player> players)
     {
         if (dungeon.Kills is not { } kills)
             return;
-        if (!kills.TryRecordKill(npc))
+        var credited = new List<(Player Player, PlayerQuest Quest)>(players.Count);
+        var creditedIds = new List<int>(players.Count);
+        foreach (Player player in players)
+        {
+            if (!ReferenceEquals(player.Playfield, dungeon)
+                || !GetLog(player).Quests.TryGetValue(kills.QuestId, out PlayerQuest? held))
+                continue;
+            int id = player.Identity.Instance;
+            if (!kills.HasCredit(id) && !LoadCredit(kills, id))
+                continue;
+            credited.Add((player, held));
+            creditedIds.Add(id);
+        }
+        if (!kills.TryRecordKill(npc, creditedIds))
         {
             LogRewardChance(dungeon, npc, kills, "not-population");
             return;
@@ -106,56 +193,21 @@ public sealed partial class QuestService
             LogRewardChance(dungeon, npc, kills, "no-reward-policy");
             return;
         }
-        (int killed, int total) = kills.Chance();
-        if (total <= 0 || killed <= 0)
-        {
-            LogRewardChance(dungeon, npc, kills, "no-kills");
-            return;
-        }
-        if (policy.FormatFeedback((float)(100.0 * killed / total)) is not { } text)
-        {
-            LogRewardChance(dungeon, npc, kills, "no-feedback-text");
-            return;
-        }
 
-        // The owner, or on a team mission any member inside still holding it (the owner may be outside or done).
-        Player? owner = null;
-        PlayerQuest? quest = null;
-        foreach (Player player in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities())
+        Chat.VicinityChatRelay? relay = dungeon.GetService<Chat.VicinityChatRelay>();
+        int sent = 0;
+        foreach ((Player player, PlayerQuest quest) in credited)
         {
-            if (!GetLog(player).Quests.TryGetValue(kills.QuestId, out PlayerQuest? held))
+            if (!quest.IsActive || !HasGatedReward(player, quest, policy))
                 continue;
-            if (player.Identity.Instance == kills.OwnerId)
-            {
-                (owner, quest) = (player, held);
-                break;
-            }
-            if (owner == null && held.IsActive && held.Template.IsTeamScope)
-                (owner, quest) = (player, held);
-        }
-        if (owner == null || quest == null)
-        {
-            LogRewardChance(dungeon, npc, kills, "owner-or-quest-missing");
-            return;
-        }
-        if (!HasGatedReward(owner, quest, policy))
-        {
-            LogRewardChance(dungeon, npc, kills, "nothing-gated side=" + owner.Stats.GetOrZero(CharacterStat.Side));
-            return;
-        }
-
-        IReadOnlyList<int> recipients = dungeon.GetService<Teams.TeamService>()?.GetTeam(owner)?.MemberIds
-            ?? [owner.Identity.Instance];
-        if (dungeon.GetService<Chat.VicinityChatRelay>()?.Announce(text, recipients) == true)
-        {
-            LogRewardChance(dungeon, npc, kills, "sent-chat recipients=" + recipients.Count);
-            return;
-        }
-
-        foreach (Player player in dungeon.GetRequiredService<DynelRegistry>().PlayerEntities())
-            if (recipients.Contains(player.Identity.Instance))
+            (int killed, int total) = kills.Chance(player.Identity.Instance);
+            if (total <= 0 || killed <= 0 || policy.FormatFeedback((float)(100.0 * killed / total)) is not { } text)
+                continue;
+            if (relay?.Announce(text, [player.Identity.Instance]) != true)
                 ClientFeedback.SendFormatted(player, ClientFeedback.PlainText, text);
-        LogRewardChance(dungeon, npc, kills, "sent-zone recipients=" + recipients.Count);
+            sent++;
+        }
+        LogRewardChance(dungeon, npc, kills, "credited=" + credited.Count + " sent=" + sent);
     }
 
     void LogRewardChance(QuestDungeonPlayfield dungeon, NpcCharacter npc, DungeonKills kills, string outcome)
@@ -204,9 +256,9 @@ public sealed partial class QuestService
     }
 
     /// <summary>
-    /// One draw at earning, in the earning transaction, with the final kill checkpoint beside it. A team mission's
-    /// holders share the chance: in the dungeon its one kill ledger decides; away from it, the chance a teammate earned
-    /// the objective with (<paramref name="sharedChance"/>). Each holder still draws once for themselves.
+    /// One draw at earning, in the earning transaction, with the final kill checkpoint beside it. Each holder draws
+    /// once with their own kill credit: in the dungeon the ledger's credit for them decides; away from it, a chance
+    /// carried in (<paramref name="sharedChance"/>), else their saved credit.
     /// </summary>
     void RollToken(IMissionDaoTransaction transaction, Player player, PlayerQuest quest, CharacterQuestCompletionSnapshotData stored,
         (int Killed, int Total)? sharedChance = null)
@@ -225,7 +277,10 @@ public sealed partial class QuestService
             && string.Equals(dungeon.QuestId, quest.QuestId, StringComparison.Ordinal) ? dungeon.Kills : null;
         if (kills != null)
         {
-            (killed, total) = kills.Chance();
+            LoadCredit(transaction, kills, key);
+            (killed, total) = kills.Chance(player.Identity.Instance);
+            // Written with the roll; left dirty, so the unload writes it again if this transaction does not commit.
+            UpsertFlag(transaction, key, KillCreditFlag(stored.AssignedAtUtcTicks), kills.CreditCheckpoint(player.Identity.Instance), now);
             // The ledger's checkpoint lives under its owner (the dungeon reloads it from there); a teammate only reads it.
             if (kills.OwnerId == player.Identity.Instance)
             {
@@ -239,8 +294,8 @@ public sealed partial class QuestService
         }
         else
         {
-            // Earning away from the dungeon (a bound objective committed after relogging): the last checkpoint decides.
-            (killed, total) = DungeonKills.ChanceOf(parameters, transaction.GetFlag(key, KillsFlag(stored.AssignedAtUtcTicks))?.Value);
+            // Earning away from the dungeon (a bound objective committed after relogging): their saved credit decides.
+            (killed, total) = SavedCredit(transaction, key, parameters, stored.AssignedAtUtcTicks);
         }
         // Every side rolls for the reward; only Clan and Omni, on a token-awarding quest, have a token to add to a won roll.
         int side = player.Stats.GetOrZero(CharacterStat.Side);
@@ -257,7 +312,7 @@ public sealed partial class QuestService
     /// it pays (its frozen <see cref="MissionRewardSplit"/>; null for a mission without a split, which pays as before).
     /// Null for a quest that is not a generated mission.
     /// </summary>
-    internal sealed record MissionShare(int Quality, int Killed, int Total, double? Factor);
+    internal sealed record MissionShare(int Quality, int Killed, int Total, double? Factor, string Mission);
 
     MissionShare? ShareFor(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
         CharacterQuestCompletionSnapshotData stored, TokenRoll? roll)
@@ -266,20 +321,26 @@ public sealed partial class QuestService
             || !QuestDungeonParameters.TryParse(stored.AcgBuildingGeneratorJson, out var parameters))
             return null;
         (int killed, int total) = KillShare(transaction, player, quest, stored, parameters, roll);
-        return new MissionShare(parameters.Quality, killed, total, parameters.Rewards?.Factor(killed, total));
+        return new MissionShare(parameters.Quality, killed, total, parameters.Rewards?.Factor(killed, total), parameters.Mission);
     }
 
-    /// <summary>The kill share: the reward roll's when there is one, else the dungeon's ledger or its last checkpoint.</summary>
+    /// <summary>
+    /// The player's own kill share: the reward roll's when there is one, else their credit in the dungeon's ledger or
+    /// their saved credit.
+    /// </summary>
     (int Killed, int Total) KillShare(IMissionDaoTransaction transaction, Player player, PlayerQuest quest,
         CharacterQuestCompletionSnapshotData stored, QuestDungeonParameters parameters, TokenRoll? roll)
     {
         if (roll != null)
             return (roll.Killed, roll.Total);
+        var key = new MissionKeyData(player.Identity.Instance, quest.QuestId);
         if (player.Playfield is QuestDungeonPlayfield dungeon
             && string.Equals(dungeon.QuestId, quest.QuestId, StringComparison.Ordinal) && dungeon.Kills is DungeonKills kills)
-            return kills.Chance();
-        return DungeonKills.ChanceOf(parameters, transaction.GetFlag(
-            new MissionKeyData(player.Identity.Instance, quest.QuestId), KillsFlag(stored.AssignedAtUtcTicks))?.Value);
+        {
+            LoadCredit(transaction, kills, key);
+            return kills.Chance(player.Identity.Instance);
+        }
+        return SavedCredit(transaction, key, parameters, stored.AssignedAtUtcTicks);
     }
 
     static TokenRoll? ReadTokenReward(IMissionDaoTransaction transaction, Player player,

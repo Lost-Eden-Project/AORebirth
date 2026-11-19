@@ -30,6 +30,7 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly IResearchRepository? _research;
         private readonly INanoLineLockRepository? _nanoLineLocks;
         private readonly IPetNameRepository? _petNames;
+        private readonly IBagNameRepository? _bagNames;
         private readonly IZoneLogger _logger;
         private readonly ZoneEngine_New.Core.World.WorldLink? _world;
         private readonly object _scheduleGate = new();
@@ -47,8 +48,10 @@ namespace ZoneEngine_New.Core.Inventory
             IResearchRepository? research = null,
             INanoLineLockRepository? nanoLineLocks = null,
             IPetNameRepository? petNames = null,
-            ZoneEngine_New.Core.World.WorldLink? world = null)
+            ZoneEngine_New.Core.World.WorldLink? world = null,
+            IBagNameRepository? bagNames = null)
         {
+            _bagNames = bagNames;
             ArgumentNullException.ThrowIfNull(playfieldManager);
             ArgumentNullException.ThrowIfNull(persist);
             ArgumentNullException.ThrowIfNull(logger);
@@ -330,8 +333,9 @@ namespace ZoneEngine_New.Core.Inventory
                 ResearchChanges? research = _research == null ? null : player.Research.TakeDirty();
                 List<SkillLockRecord>? nanoLineLocks = _nanoLineLocks == null ? null : player.NanoLineLocks.TakeDirty(DateTime.UtcNow);
                 PetNameRecord[]? petNames = _petNames == null ? null : player.PetNames.TakeDirty();
+                BagNameRecord[]? bagNames = _bagNames == null ? null : player.BagNames.TakeDirty();
                 if (inventory == null && nanos.Length == 0 && activeNanos == null && skillLocks == null && trainedPerks == null
-                    && perkLocks == null && research == null && nanoLineLocks == null && petNames == null)
+                    && perkLocks == null && research == null && nanoLineLocks == null && petNames == null && bagNames == null)
                     return;
 
                 // The perk, lock, research and pet-name sets are written to their own tables, each in its own
@@ -349,6 +353,8 @@ namespace ZoneEngine_New.Core.Inventory
                     () => player.NanoLineLocks.RestoreDirty(nanoLineLocks), "nano line locks");
                 SaveReplacementSet(player, petNames, names => _petNames!.Save(player.Identity.Instance, names),
                     () => player.PetNames.RestoreDirty(petNames), "pet names");
+                SaveReplacementSet(player, bagNames, names => _bagNames!.Save(player.Identity.Instance, names),
+                    () => player.BagNames.RestoreDirty(bagNames), "bag names");
                 // A finished research tier leaves its progress row only once it is a stored trained perk: never write
                 // the research set ahead of a trained-perk set that failed, or the tier would be lost on a restart.
                 if (perksSaved)
@@ -440,7 +446,8 @@ namespace ZoneEngine_New.Core.Inventory
         static bool HasDirtyState(Player player)
             => !player.PendingCommits.IsEmpty || player.Inventory.HasDirtyEntries || player.HasDirtyUploadedNanos || player.HasDirtyActiveNanos
                 || player.SkillLocks.IsDirty || player.TrainedPerks.IsDirty || player.PerkLocks.IsDirty
-                || player.Research.IsDirty || player.NanoLineLocks.IsDirty || player.PetNames.IsDirty;
+                || player.Research.IsDirty || player.NanoLineLocks.IsDirty || player.PetNames.IsDirty
+                || player.BagNames.IsDirty;
 
         public void Dispose()
         {

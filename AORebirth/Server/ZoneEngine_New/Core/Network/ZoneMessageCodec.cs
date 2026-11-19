@@ -17,6 +17,9 @@ namespace ZoneEngine_New.Core.Network
         /// <summary>The message id every zone packet starts with.</summary>
         public const ushort PacketMessageId = 0xDFDF;
 
+        // The server's own messages (team loot, loot rolls, bag names) decode like any other before a codec exists.
+        static ZoneMessageCodec() => ExtendedMessages.Register();
+
         private readonly MessageCodec _codec = new MessageCodec();
 
         [ThreadStatic]

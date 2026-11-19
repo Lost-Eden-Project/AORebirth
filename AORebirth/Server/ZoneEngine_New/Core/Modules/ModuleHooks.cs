@@ -301,6 +301,8 @@ namespace ZoneEngine_New.Core.Modules
                     PlayfieldId = playfield.Identity.Instance,
                     QuestId = quest.QuestId,
                     Generated = quest.Source == Quests.QuestSource.Generated,
+                    // The stored copy of a mission drops its Dungeon block; the accepted dungeon's parameters keep the name.
+                    Mission = share?.Mission is { Length: > 0 } mission ? mission : template.Dungeon?.Mission ?? string.Empty,
                     Title = template.Title ?? template.Name,
                     Quality = share?.Quality ?? template.Dungeon?.Quality ?? 0,
                     Killed = share?.Killed ?? 0,

@@ -13,6 +13,7 @@ namespace ZoneEngine_New.Core.Teams
     using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
+    using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield.Locality;
 
     using Identity = LostEden.Protocol.GameData.Identity;
@@ -81,9 +82,12 @@ namespace ZoneEngine_New.Core.Teams
         }
 
         /// <summary>Sends a team command for <paramref name="player"/>; World's answer (feedback, text) goes back to it.</summary>
-        void WorldCommand(Player player, TeamOp op, int target = 0, int raidTeam = 0)
+        void WorldCommand(Player player, TeamOp op, int target = 0, int raidTeam = 0, int lootMode = 0)
         {
-            var command = new TeamCommand { Op = op, Actor = player.Identity.Instance, Target = target, RaidTeam = raidTeam };
+            var command = new TeamCommand
+            {
+                Op = op, Actor = player.Identity.Instance, Target = target, RaidTeam = raidTeam, LootMode = lootMode
+            };
             _ = Task.Run(async () =>
             {
                 TeamCommandReply? reply = await CallWorld(command).ConfigureAwait(false);
@@ -216,7 +220,8 @@ namespace ZoneEngine_New.Core.Teams
                         TeamId = team.Id,
                         Leader = team.Leader,
                         Raid = team.IsRaid,
-                        ExplicitLeader = team.ExplicitLeadershipTransfer
+                        ExplicitLeader = team.ExplicitLeadershipTransfer,
+                        LootMode = (int)team.LootMode
                     };
                     foreach (int id in team.Members)
                         state.Members.Add(new TeamMember
@@ -270,6 +275,7 @@ namespace ZoneEngine_New.Core.Teams
                     {
                         QueueRoster(leaving, departed, update.NotifyLeaving);
                         if (old != null) LeaveChat(departed, old.Id);
+                        if (old != null) SendLootMode(leaving, TeamLootMode.FreeForAll, 0);
                     }
                 }
 
@@ -284,6 +290,7 @@ namespace ZoneEngine_New.Core.Teams
                         CancelInvitations(last);
                         QueueRoster(alone, departed);
                         LeaveChat(last, state.TeamId);
+                        SendLootMode(alone, TeamLootMode.FreeForAll, 0);
                     }
 
                     // Everyone this instance still shows in the team (World's resync of a team it no longer has).
@@ -299,13 +306,19 @@ namespace ZoneEngine_New.Core.Teams
                     return;
                 }
 
+                TeamLootMode modeBefore = _mirrors.TryGetValue(state.TeamId, out Team? known) ? known.LootMode : TeamLootMode.FreeForAll;
                 Team mirror = Mirror(state);
                 if (update.Joined > 0 && _players.ContainsKey(update.Joined))
                     ChatCommand(update.Joined, "#aorebirth-lft-remove");
+                bool modeChanged = mirror.LootMode != modeBefore;
                 foreach (int id in mirror.Members)
                 {
-                    if (_players.TryGetValue(id, out Player? viewer))
-                        QueueRoster(viewer, departed > 0 ? departed : null);
+                    if (!_players.TryGetValue(id, out Player? viewer))
+                        continue;
+                    QueueRoster(viewer, departed > 0 ? departed : null);
+                    // Members learn a new mode; an arriving or joining member learns the current one.
+                    if (modeChanged || update.Sync || update.Joined == id)
+                        SendLootMode(viewer, mirror.LootMode, modeChanged ? update.LootModeSetBy : 0);
                 }
 
                 PruneMirror(mirror);
@@ -324,6 +337,7 @@ namespace ZoneEngine_New.Core.Teams
 
             team.Leader = state.Leader;
             team.IsRaid = state.Raid;
+            team.LootMode = state.LootMode == (int)TeamLootMode.NeedOrGreed ? TeamLootMode.NeedOrGreed : TeamLootMode.FreeForAll;
             team.ExplicitLeadershipTransfer = state.ExplicitLeader;
             List<int> previous = [.. team.Members];
             team.Members.Clear();

@@ -561,6 +561,8 @@ message TeamState {
   bool raid = 4;
   bool explicit_leader = 5;
   repeated TeamMember members = 6;
+  // 0 free for all (the default), 1 Need or Greed rolls; only the leader changes it.
+  int32 loot_mode = 7;
 }
 
 // A team changed (or, with sync, its state for a member arriving on this instance).
@@ -574,6 +576,8 @@ message TeamUpdate {
   int32 last_member = 5;
   int32 joined = 6;
   bool sync = 7;
+  // The leader who just changed the loot mode; 0 when it did not change.
+  int32 loot_mode_set_by = 8;
 }
 
 message TeamInvited {
@@ -617,6 +621,8 @@ enum TeamOp {
   TEAM_SYNC = 9;
   // The member's client dropped (link-dead): its invitations lapse.
   TEAM_DISCONNECT = 10;
+  // The leader picks the team's loot mode (TeamCommand.loot_mode).
+  TEAM_SET_LOOT_MODE = 11;
 }
 
 message TeamCommand {
@@ -627,6 +633,8 @@ message TeamCommand {
   // The client already confirmed an out-of-range invite.
   bool confirmed_range = 5;
   string target_name = 6;
+  // TEAM_SET_LOOT_MODE: 0 free for all, 1 Need or Greed.
+  int32 loot_mode = 7;
 }
 
 // Invite before the range check: the zone checks level eligibility (GameData) and sends the invite again confirmed.

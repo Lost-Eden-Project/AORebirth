@@ -35,7 +35,12 @@ namespace WorldEngine.Teams
             public bool ExplicitLeadershipTransfer;
             public Dictionary<int, int> RaidTeamIndex { get; } = new();
             public ulong Version;
+            // 0 free for all, 1 Need or Greed (TeamState.loot_mode).
+            public int LootMode;
         }
+
+        const int FreeForAllLootMode = 0;
+        const int NeedOrGreedLootMode = 1;
 
         sealed record Invitation(int Inviter, int Invitee, LeaseToken InviterToken, LeaseToken InviteeToken, int TeamId, long ExpiresMs);
 
@@ -81,6 +86,7 @@ namespace WorldEngine.Teams
                     TeamOp.TeamMoveRaidMember => MoveRaidMember(actor.Value, command.Target, command.RaidTeam),
                     TeamOp.TeamSync => Sync(actor.Value),
                     TeamOp.TeamDisconnect => Disconnected(actor.Value.CharacterId),
+                    TeamOp.TeamSetLootMode => SetLootMode(actor.Value, command.LootMode),
                     _ => Refused("Unsupported team command.")
                 };
             }
@@ -150,7 +156,12 @@ namespace WorldEngine.Teams
                         .Where(id => id > 0 && !_membership.ContainsKey(id) && _state.View(id) != null).Distinct().ToList();
                     if (members.Count < 2) continue;
                     int leader = members.Contains(asserted.Leader) ? asserted.Leader : members[0];
-                    var team = new Team(asserted.TeamId, leader) { IsRaid = asserted.Raid, ExplicitLeadershipTransfer = asserted.ExplicitLeader };
+                    var team = new Team(asserted.TeamId, leader)
+                    {
+                        IsRaid = asserted.Raid,
+                        ExplicitLeadershipTransfer = asserted.ExplicitLeader,
+                        LootMode = asserted.LootMode == NeedOrGreedLootMode ? NeedOrGreedLootMode : FreeForAllLootMode
+                    };
                     team.Members.Clear();
                     team.Members.AddRange(members);
                     foreach (TeamMember member in asserted.Members)
@@ -176,6 +187,7 @@ namespace WorldEngine.Teams
                         id = t.Id,
                         leader = t.Leader,
                         raid = t.IsRaid,
+                        lootMode = t.LootMode,
                         members = t.Members.ToList(),
                         version = t.Version
                     }).ToList(),
@@ -353,6 +365,18 @@ namespace WorldEngine.Teams
             return Ok();
         }
 
+        TeamCommandReply SetLootMode(WorldState.MemberView leader, int mode)
+        {
+            if (!_membership.TryGetValue(leader.CharacterId, out Team? team)) return Feedback("Feedback_YouAreNotMemberOfTeam");
+            if (team.Leader != leader.CharacterId) return Feedback("Feedback_NeedToBeTeamLeader");
+            if (mode is not (FreeForAllLootMode or NeedOrGreedLootMode)) return Refused("Unknown loot mode.");
+            if (team.LootMode == mode) return Ok();
+            team.LootMode = mode;
+            Publish(team, new TeamUpdate { LootModeSetBy = leader.CharacterId });
+            _log.LogInformation("Team {Team} loot mode {Mode} set by {Leader}", team.Id, mode, leader.CharacterId);
+            return Ok();
+        }
+
         /// <summary>
         /// The first raid group with room for a joiner (groups fill in order), or -1 when all six are full. A member
         /// without an index sits in group zero, as the zone lists it.
@@ -457,7 +481,8 @@ namespace WorldEngine.Teams
                 Version = team.Version,
                 Leader = team.Leader,
                 Raid = team.IsRaid,
-                ExplicitLeader = team.ExplicitLeadershipTransfer
+                ExplicitLeader = team.ExplicitLeadershipTransfer,
+                LootMode = team.LootMode
             };
             foreach (int id in team.Members)
             {

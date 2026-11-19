@@ -38,7 +38,8 @@ public static class SchemaContract
         "20261030_daily_login_character_scope.sql",
         "20261102_account_sanctions.sql",
         "20261117_organizations.sql",
-        "20261118_module_schema_migrations.sql"
+        "20261118_module_schema_migrations.sql",
+        "20261118_player_bag_names.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -58,7 +59,7 @@ public static class SchemaContract
         "generatedmissionsequences", "generatedmissionbatches", "generatedmissionoffers",
         "generatedmissionbindings", "generatedmissionobservations", "generatedmissionartifacts", "generatedmissionobjects",
         "characterskilllocks", "characterquests", "generatedquests", "questdungeonkeys",
-        "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames", "dailyloginclaims",
+        "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames", "characterbagnames", "dailyloginclaims",
         "account_sanctions",
         "org_organizations", "org_members", "org_votes", "org_vote_ballots",
         "module_schema_migrations"
@@ -84,6 +85,7 @@ public static class SchemaContract
         ("characterresearch", "CharacterId,ResearchId"),
         ("characternanolinelocks", "CharacterId,NanoStrain"),
         ("characterpetnames", "CharacterId,PetType"),
+        ("characterbagnames", "CharacterId,BagInstanceId"),
         ("dailyloginclaims", "Id"), ("dailyloginclaims", "ClaimToken"), ("dailyloginclaims", "CharacterId,ClaimDateUtc"),
         ("account_sanctions", "SanctionId"),
         ("org_organizations", "OrganizationId"), ("org_organizations", "Name"), ("org_members", "CharacterId"),
@@ -180,6 +182,8 @@ public static class SchemaContract
         Add("characternanolinelocks", "bigint", "ExpiresAtUtcTicks", false);
         Add("characterpetnames", "int", "CharacterId PetType", false);
         Add("characterpetnames", "varchar", "Name", false);
+        Add("characterbagnames", "int", "CharacterId BagInstanceId", false);
+        Add("characterbagnames", "varchar", "Name", false);
         Add("dailyloginclaims", "bigint", "Id CreatedAtUtcTicks", false);
         Add("dailyloginclaims", "int", "AccountId CharacterId", false);
         Add("dailyloginclaims", "varchar", "ClaimToken");

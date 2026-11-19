@@ -199,6 +199,12 @@ namespace AORebirth.Modules.Events
         /// <summary>True for a generated mission (a terminal roll's offer, or a Quests.json quest with a dungeon); false for an ordinary quest.</summary>
         public bool Generated { get; init; }
 
+        /// <summary>
+        /// The GameData <c>Missions/Missions.json</c> mission it ran (its <c>Dungeon.Mission</c>: a terminal's solo or
+        /// team mission, or the one a Quests.json dungeon quest names); empty for a quest without a dungeon (1.15).
+        /// </summary>
+        public string Mission { get; init; } = string.Empty;
+
         /// <summary>The mission's title as the journal showed it.</summary>
         public string Title { get; init; } = string.Empty;
 

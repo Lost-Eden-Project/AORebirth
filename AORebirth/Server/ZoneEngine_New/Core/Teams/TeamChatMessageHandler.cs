@@ -26,6 +26,8 @@ namespace ZoneEngine_New.Core.Teams
                 teams.TryHandleChatCommand(player, args);
             else if (args[0].Equals("invite", StringComparison.OrdinalIgnoreCase) && args.Length == 2)
                 teams.TryHandleChatCommand(player, ["team", "invite", args[1]]);
+            else if (args[0].Equals("loot", StringComparison.OrdinalIgnoreCase))
+                player.Playfield?.GetService<Loot.LootRollService>()?.HandleCommand(player, args);
             else if (args[0].Equals("stuck", StringComparison.OrdinalIgnoreCase))
                 stuck.TryUnstick(player);
             else if (args[0].Equals("terminate", StringComparison.OrdinalIgnoreCase))

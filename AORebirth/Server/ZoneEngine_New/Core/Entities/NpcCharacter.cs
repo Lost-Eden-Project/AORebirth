@@ -42,6 +42,16 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Source mob template when this NPC was spawned from GameData mob templates.</summary>
         public MobTemplate? MobTemplate { get; set; }
 
+        /// <summary>Features this one NPC carries beyond its template's (a dungeon population's "Features"); null: none.</summary>
+        HashSet<Mobs.NpcFeature>? _addedFeatures;
+
+        /// <summary>Gives this NPC alone a feature its template does not list.</summary>
+        public void AddFeature(Mobs.NpcFeature feature) => (_addedFeatures ??= new()).Add(feature);
+
+        /// <summary>The feature from its template (MonsterCombatRules.json) or given to this NPC alone (<see cref="AddFeature"/>).</summary>
+        public bool HasFeature(Mobs.NpcFeature feature)
+            => MobTemplate?.Has(feature) == true || _addedFeatures?.Contains(feature) == true;
+
         /// <summary>Granted only by an accepted runtime combat adapter, never by a template or name.</summary>
         public virtual bool AcceptsPlayerCombatNanos => false;
         /// <summary>Interpolated worn items and expanded monster weapons. Capacity 50.</summary>

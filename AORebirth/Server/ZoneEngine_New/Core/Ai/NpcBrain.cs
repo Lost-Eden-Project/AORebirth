@@ -958,16 +958,22 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             if (Hate.Contains(player.Identity))
                 return;
-            int npcSide = Npc.Stats.GetOrZero(CharacterStat.Side);
-            int playerSide = player.Stats.GetOrZero(CharacterStat.Side);
-            if (!NpcAiRules.SideAllowsProximityAggro(npcSide, playerSide))
-                return;
-            // A guard that is not hostile on its own only goes for the opposing faction.
-            if (!hostile && !NpcAiRules.IsOpposingFaction(npcSide, playerSide))
-                return;
-            // MonsterCombatRules.json "IgnoresSides": e.g. an Omni guard that leaves Clans alone.
-            if (IgnoresSideOf(player))
-                return;
+            // AggroesAllSides (Rubi-Ka mission humanoids, through their population): a hostile NPC attacks every player,
+            // whatever Side its template carries (a Clan or Omni soldier, a Neutral civilian).
+            bool sideBlind = hostile && Npc.HasFeature(Mobs.NpcFeature.AggroesAllSides);
+            if (!sideBlind)
+            {
+                int npcSide = Npc.Stats.GetOrZero(CharacterStat.Side);
+                int playerSide = player.Stats.GetOrZero(CharacterStat.Side);
+                if (!NpcAiRules.SideAllowsProximityAggro(npcSide, playerSide))
+                    return;
+                // A guard that is not hostile on its own only goes for the opposing faction.
+                if (!hostile && !NpcAiRules.IsOpposingFaction(npcSide, playerSide))
+                    return;
+                // MonsterCombatRules.json "IgnoresSides": e.g. an Omni guard that leaves Clans alone.
+                if (IgnoresSideOf(player))
+                    return;
+            }
             if (guard && IsPvping(player))
                 return;
             // A sneaker whose Concealment beats this NPC's Perception goes unnoticed.

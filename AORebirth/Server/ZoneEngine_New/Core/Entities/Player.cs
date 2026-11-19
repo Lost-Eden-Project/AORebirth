@@ -817,6 +817,9 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>/pet rename names per pet type; a summoned pet of that type takes its name (characterpetnames).</summary>
         public PetNames PetNames { get; } = new();
 
+        /// <summary>The names this player gave their own bags (characterbagnames).</summary>
+        public BagNames BagNames { get; } = new();
+
         /// <summary>
         /// The organization this player shows (id and name), from org_members; null when it belongs to none. Set at login
         /// and afterwards only on the player's tick by <see cref="ZoneEngine_New.Core.Organizations.OrganizationService"/>.
@@ -1181,6 +1184,33 @@ namespace ZoneEngine_New.Core.Entities
             UnlockBackstabIfEligible(requireInPlay: false);
         }
 
+        /// <summary>
+        /// The client said hello (ClientHelloMessage) after this character's FullCharacter: it reads the server's own
+        /// messages (loot rolls, loot order, bag names). Never set for the stock client, which is never sent them.
+        /// </summary>
+        public bool SpeaksExtendedMessages { get; private set; }
+
+        /// <summary>The client's hello: from now on it gets the server's own messages, starting with its bag names.</summary>
+        internal void OnClientHello()
+        {
+            SpeaksExtendedMessages = true;
+            SendBagNames();
+        }
+
+        /// <summary>Every bag name this player keeps (BagNameMessage), to a client that said hello.</summary>
+        void SendBagNames()
+        {
+            if (Session == null || !SpeaksExtendedMessages)
+                return;
+            foreach ((int bagInstanceId, string name) in BagNames.Snapshot())
+                Session.Send(new Network.BagNameMessage
+                {
+                    Identity = Identity,
+                    Bag = new Identity { Type = IdentityType.Container, Instance = bagInstanceId },
+                    Name = name
+                });
+        }
+
         /// <summary>Whether this client character has been given Backstab (CharacterAction 0xB5) since it was built.</summary>
         bool _backstabUnlockSent;
 
@@ -1199,6 +1229,8 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             _backstabUnlockSent = true;
+            Logger.Info("Backstab unlocked (CharacterAction 0xB5) char=" + Identity.Instance
+                + " sneakAttack=" + Stats.GetOrZero(CharacterStat.SneakAttack));
             Session.Send(new CharacterActionMessage
             {
                 Identity = Identity,

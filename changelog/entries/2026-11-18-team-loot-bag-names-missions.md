@@ -1,0 +1,8 @@
+- Added: Need or Greed team loot. Team leaders turn it on with /team loot needgreed and back to free for all with /team loot all. Trash items are never rolled. (needs the latest Lost Eden client for the roll window)
+- Added: Bag names are saved on the server and follow your character. A bag loses its name when traded, dropped or deleted. (needs the latest Lost Eden client)
+- Added: Picking a door lock gives XP, once per door.
+- Changed: Picking locks on doors and chests now uses Breaking and Entry.
+- Changed: The lucky chance to pick a lock beyond your skill can be tried only once per door.
+- Changed: Hostile humans in Rubi-Ka missions attack players of every side.
+- Changed: In team missions, your reward chance counts only kills made near you. Teammates outside the mission no longer get progress updates.
+- Fixed: A room reachable through more than one door no longer stays blocked when one of those doors is locked. Picking one opens them all.

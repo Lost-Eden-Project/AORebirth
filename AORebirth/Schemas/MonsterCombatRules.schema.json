@@ -41,7 +41,8 @@
             "Summoner",
             "SpawnsExitDevice",
             "NoXp",
-            "HealsSpawner"
+            "HealsSpawner",
+            "AggroesAllSides"
           ]
         }
       },

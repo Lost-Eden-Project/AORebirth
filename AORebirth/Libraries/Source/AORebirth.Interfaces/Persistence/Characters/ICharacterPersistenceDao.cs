@@ -43,6 +43,10 @@ namespace AORebirth.Interfaces.Persistence.Characters
         IList<PersistedPetNameData> LoadPetNames(int characterId);
         /// <summary>Replaces the character's pet names in one transaction.</summary>
         void SavePetNames(int characterId, IList<PersistedPetNameData> petNames);
+        /// <summary>Names the character gave their bags, per bag item instance (characterbagnames).</summary>
+        IList<PersistedBagNameData> LoadBagNames(int characterId);
+        /// <summary>Replaces the character's bag names in one transaction.</summary>
+        void SaveBagNames(int characterId, IList<PersistedBagNameData> bagNames);
         /// <summary>Personal research tiers in progress (characterresearch).</summary>
         IList<PersistedResearchData> LoadResearch(int characterId);
         /// <summary>Replaces the character's research progress in one transaction.</summary>

@@ -63,5 +63,13 @@ namespace ZoneEngine_New.Core.Mobs
         /// none of them. Hostile nanos and summons are unchanged.
         /// </summary>
         HealsSpawner,
+
+        /// <summary>
+        /// Attacks players on sight whatever their side: its own Side (a Clan or Omni soldier, a Neutral civilian) does
+        /// not choose whom it goes for, and neither its IgnoresSides nor a guard's opposing-faction rule applies. It still
+        /// needs aggressiveness of its own (BreedHostility above 0). Listed for a hash, or for every monster of a dungeon
+        /// population (Dungeons/Population.json "Features": Rubi-Ka mission humanoids).
+        /// </summary>
+        AggroesAllSides,
     }
 }

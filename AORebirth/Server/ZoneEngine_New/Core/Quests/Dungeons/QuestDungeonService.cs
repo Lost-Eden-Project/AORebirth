@@ -343,16 +343,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         /// <summary>
         /// A team mission's objective was earned by one holder: every other holder online and inside this mission's
-        /// dungeon at that moment earns it too (its credits, experience, items and reward roll), with the team dungeon's
-        /// kill chance as the earner saw it. Every other holder, offline or anywhere else, loses their copy with no reward:
-        /// its row is closed as failed now, and an online holder's journal entry goes on their own tick.
+        /// dungeon at that moment earns it too (its credits, experience, items and reward roll), each with their own kill
+        /// credit (the dungeon's ledger decides it on their tick). Every other holder, offline or anywhere else, loses their
+        /// copy with no reward: its row is closed as failed now, and an online holder's journal entry goes on their own tick.
         /// </summary>
         void OnTeamObjectiveEarned(Player earner, PlayerQuest quest)
         {
-            (int Killed, int Total)? chance = earner.Playfield is QuestDungeonPlayfield dungeon
-                && string.Equals(dungeon.QuestId, quest.QuestId, StringComparison.Ordinal) && dungeon.Kills is { } kills
-                ? kills.Chance() : null;
-
             PlayfieldManager playfields = _playfields.Value;
             string questId = quest.QuestId;
             foreach (int holder in _store.LoadActiveQuestHolders(questId))
@@ -363,7 +359,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (online && member.Playfield is QuestDungeonPlayfield at
                     && string.Equals(at.QuestId, questId, StringComparison.Ordinal))
                 {
-                    at.DispatchPlayerProjection(member, () => _quests.EarnShared(member, questId, chance));
+                    at.DispatchPlayerProjection(member, () => _quests.EarnShared(member, questId, null));
                     continue;
                 }
 
@@ -442,6 +438,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 {
                     Seed = RandomNumberGenerator.GetInt32(int.MaxValue),
                     GeneratorVersion = DungeonLayoutGenerator.CurrentVersion,
+                    Mission = input.Mission,
                     DungeonPlayfield = dungeonPlayfield,
                     EntranceType = unchecked((int)entrance.IdentityType),
                     EntranceInstance = unchecked((int)entrance.IdentityInstance),

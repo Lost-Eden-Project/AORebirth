@@ -26,6 +26,9 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>How close a character must be to open or close a door (units).</summary>
         const float UseRange = 5f;
 
+        /// <summary>Chance (percent) a lock pick opens a locked door even when its rating is below LockDifficulty.</summary>
+        const int BasePickChancePercent = 10;
+
         public Door(Identity identity, int templateId, int flags, int roomLink, int lockDifficulty = 0)
             : base(identity)
         {
@@ -204,21 +207,82 @@ namespace ZoneEngine_New.Core.Entities
                 || GetEdgeDistanceTo(player) > UseRange)
                 return BreakAndEnterResult.Refused;
 
-            if (pickRating < LockDifficulty)
+            // A picker without the skill gets one flat base-chance try at this door: retrying the base chance would open
+            // any lock to anyone who spams the pick.
+            if (pickRating < LockDifficulty
+                && (!_baseChanceTried.Add(player.Identity.Instance) || Random.Shared.Next(100) >= BasePickChancePercent))
             {
                 BreakAndEnterActions.SendFailed(this, player);
                 return BreakAndEnterResult.Failed;
             }
 
             Flags = (Flags & ~LockedFlag) | OpenFlag;
+            AwardPickXp(player);
             Playfield.WorldAccess.Instance?.InvalidateLineOfSight();
             Playfield.GetRequiredService<PlayfieldLocality>().Announce(this,
                 BreakAndEnterActions.Result(Identity, player.Identity, BreakAndEnterActions.Unlocked), includeSelf: true);
             // The action result alone leaves the stock client's door locked ("It is locked" on the next use): the status
             // update unlocks and opens it for everyone who has the door.
             AnnounceStatus();
+            // The other doorways between the same two rooms are the same lock to the client: they open with it, and pay
+            // no XP of their own.
+            if (_twins != null)
+                foreach (Door twin in _twins)
+                {
+                    twin._pickXpPaid = true;
+                    if (twin.IsLocked)
+                        twin.ApplyFlags((twin.Flags & ~LockedFlag) | OpenFlag);
+                }
             return BreakAndEnterResult.Unlocked;
         }
+
+        /// <summary>
+        /// The first successful pick of this door pays Gameplay.json xp.doorPickXpPerLevel x the picker's level, counted
+        /// no higher than the lock's own level (LockDifficulty: a dungeon door's is the mission QL), so a high level
+        /// picking a QL 1 mission's doors earns QL 1 XP. A door an authored trigger locks again does not pay twice, and
+        /// neither does the same door rebuilt locked when its dungeon reloads from the seed (<see cref="PaidPicks"/>).
+        /// </summary>
+        void AwardPickXp(Player player)
+        {
+            if (_pickXpPaid || Playfield == null)
+                return;
+            _pickXpPaid = true;
+            if (!MarkPaid(player.Identity.Instance, Playfield.Identity.Instance, Identity.Instance))
+                return;
+            int perLevel = Playfield.GetService<Configuration.GameplaySettings>()?.Xp.DoorPickXpPerLevel ?? 0;
+            if (perLevel <= 0)
+                return;
+            int level = player.Stats.GetOrOne(CharacterStat.Level);
+            if (LockDifficulty > 0)
+                level = Math.Min(level, LockDifficulty);
+            long xp = (long)perLevel * level;
+            player.AwardXp((int)Math.Min(int.MaxValue, xp), XpSource.Quest);
+        }
+
+        bool _pickXpPaid;
+
+        /// <summary>Pickers who already had their base-chance try at this door.</summary>
+        readonly HashSet<int> _baseChanceTried = new();
+
+        /// <summary>
+        /// (character, playfield, door) picks that paid XP, for the life of the process: a new Player is built on every
+        /// zone arrival and a dungeon rebuilds its doors from the seed, so neither can remember it. Bounded.
+        /// </summary>
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Character, int Playfield, int Door), byte> PaidPicks = new();
+
+        const int MaxPaidPicks = 200_000;
+
+        static bool MarkPaid(int character, int playfield, int door)
+        {
+            if (PaidPicks.Count >= MaxPaidPicks)
+                PaidPicks.Clear();
+            return PaidPicks.TryAdd((character, playfield, door), 0);
+        }
+
+        /// <summary>The other doorways between the same two dungeon rooms (they share one lock); null when there are none.</summary>
+        List<Door>? _twins;
+
+        internal void AddTwin(Door twin) => (_twins ??= []).Add(twin);
 
         /// <summary>Heading for a door turned <paramref name="yawDegrees"/> about the vertical axis.</summary>
         public static AORebirth.Core.Vector.Quaternion Heading(int yawDegrees)

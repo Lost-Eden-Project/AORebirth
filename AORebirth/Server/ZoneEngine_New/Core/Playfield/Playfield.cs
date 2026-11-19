@@ -803,6 +803,8 @@ namespace ZoneEngine_New.Core.Playfield
                 _inbound.Drain(_router, spawn, this);
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("spawn.tick");
                 spawn.Tick();
+                ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("loot.rolls");
+                GetRequiredService<Loot.LootRollService>().Tick();
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("npc.activation");
                 GetRequiredService<NpcContentActivationService>().Tick();
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("inventory.moves");
@@ -982,6 +984,7 @@ namespace ZoneEngine_New.Core.Playfield
             services.AddSingleton<NpcContentActivationService>();
             services.AddSingleton<HashSpawnSystem>();
             services.AddSingleton<ItemUseService>();
+            services.AddSingleton<Loot.LootRollService>();
             return services;
         }
     }

@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.14**.
+The current version is **1.15**.
 
 ## Loading
 
@@ -50,6 +50,7 @@ The current version is **1.14**.
 | 1.12 | `RegisterMessageHandler` (inbound N3 types the engine does not read), `Actions.SendMessage` (a module's own N3 message), the `player.purchase` and `player.stat-add` operations, `Events.MissionCompleted`; the `handle-messages` and `send-raw-messages` capabilities |
 | 1.13 | `RegisterReloadable` and `IModuleReloadable` (a module's own data, reloadable as `<module id>/<name>` beside the GameData catalogs) |
 | 1.14 | `Database` (`IModuleDatabase`): a module's own `mod_<id>_*` tables, created by migrations it ships and DatabaseMigrationTool applies; the `database` capability; module.json `Capabilities` (what the module cannot load without) |
+| 1.15 | `MissionCompletedEvent.Mission`: the `Missions/Missions.json` mission a completed quest ran |
 
 ## Context members
 
@@ -530,7 +531,8 @@ The engine reads neither message; the client library that defines them is the la
 ## Mission completion (1.12)
 
 `Events.MissionCompleted` is raised on the player's playfield tick after a mission's reward is committed and paid:
-`CharacterId`, `PlayfieldId`, `QuestId`, `Generated` (a terminal mission or a Quests.json dungeon quest), `Title`,
+`CharacterId`, `PlayfieldId`, `QuestId`, `Generated` (a terminal mission or a Quests.json dungeon quest), `Mission`
+(the `Missions/Missions.json` mission it ran, empty without a dungeon; 1.15), `Title`,
 `Quality` (0 for an ordinary quest), `Killed`/`Total` (a generated mission's dungeon kill share; 0/0 when unknown),
 `Credits` and `Experience` the engine paid after any completion split, `RewardWon` (the reward roll; null without one)
 and `Timestamp`. What a module pays on top (Lost Eden's ICC Commendations, through `player.stat-add`) is its own and

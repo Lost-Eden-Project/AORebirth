@@ -61,7 +61,9 @@ public sealed partial class QuestService
                 || world.QuestId != quest.QuestId
                 || !world.GetRequiredService<ZoneEngine_New.Core.Playfield.DynelRegistry>().TryGet(npc.Identity, out var registered)
                 || !ReferenceEquals(registered, npc)
-                || inspected && (player.GetEdgeDistanceTo(npc) > LootableDynel.OpenRange || !player.HasLineOfSightTo(npc)))
+                // Find Person has no range of its own: the caller requires the NPC be spawned on this client
+                // (PlayfieldLocality.IsVisibleTo); only line of sight is checked here.
+                || inspected && !player.HasLineOfSightTo(npc))
                 return;
             if (!TryEarnBoundObjective(player, quest, parameters, null) && !inspected && !player.IsPersistenceQuarantined)
             {

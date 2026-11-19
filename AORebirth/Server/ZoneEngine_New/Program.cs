@@ -292,6 +292,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IResearchRepository, MySqlResearchRepository>();
             services.AddSingleton<INanoLineLockRepository, MySqlNanoLineLockRepository>();
             services.AddSingleton<IPetNameRepository, MySqlPetNameRepository>();
+            services.AddSingleton<IBagNameRepository, MySqlBagNameRepository>();
             services.AddSingleton<ZoneEngine_New.Core.Organizations.IOrganizationStore, ZoneEngine_New.Core.Organizations.MySqlOrganizationStore>();
             services.AddSingleton<ZoneEngine_New.Core.Organizations.OrganizationService>();
             services.AddSingleton<ICharacterCoalesceCommit, MySqlCharacterCoalesceCommit>();
@@ -489,6 +490,9 @@ namespace ZoneEngine_New
             AddMessageHandler<TextMessageHandler>(services);
             AddMessageHandler<SkillMessageHandler>(services);
             AddMessageHandler<SetStatMessageHandler>(services);
+            AddMessageHandler<BagNameSetMessageHandler>(services);
+            AddMessageHandler<LootRollChoiceMessageHandler>(services);
+            AddMessageHandler<ClientHelloMessageHandler>(services);
             services.AddSingleton<IMessageRouter, MessageRouter>();
             services.AddSingleton<ZoneMessageDispatcher>();
             services.AddSingleton<ZoneNetworkHost>();

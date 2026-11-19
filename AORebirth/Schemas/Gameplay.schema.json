@@ -85,6 +85,10 @@
         "tradeskillXpPerQl": {
           "type": "integer"
         },
+        "doorPickXpPerLevel": {
+          "type": "integer",
+          "minimum": 0
+        },
         "caps": {
           "type": "object",
           "properties": {
@@ -279,6 +283,15 @@
       "properties": {
         "qualityVariancePercent": {
           "type": "integer"
+        },
+        "needGreedRollSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 120
+        },
+        "needGreedRange": {
+          "type": "number",
+          "minimum": 0
         }
       },
       "additionalProperties": false

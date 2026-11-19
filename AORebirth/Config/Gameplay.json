@@ -6,7 +6,7 @@
   "requireAmmo": true,
   "zoneInGraceSeconds": 1,
   "shops": { "preferDatabaseStock": true },
-  "loot": { "qualityVariancePercent": 25 },
+  "loot": { "qualityVariancePercent": 25, "needGreedRollSeconds": 30, "needGreedRange": 100 },
   "xp": {
     "globalModifier": 1.0,
     "shadowlandsModifier": 1.85,
@@ -18,6 +18,7 @@
     "defaultXpPoolRecoveryPercent": 50,
     "tradeskillGrantsXp": false,
     "tradeskillXpPerQl": 5,
+    "doorPickXpPerLevel": 100,
     "teamMemberPercent": [100, 82.5, 75, 70, 65, 62.5],
     "caps": {
       "killXp": 10.0,

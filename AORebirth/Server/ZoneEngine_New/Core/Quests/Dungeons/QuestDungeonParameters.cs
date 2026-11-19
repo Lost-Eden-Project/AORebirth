@@ -16,6 +16,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public int GeneratorVersion { get; set; }
 
+        /// <summary>The GameData Missions/Missions.json mission it was accepted as; empty on quests stored before it was kept.</summary>
+        public string Mission { get; set; } = string.Empty;
+
         public DungeonLayoutPlan? LayoutPlan { get; set; }
 
         /// <summary>The exact Find Item instance and placement selected before acceptance commits.</summary>

@@ -40,6 +40,9 @@ namespace ZoneEngine_New.Core.Characters
         /// <summary>Stored /pet rename names per pet type from characterpetnames.</summary>
         public IReadOnlyList<PetNameRecord> PetNames { get; init; } = [];
 
+        /// <summary>Stored names of the character's bags from characterbagnames.</summary>
+        public IReadOnlyList<BagNameRecord> BagNames { get; init; } = [];
+
         /// <summary>The organizations row for the character's Clan stat, or null when it has none.</summary>
         /// <summary>The character's org_members row with its organization; null when it belongs to none.</summary>
         public ZoneEngine_New.Core.Organizations.OrgMembershipRow? Organization { get; init; }

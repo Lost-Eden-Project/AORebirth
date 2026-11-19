@@ -22,6 +22,7 @@ namespace ZoneEngine_New.Core.Characters
         private readonly IResearchRepository? _research;
         private readonly INanoLineLockRepository? _nanoLineLocks;
         private readonly IPetNameRepository? _petNames;
+        private readonly IBagNameRepository? _bagNames;
         private readonly ZoneEngine_New.Core.Organizations.IOrganizationStore? _organizations;
         private readonly IZoneLogger _logger;
 
@@ -38,8 +39,10 @@ namespace ZoneEngine_New.Core.Characters
             IResearchRepository? research = null,
             INanoLineLockRepository? nanoLineLocks = null,
             IPetNameRepository? petNames = null,
-            ZoneEngine_New.Core.Organizations.IOrganizationStore? organizations = null)
+            ZoneEngine_New.Core.Organizations.IOrganizationStore? organizations = null,
+            IBagNameRepository? bagNames = null)
         {
+            _bagNames = bagNames;
             ArgumentNullException.ThrowIfNull(skillLocks);
             ArgumentNullException.ThrowIfNull(characters);
             ArgumentNullException.ThrowIfNull(stats);
@@ -88,7 +91,8 @@ namespace ZoneEngine_New.Core.Characters
                 PerkLocks = _perkLocks?.GetForCharacter(characterId) ?? [],
                 Research = _research?.GetForCharacter(characterId) ?? [],
                 NanoLineLocks = _nanoLineLocks?.GetForCharacter(characterId) ?? [],
-                PetNames = _petNames?.GetForCharacter(characterId) ?? []
+                PetNames = _petNames?.GetForCharacter(characterId) ?? [],
+                BagNames = _bagNames?.GetForCharacter(characterId) ?? []
             };
 
             CharacterHydrationValidationResult validation = CharacterHydrationValidator.Validate(result);

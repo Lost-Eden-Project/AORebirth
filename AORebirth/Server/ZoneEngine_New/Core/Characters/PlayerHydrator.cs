@@ -82,6 +82,7 @@ namespace ZoneEngine_New.Core.Characters
             foreach (SkillLockRecord record in hydration.NanoLineLocks)
                 player.NanoLineLocks.Restore(record.StatId, new DateTime(record.ExpiresAtUtcTicks, DateTimeKind.Utc), nowUtc);
             player.PetNames.Restore(hydration.PetNames);
+            player.BagNames.Restore(hydration.BagNames);
             // After the stored stats: the Clan and ClanLevel stats come from org_members, not from the stats table.
             ZoneEngine_New.Core.Organizations.OrganizationService.ApplyHydratedMembership(player, hydration.Organization, _gameData.Organizations);
         }

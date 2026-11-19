@@ -212,6 +212,15 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
     /// </summary>
     public int? AssistanceRadius { get; set; }
 
+    /// <summary>
+    /// <see cref="Mobs.NpcFeature"/> names every monster of the population carries besides its template's own. Only
+    /// the features an NPC is asked about one by one can be given this way: <see cref="PopulationFeatures"/>.
+    /// </summary>
+    public string[]? Features { get; set; }
+
+    /// <summary>The features a population may list.</summary>
+    public static readonly Mobs.NpcFeature[] PopulationFeatures = [Mobs.NpcFeature.AggroesAllSides];
+
     public const int MaxSpreadPercent = 90;
     public const int MaxRangePercent = 400;
     public const int MaxKinds = 20;
@@ -233,10 +242,14 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
         HelpRangePercent = HelpRangePercent ?? under.HelpRangePercent,
         Aggressiveness = Aggressiveness ?? under.Aggressiveness,
         Clan = Clan ?? under.Clan,
-        AssistanceRadius = AssistanceRadius ?? under.AssistanceRadius
+        AssistanceRadius = AssistanceRadius ?? under.AssistanceRadius,
+        Features = Features ?? under.Features
     };
 
-    /// <summary>Puts the population's Aggressiveness and Clan on one of its monsters (each left as the template's when unset).</summary>
+    /// <summary>
+    /// Puts the population's Aggressiveness and Clan on one of its monsters (each left as the template's when unset),
+    /// and gives it the population's Features.
+    /// </summary>
     internal void ApplyTo(Entities.NpcCharacter npc)
     {
         ArgumentNullException.ThrowIfNull(npc);
@@ -244,6 +257,17 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
             npc.Stats.Set(Characters.CharacterStat.BreedHostility, aggressiveness);
         if (Clan is int clan)
             npc.Stats.Set(Characters.CharacterStat.Clan, clan);
+        if (Features != null)
+            foreach (string name in Features)
+                if (TryParseFeature(name, out Mobs.NpcFeature feature))
+                    npc.AddFeature(feature);
+    }
+
+    static bool TryParseFeature(string? name, out Mobs.NpcFeature feature)
+    {
+        feature = default;
+        return name != null && Enum.TryParse(name.Trim(), ignoreCase: false, out feature) && Enum.IsDefined(feature)
+            && Array.IndexOf(PopulationFeatures, feature) >= 0;
     }
 
     /// <summary>One monster's level for a mission of <paramref name="quality"/>, from the room's seeded <paramref name="roll"/>.</summary>
@@ -285,6 +309,8 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
             return "Population.GroupRadius must be 0 or more";
         if (Loot != null && !Loot.TrueForAll(Mobs.MobItemTableEntry.IsWellFormed))
             return "Population.Loot " + LootRowRule;
+        if (Features != null && !Array.TrueForAll(Features, name => TryParseFeature(name, out _)))
+            return "Population.Features may only list " + string.Join(", ", PopulationFeatures);
         return null;
     }
 

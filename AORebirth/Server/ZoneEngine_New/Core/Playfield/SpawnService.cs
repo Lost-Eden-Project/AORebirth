@@ -655,6 +655,9 @@ namespace ZoneEngine_New.Core.Playfield
 
             _registry.Register(corpse);
             _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(corpse);
+            // A Need or Greed team's kill: its items go up for rolls before anyone can take them.
+            if (!forfeited)
+                _playfield.GetService<Loot.LootRollService>()?.OnCorpseSpawned(corpse);
 
             _logger.Info(
                 string.Format(

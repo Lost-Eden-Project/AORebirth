@@ -615,6 +615,12 @@ public sealed class QuestDungeonPlayfield : Playfield
     /// One Door per layout doorway, from the style's door templates (the exit has its own). The exit always starts
     /// open; interior doors roll locked (<see cref="AORebirth.DungeonGenerator.DungeonDoorLocks"/>) or open from the
     /// dungeon seed, so a rebuilt dungeon gets the same doors.
+    /// <para>
+    /// Every doorway between the same two rooms shares one state: the first one's roll. The client keeps one door per
+    /// room pair (N3.dll n3Playfield_t::RegisterDoorWithRoomLink 0x1000d06f overwrites it, FindDoorIDFromRoomLink
+    /// 0x1000d0e7 returns it) and its room-transition veto checks that one door whichever doorway is walked through,
+    /// so a locked twin refused entry through an unlocked doorway (and an unlocked twin let players through a locked one).
+    /// </para>
     /// </summary>
     void SpawnDoors(IReadOnlyList<AORebirth.World.Collision.DungeonDoorPlacement> placements, PlayfieldLocality locality)
     {
@@ -623,6 +629,8 @@ public sealed class QuestDungeonPlayfield : Playfield
             return;
 
         var registry = GetRequiredService<DynelRegistry>();
+        // Room pair (low room << 16 | high room) -> the doors spawned between them and the state the first one rolled.
+        var pairs = new Dictionary<int, (int State, List<Door> Doors)>();
         for (int i = 0; i < placements.Count; i++)
         {
             AORebirth.World.Collision.DungeonDoorPlacement placement = placements[i];
@@ -635,16 +643,23 @@ public sealed class QuestDungeonPlayfield : Playfield
 
             int flags = template.Stats.TryGetValue(CharacterStat.Flags, out int baseFlags) ? baseFlags : 0;
             flags &= ~(Door.OpenFlag | Door.LockedFlag);
+            int pair = 0;
             if (placement.IsExit)
                 flags |= Door.OpenFlag;
             else
             {
-                // Same seed and door index as the generator (and its viewer), so both agree on which doors are locked.
-                var roll = new Random(unchecked((Layout.Seed * 397) ^ (i + 1)));
-                if (AORebirth.DungeonGenerator.DungeonDoorLocks.IsLocked(Layout.Seed, i, style.LockedChancePercent))
-                    flags |= Door.LockedFlag;
-                else if (roll.Next(100) < style.OpenChancePercent)
-                    flags |= Door.OpenFlag;
+                pair = (Math.Min(placement.Room, placement.LinkedRoom) << 16) | (Math.Max(placement.Room, placement.LinkedRoom) & 0xFFFF);
+                if (pairs.TryGetValue(pair, out var shared))
+                    flags |= shared.State;
+                else
+                {
+                    // Same seed and door index as the generator (and its viewer), so both agree on which doors are locked.
+                    var roll = new Random(unchecked((Layout.Seed * 397) ^ (i + 1)));
+                    if (AORebirth.DungeonGenerator.DungeonDoorLocks.IsLocked(Layout.Seed, i, style.LockedChancePercent))
+                        flags |= Door.LockedFlag;
+                    else if (roll.Next(100) < style.OpenChancePercent)
+                        flags |= Door.OpenFlag;
+                }
             }
 
             var door = new Door(new Identity { Type = IdentityType.Door, Instance = FirstDoorInstance + i }, templateId, flags,
@@ -655,6 +670,20 @@ public sealed class QuestDungeonPlayfield : Playfield
                 Rotation = Door.Heading(placement.YawDegrees)
             };
             registry.Register(door);
+            if (!placement.IsExit)
+            {
+                if (pairs.TryGetValue(pair, out var twins))
+                {
+                    foreach (Door twin in twins.Doors)
+                    {
+                        twin.AddTwin(door);
+                        door.AddTwin(twin);
+                    }
+                    twins.Doors.Add(door);
+                }
+                else
+                    pairs[pair] = (flags & (Door.OpenFlag | Door.LockedFlag), [door]);
+            }
             // In its owning room's cell, not the cell its position resolves to: the door sits on that room's floor,
             // which a lower floor's room box (a floor tall from its own base) can also contain, and a door in the
             // wrong cell never reaches the players who can see it. The exit belongs to the entrance room.

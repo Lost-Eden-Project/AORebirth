@@ -676,6 +676,7 @@ namespace ZoneEngine_New.Core.Trade
             int partnerCredits = session.PartnerOffer.Credits;
             bool durable = false;
             var deliveries = new List<Delivery>();
+            var tradedBags = new List<Identity>();
             try
             {
                 _flush.WithExclusivePlayers(initiator, partner, () =>
@@ -690,12 +691,16 @@ namespace ZoneEngine_New.Core.Trade
                     session.PartnerOffer.DrainAll();
                     ApplyDeliveries(deliveries);
                     // Neither side keeps a page for a bag that changed hands; its holder loads the contents on first use.
+                    // A traded bag loses its name: the giver's is dropped and the receiver starts with none.
                     foreach (Delivery delivery in deliveries)
                     {
                         if (!InventoryMoveService.IsBagItem(delivery.Item))
                             continue;
                         initiator.Inventory.ForgetBackpackPage(delivery.Item.Identity);
                         partner.Inventory.ForgetBackpackPage(delivery.Item.Identity);
+                        initiator.BagNames.Remove(delivery.Item.InstanceId);
+                        partner.BagNames.Remove(delivery.Item.InstanceId);
+                        tradedBags.Add(delivery.Item.Identity);
                     }
                     // Held back until after the Complete frames: see SendTradeCash.
                     SetCashQuietly(initiator, initiatorCash);
@@ -713,6 +718,20 @@ namespace ZoneEngine_New.Core.Trade
                 ModuleHooks.ItemMoved(delivery.Receiver, delivery.Item,
                     ModuleHooks.Place(ItemPlaceKind.Trade, (ReferenceEquals(delivery.Receiver, initiator) ? partner : initiator).Identity),
                     ModuleHooks.Place(ItemPlaceKind.Inventory));
+
+            // Both clients forget the traded bags' names (the Lost Eden client keeps its own copy per bag).
+            foreach (Identity bag in tradedBags)
+            {
+                if (initiator.SpeaksExtendedMessages)
+                    initiator.Session?.Send(new Network.BagNameMessage { Identity = initiator.Identity, Bag = bag, Name = string.Empty });
+                if (partner.SpeaksExtendedMessages)
+                    partner.Session?.Send(new Network.BagNameMessage { Identity = partner.Identity, Bag = bag, Name = string.Empty });
+            }
+            if (tradedBags.Count > 0)
+            {
+                _flush.NotifyDirty(initiator);
+                _flush.NotifyDirty(partner);
+            }
 
             Unregister(initiator);
             Unregister(partner);

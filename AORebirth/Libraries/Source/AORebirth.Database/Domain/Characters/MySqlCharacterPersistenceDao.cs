@@ -303,6 +303,30 @@ namespace AORebirth.Database.Domain.Characters
             });
         }
 
+        public IList<PersistedBagNameData> LoadBagNames(int characterId)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            return Query("SELECT BagInstanceId,Name FROM characterbagnames WHERE CharacterId=@Id ORDER BY BagInstanceId",
+                r => new PersistedBagNameData { BagInstanceId = r.GetInt32(0), Name = r.GetString(1) }, "@Id", characterId);
+        }
+
+        public void SaveBagNames(int characterId, IList<PersistedBagNameData> bagNames)
+        {
+            if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
+            if (bagNames == null) throw new ArgumentNullException(nameof(bagNames));
+            if (bagNames.Any(n => n.BagInstanceId <= 0 || string.IsNullOrEmpty(n.Name) || n.Name.Length > 32)
+                || bagNames.Select(n => n.BagInstanceId).Distinct().Count() != bagNames.Count)
+                throw new ArgumentException("Invalid or duplicate bag name.", nameof(bagNames));
+            Transaction((c, t) =>
+            {
+                Execute(c, t, "DELETE FROM characterbagnames WHERE CharacterId=@Id", "@Id", characterId);
+                foreach (var bagName in bagNames)
+                    Execute(c, t, "INSERT INTO characterbagnames (CharacterId,BagInstanceId,Name) VALUES (@Id,@Bag,@Name)",
+                        "@Id", characterId, "@Bag", bagName.BagInstanceId, "@Name", bagName.Name);
+                return 0;
+            });
+        }
+
         public IList<PersistedResearchData> LoadResearch(int characterId)
         {
             if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));

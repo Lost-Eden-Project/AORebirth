@@ -297,6 +297,18 @@ only the execution process's PATH when necessary, then invoke the established
 wrapper unchanged. Do not change global PATH, create substitute build tokens,
 copy acceptance state between checkouts or bypass the public-source checks.
 
+## Player changelog
+
+[changelog/README.md](changelog/README.md) defines the format.
+
+- Every commit with a player-visible effect adds one `changelog/entries/YYYY-MM-DD-short-slug.md` file in that same
+  commit. Each line starts with `- Added:`, `- Changed:`, `- Fixed:` or `- Removed:` and is written for players.
+- Entries contain no code, files, packets, database, engine, build, tooling or private-infrastructure detail.
+  Backend-only changes get no entry.
+- Deployment release notes are the entry files added between the live public-master SHA and the accepted release
+  SHA (`git diff --name-only --diff-filter=A <live> <accepted> -- changelog/entries/`), grouped as Added, Changed,
+  Fixed, Removed. Deployment never edits, moves or deletes entry files. An unknown live SHA means ask, not guess.
+
 ## Existing architecture and scope
 
 Before introducing an abstraction, replacement system, build or configuration

@@ -107,6 +107,10 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 loot?.NotifyLootChanged();
                 ModuleHooks.ItemMoved(player, item, ItemPlaces.Of(page, loot), ModuleHooks.Place(destination));
+                // A deleted or dropped bag loses its name (a dropped bag picked up again is a new item).
+                if (loot == null && InventoryMoveService.IsBagItem(item) && player.BagNames.Remove(item.InstanceId)
+                    && player.SpeaksExtendedMessages)
+                    player.Session?.Send(new Network.BagNameMessage { Identity = player.Identity, Bag = item.Identity, Name = string.Empty });
             }
             if (result && page.Identity.Type.IsWearPage())
             {

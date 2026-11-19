@@ -141,11 +141,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
                             break;
                         }
                     }
-                    if (TryGetBreakAndEnter(player, playfield, source, message.Target, out IBreakAndEnterTarget lockable, out Item pick))
+                    if (TryGetBreakAndEnter(player, playfield, source, message.Target, out IBreakAndEnterTarget lockable, out _))
                     {
                         // A pick that opens the lock gets "Lockpicking successful." from the server (the client has no
                         // success text of its own) and the ack; a failed pick (0x65, "Lockpicking failed.") is refused.
-                        switch (lockable.TryBreakAndEnter(player, PickRating(player, pick)))
+                        // Every lock, door or chest, is a Breaking and Entry contest; the pick only has to be in hand.
+                        int rating = player.Stats.GetOrZero(CharacterStat.BreakingEntry);
+                        switch (lockable.TryBreakAndEnter(player, rating))
                         {
                             case BreakAndEnterResult.Unlocked:
                                 ClientFeedback.Send(player, ClientFeedback.LockpickingSuccessful);
@@ -666,22 +668,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
             lockable = found;
             pick = item;
             return true;
-        }
-
-        /// <summary>
-        /// The pick's rating against a lock: the lock pick's Attack skills weighted against the player (Lock Pick 95577:
-        /// 100% of skill 135), or Break and Entry when the item lists none. It must reach the lock's LockDifficulty.
-        /// </summary>
-        static int PickRating(Player player, Item pick)
-        {
-            var attack = pick.Definition.Attack;
-            if (attack.Count == 0)
-                return player.Stats.GetOrZero(CharacterStat.BreakingEntry);
-
-            long total = 0;
-            foreach ((CharacterStat stat, int percent) in attack)
-                total += (long)player.Stats.GetOrZero(stat) * percent;
-            return (int)Math.Clamp(total / 100, 0, int.MaxValue);
         }
 
         static void Acknowledge(IZoneSession session, GenericCmdMessage message, Identity target, bool corpseUse = false)

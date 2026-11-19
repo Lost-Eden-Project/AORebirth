@@ -3,11 +3,14 @@
   // draw from Dungeons/Families.json instead of Npcs when that file exists. Aggressiveness (BreedHostility) and Clan
   // replace every monster's own (and a kill objective's): one clan makes them answer each other's calls for help
   // (Gameplay.json socialAggro.sameClanOnly), carried AssistanceRadius meters before socialAggro's caps and scale.
+  // Features (MonsterCombatRules.json names; only AggroesAllSides) go on every monster: AggroesAllSides makes a
+  // Clan, Omni or Neutral humanoid attack players of every side.
   "rubika": {
     "Npcs": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"],
     "Aggressiveness": 60,
     "Clan": 900000,
-    "AssistanceRadius": 20
+    "AssistanceRadius": 20,
+    "Features": ["AggroesAllSides"]
   },
   "mothership": {
     "Npcs": ["ARZWEH"]

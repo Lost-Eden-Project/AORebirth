@@ -160,6 +160,8 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.defaultXpPoolRecoveryPercent must be from 0 to 100.");
             if (Xp.TradeskillXpPerQl < 0)
                 throw new InvalidDataException(path + ": xp.tradeskillXpPerQl must be 0 or more.");
+            if (Xp.DoorPickXpPerLevel < 0)
+                throw new InvalidDataException(path + ": xp.doorPickXpPerLevel must be 0 (off) or more.");
             if (Xp.TeamMemberPercent == null || Array.Exists(Xp.TeamMemberPercent, x => !double.IsFinite(x) || x < 0))
                 throw new InvalidDataException(path + ": xp.teamMemberPercent must be a list of finite, non-negative percents (it may be empty).");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
@@ -185,6 +187,10 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": proximityAggro.indoorRangePercent and outdoorRangePercent must be finite percents, 0 or more.");
             if (Loot == null || Loot.QualityVariancePercent is < 0 or > 100)
                 throw new InvalidDataException(path + ": loot.qualityVariancePercent must be 0 to 100.");
+            if (Loot.NeedGreedRollSeconds is < 5 or > 120)
+                throw new InvalidDataException(path + ": loot.needGreedRollSeconds must be 5 to 120 (a corpse lasts 3 minutes).");
+            if (!float.IsFinite(Loot.NeedGreedRange) || Loot.NeedGreedRange < 0)
+                throw new InvalidDataException(path + ": loot.needGreedRange must be a finite distance, 0 or more.");
             if (SocialAggro == null
                 || !float.IsFinite(SocialAggro.DefaultRadius) || SocialAggro.DefaultRadius < 0
                 || !float.IsFinite(SocialAggro.NpcVsNpcDefaultRadius) || SocialAggro.NpcVsNpcDefaultRadius < 0
@@ -606,6 +612,11 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>XP per QL of a combine's result while <see cref="TradeskillGrantsXp"/> is on.</summary>
         public int TradeskillXpPerQl { get; init; } = 5;
 
+        /// <summary>
+        /// XP for picking a locked door open: this x the picker's level, paid once per door. 0 turns it off.
+        /// </summary>
+        public int DoorPickXpPerLevel { get; init; } = 100;
+
         /// <summary>Per-grant caps, in percent of the current level's XP bar.</summary>
         public GameplayXpCaps Caps { get; init; } = new();
 
@@ -671,6 +682,14 @@ namespace ZoneEngine_New.Core.Configuration
         /// levelMod uses that instead. 0 drops at exactly that QL.
         /// </summary>
         public int QualityVariancePercent { get; init; } = 25;
+
+        /// <summary>Seconds a Need or Greed roll stays open; whoever has not answered by then passes.</summary>
+        public int NeedGreedRollSeconds { get; init; } = 30;
+
+        /// <summary>
+        /// How close to the corpse (metres) a team member must be, on its playfield, when it drops to roll on its items.
+        /// </summary>
+        public float NeedGreedRange { get; init; } = 100f;
     }
 
     public sealed class GameplayShops

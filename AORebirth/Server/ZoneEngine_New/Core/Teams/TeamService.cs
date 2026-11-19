@@ -12,7 +12,8 @@ namespace ZoneEngine_New.Core.Teams
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield.Locality;
 
-    public sealed record TeamSnapshot(int TeamId, int LeaderId, IReadOnlyList<int> MemberIds, bool IsRaid);
+    public sealed record TeamSnapshot(int TeamId, int LeaderId, IReadOnlyList<int> MemberIds, bool IsRaid,
+        TeamLootMode LootMode = TeamLootMode.FreeForAll);
 
     /// <summary>
     /// Teams for this zone instance's players, independent of playfield and transport ownership. With a World link,
@@ -33,6 +34,8 @@ namespace ZoneEngine_New.Core.Teams
             public bool ExplicitLeadershipTransfer;
             /// <summary>Per-member raid sub-team index; missing / default = -1 (capture 20260924-213512).</summary>
             public Dictionary<int, int> RaidTeamIndex { get; } = new();
+            /// <summary>Free for all unless the leader picked Need or Greed.</summary>
+            public TeamLootMode LootMode;
         }
 
         private sealed record Invitation(Player Inviter, Player Invitee, IZoneSession InviterSession,
@@ -344,7 +347,7 @@ namespace ZoneEngine_New.Core.Teams
         {
             lock (_sync)
                 return Owns(player) && _membership.TryGetValue(player.Identity.Instance, out Team? team)
-                    ? new TeamSnapshot(team.Id, team.Leader, Array.AsReadOnly(team.Members.ToArray()), team.IsRaid)
+                    ? new TeamSnapshot(team.Id, team.Leader, Array.AsReadOnly(team.Members.ToArray()), team.IsRaid, team.LootMode)
                     : null;
         }
 
@@ -425,9 +428,30 @@ namespace ZoneEngine_New.Core.Teams
                     && ReferenceEquals(team, other);
         }
 
+        /// <summary>
+        /// Stock's /team loot &lt;word&gt; from the leader (Gamecode 10040949): Parameter1 0, Parameter2 the loot order
+        /// (<see cref="TeamLootOrder"/>). The client refuses anyone but the leader itself; this server checks again.
+        /// </summary>
+        private const CharacterActionType SetLootOrderAction = (CharacterActionType)0x7F;
+
+        /// <summary>Stock's /team loot with no word: any member asks for the team's loot order.</summary>
+        private const CharacterActionType LootOrderQueryAction = (CharacterActionType)0x91;
+
         public bool TryHandle(Player player, CharacterActionMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
+            if (message.Action is SetLootOrderAction or LootOrderQueryAction)
+            {
+                lock (_sync)
+                {
+                    if (!IsActive(player) || message.Identity != player.Identity) return true;
+                    if (message.Action == LootOrderQueryAction)
+                        TellLootOrder(player);
+                    else
+                        SetLootOrder(player, message.Parameter2);
+                }
+                return true;
+            }
             if (message.Action is not (CharacterActionType.TeamRequestInvite or CharacterActionType.TeamEvent
                 or CharacterActionType.TeamRequestReply or CharacterActionType.LeaveTeam
                 or CharacterActionType.TeamKickMember or CharacterActionType.TransferLeader
@@ -508,6 +532,121 @@ namespace ZoneEngine_New.Core.Teams
                     default: return Error(player, "Unknown team command.");
                 }
             }
+        }
+
+        /// <summary>
+        /// /team loot &lt;order&gt; (CharacterAction 0x7F): all is free for all, needgreed (ours) rolls. Stock's leader and
+        /// alpha orders have no captured server behaviour here, so they are refused rather than guessed at. Caller holds _sync.
+        /// </summary>
+        bool SetLootOrder(Player leader, int order)
+        {
+            switch (order)
+            {
+                case TeamLootOrder.All:
+                    return SetLootModeCore(leader, TeamLootMode.FreeForAll);
+                case TeamLootOrder.NeedGreed:
+                    return SetLootModeCore(leader, TeamLootMode.NeedOrGreed);
+                case TeamLootOrder.Leader:
+                case TeamLootOrder.Alpha:
+                    return Error(leader, "That loot order is not available. Use /team loot all or /team loot needgreed.");
+                default:
+                    return Error(leader, "Unknown loot order.");
+            }
+        }
+
+        /// <summary>The player's team loot order (TeamLootModeMessage) to a client that just said hello; nothing outside a team.</summary>
+        public void SendCurrentLootOrder(Player member)
+        {
+            lock (_sync)
+            {
+                if (IsActive(member) && _membership.TryGetValue(member.Identity.Instance, out Team? team))
+                    SendLootMode(member, team.LootMode, 0);
+            }
+        }
+
+        /// <summary>/team loot with no word (CharacterAction 0x91): the team's current order, as a line and the message. Caller holds _sync.</summary>
+        bool TellLootOrder(Player member)
+        {
+            if (!_membership.TryGetValue(member.Identity.Instance, out Team? team))
+                return Feedback(member, "Feedback_YouAreNotMemberOfTeam");
+            SendLootMode(member, team.LootMode, 0);
+            Send(member, new ChatTextMessage
+            {
+                Identity = member.Identity,
+                Text = team.LootMode == TeamLootMode.NeedOrGreed
+                    ? "Team loot: Need or Greed. Items from the team's kills are rolled for."
+                    : "Team loot: free for all."
+            });
+            return true;
+        }
+
+        /// <summary>
+        /// The team leader picks the team's loot mode (/team loot, CharacterAction 0x7F). With a World link World
+        /// keeps it with the team, so every instance a member is on has the same mode.
+        /// </summary>
+        public bool SetLootMode(Player leader, TeamLootMode mode)
+        {
+            lock (_sync)
+                return SetLootModeCore(leader, mode);
+        }
+
+        /// <summary>Least time between one leader's loot mode changes (each one tells the whole team).</summary>
+        static readonly TimeSpan LootModeChangeCooldown = TimeSpan.FromSeconds(3);
+
+        readonly Dictionary<int, DateTime> _lootModeChangedAt = new();
+
+        /// <summary>Caller holds _sync.</summary>
+        bool SetLootModeCore(Player leader, TeamLootMode mode)
+        {
+            if (!IsActive(leader)) return false;
+            if (mode is not (TeamLootMode.FreeForAll or TeamLootMode.NeedOrGreed)) return Error(leader, "Unknown loot mode.");
+            // The local copy (World's mirror) answers the cheap refusals without a World call; World checks again.
+            if (!_membership.TryGetValue(leader.Identity.Instance, out Team? team))
+                return Feedback(leader, "Feedback_YouAreNotMemberOfTeam");
+            if (team.Leader != leader.Identity.Instance)
+                return Feedback(leader, "Feedback_NeedToBeTeamLeader");
+            if (team.LootMode == mode)
+                return true;
+            DateTime now = _utcNow();
+            if (_lootModeChangedAt.TryGetValue(leader.Identity.Instance, out DateTime last) && now - last < LootModeChangeCooldown)
+                return Error(leader, "Wait a moment before changing the loot mode again.");
+            if (_lootModeChangedAt.Count > 4096)
+                _lootModeChangedAt.Clear();
+            _lootModeChangedAt[leader.Identity.Instance] = now;
+            if (_world != null)
+            {
+                WorldCommand(leader, AORebirth.World.Contracts.V1.TeamOp.TeamSetLootMode, lootMode: (int)mode);
+                return true;
+            }
+
+            team.LootMode = mode;
+            foreach (int id in team.Members)
+            {
+                if (_players.TryGetValue(id, out Player? member))
+                    SendLootMode(member, mode, leader.Identity.Instance);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Tells a member the team's loot mode (TeamLootModeMessage). <paramref name="setBy"/> is the leader who just
+        /// changed it, who is also named in a chat line every member reads (the stock client shows only that); 0 just
+        /// tells the member the current mode. Caller holds _sync.
+        /// </summary>
+        void SendLootMode(Player member, TeamLootMode mode, int setBy)
+        {
+            if (member.SpeaksExtendedMessages)
+                Send(member, new TeamLootModeMessage { Identity = member.Identity, Order = TeamLootOrder.Of(mode), SetBy = setBy });
+            if (setBy == 0)
+                return;
+            string leader = DataOf(setBy)?.Name is { Length: > 0 } name ? name : "The team leader";
+            Send(member, new ChatTextMessage
+            {
+                Identity = member.Identity,
+                Text = mode == TeamLootMode.NeedOrGreed
+                    ? leader + " set the team's loot to Need or Greed: items from the team's kills are rolled for."
+                    : leader + " set the team's loot to free for all."
+            });
         }
 
         public bool ConvertToRaid(Player leader)
