@@ -573,7 +573,8 @@ public static class KnubotItems
 
         player.Inventory.MarkDirty(item, page, slot);
         flush.NotifyDirty(player);
-        ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Inventory));
+        using (StatChangeScope.Begin(StatChangeReason.Dialogue))
+            ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Inventory));
         if (ReferenceEquals(page, player.Inventory.Overflow))
         {
             OverflowGrants.Send(player, item);

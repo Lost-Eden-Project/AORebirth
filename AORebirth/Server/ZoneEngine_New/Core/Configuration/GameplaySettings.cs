@@ -684,7 +684,7 @@ namespace ZoneEngine_New.Core.Configuration
         public int QualityVariancePercent { get; init; } = 25;
 
         /// <summary>Seconds a Need or Greed roll stays open; whoever has not answered by then passes.</summary>
-        public int NeedGreedRollSeconds { get; init; } = 30;
+        public int NeedGreedRollSeconds { get; init; } = 45;
 
         /// <summary>
         /// How close to the corpse (metres) a team member must be, on its playfield, when it drops to roll on its items.

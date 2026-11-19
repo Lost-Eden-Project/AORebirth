@@ -210,7 +210,8 @@ namespace ZoneEngine_New.Core.Modules
                     Item = ItemRefOf(item),
                     Count = count > 0 ? count : Math.Max(1, item.StackCount),
                     From = from,
-                    To = to
+                    To = to,
+                    Reason = StatChangeScope.Current
                 });
         }
 
@@ -260,6 +261,8 @@ namespace ZoneEngine_New.Core.Modules
                     Timestamp = Now,
                     Attacker = Entity(attacker.Identity),
                     Target = Entity(target.Identity),
+                    AttackerOwner = PetOwner(attacker),
+                    TargetOwner = PetOwner(target),
                     Source = source,
                     SourceId = sourceId,
                     Result = result,
@@ -314,7 +317,72 @@ namespace ZoneEngine_New.Core.Modules
                 });
         }
 
+        // ---- 1.16: audited stats ----
+
+        /// <summary>The stats <see cref="PlayerStatChanged"/> reports: credits, experience, level, alien experience, alien level.</summary>
+        public static bool IsAuditedStat(CharacterStat stat)
+            => stat is CharacterStat.Cash or CharacterStat.XP or CharacterStat.Level
+                or CharacterStat.AlienXP or CharacterStat.AlienLevel;
+
+        /// <summary>
+        /// The stored value of an audited stat of <paramref name="player"/> changed. Loading a character (before the
+        /// server puts it in play) raises nothing. The reason is <see cref="StatChangeScope.Current"/>.
+        /// </summary>
+        public static void PlayerStatChanged(Player player, CharacterStat stat, int before, int after)
+        {
+            if (player.InPlaySinceUtc == default || player.Playfield is not Playfield playfield
+                || Events(playfield) is not { PlayerStatChanged.HasHandlers: true } events)
+                return;
+            before = StatCollection.Normalize(before);
+            after = StatCollection.Normalize(after);
+            if (before == after)
+                return;
+            events.PlayerStatChanged.Raise(new PlayerStatChangedEvent
+            {
+                CharacterId = player.Identity.Instance,
+                PlayfieldId = playfield.Identity.Instance,
+                Timestamp = Now,
+                RequestTimestamp = ModuleRequest.Current,
+                Stat = (int)stat,
+                Before = before,
+                After = after,
+                Reason = StatChangeScope.Current
+            });
+        }
+
+        // ---- 1.16: GM commands ----
+
+        /// <summary>
+        /// <paramref name="player"/> ran <paramref name="command"/>, or was refused it for GM level. Call after it ran, with
+        /// the playfield it was issued on (a teleport or logout moves the player away).
+        /// </summary>
+        public static void GmCommandUsed(Playfield? issuedOn, Player player, string command, string[] args, int gmLevel, int requiredGmLevel,
+            GmCommandOutcome outcome)
+        {
+            if ((issuedOn ?? player.Playfield) is not Playfield playfield || Events(playfield) is not { GmCommandUsed.HasHandlers: true } events)
+                return;
+            Identity target = player.Target;
+            events.GmCommandUsed.Raise(new GmCommandUsedEvent
+            {
+                CharacterId = player.Identity.Instance,
+                PlayfieldId = playfield.Identity.Instance,
+                Timestamp = Now,
+                RequestTimestamp = ModuleRequest.Current,
+                Command = command,
+                // A copy: the dispatcher's array is the command's own.
+                Args = args.Length == 0 ? Array.Empty<string>() : (string[])args.Clone(),
+                GmLevel = gmLevel,
+                RequiredGmLevel = requiredGmLevel,
+                Target = target == player.Identity ? default : Entity(target),
+                Outcome = outcome
+            });
+        }
+
         // ---- helpers ----
+
+        /// <summary>The player owning <paramref name="character"/> when it is a pet; empty otherwise.</summary>
+        static EntityRef PetOwner(Character character)
+            => character is NpcCharacter { PetOwner: Player owner } ? Entity(owner.Identity) : default;
 
         public static ItemRef ItemRefOf(Item? item) => item == null ? default : new ItemRef(item.LowId, item.HighId, item.Quality);
 

@@ -91,7 +91,8 @@ namespace ZoneEngine_New.Core.Trade
                         PersistPlan(player, cash, null, 0, deliveries, [], dynel.Identity, currency, remaining);
                     durable = true;
                     ApplyDeliveries(deliveries);
-                    player.Stats.Set(currency, remaining, StatDetail.Base, dirty: true);
+                    using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Shop))
+                        player.Stats.Set(currency, remaining, StatDetail.Base, dirty: true);
                     foreach (Delivery delivery in deliveries)
                         SendDelivery(delivery);
                 });

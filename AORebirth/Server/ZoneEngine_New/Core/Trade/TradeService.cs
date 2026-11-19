@@ -1167,7 +1167,7 @@ namespace ZoneEngine_New.Core.Trade
                     ApplyDeliveries(deliveries);
                     if (!payInCash)
                         player.Stats.Set(currency, (int)finalCurrency, StatDetail.Base, dirty: true);
-                    SetCash(player, finalCash);
+                    SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Shop);
                     foreach (Delivery delivery in deliveries) SendDelivery(delivery);
                 });
             }
@@ -1475,7 +1475,7 @@ namespace ZoneEngine_New.Core.Trade
                     PersistPlan(player, finalCash, null, 0, [], given, npc.Identity);
                     durable = true;
                     offer.DrainAll();
-                    SetCash(player, finalCash);
+                    SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Dialogue);
                 });
             }
             catch (Exception exception)
@@ -2095,19 +2095,23 @@ namespace ZoneEngine_New.Core.Trade
                     Stats = { new((Stat)CharacterStat.SocialStatus, (uint)value) }
                 });
 
-        void SetCash(Player player, long cash)
+        void SetCash(Player player, long cash, AORebirth.Modules.Events.StatChangeReason reason)
         {
-            player.Stats.Set(
-                CharacterStat.Cash,
-                TradeRules.ClampCash(cash),
-                StatDetail.Base,
-                dirty: true);
+            using (Modules.StatChangeScope.Begin(reason))
+                player.Stats.Set(
+                    CharacterStat.Cash,
+                    TradeRules.ClampCash(cash),
+                    StatDetail.Base,
+                    dirty: true);
             player.FlushDirtyStats();
         }
 
         /// <summary>Sets Cash without queuing it for the next stat flush; <see cref="SendTradeCash"/> sends it.</summary>
         static void SetCashQuietly(Player player, long cash)
-            => player.Stats.Set(CharacterStat.Cash, TradeRules.ClampCash(cash), StatDetail.Base, dirty: false);
+        {
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Trade))
+                player.Stats.Set(CharacterStat.Cash, TradeRules.ClampCash(cash), StatDetail.Base, dirty: false);
+        }
 
         /// <summary>
         /// A player trade's final Cash, sent after the Complete frames. The client moves the traded credits itself on

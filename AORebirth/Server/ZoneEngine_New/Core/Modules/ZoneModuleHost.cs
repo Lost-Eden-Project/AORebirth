@@ -727,6 +727,18 @@ namespace ZoneEngine_New.Core.Modules
                 add => _events.MissionCompleted.Add(_moduleId, value);
                 remove => _events.MissionCompleted.Remove(_moduleId, value);
             }
+
+            public event Action<PlayerStatChangedEvent> PlayerStatChanged
+            {
+                add => _events.PlayerStatChanged.Add(_moduleId, value);
+                remove => _events.PlayerStatChanged.Remove(_moduleId, value);
+            }
+
+            public event Action<GmCommandUsedEvent> GmCommandUsed
+            {
+                add => _events.GmCommandUsed.Add(_moduleId, value);
+                remove => _events.GmCommandUsed.Remove(_moduleId, value);
+            }
         }
 
         private sealed class ModuleLogger : IModuleLogger

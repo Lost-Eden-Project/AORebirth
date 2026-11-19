@@ -361,12 +361,14 @@ namespace ZoneEngine_New.Core.Tradeskills
             foreach ((Identity _, Item used) in consumed)
                 Modules.ModuleHooks.ItemMoved(player, used, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
                     Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
-            Modules.ModuleHooks.ItemMoved(player, result, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
-                Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Tradeskill))
+                Modules.ModuleHooks.ItemMoved(player, result, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
+                    Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
 
             int xp = Xp(player, result.Quality);
             if (xp > 0)
-                player.AwardXp(xp, XpSource.Quest);
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Tradeskill))
+                    player.AwardXp(xp, XpSource.Quest);
             player.Playfield?.GetService<Quests.QuestService>()?.OnItemAssembled(player, result);
             if (_windows.TryGetValue(player, out Window? window))
             {

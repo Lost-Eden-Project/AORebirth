@@ -170,8 +170,9 @@ namespace ZoneEngine_New.Core.Modules
             {
                 try
                 {
-                    done.TrySetResult(_manager.Value.FindPlayer(characterId, out Player current)
-                        && ReferenceEquals(current, player) ? action(player) : notHere);
+                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Module))
+                        done.TrySetResult(_manager.Value.FindPlayer(characterId, out Player current)
+                            && ReferenceEquals(current, player) ? action(player) : notHere);
                 }
                 catch (Exception exception)
                 {

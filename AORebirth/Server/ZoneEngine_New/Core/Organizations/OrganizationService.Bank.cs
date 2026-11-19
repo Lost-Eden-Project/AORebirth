@@ -68,7 +68,8 @@ namespace ZoneEngine_New.Core.Organizations
                 return;
 
             int after = cash - amount;
-            player.Stats.Set(CharacterStat.Cash, after, StatDetail.Base, dirty: true);
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.OrgBank))
+                player.Stats.Set(CharacterStat.Cash, after, StatDetail.Base, dirty: true);
             player.FlushDirtyStats();
             var record = new StatRecord { StatId = (int)CharacterStat.Cash, StatValue = after };
             try
@@ -192,7 +193,8 @@ namespace ZoneEngine_New.Core.Organizations
             if (amount <= 0)
                 return;
             int value = CashLimit.Clamp((long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + amount);
-            player.Stats.Set(CharacterStat.Cash, value, StatDetail.Base, dirty: true);
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.OrgBank))
+                player.Stats.Set(CharacterStat.Cash, value, StatDetail.Base, dirty: true);
             player.FlushDirtyStats();
             if (player.IsPersistenceQuarantined || player.Playfield is not Playfield playfield
                 || playfield.GetService<CharacterSnapshotService>() is not { } snapshot

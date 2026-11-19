@@ -218,12 +218,19 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
     /// </summary>
     public string[]? Features { get; set; }
 
+    /// <summary>
+    /// Scale (stat 360) by NPC spawn hash: a monster spawned from a listed hash, or the objective NPC, takes this Scale
+    /// in place of its template's (100 is a template's ordinary size). Unlisted hashes keep their own.
+    /// </summary>
+    public Dictionary<string, int>? Scales { get; set; }
+
     /// <summary>The features a population may list.</summary>
     public static readonly Mobs.NpcFeature[] PopulationFeatures = [Mobs.NpcFeature.AggroesAllSides];
 
     public const int MaxSpreadPercent = 90;
     public const int MaxRangePercent = 400;
     public const int MaxKinds = 20;
+    public const int MaxScale = 2000;
     public static readonly string[] Categories = ["human", "monster", "robot"];
     public static readonly string[] StyleNames = ["physical", "mystical", "mixed"];
 
@@ -243,16 +250,18 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
         Aggressiveness = Aggressiveness ?? under.Aggressiveness,
         Clan = Clan ?? under.Clan,
         AssistanceRadius = AssistanceRadius ?? under.AssistanceRadius,
-        Features = Features ?? under.Features
+        Features = Features ?? under.Features,
+        Scales = Scales ?? under.Scales
     };
 
     /// <summary>
     /// Puts the population's Aggressiveness and Clan on one of its monsters (each left as the template's when unset),
-    /// and gives it the population's Features.
+    /// and gives it the population's Features and its hash's <see cref="Scales"/> entry.
     /// </summary>
     internal void ApplyTo(Entities.NpcCharacter npc)
     {
         ArgumentNullException.ThrowIfNull(npc);
+        ApplyScale(npc);
         if (Aggressiveness is int aggressiveness)
             npc.Stats.Set(Characters.CharacterStat.BreedHostility, aggressiveness);
         if (Clan is int clan)
@@ -261,6 +270,14 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
             foreach (string name in Features)
                 if (TryParseFeature(name, out Mobs.NpcFeature feature))
                     npc.AddFeature(feature);
+    }
+
+    /// <summary>Sets <paramref name="npc"/>'s Scale from <see cref="Scales"/> when its spawn hash is listed.</summary>
+    internal void ApplyScale(Entities.NpcCharacter npc)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        if (Scales != null && npc.SpawnHash is string hash && Scales.TryGetValue(hash, out int scale))
+            npc.Stats.Set(Characters.CharacterStat.Scale, scale);
     }
 
     static bool TryParseFeature(string? name, out Mobs.NpcFeature feature)
@@ -311,6 +328,8 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
             return "Population.Loot " + LootRowRule;
         if (Features != null && !Array.TrueForAll(Features, name => TryParseFeature(name, out _)))
             return "Population.Features may only list " + string.Join(", ", PopulationFeatures);
+        if (Scales != null && Scales.Any(kv => string.IsNullOrWhiteSpace(kv.Key) || kv.Value is < 1 or > MaxScale))
+            return "Population.Scales maps NPC hashes to a Scale of 1-" + MaxScale;
         return null;
     }
 

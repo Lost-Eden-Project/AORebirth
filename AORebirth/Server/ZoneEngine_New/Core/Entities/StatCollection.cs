@@ -61,8 +61,10 @@ namespace ZoneEngine_New.Core.Entities
 
         public event Action<CharacterStat, int, int, bool>? StatChanged;
 
-        /// <summary>Raised when a stored (base) value changes; bonus-only changes never raise it.</summary>
-        public event Action<CharacterStat>? BaseChanged;
+        /// <summary>
+        /// Raised when a stored (base) value changes, with the base before and after; bonus-only changes never raise it.
+        /// </summary>
+        public event Action<CharacterStat, int, int>? BaseChanged;
 
         public static bool IsUnset(int value) => value == (int)CharacterStat.Unset;
 
@@ -176,7 +178,7 @@ namespace ZoneEngine_New.Core.Entities
 
             StatChanged?.Invoke(stat, previousFull, existing.Full, isInitialSet);
             if (previousBase != existing.Base || (isInitialSet && detail != StatDetail.Bonus))
-                BaseChanged?.Invoke(stat);
+                BaseChanged?.Invoke(stat, previousBase, existing.Base);
         }
 
         public void AddBonus(CharacterStat stat, int delta, bool dirty = false)

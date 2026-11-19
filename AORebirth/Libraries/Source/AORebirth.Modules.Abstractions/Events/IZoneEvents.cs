@@ -86,6 +86,18 @@ namespace AORebirth.Modules.Events
         /// the engine paid the mission's own credits, experience and items; what a module pays on top is its own.
         /// </summary>
         event Action<MissionCompletedEvent> MissionCompleted;
+
+        /// <summary>
+        /// The stored value of a player's credits, experience, level, alien experience or alien level changed, with what
+        /// changed it (1.16). Raised on the player's playfield tick for every change, whatever the path.
+        /// </summary>
+        event Action<PlayerStatChangedEvent> PlayerStatChanged;
+
+        /// <summary>
+        /// A character ran a GM command, or was refused one for its GM level, with the arguments and the selected target
+        /// (1.16). Raised on the issuer's playfield tick after the command ran.
+        /// </summary>
+        event Action<GmCommandUsedEvent> GmCommandUsed;
     }
 
     public sealed class PlayerPlayfieldEvent

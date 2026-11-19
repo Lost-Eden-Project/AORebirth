@@ -648,6 +648,13 @@ namespace ZoneEngine_New.Core.Entities
             if (!gameData.TryGetXpLevel(level, out XpLevelEntry current))
                 return;
 
+            using var reason = Modules.StatChangeScope.Default(source switch
+            {
+                XpSource.Kill => AORebirth.Modules.Events.StatChangeReason.Kill,
+                XpSource.Daily => AORebirth.Modules.Events.StatChangeReason.Daily,
+                _ => AORebirth.Modules.Events.StatChangeReason.Quest
+            });
+
             if (source == XpSource.Kill)
             {
                 amount = ApplyXpModifier(amount);
@@ -1388,6 +1395,7 @@ namespace ZoneEngine_New.Core.Entities
                 amount = (int)Math.Min(amount, GameplayXpCaps.Of(XpCaps.KillXp, current.NextLevelXp));
             }
 
+            using var reason = Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Kill);
             SettleAlienXp(gameData, (long)Stats.GetOrZero(CharacterStat.AlienXP) + amount);
         }
 
@@ -1404,6 +1412,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             long amount = (long)current.NextLevelXp * percent / 100;
+            using var reason = Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Daily);
             SettleAlienXp(gameData, Stats.GetOrZero(CharacterStat.AlienXP) + amount);
         }
 

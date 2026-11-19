@@ -136,7 +136,7 @@ namespace ZoneEngine_New.Core.Inventory
                 return Refused(player, PlayerActionKind.ItemUse, item.LowId, item, ActionRefusal.Requirements, "unique item held");
 
             player.SyncCharState();
-            CanFlags can = UseTargetRules.CanOf(item.Definition);
+            CanFlags can = UseTargetRules.ItemUseCanOf(item.Definition);
             Character useTarget = player;
             if ((UseTargetRules.IsHostileTargeted(can) || UseTargetRules.AppliesToFriendly(can))
                 && !UseTargetRules.TryResolve(player, can, out useTarget, out UseTargetRules.Failure targetFailure))

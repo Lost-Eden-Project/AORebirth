@@ -1,0 +1,3 @@
+- Fixed: Zoning through water (such as the water zone lines in the Shadowlands) no longer leaves you swimming on dry land in the next zone.
+- Fixed: Logging out while swimming no longer has you swimming on dry land when you log back in, and dying in water no longer has you respawn swimming.
+- Fixed: Pets that follow you through water into another zone no longer swim on dry land there.

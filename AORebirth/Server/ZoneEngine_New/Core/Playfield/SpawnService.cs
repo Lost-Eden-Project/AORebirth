@@ -866,7 +866,7 @@ namespace ZoneEngine_New.Core.Playfield
             {
                 _services.GetRequiredService<PlayerHydrator>().Apply(player, hydration);
                 player.SaveState.SeedPersisted(character, hydration.Stats);
-                // The stored movement mode (Sit after a seated logout) follows the motor's standing runner before
+                // The stored movement mode (Sit or Swim after a seated or swimming logout) follows the motor's standing runner before
                 // FullCharacter reports it and before the nano cast rules read it.
                 player.Motor.SyncModeStatsAfterHydration();
                 int savedCash = player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
@@ -1543,8 +1543,7 @@ namespace ZoneEngine_New.Core.Playfield
             if (npc.Playfield != null)
                 throw new InvalidOperationException("NPC is still on a playfield.");
 
-            npc.Motor.ClearPath();
-            npc.Motor.Warp(position, heading);
+            npc.Motor.ResetNpcForPlayfieldTransfer(position, heading);
             // Entering sets the playfield stats the spawn packet carries (Character.OnEnteredPlayfield).
             npc.Playfield = _playfield;
             if (!_registry.TryRegister(npc))

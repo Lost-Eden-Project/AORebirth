@@ -56,6 +56,21 @@ namespace ZoneEngine_New.Core.Inventory
             return can;
         }
 
+        /// <summary>
+        /// <see cref="CanOf"/> for an inventory item use. An item whose ToUse criteria test the target (an OnTarget /
+        /// OnFightingTarget selector) is used on the selected character even without ApplyOnFriendly or stat 371
+        /// (Trimmer - Increase Aggressiveness 154939/154940, Android NCU Upgrade 150306/150307); unless a hostile flag
+        /// already aims it, it is treated as ApplyOnFriendly. Perk actions keep <see cref="CanOf"/>: Player resolves
+        /// their ToUse-OnTarget targeting itself.
+        /// </summary>
+        public static CanFlags ItemUseCanOf(ItemTemplate template)
+        {
+            CanFlags can = CanOf(template);
+            if (!IsHostileTargeted(can) && ToUseCriteriaReadTarget(template))
+                can |= CanFlags.ApplyOnFriendly;
+            return can;
+        }
+
         public static bool NeedsFightingTarget(CanFlags can) => (can & CanFlags.ApplyOnFightingTarget) != 0;
 
         public static bool AppliesToHostile(CanFlags can) => !NeedsFightingTarget(can) && (can & CanFlags.ApplyOnHostile) != 0;
@@ -239,6 +254,12 @@ namespace ZoneEngine_New.Core.Inventory
         static bool OnUseCriteriaReadTarget(ItemTemplate template)
             => template.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells)
                 && spells.Exists(spell => spell.Requirements.Exists(requirement
+                    => (Operator)requirement.Operator is Operator.OnTarget or Operator.OnFightingTarget));
+
+        /// <summary>True when the ToUse action's criteria aim a check at the target (an OnTarget / OnFightingTarget selector).</summary>
+        static bool ToUseCriteriaReadTarget(ItemTemplate template)
+            => template.Actions.Exists(action => action.ActionType == (int)ActionType.ToUse
+                && action.Requirements.Exists(requirement
                     => (Operator)requirement.Operator is Operator.OnTarget or Operator.OnFightingTarget));
 
         /// <summary>The user's selected living character other than themselves, or null.</summary>

@@ -162,6 +162,7 @@ namespace ZoneEngine_New.Core.Entities
             _cashClaimed = true;
             SourceStats[CharacterStat.Cash] = 0;
 
+            using var reason = Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Loot);
             int current = Math.Max(0, player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base));
             int taken = Math.Min(cash, Characters.CashLimit.Room(current));
             if (taken < cash)

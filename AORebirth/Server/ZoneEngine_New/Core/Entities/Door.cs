@@ -256,7 +256,8 @@ namespace ZoneEngine_New.Core.Entities
             if (LockDifficulty > 0)
                 level = Math.Min(level, LockDifficulty);
             long xp = (long)perLevel * level;
-            player.AwardXp((int)Math.Min(int.MaxValue, xp), XpSource.Quest);
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Lockpick))
+                player.AwardXp((int)Math.Min(int.MaxValue, xp), XpSource.Quest);
         }
 
         bool _pickXpPaid;

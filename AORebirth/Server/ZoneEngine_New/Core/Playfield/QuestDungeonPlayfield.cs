@@ -471,8 +471,11 @@ public sealed class QuestDungeonPlayfield : Playfield
             {
                 if (fightsWithPopulation)
                     Layout.Population.ApplyTo(actor);
-                // The policy percent scales the template's own size (Master of Time and Space is 600, a human 100);
-                // it is not an absolute Scale, or a large boss would shrink to a fifth of its catalog size.
+                else
+                    Layout.Population.ApplyScale(actor);
+                // The policy percent scales the template's own size (Master of Time and Space is 600, a human 100), or
+                // the population's Scales entry for it; it is not an absolute Scale, or a large boss would shrink to a
+                // fifth of its catalog size.
                 if (objectiveScale is int scale)
                 {
                     int baseScale = actor.Stats.TryGetValue(CharacterStat.Scale, out int held) && !StatCollection.IsUnset(held)

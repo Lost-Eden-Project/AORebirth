@@ -29,7 +29,7 @@ namespace ZoneEngine_New.Core.Loot
     /// (<see cref="LootRollChoiceMessage"/>, or /loot need|greed|pass [roll] from the stock client). The roll closes when
     /// all have answered or loot.needGreedRollSeconds pass (silence passes). Need beats Greed, the higher 1-100 roll wins,
     /// and the server puts the item straight into the winner's inventory; when nobody wants it, or no roller can take it
-    /// (gone, inventory full, already holds the Unique), it is released in the corpse as ordinary loot. Credits are not
+    /// (gone, inventory and overflow full, already holds the Unique), it is released in the corpse as ordinary loot. Credits are not
     /// rolled. Everything runs on the playfield tick.
     /// </summary>
     public sealed class LootRollService
@@ -324,7 +324,8 @@ namespace ZoneEngine_New.Core.Loot
 
         /// <summary>
         /// Moves the rolled item out of the corpse into the winner's inventory: onto a stack it joins, else a free
-        /// inventory slot (never overflow, which would trim). False leaves it in the corpse, locked, for the next roller.
+        /// inventory slot, else overflow while it is under capacity (never trimming an older overflow item). False leaves
+        /// it in the corpse, locked, for the next roller.
         /// </summary>
         bool TryAward(Roll roll, int characterId, out Player receiver)
         {
@@ -339,9 +340,9 @@ namespace ZoneEngine_New.Core.Loot
                 return false;
             }
             bool auto = AutoConsumedItems.IsAutoConsumed(item);
-            if (!auto && player.Inventory.Inventory.FindFreeSlot() < 0)
+            if (!auto && player.Inventory.Inventory.FindFreeSlot() < 0 && !HasOverflowRoom(player))
             {
-                RequirementFeedback.SendText(player, "Your inventory is full: you could not take " + roll.ItemName + ".");
+                RequirementFeedback.SendText(player, "Your inventory and overflow are full: you could not take " + roll.ItemName + ".");
                 return false;
             }
             Corpse corpse = roll.Corpse;
@@ -362,31 +363,51 @@ namespace ZoneEngine_New.Core.Loot
             }
             else if (!InventoryStacking.TryGrantOntoStack(player, item, _flush))
             {
-                int free = player.Inventory.Inventory.FindFreeSlot();
-                if (free < 0 || !player.Inventory.Inventory.Add(free, item))
+                Container page = player.Inventory.Inventory;
+                int free = page.FindFreeSlot();
+                bool placed = free >= 0
+                    ? page.Add(free, item)
+                    : HasOverflowRoom(player) && player.Inventory.TryAddToOverflow(item, out page, out free);
+                if (!placed)
                 {
                     // Cannot happen after the check above on one tick; put it back rather than lose it.
                     corpse.Loot.Add(slot, item);
                     item.Locked = true;
                     return false;
                 }
-                player.Inventory.MarkDirty(item, player.Inventory.Inventory, free);
+                player.Inventory.MarkDirty(item, page, free);
                 _flush.NotifyDirty(player);
                 ModuleHooks.ItemMoved(player, item, from, ModuleHooks.Place(ItemPlaceKind.Inventory));
-                player.Session?.Send(new AddTemplateMessage
+                if (ReferenceEquals(page, player.Inventory.Overflow))
                 {
-                    Identity = player.Identity,
-                    HighId = item.HighId,
-                    LowId = item.LowId,
-                    Quality = item.Quality,
-                    Count = item.StackCount
-                });
+                    OverflowGrants.Send(player, item);
+                    OverflowGrants.Trim(player);
+                }
+                else
+                {
+                    player.Session?.Send(new AddTemplateMessage
+                    {
+                        Identity = player.Identity,
+                        HighId = item.HighId,
+                        LowId = item.LowId,
+                        Quality = item.Quality,
+                        Count = item.StackCount
+                    });
+                }
             }
             player.InvalidateOwnedItemCache();
             _playfield.GetService<VicinityChatRelay>()?.AnnounceLoot(player, corpse, item);
             receiver = player;
             return true;
         }
+
+        /// <summary>
+        /// Overflow has room below its Gameplay.json capacity, so a won item lands there without trimming away an older
+        /// overflow item the player already has.
+        /// </summary>
+        static bool HasOverflowRoom(Player player)
+            => player.Inventory.Overflow.Content.Count < OverflowGrants.Capacity(player)
+                && player.Inventory.Overflow.FindFreeSlot() >= 0;
 
         static bool TryFindSlot(Corpse corpse, Item item, out int slot)
         {

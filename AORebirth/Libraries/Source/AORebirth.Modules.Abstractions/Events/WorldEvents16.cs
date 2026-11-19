@@ -118,6 +118,14 @@ namespace AORebirth.Modules.Events
         public ItemPlace From { get; init; }
 
         public ItemPlace To { get; init; }
+
+        /// <summary>
+        /// What the engine was doing (1.16): <see cref="StatChangeReason.Gm"/> while a GM command runs and
+        /// <see cref="StatChangeReason.Module"/> for a module operation, whatever else they cause; <c>Quest</c>, <c>Daily</c>,
+        /// <c>Tradeskill</c> and <c>Dialogue</c> for the items those create; otherwise <c>Other</c>, where
+        /// <see cref="From"/> and <see cref="To"/> say what happened.
+        /// </summary>
+        public StatChangeReason Reason { get; init; }
     }
 
     /// <summary>A chat channel the zone handles (module API 1.6).</summary>
@@ -194,6 +202,12 @@ namespace AORebirth.Modules.Events
         public EntityRef Attacker { get; init; }
 
         public EntityRef Target { get; init; }
+
+        /// <summary>The player who owns the attacker when the attacker is a pet; empty otherwise (1.16).</summary>
+        public EntityRef AttackerOwner { get; init; }
+
+        /// <summary>The player who owns the target when the target is a pet; empty otherwise (1.16).</summary>
+        public EntityRef TargetOwner { get; init; }
 
         public CombatSource Source { get; init; }
 

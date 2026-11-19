@@ -7,6 +7,7 @@
   // Clan, Omni or Neutral humanoid attack players of every side.
   "rubika": {
     "Npcs": ["ANDR", "ROLL", "CLAW", "TENT", "SHAD", "UNBR"],
+    "MaxGroup": 2,
     "Aggressiveness": 60,
     "Clan": 900000,
     "AssistanceRadius": 20,

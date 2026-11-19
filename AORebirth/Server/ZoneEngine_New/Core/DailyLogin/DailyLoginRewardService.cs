@@ -102,7 +102,8 @@ public sealed class DailyLoginRewardService(
                 if (result.Status == DailyLoginClaimCommitStatus.Applied)
                 {
                     committed = true;
-                    plan.PublishAfterCommit();
+                    using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Daily))
+                        plan.PublishAfterCommit();
                     for (int index = 0; autoConsumed && index < selection.ItemCount; index++)
                         AutoConsumedItems.TryConsume(player, rewardTemplate);
                     return success;

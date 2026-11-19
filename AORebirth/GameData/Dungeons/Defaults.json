@@ -15,7 +15,8 @@
     "GroupRadius": 8.0,
     "AggroRangePercent": 100,
     "HelpRangePercent": 100,
-    "Loot": []
+    "Loot": [],
+    "Scales": { "STAL": 32 }
   },
   "Chests": {
     "Enabled": true,

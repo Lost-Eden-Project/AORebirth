@@ -202,7 +202,7 @@ namespace ZoneEngine_New.Core.Inventory
             if (quality == high.Quality)
                 return DeepCopy(high, quality);
 
-            float factor = (quality - low.Quality) / (float)(high.Quality - low.Quality);
+            var ql = new QlSpan(low.Quality, high.Quality, quality);
 
             return new ItemTemplate
             {
@@ -212,12 +212,12 @@ namespace ZoneEngine_New.Core.Inventory
                 Flags = low.Flags,
                 ItemType = low.ItemType,
                 DynelType = low.DynelType,
-                MultipleCount = LerpInt(low.MultipleCount, high.MultipleCount, factor),
-                Stats = LerpIntMap(low.Stats, high.Stats, factor),
-                Attack = LerpIntMap(low.Attack, high.Attack, factor),
-                Defend = LerpIntMap(low.Defend, high.Defend, factor),
-                SpellList = LerpSpellList(low.SpellList, high.SpellList, factor),
-                Actions = LerpActions(low.Actions, high.Actions, factor),
+                MultipleCount = ql.Between(low.MultipleCount, high.MultipleCount),
+                Stats = LerpIntMap(low.Stats, high.Stats, ql),
+                Attack = LerpIntMap(low.Attack, high.Attack, ql),
+                Defend = LerpIntMap(low.Defend, high.Defend, ql),
+                SpellList = LerpSpellList(low.SpellList, high.SpellList, ql),
+                Actions = LerpActions(low.Actions, high.Actions, ql),
                 Relations = new List<int>(low.Relations),
                 ShopInventory = low.ShopInventory
             };
@@ -260,13 +260,13 @@ namespace ZoneEngine_New.Core.Inventory
         private static Dictionary<CharacterStat, int> LerpIntMap(
             Dictionary<CharacterStat, int> low,
             Dictionary<CharacterStat, int> high,
-            float factor)
+            QlSpan ql)
         {
             var result = new Dictionary<CharacterStat, int>();
             foreach (KeyValuePair<CharacterStat, int> pair in low)
             {
                 int highValue = high.TryGetValue(pair.Key, out int hv) ? hv : pair.Value;
-                result[pair.Key] = LerpInt(pair.Value, highValue, factor);
+                result[pair.Key] = ql.Between(pair.Value, highValue);
             }
 
             foreach (KeyValuePair<CharacterStat, int> pair in high)
@@ -281,7 +281,7 @@ namespace ZoneEngine_New.Core.Inventory
         private static Dictionary<AORebirth.Enums.EventType, List<ItemSpell>> LerpSpellList(
             Dictionary<AORebirth.Enums.EventType, List<ItemSpell>> low,
             Dictionary<AORebirth.Enums.EventType, List<ItemSpell>> high,
-            float factor)
+            QlSpan ql)
         {
             var result = new Dictionary<AORebirth.Enums.EventType, List<ItemSpell>>();
             foreach (KeyValuePair<AORebirth.Enums.EventType, List<ItemSpell>> pair in low)
@@ -298,19 +298,19 @@ namespace ZoneEngine_New.Core.Inventory
                 int count = Math.Min(pair.Value.Count, highSpells.Count);
                 var lerped = new List<ItemSpell>(count);
                 for (int i = 0; i < count; i++)
-                    lerped.Add(LerpSpell(pair.Value[i], highSpells[i], factor));
+                    lerped.Add(LerpSpell(pair.Value[i], highSpells[i], ql));
                 result[pair.Key] = lerped;
             }
 
             return result;
         }
 
-        private static ItemSpell LerpSpell(ItemSpell low, ItemSpell high, float factor)
+        private static ItemSpell LerpSpell(ItemSpell low, ItemSpell high, QlSpan ql)
         {
             ItemSpell copy = low.Copy();
             int reqCount = Math.Min(copy.Requirements.Count, high.Requirements.Count);
             for (int i = 0; i < reqCount; i++)
-                copy.Requirements[i].Value = LerpInt(low.Requirements[i].Value, high.Requirements[i].Value, factor);
+                copy.Requirements[i].Value = ql.Between(low.Requirements[i].Value, high.Requirements[i].Value);
 
             int argCount = Math.Min(copy.Arguments.Count, high.Arguments.Count);
             for (int i = 0; i < argCount; i++)
@@ -318,9 +318,9 @@ namespace ZoneEngine_New.Core.Inventory
                 if (low.Arguments[i] is int lowId && high.Arguments[i] is int highId && IsIdentifierArgument(low, i))
                     copy.Arguments[i] = lowId != 0 ? lowId : highId;
                 else if (low.Arguments[i] is int lowInt && high.Arguments[i] is int highInt)
-                    copy.Arguments[i] = LerpInt(lowInt, highInt, factor);
+                    copy.Arguments[i] = ql.Between(lowInt, highInt);
                 else if (low.Arguments[i] is float lowFloat && high.Arguments[i] is float highFloat)
-                    copy.Arguments[i] = lowFloat + (factor * (highFloat - lowFloat));
+                    copy.Arguments[i] = lowFloat + (ql.Factor * (highFloat - lowFloat));
             }
 
             return copy;
@@ -336,7 +336,7 @@ namespace ZoneEngine_New.Core.Inventory
                || (index == 3 && (spell.Is(FunctionType.Hit) || spell.Is(FunctionType.SpecialHit)
                    || spell.Is(FunctionType.AreaHit) || spell.Is(FunctionType.DrainHit)));
 
-        private static List<ItemAction> LerpActions(List<ItemAction> low, List<ItemAction> high, float factor)
+        private static List<ItemAction> LerpActions(List<ItemAction> low, List<ItemAction> high, QlSpan ql)
         {
             var result = new List<ItemAction>(low.Count);
             foreach (ItemAction lowAction in low)
@@ -346,10 +346,9 @@ namespace ZoneEngine_New.Core.Inventory
                 int reqCount = Math.Min(copy.Requirements.Count, highAction.Requirements.Count);
                 for (int i = 0; i < reqCount; i++)
                 {
-                    copy.Requirements[i].Value = LerpInt(
+                    copy.Requirements[i].Value = ql.Between(
                         lowAction.Requirements[i].Value,
-                        highAction.Requirements[i].Value,
-                        factor);
+                        highAction.Requirements[i].Value);
                 }
 
                 result.Add(copy);
@@ -359,14 +358,49 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
-        /// QL blend of two values, rounded to even as before and clamped to Int32. Done in double: `high - low` in int
-        /// wraps for far-apart values (a stat near the Int32 limit on one end), and the blend then overflowed the cast,
-        /// throwing out of corpse loot creation (2026-10-13: Stim Fiend loot left the NPC dead and never swapped).
+        /// The low template's QL, the high template's QL and the item's QL. Integer values blend the way stock does
+        /// (Gamecode 100cb909) and the client builds the item: from the smaller value, a half rounds up. A QL 30 Belt
+        /// Component Platform (2 slots at QL 20, 3 at QL 40) has 3 slots, where round-half-to-even gave 2.
         /// </summary>
-        private static int LerpInt(int low, int high, float factor)
+        private readonly struct QlSpan
         {
-            double value = Math.Round(low + (factor * ((double)high - low)));
-            return (int)Math.Clamp(value, int.MinValue, int.MaxValue);
+            private readonly int ql1;
+            private readonly int ql2;
+            private readonly int ql;
+
+            public QlSpan(int ql1, int ql2, int ql)
+            {
+                this.ql1 = ql1;
+                this.ql2 = ql2;
+                this.ql = ql;
+            }
+
+            /// <summary>Float arguments only; integer values use <see cref="Between"/>.</summary>
+            public float Factor => (ql - ql1) / (float)(ql2 - ql1);
+
+            /// <summary>
+            /// Stock 100cb909: the value at ql between v1 (at ql1) and v2 (at ql2). The difference wraps in Int32
+            /// as in stock; the step is done in long, so far-apart values (a stat near the Int32 limit on one end)
+            /// never throw out of corpse loot creation (2026-10-13: Stim Fiend loot).
+            /// </summary>
+            public int Between(int v1, int v2)
+            {
+                ushort q1 = (ushort)ql1, q2 = (ushort)ql2, q = (ushort)ql;
+                if (v1 == v2 || q1 == q2 || q1 == q)
+                    return v1;
+                if (q2 == q)
+                    return v2;
+                if (v1 < v2)
+                    return unchecked(Step(q - q1, v2 - v1, q2 - q1) + v1);
+                return unchecked(Step(q - q2, v1 - v2, q1 - q2) + v2);
+            }
+
+            /// <summary>trunc(a * b / d + 0.5), exactly: (2ab + d) / (2d), truncating.</summary>
+            private static int Step(int a, int b, int d)
+            {
+                long x = (long)a * b;
+                return unchecked((int)((2 * x + d) / (2L * d)));
+            }
         }
 
         private static void ApplyStatsBlob(ItemTemplate definition, byte[]? statsBlob)

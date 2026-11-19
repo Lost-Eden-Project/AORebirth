@@ -414,17 +414,21 @@ public sealed partial class QuestService
                 queued = true;
                 try
                 {
-                    grant.PublishBeforeCommit();
+                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                        grant.PublishBeforeCommit();
                 }
                 finally
                 {
                     Ended(player, quest);
                 }
-                foreach (var pair in values)
-                    player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
-                player.FlushDirtyStats();
-                if (xpReward > 0)
-                    player.AwardXp(xpReward, XpSource.Quest);
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                {
+                    foreach (var pair in values)
+                        player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
+                    player.FlushDirtyStats();
+                    if (xpReward > 0)
+                        player.AwardXp(xpReward, XpSource.Quest);
+                }
                 if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
                     foreach (Item item in used)
                         item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
@@ -650,18 +654,22 @@ public sealed partial class QuestService
                 // Local playtest: AddTemplate fills the first free client slot, so publish before key deletion opens a hole.
                 try
                 {
-                    grant.PublishAfterCommit();
+                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                        grant.PublishAfterCommit();
                 }
                 finally
                 {
                     // Durable lifecycle cleanup must still run if reward publication fails.
                     Ended(player, quest);
                 }
-                foreach (var pair in values)
-                    player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
-                player.FlushDirtyStats();
-                if (xpReward > 0)
-                    player.AwardXp(xpReward, XpSource.Quest);
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                {
+                    foreach (var pair in values)
+                        player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
+                    player.FlushDirtyStats();
+                    if (xpReward > 0)
+                        player.AwardXp(xpReward, XpSource.Quest);
+                }
                 if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
                     foreach (Item item in used)
                         item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);

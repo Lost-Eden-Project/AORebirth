@@ -643,12 +643,46 @@ namespace ZoneEngine_New.Core.Movement
             // The destination must not inherit input, a path or a follow from the previous world.
             ClearPath();
             EndFollow();
-            // A full status, no transition: standing still in the current mode.
+            ForgetLiquid();
+            // A full status, no transition: standing still in the current mode, or a swimmer standing in its walk/run.
             RulesStatus.Fields fields = RulesStatus.Fields.Default;
-            fields.Mode = _move.State;
+            fields.Mode = _move.State == (int)MovementState.Swim ? DryMode : _move.State;
             _move.ApplyStatus(fields, _move.LastSpeedMode);
             SyncModeStats();
             Warp(position);
+        }
+
+        /// <summary>
+        /// An NPC placed into another playfield (a pet following its owner) arrives out of the water the same way
+        /// <see cref="ResetForPlayfieldTransfer"/> brings a player: its spawn there shows the mode it has now.
+        /// </summary>
+        public void ResetNpcForPlayfieldTransfer(Vector3 position, Quaternion heading)
+        {
+            ClearPath();
+            ForgetLiquid();
+            if (_move.State == (int)MovementState.Swim)
+            {
+                _move.LeaveState();
+                SyncModeStats();
+            }
+
+            Warp(position, heading);
+        }
+
+        /// <summary>The walk/run a swimmer leaves to (the rules' own LeaveSwim target).</summary>
+        int DryMode => _move.LastSpeedMode == (int)MovementState.Walk ? (int)MovementState.Walk : (int)MovementState.Run;
+
+        /// <summary>
+        /// A body the client builds anew (a zone change, a respawn it rebuilds, a pet's spawn there) starts out of
+        /// liquid, and the client puts it into Swim only on entering water. The server's body kept its InLiquid across
+        /// the warp, so a swimmer zoned through water arrived in Swim (the client swam on dry land) and the first tick
+        /// left Swim on the server alone; only the next zone's FullCharacter cleared it (bug #584). Both bodies now
+        /// start dry, and a landing in water switches both into Swim on its first step.
+        /// </summary>
+        void ForgetLiquid()
+        {
+            _sim.InLiquid = false;
+            _liquidChanges.Clear();
         }
 
         /// <summary>
@@ -1646,12 +1680,15 @@ namespace ZoneEngine_New.Core.Movement
         /// After hydration: a stored seated state stands up. A character that logged out sitting is stored with mode
         /// Sit (WaitState 2), while every body starts as a standing runner and the client builds its login character in
         /// Run as well. Left at Sit, the nano cast rules (which read the stat, not the motor) refuse every cast with
-        /// "You must be standing up" until the player sits and stands again (bug #405). Any other stored mode (Fly,
-        /// Sneak, Walk) is left as stored: FullCharacter reports it as before.
+        /// "You must be standing up" until the player sits and stands again (bug #405). A stored Swim (a logout in the
+        /// water) leaves too: the body starts dry, and FullCharacter reporting Swim kept the client swimming wherever it
+        /// logged in until it next entered and left water (bug #584); in water both switch into Swim on the first step.
+        /// Any other stored mode (Fly, Sneak, Walk) is left as stored: FullCharacter reports it as before.
         /// </summary>
         public void SyncModeStatsAfterHydration()
         {
-            if (_character.Stats.GetOrZero(CharacterStat.CurrentMovementMode) == (int)MovementState.Sit)
+            int stored = _character.Stats.GetOrZero(CharacterStat.CurrentMovementMode);
+            if (stored == (int)MovementState.Sit || stored == (int)MovementState.Swim)
                 SyncModeStats();
             else if (_character.Stats.GetOrZero(CharacterStat.WaitState) == 2)
                 _character.Stats.Set(CharacterStat.WaitState, 0, StatDetail.Base);

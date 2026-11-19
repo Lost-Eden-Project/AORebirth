@@ -168,10 +168,12 @@ namespace ZoneEngine_New.Core.Entities
             Stats.WireValueOverride = stat => stat == CharacterStat.IP ? Math.Max(0, AvailableIp) : null;
             // Requirement folds use Stats.Get; keep this at 0 so Unset never fails NotBitAnd checks.
             Stats.Set(CharacterStat.SelectedTargetType, 0, StatDetail.Base);
-            Stats.BaseChanged += stat =>
+            Stats.BaseChanged += (stat, before, after) =>
             {
                 if (!CharacterSaveState.IsCheckpointOnly(stat) && !StatCollection.IsRuntimeOnly(stat))
                     SaveState.MarkDirty();
+                if (Modules.ModuleHooks.IsAuditedStat(stat))
+                    Modules.ModuleHooks.PlayerStatChanged(this, stat, before, after);
             };
             Stats.StatChanged += OnShadowBreedStatChanged;
         }
@@ -2237,7 +2239,8 @@ namespace ZoneEngine_New.Core.Entities
                 return false;
             }
 
-            Stats.Set(CharacterStat.Cash, cash - fee, StatDetail.Base, dirty: true);
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Fee))
+                Stats.Set(CharacterStat.Cash, cash - fee, StatDetail.Base, dirty: true);
             FlushDirtyStats();
             ClientFeedback.SendFormatted(this, ClientFeedback.CreditsDeducted, fee);
 
@@ -2306,7 +2309,8 @@ namespace ZoneEngine_New.Core.Entities
             if (lost <= 0)
                 return;
 
-            Stats.Set(CharacterStat.XP, keep, StatDetail.Base, dirty: true);
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Death))
+                Stats.Set(CharacterStat.XP, keep, StatDetail.Base, dirty: true);
             int pool = AddToDeathXpPool(lost);
             Logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Death XP loss character={0} level={1} xp={2}->{3} lost={4} pool={5}",

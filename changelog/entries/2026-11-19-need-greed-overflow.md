@@ -1,0 +1,1 @@
+- Fixed: Winning a Need or Greed roll with a full inventory now sends the item to your overflow window instead of leaving it unclaimed.

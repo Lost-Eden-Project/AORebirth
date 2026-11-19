@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.15**.
+The current version is **1.16**.
 
 ## Loading
 
@@ -51,6 +51,7 @@ The current version is **1.15**.
 | 1.13 | `RegisterReloadable` and `IModuleReloadable` (a module's own data, reloadable as `<module id>/<name>` beside the GameData catalogs) |
 | 1.14 | `Database` (`IModuleDatabase`): a module's own `mod_<id>_*` tables, created by migrations it ships and DatabaseMigrationTool applies; the `database` capability; module.json `Capabilities` (what the module cannot load without) |
 | 1.15 | `MissionCompletedEvent.Mission`: the `Missions/Missions.json` mission a completed quest ran |
+| 1.16 | `Events.PlayerStatChanged` (credits, experience, level, alien experience and alien level, with a `StatChangeReason`); `Events.GmCommandUsed`; `CombatResolvedEvent.AttackerOwner` and `TargetOwner` (a pet's owner); `ItemMovedEvent.Reason` |
 
 ## Context members
 
@@ -92,6 +93,9 @@ actions on it return false.
 | `ItemMoved` | An item changed place: loot, pickup, trade, shop, bank, reward, creation, destruction (1.6). |
 | `PlayerSpoke` | A player spoke in chat the zone handles (1.6, `observe-chat`; the text needs `read-chat-text`). |
 | `CombatResolved` | A hit or miss involving at least one player was resolved (1.6). |
+| `MissionCompleted` | A player completed a mission and its reward was committed (1.12; see Mission completion). |
+| `PlayerStatChanged` | The stored credits, experience, level, alien experience or alien level of a player in play changed (1.16; see Audited stats). |
+| `GmCommandUsed` | A character ran a GM command, or was refused one for its GM level (1.16; see GM command audit). |
 
 From 1.6 every event carries `Timestamp`, when the engine raised it on `Clock`. An event a client message caused
 also carries `RequestTimestamp`: that message's `MessageSample.Timestamp`, so an observer can match the two exactly,
@@ -431,7 +435,9 @@ A single `Speed` after lag, a zone landing or a long fall can be legitimate; a h
 `ItemMoved` (1.6) reports every item changing place for a player, so loot, pickups, trades, shops, the bank and
 rewards look the same: `Item`, `Count`, `From` and `To` (an `ItemPlace`: the kind, and its owner or container such as
 the corpse, the shop NPC or the other trader). `From None` means created (a reward, a GM spawn) and `To Destroyed`
-deleted or consumed. Rearranging slots within one place of one character is not raised.
+deleted or consumed. Rearranging slots within one place of one character is not raised. From 1.16 `Reason` (a
+`StatChangeReason`) is `Gm` for anything a GM command moves and `Module` for a module operation; `Quest`, `Daily`,
+`Tradeskill` and `Dialogue` for items those create; otherwise `Other`, where `From` and `To` tell the story.
 
 ## Chat
 
@@ -444,7 +450,33 @@ because chat is personal. Tells and channels go through the chat server and are 
 `CombatResolved` (1.6) reports every resolved hit or miss with at least one player as attacker or target: `Attacker`,
 `Target`, `Source` (`AutoAttack`, `Special`, `Nano`, `Item`, `Perk`, `Pet`, `Environment`), `SourceId`, `Result`
 (`Hit`, `Critical`, `Miss`, `Evaded`, `Resisted`, `Blocked`), `Amount` (after absorbs) and `DamageType`. Fights
-between NPCs are left out to keep the volume down.
+between NPCs are left out to keep the volume down. From 1.16 `AttackerOwner` and `TargetOwner` name the player who
+owns a pet attacker or target (empty otherwise), so a pet's damage counts toward its owner.
+
+## Audited stats (1.16)
+
+`PlayerStatChanged` reports every change to the stored value of a player's `Cash` (61), `XP` (52), `Level` (54),
+`AlienXP` (40) and `AlienLevel` (169), whatever path changed it: `CharacterId`, `PlayfieldId`, `Stat`, `Before`,
+`After`, `Delta`, `Reason`, `Timestamp` and `RequestTimestamp`. It is raised on the player's playfield tick as the value
+changes, so a module can keep running totals (credits gained per hour, experience per kill) and compare them with
+`CombatResolved` (damage done, largest hit), `ItemMoved` and `MissionCompleted` to flag a character for review. Loading a
+character raises nothing, and a buff never changes a stored value.
+
+`Reason` (`StatChangeReason`) says what the engine was doing: `Kill`, `Quest`, `Daily`, `Tradeskill`, `Lockpick`,
+`Trade`, `Shop`, `Dialogue`, `Loot`, `OrgBank`, `Fee`, `Death`, `Gm` or `Module`. A GM command or a module operation
+stays the reason for everything it causes, so a GM-given level or a module payout never reads as earned. `Other` is a
+path the engine does not label; for an audit it is the one worth a second look. The event needs no capability.
+
+## GM command audit (1.16)
+
+`GmCommandUsed` is raised after every GM command a character runs, whether typed in vicinity chat or relayed from a chat
+channel or tell: `CharacterId` (the issuer), `PlayfieldId` (where it was issued), `Command` (without the '.'), `Args`
+(as typed, split on whitespace), `GmLevel` and `RequiredGmLevel`, `Target` (what the issuer had selected, which most
+commands act on; empty for nothing or themselves), `Outcome`, `Timestamp` and `RequestTimestamp`. `Outcome` is
+`Executed` (the command ran; it may still have answered with its usage), `Failed` (it threw) or `Refused` (the GM level
+was too low, so nothing ran: a player probing for commands). Unknown command names and help requests raise nothing.
+What the command changed shows in the other events with reason `Gm` (`PlayerStatChanged`), so a module can tie a GM's
+`.set cash` to the credits it gave. The event needs no capability.
 
 ## World additions (1.6)
 
