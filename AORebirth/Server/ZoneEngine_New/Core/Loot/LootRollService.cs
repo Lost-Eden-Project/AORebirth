@@ -140,9 +140,6 @@ namespace ZoneEngine_New.Core.Loot
                         Seconds = settings.NeedGreedRollSeconds,
                         ItemName = roll.ItemName
                     });
-                Tell(roll.Rollers, string.Format(CultureInfo.InvariantCulture,
-                    "Roll {0}: {1} (QL {2}). /loot need {0}, /loot greed {0} or /loot pass {0} within {3} seconds.",
-                    roll.Id, roll.ItemName, item.Quality, settings.NeedGreedRollSeconds));
             }
 
             if (opened > 0)
@@ -215,10 +212,11 @@ namespace ZoneEngine_New.Core.Loot
 
             int value = choice == LootRollChoice.Pass ? 0 : RandomNumberGenerator.GetInt32(1, 101);
             roll.Answers[self] = (choice, value);
-            Tell(roll.Rollers, choice == LootRollChoice.Pass
-                ? string.Format(CultureInfo.InvariantCulture, "{0} passed on {1} (roll {2}).", player.Name, roll.ItemName, roll.Id)
-                : string.Format(CultureInfo.InvariantCulture, "{0} selected {1} for {2} (roll {3}).", player.Name,
-                    choice == LootRollChoice.Need ? "Need" : "Greed", roll.ItemName, roll.Id));
+            // Only the chooser hears their own choice; the team hears the result when the roll closes.
+            Tell(new[] { self }, choice == LootRollChoice.Pass
+                ? string.Format(CultureInfo.InvariantCulture, "You passed on {0}.", roll.ItemName)
+                : string.Format(CultureInfo.InvariantCulture, "You selected {0} for {1}.",
+                    choice == LootRollChoice.Need ? "Need" : "Greed", roll.ItemName));
 
             if (roll.Answers.Count >= roll.Rollers.Count)
                 Close(roll);
@@ -275,15 +273,15 @@ namespace ZoneEngine_New.Core.Loot
 
             string text;
             if (!inCorpse)
-                text = string.Format(CultureInfo.InvariantCulture, "Roll {0} for {1} ended: the remains are gone.", roll.Id, roll.ItemName);
+                text = string.Format(CultureInfo.InvariantCulture, "The roll for {0} ended: the remains are gone.", roll.ItemName);
             else if (winner != null)
-                text = string.Format(CultureInfo.InvariantCulture, "{0} won {1} with {2} {3} (roll {4}).", winner.Name, roll.ItemName,
-                    won.Choice == LootRollChoice.Need ? "Need" : "Greed", won.Roll, roll.Id);
+                text = string.Format(CultureInfo.InvariantCulture, "{0} won {1} with {2} {3}.", winner.Name, roll.ItemName,
+                    won.Choice == LootRollChoice.Need ? "Need" : "Greed", won.Roll);
             else
             {
                 // Nobody wanted it, or nobody who wanted it could take it: it is ordinary loot in the corpse now.
                 roll.Item.Locked = false;
-                text = string.Format(CultureInfo.InvariantCulture, "Nobody won {0} (roll {1}); it is free to loot.", roll.ItemName, roll.Id);
+                text = string.Format(CultureInfo.InvariantCulture, "Nobody won {0}; it is free to loot.", roll.ItemName);
             }
 
             var result = new LootRollResultMessage

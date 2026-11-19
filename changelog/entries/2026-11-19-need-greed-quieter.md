@@ -1,0 +1,1 @@
+- Changed: Need or Greed is quieter in Team Loot: no more announcement for each item put up for a roll. You only see your own Need, Greed or Pass choice and who won each roll.
