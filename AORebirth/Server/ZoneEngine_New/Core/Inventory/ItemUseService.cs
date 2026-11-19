@@ -188,7 +188,14 @@ namespace ZoneEngine_New.Core.Inventory
                     noFightingTarget ? ActionRefusal.Target : ActionRefusal.Requirements, "use requirements", useTarget.Identity);
             }
 
-            if (UseTargetRules.AppliesToFriendly(can)
+            // A friendly use whose functions all land on the user (a nano crystal upload, an Information Tool) reads the
+            // selection only in its criteria: it does not flag the user for PvP, and the selection must be in reach only
+            // when the item names its own AttackRange (Personal Grid Converter 205224: 3 m from the controller).
+            bool friendlyReachesTarget = UseTargetRules.AppliesToFriendly(can) && UseTargetRules.AnyEffectReachesTarget(item.Definition);
+            bool friendlyNeedsReach = friendlyReachesTarget
+                || (UseTargetRules.AppliesToFriendly(can) && item.Definition.Stats.TryGetValue(CharacterStat.AttackRange, out int ownRange)
+                    && StatCollection.Normalize(ownRange) > 0);
+            if (friendlyNeedsReach
                 && UseTargetRules.CheckFriendlyReach(player, item.Definition, useTarget) is { } reachFailure)
             {
                 UseTargetRules.SendFailure(player, reachFailure, useTarget);
@@ -198,7 +205,7 @@ namespace ZoneEngine_New.Core.Inventory
             // A hostile use aimed at a player, or a friendly one on a PvP-enabled player, flags the user for PvP.
             if (UseTargetRules.IsHostileTargeted(can) && !ReferenceEquals(useTarget, player))
                 Helpers.PvpAttackerFlag.OnHostileAction(player, useTarget);
-            else if (UseTargetRules.AppliesToFriendly(can) && !ReferenceEquals(useTarget, player))
+            else if (friendlyReachesTarget && !ReferenceEquals(useTarget, player))
                 Helpers.PvpAttackerFlag.OnFriendlyAction(player, useTarget);
 
             int instanceId = item.InstanceId;

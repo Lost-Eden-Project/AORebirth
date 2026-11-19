@@ -1,0 +1,1 @@
+- Fixed: Items meant for your selected target, such as pet Trimmers, Android NCU Upgrades and Information Tools, now work on that target. Information Tools work at any distance.

@@ -88,22 +88,16 @@ namespace AORebirth.Modules.Events
         public StatChangeReason Reason { get; init; }
     }
 
-    /// <summary>How a GM command attempt ended (module API 1.16).</summary>
+    /// <summary>How a GM command ended (module API 1.16). Only commands that ran are raised.</summary>
     public enum GmCommandOutcome
     {
         /// <summary>The command ran. It may still have answered with its usage when its arguments were wrong.</summary>
-        Executed,
-
-        /// <summary>The command ran and threw; the GM was told it failed.</summary>
-        Failed,
-
-        /// <summary>The character's GM level is below the command's; nothing ran.</summary>
-        Refused
+        Executed
     }
 
     /// <summary>
-    /// A character ran, or tried to run, a GM command (module API 1.16): typed in vicinity chat or relayed from a chat
-    /// channel or tell. Unknown command names and help requests raise nothing.
+    /// A character ran a GM command (module API 1.16): typed in vicinity chat or relayed from a chat channel or tell.
+    /// Unknown command names, help requests, refusals for GM level and commands that threw raise nothing.
     /// </summary>
     public sealed class GmCommandUsedEvent
     {

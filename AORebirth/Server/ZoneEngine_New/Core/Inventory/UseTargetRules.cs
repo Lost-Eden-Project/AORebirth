@@ -256,6 +256,15 @@ namespace ZoneEngine_New.Core.Inventory
                 && spells.Exists(spell => spell.Requirements.Exists(requirement
                     => (Operator)requirement.Operator is Operator.OnTarget or Operator.OnFightingTarget));
 
+        /// <summary>
+        /// True when an OnUse function lands on someone other than the user (its ApplyOn is not User, Wearer or Self). A
+        /// use whose functions all land on the user (a nano crystal whose ToUse criteria test the target, an Information
+        /// Tool) still reads the selection in its criteria, but neither needs the friendly reach nor flags for PvP.
+        /// </summary>
+        public static bool AnyEffectReachesTarget(ItemTemplate template)
+            => template.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells)
+                && spells.Exists(spell => spell.Target is not ((int)ItemTarget.User or (int)ItemTarget.Wearer or (int)ItemTarget.Self));
+
         /// <summary>True when the ToUse action's criteria aim a check at the target (an OnTarget / OnFightingTarget selector).</summary>
         static bool ToUseCriteriaReadTarget(ItemTemplate template)
             => template.Actions.Exists(action => action.ActionType == (int)ActionType.ToUse

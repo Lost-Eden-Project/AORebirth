@@ -353,7 +353,7 @@ namespace ZoneEngine_New.Core.Modules
         // ---- 1.16: GM commands ----
 
         /// <summary>
-        /// <paramref name="player"/> ran <paramref name="command"/>, or was refused it for GM level. Call after it ran, with
+        /// <paramref name="player"/> ran <paramref name="command"/>. Call after it ran without throwing, with
         /// the playfield it was issued on (a teleport or logout moves the player away).
         /// </summary>
         public static void GmCommandUsed(Playfield? issuedOn, Player player, string command, string[] args, int gmLevel, int requiredGmLevel,

@@ -21,7 +21,8 @@ namespace WorldEngine.Teams
     public sealed class TeamRegistry
     {
         const int FirstTeamId = 0x02800000;
-        const int RaidTeamIdentityCount = 6;
+        // 40 raid groups of 6 (240 members); must match the zone TeamService's RaidTeamLists.
+        const int RaidTeamIdentityCount = 40;
         const int RaidGroupSize = 6;
         static readonly TimeSpan DeclineCooldown = TimeSpan.FromSeconds(30);
         static readonly TimeSpan InvitationLifetime = TimeSpan.FromMinutes(2);
@@ -280,7 +281,7 @@ namespace WorldEngine.Teams
             if (team == null)
             {
                 if (_nextTeamId > int.MaxValue - RaidTeamIdentityCount) return Refused("Team identity space is exhausted.");
-                // Live raid subgroups use consecutive team identities; reserve all six before a possible conversion.
+                // Live raid subgroups use consecutive team identities; reserve them all before a possible conversion.
                 team = new Team(_nextTeamId + 1, invitation.Inviter);
                 _nextTeamId += RaidTeamIdentityCount;
                 _teams[team.Id] = team;
@@ -378,7 +379,7 @@ namespace WorldEngine.Teams
         }
 
         /// <summary>
-        /// The first raid group with room for a joiner (groups fill in order), or -1 when all six are full. A member
+        /// The first raid group with room for a joiner (groups fill in order), or -1 when every group is full. A member
         /// without an index sits in group zero, as the zone lists it.
         /// </summary>
         static int FirstRaidGroupWithRoom(Team team)

@@ -11,7 +11,8 @@ namespace ZoneEngine_New.Core.Teams
 
     public sealed partial class TeamService
     {
-        const int RaidTeamLists = FullCharacterMessage.RaidTeamCount;
+        // 40 raid groups of 6 (240 members). Each group is its own consecutive team identity, so every team reserves 40.
+        const int RaidTeamLists = 40;
         const int RaidGroupSize = 6;
 
         /// <summary>The rows a FullCharacter listed for one session: member → raid list (-1 in an ordinary team).</summary>
@@ -62,8 +63,10 @@ namespace ZoneEngine_New.Core.Teams
                     lists[RaidListOf(team, id)].Add(id);
 
                 message.RaidGroupIndex = RaidListOf(team, viewerId);
-                var teams = new TeamMember[RaidTeamLists][];
-                for (int i = 0; i < lists.Length; i++)
+                // The block carries the first FullCharacterMessage.RaidTeamCount groups; members of later groups stay
+                // unlisted, so the roster publish that follows sends them as ordinary TeamMember rows.
+                var teams = new TeamMember[FullCharacterMessage.RaidTeamCount][];
+                for (int i = 0; i < teams.Length; i++)
                     teams[i] = Members(viewer, lists[i], i, listed);
                 message.Teams = teams;
                 _fullCharacterRosters[viewerId] = new FullCharacterRoster(viewer.Session, team.Id, true, listed);
@@ -89,7 +92,7 @@ namespace ZoneEngine_New.Core.Teams
         static int RaidListOf(Team team, int characterId)
             => team.RaidTeamIndex.GetValueOrDefault(characterId, -1) is int index and >= 0 and < RaidTeamLists ? index : 0;
 
-        /// <summary>The first raid group with room for a joiner (groups fill in order), or -1 when all six are full.</summary>
+        /// <summary>The first raid group with room for a joiner (groups fill in order), or -1 when every group is full.</summary>
         static int FirstRaidGroupWithRoom(Team team)
         {
             System.Span<int> counts = stackalloc int[RaidTeamLists];

@@ -95,7 +95,7 @@ actions on it return false.
 | `CombatResolved` | A hit or miss involving at least one player was resolved (1.6). |
 | `MissionCompleted` | A player completed a mission and its reward was committed (1.12; see Mission completion). |
 | `PlayerStatChanged` | The stored credits, experience, level, alien experience or alien level of a player in play changed (1.16; see Audited stats). |
-| `GmCommandUsed` | A character ran a GM command, or was refused one for its GM level (1.16; see GM command audit). |
+| `GmCommandUsed` | A character ran a GM command (1.16; see GM command audit). |
 
 From 1.6 every event carries `Timestamp`, when the engine raised it on `Clock`. An event a client message caused
 also carries `RequestTimestamp`: that message's `MessageSample.Timestamp`, so an observer can match the two exactly,
@@ -473,8 +473,8 @@ path the engine does not label; for an audit it is the one worth a second look. 
 channel or tell: `CharacterId` (the issuer), `PlayfieldId` (where it was issued), `Command` (without the '.'), `Args`
 (as typed, split on whitespace), `GmLevel` and `RequiredGmLevel`, `Target` (what the issuer had selected, which most
 commands act on; empty for nothing or themselves), `Outcome`, `Timestamp` and `RequestTimestamp`. `Outcome` is
-`Executed` (the command ran; it may still have answered with its usage), `Failed` (it threw) or `Refused` (the GM level
-was too low, so nothing ran: a player probing for commands). Unknown command names and help requests raise nothing.
+always `Executed` (the command ran; it may still have answered with its usage). Unknown command names, help requests,
+refusals for GM level and commands that threw raise nothing.
 What the command changed shows in the other events with reason `Gm` (`PlayerStatChanged`), so a module can tie a GM's
 `.set cash` to the credits it gave. The event needs no capability.
 

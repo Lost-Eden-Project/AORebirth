@@ -339,8 +339,6 @@ namespace ZoneEngine_New.Core.Commands
             if (gmLevel < command.RequiredGmLevel)
             {
                 GmCommandFeedback.SendError(session, player, "Insufficient GM level.");
-                Modules.ModuleHooks.GmCommandUsed(player.Playfield, player, command.Name, args, gmLevel, command.RequiredGmLevel,
-                    AORebirth.Modules.Events.GmCommandOutcome.Refused);
                 return;
             }
 
@@ -352,7 +350,6 @@ namespace ZoneEngine_New.Core.Commands
             }
 
             Playfield? issuedOn = player.Playfield;
-            var outcome = AORebirth.Modules.Events.GmCommandOutcome.Executed;
             try
             {
                 using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Gm))
@@ -360,11 +357,13 @@ namespace ZoneEngine_New.Core.Commands
             }
             catch (Exception exception)
             {
-                outcome = AORebirth.Modules.Events.GmCommandOutcome.Failed;
                 context.SendUsage(string.Format(CultureInfo.InvariantCulture, "Command failed: {0}", exception.Message));
+                return;
             }
 
-            Modules.ModuleHooks.GmCommandUsed(issuedOn, player, command.Name, args, gmLevel, command.RequiredGmLevel, outcome);
+            // Only a command that ran is audited; a refusal for GM level or a throw raises nothing.
+            Modules.ModuleHooks.GmCommandUsed(issuedOn, player, command.Name, args, gmLevel, command.RequiredGmLevel,
+                AORebirth.Modules.Events.GmCommandOutcome.Executed);
         }
     }
 }

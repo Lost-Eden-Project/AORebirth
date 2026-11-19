@@ -1,0 +1,1 @@
+- Fixed: Items between two quality levels now get the same values the game client shows, with halves rounding up: a QL 30 Belt Component Platform has 3 slots instead of 2, and some requirements and bonuses move by one point.
