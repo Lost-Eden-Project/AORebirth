@@ -332,7 +332,9 @@ namespace ZoneEngine_New.Core.Quests
 
         /// <summary>
         /// Completes an active quest on request (an NPC turn-in): saves it, removes the journal entry, grants the
-        /// reward and assigns NextStep, exactly as a finished kill objective does. False when it is not active.
+        /// reward and assigns NextStep, exactly as a finished kill objective does. False when it is not active. A
+        /// Quests.json quest completes on the tick with its transactions queued behind it; a generated mission's earn
+        /// is read from storage off the tick first, so it reports true while that is in flight and pays moments later.
         /// </summary>
         public bool TryComplete(Player player, string questId, out string result)
         {
@@ -349,8 +351,18 @@ namespace ZoneEngine_New.Core.Quests
                 return false;
             }
             Complete(player, quest);
-            result = quest.State == QuestState.Completed ? "Quest completed." : "Mission reward remains pending delivery.";
-            return quest.State == QuestState.Completed;
+            if (quest.State == QuestState.Completed)
+            {
+                result = "Quest completed.";
+                return true;
+            }
+            if (quest.IsCommitInFlight(_now().Ticks))
+            {
+                result = "Mission completion is being stored.";
+                return true;
+            }
+            result = "Mission reward remains pending delivery.";
+            return false;
         }
 
         /// <summary>

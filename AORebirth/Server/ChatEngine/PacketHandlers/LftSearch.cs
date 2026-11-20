@@ -250,20 +250,6 @@ namespace ChatEngine.PacketHandlers
              * ========================================================
              */
 
-            int searcherLevel =
-                ReadStat(
-                    client.Character.CharacterId,
-                    LevelStatId);
-
-            if (searcherLevel < 1)
-            {
-                searcherLevel = 1;
-            }
-            else if (searcherLevel > 220)
-            {
-                searcherLevel = 220;
-            }
-
             int searcherSide =
                 client.Character.CharacterSide;
 
@@ -278,7 +264,6 @@ namespace ChatEngine.PacketHandlers
              */
 
             int skippedOffline = 0;
-            int skippedLevel = 0;
             int skippedSide = 0;
             int skippedProfession = 0;
             int skippedLocation = 0;
@@ -415,28 +400,6 @@ namespace ChatEngine.PacketHandlers
 
                         continue;
                     }
-                }
-
-                /*
-                 * ====================================================
-                 * LEVEL FILTER
-                 * ====================================================
-                 */
-
-                if (!TeamLevelRanges.IsCompatible(
-                        searcherLevel,
-                        candidateLevel))
-                {
-                    skippedLevel++;
-
-                    client.Server.Debug(
-                        client,
-                        "LFT LEVEL REJECT: candidate={0} candidateLevel={1} searcherLevel={2}",
-                        candidateClient.Character.characterName,
-                        candidateLevel,
-                        searcherLevel);
-
-                    continue;
                 }
 
                 /*
@@ -594,19 +557,17 @@ namespace ChatEngine.PacketHandlers
 
             client.Server.Info(
                 client,
-                "{0} >> LftSearch: f0={1} f1={2} f2={3} f3={4} matches={5} searcherLvl={6} searcherSide={7} searcherPF={8} registry={9} skipOffline={10} skipLevel={11} skipSide={12} skipProfession={13} skipLocation={14}",
+                "{0} >> LftSearch: f0={1} f1={2} f2={3} f3={4} matches={5} searcherSide={6} searcherPF={7} registry={8} skipOffline={9} skipSide={10} skipProfession={11} skipLocation={12}",
                 client.Character.characterName,
                 filter0,
                 filter1,
                 filter2,
                 filter3,
                 matches.Count,
-                searcherLevel,
                 searcherSide,
                 searcherPlayfield,
                 registryCount,
                 skippedOffline,
-                skippedLevel,
                 skippedSide,
                 skippedProfession,
                 skippedLocation);

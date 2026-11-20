@@ -10,12 +10,17 @@ using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.Playfield.Locality;
 using ZoneEngine_New.Core.Quests.Dungeons;
 
-/// <summary>A persisted, owner-bound mission item, never a template OnUse spell.</summary>
+/// <summary>
+/// A persisted, owner-bound mission item, never a template OnUse spell. Collecting it is two steps: the collect or
+/// earn callback queues the mission transaction in the player's write-behind lane and returns true, and the quest
+/// service calls <see cref="FinishPickup"/> or <see cref="FinishFind"/> on this playfield's tick once it has landed.
+/// </summary>
 public sealed class MissionObjectiveItem : WorldItem
 {
     readonly Func<Player, MissionObjectiveItem, bool> _collect;
     readonly object _pickupGate = new();
     bool _collected;
+    bool _pending;
 
     public MissionObjectiveItem(MissionItemObjectiveBinding binding, ItemTemplate template,
         Func<Player, MissionObjectiveItem, bool> collect)
@@ -30,13 +35,14 @@ public sealed class MissionObjectiveItem : WorldItem
 
     public MissionItemObjectiveBinding Binding { get; }
 
+    /// <summary>True when the collection was queued; <see cref="FinishPickup"/> then publishes or releases it.</summary>
     public bool TryPickup(Player player)
     {
         ArgumentNullException.ThrowIfNull(player);
         lock (_pickupGate)
         {
             if (Binding.IsSourceItem || (MissionRollType)Binding.MissionType is not (MissionRollType.FindItem or MissionRollType.FindItemReturn)
-                || _collected || player.IsDead || player.IsPersistenceQuarantined || player.Session == null
+                || _collected || _pending || player.IsDead || player.IsPersistenceQuarantined || player.Session == null
                 || player.Identity.Instance != Binding.OwnerId || Playfield is not QuestDungeonPlayfield dungeon
                 || !ReferenceEquals(player.Playfield, dungeon)
                 || !string.Equals(dungeon.QuestId, Binding.QuestId, StringComparison.Ordinal)
@@ -49,12 +55,35 @@ public sealed class MissionObjectiveItem : WorldItem
             if (!_collect(player, this))
                 return false;
 
+            _pending = true;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The queued collection landed (<paramref name="collected"/>) or did not: the item leaves the world for the
+    /// player's inventory, or is free to be picked up again. On this playfield's tick.
+    /// </summary>
+    public void FinishPickup(Player player, bool collected)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        lock (_pickupGate)
+        {
+            if (!_pending)
+                return;
+            _pending = false;
+            if (!collected || Playfield is not QuestDungeonPlayfield dungeon)
+                return;
+
             _collected = true;
+            var registry = dungeon.GetRequiredService<DynelRegistry>();
             try
             {
                 var owned = player.Inventory.Inventory.Content.Single(pair => pair.Value.Identity == Identity);
+                Network.IZoneSession session = player.Session
+                    ?? throw new InvalidOperationException("The collector is no longer connected.");
                 // Both retained pickup traces acknowledge the original world identity, with a zero target and placement.
-                player.Session.Send(new ContainerAddItem
+                session.Send(new ContainerAddItem
                 {
                     Identity = player.Identity, Source = Identity, Target = Identity.None, Slot = 0
                 });
@@ -63,11 +92,10 @@ public sealed class MissionObjectiveItem : WorldItem
                 ownedUpdate.OwnerInstance = player.Identity.Instance;
                 // The two bytes after the state machine: the inventory id (1), then the slot.
                 ownedUpdate.Unknown2 = (short)((1 << 8) | checked((byte)owned.Key));
-                player.Session.Send(ownedUpdate);
+                session.Send(ownedUpdate);
                 var locality = dungeon.GetRequiredService<PlayfieldLocality>();
                 locality.UnregisterDynel(this, transferredTo: player);
                 registry.UnregisterExact(this);
-                return true;
             }
             catch (Exception exception)
             {
@@ -75,14 +103,14 @@ public sealed class MissionObjectiveItem : WorldItem
                 player.QuarantinePersistence();
                 player.Session?.Close();
                 dungeon.GetService<IZoneLogger>()?.Error(exception, "Committed objective pickup publication failed; reload required.");
-                return false;
             }
         }
     }
 
     /// <summary>
-    /// Find Item: the owner selected this item (LookAt). When <paramref name="earn"/> completes the mission the item
-    /// leaves the world for everyone; it is never picked up. Return an item still needs <see cref="TryPickup"/>.
+    /// Find Item: the owner selected this item (LookAt). <paramref name="earn"/> queues the mission's earn and returns
+    /// true; once it lands (<see cref="FinishFind"/>) the item leaves the world for everyone; it is never picked up.
+    /// Return an item still needs <see cref="TryPickup"/>.
     /// </summary>
     public bool TryFindByTarget(Player player, Func<Player, MissionObjectiveItem, bool> earn)
     {
@@ -91,7 +119,7 @@ public sealed class MissionObjectiveItem : WorldItem
         lock (_pickupGate)
         {
             if (Binding.IsSourceItem || (MissionRollType)Binding.MissionType != MissionRollType.FindItem
-                || _collected || player.IsDead || player.Identity.Instance != Binding.OwnerId
+                || _collected || _pending || player.IsDead || player.Identity.Instance != Binding.OwnerId
                 || Playfield is not QuestDungeonPlayfield dungeon || !ReferenceEquals(player.Playfield, dungeon)
                 || !string.Equals(dungeon.QuestId, Binding.QuestId, StringComparison.Ordinal))
                 return false;
@@ -100,10 +128,25 @@ public sealed class MissionObjectiveItem : WorldItem
             if (!registry.TryGet(Identity, out Dynel? registered) || !ReferenceEquals(registered, this) || !earn(player, this))
                 return false;
 
+            _pending = true;
+            return true;
+        }
+    }
+
+    /// <summary>The queued Find Item earn landed (<paramref name="earned"/>) or did not. On this playfield's tick.</summary>
+    public void FinishFind(bool earned)
+    {
+        lock (_pickupGate)
+        {
+            if (!_pending)
+                return;
+            _pending = false;
+            if (!earned || Playfield is not QuestDungeonPlayfield dungeon)
+                return;
+
             _collected = true;
             dungeon.GetRequiredService<PlayfieldLocality>().UnregisterDynel(this);
-            registry.UnregisterExact(this);
-            return true;
+            dungeon.GetRequiredService<DynelRegistry>().UnregisterExact(this);
         }
     }
 

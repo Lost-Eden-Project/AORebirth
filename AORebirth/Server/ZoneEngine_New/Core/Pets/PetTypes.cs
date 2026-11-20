@@ -28,6 +28,12 @@ namespace ZoneEngine_New.Core.Pets
         /// <summary>The tower slot (service towers and other pets of type 5000-5999).</summary>
         public const int TowerSlot = 5;
 
+        /// <summary>The social slot (pets of type 4000-4999).</summary>
+        public const int SocialSlot = 4;
+
+        /// <summary>A social pet does not fight: it refuses attack and guard orders and never picks an enemy.</summary>
+        public static bool NeverFights(int petType) => Slot(petType) == SocialSlot;
+
         /// <summary>A tower stays where it was put: it does not zone with its owner.</summary>
         public static bool StaysBehind(int petType) => Slot(petType) == TowerSlot;
 

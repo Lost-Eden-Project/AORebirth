@@ -270,6 +270,20 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// </summary>
         void JoinTeamQuest(Player member, string questId, string rollerName)
         {
+            if (member.IsPersistenceQuarantined || member.Session == null || member.Playfield == null || !member.Inventory.IsHydrated)
+                return;
+            // Before the gate: a hard flush drives the member's lane, whose writer takes that gate to finish.
+            try
+            {
+                _flush.HardFlush(member);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, string.Format(CultureInfo.InvariantCulture, "Team mission join failed char={0} quest={1}",
+                    member.Identity.Instance, questId));
+                return;
+            }
+
             lock (member.PersistenceGate)
             {
                 if (member.IsPersistenceQuarantined || member.Session == null || member.Playfield == null || !member.Inventory.IsHydrated)
@@ -294,7 +308,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
                 try
                 {
-                    _flush.HardFlush(member);
                     Item key = CreateKey();
                     if (!InventoryGrantPlan.TryCreate(member, [key], out InventoryGrantPlan plan))
                     {
@@ -397,6 +410,20 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             QuestDungeonTemplate input = source.Dungeon ?? throw new ArgumentException("The quest has no dungeon.", nameof(source));
             if (input.Problem(source.Action) is string problem)
                 return problem;
+
+            if (player.IsPersistenceQuarantined || player.Session == null || player.Playfield == null || !player.Inventory.IsHydrated)
+                return "Mission acceptance is unavailable right now.";
+            // Before the gate: a hard flush drives the player's lane, whose writer takes that gate to finish.
+            try
+            {
+                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.flush", player.Identity.Instance))
+                    _flush.HardFlush(player);
+            }
+            catch (DatabaseCommitOutcomeUnknownException exception)
+            {
+                Quarantine(player, exception);
+                return "Mission acceptance needs to be reconciled; please reconnect.";
+            }
 
             lock (player.PersistenceGate)
             {
@@ -595,8 +622,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
             try
             {
-                using (ZoneEngine_New.Core.Metrics.TickStallWatch.Enter("mission.accept.flush", player.Identity.Instance))
-                    _flush.HardFlush(player);
                 Item key = CreateKey();
                 MissionItemObjectiveBinding? sourceBinding = parameters.ObjectiveTool;
                 Item? sourceItem = sourceBinding == null ? null : _items.Create(sourceBinding.LowId,
@@ -813,6 +838,19 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             if (key == null || duplicator == null || ReferenceEquals(key, duplicator))
                 return false;
 
+            if (player.IsPersistenceQuarantined || player.IsDead || player.Session == null)
+                return true;
+            // Before the gate: a hard flush drives the player's lane, whose writer takes that gate to finish.
+            try
+            {
+                _flush.HardFlush(player);
+            }
+            catch (DatabaseCommitOutcomeUnknownException exception)
+            {
+                Quarantine(player, exception);
+                return true;
+            }
+
             lock (player.PersistenceGate)
             {
                 if (player.IsPersistenceQuarantined || player.IsDead || player.Session == null)
@@ -823,7 +861,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
                 try
                 {
-                    _flush.HardFlush(player);
                     Item copy = CreateKey();
                     if (!InventoryGrantPlan.TryCreate(player, [copy], out InventoryGrantPlan plan))
                     {

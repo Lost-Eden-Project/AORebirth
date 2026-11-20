@@ -1281,7 +1281,25 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
+        /// The zone-change save, before <see cref="LeaveForTransfer(Player)"/>: in-progress actions end and offered
+        /// trade items go back (as on logout), then the character's lane is drained. Call it on this playfield's tick
+        /// without the character's persistence gate or session lock: a writer holding the lane takes the gate and may
+        /// close the session, so waiting for the lane under either would deadlock.
+        /// </summary>
+        public void SaveBeforeTransfer(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            if (!ReferenceEquals(player.Playfield, _playfield))
+                throw new InvalidOperationException("Player is not on this playfield.");
+
+            player.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
+            _trades.Cancel(player, "left playfield");
+            _flush.HardFlush(player);
+        }
+
+        /// <summary>
         /// Soft-leave for cross-playfield transfer. Keeps <see cref="PlayfieldManager"/> registration and session.
+        /// The caller has saved first (<see cref="SaveBeforeTransfer"/>); this runs under the persistence gate.
         /// </summary>
         public void LeaveForTransfer(Player player)
         {
@@ -1307,10 +1325,6 @@ namespace ZoneEngine_New.Core.Playfield
 
             player.SetFightingTarget(Identity.None);
             player.SetTarget(Identity.None);
-
-            player.InterruptTimedActions(TimedActionInterrupt.LeavePlayfield);
-            _trades.Cancel(player, "left playfield");
-            _flush.HardFlush(player);
 
             PlayfieldLocality locality = _playfield.GetRequiredService<PlayfieldLocality>();
             locality.DeactivatePlayerVisibility(player);

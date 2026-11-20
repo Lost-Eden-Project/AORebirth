@@ -1,0 +1,1 @@
+- Fixed: Social pets now refuse attack and guard orders and no longer join fights.

@@ -40,6 +40,25 @@ namespace ZoneEngine_New.Core.Playfield
         public void Depart()
         {
             Source.RequireTransferTick();
+            // Save first, outside both locks: a writer holding the character's lane takes this gate and may close the
+            // session, so the hard flush must never wait for the lane under either (lane first, then gate).
+            if (_phase == Phase.Scheduled && ReferenceEquals(Player.Playfield, Source) && Source.IsAuthoritativePlayer(Player)
+                && !Source.IsDisposed && !Destination.IsDisposed && OwnsSession())
+            {
+                try
+                {
+                    Source.GetRequiredService<SpawnService>().SaveBeforeTransfer(Player);
+                }
+                catch
+                {
+                    // Nothing has left the source yet: the character stays where they are.
+                    lock (Player.PersistenceGate)
+                    lock (Session)
+                        if (_phase == Phase.Scheduled) Finish(Phase.Abandoned);
+                    throw;
+                }
+            }
+
             // The write-behind failure path may close the session while holding this gate.
             // Take the same aggregate-before-session order; never wait for it under a session lock.
             lock (Player.PersistenceGate)

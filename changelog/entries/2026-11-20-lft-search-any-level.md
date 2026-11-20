@@ -1,0 +1,1 @@
+- Changed: Looking for Team searches now show players of every level instead of only those within your team level range.

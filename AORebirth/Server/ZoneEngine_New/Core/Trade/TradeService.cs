@@ -674,22 +674,24 @@ namespace ZoneEngine_New.Core.Trade
 
             int initiatorCredits = session.InitiatorOffer.Credits;
             int partnerCredits = session.PartnerOffer.Credits;
-            bool durable = false;
+            bool applied = false;
             var deliveries = new List<Delivery>();
             var tradedBags = new List<Identity>();
             try
             {
-                _flush.WithExclusivePlayers(initiator, partner, () =>
+                WithGates(initiator, partner, () =>
                 {
                     PlanDeliveries(session.InitiatorOffer.Items.Values, partner, deliveries);
                     PlanDeliveries(session.PartnerOffer.Items.Values, initiator, deliveries);
                     int initiatorCash = checked(initiator.Stats.GetOrZero(CharacterStat.Cash) - initiatorCredits + partnerCredits);
                     int partnerCash = checked(partner.Stats.GetOrZero(CharacterStat.Cash) - partnerCredits + initiatorCredits);
-                    PersistPlan(initiator, initiatorCash, partner, partnerCash, deliveries, [], Identity.None);
-                    durable = true;
+                    TradePlan plan = PlanRows(initiator, initiatorCash, partner, partnerCash, deliveries, [], Identity.None);
+                    applied = true;
                     session.InitiatorOffer.DrainAll();
                     session.PartnerOffer.DrainAll();
                     ApplyDeliveries(deliveries);
+                    // One transaction for both, off the tick, in both lanes: after everything either already holds.
+                    _flush.EnqueueJoint(initiator, partner, () => PersistPlan(plan));
                     // Neither side keeps a page for a bag that changed hands; its holder loads the contents on first use.
                     // A traded bag loses its name: the giver's is dropped and the receiver starts with none.
                     foreach (Delivery delivery in deliveries)
@@ -709,7 +711,7 @@ namespace ZoneEngine_New.Core.Trade
             }
             catch (Exception exception)
             {
-                FailedCommit(session, exception, durable);
+                FailedCommit(session, exception, applied);
                 return;
             }
 
@@ -891,120 +893,186 @@ namespace ZoneEngine_New.Core.Trade
         /// </summary>
         sealed record Delivery(Item Item, Player Receiver, Container Page, int Slot, Item? MergeTarget = null, int MergeSlot = 0);
 
-        void PersistPlan(Player first, int firstCash, Player? second, int secondCash,
-            List<Delivery> deliveries, IReadOnlyList<Item> retired, Identity graveyard,
-            CharacterStat firstCurrency = CharacterStat.Cash, int firstCurrencyValue = 0)
+        /// <summary>Takes the participants' persistence gates in id order around a tick-side plan and apply; no I/O inside.</summary>
+        internal static void WithGates(Player first, Player? second, Action action)
         {
-            var players = second == null ? new[] { first } : new[] { first, second };
-            var pending = players.Select(p => p.Inventory.TakeDirty()).ToArray();
-            var nanos = players.Select(p => p.DrainDirtyUploadedNanos()).ToArray();
-            try
+            ArgumentNullException.ThrowIfNull(first);
+            ArgumentNullException.ThrowIfNull(action);
+            Player low = second != null && second.Identity.Instance < first.Identity.Instance ? second : first;
+            Player? high = second == null ? null : ReferenceEquals(low, first) ? second : first;
+            lock (low.PersistenceGate)
             {
-                var inserts = new Dictionary<int, ItemInstanceRecord>();
-                var updates = new Dictionary<int, ItemLocationUpdate>();
-                foreach (var flush in pending)
-                {
-                    if (flush == null) continue;
-                    foreach (var insert in flush.Inserts) inserts[insert.InstanceId] = insert;
-                    foreach (var update in flush.Updates) updates[update.InstanceId] = update;
-                }
-                var stackTotals = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
-                foreach (Delivery delivery in deliveries)
-                {
-                    if (delivery.MergeTarget == null)
-                    {
-                        Place(delivery.Item, delivery.Page.Identity, delivery.Slot);
-                        continue;
-                    }
-
-                    // A merged item gives up its own row (a traded stack is retired, a minted one never written)
-                    // and its count lands on the stack's row.
-                    if (delivery.Item.IsPersisted)
-                        Place(delivery.Item, new Identity { Type = IdentityType.None, Instance = delivery.Receiver.Identity.Instance },
-                            delivery.Item.InstanceId);
-                    else
-                    {
-                        inserts.Remove(delivery.Item.InstanceId);
-                        updates.Remove(delivery.Item.InstanceId);
-                    }
-
-                    stackTotals[delivery.MergeTarget] = stackTotals.GetValueOrDefault(delivery.MergeTarget, delivery.MergeTarget.StackCount)
-                        + delivery.Item.StackCount;
-                }
-
-                foreach (Delivery delivery in deliveries)
-                {
-                    if (delivery.MergeTarget is not Item target || !stackTotals.TryGetValue(target, out int total))
-                        continue;
-                    if (target.InstanceId <= 0 || !target.IsPersisted || total > InventoryStacking.MaxStackCount)
-                        throw new InvalidOperationException("Invalid trade stack merge.");
-                    updates[target.InstanceId] = new ItemLocationUpdate(target.InstanceId, (int)delivery.Page.Identity.Type,
-                        delivery.Page.Identity.Instance, delivery.MergeSlot, total);
-                    inserts.Remove(target.InstanceId);
-                }
-
-                foreach (Item item in retired)
-                {
-                    inserts.Remove(item.InstanceId);
-                    updates.Remove(item.InstanceId);
-                    if (item.IsPersisted) Place(item, graveyard, item.InstanceId);
-                }
-                var characters = new List<TradeCharacterWrite>
-                {
-                    firstCurrency != CharacterStat.Cash
-                        ? new(first.Identity.Instance, firstCash, nanos[0], (int)firstCurrency, firstCurrencyValue)
-                        : new(first.Identity.Instance, firstCash, nanos[0])
-                };
-                if (second != null) characters.Add(new(second.Identity.Instance, secondCash, nanos[1]));
-                _persistence.Persist(new TradePersistenceBatch(inserts.Values.ToArray(), updates.Values.ToArray(), characters));
-                foreach (var flush in pending) flush?.MarkNewlyPersisted();
-
-                void Place(Item item, Identity container, int slot)
-                {
-                    if (item.InstanceId <= 0) throw new InvalidOperationException("Trade item has no durable instance id.");
-                    inserts.Remove(item.InstanceId);
-                    updates.Remove(item.InstanceId);
-                    if (item.IsPersisted)
-                        updates[item.InstanceId] = new ItemLocationUpdate(item.InstanceId, (int)container.Type, container.Instance, slot);
-                    else
-                        inserts[item.InstanceId] = new ItemInstanceRecord
-                        {
-                            InstanceId = item.InstanceId, ContainerType = (int)container.Type,
-                            ContainerInstance = container.Instance, ContainerPlacement = slot,
-                            ItemType = item.Identity.Type != IdentityType.None ? (int)item.Identity.Type : item.Definition.ItemType,
-                            LowId = item.LowId, HighId = item.HighId, Quality = item.Quality,
-                            StackCount = item.StackCount, Source = item.Source
-                        };
-                }
-            }
-            catch (DatabaseCommitOutcomeUnknownException)
-            {
-                // Do not requeue a transaction whose outcome is unknown.
-                foreach (Player player in players) player.QuarantinePersistence();
-                throw;
-            }
-            catch (DatabaseStateConflictException)
-            {
-                // Rolled back, but a participant's pending rows contradict the database; a retry cannot succeed.
-                foreach (Player player in players) player.QuarantinePersistence();
-                throw;
-            }
-            catch
-            {
-                for (int i = 0; i < players.Length; i++)
-                {
-                    if (pending[i] != null) players[i].Inventory.RestoreDirty(pending[i]!);
-                    players[i].RestoreDirtyUploadedNanos(nanos[i]);
-                }
-                throw;
+                if (high == null)
+                    action();
+                else
+                    lock (high.PersistenceGate) action();
             }
         }
 
-        void FailedCommit(TradeSession session, Exception exception, bool durable)
+        enum TradeRowKind
         {
-            _logger.Error(exception, "Trade persistence failed; completion was not acknowledged.");
-            if (durable || exception is DatabaseCommitOutcomeUnknownException or DatabaseStateConflictException
-                || session.Initiator.IsPersistenceQuarantined || session.Partner?.IsPersistenceQuarantined == true)
+            /// <summary>The item goes to a place (an insert for an item without a row, a move for one with).</summary>
+            Place,
+
+            /// <summary>The item's row moves to a graveyard.</summary>
+            Retire,
+
+            /// <summary>The item never gets a row (a never-stored item merged away).</summary>
+            Drop
+        }
+
+        /// <summary>One row of a trade plan; <paramref name="Owner"/>'s lane writes it.</summary>
+        sealed record PlannedTradeRow(TradeRowKind Kind, Item Item, Player Owner, bool HadRow, Identity Container, int Placement, int Count);
+
+        /// <summary>
+        /// What a trade commit writes, decided on the tick from memory as it stands then (<see cref="PlanRows"/>) and
+        /// stored off the tick (<see cref="PersistPlan"/>). Each item is recorded with whether it had a row at the plan,
+        /// and an item the plan inserts counts as persisted from then on: its insert runs ahead of anything that moves or
+        /// retires it later in its receiver's lane. Kept across retries of a transient failure.
+        /// </summary>
+        sealed class TradePlan
+        {
+            public TradePlan(Player first, Player? second, List<TradeCharacterWrite> characters, long sequence)
+            {
+                First = first;
+                Second = second;
+                Characters = characters;
+                Sequence = sequence;
+                SecondWrites = second == null ? null : new InventoryWriteSet();
+            }
+
+            public Player First { get; }
+            public Player? Second { get; }
+            public List<PlannedTradeRow> Rows { get; } = new();
+            public List<TradeCharacterWrite> Characters { get; }
+            public long Sequence { get; }
+            public InventoryWriteSet FirstWrites { get; } = new();
+            public InventoryWriteSet? SecondWrites { get; }
+
+            public InventoryWriteSet WritesFor(Player owner) => ReferenceEquals(owner, First) ? FirstWrites : SecondWrites!;
+
+            public InventoryWriteSet? OtherWritesFor(Player owner) => ReferenceEquals(owner, First) ? SecondWrites : FirstWrites;
+        }
+
+        /// <summary>
+        /// Decides the trade's rows on the tick, before the deliveries are applied in memory: which items are inserted
+        /// (no row yet; they count as persisted from here on), moved, retired to a graveyard or never written.
+        /// </summary>
+        static TradePlan PlanRows(Player first, int firstCash, Player? second, int secondCash,
+            List<Delivery> deliveries, IReadOnlyList<Item> retired, Identity graveyard,
+            CharacterStat firstCurrency = CharacterStat.Cash, int firstCurrencyValue = 0)
+        {
+            var characters = new List<TradeCharacterWrite>
+            {
+                firstCurrency != CharacterStat.Cash
+                    ? new(first.Identity.Instance, firstCash, [], (int)firstCurrency, firstCurrencyValue)
+                    : new(first.Identity.Instance, firstCash, [])
+            };
+            if (second != null) characters.Add(new(second.Identity.Instance, secondCash, []));
+            var plan = new TradePlan(first, second, characters, PlayerInventory.DirtySequence);
+
+            var stackTotals = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
+            foreach (Delivery delivery in deliveries)
+            {
+                Item item = delivery.Item;
+                if (item.InstanceId <= 0) throw new InvalidOperationException("Trade item has no durable instance id.");
+                if (delivery.MergeTarget == null)
+                {
+                    plan.Rows.Add(new(TradeRowKind.Place, item, delivery.Receiver, item.IsPersisted, delivery.Page.Identity, delivery.Slot, item.StackCount));
+                    item.IsPersisted = true;
+                    continue;
+                }
+
+                // A merged item gives up its own row (a traded stack is retired, a minted one never written)
+                // and its count lands on the stack's row.
+                plan.Rows.Add(item.IsPersisted
+                    ? new(TradeRowKind.Retire, item, delivery.Receiver, true,
+                        new Identity { Type = IdentityType.None, Instance = delivery.Receiver.Identity.Instance }, item.InstanceId, 0)
+                    : new(TradeRowKind.Drop, item, delivery.Receiver, false, Identity.None, 0, 0));
+                stackTotals[delivery.MergeTarget] = stackTotals.GetValueOrDefault(delivery.MergeTarget, delivery.MergeTarget.StackCount)
+                    + item.StackCount;
+            }
+
+            foreach (Delivery delivery in deliveries)
+            {
+                if (delivery.MergeTarget is not Item target || !stackTotals.Remove(target, out int total))
+                    continue;
+                if (target.InstanceId <= 0 || !target.IsPersisted || total > InventoryStacking.MaxStackCount)
+                    throw new InvalidOperationException("Invalid trade stack merge.");
+                plan.Rows.Add(new(TradeRowKind.Place, target, delivery.Receiver, true, delivery.Page.Identity, delivery.MergeSlot, total));
+            }
+
+            foreach (Item item in retired)
+            {
+                if (item.InstanceId <= 0) throw new InvalidOperationException("Trade item has no durable instance id.");
+                plan.Rows.Add(item.IsPersisted
+                    ? new(TradeRowKind.Retire, item, first, true, graveyard, item.InstanceId, 0)
+                    : new(TradeRowKind.Drop, item, first, false, Identity.None, 0, 0));
+            }
+            return plan;
+        }
+
+        /// <summary>
+        /// The queued trade transaction, in the participants' lanes: the plan's rows folded with each participant's
+        /// dirty inventory taken now (an entry made since the plan wins; one made before it, or one a giver still holds
+        /// for an item that changed hands, is overridden), their uploaded nanos and final cash, in one transaction.
+        /// </summary>
+        void PersistPlan(TradePlan plan)
+        {
+            Player[] players = plan.Second == null ? [plan.First] : [plan.First, plan.Second];
+            WithGates(plan.First, plan.Second, () =>
+            {
+                foreach (Player player in players)
+                {
+                    PlayerInventory.InventoryDirtyFlush? taken = player.Inventory.TakeDirty();
+                    taken?.MarkNewlyPersisted();
+                    plan.WritesFor(player).Fold(taken, player.DrainDirtyUploadedNanos());
+                }
+            });
+
+            // An item that changed hands leaves nothing behind in its giver's writes.
+            foreach (PlannedTradeRow row in plan.Rows)
+                plan.OtherWritesFor(row.Owner)?.Drop(row.Item.InstanceId);
+            foreach (PlannedTradeRow row in plan.Rows)
+            {
+                InventoryWriteSet writes = plan.WritesFor(row.Owner);
+                switch (row.Kind)
+                {
+                    case TradeRowKind.Place:
+                        writes.Place(row.Item, row.HadRow, row.Container, row.Placement, row.Count, plan.Sequence);
+                        break;
+                    case TradeRowKind.Retire:
+                        writes.Retire(row.Item, row.HadRow, row.Container, row.Placement);
+                        break;
+                    default:
+                        writes.Drop(row.Item.InstanceId);
+                        break;
+                }
+            }
+
+            var inserts = new List<ItemInstanceRecord>(plan.FirstWrites.Inserts);
+            var updates = new List<ItemLocationUpdate>(plan.FirstWrites.Locations);
+            var characters = new List<TradeCharacterWrite>
+            {
+                plan.Characters[0] with { UploadedNanoIds = plan.FirstWrites.UploadedNanos }
+            };
+            if (plan.SecondWrites != null)
+            {
+                inserts.AddRange(plan.SecondWrites.Inserts);
+                updates.AddRange(plan.SecondWrites.Locations);
+                characters.Add(plan.Characters[1] with { UploadedNanoIds = plan.SecondWrites.UploadedNanos });
+            }
+            _persistence.Persist(new TradePersistenceBatch(inserts, updates, characters));
+        }
+
+        /// <summary>
+        /// The tick-side plan or apply threw. Once memory changed (<paramref name="applied"/>) both aggregates must be
+        /// reloaded from storage; before that nothing happened, and the window stays open to try again.
+        /// </summary>
+        void FailedCommit(TradeSession session, Exception exception, bool applied)
+        {
+            _logger.Error(exception, "Trade commit failed; completion was not acknowledged.");
+            if (applied || session.Initiator.IsPersistenceQuarantined || session.Partner?.IsPersistenceQuarantined == true)
             {
                 session.Initiator.QuarantinePersistence();
                 session.Partner?.QuarantinePersistence();
@@ -1017,10 +1085,8 @@ namespace ZoneEngine_New.Core.Trade
             }
             session.Committing = false;
             session.ClearAcceptances();
-            _flush.NotifyDirty(session.Initiator);
-            if (session.Partner != null) _flush.NotifyDirty(session.Partner);
-            Tell(session.Initiator, "Trade failed: persistence was not committed. Please try again.");
-            if (session.Partner != null) Tell(session.Partner, "Trade failed: persistence was not committed. Please try again.");
+            Tell(session.Initiator, "Trade failed: it could not be planned. Please try again.");
+            if (session.Partner != null) Tell(session.Partner, "Trade failed: it could not be planned. Please try again.");
         }
 
         void CommitShop(Player player, TradeSession session)
@@ -1151,29 +1217,30 @@ namespace ZoneEngine_New.Core.Trade
             }
 
             session.Committing = true;
-            bool durable = false;
+            bool applied = false;
             int soldCount = offer.Count;
             Item[] sold = ModuleHooks.WantsItemMoves(player.Playfield) ? offer.Items.Values.ToArray() : [];
             var deliveries = new List<Delivery>();
             try
             {
-                _flush.WithExclusivePlayers(player, null, () =>
+                WithGates(player, null, () =>
                 {
                     PlanDeliveries(bought, player, deliveries);
-                    PersistPlan(player, checked((int)finalCash), null, 0, deliveries, offer.Items.Values.ToArray(), machine.Identity,
+                    TradePlan plan = PlanRows(player, checked((int)finalCash), null, 0, deliveries, offer.Items.Values.ToArray(), machine.Identity,
                         currency, payInCash ? 0 : checked((int)finalCurrency));
-                    durable = true;
+                    applied = true;
                     offer.DrainAll();
                     ApplyDeliveries(deliveries);
                     if (!payInCash)
                         player.Stats.Set(currency, (int)finalCurrency, StatDetail.Base, dirty: true);
                     SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Shop, ModuleHooks.ShopSource(machine));
                     foreach (Delivery delivery in deliveries) SendDelivery(delivery);
+                    _flush.Enqueue(player, () => PersistPlan(plan));
                 });
             }
             catch (Exception exception)
             {
-                FailedCommit(session, exception, durable);
+                FailedCommit(session, exception, applied);
                 return;
             }
 
@@ -1468,20 +1535,21 @@ namespace ZoneEngine_New.Core.Trade
             int finalCash = player.Stats.GetOrZero(CharacterStat.Cash) - credits;
 
             session.Committing = true;
-            bool durable = false;
+            bool applied = false;
             try
             {
-                _flush.WithExclusivePlayers(player, null, () =>
+                WithGates(player, null, () =>
                 {
-                    PersistPlan(player, finalCash, null, 0, [], given, npc.Identity);
-                    durable = true;
+                    TradePlan plan = PlanRows(player, finalCash, null, 0, [], given, npc.Identity);
+                    applied = true;
                     offer.DrainAll();
                     SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Dialogue, ModuleHooks.SourceOf(npc));
+                    _flush.Enqueue(player, () => PersistPlan(plan));
                 });
             }
             catch (Exception exception)
             {
-                FailedCommit(session, exception, durable);
+                FailedCommit(session, exception, applied);
                 return false;
             }
 

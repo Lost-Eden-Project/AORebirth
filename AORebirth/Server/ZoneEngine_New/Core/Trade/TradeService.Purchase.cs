@@ -78,37 +78,34 @@ namespace ZoneEngine_New.Core.Trade
 
             int remaining = balance - price;
             int cash = player.Stats.GetOrZero(CharacterStat.Cash);
-            bool durable = false;
+            bool applied = false;
             try
             {
-                _flush.WithExclusivePlayers(player, null, () =>
+                WithGates(player, null, () =>
                 {
                     deliveries.Clear();
                     PlanDeliveries([item], player, deliveries);
-                    if (currency == CharacterStat.Cash)
-                        PersistPlan(player, remaining, null, 0, deliveries, [], dynel.Identity);
-                    else
-                        PersistPlan(player, cash, null, 0, deliveries, [], dynel.Identity, currency, remaining);
-                    durable = true;
+                    TradePlan plan = currency == CharacterStat.Cash
+                        ? PlanRows(player, remaining, null, 0, deliveries, [], dynel.Identity)
+                        : PlanRows(player, cash, null, 0, deliveries, [], dynel.Identity, currency, remaining);
+                    applied = true;
                     ApplyDeliveries(deliveries);
                     using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Shop,
                         dynel is NpcCharacter { Shop: { } npcShop } ? Modules.ModuleHooks.ShopSource(npcShop) : Modules.ModuleHooks.SourceOf(dynel)))
                         player.Stats.Set(currency, remaining, StatDetail.Base, dirty: true);
                     foreach (Delivery delivery in deliveries)
                         SendDelivery(delivery);
+                    // Stored off the tick, in the player's lane, behind everything their inventory already queued.
+                    _flush.Enqueue(player, () => PersistPlan(plan));
                 });
             }
             catch (Exception exception)
             {
-                _logger.Error(exception, "Purchase was not saved character=" + player.Identity.Instance);
-                if (durable || exception is DatabaseCommitOutcomeUnknownException or DatabaseStateConflictException)
+                _logger.Error(exception, "Purchase could not be planned character=" + player.Identity.Instance);
+                if (applied || player.IsPersistenceQuarantined)
                 {
                     player.QuarantinePersistence();
                     player.Session?.Close();
-                }
-                else
-                {
-                    _flush.NotifyDirty(player);
                 }
                 return PurchaseStatus.Failed;
             }

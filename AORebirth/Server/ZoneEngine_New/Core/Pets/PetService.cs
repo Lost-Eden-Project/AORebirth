@@ -578,6 +578,13 @@ namespace ZoneEngine_New.Core.Pets
                     continue;
 
                 bool healPet = IsHealPet(controller.Type);
+                // A social pet does not fight: it refuses an attack or guard order and keeps doing what it was.
+                if (command is PetCommandCode.Attack or PetCommandCode.Guard && PetTypes.NeverFights(controller.Type))
+                {
+                    Answer(owner, pet, PetReplyCatalog.AttackRefused);
+                    continue;
+                }
+
                 switch (command)
                 {
                     case PetCommandCode.Follow:
@@ -792,10 +799,11 @@ namespace ZoneEngine_New.Core.Pets
         static bool IsMezzPet(int type) => PetTypes.Slot(type) == PetTypes.Slot(PetTypes.Support);
 
         /// <summary>
-        /// A newly summoned heal pet follows until told to heal or guard, and a mezz pet follows until sent at a
-        /// target; other pets guard.
+        /// A newly summoned heal pet follows until told to heal or guard, a mezz pet follows until sent at a
+        /// target, and a social pet always follows; other pets guard.
         /// </summary>
-        static PetMode DefaultMode(int type) => IsHealPet(type) || IsMezzPet(type) ? PetMode.Follow : PetMode.Guard;
+        static PetMode DefaultMode(int type)
+            => IsHealPet(type) || IsMezzPet(type) || PetTypes.NeverFights(type) ? PetMode.Follow : PetMode.Guard;
 
         IEnumerable<NpcCharacter> ResolveOwned(Player owner, IReadOnlyList<Identity> petIdentities)
         {

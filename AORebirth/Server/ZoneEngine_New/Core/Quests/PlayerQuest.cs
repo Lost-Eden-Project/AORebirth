@@ -65,6 +65,14 @@ namespace ZoneEngine_New.Core.Quests
 
         /// <summary>A Quests.json quest's earn is queued or stored this session (<see cref="QuestService"/> write-behind).</summary>
         internal bool EarnQueued { get; set; }
+
+        /// <summary>
+        /// A mission objective earn or completion transaction is running off the tick for this quest until this UTC
+        /// tick: the retry tick does not queue another meanwhile. A lost continuation (the player left) expires it.
+        /// </summary>
+        internal long CommitInFlightUntilUtcTicks { get; set; }
+
+        internal bool IsCommitInFlight(long nowUtcTicks) => CommitInFlightUntilUtcTicks > nowUtcTicks;
         // A validated server-side death is one-shot; retry its transaction while this actor remains loaded.
         internal bool NpcObjectiveCommitPending { get; set; }
 

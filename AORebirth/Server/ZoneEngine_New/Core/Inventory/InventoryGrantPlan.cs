@@ -23,8 +23,8 @@ namespace ZoneEngine_New.Core.Inventory
     }
 
     /// <summary>
-    /// Pure capacity/identity plan for a mission-owned transaction. The caller holds
-    /// PersistenceGate through its existing mission DAO commit and PublishAfterCommit.
+    /// Pure capacity/identity plan for a mission-owned transaction. The caller holds PersistenceGate while planning
+    /// and publishing on the tick; the queued commit that stores the rows runs off the tick and marks them stored.
     /// This class never starts an independent transaction or allocates an identity.
     /// </summary>
     public sealed class InventoryGrantPlan
@@ -140,9 +140,10 @@ namespace ZoneEngine_New.Core.Inventory
 
         /// <summary>
         /// <see cref="PublishAfterCommit"/> for a grant whose rows a queued commit inserts at <see cref="ParkedRows"/>
-        /// (<see cref="InventoryFlushService.Enqueue"/>): the items go to their planned slots now, still unpersisted,
-        /// and are marked dirty there, so the write-behind moves each row into its slot right after the commit stores it.
-        /// The commit sets <see cref="Item.IsPersisted"/> once stored (<see cref="MarkStored"/>).
+        /// (<see cref="InventoryFlushService.Enqueue"/>): the items go to their planned slots now and are marked dirty
+        /// there, so the write-behind moves each row into its slot right after the commit stores it. They count as
+        /// persisted from now on (<see cref="Item.IsPersisted"/>): their insert is queued in the player's lane ahead of
+        /// anything that moves or retires them later, so a later retire writes its graveyard row rather than dropping it.
         /// </summary>
         public bool PublishBeforeCommit() => Publish(committed: false, notify: true, from: null);
 
@@ -160,12 +161,14 @@ namespace ZoneEngine_New.Core.Inventory
             return _items.Select(item => item.ToRecord(parking, item.InstanceId, item.StackCount)).ToArray();
         }
 
-        /// <summary>The queued commit stored the rows (write-behind lane, inside the player's gate).</summary>
+        /// <summary>The queued commit stored the rows (write-behind lane; takes the player's gate itself).</summary>
         public void MarkStored()
         {
-            if (!Monitor.IsEntered(_player.PersistenceGate)) throw new InvalidOperationException("Grant storage requires the player's persistence gate.");
-            foreach (Item item in _items)
-                item.IsPersisted = true;
+            lock (_player.PersistenceGate)
+            {
+                foreach (Item item in _items)
+                    item.IsPersisted = true;
+            }
         }
 
         bool Publish(bool committed, bool notify, ItemPlace? from)
@@ -179,9 +182,10 @@ namespace ZoneEngine_New.Core.Inventory
             for (int i = 0; i < _items.Length; i++)
             {
                 _pages[i].Add(_slots[i], _items[i]);
-                if (committed)
-                    _items[i].IsPersisted = true;
-                else
+                // Stored, or about to be by the commit queued in the player's lane: either way persisted to every later
+                // move or retire of the item, whose own write follows that insert in the lane.
+                _items[i].IsPersisted = true;
+                if (!committed)
                     _player.Inventory.MarkDirty(_items[i], _pages[i], _slots[i]);
                 if (ReferenceEquals(_pages[i], _player.Inventory.Overflow))
                     _player.Inventory.NoteOverflowArrival(_items[i]);

@@ -20,9 +20,9 @@ namespace ZoneEngine_New.Core.Characters
 
     /// <summary>
     /// Durable writes of the in-memory character aggregate. Logout/despawn commits location + base stats
-    /// synchronously; while online, dirty and periodic base-stat checkpoints are captured on the playfield
-    /// tick and written behind on a dedicated thread, one transaction per character.
-    /// Inventory is flushed separately by <see cref="ZoneEngine_New.Core.Inventory.InventoryFlushService"/>.
+    /// synchronously; while online, dirty and periodic base-stat checkpoints are captured on the playfield tick and
+    /// written in the character's write-behind lane (<see cref="ZoneEngine_New.Core.Inventory.InventoryFlushService"/>),
+    /// so a checkpoint lands in order with the reward and trade transactions that also set stats.
     /// </summary>
     public sealed class CharacterSnapshotService : IDisposable
     {
@@ -39,10 +39,6 @@ namespace ZoneEngine_New.Core.Characters
         private readonly IStatRepository _stats;
         private readonly IZoneLogger _logger;
         private readonly WorldLink? _world;
-        private readonly object _queueGate = new();
-        private readonly Dictionary<Player, PendingCheckpoint> _pending = new(ReferenceEqualityComparer.Instance);
-        private readonly ManualResetEventSlim _wake = new(false);
-        private Thread? _writer;
         private volatile bool _disposed;
 
         public CharacterSnapshotService(
@@ -144,15 +140,13 @@ namespace ZoneEngine_New.Core.Characters
 
         /// <summary>
         /// Stores <paramref name="stats"/> as the character's base values ahead of a reward transaction that expects
-        /// exactly them: the values the tick held when it decided the reward. Runs in the write-behind lane, inside the
-        /// player's gate. Fails unless this instance still owns the online character.
+        /// exactly them: the values the tick held when it decided the reward. Runs in the write-behind lane, without
+        /// the player's gate across the write. Fails unless this instance still owns the online character.
         /// </summary>
         internal void SyncStats(Player player, IReadOnlyList<StatRecord> stats)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(stats);
-            if (!Monitor.IsEntered(player.PersistenceGate))
-                throw new InvalidOperationException("Stat sync requires the player's persistence gate.");
             if (player.IsPersistenceQuarantined)
                 throw new InvalidOperationException("A quarantined player must be reloaded before persistence.");
             RequireLease(player);
@@ -161,7 +155,8 @@ namespace ZoneEngine_New.Core.Characters
             if (!_characters.SaveOnlineCheckpoint(player.Identity.Instance, null, stats))
                 throw new InvalidOperationException("Reward stat sync requires the current online character owner.");
             // No sequence of its own: it records what storage now holds, and never retires a checkpoint.
-            player.SaveState.MarkCommitted(0, stats, location: null);
+            lock (player.PersistenceGate)
+                player.SaveState.MarkCommitted(0, stats, location: null);
         }
 
         /// <summary>Puts Online back after a transfer that did not happen (the transfer save cleared it).</summary>
@@ -248,17 +243,19 @@ namespace ZoneEngine_New.Core.Characters
         }
 
         /// <summary>
-        /// Queues a checkpoint (location + base stats) when the player's save is due. Must run on the owning
-        /// playfield tick: state is copied here because the writer thread may not read the live aggregate.
+        /// Queues a checkpoint (location + base stats) in the player's write-behind lane when the player's save is
+        /// due. Must run on the owning playfield tick: state is copied here because the lane may not read the live
+        /// aggregate. In the lane it lands after every reward or trade transaction queued before it and before every
+        /// one queued after, so a checkpoint never overwrites stats a later transaction set.
         /// </summary>
-        public void CheckpointIfDue(Player player) => CheckpointIfDue(player, Environment.TickCount64);
+        public void CheckpointIfDue(Player player, ZoneEngine_New.Core.Inventory.InventoryFlushService lane)
+            => CheckpointIfDue(player, lane, Environment.TickCount64);
 
-        internal void CheckpointIfDue(Player player, long nowMs)
+        internal void CheckpointIfDue(Player player, ZoneEngine_New.Core.Inventory.InventoryFlushService lane, long nowMs)
         {
             ArgumentNullException.ThrowIfNull(player);
-            // Stats captured while a quest commit is queued would include a reward storage does not hold yet; the due
-            // state waits, and the commit requests a checkpoint when it lands.
-            if (_disposed || player.IsPersistenceQuarantined || player.Identity.Instance <= 0 || !player.PendingCommits.IsEmpty)
+            ArgumentNullException.ThrowIfNull(lane);
+            if (_disposed || player.IsPersistenceQuarantined || player.Identity.Instance <= 0)
                 return;
             if (!player.SaveState.TakeDue(nowMs, player.Identity.Instance))
                 return;
@@ -267,14 +264,7 @@ namespace ZoneEngine_New.Core.Characters
                 player.SaveState.NextSequence(),
                 CaptureResumableLocation(player),
                 CaptureBaseStats(player));
-            lock (_queueGate)
-            {
-                if (_disposed)
-                    return;
-                _pending[player] = checkpoint;
-                _writer ??= StartWriter();
-                _wake.Set();
-            }
+            lane.Enqueue(player, () => WriteCheckpoint(player, checkpoint));
         }
 
         /// <summary>
@@ -333,133 +323,73 @@ namespace ZoneEngine_New.Core.Characters
             return stats;
         }
 
-        private Thread StartWriter()
-        {
-            var writer = new Thread(WriterLoop)
-            {
-                IsBackground = true,
-                Name = "CharacterCheckpointWriter"
-            };
-            writer.Start();
-            return writer;
-        }
-
-        private void WriterLoop()
-        {
-            while (!_disposed)
-            {
-                _wake.Wait();
-                List<KeyValuePair<Player, PendingCheckpoint>> batch;
-                lock (_queueGate)
-                {
-                    batch = [.. _pending];
-                    _pending.Clear();
-                    _wake.Reset();
-                }
-
-                foreach (KeyValuePair<Player, PendingCheckpoint> pair in batch)
-                {
-                    if (_disposed)
-                        break;
-
-                    try
-                    {
-                        WriteCheckpoint(pair.Key, pair.Value);
-                    }
-                    catch (Exception exception)
-                    {
-                        _logger.Error(
-                            exception,
-                            string.Format(
-                                CultureInfo.InvariantCulture,
-                                "Character checkpoint failed character={0}",
-                                pair.Key.Identity.Instance));
-                    }
-                }
-            }
-        }
-
+        /// <summary>
+        /// The queued checkpoint, in the player's lane: the gate only around reading and recording the persisted
+        /// baseline, never across the write. A write that cannot be repeated quarantines; any other failure is the
+        /// lane's to retry (a checkpoint is idempotent).
+        /// </summary>
         private void WriteCheckpoint(Player player, PendingCheckpoint checkpoint)
         {
             CharacterSaveState state = player.SaveState;
+            List<StatRecord> changed;
+            CharacterRecord? location;
             lock (player.PersistenceGate)
             {
                 // A logout snapshot or newer checkpoint already made this capture obsolete.
                 if (player.IsPersistenceQuarantined || !state.IsNewerThanCommitted(checkpoint.Sequence))
                     return;
-                // A queued quest commit has not stored what the tick already paid; stats that include it must not land
-                // first. The commit asks for a fresh checkpoint once it is stored.
-                if (!player.PendingCommits.IsEmpty)
+                changed = state.ChangedSincePersisted(checkpoint.Stats);
+                location = checkpoint.Location != null && state.LocationChanged(checkpoint.Location)
+                    ? checkpoint.Location
+                    : null;
+            }
+
+            if (!OwnsLease(player.Identity.Instance))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Character checkpoint skipped character={0}: this instance no longer holds its World lease",
+                        player.Identity.Instance));
+                return;
+            }
+
+            if (changed.Count > 0 || location != null)
+            {
+                bool written;
+                try
                 {
-                    state.RequestCheckpoint();
-                    return;
+                    written = _characters.SaveOnlineCheckpoint(player.Identity.Instance, location, changed);
                 }
-                if (!OwnsLease(player.Identity.Instance))
+                catch (DatabaseCommitOutcomeUnknownException)
                 {
+                    player.QuarantinePersistence();
+                    player.Session?.Close();
+                    throw;
+                }
+
+                if (!written)
+                {
+                    // Storage says offline while this aggregate is live; leave the baseline so nothing is lost.
                     _logger.Warn(
                         string.Format(
                             CultureInfo.InvariantCulture,
-                            "Character checkpoint skipped character={0}: this instance no longer holds its World lease",
+                            "Character checkpoint skipped character={0}: row is not marked online",
                             player.Identity.Instance));
                     return;
                 }
+            }
 
-                List<StatRecord> changed = state.ChangedSincePersisted(checkpoint.Stats);
-                CharacterRecord? location = checkpoint.Location != null && state.LocationChanged(checkpoint.Location)
-                    ? checkpoint.Location
-                    : null;
-                if (changed.Count > 0 || location != null)
-                {
-                    bool written;
-                    try
-                    {
-                        written = _characters.SaveOnlineCheckpoint(player.Identity.Instance, location, changed);
-                    }
-                    catch (DatabaseCommitOutcomeUnknownException)
-                    {
-                        player.QuarantinePersistence();
-                        player.Session?.Close();
-                        throw;
-                    }
-
-                    if (!written)
-                    {
-                        // Storage says offline while this aggregate is live; leave the baseline so nothing is lost.
-                        _logger.Warn(
-                            string.Format(
-                                CultureInfo.InvariantCulture,
-                                "Character checkpoint skipped character={0}: row is not marked online",
-                                player.Identity.Instance));
-                        return;
-                    }
-                }
-
-                state.MarkCommitted(checkpoint.Sequence, changed, location);
+            lock (player.PersistenceGate)
+            {
+                if (state.IsNewerThanCommitted(checkpoint.Sequence))
+                    state.MarkCommitted(checkpoint.Sequence, changed, location);
             }
         }
 
         public void Dispose()
         {
-            if (_disposed)
-                return;
-
-            Thread? writer;
-            lock (_queueGate)
-            {
-                _disposed = true;
-                _pending.Clear();
-                writer = _writer;
-                _wake.Set();
-            }
-
-            if (writer != null && !writer.Join(2000))
-            {
-                // The writer may still wait on the event; disposing it would fault that thread.
-                _logger.Warn("Character checkpoint writer did not stop within 2s");
-                return;
-            }
-
-            _wake.Dispose();
+            _disposed = true;
         }
 
         private sealed record PendingCheckpoint(long Sequence, CharacterRecord? Location, IReadOnlyList<StatRecord> Stats);

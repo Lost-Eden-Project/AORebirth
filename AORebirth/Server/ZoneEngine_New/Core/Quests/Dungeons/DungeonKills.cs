@@ -18,6 +18,10 @@ using ZoneEngine_New.Core.Entities;
 /// teammate who was outside does not gain from the team's kills, and starts at zero when they enter. Each player's
 /// credit is one more mission flag under their own character (<see cref="CreditCheckpoint"/>).
 /// </para>
+/// <para>
+/// Thread-safe: the dungeon tick records kills while a player's write-behind lane rolls their reward from the same
+/// ledger (<see cref="QuestService"/>).
+/// </para>
 /// </summary>
 public sealed class DungeonKills
 {
@@ -29,6 +33,7 @@ public sealed class DungeonKills
     /// </summary>
     const string CreditMarker = "|c";
 
+    readonly object _sync = new();
     readonly Dictionary<string, int> _ordinals = new(StringComparer.Ordinal);
     readonly HashSet<int> _killed = new();
     readonly Dictionary<NpcCharacter, string> _slots = new(ReferenceEqualityComparer.Instance);
@@ -37,6 +42,7 @@ public sealed class DungeonKills
     readonly bool _legacyCheckpoint;
     readonly Dictionary<int, HashSet<int>> _credited = new();
     readonly HashSet<int> _creditDirty = new();
+    bool _dirty;
 
     public DungeonKills(int ownerId, string questId, long assignedAtTicks, MissionTokenRewardPolicy? policy,
         bool hasObjective, bool objectiveCounts, string? checkpoint)
@@ -66,16 +72,41 @@ public sealed class DungeonKills
     public MissionTokenRewardPolicy? Policy { get; }
 
     /// <summary>Slots registered by the build: the population an untouched dungeon spawns.</summary>
-    public int Total => _ordinals.Count;
+    public int Total
+    {
+        get
+        {
+            lock (_sync)
+                return _ordinals.Count;
+        }
+    }
 
     /// <summary>True when a kill happened since the last checkpoint.</summary>
-    public bool Dirty { get; private set; }
+    public bool Dirty
+    {
+        get
+        {
+            lock (_sync)
+                return _dirty;
+        }
+    }
 
-    /// <summary>Players whose kill credit changed since it was last saved.</summary>
-    public IReadOnlyCollection<int> DirtyCredits => _creditDirty;
+    /// <summary>Players whose kill credit changed since it was last saved (a snapshot).</summary>
+    public IReadOnlyCollection<int> DirtyCredits
+    {
+        get
+        {
+            lock (_sync)
+                return [.. _creditDirty];
+        }
+    }
 
     /// <summary>True when <paramref name="playerId"/>'s credit is in memory (loaded from their flag, or credited here).</summary>
-    public bool HasCredit(int playerId) => _credited.ContainsKey(playerId);
+    public bool HasCredit(int playerId)
+    {
+        lock (_sync)
+            return _credited.ContainsKey(playerId);
+    }
 
     /// <summary>
     /// Takes <paramref name="playerId"/>'s saved credit (<see cref="CreditCheckpoint"/>) unless it is already loaded.
@@ -83,20 +114,23 @@ public sealed class DungeonKills
     /// </summary>
     public void LoadCredit(int playerId, string? checkpoint)
     {
-        if (_credited.ContainsKey(playerId))
-            return;
-        HashSet<int> credit;
-        if (string.IsNullOrEmpty(checkpoint) && _legacyCheckpoint && playerId == OwnerId)
+        lock (_sync)
         {
-            credit = new HashSet<int>(_killed);
-            if (credit.Count > 0)
-                _creditDirty.Add(playerId);
+            if (_credited.ContainsKey(playerId))
+                return;
+            HashSet<int> credit;
+            if (string.IsNullOrEmpty(checkpoint) && _legacyCheckpoint && playerId == OwnerId)
+            {
+                credit = new HashSet<int>(_killed);
+                if (credit.Count > 0)
+                    _creditDirty.Add(playerId);
+            }
+            else
+            {
+                credit = new HashSet<int>(ParseKilled(checkpoint));
+            }
+            _credited[playerId] = credit;
         }
-        else
-        {
-            credit = new HashSet<int>(ParseKilled(checkpoint));
-        }
-        _credited[playerId] = credit;
     }
 
     /// <summary>True when a saved population checkpoint predates per-player credit (see <see cref="CreditMarker"/>).</summary>
@@ -108,25 +142,39 @@ public sealed class DungeonKills
     /// <summary>Gives <paramref name="slot"/> its ordinal; the same build order always yields the same ordinals.</summary>
     internal void RegisterSlot(string slot)
     {
-        if (!_ordinals.ContainsKey(slot))
-            _ordinals[slot] = _ordinals.Count;
+        lock (_sync)
+        {
+            if (!_ordinals.ContainsKey(slot))
+                _ordinals[slot] = _ordinals.Count;
+        }
     }
 
     /// <summary>Forgets every slot registered from <paramref name="firstOrdinal"/> on (a spawn point the grid refused).</summary>
     internal void RollbackSlots(int firstOrdinal)
     {
-        var dropped = new List<string>();
-        foreach ((string slot, int ordinal) in _ordinals)
-            if (ordinal >= firstOrdinal)
-                dropped.Add(slot);
-        foreach (string slot in dropped)
-            _ordinals.Remove(slot);
+        lock (_sync)
+        {
+            var dropped = new List<string>();
+            foreach ((string slot, int ordinal) in _ordinals)
+                if (ordinal >= firstOrdinal)
+                    dropped.Add(slot);
+            foreach (string slot in dropped)
+                _ordinals.Remove(slot);
+        }
     }
 
-    internal bool IsKilled(string slot) => _ordinals.TryGetValue(slot, out int ordinal) && _killed.Contains(ordinal);
+    internal bool IsKilled(string slot)
+    {
+        lock (_sync)
+            return _ordinals.TryGetValue(slot, out int ordinal) && _killed.Contains(ordinal);
+    }
 
     /// <summary>The live actor now standing in <paramref name="slot"/> (a spawn, or a respawn after the cell slept).</summary>
-    internal void Bind(NpcCharacter actor, string slot) => _slots[actor] = slot;
+    internal void Bind(NpcCharacter actor, string slot)
+    {
+        lock (_sync)
+            _slots[actor] = slot;
+    }
 
     /// <summary>
     /// True when <paramref name="npc"/> was one of this dungeon's population; its slot is dead from now on, and the kill
@@ -135,36 +183,47 @@ public sealed class DungeonKills
     public bool TryRecordKill(NpcCharacter npc, IEnumerable<int> credited)
     {
         ArgumentNullException.ThrowIfNull(credited);
-        if (!_slots.Remove(npc, out string? slot) || !_ordinals.TryGetValue(slot, out int ordinal))
-            return false;
-        if (_killed.Add(ordinal))
-            Dirty = true;
-        foreach (int playerId in credited)
+        lock (_sync)
         {
-            if (!_credited.TryGetValue(playerId, out HashSet<int>? credit))
-                _credited[playerId] = credit = new HashSet<int>();
-            if (credit.Add(ordinal))
-                _creditDirty.Add(playerId);
+            if (!_slots.Remove(npc, out string? slot) || !_ordinals.TryGetValue(slot, out int ordinal))
+                return false;
+            if (_killed.Add(ordinal))
+                _dirty = true;
+            foreach (int playerId in credited)
+            {
+                if (!_credited.TryGetValue(playerId, out HashSet<int>? credit))
+                    _credited[playerId] = credit = new HashSet<int>();
+                if (credit.Add(ordinal))
+                    _creditDirty.Add(playerId);
+            }
+            return true;
         }
-        return true;
     }
 
     /// <summary>The whole population's killed and total enemies; a Find Person objective is left out of both.</summary>
-    public (int Killed, int Total) Chance() => Count(_killed);
+    public (int Killed, int Total) Chance()
+    {
+        lock (_sync)
+            return Count(_killed);
+    }
 
     /// <summary>
     /// <paramref name="playerId"/>'s own reward chance: the kills credited to them over the whole population. Zero kills
     /// when their credit is not loaded (<see cref="LoadCredit"/>).
     /// </summary>
     public (int Killed, int Total) Chance(int playerId)
-        => Count(_credited.TryGetValue(playerId, out HashSet<int>? credit) ? credit : EmptyCredit);
+    {
+        lock (_sync)
+            return Count(_credited.TryGetValue(playerId, out HashSet<int>? credit) ? credit : EmptyCredit);
+    }
 
     static readonly HashSet<int> EmptyCredit = new();
 
+    /// <summary>Under <see cref="_sync"/>.</summary>
     (int Killed, int Total) Count(HashSet<int> killedSet)
     {
         int killed = killedSet.Count;
-        int total = Total;
+        int total = _ordinals.Count;
         if (_hasObjective && !_objectiveCounts)
         {
             total--;
@@ -197,12 +256,20 @@ public sealed class DungeonKills
     /// "total|hex bitset of killed ordinals|c"; fits the mission flag value for any dungeon the generator makes. The
     /// trailing marker says credit is per player (<see cref="CreditMarker"/>).
     /// </summary>
-    public string Checkpoint() => Encode(_killed) + CreditMarker;
+    public string Checkpoint()
+    {
+        lock (_sync)
+            return Encode(_killed) + CreditMarker;
+    }
 
     /// <summary><paramref name="playerId"/>'s credited kills, "total|hex bitset" (read back by <see cref="ChanceOf"/>).</summary>
     public string CreditCheckpoint(int playerId)
-        => Encode(_credited.TryGetValue(playerId, out HashSet<int>? credit) ? credit : EmptyCredit);
+    {
+        lock (_sync)
+            return Encode(_credited.TryGetValue(playerId, out HashSet<int>? credit) ? credit : EmptyCredit);
+    }
 
+    /// <summary>Under <see cref="_sync"/>.</summary>
     string Encode(HashSet<int> ordinals)
     {
         int max = -1;
@@ -211,12 +278,20 @@ public sealed class DungeonKills
         byte[] bits = new byte[max < 0 ? 0 : max / 8 + 1];
         foreach (int ordinal in ordinals)
             bits[ordinal / 8] |= (byte)(1 << (ordinal % 8));
-        return Total.ToString(CultureInfo.InvariantCulture) + "|" + Convert.ToHexString(bits);
+        return _ordinals.Count.ToString(CultureInfo.InvariantCulture) + "|" + Convert.ToHexString(bits);
     }
 
-    internal void MarkSaved() => Dirty = false;
+    internal void MarkSaved()
+    {
+        lock (_sync)
+            _dirty = false;
+    }
 
-    internal void MarkCreditSaved(int playerId) => _creditDirty.Remove(playerId);
+    internal void MarkCreditSaved(int playerId)
+    {
+        lock (_sync)
+            _creditDirty.Remove(playerId);
+    }
 
     static IEnumerable<int> ParseKilled(string? checkpoint)
     {

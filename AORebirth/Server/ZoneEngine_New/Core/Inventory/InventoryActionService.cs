@@ -17,8 +17,9 @@ namespace ZoneEngine_New.Core.Inventory
     /// Inventory mutations the client requests. Rows that only this player owns (split, join, and the moves in
     /// <see cref="InventoryMoveService"/>) are applied on the tick and written by the coalesced flush: one transaction
     /// per player per window, never one per packet, so no client can turn a stream of cheap requests into a stream of
-    /// database round trips on the playfield thread. Deletes, and anything whose durable guard must be checked
-    /// against storage before memory changes, still plan first, commit, then publish through <see cref="TryCommit"/>.
+    /// database round trips on the playfield thread. Deletes, pickups, combines and anything with a durable guard
+    /// (a chest row locked as last seen) are applied on the tick too and queue their own transaction in the player's
+    /// write-behind lane through <see cref="TryCommit"/>; the tick never waits for the database.
     /// </summary>
     public sealed class InventoryActionService
     {
@@ -297,99 +298,109 @@ namespace ZoneEngine_New.Core.Inventory
             => !expected.Locked && expected.InstanceId == instance
                 && page.Content.TryGetValue(slot, out Item? current) && ReferenceEquals(current, expected);
 
+        /// <summary>
+        /// Applies an inventory mutation on the tick and queues its transaction in the player's lane
+        /// (<see cref="InventoryFlushService.Enqueue"/>). <paramref name="validate"/> runs first, under the player's
+        /// gate; <paramref name="publish"/> then changes memory and tells the client. The queued transaction writes the
+        /// rows the plan decided, folded with the dirty inventory it finds then (which is newer), in one batch with
+        /// <paramref name="expectedSources"/> and <paramref name="finalStats"/>. Items the plan inserts count as persisted
+        /// from here on: whatever moves or retires one later writes behind the insert in the lane. False when the action
+        /// does not apply (nothing changed); a transaction that fails quarantines the player for a reload.
+        /// </summary>
         internal bool TryCommit(Player player, IReadOnlyList<InventoryRowChange> changes,
             Func<bool> validate, Action publish, IReadOnlyList<StatRecord>? finalStats = null,
             IReadOnlyList<ItemInstanceRecord>? expectedSources = null)
         {
-            bool committed = false;
             player.InvalidateOwnedItemCache();
-            bool successful = false;
-            try
+            lock (player.PersistenceGate)
             {
-                _flush.WithExclusivePlayers(player, null, () =>
+                if (player.Session?.State != SessionState.InPlay || player.IsPersistenceQuarantined || !validate())
+                    return false;
+                if (changes.Select(c => c.Item.InstanceId).Distinct().Count() != changes.Count)
+                    throw new InvalidOperationException("One mutation may write an instance only once.");
+                var rows = new PlannedRow[changes.Count];
+                for (int i = 0; i < rows.Length; i++)
                 {
-                    if (player.Session?.State != SessionState.InPlay || player.IsPersistenceQuarantined || !validate()) return;
-                    PlayerInventory.InventoryDirtyFlush? pending = player.Inventory.TakeDirty();
-                    int[] nanos = player.DrainDirtyUploadedNanos();
-                    try
-                    {
-                        var inserts = (pending?.Inserts ?? []).ToDictionary(r => r.InstanceId);
-                        var locations = (pending?.Updates ?? []).ToDictionary(r => r.InstanceId);
-                        var stacks = new List<ItemStackUpdate>();
-                        var qualities = new List<ItemQualityUpdate>();
-                        if (changes.Select(c => c.Item.InstanceId).Distinct().Count() != changes.Count)
-                            throw new InvalidOperationException("One mutation may write an instance only once.");
-                        foreach (InventoryRowChange change in changes)
-                        {
-                            Item item = change.Item;
-                            if (item.InstanceId <= 0 || change.FinalCount <= 0)
-                                throw new InvalidOperationException("Invalid inventory mutation identity or count.");
-                            inserts.Remove(item.InstanceId);
-                            locations.Remove(item.InstanceId);
-                            if (change.Retired && !item.IsPersisted) continue;
-                            if (item.IsPersisted)
-                            {
-                                locations[item.InstanceId] = new ItemLocationUpdate(item.InstanceId,
-                                    (int)change.Container.Type, change.Container.Instance, change.Placement);
-                                if (change.FinalCount != item.StackCount)
-                                    stacks.Add(new ItemStackUpdate(item.InstanceId, item.StackCount, change.FinalCount));
-                                if (change.PreviousQuality > 0 && change.PreviousQuality != item.Quality)
-                                    qualities.Add(new ItemQualityUpdate(item.InstanceId, change.PreviousQuality, item.Quality));
-                            }
-                            else inserts[item.InstanceId] = item.ToRecord(change.Container, change.Placement, change.FinalCount);
-                        }
-                        _persistence.Persist(new InventoryMutationBatch(player.Identity.Instance,
-                            inserts.Values.ToArray(), locations.Values.ToArray(), stacks,
-                            nanos)
-                        {
-                            ExpectedSources = expectedSources ?? [],
-                            FinalStats = finalStats ?? [],
-                            Qualities = qualities,
-                            EmptyContainersBeforeRetire = changes.Where(change => change.Retired
-                                && InventoryMoveService.IsBagItem(change.Item)).Select(change => change.Item.InstanceId).ToArray()
-                        });
-                        committed = true;
-                        pending?.MarkNewlyPersisted();
-                        foreach (InventoryRowChange change in changes)
-                            if (!change.Retired) change.Item.IsPersisted = true;
-                        publish();
-                        successful = true;
-                    }
-                    catch (DatabaseCommitOutcomeUnknownException)
-                    {
-                        player.QuarantinePersistence();
-                        throw;
-                    }
-                    catch (DatabaseStateConflictException)
-                    {
-                        // Rolled back, but the pending batch contradicts stored rows and would fail on every retry.
-                        player.QuarantinePersistence();
-                        throw;
-                    }
-                    catch
-                    {
-                        if (!committed)
-                        {
-                            if (pending != null) player.Inventory.RestoreDirty(pending);
-                            player.RestoreDirtyUploadedNanos(nanos);
-                        }
-                        throw;
-                    }
-                });
-            }
-            catch (Exception exception)
-            {
-                if (committed || exception is DatabaseCommitOutcomeUnknownException or DatabaseStateConflictException
-                    || player.IsPersistenceQuarantined)
+                    InventoryRowChange change = changes[i];
+                    Item item = change.Item;
+                    if (item.InstanceId <= 0 || change.FinalCount <= 0)
+                        throw new InvalidOperationException("Invalid inventory mutation identity or count.");
+                    rows[i] = new PlannedRow(item, change.Container, change.Placement, change.FinalCount, change.Retired,
+                        HadRow: item.IsPersisted, CountBefore: item.StackCount, change.PreviousQuality, item.Quality);
+                }
+                int[] emptyContainersBeforeRetire = changes
+                    .Where(change => change.Retired && InventoryMoveService.IsBagItem(change.Item))
+                    .Select(change => change.Item.InstanceId).ToArray();
+                long planSequence = PlayerInventory.DirtySequence;
+
+                try
                 {
+                    publish();
+                }
+                catch (Exception exception)
+                {
+                    // Memory may be half changed with nothing queued to store it: reload the character from storage.
                     player.QuarantinePersistence();
                     player.Session?.Close();
+                    _logger.Error(exception, "Inventory action publication failed; player persistence quarantined for reload.");
+                    return false;
                 }
-                else _flush.NotifyDirty(player);
-                _logger.Error(exception, "Inventory action failed; no success acknowledgement was sent.");
+
+                foreach (PlannedRow row in rows)
+                    if (!row.Retired && !row.HadRow)
+                        row.Item.IsPersisted = true; // Its insert is queued below, ahead of any later move or retire.
+
+                var writes = new InventoryWriteSet();
+                int characterId = player.Identity.Instance;
+                IReadOnlyList<StatRecord> stats = finalStats ?? [];
+                IReadOnlyList<ItemInstanceRecord> sources = expectedSources ?? [];
+                _flush.Enqueue(player, () => Persist(player, characterId, writes, rows, planSequence, stats, sources, emptyContainersBeforeRetire));
             }
-            return successful;
+            return true;
         }
+
+        /// <summary>
+        /// The queued transaction, in the player's lane. <paramref name="writes"/> keeps what was taken across a retry
+        /// of a transient failure, so dirty entries taken by a failed attempt are written by the next.
+        /// </summary>
+        void Persist(Player player, int characterId, InventoryWriteSet writes, PlannedRow[] rows, long planSequence,
+            IReadOnlyList<StatRecord> finalStats, IReadOnlyList<ItemInstanceRecord> expectedSources, int[] emptyContainersBeforeRetire)
+        {
+            lock (player.PersistenceGate)
+            {
+                PlayerInventory.InventoryDirtyFlush? taken = player.Inventory.TakeDirty();
+                taken?.MarkNewlyPersisted();
+                writes.Fold(taken, player.DrainDirtyUploadedNanos());
+            }
+
+            var stacks = new List<ItemStackUpdate>();
+            var qualities = new List<ItemQualityUpdate>();
+            foreach (PlannedRow row in rows)
+            {
+                if (row.Retired)
+                {
+                    writes.Retire(row.Item, row.HadRow, row.Container, row.Placement);
+                    continue;
+                }
+                writes.Place(row.Item, row.HadRow, row.Container, row.Placement, row.FinalCount, planSequence);
+                if (row.FinalCount != row.CountBefore)
+                    stacks.Add(new ItemStackUpdate(row.Item.InstanceId, row.CountBefore, row.FinalCount));
+                if (row.PreviousQuality > 0 && row.PreviousQuality != row.Quality)
+                    qualities.Add(new ItemQualityUpdate(row.Item.InstanceId, row.PreviousQuality, row.Quality));
+            }
+
+            _persistence.Persist(new InventoryMutationBatch(characterId, [.. writes.Inserts], [.. writes.Locations], stacks, writes.UploadedNanos)
+            {
+                ExpectedSources = expectedSources,
+                FinalStats = finalStats,
+                Qualities = qualities,
+                EmptyContainersBeforeRetire = emptyContainersBeforeRetire
+            });
+        }
+
+        /// <summary>One row of a <see cref="TryCommit"/> plan, as the tick decided it: whether the item had a row then decides insert or update.</summary>
+        sealed record PlannedRow(Item Item, Identity Container, int Placement, int FinalCount, bool Retired, bool HadRow,
+            int CountBefore, int PreviousQuality, int Quality);
     }
 
     /// <param name="PreviousQuality">The stored QL of a persisted <paramref name="Item"/> that replaces it in place at a new QL; 0 otherwise.</param>

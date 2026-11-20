@@ -72,11 +72,18 @@ public sealed partial class QuestService
                 // (PlayfieldLocality.IsVisibleTo); only line of sight is checked here.
                 || targeted && !player.HasLineOfSightTo(npc))
                 return;
-            if (!TryEarnBoundObjective(player, quest, parameters, null) && !targeted && !player.IsPersistenceQuarantined)
-            {
-                quest.NpcObjectiveCommitPending = true;
-                quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
-            }
+            if (quest.IsCommitInFlight(_now().Ticks))
+                return;
+            BeginBoundObjectiveEarn(player, quest, parameters, removal: null, sharedChance: null, share: true,
+                earned: null,
+                failed: () =>
+                {
+                    if (!targeted && !player.IsPersistenceQuarantined)
+                    {
+                        quest.NpcObjectiveCommitPending = true;
+                        quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
+                    }
+                });
         }
     }
 
@@ -134,31 +141,40 @@ public sealed partial class QuestService
                 }
                 Container page = player.Inventory.Inventory;
                 int placement = sourceSlot.Instance;
-                if (!TryEarnBoundObjective(player, quest, parameters, ToMissionItem(source.ToRecord(page.Identity, placement, source.StackCount))))
+                if (quest.IsCommitInFlight(_now().Ticks))
                     return false;
-                try
-                {
-                    if (!ReferenceEquals(page.Remove(placement), source))
-                        throw new InvalidOperationException("Committed mission source changed before publication.");
-                    ModuleHooks.ItemMoved(player, source, ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
-                        ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
-                    player.Session?.Send(new TemplateActionMessage
+                // Held still until the transaction lands: a locked item cannot be moved, traded or deleted meanwhile.
+                source.Locked = true;
+                Identity usedSlot = sourceSlot;
+                BeginBoundObjectiveEarn(player, quest, parameters, ToMissionItem(source.ToRecord(page.Identity, placement, source.StackCount)),
+                    sharedChance: null, share: true,
+                    earned: () =>
                     {
-                        Identity = player.Identity, ItemLowId = source.LowId, ItemHighId = source.HighId,
-                        Quality = source.Quality, Placement = sourceSlot, Count = 1,
-                        Action = TemplateActionType.Use, Unknown3 = (int)player.Identity.Type, Unknown4 = player.Identity.Instance
-                    });
-                    player.Session?.Send(new CharacterActionMessage
-                    {
-                        Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = sourceSlot
-                    });
-                    return true;
-                }
-                catch (Exception exception)
-                {
-                    CompletionFailure(player, exception, committed: true);
-                    return false;
-                }
+                        source.Locked = false;
+                        try
+                        {
+                            if (!ReferenceEquals(page.Remove(placement), source))
+                                throw new InvalidOperationException("Committed mission source changed before publication.");
+                            ModuleHooks.ItemMoved(player, source, ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
+                                ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
+                            player.Session?.Send(new TemplateActionMessage
+                            {
+                                Identity = player.Identity, ItemLowId = source.LowId, ItemHighId = source.HighId,
+                                Quality = source.Quality, Placement = usedSlot, Count = 1,
+                                Action = TemplateActionType.Use, Unknown3 = (int)player.Identity.Type, Unknown4 = player.Identity.Instance
+                            });
+                            player.Session?.Send(new CharacterActionMessage
+                            {
+                                Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = usedSlot
+                            });
+                        }
+                        catch (Exception exception)
+                        {
+                            CompletionFailure(player, exception, committed: true);
+                        }
+                    },
+                    failed: () => source.Locked = false);
+                return true;
             }
             return false;
         }
@@ -187,24 +203,110 @@ public sealed partial class QuestService
                 return;
 
             quest.SharedRewardChance = chance ?? quest.SharedRewardChance;
-            if (!CanDeliver(player) || !TryEarnBoundObjective(player, quest, parameters, null, quest.SharedRewardChance, share: false))
+            if (!CanDeliver(player))
             {
-                if (player.IsPersistenceQuarantined)
-                    return;
                 quest.SharedEarnPending = true;
                 quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
+                return;
             }
+            if (quest.IsCommitInFlight(_now().Ticks))
+                return;
+            BeginBoundObjectiveEarn(player, quest, parameters, removal: null, quest.SharedRewardChance, share: false,
+                earned: null,
+                failed: () =>
+                {
+                    if (player.IsPersistenceQuarantined)
+                        return;
+                    quest.SharedEarnPending = true;
+                    quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
+                });
         }
     }
 
-    bool TryEarnBoundObjective(Player player, PlayerQuest quest, QuestDungeonParameters parameters, MissionItemInstanceData? removal,
-        (int Killed, int Total)? sharedChance = null, bool share = true)
+    /// <summary>How long a queued mission transaction may stay in flight before the retry tick may queue another.</summary>
+    const int CommitInFlightSeconds = 30;
+
+    /// <summary>
+    /// Runs a mission transaction for <paramref name="quest"/> in the player's write-behind lane (behind everything
+    /// their inventory already queued, like the hard flush that used to precede it) and brings the result back to the
+    /// player's tick, under their gate: <paramref name="apply"/> with what the transaction returned, or
+    /// <paramref name="failed"/> with the exception it threw. The quest shows the transaction as in flight meanwhile,
+    /// so the retry tick does not queue it twice. An unknown commit outcome is left to the lane, which quarantines the
+    /// player. The caller holds the gate.
+    /// </summary>
+    void RunMissionTransaction<T>(Player player, PlayerQuest quest, Func<IMissionDaoTransaction, T> transaction,
+        Action<T> apply, Action<Exception> failed)
     {
-        bool committed = false;
-        try
+        quest.CommitInFlightUntilUtcTicks = _now().AddSeconds(CommitInFlightSeconds).Ticks;
+        int characterId = player.Identity.Instance;
+        _flush.Enqueue(player, () =>
         {
-            _flush.HardFlush(player);
-            var result = _completionDao!.Execute(player.Identity.Instance, null!, tx =>
+            T? result = default;
+            Exception? failure = null;
+            try
+            {
+                result = _completionDao!.Execute(characterId, null!, transaction);
+            }
+            catch (Exception exception) when (exception is MissionCommitOutcomeUnknownException or DatabaseCommitOutcomeUnknownException)
+            {
+                lock (player.PersistenceGate)
+                    quest.CommitInFlightUntilUtcTicks = 0;
+                throw;
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+
+            ZoneEngine_New.Core.Playfield.Playfield? here = player.Playfield;
+            if (here == null)
+            {
+                // The player left before the result could be applied: a stored earn is recovered at the next login.
+                lock (player.PersistenceGate)
+                    quest.CommitInFlightUntilUtcTicks = 0;
+                return;
+            }
+            here.DispatchPlayerProjection(player, () =>
+            {
+                lock (player.PersistenceGate)
+                {
+                    quest.CommitInFlightUntilUtcTicks = 0;
+                    try
+                    {
+                        if (failure != null)
+                            failed(failure);
+                        else
+                            apply(result!);
+                    }
+                    catch (Exception exception)
+                    {
+                        CompletionFailure(player, exception, committed: true);
+                    }
+                }
+            });
+        });
+    }
+
+    /// <summary>Runs <paramref name="action"/> on the objective's playfield tick (now, when this is it).</summary>
+    static void OnObjectiveTick(MissionObjectiveItem objective, Action action)
+    {
+        if (objective.Playfield is ZoneEngine_New.Core.Playfield.Playfield playfield)
+            playfield.Dispatch(action);
+        else
+            action();
+    }
+
+    /// <summary>
+    /// Queues a bound objective's earn (<see cref="RunMissionTransaction{T}"/>): the stored quest must still be the
+    /// accepted one with the objective open. Once it lands, on the player's tick under their gate, the quest's
+    /// progress is set and the objective shared with the team, then <paramref name="earned"/> runs; a refusal or
+    /// failure runs <paramref name="failed"/>. The caller holds the gate and has checked the quest is not in flight.
+    /// </summary>
+    void BeginBoundObjectiveEarn(Player player, PlayerQuest quest, QuestDungeonParameters parameters, MissionItemInstanceData? removal,
+        (int Killed, int Total)? sharedChance, bool share, Action? earned, Action? failed)
+    {
+        RunMissionTransaction(player, quest,
+            tx =>
             {
                 var completion = RequireCompletion(tx);
                 var stored = completion.ReadCharacterQuest(quest.QuestId);
@@ -221,23 +323,29 @@ public sealed partial class QuestService
                     ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson,
                     NowUtcTicks = _now().Ticks, Removals = removal == null ? [] : [removal]
                 }, sharedChance);
+            },
+            apply: result =>
+            {
+                if (result.Status != CharacterQuestCompletionStatus.Earned)
+                {
+                    _logger.Warn("Mission objective not earned char=" + player.Identity.Instance + " quest=" + quest.QuestId
+                        + " status=" + result.Status + " reason=" + result.Reason);
+                    failed?.Invoke();
+                    return;
+                }
+                quest.Progress = quest.RequiredCount;
+                quest.NpcObjectiveCommitPending = false;
+                quest.SharedEarnPending = false;
+                quest.NextRewardRetryUtcTicks = 0;
+                earned?.Invoke();
+                if (share)
+                    ShareObjective(player, quest);
+            },
+            failed: exception =>
+            {
+                CompletionFailure(player, exception, committed: false);
+                failed?.Invoke();
             });
-            if (result.Status != CharacterQuestCompletionStatus.Earned)
-                return false;
-            committed = true;
-            quest.Progress = quest.RequiredCount;
-            quest.NpcObjectiveCommitPending = false;
-            quest.SharedEarnPending = false;
-            quest.NextRewardRetryUtcTicks = 0;
-            if (share)
-                ShareObjective(player, quest);
-            return true;
-        }
-        catch (Exception exception)
-        {
-            CompletionFailure(player, exception, committed);
-            return false;
-        }
     }
 
     /// <summary>Passes a team mission's earned objective on to its other holders; a failing listener never undoes the earn.</summary>
@@ -272,21 +380,20 @@ public sealed partial class QuestService
                 || parameters.ObjectiveItem?.SameObjectiveAs(objective.Binding) != true
                 || player.GetEdgeDistanceTo(objective) > LootableDynel.OpenRange
                 || !world.GetRequiredService<ZoneEngine_New.Core.Playfield.DynelRegistry>().TryGet(objective.Identity, out var current)
-                || !ReferenceEquals(current, objective))
+                || !ReferenceEquals(current, objective)
+                || quest.IsCommitInFlight(_now().Ticks))
                 return false;
 
-            bool committed = false;
-            try
+            Item item = _items.Create(objective.LowId, objective.HighId, objective.Quality,
+                ItemSource.Quest, 1, objective.Identity.Instance, objective.Identity);
+            if (!InventoryGrantPlan.TryCreate(player, [item], out var grant))
             {
-                Item item = _items.Create(objective.LowId, objective.HighId, objective.Quality,
-                    ItemSource.Quest, 1, objective.Identity.Instance, objective.Identity);
-                if (!InventoryGrantPlan.TryCreate(player, [item], out var grant))
-                {
-                    ClientFeedback.Send(player, "Make inventory space before picking up the mission item.");
-                    return false;
-                }
-                _flush.HardFlush(player);
-                var result = _completionDao.Execute(player.Identity.Instance, null!, tx =>
+                ClientFeedback.Send(player, "Make inventory space before picking up the mission item.");
+                return false;
+            }
+            bool returnItem = quest.Template.IsReturnItem;
+            RunMissionTransaction(player, quest,
+                tx =>
                 {
                     var completion = RequireCompletion(tx);
                     var stored = completion.ReadCharacterQuest(quest.QuestId);
@@ -304,30 +411,44 @@ public sealed partial class QuestService
                         ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson,
                         NowUtcTicks = _now().Ticks, Grants = grant.Rows.Select(ToMissionItem).ToArray()
                     };
-                    return quest.Template.IsReturnItem
+                    return returnItem
                         ? (tx as ICharacterQuestObjectiveCollectionTransaction
                             ?? throw new InvalidOperationException("Mission DAO cannot persist partial objective collection."))
                             .TryCollectCharacterQuestItem(request)
                         : EarnWithToken(tx, completion, player, quest, request);
+                },
+                apply: result =>
+                {
+                    bool collected = result.Status == (returnItem ? CharacterQuestCompletionStatus.Collected : CharacterQuestCompletionStatus.Earned);
+                    if (!collected)
+                    {
+                        _logger.Warn("Mission item not collected char=" + player.Identity.Instance + " quest=" + quest.QuestId
+                            + " status=" + result.Status + " reason=" + result.Reason);
+                        OnObjectiveTick(objective, () => objective.FinishPickup(player, collected: false));
+                        return;
+                    }
+                    try
+                    {
+                        grant.PublishAfterCommit(notify: false,
+                            from: ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.World, objective.Identity));
+                        quest.Progress = returnItem ? 1 : quest.RequiredCount;
+                        quest.NextRewardRetryUtcTicks = 0;
+                        if (!returnItem)
+                            ShareObjective(player, quest);
+                    }
+                    finally
+                    {
+                        // The objective dynel publishes the pickup acknowledgement and leaves the world.
+                        // The player's next tick then delivers the independent terminal rewards.
+                        OnObjectiveTick(objective, () => objective.FinishPickup(player, collected: true));
+                    }
+                },
+                failed: exception =>
+                {
+                    CompletionFailure(player, exception, committed: false);
+                    OnObjectiveTick(objective, () => objective.FinishPickup(player, collected: false));
                 });
-                if (result.Status != (quest.Template.IsReturnItem ? CharacterQuestCompletionStatus.Collected : CharacterQuestCompletionStatus.Earned))
-                    return false;
-                committed = true;
-                grant.PublishAfterCommit(notify: false,
-                    from: ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.World, objective.Identity));
-                quest.Progress = quest.Template.IsReturnItem ? 1 : quest.RequiredCount;
-                quest.NextRewardRetryUtcTicks = 0;
-                if (!quest.Template.IsReturnItem)
-                    ShareObjective(player, quest);
-                // The objective dynel publishes the captured pickup acknowledgement first.
-                // The player's next tick then delivers the independent terminal rewards.
-                return true;
-            }
-            catch (Exception exception)
-            {
-                CompletionFailure(player, exception, committed);
-                return false;
-            }
+            return true;
         }
     }
 
@@ -350,9 +471,13 @@ public sealed partial class QuestService
                 || parameters.ObjectiveItem?.SameObjectiveAs(objective.Binding) != true
                 || !world.GetRequiredService<ZoneEngine_New.Core.Playfield.DynelRegistry>().TryGet(objective.Identity, out var current)
                 || !ReferenceEquals(current, objective)
-                || !player.HasLineOfSightTo(objective))
+                || !player.HasLineOfSightTo(objective)
+                || quest.IsCommitInFlight(_now().Ticks))
                 return false;
-            return TryEarnBoundObjective(player, quest, parameters, null);
+            BeginBoundObjectiveEarn(player, quest, parameters, removal: null, sharedChance: null, share: true,
+                earned: () => OnObjectiveTick(objective, () => objective.FinishFind(earned: true)),
+                failed: () => OnObjectiveTick(objective, () => objective.FinishFind(earned: false)));
+            return true;
         }
     }
 
@@ -363,21 +488,25 @@ public sealed partial class QuestService
         var log = player.QuestLog ??= Load(player);
         long now = _now().Ticks;
         foreach (var quest in log.Quests.Values.Where(q => q.IsActive && !q.IsRewardPending
-            && (q.NpcObjectiveCommitPending || q.SharedEarnPending)
+            && (q.NpcObjectiveCommitPending || q.SharedEarnPending) && !q.IsCommitInFlight(now)
             && (force || q.NextRewardRetryUtcTicks <= now)).ToArray())
         {
             lock (player.PersistenceGate)
             {
                 quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
-                if (!QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters))
+                if (!QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
+                    || quest.IsCommitInFlight(now))
                     continue;
+                // The pending flags stay set until the earn lands, so a refusal is retried at the next due time.
                 if (quest.SharedEarnPending)
-                    TryEarnBoundObjective(player, quest, parameters, null, quest.SharedRewardChance, share: false);
+                    BeginBoundObjectiveEarn(player, quest, parameters, removal: null, quest.SharedRewardChance, share: false,
+                        earned: null, failed: null);
                 else if (parameters.ObjectiveNpc is { IsValid: true, MissionType: 0 })
-                    TryEarnBoundObjective(player, quest, parameters, null);
+                    BeginBoundObjectiveEarn(player, quest, parameters, removal: null, sharedChance: null, share: true,
+                        earned: null, failed: null);
             }
         }
-        foreach (var quest in log.Quests.Values.Where(q => q.IsRewardPending
+        foreach (var quest in log.Quests.Values.Where(q => q.IsRewardPending && !q.IsCommitInFlight(now)
             && (force || q.NextRewardRetryUtcTicks <= now)).ToArray())
             Complete(player, quest);
     }
@@ -554,27 +683,32 @@ public sealed partial class QuestService
         if (result.Status != CharacterQuestCompletionStatus.Applied)
             throw new InvalidOperationException("Quest " + quest.QuestId + " reward was not applied: " + result.Status + " " + result.Reason);
         grant.MarkStored();
-        // Retire any checkpoint captured before the reward, so it cannot overwrite paid stats; then take a fresh one.
-        player.SaveState.MarkCommitted(player.SaveState.NextSequence(), paid, location: null);
-        player.SaveState.RequestCheckpoint();
+        lock (player.PersistenceGate)
+        {
+            // Retire any checkpoint captured before the reward, so it cannot overwrite paid stats; then take a fresh one.
+            player.SaveState.MarkCommitted(player.SaveState.NextSequence(), paid, location: null);
+            player.SaveState.RequestCheckpoint();
+        }
         _logger.Info("Quest rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId);
     }
 
+    /// <summary>
+    /// A generated mission's completion. Its earn, with the reward roll and kill share read from storage, runs in the
+    /// player's write-behind lane; the reward is then decided and shown on the player's tick and its transaction queued
+    /// behind the earn, as a Quests.json quest's is (<see cref="CompleteTemplate"/>). While the earn is in flight the
+    /// quest is marked so and the retry tick leaves it alone.
+    /// </summary>
     void CompleteMission(Player player, PlayerQuest quest)
     {
         lock (player.PersistenceGate)
         {
-            if (!CanDeliver(player) || _completionDao == null || !quest.IsActive)
+            if (!CanDeliver(player) || _completionDao == null || _snapshot == null || !quest.IsActive
+                || quest.IsCommitInFlight(_now().Ticks))
                 return;
             quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
-            bool committed = false;
-            try
-            {
-                _flush.HardFlush(player);
-                // Earning is durable even when capacity, content availability or delivery fails later.
-                TokenRoll? tokenReward = null;
-                MissionShare? share = null;
-                var earned = _completionDao.Execute(player.Identity.Instance, null!, tx =>
+            // Earning is durable even when capacity, content availability or delivery fails later.
+            RunMissionTransaction(player, quest,
+                tx =>
                 {
                     var completion = RequireCompletion(tx);
                     var stored = completion.ReadCharacterQuest(quest.QuestId);
@@ -587,142 +721,189 @@ public sealed partial class QuestService
                         ExpectedDefinitionJson = stored.DefinitionJson,
                         ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson, NowUtcTicks = _now().Ticks
                     });
+                    TokenRoll? tokenReward = null;
+                    MissionShare? share = null;
                     if (result.Status is CharacterQuestCompletionStatus.Earned or CharacterQuestCompletionStatus.AlreadyEarned)
                     {
                         tokenReward = ReadTokenReward(tx, player, quest, result.Quest);
                         share = ShareFor(tx, player, quest, result.Quest, tokenReward);
                     }
-                    return result;
+                    return new MissionEarn(result, tokenReward, share);
+                },
+                apply: earn => DeliverMissionReward(player, quest, earn),
+                failed: exception =>
+                {
+                    CompletionFailure(player, exception, committed: false);
+                    if (quest.IsRewardPending && !player.IsPersistenceQuarantined)
+                        NotifyPending(player, quest);
                 });
-                if (earned.Status == CharacterQuestCompletionStatus.AlreadyApplied)
-                {
-                    // A different/uncertain publication already paid; never overwrite its durable stats with this actor.
-                    player.QuarantinePersistence();
-                    player.Session?.Close();
-                    return;
-                }
-                if (earned.Status is not (CharacterQuestCompletionStatus.Earned or CharacterQuestCompletionStatus.AlreadyEarned))
-                    return;
-                quest.Progress = quest.RequiredCount;
-                if (_snapshot == null)
-                    throw new InvalidOperationException("Character snapshot service is unavailable; reward remains pending.");
-                _snapshot.CommitOnline(player);
-                QuestTemplate rewardTemplate = quest.Source == QuestSource.Generated
-                    ? JsonSerializer.Deserialize<QuestTemplate>(earned.Quest.DefinitionJson, QuestTemplate.JsonOptions)
-                        ?? throw new InvalidOperationException("Stored reward definition is unavailable.")
-                    : quest.Template;
-                var reward = rewardTemplate.Reward;
-                // A dungeon quest's reward roll gates its XP and items (and a sided token); credits pay on completion.
-                bool rewardLost = tokenReward is { Won: false };
-                List<QuestRewardItem> definitions = rewardLost ? new() : RewardItemsFor(player, quest, reward).ToList();
-                if (tokenReward is { Won: true, ItemId: > 0 })
-                {
-                    definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
-                }
-                List<Item> items = MintRewardItems(player, quest, definitions, out List<Item> used);
-                if (!InventoryGrantPlan.TryCreate(player, items, out var grant, out GrantRefusal refusal, allowOverflow: true))
-                {
-                    _logger.Warn("Quest reward pending char=" + player.Identity.Instance + " quest=" + quest.QuestId + " reason=" + refusal);
-                    NotifyPending(player, quest, uniqueConflict: refusal is GrantRefusal.UniqueHeld or GrantRefusal.UniqueRepeated);
-                    return;
-                }
-                // XP is awarded after the commit through the ordinary XP path (caps, research share, level-ups) and
-                // persists with the next save; only cash and mission bits are durable parts of the reward transaction.
-                // A mission with a reward split (Missions.json Rewards) pays its credits and XP by the share cleared, and
-                // its XP no longer by the roll; one without pays as before.
-                int fullXp = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0;
-                double? rewardFactor = share?.Factor;
-                int xpReward = rewardFactor is double xpShare
-                    ? (int)Math.Round(fullXp * xpShare, MidpointRounding.AwayFromZero)
-                    : rewardLost ? 0 : fullXp;
-                int credits = reward?.Credits ?? 0;
-                if (rewardFactor is double creditShare)
-                    credits = (int)Math.Round(credits * creditShare, MidpointRounding.AwayFromZero);
-                var values = new Dictionary<CharacterStat, int>();
-                if (credits > 0)
-                    values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
-                        (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + credits);
-                if (rewardTemplate.MissionBit is int bit && MissionBits.IsValid(bit))
-                {
-                    var (stat, mask) = MissionBits.Locate(bit);
-                    values[stat] = player.Stats.GetOrZero(stat, StatDetail.Base) | mask;
-                }
-                var expected = values.Keys.Select(stat => new MissionStatValueData
-                {
-                    StatIdentityType = (int)player.Identity.Type, StatId = (int)stat,
-                    Value = player.Stats.GetOrZero(stat, StatDetail.Base)
-                }).ToArray();
-                var result = _completionDao.Execute(player.Identity.Instance, null!, tx => RequireCompletion(tx).TryCompleteCharacterQuest(new()
-                {
-                    QuestId = quest.QuestId, AssignedAtUtcTicks = earned.Quest.AssignedAtUtcTicks,
-                    ExpectedDefinitionJson = earned.Quest.DefinitionJson,
-                    ExpectedAcgBuildingGeneratorJson = earned.Quest.AcgBuildingGeneratorJson, NowUtcTicks = _now().Ticks,
-                    Grants = grant.Rows.Select(ToMissionItem).ToArray(), ExpectedStatValues = expected,
-                    StatMutations = values.Select(pair => new MissionStatMutationData
-                    {
-                        StatIdentityType = (int)player.Identity.Type, StatId = (int)pair.Key,
-                        Kind = MissionStatMutationKind.Set, Value = pair.Value,
-                        MinimumValue = int.MinValue, MaximumValue = int.MaxValue
-                    }).ToArray()
-                }));
-                if (result.Status != CharacterQuestCompletionStatus.Applied)
-                {
-                    _logger.Warn("Quest reward delivery not applied char=" + player.Identity.Instance
-                        + " quest=" + quest.QuestId + " status=" + result.Status + " reason=" + result.Reason);
-                    if (result.Status == CharacterQuestCompletionStatus.AlreadyApplied)
-                    {
-                        player.QuarantinePersistence();
-                        player.Session?.Close();
-                    }
-                    return;
-                }
-                committed = true;
-                // Retire any queued pre-reward checkpoint before publishing, so it cannot overwrite paid stats.
-                player.SaveState.MarkCommitted(player.SaveState.NextSequence(), values.Select(pair => new StatRecord
-                {
-                    StatId = (int)pair.Key, StatValue = pair.Value
-                }).ToArray(), location: null);
-                quest.State = QuestState.Completed;
-                // Local playtest: AddTemplate fills the first free client slot, so publish before key deletion opens a hole.
-                try
-                {
-                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
-                        grant.PublishAfterCommit();
-                }
-                finally
-                {
-                    // Durable lifecycle cleanup must still run if reward publication fails.
-                    Ended(player, quest);
-                }
-                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
-                {
-                    foreach (var pair in values)
-                        player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
-                    player.FlushDirtyStats();
-                    if (xpReward > 0)
-                        player.AwardXp(xpReward, XpSource.Quest);
-                }
-                if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
-                    foreach (Item item in used)
-                        item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
-                QuestJournal.SendEnded(player, quest, CharacterActionType.MissionAccomplished);
-                QuestJournal.Delete(player, quest);
-                _logger.Info("Quest completed and rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId
-                    + (tokenReward == null ? string.Empty : " rewardWon=" + tokenReward.Won + " tokenItem=" + tokenReward.ItemId
-                        + " tokenKills=" + tokenReward.Killed + "/" + tokenReward.Total));
-                // Modules hear of it after the commit (module API 1.12): what was paid is settled, what they add is theirs.
-                if (player.Playfield is ZoneEngine_New.Core.Playfield.Playfield completedOn)
-                    ModuleHooks.MissionCompleted(completedOn, player, quest, rewardTemplate, share, credits, xpReward, tokenReward?.Won);
-                if (!string.IsNullOrEmpty(rewardTemplate.NextStep) && _catalog.TryGet(rewardTemplate.NextStep, out _))
-                    TryAssignTemplate(player, rewardTemplate.NextStep, out _);
-            }
-            catch (Exception exception)
-            {
-                CompletionFailure(player, exception, committed);
-                if (quest.IsRewardPending && !player.IsPersistenceQuarantined)
-                    NotifyPending(player, quest);
-            }
         }
+    }
+
+    /// <summary>A mission's stored earn with the reward roll and kill share read beside it.</summary>
+    sealed record MissionEarn(CharacterQuestCompletionResult Result, TokenRoll? TokenReward, MissionShare? Share);
+
+    /// <summary>
+    /// The earned mission's reward, on the player's tick under their gate: decided from the stored definition and roll,
+    /// paid in memory and shown, with its transaction queued behind the earn in the player's lane (the items at parked
+    /// rows, the stat values the tick held stored first so the transaction's fail-closed check holds).
+    /// </summary>
+    void DeliverMissionReward(Player player, PlayerQuest quest, MissionEarn earn)
+    {
+        CharacterQuestCompletionResult earned = earn.Result;
+        if (earned.Status == CharacterQuestCompletionStatus.AlreadyApplied)
+        {
+            // A different/uncertain publication already paid; never overwrite its durable stats with this actor.
+            player.QuarantinePersistence();
+            player.Session?.Close();
+            return;
+        }
+        if (earned.Status is not (CharacterQuestCompletionStatus.Earned or CharacterQuestCompletionStatus.AlreadyEarned))
+        {
+            _logger.Warn("Quest earn not applied char=" + player.Identity.Instance + " quest=" + quest.QuestId
+                + " status=" + earned.Status + " reason=" + earned.Reason);
+            return;
+        }
+        if (!CanDeliver(player) || !quest.IsActive)
+            return;
+        quest.Progress = quest.RequiredCount;
+        TokenRoll? tokenReward = earn.TokenReward;
+        MissionShare? share = earn.Share;
+        bool queued = false;
+        try
+        {
+            QuestTemplate rewardTemplate = quest.Source == QuestSource.Generated
+                ? JsonSerializer.Deserialize<QuestTemplate>(earned.Quest.DefinitionJson, QuestTemplate.JsonOptions)
+                    ?? throw new InvalidOperationException("Stored reward definition is unavailable.")
+                : quest.Template;
+            var reward = rewardTemplate.Reward;
+            // A dungeon quest's reward roll gates its XP and items (and a sided token); credits pay on completion.
+            bool rewardLost = tokenReward is { Won: false };
+            List<QuestRewardItem> definitions = rewardLost ? new() : RewardItemsFor(player, quest, reward).ToList();
+            if (tokenReward is { Won: true, ItemId: > 0 })
+            {
+                definitions.Add(new QuestRewardItem { Id = tokenReward.ItemId, HighId = tokenReward.ItemId, Quality = tokenReward.Quality });
+            }
+            List<Item> items = MintRewardItems(player, quest, definitions, out List<Item> used);
+            if (!InventoryGrantPlan.TryCreate(player, items, out var grant, out GrantRefusal refusal, allowOverflow: true))
+            {
+                _logger.Warn("Quest reward pending char=" + player.Identity.Instance + " quest=" + quest.QuestId + " reason=" + refusal);
+                NotifyPending(player, quest, uniqueConflict: refusal is GrantRefusal.UniqueHeld or GrantRefusal.UniqueRepeated);
+                return;
+            }
+            // XP is awarded through the ordinary XP path (caps, research share, level-ups) and persists with the next
+            // save; only cash and mission bits are durable parts of the reward transaction.
+            // A mission with a reward split (Missions.json Rewards) pays its credits and XP by the share cleared, and
+            // its XP no longer by the roll; one without pays as before.
+            int fullXp = reward?.XpFor(player.Stats.GetOrOne(CharacterStat.Level)) ?? 0;
+            double? rewardFactor = share?.Factor;
+            int xpReward = rewardFactor is double xpShare
+                ? (int)Math.Round(fullXp * xpShare, MidpointRounding.AwayFromZero)
+                : rewardLost ? 0 : fullXp;
+            int credits = reward?.Credits ?? 0;
+            if (rewardFactor is double creditShare)
+                credits = (int)Math.Round(credits * creditShare, MidpointRounding.AwayFromZero);
+            var values = new Dictionary<CharacterStat, int>();
+            if (credits > 0)
+                values[CharacterStat.Cash] = Characters.CashLimit.Clamp(
+                    (long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + credits);
+            if (rewardTemplate.MissionBit is int bit && MissionBits.IsValid(bit))
+            {
+                var (stat, mask) = MissionBits.Locate(bit);
+                values[stat] = player.Stats.GetOrZero(stat, StatDetail.Base) | mask;
+            }
+            // What the tick holds now is what the reward transaction expects storage to hold; the commit stores it first.
+            StatRecord[] before = values.Keys.Select(stat => new StatRecord
+            {
+                StatId = (int)stat, StatValue = player.Stats.GetOrZero(stat, StatDetail.Base)
+            }).ToArray();
+            StatRecord[] paid = values.Select(pair => new StatRecord { StatId = (int)pair.Key, StatValue = pair.Value }).ToArray();
+            MissionStatValueData[] expected = values.Keys.Select(stat => new MissionStatValueData
+            {
+                StatIdentityType = (int)player.Identity.Type, StatId = (int)stat,
+                Value = player.Stats.GetOrZero(stat, StatDetail.Base)
+            }).ToArray();
+            MissionStatMutationData[] mutations = values.Select(pair => new MissionStatMutationData
+            {
+                StatIdentityType = (int)player.Identity.Type, StatId = (int)pair.Key,
+                Kind = MissionStatMutationKind.Set, Value = pair.Value,
+                MinimumValue = int.MinValue, MaximumValue = int.MaxValue
+            }).ToArray();
+            MissionItemInstanceData[] grants = grant.ParkedRows().Select(ToMissionItem).ToArray();
+            CharacterQuestCompletionSnapshotData stored = earned.Quest;
+
+            quest.State = QuestState.Completed;
+            _flush.Enqueue(player, () => CommitMissionReward(player, quest, grant, stored, grants, before, paid, expected, mutations));
+            queued = true;
+            // Local playtest: AddTemplate fills the first free client slot, so publish before key deletion opens a hole.
+            try
+            {
+                using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
+                    grant.PublishBeforeCommit();
+            }
+            finally
+            {
+                // Durable lifecycle cleanup must still run if reward publication fails.
+                Ended(player, quest);
+            }
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
+            {
+                foreach (var pair in values)
+                    player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
+                player.FlushDirtyStats();
+                if (xpReward > 0)
+                    player.AwardXp(xpReward, XpSource.Quest);
+            }
+            if (used.Count > 0 && player.Playfield?.GetService<IInventoryRepository>() is IInventoryRepository inventory)
+                foreach (Item item in used)
+                    item.Definition.ExecuteOnUseSpells(player, inventory, _items, source: player);
+            QuestJournal.SendEnded(player, quest, CharacterActionType.MissionAccomplished);
+            QuestJournal.Delete(player, quest);
+            _logger.Info("Quest completed, rewards queued for commit char=" + player.Identity.Instance + " quest=" + quest.QuestId
+                + (tokenReward == null ? string.Empty : " rewardWon=" + tokenReward.Won + " tokenItem=" + tokenReward.ItemId
+                    + " tokenKills=" + tokenReward.Killed + "/" + tokenReward.Total));
+            // Modules hear of it once the reward is decided (module API 1.12): what is paid is settled, what they add is theirs.
+            if (player.Playfield is ZoneEngine_New.Core.Playfield.Playfield completedOn)
+                ModuleHooks.MissionCompleted(completedOn, player, quest, rewardTemplate, share, credits, xpReward, tokenReward?.Won);
+            if (!string.IsNullOrEmpty(rewardTemplate.NextStep) && _catalog.TryGet(rewardTemplate.NextStep, out _))
+                TryAssignTemplate(player, rewardTemplate.NextStep, out _);
+        }
+        catch (Exception exception)
+        {
+            // Once the reward is queued, memory already shows it: a failure past that point must reload from storage.
+            CompletionFailure(player, exception, queued);
+            if (quest.IsRewardPending && !player.IsPersistenceQuarantined)
+                NotifyPending(player, quest);
+        }
+    }
+
+    /// <summary>
+    /// Write-behind lane: stores the mission reward the tick already paid. Items go in at their parked rows (the dirty
+    /// inventory flush right after moves them into their slots); credits and the mission bit are set from the values
+    /// the tick held when it decided the reward, which are stored first so the transaction's fail-closed check holds.
+    /// </summary>
+    void CommitMissionReward(Player player, PlayerQuest quest, InventoryGrantPlan grant, CharacterQuestCompletionSnapshotData stored,
+        MissionItemInstanceData[] grants, StatRecord[] before, StatRecord[] paid, MissionStatValueData[] expected,
+        MissionStatMutationData[] mutations)
+    {
+        _snapshot!.SyncStats(player, before);
+        var result = _completionDao!.Execute(player.Identity.Instance, null!, tx => RequireCompletion(tx).TryCompleteCharacterQuest(new()
+        {
+            QuestId = quest.QuestId, AssignedAtUtcTicks = stored.AssignedAtUtcTicks,
+            ExpectedDefinitionJson = stored.DefinitionJson,
+            ExpectedAcgBuildingGeneratorJson = stored.AcgBuildingGeneratorJson, NowUtcTicks = _now().Ticks,
+            Grants = grants, ExpectedStatValues = expected, StatMutations = mutations
+        }));
+        if (result.Status != CharacterQuestCompletionStatus.Applied)
+            throw new InvalidOperationException("Quest " + quest.QuestId + " reward was not applied: " + result.Status + " " + result.Reason);
+        grant.MarkStored();
+        lock (player.PersistenceGate)
+        {
+            // Retire any checkpoint captured before the reward, so it cannot overwrite paid stats; then take a fresh one.
+            player.SaveState.MarkCommitted(player.SaveState.NextSequence(), paid, location: null);
+            player.SaveState.RequestCheckpoint();
+        }
+        _logger.Info("Mission rewards committed char=" + player.Identity.Instance + " quest=" + quest.QuestId);
     }
 
     /// <summary>

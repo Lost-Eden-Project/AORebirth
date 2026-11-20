@@ -49,16 +49,24 @@ namespace ZoneEngine_New.Core.Entities
         private IDisposable? _onlineOwnership;
         private volatile bool _persistenceQuarantined;
 
-        /// <summary>Serializes durable snapshots, write-behind, and economic transactions.</summary>
+        /// <summary>
+        /// Serializes memory bookkeeping of the persisted aggregate: what the tick changes and what a storage write
+        /// snapshots or finalizes. Never held across database work; a lane driver takes it only briefly (see
+        /// <see cref="Inventory.PersistenceLane"/>).
+        /// </summary>
         public object PersistenceGate { get; } = new();
 
         public bool IsPersistenceQuarantined => _persistenceQuarantined;
 
         /// <summary>
-        /// Database work the tick already shows (a Quests.json quest's progress, earn and reward), written in order off
-        /// the tick by <see cref="InventoryFlushService"/>, ahead of the dirty inventory and of every hard flush.
+        /// This character's ordered storage work (queued commits the tick already shows, shared trade commits, a retried
+        /// dirty flush), run off the tick by <see cref="InventoryFlushService"/> ahead of the dirty inventory and of every
+        /// hard flush.
         /// </summary>
-        internal System.Collections.Concurrent.ConcurrentQueue<Action> PendingCommits { get; } = new();
+        internal Inventory.PersistenceLane Lane { get; }
+
+        /// <summary>True while a queued commit has not been stored: base stats must not be checkpointed over it.</summary>
+        internal bool HasPendingCommits => Lane.HasQueuedWork;
 
         public CharacterSaveState SaveState { get; } = new();
 
@@ -166,6 +174,7 @@ namespace ZoneEngine_New.Core.Entities
             ArgumentNullException.ThrowIfNull(items);
             Logger = logger;
             _items = items;
+            Lane = new Inventory.PersistenceLane(identity.Instance, this);
             Inventory = new PlayerInventory();
             // The client's IP is what is left to spend; it never sees the level bonus or UsedIP split.
             Stats.WireValueOverride = stat => stat == CharacterStat.IP ? Math.Max(0, AvailableIp) : null;
@@ -2481,6 +2490,7 @@ namespace ZoneEngine_New.Core.Entities
             // admission is held until the arrival has run, so it cannot retire with the character in transit.
             Vector3 origin = new Vector3(Position.x, Position.y, Position.z);
             Quaternion originHeading = new Quaternion(Rotation.x, Rotation.y, Rotation.z, Rotation.w);
+            playfield.GetRequiredService<SpawnService>().SaveBeforeTransfer(this);
             playfield.LeaveTransferredPlayer(this);
             bool arrivalQueued;
             try

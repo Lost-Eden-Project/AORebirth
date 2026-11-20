@@ -24,6 +24,19 @@ public sealed class DailyLoginRewardService(
         if (string.IsNullOrEmpty(account) || characterId <= 0 || !IsValidToken(token))
             return new DailyLoginClaimResult { Message = "Daily Login claim authentication is invalid.", Terminal = true };
         utcNow = DailyLoginAccountState.Utc(utcNow);
+        if (player.IsPersistenceQuarantined || !player.Inventory.IsHydrated)
+            return Failure("Character inventory is not ready.", new DailyLoginAccountState());
+        // Before the gate: a hard flush drives the player's lane, whose writer takes that gate to finish. The claim's
+        // rows then land behind everything the player's inventory already queued.
+        try
+        {
+            flush.HardFlush(player);
+        }
+        catch (Exception exception) when (exception is not (DatabaseCommitOutcomeUnknownException or CharacterPersistenceCommitOutcomeUnknownException))
+        {
+            return Failure("Daily reward could not be saved. No reward was granted; try again.", new DailyLoginAccountState());
+        }
+
         lock (player.PersistenceGate)
         {
             if (player.IsPersistenceQuarantined || !player.Inventory.IsHydrated)
@@ -92,7 +105,6 @@ public sealed class DailyLoginRewardService(
             bool committed = false;
             try
             {
-                flush.HardFlush(player);
                 DailyLoginClaimCommitResultData result = dao.CommitDailyLoginClaim(new DailyLoginClaimCommitData
                 {
                     AccountUsername = account, CharacterId = player.Identity.Instance, ClaimToken = token,

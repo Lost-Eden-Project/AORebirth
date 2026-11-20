@@ -852,7 +852,7 @@ namespace ZoneEngine_New.Core.Playfield
                 {
                     if (!ReferenceEquals(player.Playfield, this))
                         continue;
-                    _characterSnapshot.CheckpointIfDue(player);
+                    _characterSnapshot.CheckpointIfDue(player, _inventoryFlush);
                 }
 
                 if (_playfieldManager.ModuleWorld is { } moduleWorld)

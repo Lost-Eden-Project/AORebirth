@@ -31,6 +31,13 @@ namespace ZoneEngine_New.Core.Inventory
         private int _nextClientHandle = 1;
         private readonly Dictionary<int, DirtyEntry> _dirty = new();
         private readonly object _dirtyGate = new();
+        private static long s_dirtySequence;
+
+        /// <summary>
+        /// The process-wide dirty clock: every dirty entry is stamped from it. A plan made on the tick records this
+        /// value so the transaction it queues can tell newer entries from older ones when it takes the dirty inventory.
+        /// </summary>
+        public static long DirtySequence => System.Threading.Volatile.Read(ref s_dirtySequence);
 
         /// <summary>
         /// Pending durable write for an item keyed by unique InstanceId. Whether it becomes an INSERT or an UPDATE is
@@ -46,9 +53,16 @@ namespace ZoneEngine_New.Core.Inventory
                 ContainerInstance = containerInstance;
                 ContainerPlacement = containerPlacement;
                 Retired = retired;
+                Sequence = System.Threading.Interlocked.Increment(ref s_dirtySequence);
             }
 
             public Item Item { get; }
+
+            /// <summary>
+            /// When this entry was made, on the process-wide dirty clock (<see cref="DirtySequence"/>): a queued
+            /// transaction tells an entry made after its plan (which wins) from one made before it (which it overrides).
+            /// </summary>
+            public long Sequence { get; }
 
             public int InstanceId => Item.InstanceId;
 
@@ -1030,9 +1044,17 @@ namespace ZoneEngine_New.Core.Inventory
                 Inserts = inserts;
                 Updates = updates;
                 NewlyPersisted = newlyPersisted;
+                _sequences = new Dictionary<int, long>(pending.Length);
+                foreach (DirtyEntry entry in pending)
+                    _sequences[entry.InstanceId] = entry.Sequence;
             }
 
+            readonly Dictionary<int, long> _sequences;
+
             internal DirtyEntry[] Pending { get; }
+
+            /// <summary>When the taken entry for <paramref name="instanceId"/> was made (<see cref="DirtySequence"/>); 0 for none.</summary>
+            public long SequenceOf(int instanceId) => _sequences.GetValueOrDefault(instanceId);
 
             public IReadOnlyList<ItemInstanceRecord> Inserts { get; }
 

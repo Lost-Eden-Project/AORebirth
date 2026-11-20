@@ -5,6 +5,7 @@ namespace ZoneEngine_New.Core.Loot
     using System.Globalization;
     using System.Linq;
     using System.Security.Cryptography;
+    using System.Text;
     using System.Threading;
 
     using AORebirth.Modules.Events;
@@ -56,6 +57,8 @@ namespace ZoneEngine_New.Core.Loot
             public required DateTime ClosesAtUtc { get; init; }
             /// <summary>The members who may answer, in team order.</summary>
             public required List<int> Rollers { get; init; }
+            /// <summary>Each roller's name when the roll opened, for the [Rolls] page after some may have left.</summary>
+            public required Dictionary<int, string> RollerNames { get; init; }
             public Dictionary<int, (LootRollChoice Choice, int Value)> Answers { get; } = new();
         }
 
@@ -105,6 +108,10 @@ namespace ZoneEngine_New.Core.Loot
             if (rollers.Count < 2)
                 return;
 
+            var names = new Dictionary<int, string>(present.Count);
+            foreach (Player member in present)
+                names[member.Identity.Instance] = member.Name ?? string.Empty;
+
             DateTime closes = DateTime.UtcNow.AddSeconds(settings.NeedGreedRollSeconds);
             int opened = 0;
             foreach (Item item in corpse.Loot.Content.OrderBy(pair => pair.Key).Select(pair => pair.Value).ToArray())
@@ -121,7 +128,8 @@ namespace ZoneEngine_New.Core.Loot
                     Item = item,
                     ItemName = string.IsNullOrEmpty(item.Name) ? "an item" : item.Name,
                     ClosesAtUtc = closes,
-                    Rollers = rollers
+                    Rollers = rollers,
+                    RollerNames = names
                 };
                 _rolls[roll.Id] = roll;
                 opened++;
@@ -301,12 +309,55 @@ namespace ZoneEngine_New.Core.Loot
                     member.Session?.Send(result);
                 }
             }
-            Tell(roll.Rollers, text);
+            Tell(roll.Rollers, text, RollsLink(roll, entries, winner != null ? won.CharacterId : 0));
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Need or Greed roll={0} corpse={1} item={2} winner={3} answers={4}", roll.Id, roll.Corpse.Identity.Instance,
                 roll.Item.LowId, winner?.Identity.Instance ?? 0,
                 string.Join(",", entries.Select(e => e.CharacterId + ":" + e.Choice + ":" + e.Roll))));
         }
+
+        /// <summary>
+        /// A <c>[Rolls]</c> text:// link for the result line: the item, then Need and Greed each by roll (highest first,
+        /// the winner in green), then the members who passed or did not answer.
+        /// </summary>
+        static string RollsLink(Roll roll, List<LootRollEntry> entries, int winnerId)
+        {
+            var page = new StringBuilder();
+            page.Append("<font color='#FFFF00'>Rolls for ").Append(Safe(roll.ItemName)).Append("</font><br>");
+            AppendChoice(page, roll, entries, LootRollChoice.Need, "Need", winnerId);
+            AppendChoice(page, roll, entries, LootRollChoice.Greed, "Greed", winnerId);
+
+            var passed = entries.Where(e => e.Choice == LootRollChoice.Pass).Select(e => NameIn(roll, e.CharacterId)).ToList();
+            if (passed.Count > 0)
+            {
+                page.Append("<br><font color='#888888'>Passed (").Append(passed.Count.ToString(CultureInfo.InvariantCulture))
+                    .Append(")</font><br>").Append(string.Join(", ", passed)).Append("<br>");
+            }
+            return "<a href=\"text://" + page + "\">[Rolls]</a>";
+        }
+
+        static void AppendChoice(StringBuilder page, Roll roll, List<LootRollEntry> entries, LootRollChoice choice, string title, int winnerId)
+        {
+            var picked = entries.Where(e => e.Choice == choice)
+                .OrderByDescending(e => e.Roll)
+                .ThenBy(e => AnswerOrder(roll, e.CharacterId))
+                .ToList();
+            if (picked.Count == 0)
+                return;
+            page.Append("<br><font color='#FFFF00'>").Append(title).Append("</font><br>");
+            foreach (LootRollEntry entry in picked)
+            {
+                string row = NameIn(roll, entry.CharacterId) + " " + entry.Roll.ToString(CultureInfo.InvariantCulture);
+                page.Append(entry.CharacterId == winnerId ? "<font color='#00FF00'>" + row + "</font>" : row).Append("<br>");
+            }
+        }
+
+        static string NameIn(Roll roll, int characterId)
+            => roll.RollerNames.TryGetValue(characterId, out string? name) && !string.IsNullOrEmpty(name) ? Safe(name) : "Someone";
+
+        /// <summary>A double quote would end the text:// href; angle brackets would open a tag.</summary>
+        static string Safe(string text) => text.Replace('"', '\'').Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal);
 
         static int AnswerOrder(Roll roll, int characterId)
         {
@@ -435,11 +486,13 @@ namespace ZoneEngine_New.Core.Loot
 
         /// <summary>
         /// One line to the rollers in the client's Team Loot tab: from the chat server, reaching them wherever they are;
-        /// zone feedback to those on this playfield when it cannot be reached.
+        /// zone feedback to those on this playfield when it cannot be reached. <paramref name="chatLink"/> follows the
+        /// text in the chat line only; plain feedback shows no links.
         /// </summary>
-        void Tell(IReadOnlyList<int> rollers, string text)
+        void Tell(IReadOnlyList<int> rollers, string text, string? chatLink = null)
         {
-            if (_playfield.GetService<VicinityChatRelay>()?.Announce(text, rollers, VicinityChatRelay.TeamLootBlob) == true)
+            string line = string.IsNullOrEmpty(chatLink) ? text : text + " " + chatLink;
+            if (_playfield.GetService<VicinityChatRelay>()?.Announce(line, rollers, VicinityChatRelay.TeamLootBlob) == true)
                 return;
             foreach (int id in rollers)
             {

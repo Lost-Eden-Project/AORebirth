@@ -229,6 +229,14 @@ namespace ZoneEngine_New.Core.Ai
                 return false;
             }
 
+            // A social pet does not fight, even when something hits it.
+            if (PetTypes.NeverFights(pet.Type))
+            {
+                pet.EndAttack();
+                brain.SetCurrentTarget(Identity.None);
+                return false;
+            }
+
             if (pet.Mode == PetMode.Attack)
             {
                 enemy = Resolve(npc, pet.AttackTarget, requireNearOwner: false);

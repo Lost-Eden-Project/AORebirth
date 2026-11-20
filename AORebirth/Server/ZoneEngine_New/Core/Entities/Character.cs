@@ -1054,9 +1054,9 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Shadowlands faction (<see cref="Factions.KillFaction"/>) for a monster of a Gameplay.json factions.kills faction:
-        /// every player with kill credit and their nearby teammates each move by the full amount, within the same level
-        /// range as kill XP: teammates the XP sharing rule leaves out (LevelEligibility.json) and anyone the monster is
-        /// grey for get none. None from pets, summoned adds or NoXp templates.
+        /// every player with kill credit and their living teammates anywhere on this playfield each move by the full
+        /// amount, whatever the monster's level is to them (no grey, team level-share or distance limit). None from pets,
+        /// summoned adds or NoXp templates.
         /// </summary>
         void AwardFaction(Playfield playfield, IReadOnlyList<int> present)
         {
@@ -1064,8 +1064,6 @@ namespace ZoneEngine_New.Core.Entities
                 || !Factions.KillFaction.TryGetRule(rules, this, out GameplayFactionKillRule rule, out int mobValue))
                 return;
 
-            IGameData gameData = playfield.GetRequiredService<IGameData>();
-            int victimLevel = Stats.GetOrOne(CharacterStat.Level);
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
             AORebirth.Modules.Events.StatChangeSource victim = Modules.ModuleHooks.SourceOf(this);
             var seen = new HashSet<int>();
@@ -1075,10 +1073,9 @@ namespace ZoneEngine_New.Core.Entities
                     || !registry.TryGet(identity, out Dynel? dynel) || dynel is not Character killer)
                     continue;
 
-                foreach (Character member in CollectNearbyTeam(playfield, registry, killer))
+                foreach (Character member in CollectNearbyTeamMembers(playfield, registry, killer, anyDistance: true))
                 {
-                    if (member is not Player player || !seen.Add(player.Identity.Instance)
-                        || IsGreyFor(player, victimLevel, gameData))
+                    if (member is not Player player || !seen.Add(player.Identity.Instance))
                         continue;
 
                     using var kill = Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Kill,
@@ -1305,8 +1302,11 @@ namespace ZoneEngine_New.Core.Entities
             return eligible;
         }
 
-        /// <summary>Killer first, then living teammates on this playfield within <see cref="TeamShareRange"/> of the victim.</summary>
-        List<Character> CollectNearbyTeamMembers(Playfield playfield, DynelRegistry registry, Character killer)
+        /// <summary>
+        /// Killer first, then living teammates on this playfield within <see cref="TeamShareRange"/> of the victim, or
+        /// anywhere on it when <paramref name="anyDistance"/> is set.
+        /// </summary>
+        List<Character> CollectNearbyTeamMembers(Playfield playfield, DynelRegistry registry, Character killer, bool anyDistance = false)
         {
             var recipients = new List<Character> { killer };
             TeamSnapshot? team = killer is Player player ? playfield.GetService<TeamService>()?.GetTeam(player) : null;
@@ -1321,7 +1321,7 @@ namespace ZoneEngine_New.Core.Entities
                 if (!registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = memberId }, out Dynel? dynel)
                     || dynel is not Player mate || mate.IsDead)
                     continue;
-                if (Distance3D(mate) > TeamShareRange)
+                if (!anyDistance && Distance3D(mate) > TeamShareRange)
                     continue;
 
                 recipients.Add(mate);
@@ -4483,6 +4483,16 @@ namespace ZoneEngine_New.Core.Entities
                 return true;
             }
 
+            // A BackMesh cut per breed or sex is fitted to the body's back and sits on the back attractor whichever slot
+            // carries it: Press Gear 158681 (right shoulder, backpack_*_pressgear), Father Time Hood 296502 and Social
+            // Armor 001 285517 (head or back). A single unconditioned BackMesh is a free prop that takes its slot's
+            // attractor: Wen-Wens and torches ship in "Shoulder" and "Utils" variants of the same mesh.
+            if (slot is not (6 or 8 or 56 or 58) && spell.Is(FunctionType.BackMesh) && IsBodyFitted(spell))
+            {
+                position = BackPosition;
+                return true;
+            }
+
             switch (slot)
             {
                 case 18:
@@ -4511,7 +4521,7 @@ namespace ZoneEngine_New.Core.Entities
                 default:
                     if (spell.Is(FunctionType.BackMesh))
                     {
-                        position = 5;
+                        position = BackPosition;
                         return true;
                     }
 
@@ -4524,6 +4534,22 @@ namespace ZoneEngine_New.Core.Entities
                     position = 0;
                     return false;
             }
+        }
+
+        /// <summary>The back attractor's mesh position.</summary>
+        const int BackPosition = 5;
+
+        /// <summary>True when the spell's criteria read breed or sex: its mesh is one of a per-body-shape set.</summary>
+        static bool IsBodyFitted(ItemSpell spell)
+        {
+            foreach (ItemRequirement requirement in spell.Requirements)
+            {
+                if ((CharacterStat)requirement.StatNumber is CharacterStat.Breed or CharacterStat.Sex
+                    or CharacterStat.VisualBreed or CharacterStat.VisualSex)
+                    return true;
+            }
+
+            return false;
         }
 
         bool SameWearAppearance(Dictionary<int, int> textures, List<Mesh> meshes)
