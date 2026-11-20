@@ -41,8 +41,19 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (playfield == null)
                 return;
 
-            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Target, out Dynel? dynel)
-                || dynel is not Character target)
+            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(message.Target, out Dynel? dynel))
+                return;
+
+            // Find Item completes on selecting the mission's world item, only one this client was actually sent.
+            if (dynel is MissionObjectiveItem objective)
+            {
+                if (playfield.GetService<QuestService>() is QuestService itemQuests
+                    && playfield.GetRequiredService<PlayfieldLocality>().IsVisibleTo(objective, player))
+                    objective.TryFindByTarget(player, itemQuests.TryEarnTargetedFindItem);
+                return;
+            }
+
+            if (dynel is not Character target)
                 return;
 
             // Credit only for an NPC this client was actually sent, so a spoofed identity cannot complete it.

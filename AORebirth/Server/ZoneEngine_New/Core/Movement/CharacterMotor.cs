@@ -1476,16 +1476,17 @@ namespace ZoneEngine_New.Core.Movement
             }
 
             SyncModeStats();
-            // Only translation keeps a sneaker sneaking (bug #545). A mode switch (walk/run, fly, sit, ...) already left
-            // sneak in the rules and SyncModeStats announced it; anything else the rules take in sneak (a jump) breaks it.
+            // Only translation and jumping keep a sneaker sneaking (bug #545). A mode switch (walk/run, fly, sit, ...)
+            // already left sneak in the rules and SyncModeStats announced it; anything else the rules take in sneak breaks it.
             if (wasSneaking && _move.State == (int)MovementState.Sneak && !KeepsSneak(action))
                 _character.BreakSneak();
             return true;
         }
 
-        /// <summary>The moves a sneaker can make and stay sneaking: walking, backing up, strafing, turning, stopping.</summary>
+        /// <summary>The moves a sneaker can make and stay sneaking: walking, backing up, strafing, turning, jumping,
+        /// stopping.</summary>
         static bool KeepsSneak(MovementAction action) => action is >= MovementAction.ForwardStart
-                and <= MovementAction.TurnLeftStop
+                and <= MovementAction.JumpStop
             or MovementAction.FullStop
             or MovementAction.SwitchToSneak
             or MovementAction.LeaveSneak;

@@ -8,6 +8,15 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
     public static class WallZoneLandingResolver
     {
+        /// <summary>
+        /// A destination line shorter than this is a landing point, and its own height is the landing height: the
+        /// Shadowlands stack zones over each other (4872 Adonis at Y 113 drops into 4873 Adonis Abyss's water, whose
+        /// line sits at Y 102), so the height the character left at is wrong there. Longer lines are zone edges whose
+        /// two end heights say nothing about the terrain between them (655/670: a blend lands 16-31 units underground),
+        /// so a crossing there keeps the character's own height, which neighbouring edges share.
+        /// </summary>
+        public const float PointLineMaxLength = 20f;
+
         public static bool TryResolve(
             DestinationsCatalog destinations,
             ZoneTriggerVolume wall,
@@ -46,7 +55,10 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 newZ += headX * 8f;
             }
 
-            landing = new Vector3(newX, (float)currentPosition.y, newZ);
+            float newY = dist < PointLineMaxLength
+                ? ((dest.EndY - dest.StartY) * factor) + dest.StartY
+                : (float)currentPosition.y;
+            landing = new Vector3(newX, newY, newZ);
             return true;
         }
     }

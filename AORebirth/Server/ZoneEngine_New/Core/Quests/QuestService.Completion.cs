@@ -44,22 +44,22 @@ public sealed partial class QuestService
             && (!RequiresBoundObjective(quest) || quest.IsRewardPending);
     }
 
-    /// <summary>Retail Find Person completes on inspection of the accepted actor, not ordinary targeting.</summary>
-    public void OnNpcInspected(Player player, NpcCharacter npc)
+    /// <summary>Find Person completes when the holder selects the accepted actor (LookAt), in line of sight.</summary>
+    void TryEarnTargetedNpcObjectives(Player player, NpcCharacter npc)
     {
         foreach (var quest in GetLog(player).Quests.Values)
             if (quest.IsActive && quest.Template.Action == QuestTemplate.TargetNpcAction && RequiresBoundObjective(quest))
-                TryEarnNpcObjective(player, quest, npc, inspected: true);
+                TryEarnNpcObjective(player, quest, npc, targeted: true);
     }
 
-    void TryEarnNpcObjective(Player player, PlayerQuest quest, NpcCharacter npc, bool inspected)
+    void TryEarnNpcObjective(Player player, PlayerQuest quest, NpcCharacter npc, bool targeted)
     {
         lock (player.PersistenceGate)
         {
             if (!CanDeliver(player) || _completionDao == null || !quest.IsActive || quest.IsRewardPending
                 || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
                 || parameters.ObjectiveNpc is not { IsValid: true } binding
-                || binding.MissionType != (inspected ? 1 : 0)
+                || binding.MissionType != (targeted ? 1 : 0)
                 // A team mission's target counts for every member holding it; the database binds the holder's own row.
                 || (binding.OwnerId != player.Identity.Instance && !quest.Template.IsTeamScope)
                 || binding.QuestId != quest.QuestId || npc.Identity != binding.Identity
@@ -70,9 +70,9 @@ public sealed partial class QuestService
                 || !ReferenceEquals(registered, npc)
                 // Find Person has no range of its own: the caller requires the NPC be spawned on this client
                 // (PlayfieldLocality.IsVisibleTo); only line of sight is checked here.
-                || inspected && !player.HasLineOfSightTo(npc))
+                || targeted && !player.HasLineOfSightTo(npc))
                 return;
-            if (!TryEarnBoundObjective(player, quest, parameters, null) && !inspected && !player.IsPersistenceQuarantined)
+            if (!TryEarnBoundObjective(player, quest, parameters, null) && !targeted && !player.IsPersistenceQuarantined)
             {
                 quest.NpcObjectiveCommitPending = true;
                 quest.NextRewardRetryUtcTicks = _now().AddSeconds(5).Ticks;
@@ -328,6 +328,31 @@ public sealed partial class QuestService
                 CompletionFailure(player, exception, committed);
                 return false;
             }
+        }
+    }
+
+    /// <summary>
+    /// Find Item (not Return an item) completes when the mission's owner selects the world item (LookAt) in line of
+    /// sight; nothing is picked up. Only the registered owner-bound world objective can call this.
+    /// </summary>
+    internal bool TryEarnTargetedFindItem(Player player, MissionObjectiveItem objective)
+    {
+        lock (player.PersistenceGate)
+        {
+            if (!CanDeliver(player) || _completionDao == null
+                || objective.Playfield is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield world
+                || !ReferenceEquals(player.Playfield, world)
+                || player.Identity.Instance != objective.Binding.OwnerId
+                || !GetLog(player).Quests.TryGetValue(objective.Binding.QuestId, out PlayerQuest? quest)
+                || !quest.IsActive || quest.IsRewardPending || !quest.Template.IsFindItem || quest.Progress != 0
+                || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
+                || parameters.DungeonPlayfield != world.Identity.Instance
+                || parameters.ObjectiveItem?.SameObjectiveAs(objective.Binding) != true
+                || !world.GetRequiredService<ZoneEngine_New.Core.Playfield.DynelRegistry>().TryGet(objective.Identity, out var current)
+                || !ReferenceEquals(current, objective)
+                || !player.HasLineOfSightTo(objective))
+                return false;
+            return TryEarnBoundObjective(player, quest, parameters, null);
         }
     }
 

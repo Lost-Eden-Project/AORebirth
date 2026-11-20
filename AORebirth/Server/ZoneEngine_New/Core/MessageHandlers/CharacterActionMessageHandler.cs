@@ -22,7 +22,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Playfield.Locality;
-    using ZoneEngine_New.Core.Quests;
 
     using MsgQuaternion = LostEden.Protocol.GameData.Quaternion;
     using MsgVector3 = LostEden.Protocol.GameData.Vector3;
@@ -352,11 +351,6 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         break;
 
                     session.Send(target.BuildInfoPacket());
-                    // Retail Find Person completion follows inspection of the exact, visible objective NPC.
-                    if (target is NpcCharacter npc
-                        && playfield.GetRequiredService<PlayfieldLocality>().IsVisibleTo(npc, player)
-                        && playfield.GetService<QuestService>() is QuestService quests)
-                        quests.OnNpcInspected(player, npc);
                     break;
                 }
 

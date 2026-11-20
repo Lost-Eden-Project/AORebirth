@@ -471,7 +471,7 @@ namespace ZoneEngine_New.Core.Quests
                 {
                     if (quest.IsActive && quest.Template.IsKill && RequiresBoundObjective(quest))
                     {
-                        TryEarnNpcObjective(player, quest, npc, inspected: false);
+                        TryEarnNpcObjective(player, quest, npc, targeted: false);
                         continue;
                     }
                     if (quest.IsActive && quest.Template.IsKill && Matches(npc, quest.Template.Objective.Npc))
@@ -485,12 +485,15 @@ namespace ZoneEngine_New.Core.Quests
 
         /// <summary>
         /// <paramref name="player"/> selected <paramref name="npc"/>: active TargetNpc quests on that NPC complete when
-        /// the player has line of sight to it. Matches the same way as kill credit.
+        /// the player has line of sight to it. Matches the same way as kill credit; a generated Find Person mission
+        /// completes on its own bound objective NPC.
         /// </summary>
         public void OnNpcTargeted(Player player, NpcCharacter npc)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(npc);
+
+            TryEarnTargetedNpcObjectives(player, npc);
 
             List<PlayerQuest>? found = FindActiveOn(player, npc, QuestTemplate.TargetNpcAction);
             // Raycast only when something would complete.

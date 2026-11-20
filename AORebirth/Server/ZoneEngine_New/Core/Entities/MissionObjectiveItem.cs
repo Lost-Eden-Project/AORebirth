@@ -80,6 +80,33 @@ public sealed class MissionObjectiveItem : WorldItem
         }
     }
 
+    /// <summary>
+    /// Find Item: the owner selected this item (LookAt). When <paramref name="earn"/> completes the mission the item
+    /// leaves the world for everyone; it is never picked up. Return an item still needs <see cref="TryPickup"/>.
+    /// </summary>
+    public bool TryFindByTarget(Player player, Func<Player, MissionObjectiveItem, bool> earn)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(earn);
+        lock (_pickupGate)
+        {
+            if (Binding.IsSourceItem || (MissionRollType)Binding.MissionType != MissionRollType.FindItem
+                || _collected || player.IsDead || player.Identity.Instance != Binding.OwnerId
+                || Playfield is not QuestDungeonPlayfield dungeon || !ReferenceEquals(player.Playfield, dungeon)
+                || !string.Equals(dungeon.QuestId, Binding.QuestId, StringComparison.Ordinal))
+                return false;
+
+            var registry = dungeon.GetRequiredService<DynelRegistry>();
+            if (!registry.TryGet(Identity, out Dynel? registered) || !ReferenceEquals(registered, this) || !earn(player, this))
+                return false;
+
+            _collected = true;
+            dungeon.GetRequiredService<PlayfieldLocality>().UnregisterDynel(this);
+            registry.UnregisterExact(this);
+            return true;
+        }
+    }
+
     protected override bool DelaysUse => false;
 
     protected override bool OnUse(Player player) => false;

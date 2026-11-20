@@ -1,0 +1,4 @@
+- Changed: Find Person missions now complete when you select the person, instead of needing to inspect them.
+- Changed: Find Item missions now complete when you select the item in the mission dungeon; there is nothing to pick up.
+- Fixed: Jumping while sneaking no longer breaks sneak.
+- Fixed: Falling from one Shadowlands zone into the zone below now lands you at the right height instead of the height you left at.
