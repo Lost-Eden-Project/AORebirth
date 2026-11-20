@@ -137,27 +137,32 @@ namespace ZoneEngine_New.Core.Helpers
             }
             if (!attacker.HasLineOfSightTo(target))
                 return ClientFeedback.SpecialNoLineOfSight;
-            if (IsNoticedStealthStrike(attacker, target, special))
-                return ClientFeedback.SpecialTargetAware;
-            return null;
+            return StealthStrikeBlocker(attacker, target, special);
         }
 
         /// <summary>
-        /// Aimed Shot or Sneak Attack an NPC target would notice, or a Backstab from in front of the target. Against a
-        /// player target (PvP) Aimed Shot and Sneak Attack need no stealth.
+        /// Why a stealth strike cannot go off, as a feedback message; null when it can. Aimed Shot and Sneak Attack
+        /// fail when an NPC target would notice them (against a player target, PvP, they need no stealth). Backstab
+        /// needs no stealth: it needs a target fighting someone other than the attacker, and the attacker behind it,
+        /// each with its own message. The server judges "behind"; the client never works it out itself.
         /// </summary>
-        static bool IsNoticedStealthStrike(Character attacker, Character target, CharacterStat special)
+        static int? StealthStrikeBlocker(Character attacker, Character target, CharacterStat special)
         {
-            return special switch
+            switch (special)
             {
-                CharacterStat.AimedShot or CharacterStat.SneakAttack =>
-                    target is not Player && (!IsSneaking(attacker) || CanSee(target, attacker)),
-                // Backstab's only position rule: behind the target. The target need not be distracted or unaware of the
-                // attacker, and the attacker need not be sneaking. The server judges it; the client never works out
-                // "behind" itself.
-                CharacterStat.Backstab => !IsBehind(attacker, target),
-                _ => false
-            };
+                case CharacterStat.AimedShot or CharacterStat.SneakAttack
+                    when target is not Player && (!IsSneaking(attacker) || CanSee(target, attacker)):
+                    return ClientFeedback.SpecialTargetAware;
+                case CharacterStat.Backstab:
+                    Identity fighting = target.FightingTarget;
+                    if (fighting.Instance == 0 || fighting == attacker.Identity)
+                        return ClientFeedback.SpecialTargetMustFightOther;
+                    if (!IsBehind(attacker, target))
+                        return ClientFeedback.SpecialMustBeBehind;
+                    return null;
+                default:
+                    return null;
+            }
         }
 
         /// <summary>Gun specials hold while their shooter moves.</summary>
@@ -202,10 +207,13 @@ namespace ZoneEngine_New.Core.Helpers
                 return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Requirements, "sneak attack too low");
             }
 
-            if (IsNoticedStealthStrike(attacker, target, special))
+            if (StealthStrikeBlocker(attacker, target, special) is int stealthBlocked)
             {
-                ClientFeedback.Send(attacker, ClientFeedback.SpecialTargetAware);
-                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Target, "target aware");
+                ClientFeedback.Send(attacker, stealthBlocked);
+                return Dropped(attacker, target, special, requestTimestamp, ActionRefusal.Target,
+                    stealthBlocked == ClientFeedback.SpecialTargetAware ? "target aware"
+                    : stealthBlocked == ClientFeedback.SpecialMustBeBehind ? "not behind target"
+                    : "target not fighting someone else");
             }
 
             bool backstab = special == CharacterStat.Backstab;

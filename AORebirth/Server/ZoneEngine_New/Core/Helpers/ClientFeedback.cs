@@ -52,6 +52,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"Special attack not possible. The target is aware of your presence." (category 110).</summary>
         public const int SpecialTargetAware = 90809749;
 
+        /// <summary>"Special attack not possible. The target must be fighting someone else." (category 110). Backstab.</summary>
+        public const int SpecialTargetMustFightOther = 38085045;
+
+        /// <summary>"Special attack not possible. You must be behind the target." (category 110). Backstab.</summary>
+        public const int SpecialMustBeBehind = 244601803;
+
         /// <summary>"Action is not available." (category 110). A special no wielded weapon can perform.</summary>
         public const int ActionNotAvailable = 19815477;
 

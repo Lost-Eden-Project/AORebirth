@@ -1,0 +1,1 @@
+- Changed: Backstab no longer says the target is aware of you; it now tells you when the target must be fighting someone else or when you must be behind it.
