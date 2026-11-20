@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Entities
 {
     using System;
+    using System.Collections.Generic;
 
     using LostEden.Protocol.GameData;
     using LostEden.Protocol.Messages;
@@ -31,6 +32,66 @@ namespace ZoneEngine_New.Core.Entities
         public bool IsLocked { get; private set; }
 
         public object LootGate { get; } = new();
+
+        /// <summary>Players whose takes from this chest are applied in memory with their durable row change still queued.</summary>
+        readonly HashSet<Player> _pendingTakers = new();
+
+        /// <summary>
+        /// Records a take applied on the tick whose row relocation is queued with the player's flush
+        /// (<see cref="Inventory.InventoryActionService.QueueSharedSourceRelocation"/>). Called under <see cref="LootGate"/>.
+        /// </summary>
+        public void RecordPendingTake(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            lock (LootGate)
+                _pendingTakers.Add(player);
+        }
+
+        /// <summary>
+        /// Writes every queued take before a new opener is shown the stored rows: a reload inside the coalesce window
+        /// would otherwise offer an item a player already holds. A hard flush with nothing left to write returns at
+        /// once, so this costs a transaction only when the chest is reopened within that window. A quarantined taker is
+        /// skipped: storage is already the authority for them. A flush that cannot run keeps the chest closed for this
+        /// attempt and the takers recorded, so the next open tries again.
+        /// </summary>
+        bool SettlePendingTakes()
+        {
+            Player[] takers;
+            lock (LootGate)
+            {
+                if (_pendingTakers.Count == 0)
+                    return true;
+                takers = [.. _pendingTakers];
+                _pendingTakers.Clear();
+            }
+
+            InventoryFlushService? flush = Playfield?.GetService<InventoryFlushService>();
+            for (int i = 0; i < takers.Length; i++)
+            {
+                Player taker = takers[i];
+                if (taker.IsPersistenceQuarantined)
+                    continue;
+                try
+                {
+                    if (flush == null)
+                        throw new InvalidOperationException("No inventory flush service is available to settle chest takes.");
+                    flush.HardFlush(taker);
+                }
+                catch (Exception exception)
+                {
+                    lock (LootGate)
+                        for (int remaining = i; remaining < takers.Length; remaining++)
+                            _pendingTakers.Add(takers[remaining]);
+                    Playfield?.GetService<Logging.IZoneLogger>()?.Warn(
+                        "Chest " + Identity.Instance.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        + " stays closed: a queued take by character "
+                        + taker.Identity.Instance.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        + " could not be stored before reopening. " + exception.Message);
+                    return false;
+                }
+            }
+            return true;
+        }
 
         public float CollisionRadius
         {
@@ -103,6 +164,10 @@ namespace ZoneEngine_New.Core.Entities
         public override bool TryUse(Player player)
         {
             ArgumentNullException.ThrowIfNull(player);
+            // Settled outside the loot gate: a hard flush takes the taker's persistence gate, which the move path takes
+            // before this gate. Everything that opens or takes from a chest runs on its playfield's tick thread.
+            if (!IsOpen && !SettlePendingTakes())
+                return false;
             lock (LootGate)
             {
                 if (!CanInteract(player))

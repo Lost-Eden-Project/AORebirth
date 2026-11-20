@@ -487,7 +487,8 @@ namespace AORebirth.Database.Domain.Quests
         static RetiredDungeonKey ReadQuestArtifact(IDbConnection c, IDbTransaction t, string questId, QuestDungeonKeyItemRow artifact)
         {
             using (IDbCommand owner = Prepare(c, t,
-                "SELECT OwnerId FROM generatedquests WHERE QuestId=@Quest AND OwnerType=0 FOR UPDATE",
+                // Solo or team: a team mission's artifact is issued to its roller, the quest's OwnerId.
+                "SELECT OwnerId FROM generatedquests WHERE QuestId=@Quest FOR UPDATE",
                 new object[] { "@Quest", questId }))
             {
                 object value = owner.ExecuteScalar();

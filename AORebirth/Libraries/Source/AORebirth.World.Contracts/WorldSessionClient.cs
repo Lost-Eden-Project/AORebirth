@@ -43,8 +43,9 @@ namespace AORebirth.World.Contracts
 
         public string Url => _channel.Url;
 
-        public string BeginLogin(string account)
-            => _channel.Session.BeginLogin(new BeginLoginRequest { Account = account }, _channel.Call(CallTimeout)).Generation;
+        /// <summary>The login generation, or an empty generation and <see cref="BeginLoginReply.Refused"/> while the server is starting.</summary>
+        public BeginLoginReply BeginLogin(string account)
+            => _channel.Session.BeginLogin(new BeginLoginRequest { Account = account }, _channel.Call(CallTimeout));
 
         /// <param name="clientVersion">The version string the client sent at login, for the target zone's handoff hook.</param>
         public SelectCharacterReply SelectCharacter(

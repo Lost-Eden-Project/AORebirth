@@ -27,28 +27,27 @@ namespace ZoneEngine_New.Tests
         static Identity Slot(int placement = 64) => new() { Type = IdentityType.Inventory, Instance = placement };
 
         [TestMethod]
-        public void SplitPreservesQuantityAndOriginalInstanceAndPublishesOnlyAfterCommit()
+        public void SplitPreservesQuantityAndOriginalInstanceAndStoresBothRowsOnTheCoalescedFlush()
         {
             using var w = new World();
             Item original = w.Add(11, 10);
-            w.Persistence.BeforeCommit = batch =>
-            {
-                Assert.AreEqual(10, original.StackCount);
-                Assert.AreEqual(1, w.Player.Inventory.Inventory.Content.Count);
-                Assert.AreEqual(0, w.Session.Messages.Count);
-                Assert.AreEqual(11, batch.Stacks.Single().InstanceId);
-                Assert.AreEqual(10, batch.Stacks.Single().ExpectedCount);
-                Assert.AreEqual(7, batch.Stacks.Single().FinalCount);
-                Assert.AreEqual(3, batch.Inserts.Single().StackCount);
-            };
             Assert.IsTrue(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
             Assert.AreSame(original, w.Player.Inventory.Inventory.Content[64]);
             Assert.AreEqual(7, original.StackCount);
             Item split = w.Player.Inventory.Inventory.Content[65];
             Assert.AreNotEqual(original.InstanceId, split.InstanceId);
             Assert.AreEqual(3, split.StackCount);
-            Assert.IsTrue(split.IsPersisted);
             Assert.AreEqual(10, w.Player.Inventory.Inventory.Content.Values.Sum(i => i.StackCount));
+            // No transaction on the tick: the remainder's count and the new half wait for the flush.
+            Assert.AreEqual(0, w.Persistence.Calls);
+            Assert.IsFalse(split.IsPersisted);
+            Assert.AreEqual(10, w.Persistence.Rows[11].StackCount);
+            w.Flush.HardFlush(w.Player);
+            Assert.AreEqual(1, w.Persistence.FlushCalls);
+            Assert.IsTrue(split.IsPersisted);
+            Assert.AreEqual(7, w.Persistence.Rows[11].StackCount);
+            Assert.AreEqual(3, w.Persistence.Rows[split.InstanceId].StackCount);
+            Assert.AreEqual(65, w.Persistence.Rows[split.InstanceId].ContainerPlacement);
             Assert.AreEqual(10, w.Persistence.Rows.Values.Sum(r => r.StackCount));
         }
 
@@ -87,22 +86,48 @@ namespace ZoneEngine_New.Tests
             Assert.IsTrue(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
             Assert.IsTrue(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
             Assert.AreEqual(10, w.Player.Inventory.Inventory.Content.Values.Sum(i => i.StackCount));
+            // Both splits coalesce into one flush: two inserts and the remainder's count.
+            w.Flush.HardFlush(w.Player);
+            Assert.AreEqual(1, w.Persistence.FlushCalls);
+            Assert.AreEqual(3, w.Persistence.Rows.Count);
             Assert.AreEqual(10, w.Persistence.Rows.Values.Sum(r => r.StackCount));
             Assert.IsFalse(w.Actions.TrySplit(w.Player, Slot(), 11, 5));
         }
 
         [TestMethod]
-        public void FailedSplitLeavesBothMemoryAndDurableStateUntouched()
+        public void SplitAndJoinLoopNeverCreatesQuantityAndLeavesNoRowForTheShortLivedHalf()
+        {
+            // The spam a hostile client can send: each round trip is memory work, and the flush sees only the net result.
+            using var w = new World(); Item item = w.Add(11, 10);
+            for (int round = 0; round < 50; round++)
+            {
+                Assert.IsTrue(w.Actions.TrySplit(w.Player, Slot(), 11, 4));
+                Item half = w.Player.Inventory.Inventory.Content[65];
+                Assert.IsTrue(w.Actions.TryJoin(w.Player, Slot(), Slot(65)));
+                Assert.IsFalse(w.Player.Inventory.Inventory.Content.ContainsValue(half));
+            }
+            Assert.AreEqual(10, item.StackCount);
+            Assert.AreEqual(1, w.Player.Inventory.Inventory.Content.Count);
+            Assert.AreEqual(0, w.Persistence.Calls);
+            w.Flush.HardFlush(w.Player);
+            Assert.AreEqual(1, w.Persistence.FlushCalls);
+            Assert.AreEqual(1, w.Persistence.Rows.Count);
+            Assert.AreEqual(10, w.Persistence.Rows[11].StackCount);
+        }
+
+        [TestMethod]
+        public void QuarantinedPlayerSplitLeavesBothMemoryAndDurableStateUntouched()
         {
             using var w = new World(); Item item = w.Add(11, 10);
-            w.Persistence.Failure = new InvalidOperationException("late statement failure");
+            w.Player.QuarantinePersistence();
             Assert.IsFalse(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
             Assert.AreEqual(10, item.StackCount);
             Assert.AreEqual(1, w.Player.Inventory.Inventory.Content.Count);
+            Assert.IsFalse(w.Player.Inventory.HasDirtyEntries);
             Assert.AreEqual(1, w.Persistence.Rows.Count);
             Assert.AreEqual(10, w.Persistence.Rows[11].StackCount);
             Assert.AreEqual(0, w.Session.Messages.Count);
-            w.Flush.HardFlush(w.Player);
+            Assert.AreEqual(0, w.Ids.Calls);
         }
 
         [TestMethod]
@@ -110,10 +135,10 @@ namespace ZoneEngine_New.Tests
         {
             using var w = new World(); w.Add(11, 10);
             w.Persistence.Failure = new DatabaseCommitOutcomeUnknownException(new Exception("lost commit reply"));
-            Assert.IsFalse(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
+            Assert.IsFalse(w.Actions.TryDelete(w.Player, Slot(), 11));
             Assert.IsTrue(w.Player.IsPersistenceQuarantined);
             Assert.AreEqual(SessionState.Closed, w.Session.State);
-            Assert.IsFalse(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
+            Assert.IsFalse(w.Actions.TryDelete(w.Player, Slot(), 11));
             Assert.AreEqual(1, w.Persistence.Calls);
             Assert.AreEqual(0, w.Session.Messages.Count);
         }
@@ -187,31 +212,40 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void MovePacketCommitsBeforeAckAndRejectsDuplicateSource()
+        public void MovePacketAppliesOnTheTickQueuesTheLocationAndRejectsDuplicateSource()
         {
             using var w = new World(); Item item = w.Add(11, 5);
             var moves = new InventoryMoveService(new StubLogger(), w.Flush, w.Actions);
             var message = new ClientMoveItemToInventoryMessage { SourceContainer = Slot(), TargetPlacement = 65 };
-            w.Persistence.BeforeCommit = _ => Assert.AreSame(item, w.Player.Inventory.Inventory.Content[64]);
             moves.Handle(w.Player, message);
             Assert.AreSame(item, w.Player.Inventory.Inventory.Content[65]);
-            Assert.AreEqual(65, w.Persistence.Rows[11].ContainerPlacement);
             Assert.AreEqual(65, w.Session.Messages.OfType<ContainerAddItemMessage>().Single().TargetPlacement);
+            // An owned move runs no transaction on the tick: its new location waits for the coalesced flush.
+            Assert.AreEqual(0, w.Persistence.Calls);
+            PlayerInventory.InventoryDirtyFlush? pending = w.Player.Inventory.TakeDirty();
+            Assert.IsNotNull(pending);
+            ItemLocationUpdate update = pending!.Updates.Single();
+            Assert.AreEqual(11, update.InstanceId);
+            Assert.AreEqual(65, update.ContainerPlacement);
+            Assert.AreEqual(0, pending.Inserts.Count);
+            // The source slot is empty now: the repeated packet moves nothing and dirties nothing.
             moves.Handle(w.Player, message);
-            Assert.AreEqual(1, w.Persistence.Calls);
+            Assert.AreEqual(1, w.Session.Messages.OfType<ContainerAddItemMessage>().Count());
+            Assert.IsFalse(w.Player.Inventory.HasDirtyEntries);
         }
 
         [TestMethod]
-        public void FailedMoveDoesNotPublishOrLoseOriginalSlot()
+        public void LockedItemMoveDoesNotPublishOrLoseOriginalSlot()
         {
             using var w = new World(); Item item = w.Add(11, 5);
-            w.Persistence.Failure = new InvalidOperationException();
+            item.Locked = true;
             new InventoryMoveService(new StubLogger(), w.Flush, w.Actions).Handle(w.Player,
                 new ClientMoveItemToInventoryMessage { SourceContainer = Slot(), TargetPlacement = 65 });
             Assert.AreSame(item, w.Player.Inventory.Inventory.Content[64]);
             Assert.IsFalse(w.Player.Inventory.Inventory.Content.ContainsKey(65));
             Assert.AreEqual(0, w.Session.Messages.Count);
-            w.Flush.HardFlush(w.Player);
+            Assert.IsFalse(w.Player.Inventory.HasDirtyEntries);
+            Assert.AreEqual(0, w.Persistence.Calls);
         }
 
         [TestMethod]
@@ -237,11 +271,14 @@ namespace ZoneEngine_New.Tests
                 Source = new Identity { Type = IdentityType.BankByRef, Instance = bank.Offset }, Target = bag.Identity
             });
             Assert.AreSame(stored, backpack.Content[0]);
-            Assert.AreEqual(22, w.Persistence.Rows[22].InstanceId);
-            Assert.AreEqual(21, w.Persistence.Rows[22].ContainerInstance);
-            Assert.AreEqual((int)IdentityType.Container, w.Persistence.Rows[22].ContainerType);
             Assert.AreEqual(0, bank.Content.Count);
             Assert.AreEqual(1, w.Session.Messages.OfType<ContainerAddItemMessage>().Count());
+            // Bank to bag is an owned move: the same instance is re-homed by the coalesced flush, never on the tick.
+            Assert.AreEqual(0, w.Persistence.Calls);
+            ItemLocationUpdate update = w.Player.Inventory.TakeDirty()!.Updates.Single();
+            Assert.AreEqual(22, update.InstanceId);
+            Assert.AreEqual((int)IdentityType.Container, update.ContainerType);
+            Assert.AreEqual(21, update.ContainerInstance);
         }
 
         [TestMethod]
@@ -267,6 +304,7 @@ namespace ZoneEngine_New.Tests
             Assert.AreEqual(0, w.Persistence.Calls);
             w.Session.State = SessionState.InPlay;
             Assert.IsTrue(w.Actions.TrySplit(w.Player, Slot(), 11, 3));
+            w.Flush.HardFlush(w.Player);
             var builder = new ItemBuilder(new StubCatalog().Add(1000, 1), new StubLogger());
             var reloaded = TestWorld.CreatePlayer(111);
             reloaded.Inventory.Apply(new ZoneEngine_New.Core.Characters.CharacterHydrationResult { Items = w.Persistence.Rows.Values.ToArray() }, 111, builder);
@@ -386,7 +424,7 @@ namespace ZoneEngine_New.Tests
                 var manager = (PlayfieldManager)RuntimeHelpers.GetUninitializedObject(typeof(PlayfieldManager));
                 typeof(PlayfieldManager).GetField("_sync", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(manager, new Lock());
                 typeof(PlayfieldManager).GetField("_playersByCharacterId", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(manager, new Dictionary<int, Player>());
-                Flush = new InventoryFlushService(new Lazy<PlayfieldManager>(() => manager), new Coalesce(), new StubLogger());
+                Flush = new InventoryFlushService(new Lazy<PlayfieldManager>(() => manager), new Coalesce(Persistence), new StubLogger());
                 _services = new ServiceCollection()
                     .AddSingleton(new PlayfieldLocality(4582, null))
                     .AddSingleton(Flush)
@@ -408,15 +446,30 @@ namespace ZoneEngine_New.Tests
             public void Dispose() { Flush.Dispose(); _services.Dispose(); }
         }
         internal sealed class Ids : IItemInstanceIdAllocator { int _next = 100; public int Calls; public int Allocate() { Calls++; return _next++; } }
-        sealed class Coalesce : ICharacterCoalesceCommit
+        /// <summary>The coalesced flush writes into the same rows the synchronous mutation path does.</summary>
+        sealed class Coalesce(Persistence rows) : ICharacterCoalesceCommit
         {
-            public void Persist(IReadOnlyList<ItemInstanceRecord> inserts, IReadOnlyList<ItemLocationUpdate> updates, int characterId, IReadOnlyList<int> uploadedNanoIds, IReadOnlyList<ActiveNanoRecord>? activeNanos, IReadOnlyList<SkillLockRecord>? skillLocks) => throw new InvalidOperationException("No unexpected independent flush.");
+            public void Persist(IReadOnlyList<ItemInstanceRecord> inserts, IReadOnlyList<ItemLocationUpdate> updates, int characterId, IReadOnlyList<int> uploadedNanoIds, IReadOnlyList<ActiveNanoRecord>? activeNanos, IReadOnlyList<SkillLockRecord>? skillLocks)
+                => rows.ApplyFlush(inserts, updates);
         }
         internal sealed class Persistence : IInventoryMutationPersistence
         {
             public Dictionary<int, ItemInstanceRecord> Rows = new();
             public Dictionary<int, int> Stats = new();
             public int Calls;
+            /// <summary>Coalesced flush transactions (inserts and location updates, which carry the current stack count).</summary>
+            public int FlushCalls;
+            public void ApplyFlush(IReadOnlyList<ItemInstanceRecord> inserts, IReadOnlyList<ItemLocationUpdate> updates)
+            {
+                FlushCalls++;
+                foreach (ItemInstanceRecord row in inserts) Rows.Add(row.InstanceId, row);
+                foreach (ItemLocationUpdate update in updates)
+                {
+                    ItemInstanceRecord row = Rows[update.InstanceId];
+                    Rows[update.InstanceId] = Copy(row, update.ContainerType, update.ContainerInstance, update.ContainerPlacement,
+                        update.StackCount ?? row.StackCount);
+                }
+            }
             public Exception? Failure;
             public Exception? AfterCommitFailure;
             public Action<InventoryMutationBatch>? BeforeCommit;

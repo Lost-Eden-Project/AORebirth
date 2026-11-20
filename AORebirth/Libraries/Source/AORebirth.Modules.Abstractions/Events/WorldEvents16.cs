@@ -126,6 +126,16 @@ namespace AORebirth.Modules.Events
         /// <see cref="From"/> and <see cref="To"/> say what happened.
         /// </summary>
         public StatChangeReason Reason { get; init; }
+
+        /// <summary>
+        /// Who or what was on the other side (1.17), resolved when the item moved. Under a GM command or a module
+        /// operation, that GM or module (as <see cref="PlayerStatChangedEvent.Source"/>). Otherwise what the engine path
+        /// names (a Quest, Daily, Tradeskill or Dialogue reward, a shop's vendor, a Need or Greed corpse) or else the owner
+        /// of <see cref="From"/> or, failing that, <see cref="To"/> when it is a Corpse, Shop, Trade or World place: for a
+        /// corpse who died (<c>Entity</c>, <c>Hash</c>, <c>Name</c>, <c>Level</c>, <c>DetailId</c> the corpse), for a shop
+        /// as <see cref="StatChangeReason.Shop"/> describes, for a trade the other player or NPC. Empty when nothing names one.
+        /// </summary>
+        public StatChangeSource Source { get; init; }
     }
 
     /// <summary>A chat channel the zone handles (module API 1.6).</summary>

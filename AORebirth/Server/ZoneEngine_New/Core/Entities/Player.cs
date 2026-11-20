@@ -1003,7 +1003,7 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>One of this player's own stats, to its client only.</summary>
-        void SendOwnStat(CharacterStat stat, int value)
+        internal void SendOwnStat(CharacterStat stat, int value)
             => Session?.Send(new StatMessage
             {
                 Identity = Identity,
@@ -1902,7 +1902,7 @@ namespace ZoneEngine_New.Core.Entities
                 return;
 
             base.OnDeath(killer);
-            ApplyDeathXpLoss();
+            ApplyDeathXpLoss(killer);
             _respawnObserversCleared = false;
             _respawnPending = true;
             _respawnRemainingSeconds = RespawnGracePeriodMilliseconds / 1000.0;
@@ -2226,7 +2226,8 @@ namespace ZoneEngine_New.Core.Entities
         /// "Character stored. 1235 XP saved." where the number is the XP earned since the last save (or since the start
         /// of the level, which saves itself). A character that cannot pay is not saved.
         /// </summary>
-        public bool InsuranceSave()
+        /// <param name="terminal">The save terminal, for the fee's module audit source (module API 1.17).</param>
+        public bool InsuranceSave(AORebirth.Modules.Events.StatChangeSource terminal = default)
         {
             IGameData? gameData = Playfield?.GetService<IGameData>();
             if (gameData == null)
@@ -2242,7 +2243,7 @@ namespace ZoneEngine_New.Core.Entities
                 return false;
             }
 
-            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Fee))
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Fee, terminal))
                 Stats.Set(CharacterStat.Cash, cash - fee, StatDetail.Base, dirty: true);
             FlushDirtyStats();
             ClientFeedback.SendFormatted(this, ClientFeedback.CreditsDeducted, fee);
@@ -2299,7 +2300,7 @@ namespace ZoneEngine_New.Core.Entities
         /// xp.deathXpLossGraceLevel, nor at shadow levels, which earn SK). The lost XP goes into the death pool, which
         /// later kills give back (<see cref="TakeDeathPoolRecovery"/>).
         /// </summary>
-        void ApplyDeathXpLoss()
+        void ApplyDeathXpLoss(Character? killer)
         {
             IGameData? gameData = Playfield?.GetService<IGameData>();
             int level = Stats.GetOrOne(CharacterStat.Level);
@@ -2312,7 +2313,7 @@ namespace ZoneEngine_New.Core.Entities
             if (lost <= 0)
                 return;
 
-            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Death))
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Death, Modules.ModuleHooks.SourceOf(killer)))
                 Stats.Set(CharacterStat.XP, keep, StatDetail.Base, dirty: true);
             int pool = AddToDeathXpPool(lost);
             Logger.Info(string.Format(CultureInfo.InvariantCulture,

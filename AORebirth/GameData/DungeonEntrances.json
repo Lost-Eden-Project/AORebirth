@@ -13,7 +13,23 @@
         {"Room": 51, "Name": "production_factory_entrance", "ExitDoor": 0, "Source": "geometry"},
         {"Room": 52, "Name": "living_ot_entrance", "ExitDoor": 0, "Source": "geometry, live"}
       ],
-      "MainHalls": [61, 62, 63, 64, 65, 66, 67, 68]
+      "MainHalls": [61, 62, 63, 64, 65, 66, 67, 68],
+      "FloorTransitions": {
+        "_comment": "Authored, not captured: no PF321 lift has been observed. Spots were picked on each room's own baked navmesh (flat for at least 2 units all round, at least 6 from any doorway, every doorway walkable from it) following the captured pattern: leave from a one-door room, arrive in a multi-door room, boss room alone. Platform 2 (159868) is assumed for this tileset. Replace with captured anchors when a PF321 team mission is recorded.",
+        "DescendingFloors": false,
+        "ArrivalRooms": [
+          {"Room": 17, "Position": [-1.5, 0.01, -0.5], "PlatformTemplateId": 159868, "ButtonTemplateId": 159863, "Source": "navmesh; living_room_recreational"},
+          {"Room": 3, "Position": [-3.5, 0.01, -3.5], "PlatformTemplateId": 159868, "ButtonTemplateId": 159863, "Source": "navmesh; foyaer"}
+        ],
+        "DepartureRooms": [
+          {"Room": 15, "Position": [-2.5, 0.01, 0.5], "PlatformTemplateId": 159868, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; elevator"},
+          {"Room": 16, "Position": [-1.5, 0.01, 0.5], "PlatformTemplateId": 159868, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; stair"},
+          {"Room": 53, "Position": [-2.5, 0.01, -2.5], "PlatformTemplateId": 159868, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; office_endblock_one"}
+        ],
+        "BossRooms": [
+          {"Room": 59, "Position": [-1.5, 0.01, -1.5], "PlatformTemplateId": 159868, "ButtonTemplateId": 159863, "Source": "navmesh; hitech_bossroom1"}
+        ]
+      }
     },
     {
       "Style": 324,
@@ -24,18 +40,22 @@
       ],
       "MainHalls": [47, 48, 49, 50, 51, 52, 53, 54],
       "FloorTransitions": {
-        "_comment": "Captured role/anchor examples, chosen as configurable generation policy, not universal retail positions. PF324 has two-floor team evidence; no ordinary arrival anchor is promoted. See docs/evidence/PROCEDURAL_DUNGEON_FOUNDATION_EVIDENCE.md. Platform and button share the recorded position and world identity orientation.",
+        "_comment": "Captured role/anchor examples, chosen as configurable generation policy, not universal retail positions. PF324 has two-floor team evidence only, so no arrival anchor was captured: the arrival room and departure rooms 12 and 13 are authored on each room's own baked navmesh (see the PF321 note), and a departure's plain button is the up button 159869 (only the boss button 159864 was observed). See docs/evidence/PROCEDURAL_DUNGEON_FOUNDATION_EVIDENCE.md. Platform and button share the recorded position and world identity orientation.",
         "DescendingFloors": false,
-        "ArrivalRooms": [],
+        "ArrivalRooms": [
+          {"Room": 14, "Position": [0.5, 0.01, 1.5], "PlatformTemplateId": 159867, "ButtonTemplateId": 159863, "Source": "navmesh; clan_living_room_recreational"}
+        ],
         "DepartureRooms": [
           {
             "Room": 6,
             "Position": [-4.5, 0.0100016593933105, -4.79998779296875],
             "PlatformTemplateId": 159867,
-            "ButtonTemplateId": 159864,
+            "ButtonTemplateId": 159869,
             "BossButtonTemplateId": 159864,
             "Source": "mission-20261011-062013; packets 303/304; room 12; normalized from facing 3"
-          }
+          },
+          {"Room": 12, "Position": [-2.5, 0.01, 0.5], "PlatformTemplateId": 159867, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; clan_elevator"},
+          {"Room": 13, "Position": [-1.5, 0.01, 0.5], "PlatformTemplateId": 159867, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; clan_stair"}
         ],
         "BossRooms": [
           {
@@ -102,7 +122,25 @@
       "Entrances": [
         {"Room": 68, "Name": "Subway_Ent_3", "ExitDoor": 0, "Source": "live"}
       ],
-      "MainHalls": [73, 74, 75, 76, 77, 78, 79, 80]
+      "MainHalls": [73, 74, 75, 76, 77, 78, 79, 80],
+      "FloorTransitions": {
+        "_comment": "Authored, not captured: no PF351 lift has been observed. Spots were picked on each room's own baked navmesh, as for PF321. Platform 4 (159866) is assumed for this tileset. Replace with captured anchors when a PF351 team mission is recorded.",
+        "DescendingFloors": false,
+        "ArrivalRooms": [
+          {"Room": 19, "Position": [4.5, 0.01, -1.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159863, "Source": "navmesh; Subway_SmallA2"},
+          {"Room": 20, "Position": [-3.5, 0.01, 3.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159863, "Source": "navmesh; Subway_Checkpoint1"},
+          {"Room": 35, "Position": [2.5, 0.01, 2.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159863, "Source": "navmesh; Subway_BigA3"}
+        ],
+        "DepartureRooms": [
+          {"Room": 5, "Position": [-2.5, 0.01, 0.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; Subway_MiniA6"},
+          {"Room": 9, "Position": [-1.5, 0.01, 0.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; Subway_MiniB1"},
+          {"Room": 14, "Position": [-2.5, 0.01, 0.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159869, "BossButtonTemplateId": 159864, "Source": "navmesh; Subway_MiniB6"}
+        ],
+        "BossRooms": [
+          {"Room": 63, "Position": [-1.5, 0.01, -1.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159863, "Source": "navmesh; Subway_Bossroom_1"},
+          {"Room": 64, "Position": [-1.5, 0.01, -1.5], "PlatformTemplateId": 159866, "ButtonTemplateId": 159863, "Source": "navmesh; Subway_Bossroom_2"}
+        ]
+      }
     },
     {
       "Style": 362,

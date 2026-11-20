@@ -140,6 +140,7 @@
     {"Playfield": 4531, "Type": "Door", "Instance": "C00611B3", "DestinationPlayfield": 4575, "DestinationType": "Door", "DestinationInstance": "C00011DF"},
     {"Playfield": 4833, "Type": "Terminal", "Instance": "C00312E1", "DestinationPlayfield": 687, "X": 207.9, "Y": 15.4, "Z": 874.6, "SetSavePoint": true},
     {"Playfield": 4833, "Type": "Terminal", "Instance": "C00412E1", "DestinationPlayfield": 800, "X": 692.0, "Y": 72.8, "Z": 476.8, "SetSavePoint": true},
-    {"Playfield": 4833, "Type": "Terminal", "Instance": "C00512E1", "DestinationPlayfield": 545, "X": 401.0, "Y": 0.2, "Z": 341.7, "SetSavePoint": true}
+    {"Playfield": 4833, "Type": "Terminal", "Instance": "C00512E1", "DestinationPlayfield": 545, "X": 401.0, "Y": 0.2, "Z": 341.7, "SetSavePoint": true},
+    {"Playfield": 4872, "Type": "Door", "Instance": "C0001308", "DestinationPlayfield": 4877, "DestinationType": "Door", "DestinationInstance": "C006130D"}
   ]
 }

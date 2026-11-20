@@ -24,6 +24,7 @@
   "4694": { "DestinationPlayfield": 4005, "X": 2053.0, "Y": 24.6, "Z": 719.0 },
   "4695": { "DestinationPlayfield": 4605, "X": 3220.0, "Y": 18.3, "Z": 1930.0 },
   "4872": { "DestinationPlayfield": 551, "X": 835.3, "Y": 29.6, "Z": 3365.7 },
+  "4873": { "WaterFlags": 0 },
   "4880": { "DestinationPlayfield": 647, "X": 2036.7, "Y": 17.7, "Z": 2199.1 },
   "4881": { "DestinationPlayfield": 760, "X": 1492.5, "Y": 5.0, "Z": 2273.7 },
   "6013": { "DestinationPlayfield": 4364, "X": 177.1, "Y": 100.9, "Z": 155.7 }

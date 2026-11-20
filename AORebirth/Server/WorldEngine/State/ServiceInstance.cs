@@ -57,6 +57,9 @@ namespace WorldEngine.State
         /// <summary>A module on this zone decides on login handoffs to it; World asks it (AdmitClient) at character select.</summary>
         public bool HasHandoffHook { get; set; }
 
+        /// <summary>The instance finished starting and accepts clients; until then it is given no logins or players.</summary>
+        public bool Ready { get; set; }
+
         public long LastHeartbeatMs { get; set; }
 
         public long ConnectedSinceMs { get; }

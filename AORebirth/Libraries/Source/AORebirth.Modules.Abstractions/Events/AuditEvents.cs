@@ -7,54 +7,138 @@ namespace AORebirth.Modules.Events
 
     /// <summary>
     /// What the engine was doing when an audited stat changed (module API 1.16). A GM command or a module operation stays
-    /// the reason for everything it causes, so a GM-given level or a module payout never reads as earned.
+    /// the reason for everything it causes, so a GM-given level or a module payout never reads as earned. Each member says
+    /// what its <see cref="StatChangeSource"/> holds (1.17); a field not named is empty.
     /// </summary>
     public enum StatChangeReason
     {
-        /// <summary>A path the engine does not label. For an audit this is the one worth a second look.</summary>
+        /// <summary>A path the engine does not label. For an audit this is the one worth a second look. Source: empty.</summary>
         Other,
 
-        /// <summary>Experience for a kill, with the death pool recovered by it.</summary>
+        /// <summary>
+        /// Experience for a kill, with the death pool recovered by it. Source: the NPC killed (<c>Entity</c>, <c>Hash</c>,
+        /// <c>Name</c>, <c>Level</c>). <c>DetailId</c> is 0 when this player's own team share was credited to them, or the
+        /// character id of the teammate it was credited to (the team's highest damager) when this player shared it.
+        /// </summary>
         Kill,
 
-        /// <summary>A quest's or mission's reward.</summary>
+        /// <summary>
+        /// A quest's or mission's reward. Source: <c>Name</c> the quest's title, <c>Detail</c> its quest id (the stable key).
+        /// </summary>
         Quest,
 
-        /// <summary>A daily reward item's share of the level bar.</summary>
+        /// <summary>
+        /// A daily reward item's share of the level bar. Source: <c>DetailId</c> the reward item's id, and <c>Name</c> its
+        /// name when the daily login reward gave it.
+        /// </summary>
         Daily,
 
-        /// <summary>Experience for a tradeskill combine.</summary>
+        /// <summary>
+        /// Experience for a tradeskill combine. Source: <c>DetailId</c> the result item's id, <c>Name</c> its name and
+        /// <c>Detail</c> the source and target item ids as <c>source+target</c>.
+        /// </summary>
         Tradeskill,
 
-        /// <summary>Experience for picking a lock.</summary>
+        /// <summary>Experience for picking a lock. Source: the door (<c>Entity</c>, and <c>Level</c> its lock difficulty).</summary>
         Lockpick,
 
-        /// <summary>Credits moved by a trade between two players.</summary>
+        /// <summary>Credits moved by a trade between two players. Source: the other player (<c>Entity</c>, <c>Name</c>, <c>Level</c>).</summary>
         Trade,
 
-        /// <summary>Credits paid or taken by a shop or vending machine.</summary>
+        /// <summary>
+        /// Credits paid or taken by a shop or vending machine. Source: the vendor NPC (<c>Entity</c>, <c>Hash</c>,
+        /// <c>Name</c>, <c>Level</c>), or the vending terminal itself when no NPC runs it (<c>Entity</c>, <c>Name</c>,
+        /// <c>Hash</c> its vendor template hash); either way <c>TemplateId</c> is the terminal's item template id and
+        /// <c>DetailId</c> its vendor id (0 for a shop without a vendor row).
+        /// </summary>
         Shop,
 
-        /// <summary>Credits paid in an NPC dialogue.</summary>
+        /// <summary>Credits paid in an NPC dialogue. Source: the NPC talked to (<c>Entity</c>, <c>Hash</c>, <c>Name</c>, <c>Level</c>).</summary>
         Dialogue,
 
-        /// <summary>Credits taken from a corpse.</summary>
+        /// <summary>
+        /// Credits taken from a corpse. Source: who died (<c>Entity</c>, <c>Hash</c>, <c>Name</c>, <c>Level</c>, captured at
+        /// death), with <c>DetailId</c> the corpse's instance.
+        /// </summary>
         Loot,
 
-        /// <summary>Credits paid into or out of an organization bank.</summary>
+        /// <summary>Credits paid into or out of an organization bank. Source: <c>DetailId</c> the org id, <c>Name</c> its name.</summary>
         OrgBank,
 
-        /// <summary>A fee the engine charged (saving at a save point).</summary>
+        /// <summary>
+        /// A fee the engine charged (saving at a save point). Source: <c>TemplateId</c> the save terminal's item template id,
+        /// <c>Name</c> its name.
+        /// </summary>
         Fee,
 
-        /// <summary>Experience lost on death.</summary>
+        /// <summary>Experience lost on death. Source: the killer when known (<c>Entity</c>, <c>Hash</c> for an NPC, <c>Name</c>, <c>Level</c>).</summary>
         Death,
 
-        /// <summary>A GM command.</summary>
+        /// <summary>
+        /// A GM command. Source: the GM (<c>Entity</c>, <c>Name</c>, <c>Level</c>), with <c>Detail</c> the command name and
+        /// <c>DetailId</c> the GM level it ran at. The change lands on whoever the command acted on.
+        /// </summary>
         Gm,
 
-        /// <summary>A module operation (<c>player.stat-add</c>, <c>player.purchase</c>, ...).</summary>
+        /// <summary>
+        /// A module operation (<c>player.stat-add</c>, <c>player.purchase</c>, ...). Source: <c>Name</c> the module id
+        /// (<c>module</c> when the engine does not know it), <c>Detail</c> the operation name (empty for an action that is not
+        /// a named operation).
+        /// </summary>
         Module
+    }
+
+    /// <summary>
+    /// Who or what was on the other side of an audited change (module API 1.17): the monster killed, the shop, the other
+    /// trader, the GM. The engine fills it when the change happens, while the entity still exists, so a module needs no
+    /// later lookup (a corpse, a despawned NPC or a terminal is often gone by then). <see cref="StatChangeReason"/> says
+    /// which fields each reason fills; the others are empty (0, <c>default</c> or ""), and a string is never null.
+    /// </summary>
+    public readonly record struct StatChangeSource
+    {
+        readonly string? _hash;
+        readonly string? _name;
+        readonly string? _detail;
+
+        /// <summary>The entity on the other side; empty when there is none.</summary>
+        public EntityRef Entity { get; init; }
+
+        /// <summary>The item template id of a terminal (a shop's vending terminal, a save terminal); 0 otherwise.</summary>
+        public int TemplateId { get; init; }
+
+        /// <summary>
+        /// An NPC's template hash (the same key as <see cref="NpcSpawnEvent.NpcHash"/>), to group by monster type without
+        /// relying on names; a vending terminal's vendor template hash; "" otherwise.
+        /// </summary>
+        public string Hash
+        {
+            get => _hash ?? string.Empty;
+            init => _hash = string.IsNullOrEmpty(value) ? null : value;
+        }
+
+        /// <summary>The source's name when the change happened.</summary>
+        public string Name
+        {
+            get => _name ?? string.Empty;
+            init => _name = string.IsNullOrEmpty(value) ? null : value;
+        }
+
+        /// <summary>A character's level when the change happened (a door's lock difficulty for <c>Lockpick</c>); 0 otherwise.</summary>
+        public int Level { get; init; }
+
+        /// <summary>A reason-specific id (see <see cref="StatChangeReason"/>); 0 when none.</summary>
+        public int DetailId { get; init; }
+
+        /// <summary>A reason-specific text (see <see cref="StatChangeReason"/>); "" when none.</summary>
+        public string Detail
+        {
+            get => _detail ?? string.Empty;
+            init => _detail = string.IsNullOrEmpty(value) ? null : value;
+        }
+
+        /// <summary>Whether no field is set.</summary>
+        public bool IsEmpty => Entity == default && TemplateId == 0 && _hash == null && _name == null && Level == 0
+            && DetailId == 0 && _detail == null;
     }
 
     /// <summary>
@@ -86,6 +170,12 @@ namespace AORebirth.Modules.Events
         public long Delta => (long)After - Before;
 
         public StatChangeReason Reason { get; init; }
+
+        /// <summary>
+        /// Who or what caused it (1.17): the monster killed, the vendor, the other trader, the quest, the GM, the module.
+        /// What it holds depends on <see cref="Reason"/>; empty for <see cref="StatChangeReason.Other"/>.
+        /// </summary>
+        public StatChangeSource Source { get; init; }
     }
 
     /// <summary>How a GM command ended (module API 1.16). Only commands that ran are raised.</summary>

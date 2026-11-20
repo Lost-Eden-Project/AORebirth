@@ -82,14 +82,19 @@ public sealed class MissionChestPersistenceTests
         moves.Handle(world.Player, new ClientMoveItemToInventoryMessage { SourceContainer = firstSource, TargetPlacement = 64 });
         Assert.AreEqual(901, world.Player.Inventory.Inventory.Content[64].InstanceId);
         Assert.AreEqual(902, chest.Loot.Content.Single().Value.InstanceId);
+        Assert.AreEqual(0, world.Persistence.Calls, "A take is acknowledged on the tick and stored by the player's flush.");
+        Assert.AreEqual(chest.Identity.Instance, world.Persistence.Rows[901].ContainerInstance);
         Assert.IsTrue(chest.TryUse(world.Player));
         Assert.IsTrue(chest.TryUse(other));
+        Assert.AreEqual(1, world.Persistence.Calls, "Reopening for another player stores every queued take first.");
+        Assert.AreEqual(world.Player.Identity.Instance, world.Persistence.Rows[901].ContainerInstance);
         moves.Handle(world.Player, new ClientMoveItemToInventoryMessage
         {
             SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 | 1 },
             TargetPlacement = 65
         });
-        Assert.AreEqual(1, world.Persistence.Calls, "The former opener cannot keep taking after ownership of the open window changes.");
+        Assert.AreEqual(2, chest.Loot.Content.Count + world.Player.Inventory.Inventory.Content.Count,
+            "The former opener cannot keep taking after ownership of the open window changes.");
         moves.Handle(other, new ClientMoveItemToInventoryMessage
         {
             SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = chest.InventoryHandle << 16 | 1 },
@@ -97,6 +102,7 @@ public sealed class MissionChestPersistenceTests
         });
         Assert.AreEqual(902, other.Inventory.Inventory.Content[64].InstanceId);
         Assert.AreEqual(0, chest.Loot.Content.Count);
+        world.Flush.HardFlush(other);
         Assert.AreEqual(2, world.Persistence.Calls);
         Assert.AreEqual(world.Player.Identity.Instance, world.Persistence.Rows[901].ContainerInstance);
         Assert.AreEqual(other.Identity.Instance, world.Persistence.Rows[902].ContainerInstance);
@@ -267,7 +273,7 @@ public sealed class MissionChestPersistenceTests
     }
 
     [TestMethod]
-    public void OrdinaryTransientCorpseLootStillInsertsOnTakeWithoutChestSourceGuards()
+    public void OrdinaryTransientCorpseLootTakeAppliesOnTheTickAndQueuesItsInsertForTheCoalescedFlush()
     {
         using var world = new InventoryActionTests.World();
         var registry = new DynelRegistry();
@@ -282,24 +288,27 @@ public sealed class MissionChestPersistenceTests
         corpse.Loot.Add(0, loot);
         Assert.IsTrue(corpse.TryUse(world.Player));
         world.Session.Messages.Clear();
-        world.Persistence.BeforeCommit = batch =>
-        {
-            Assert.AreEqual(0, batch.ExpectedSources.Count);
-            Assert.AreEqual(901, batch.Inserts.Single().InstanceId);
-            Assert.AreSame(loot, corpse.Loot.Content[0]);
-        };
         new InventoryMoveService(new StubLogger(), world.Flush, world.Actions).Handle(world.Player,
             new ClientMoveItemToInventoryMessage
             {
                 SourceContainer = new Identity { Type = IdentityType.Backpack, Instance = corpse.InventoryHandle << 16 },
                 TargetPlacement = 64
             });
-        Assert.AreEqual(1, world.Persistence.Calls);
+        // Transient loot has no shared durable row: nothing is committed on the tick, the take is acknowledged at once
+        // and the row is inserted by the player's coalesced flush.
+        Assert.AreEqual(0, world.Persistence.Calls);
         Assert.AreEqual(0, corpse.Loot.Content.Count);
         Assert.AreSame(loot, world.Player.Inventory.Inventory.Content[64]);
-        Assert.IsTrue(loot.IsPersisted);
-        Assert.AreEqual(world.Player.Identity.Instance, world.Persistence.Rows[901].ContainerInstance);
         Assert.AreEqual(1, world.Session.Messages.OfType<ContainerAddItemMessage>().Count());
+        Assert.IsFalse(loot.IsPersisted);
+        PlayerInventory.InventoryDirtyFlush? pending = world.Player.Inventory.TakeDirty();
+        Assert.IsNotNull(pending);
+        ItemInstanceRecord insert = pending!.Inserts.Single();
+        Assert.AreEqual(901, insert.InstanceId);
+        Assert.AreEqual((int)IdentityType.Inventory, insert.ContainerType);
+        Assert.AreEqual(world.Player.Identity.Instance, insert.ContainerInstance);
+        Assert.AreEqual(64, insert.ContainerPlacement);
+        Assert.AreEqual(0, pending.Updates.Count);
     }
 
     [TestMethod]
@@ -327,6 +336,11 @@ public sealed class MissionChestPersistenceTests
         Assert.AreSame(item, world.Player.Inventory.Inventory.Content[64]);
         Assert.AreEqual(0, chest.Loot.Content.Count);
         Assert.AreEqual(1, world.Session.Messages.OfType<ContainerAddItemMessage>().Count());
+        // The row changes owner in the queued commit, locked as the chest row this server last saw.
+        Assert.AreEqual(0, world.Persistence.Calls);
+        world.Flush.HardFlush(world.Player);
+        Assert.AreEqual(1, world.Persistence.Calls);
+        Assert.AreEqual(world.Player.Identity.Instance, world.Persistence.Rows[901].ContainerInstance);
         moves.Handle(world.Player, new ClientMoveItemToInventoryMessage { SourceContainer = source, TargetPlacement = 65 });
         Assert.AreEqual(1, world.Persistence.Calls);
         Assert.IsFalse(world.Actions.TrySplit(world.Player, source, item.InstanceId, 1));

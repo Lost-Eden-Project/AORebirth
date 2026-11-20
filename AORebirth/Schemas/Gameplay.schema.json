@@ -209,6 +209,20 @@
       },
       "additionalProperties": false
     },
+    "leash": {
+      "type": "object",
+      "properties": {
+        "indoorRange": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outdoorRange": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
     "pets": {
       "type": "object",
       "properties": {
@@ -336,6 +350,63 @@
           "type": "object",
           "additionalProperties": {
             "type": "integer"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "factions": {
+      "type": "object",
+      "properties": {
+        "lerpPercent": {
+          "type": "number"
+        },
+        "minGainPercent": {
+          "type": "number"
+        },
+        "lossPercent": {
+          "type": "number"
+        },
+        "minStanding": {
+          "type": "integer"
+        },
+        "maxStanding": {
+          "type": "integer"
+        },
+        "kills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "mobStat": {
+                "type": "integer"
+              },
+              "gain": {
+                "type": "integer"
+              },
+              "lose": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "ranks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "integer"
+              },
+              "raised": {
+                "type": "string"
+              },
+              "lowered": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
           }
         }
       },

@@ -373,7 +373,7 @@ namespace ZoneEngine_New.Tests
             var items = new StubItemBuilder();
             using var world = new FanoutWorld(items);
             Player caster = world.Player(1, 0, 0, 0);
-            NpcCharacter victim = world.Npc(2, NpcAiRules.MaxLeashRange + 10, 0, 0, attackable: true);
+            NpcCharacter victim = world.Npc(2, ZoneEngine_New.Core.Configuration.GameplayLeash.Default.IndoorRange + 10, 0, 0, attackable: true);
             NpcBrain brain = NpcBrain.Create(victim, new Vector3(0, 0, 0));
             brain.AddThreat(caster.Identity, 10);
             Assert.IsTrue(brain.ShouldLeash());

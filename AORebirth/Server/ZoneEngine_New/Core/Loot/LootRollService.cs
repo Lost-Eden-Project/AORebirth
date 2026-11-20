@@ -357,7 +357,7 @@ namespace ZoneEngine_New.Core.Loot
             ItemPlace from = ItemPlaces.Of(corpse.Loot, corpse);
             if (AutoConsumedItems.TryConsume(player, item))
             {
-                ModuleHooks.ItemMoved(player, item, from, ModuleHooks.Place(ItemPlaceKind.Destroyed));
+                ModuleHooks.ItemMoved(player, item, from, ModuleHooks.Place(ItemPlaceKind.Destroyed), source: corpse.AuditSource);
             }
             else if (!InventoryStacking.TryGrantOntoStack(player, item, _flush))
             {
@@ -375,7 +375,7 @@ namespace ZoneEngine_New.Core.Loot
                 }
                 player.Inventory.MarkDirty(item, page, free);
                 _flush.NotifyDirty(player);
-                ModuleHooks.ItemMoved(player, item, from, ModuleHooks.Place(ItemPlaceKind.Inventory));
+                ModuleHooks.ItemMoved(player, item, from, ModuleHooks.Place(ItemPlaceKind.Inventory), source: corpse.AuditSource);
                 if (ReferenceEquals(page, player.Inventory.Overflow))
                 {
                     OverflowGrants.Send(player, item);

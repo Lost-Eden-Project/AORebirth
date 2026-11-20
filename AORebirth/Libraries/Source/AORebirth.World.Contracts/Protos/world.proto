@@ -90,6 +90,8 @@ message Register {
   // Content fingerprint of the GameData this zone runs (and its override folders). World refuses a fresh zone whose
   // build or GameData differs from the zones already running: players would see different behaviour by playfield.
   string game_data = 12;
+  // True when this process already accepts clients (it is re-registering after a dropped stream or World restart).
+  bool ready = 13;
 }
 
 message LeaseAssertion {
@@ -129,6 +131,8 @@ message Heartbeat {
   uint64 sequence = 1;
   int32 players = 2;
   repeated PlayfieldLoad playfields = 3;
+  // Startup finished and the client listener is open. World admits no login until every required engine says so.
+  bool ready = 4;
 }
 
 message PlayfieldLoad {
@@ -247,6 +251,7 @@ message ShutdownRequest {
 
 service Session {
   // After credentials are verified. Returns a generation; a newer login supersedes older tickets for the account.
+  // Refused until World is past recovery and ChatEngine and at least one zone report ready.
   rpc BeginLogin(BeginLoginRequest) returns (BeginLoginReply);
   // Routes the character to the zone instance that owns it or that runs its playfield, and issues its cookies.
   rpc SelectCharacter(SelectCharacterRequest) returns (SelectCharacterReply);
@@ -262,6 +267,8 @@ message BeginLoginRequest {
 
 message BeginLoginReply {
   string generation = 1;
+  // Set (and generation empty) while the server is not ready for logins: World recovering, or no ready chat or zone.
+  string refused = 2;
 }
 
 message SelectCharacterRequest {

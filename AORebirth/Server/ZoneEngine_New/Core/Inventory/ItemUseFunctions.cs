@@ -84,7 +84,10 @@ namespace ZoneEngine_New.Core.Inventory
                     return ResolveApplyOn(target, source, spell) is not Player textPlayer || SystemText(textPlayer, spell);
                 case FunctionType.SaveChar:
                     // Insurance terminal (ICC Cell Structure Scanner 300813 and the like): fee, save point, XP saved.
-                    return (source as Player ?? target as Player) is Player saver && saver.InsuranceSave();
+                    return (source as Player ?? target as Player) is Player saver && saver.InsuranceSave(new AORebirth.Modules.Events.StatChangeSource
+                    {
+                        TemplateId = templateId, Name = sourceTemplate?.Name ?? string.Empty
+                    });
                 case FunctionType.SaveHere:
                     // Free save on the spot (Redeemed Tree of Life 227385 OnTargetInVicinity): no fee.
                     return (target as Player ?? source as Player) is Player herePlayer && herePlayer.SaveHere();
@@ -239,14 +242,18 @@ namespace ZoneEngine_New.Core.Inventory
             // current level's bar, awarded as XP so it levels.
             if (stat == CharacterStat.XP && spell.ArgumentCount >= 3 && third == 0 && minHit > 0)
             {
-                target.AwardLevelPercentXp(minHit);
+                using (Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Daily,
+                    new AORebirth.Modules.Events.StatChangeSource { DetailId = origin.Id }))
+                    target.AwardLevelPercentXp(minHit);
                 return true;
             }
 
             // Alien Daily Mission XP Reward 288545 [AlienXP, 10, 0, 0]: the same, of the current alien level's bar.
             if (stat == CharacterStat.AlienXP && spell.ArgumentCount >= 3 && third == 0 && minHit > 0)
             {
-                target.AwardAlienLevelPercentXp(minHit);
+                using (Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Daily,
+                    new AORebirth.Modules.Events.StatChangeSource { DetailId = origin.Id }))
+                    target.AwardAlienLevelPercentXp(minHit);
                 return true;
             }
 

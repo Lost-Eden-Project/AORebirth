@@ -16,6 +16,7 @@ namespace ZoneEngine_New.Tests
         static readonly Identity PlayerA = new() { Type = IdentityType.CanbeAffected, Instance = 10 };
         static readonly Identity PlayerB = new() { Type = IdentityType.CanbeAffected, Instance = 20 };
         static readonly Vector3 Origin = new(0, 0, 0);
+        static readonly float Leash = ZoneEngine_New.Core.Configuration.GameplayLeash.Default.IndoorRange;
 
         [TestMethod]
         public void AddIncrementsThreatAndHighestWins()
@@ -58,14 +59,14 @@ namespace ZoneEngine_New.Tests
             var hate = new HateList();
             hate.Add(PlayerA, 1f);
             Vector3 npc = Origin;
-            Assert.IsTrue(NpcAiRules.ShouldLeash(hate, Origin, npc, _ => false));
+            Assert.IsTrue(NpcAiRules.ShouldLeash(hate, Origin, npc, Leash, _ => false));
         }
 
         [TestMethod]
         public void ShouldNotLeashWhenIdleAtHome()
         {
             var hate = new HateList();
-            Assert.IsFalse(NpcAiRules.ShouldLeash(hate, Origin, Origin, _ => false));
+            Assert.IsFalse(NpcAiRules.ShouldLeash(hate, Origin, Origin, Leash, _ => false));
         }
 
         [TestMethod]
@@ -73,16 +74,16 @@ namespace ZoneEngine_New.Tests
         {
             var hate = new HateList();
             hate.Add(PlayerA, 1f);
-            Vector3 far = new(NpcAiRules.MaxLeashRange + 1f, 0, 0);
-            Assert.IsTrue(NpcAiRules.ShouldLeash(hate, Origin, far, _ => true));
+            Vector3 far = new(Leash + 1f, 0, 0);
+            Assert.IsTrue(NpcAiRules.ShouldLeash(hate, Origin, far, Leash, _ => true));
         }
 
         [TestMethod]
         public void ShouldNotLeashOnHomeRangeWhenHomeIsMissing()
         {
             var hate = new HateList();
-            Vector3 far = new(NpcAiRules.MaxLeashRange + 1f, 0, 0);
-            Assert.IsFalse(NpcAiRules.ShouldLeash(hate, null, far, _ => false));
+            Vector3 far = new(Leash + 1f, 0, 0);
+            Assert.IsFalse(NpcAiRules.ShouldLeash(hate, null, far, Leash, _ => false));
         }
 
         [TestMethod]
@@ -90,8 +91,8 @@ namespace ZoneEngine_New.Tests
         {
             var hate = new HateList();
             hate.Add(PlayerA, 1f);
-            Assert.IsTrue(NpcAiRules.ShouldLeash(hate, Origin, Origin, _ => false));
-            Assert.IsFalse(NpcAiRules.ShouldLeash(hate, Origin, Origin, _ => true));
+            Assert.IsTrue(NpcAiRules.ShouldLeash(hate, Origin, Origin, Leash, _ => false));
+            Assert.IsFalse(NpcAiRules.ShouldLeash(hate, Origin, Origin, Leash, _ => true));
         }
 
         [TestMethod]

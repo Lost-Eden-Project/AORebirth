@@ -1017,6 +1017,7 @@ namespace ZoneEngine_New.Core.Entities
 
             AwardRegularXp(playfield, present);
             AwardAlienXp(playfield, present);
+            AwardFaction(playfield, present);
             AwardPvpTitle(present);
             AdvanceKillQuests(playfield, present);
             return present;
@@ -1049,6 +1050,42 @@ namespace ZoneEngine_New.Core.Entities
 
             if (players.Count > 0)
                 quests.OnNpcKilled(npc, players);
+        }
+
+        /// <summary>
+        /// Shadowlands faction (<see cref="Factions.KillFaction"/>) for a monster of a Gameplay.json factions.kills faction:
+        /// every player with kill credit and their nearby teammates each move by the full amount, within the same level
+        /// range as kill XP: teammates the XP sharing rule leaves out (LevelEligibility.json) and anyone the monster is
+        /// grey for get none. None from pets, summoned adds or NoXp templates.
+        /// </summary>
+        void AwardFaction(Playfield playfield, IReadOnlyList<int> present)
+        {
+            if (IsPlayer || HasNoXpFeature || playfield.GetService<GameplaySettings>()?.Factions is not GameplayFactions rules
+                || !Factions.KillFaction.TryGetRule(rules, this, out GameplayFactionKillRule rule, out int mobValue))
+                return;
+
+            IGameData gameData = playfield.GetRequiredService<IGameData>();
+            int victimLevel = Stats.GetOrOne(CharacterStat.Level);
+            DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
+            AORebirth.Modules.Events.StatChangeSource victim = Modules.ModuleHooks.SourceOf(this);
+            var seen = new HashSet<int>();
+            for (int i = 0; i < present.Count; i++)
+            {
+                if (!_killRewards.TryGetIdentity(present[i], out Identity identity)
+                    || !registry.TryGet(identity, out Dynel? dynel) || dynel is not Character killer)
+                    continue;
+
+                foreach (Character member in CollectNearbyTeam(playfield, registry, killer))
+                {
+                    if (member is not Player player || !seen.Add(player.Identity.Instance)
+                        || IsGreyFor(player, victimLevel, gameData))
+                        continue;
+
+                    using var kill = Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Kill,
+                        KillSource(victim, player, killer));
+                    Factions.KillFaction.Apply(player, rules, rule, mobValue);
+                }
+            }
         }
 
         /// <summary>
@@ -1157,6 +1194,7 @@ namespace ZoneEngine_New.Core.Entities
                 instance => AwardGroupOf(instance, playfield, registry));
             var tooLow = new List<Character>();
             var told = new HashSet<int>();
+            AORebirth.Modules.Events.StatChangeSource victim = Modules.ModuleHooks.SourceOf(this);
             for (int i = 0; i < shares.Count; i++)
             {
                 GroupShare share = shares[i];
@@ -1188,6 +1226,8 @@ namespace ZoneEngine_New.Core.Entities
                 {
                     // A grey monster (more than its XPKillRange in the recipient's Xp.json row below them) is worth 1 XP,
                     // whatever the share.
+                    using var kill = Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Kill,
+                        KillSource(victim, recipients[r], killer));
                     if (IsGreyFor(recipients[r], victimLevel, gameData))
                     {
                         recipients[r].AwardXp(1, XpSource.Kill);
@@ -1203,6 +1243,14 @@ namespace ZoneEngine_New.Core.Entities
                 }
             }
         }
+
+        /// <summary>
+        /// The kill's audit source for <paramref name="recipient"/> (module API 1.17): the victim, with
+        /// <c>DetailId</c> the character the team's share was credited to when that is a teammate, 0 when it is them.
+        /// </summary>
+        static AORebirth.Modules.Events.StatChangeSource KillSource(AORebirth.Modules.Events.StatChangeSource victim,
+            Character recipient, Character creditedTo)
+            => ReferenceEquals(recipient, creditedTo) ? victim : victim with { DetailId = creditedTo.Identity.Instance };
 
         /// <summary>
         /// Relative kill XP: each level the victim is above (or below) the recipient adds (or removes)
@@ -1295,6 +1343,7 @@ namespace ZoneEngine_New.Core.Entities
             GameplayXp xpRules = playfield.GetService<GameplaySettings>()?.Xp ?? new GameplayXp();
             IGameData gameData = playfield.GetRequiredService<IGameData>();
             DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
+            AORebirth.Modules.Events.StatChangeSource victim = Modules.ModuleHooks.SourceOf(this);
             List<GroupShare> shares = _killRewards.DivideByGroup(
                 AlienShareBasis,
                 CollectPresentDamagers(registry),
@@ -1311,6 +1360,8 @@ namespace ZoneEngine_New.Core.Entities
                 for (int r = 0; r < recipients.Count; r++)
                 {
                     Character recipient = recipients[r];
+                    using var kill = Modules.StatChangeScope.Default(AORebirth.Modules.Events.StatChangeReason.Kill,
+                        KillSource(victim, recipient, killer));
                     // Grey aliens pay nothing. Any other pays the recipient's cut of the formula, but at least the
                     // configured minimum, solo or in a team.
                     if (IsGreyFor(recipient, monsterLevel, gameData))

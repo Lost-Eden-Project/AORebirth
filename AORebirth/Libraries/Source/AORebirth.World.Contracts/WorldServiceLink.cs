@@ -44,6 +44,15 @@ namespace AORebirth.World.Contracts
 
         public bool IsConnected => _connected;
 
+        volatile bool _ready;
+
+        /// <summary>The service's client listener is open. Registration and heartbeats carry it; World admits no login without it.</summary>
+        public bool Ready
+        {
+            get => _ready;
+            set => _ready = value;
+        }
+
         /// <summary>World pushes other than heartbeat acknowledgements (chat events, team updates, presence).</summary>
         public event Action<WorldToService>? MessageReceived;
 
@@ -123,7 +132,7 @@ namespace AORebirth.World.Contracts
                     await call.RequestStream.WriteAsync(message, session.Token).ConfigureAwait(false);
             }, session.Token);
 
-            var register = new Register { Role = _role, Instance = _instance, LastEpoch = Interlocked.Read(ref _epoch), PreviousSession = _session };
+            var register = new Register { Role = _role, Instance = _instance, LastEpoch = Interlocked.Read(ref _epoch), PreviousSession = _session, Ready = _ready };
             foreach (KeyValuePair<int, LeaseToken> lease in _leases)
                 register.Leases.Add(new LeaseAssertion { CharacterId = lease.Key, Token = lease.Value });
             outbound.Writer.TryWrite(new ServiceToWorld { Register = register });
@@ -147,7 +156,7 @@ namespace AORebirth.World.Contracts
             {
                 ulong sequence = 0;
                 using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(interval));
-                do outbound.Writer.TryWrite(new ServiceToWorld { Heartbeat = new Heartbeat { Sequence = ++sequence } });
+                do outbound.Writer.TryWrite(new ServiceToWorld { Heartbeat = new Heartbeat { Sequence = ++sequence, Ready = _ready } });
                 while (await timer.WaitForNextTickAsync(session.Token).ConfigureAwait(false));
             }, session.Token);
 

@@ -76,8 +76,6 @@ namespace ZoneEngine_New.Core.Ai
         /// </summary>
         public const float ProximityAggroRange = 7.5f;
 
-        public const float MaxLeashRange = 70f;
-
         public const float ArriveHomeMeters = 1.5f;
 
         /// <summary>A patrolling or wandering NPC stands this long after its last Knubot chat closes, then moves on.</summary>
@@ -186,12 +184,12 @@ namespace ZoneEngine_New.Core.Ai
         /// <summary>
         /// A new target must be within <see cref="NearbyRange"/>, or the longest weapon reach
         /// (<see cref="Entities.CharacterWeapon.MaxAttackRange"/>) if that is further: a ranged attacker hitting from
-        /// 31-40 m must not go unanswered. The target already being chased keeps out to <see cref="MaxLeashRange"/>:
-        /// a route around a wall can carry the NPC past that range, and dropping it there leashes, walks back into
-        /// range and chases again.
+        /// 31-40 m must not go unanswered. The target already being chased keeps out to the playfield's
+        /// <paramref name="leashRange"/>: a route around a wall can carry the NPC past that range, and dropping it there
+        /// leashes, walks back into range and chases again.
         /// </summary>
-        public static float EngageRange(bool isCurrentTarget)
-            => isCurrentTarget ? MaxLeashRange : Math.Max(NearbyRange, Entities.CharacterWeapon.MaxAttackRange);
+        public static float EngageRange(bool isCurrentTarget, float leashRange)
+            => isCurrentTarget ? leashRange : Math.Max(NearbyRange, Entities.CharacterWeapon.MaxAttackRange);
 
         public static bool IsNearby(Vector3 from, Vector3 to, float range)
             => Vector3.Abs(to - from) <= range;
@@ -200,12 +198,13 @@ namespace ZoneEngine_New.Core.Ai
             HateList hate,
             Vector3? home,
             Vector3 npcPosition,
+            float leashRange,
             Func<Identity, bool> isEngageable)
         {
             ArgumentNullException.ThrowIfNull(hate);
             ArgumentNullException.ThrowIfNull(isEngageable);
 
-            if (home is not null && Vector3.Abs(npcPosition - home) > MaxLeashRange)
+            if (home is not null && Vector3.Abs(npcPosition - home) > leashRange)
                 return true;
 
             // Empty list is idle/patrol, not a leash. Leash only after hate exists but nobody is nearby.

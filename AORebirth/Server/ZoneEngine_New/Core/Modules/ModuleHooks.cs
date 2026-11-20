@@ -196,11 +196,20 @@ namespace ZoneEngine_New.Core.Modules
 
         /// <summary>
         /// An item changed place for <paramref name="player"/>. Not for moves between slots of one character's own
-        /// inventory. <paramref name="count"/> 0 takes the item's stack count.
+        /// inventory. <paramref name="count"/> 0 takes the item's stack count. <paramref name="source"/> (1.17): who was on
+        /// the other side when the caller knows it; a GM command's or module operation's source wins over it, and without
+        /// one the scope's source, else the Corpse, Shop, Trade or World place's owner, is used.
         /// </summary>
-        public static void ItemMoved(Player player, Item item, ItemPlace from, ItemPlace to, int count = 0)
+        public static void ItemMoved(Player player, Item item, ItemPlace from, ItemPlace to, int count = 0,
+            StatChangeSource source = default)
         {
             if (player.Playfield is Playfield playfield && Events(playfield) is { ItemMoved.HasHandlers: true } events)
+            {
+                StatChangeReason reason = StatChangeScope.Current;
+                if (reason is StatChangeReason.Gm or StatChangeReason.Module || source.IsEmpty)
+                    source = StatChangeScope.CurrentSource;
+                if (source.IsEmpty)
+                    source = PlaceSource(playfield, from, to);
                 events.ItemMoved.Raise(new ItemMovedEvent
                 {
                     CharacterId = player.Identity.Instance,
@@ -211,9 +220,27 @@ namespace ZoneEngine_New.Core.Modules
                     Count = count > 0 ? count : Math.Max(1, item.StackCount),
                     From = from,
                     To = to,
-                    Reason = StatChangeScope.Current
+                    Reason = reason,
+                    Source = source
                 });
+            }
         }
+
+        /// <summary>The owner of the first of <paramref name="from"/>, <paramref name="to"/> that is someone else's place, described.</summary>
+        static StatChangeSource PlaceSource(Playfield playfield, ItemPlace from, ItemPlace to)
+        {
+            EntityRef owner = IsOthersPlace(from) ? from.Owner : IsOthersPlace(to) ? to.Owner : default;
+            if (owner == default)
+                return default;
+            var identity = new Identity { Type = (IdentityType)owner.Type, Instance = owner.Instance };
+            return playfield.GetService<DynelRegistry>() is { } registry && registry.TryGet(identity, out Dynel? dynel) && dynel != null
+                ? SourceOf(dynel)
+                : new StatChangeSource { Entity = owner };
+        }
+
+        static bool IsOthersPlace(ItemPlace place)
+            => place.Owner != default
+                && place.Kind is ItemPlaceKind.Corpse or ItemPlaceKind.Shop or ItemPlaceKind.Trade or ItemPlaceKind.World;
 
         /// <summary>Whether anyone listens for item moves on this playfield, to skip building places on a busy path.</summary>
         public static bool WantsItemMoves(Playfield? playfield)
@@ -326,7 +353,8 @@ namespace ZoneEngine_New.Core.Modules
 
         /// <summary>
         /// The stored value of an audited stat of <paramref name="player"/> changed. Loading a character (before the
-        /// server puts it in play) raises nothing. The reason is <see cref="StatChangeScope.Current"/>.
+        /// server puts it in play) raises nothing. The reason is <see cref="StatChangeScope.Current"/> and the source
+        /// <see cref="StatChangeScope.CurrentSource"/>.
         /// </summary>
         public static void PlayerStatChanged(Player player, CharacterStat stat, int before, int after)
         {
@@ -346,8 +374,61 @@ namespace ZoneEngine_New.Core.Modules
                 Stat = (int)stat,
                 Before = before,
                 After = after,
-                Reason = StatChangeScope.Current
+                Reason = StatChangeScope.Current,
+                Source = StatChangeScope.CurrentSource
             });
+        }
+
+        // ---- 1.17: audit sources ----
+
+        /// <summary>
+        /// <paramref name="dynel"/> as a <see cref="StatChangeSource"/>: a corpse as who died, a vending terminal as
+        /// <see cref="ShopSource"/>, an NPC with its template hash, a character with its name and level, a terminal with its
+        /// item template, a door with its lock difficulty. Empty for null.
+        /// </summary>
+        public static StatChangeSource SourceOf(Dynel? dynel) => dynel switch
+        {
+            null => default,
+            Corpse corpse => corpse.AuditSource,
+            VendingMachine machine => ShopSource(machine),
+            NpcCharacter npc => new StatChangeSource
+            {
+                Entity = Entity(npc.Identity),
+                Hash = npc.MobTemplate?.Hash ?? npc.SpawnHash ?? string.Empty,
+                Name = npc.Name ?? string.Empty,
+                Level = npc.Stats.GetOrZero(CharacterStat.Level)
+            },
+            Character character => new StatChangeSource
+            {
+                Entity = Entity(character.Identity),
+                Name = character.Name ?? string.Empty,
+                Level = character.Stats.GetOrZero(CharacterStat.Level)
+            },
+            StaticDynel terminal => new StatChangeSource
+            {
+                Entity = Entity(terminal.Identity),
+                TemplateId = terminal.ItemTemplateLowId,
+                Name = terminal.RuntimeName ?? terminal.Template.Name ?? string.Empty
+            },
+            Door door => new StatChangeSource { Entity = Entity(door.Identity), Level = door.LockDifficulty },
+            _ => new StatChangeSource { Entity = Entity(dynel.Identity) }
+        };
+
+        /// <summary>
+        /// A shop as a source: the NPC that runs it, or the vending terminal itself; with the terminal's item template id
+        /// and its vendor id.
+        /// </summary>
+        public static StatChangeSource ShopSource(VendingMachine machine)
+        {
+            StatChangeSource vendor = machine.OwnerNpc is NpcCharacter owner
+                ? SourceOf(owner)
+                : new StatChangeSource
+                {
+                    Entity = Entity(machine.Identity),
+                    Hash = machine.DatabaseVendorTemplateHash,
+                    Name = machine.RuntimeName ?? machine.Template.Name ?? string.Empty
+                };
+            return vendor with { TemplateId = machine.ItemTemplateLowId, DetailId = machine.DatabaseVendorId };
         }
 
         // ---- 1.16: GM commands ----

@@ -102,10 +102,13 @@ public sealed class DailyLoginRewardService(
                 if (result.Status == DailyLoginClaimCommitStatus.Applied)
                 {
                     committed = true;
-                    using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Daily))
+                    using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Daily,
+                        new AORebirth.Modules.Events.StatChangeSource { DetailId = selection.LowId, Name = selection.ItemName }))
+                    {
                         plan.PublishAfterCommit();
-                    for (int index = 0; autoConsumed && index < selection.ItemCount; index++)
-                        AutoConsumedItems.TryConsume(player, rewardTemplate);
+                        for (int index = 0; autoConsumed && index < selection.ItemCount; index++)
+                            AutoConsumedItems.TryConsume(player, rewardTemplate);
+                    }
                     return success;
                 }
                 if (result.Status == DailyLoginClaimCommitStatus.AlreadyApplied && result.Snapshot is not null)

@@ -632,6 +632,7 @@ namespace ChatEngine
             else
             {
                 chatServer.Stop();
+                if (ChatServer.World != null) ChatServer.World.Ready = false;
             }
         }
 
@@ -646,6 +647,8 @@ namespace ChatEngine
             }
 
             chatServer.Start(TcpEnable, UdpEnable);
+            // World admits logins only once every required engine reports ready.
+            if (ChatServer.World != null) ChatServer.World.Ready = chatServer.IsRunning && chatServer.TCPEnabled;
         }
 
         /// <summary>

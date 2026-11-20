@@ -1062,6 +1062,15 @@ namespace ZoneEngine_New.Core.Ai
                 || walk <= (range + Npc.GetCollisionRadius() + player.GetCollisionRadius()) * factor;
         }
 
+        /// <summary>This NPC's Gameplay.json leash range on its playfield: indoor or outdoor (no metadata counts as indoor).</summary>
+        float LeashRange()
+        {
+            var playfield = Npc.Playfield;
+            var leash = playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Leash
+                ?? ZoneEngine_New.Core.Configuration.GameplayLeash.Default;
+            return leash.RangeFor(playfield?.MetaData?.IsIndoor ?? true);
+        }
+
         public bool ShouldLeash()
         {
             TickStallWatch.Stage("brain.leash", Npc.Identity.Instance);
@@ -1073,7 +1082,7 @@ namespace ZoneEngine_New.Core.Ai
             // A target whose reach map was too costly to build means this fight cannot be judged: reset now rather
             // than search again (and stop players standing out of reach from farming a stuck mob).
             bool leash = _evading || _resetForUnreachable || (_resetForTargetReset && Hate.IsEmpty) || guardAwayFromPost
-                || NpcAiRules.ShouldLeash(Hate, DistanceLeashAnchor(), Npc.Position, _isEngageable);
+                || NpcAiRules.ShouldLeash(Hate, DistanceLeashAnchor(), Npc.Position, LeashRange(), _isEngageable);
             _resetForUnreachable = false;
             _resetForTargetReset = false;
             if (leash)
@@ -2133,7 +2142,7 @@ namespace ZoneEngine_New.Core.Ai
         {
             Character? target = Resolve(identity);
             return target != null
-                && Npc.GetEdgeDistanceTo(target) <= NpcAiRules.EngageRange(identity == _currentTarget || OwnsCurrentPetTarget(identity))
+                && Npc.GetEdgeDistanceTo(target) <= NpcAiRules.EngageRange(identity == _currentTarget || OwnsCurrentPetTarget(identity), LeashRange())
                 && HasChanceWithGrace(target);
         }
 

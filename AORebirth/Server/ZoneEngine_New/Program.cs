@@ -136,6 +136,8 @@ namespace ZoneEngine_New
                     throw;
                 }
                 CompactStartupHeap(logger);
+                // World admits logins only once every required engine reports ready.
+                worldLink!.Ready = true;
                 RuntimeStartup.NotifyService("READY=1\nSTATUS=ZoneEngine_New ready");
                 Console.WriteLine("ZONEENGINE_NEW_READY");
                 logger.Info("ZoneEngine_New root container started.");

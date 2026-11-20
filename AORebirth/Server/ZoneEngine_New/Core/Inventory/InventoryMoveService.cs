@@ -30,6 +30,7 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly object _gate = new();
         private readonly Dictionary<int, PendingEquip> _pending = new();
         private readonly IZoneLogger _logger;
+        private readonly InventoryFlushService _flush;
         private readonly InventoryActionService _actions;
 
         public InventoryMoveService(IZoneLogger logger, InventoryFlushService flush, InventoryActionService actions)
@@ -37,6 +38,7 @@ namespace ZoneEngine_New.Core.Inventory
             ArgumentNullException.ThrowIfNull(logger);
             ArgumentNullException.ThrowIfNull(flush);
             _logger = logger;
+            _flush = flush;
             _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         }
 
@@ -1037,31 +1039,9 @@ namespace ZoneEngine_New.Core.Inventory
                 Helpers.ClientFeedback.SendFormatted(player, Helpers.ClientFeedback.AlreadyHaveUniqueItem, swappedName);
                 return false;
             }
-            var changes = new List<InventoryRowChange>
-            {
-                new(item, destPage.Identity, destSlot, item.StackCount)
-            };
-            if (existingDest != null)
-                changes.Add(new InventoryRowChange(existingDest, sourcePage.Identity, sourceSlot, existingDest.StackCount));
-            ItemInstanceRecord[] expectedSources = lootSource != null && item.IsPersisted
-                ? [item.ToRecord(sourcePage.Identity, sourceSlot, item.StackCount)] : [];
-            bool committed = _actions.TryCommit(player, changes,
-                () => !item.Locked && existingDest?.Locked != true
-                    && (lootSource is not Chest sourceChest || sourceChest.CanDistribute(item))
-                    && sourcePage.Content.TryGetValue(sourceSlot, out Item? current) && ReferenceEquals(current, item)
-                    && ReferenceEquals(destPage.Content.GetValueOrDefault(destSlot), existingDest),
-                () =>
-                {
-                    sourcePage.Content.Remove(sourceSlot);
-                    if (existingDest != null)
-                    {
-                        destPage.Content.Remove(destSlot);
-                        if (!sourcePage.Add(sourceSlot, existingDest))
-                            throw new InvalidOperationException("Reserved inventory swap source changed.");
-                    }
-                    if (!destPage.Add(destSlot, item))
-                        throw new InvalidOperationException("Reserved inventory move destination changed.");
-                }, expectedSources: expectedSources);
+            bool committed = lootSource != null && item.IsPersisted
+                ? TakeSharedLoot(player, sourcePage, sourceSlot, destPage, destSlot, item, lootSource)
+                : ApplyOwnedMove(player, sourcePage, sourceSlot, destPage, destSlot, item, existingDest, lootSource);
             if (committed)
             {
                 lootSource?.NotifyLootChanged();
@@ -1075,6 +1055,79 @@ namespace ZoneEngine_New.Core.Inventory
                 }
             }
             return committed;
+        }
+
+        /// <summary>
+        /// A move whose durable rows all belong to this player: between their own pages, bank and bags, or transient
+        /// corpse loot that has no row yet. It is applied in memory on the tick and written by the coalesced background
+        /// flush, the path grants, trades and loot rolls already take: one transaction per player per coalesce window
+        /// rather than one database round trip per message, so a loot-all or a bag sort costs the tick microseconds.
+        /// Logout, zone change and the trade and mission commits hard-flush ahead of their own writes, and the tick is
+        /// the only writer of these pages, so the checks here are exact. An item without an instance id could never be
+        /// written: the move is refused rather than left to resurrect in its old slot at the next login.
+        /// </summary>
+        bool ApplyOwnedMove(Player player, Container sourcePage, int sourceSlot, Container destPage, int destSlot,
+            Item item, Item? existingDest, LootableDynel? lootSource)
+        {
+            if (player.Session?.State != SessionState.InPlay || player.IsPersistenceQuarantined
+                || item.Locked || existingDest?.Locked == true
+                || (lootSource is Chest sourceChest && !sourceChest.CanDistribute(item))
+                || !sourcePage.Content.TryGetValue(sourceSlot, out Item? current) || !ReferenceEquals(current, item)
+                || !ReferenceEquals(destPage.Content.GetValueOrDefault(destSlot), existingDest))
+                return false;
+            if (item.InstanceId <= 0 || existingDest is { InstanceId: <= 0 })
+            {
+                _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                    "Inventory move refused: item without an instance id char={0} source={1}/{2} dest={3}/{4}",
+                    player.Identity.Instance, sourcePage.Identity, sourceSlot, destPage.Identity, destSlot));
+                return false;
+            }
+
+            sourcePage.Content.Remove(sourceSlot);
+            if (existingDest != null)
+            {
+                destPage.Content.Remove(destSlot);
+                if (!sourcePage.Add(sourceSlot, existingDest))
+                    throw new InvalidOperationException("Reserved inventory swap source changed.");
+            }
+            if (!destPage.Add(destSlot, item))
+                throw new InvalidOperationException("Reserved inventory move destination changed.");
+
+            PlayerInventory inventory = player.Inventory;
+            inventory.MarkDirty(item, destPage, destSlot);
+            if (existingDest != null)
+                inventory.MarkDirty(existingDest, sourcePage, sourceSlot);
+            _flush.NotifyDirty(player);
+            return true;
+        }
+
+        /// <summary>
+        /// A take from a shared durable container (a mission chest reloads its rows from storage on every new open). The
+        /// chest's in-memory contents are authoritative while it is loaded and the caller holds its loot gate, so the
+        /// take is applied here and acknowledged at once. Its row changes owner off the tick through the player's
+        /// ordered commit queue, in a transaction that first locks the chest row exactly as this server last saw it
+        /// (<see cref="InventoryActionService.QueueSharedSourceRelocation"/>), and the chest writes every queued take
+        /// before it reloads its rows for a new opener, so a stale projection can never hand out an item twice. Loot
+        /// never lands on an occupied slot (the caller refused that), so there is no swap here.
+        /// </summary>
+        bool TakeSharedLoot(Player player, Container sourcePage, int sourceSlot, Container destPage, int destSlot,
+            Item item, LootableDynel lootSource)
+        {
+            if (player.Session?.State != SessionState.InPlay || player.IsPersistenceQuarantined || item.Locked
+                || (lootSource is Chest sourceChest && !sourceChest.CanDistribute(item))
+                || !sourcePage.Content.TryGetValue(sourceSlot, out Item? current) || !ReferenceEquals(current, item)
+                || destPage.Content.ContainsKey(destSlot))
+                return false;
+
+            // Queued before memory changes: a refused queue leaves the chest as it was. The commit cannot run before
+            // this returns, since the caller holds the player's persistence gate.
+            _actions.QueueSharedSourceRelocation(player, item,
+                item.ToRecord(sourcePage.Identity, sourceSlot, item.StackCount), destPage.Identity, destSlot);
+            sourcePage.Content.Remove(sourceSlot);
+            if (!destPage.Add(destSlot, item))
+                throw new InvalidOperationException("Reserved inventory move destination changed.");
+            (lootSource as Chest)?.RecordPendingTake(player);
+            return true;
         }
 
         /// <summary>
@@ -1141,23 +1194,28 @@ namespace ZoneEngine_New.Core.Inventory
 
             int total = targetCount + lootedCount;
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
-            ItemInstanceRecord[] expectedSources = item.IsPersisted
-                ? [item.ToRecord(sourcePage.Identity, sourceSlot, lootedCount)] : [];
-            bool committed = _actions.TryCommit(player,
-                [new InventoryRowChange(target, inventory.Identity, targetSlot, total),
-                 new InventoryRowChange(item, graveyard, item.InstanceId, lootedCount, Retired: true)],
-                () => !item.Locked && !target.Locked
-                    && (lootSource is not Chest sourceChest || sourceChest.CanDistribute(item))
-                    && sourcePage.Content.TryGetValue(sourceSlot, out Item? current) && ReferenceEquals(current, item)
-                    && ReferenceEquals(inventory.Content.GetValueOrDefault(targetSlot), target)
-                    && item.StackCount == lootedCount && target.StackCount == targetCount,
-                () =>
-                {
-                    sourcePage.Content.Remove(sourceSlot);
-                    target.StackCount = total;
-                }, expectedSources: expectedSources);
-            if (!committed)
+            if (player.Session?.State != SessionState.InPlay || player.IsPersistenceQuarantined
+                || (lootSource is Chest sourceChest && !sourceChest.CanDistribute(item))
+                || !sourcePage.Content.TryGetValue(sourceSlot, out Item? current) || !ReferenceEquals(current, item)
+                || !ReferenceEquals(inventory.Content.GetValueOrDefault(targetSlot), target))
                 return false;
+
+            // Applied on the tick, stored by the coalesced flush (see ApplyOwnedMove): the stack as a location update
+            // carrying its new count. Shared durable loot retires its chest row off the tick with the chest row locked as
+            // last seen (see TakeSharedLoot); transient loot never had a row and is recorded as retired so that a row
+            // landing for it in flight is re-homed rather than left to duplicate the stack at the next login.
+            if (item.IsPersisted)
+                _actions.QueueSharedSourceRelocation(player, item,
+                    item.ToRecord(sourcePage.Identity, sourceSlot, lootedCount), graveyard, item.InstanceId);
+            player.InvalidateOwnedItemCache();
+            sourcePage.Content.Remove(sourceSlot);
+            target.StackCount = total;
+            player.Inventory.MarkDirty(target, inventory, targetSlot);
+            if (item.IsPersisted)
+                (lootSource as Chest)?.RecordPendingTake(player);
+            else
+                player.Inventory.MarkOrphaned(item, graveyard);
+            _flush.NotifyDirty(player);
 
             lootSource.NotifyLootChanged();
             if (lootSource is Corpse corpse)

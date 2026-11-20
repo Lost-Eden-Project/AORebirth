@@ -352,7 +352,8 @@ namespace ZoneEngine_New.Core.Commands
             Playfield? issuedOn = player.Playfield;
             try
             {
-                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Gm))
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Gm,
+                    Modules.ModuleHooks.SourceOf(player) with { Detail = command.Name, DetailId = gmLevel }))
                     command.Execute(context);
             }
             catch (Exception exception)

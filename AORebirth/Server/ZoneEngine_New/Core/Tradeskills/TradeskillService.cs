@@ -361,13 +361,19 @@ namespace ZoneEngine_New.Core.Tradeskills
             foreach ((Identity _, Item used) in consumed)
                 Modules.ModuleHooks.ItemMoved(player, used, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory),
                     Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
-            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Tradeskill))
+            var combined = new AORebirth.Modules.Events.StatChangeSource
+            {
+                DetailId = result.LowId,
+                Name = NameOf(result),
+                Detail = string.Format(CultureInfo.InvariantCulture, "{0}+{1}", source?.LowId ?? 0, target?.LowId ?? 0)
+            };
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Tradeskill, combined))
                 Modules.ModuleHooks.ItemMoved(player, result, Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.None),
                     Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Inventory));
 
             int xp = Xp(player, result.Quality);
             if (xp > 0)
-                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Tradeskill))
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Tradeskill, combined))
                     player.AwardXp(xp, XpSource.Quest);
             player.Playfield?.GetService<Quests.QuestService>()?.OnItemAssembled(player, result);
             if (_windows.TryGetValue(player, out Window? window))

@@ -21,6 +21,13 @@ using ZoneEngine_New.Core.Quests.Dungeons;
 
 public sealed partial class QuestService
 {
+    /// <summary>A quest's reward as a module audit source (module API 1.17): its title, and its quest id as the detail.</summary>
+    static AORebirth.Modules.Events.StatChangeSource AuditSource(PlayerQuest quest) => new()
+    {
+        Name = quest.Template.Title ?? quest.Template.Name,
+        Detail = quest.QuestId
+    };
+
     static bool RequiresBoundObjective(PlayerQuest quest) => quest.Source == QuestSource.Generated
         && (quest.Template.IsFindItem || quest.Template.IsReturnItem || quest.Template.IsRepair
             || QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
@@ -414,14 +421,14 @@ public sealed partial class QuestService
                 queued = true;
                 try
                 {
-                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
                         grant.PublishBeforeCommit();
                 }
                 finally
                 {
                     Ended(player, quest);
                 }
-                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
                 {
                     foreach (var pair in values)
                         player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);
@@ -654,7 +661,7 @@ public sealed partial class QuestService
                 // Local playtest: AddTemplate fills the first free client slot, so publish before key deletion opens a hole.
                 try
                 {
-                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
                         grant.PublishAfterCommit();
                 }
                 finally
@@ -662,7 +669,7 @@ public sealed partial class QuestService
                     // Durable lifecycle cleanup must still run if reward publication fails.
                     Ended(player, quest);
                 }
-                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest))
+                using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Quest, AuditSource(quest)))
                 {
                     foreach (var pair in values)
                         player.Stats.Set(pair.Key, pair.Value, StatDetail.Base, dirty: true);

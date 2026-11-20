@@ -189,10 +189,23 @@ namespace LoginEngine.MessageHandlers
             LoginCharacterInfo[] characterArray =
                 characters.ToArray();
 
+            string notReady;
             if (!client.CompleteAuthentication(
                 authenticatedAccount,
-                challengedGeneration))
+                challengedGeneration,
+                out notReady))
             {
+                if (!string.IsNullOrEmpty(notReady))
+                {
+                    Colouring.Push(ConsoleColor.Yellow);
+                    Console.WriteLine(
+                        "Login of '" + Client.ToLogValue(authenticatedAccount)
+                        + "' refused: server not ready (" + notReady + ").");
+                    Colouring.Pop();
+                    client.RejectAuthentication(invalidCredentials: false);
+                    return;
+                }
+
                 client.RejectAuthentication();
                 return;
             }

@@ -36,6 +36,18 @@ namespace ZoneEngine_New.Core.World
         /// </summary>
         public string GameDataFingerprint { get; set; } = string.Empty;
 
+        volatile bool _ready;
+
+        /// <summary>
+        /// Set once startup has finished and the game port is open. Registration and every heartbeat carry it; World
+        /// admits no login and routes no player here until it is set.
+        /// </summary>
+        public bool Ready
+        {
+            get => _ready;
+            set => _ready = value;
+        }
+
         /// <summary>Log everyone out this long before the lease deadline, while their saves are still owned.</summary>
         static readonly TimeSpan FenceMargin = TimeSpan.FromSeconds(3);
 
@@ -408,7 +420,8 @@ namespace ZoneEngine_New.Core.World
                 GameData = GameDataFingerprint,
                 PreferredSlot = _slot,
                 PreviousSession = _session,
-                HandoffHook = _modules?.HasHandoffHook ?? false
+                HandoffHook = _modules?.HasHandoffHook ?? false,
+                Ready = _ready
             };
             Dictionary<int, PlayerPresence> presence = SafePresence().ToDictionary(p => p.CharacterId);
             foreach (KeyValuePair<int, LocalLease> lease in _leases)
@@ -505,7 +518,7 @@ namespace ZoneEngine_New.Core.World
             do
             {
                 sequence++;
-                var heartbeat = new Heartbeat { Sequence = sequence };
+                var heartbeat = new Heartbeat { Sequence = sequence, Ready = _ready };
                 IReadOnlyList<PlayfieldLoad> loads = SafeLoad();
                 heartbeat.Playfields.AddRange(loads);
                 heartbeat.Players = loads.Sum(load => load.Players);

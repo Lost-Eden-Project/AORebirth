@@ -70,6 +70,7 @@ namespace ZoneEngine_New.Core.Entities
             Rotation = dead.Rotation;
             Playfield = dead.Playfield;
             LootLevel = dead.Stats.GetOrOne(CharacterStat.Level);
+            AuditSource = Modules.ModuleHooks.SourceOf(dead) with { DetailId = identity.Instance };
             if (dead is NpcCharacter npc)
             {
                 ItemTable = WithPlayfieldLoot(npc.MobTemplate?.ItemTable, dead.Playfield);
@@ -162,7 +163,7 @@ namespace ZoneEngine_New.Core.Entities
             _cashClaimed = true;
             SourceStats[CharacterStat.Cash] = 0;
 
-            using var reason = Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Loot);
+            using var reason = Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Loot, AuditSource);
             int current = Math.Max(0, player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base));
             int taken = Math.Min(cash, Characters.CashLimit.Room(current));
             if (taken < cash)
@@ -186,6 +187,12 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         public Identity Owner { get; }
+
+        /// <summary>
+        /// Who died, captured at death for module audit events (module API 1.17): the NPC's or player's identity,
+        /// template hash, name and level, with <c>DetailId</c> this corpse's instance. The dead may be gone by the loot.
+        /// </summary>
+        internal AORebirth.Modules.Events.StatChangeSource AuditSource { get; }
 
         public string Name { get; }
 

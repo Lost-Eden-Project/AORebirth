@@ -41,7 +41,10 @@ namespace WorldEngine.Services
         public override Task<BeginLoginReply> BeginLogin(BeginLoginRequest request, ServerCallContext context)
         {
             RequireLoginServer(context);
-            return Task.FromResult(new BeginLoginReply { Generation = state.BeginLogin(RequireAccount(request.Account)) });
+            string generation = state.BeginLogin(RequireAccount(request.Account), out string? refused);
+            if (refused != null)
+                log.LogInformation("Login refused account={Account} reason={Reason}", request.Account, refused);
+            return Task.FromResult(new BeginLoginReply { Generation = generation, Refused = refused ?? string.Empty });
         }
 
         public override async Task<SelectCharacterReply> SelectCharacter(SelectCharacterRequest request, ServerCallContext context)

@@ -703,8 +703,8 @@ namespace ZoneEngine_New.Core.Trade
                         tradedBags.Add(delivery.Item.Identity);
                     }
                     // Held back until after the Complete frames: see SendTradeCash.
-                    SetCashQuietly(initiator, initiatorCash);
-                    SetCashQuietly(partner, partnerCash);
+                    SetCashQuietly(initiator, initiatorCash, ModuleHooks.SourceOf(partner));
+                    SetCashQuietly(partner, partnerCash, ModuleHooks.SourceOf(initiator));
                 });
             }
             catch (Exception exception)
@@ -1167,7 +1167,7 @@ namespace ZoneEngine_New.Core.Trade
                     ApplyDeliveries(deliveries);
                     if (!payInCash)
                         player.Stats.Set(currency, (int)finalCurrency, StatDetail.Base, dirty: true);
-                    SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Shop);
+                    SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Shop, ModuleHooks.ShopSource(machine));
                     foreach (Delivery delivery in deliveries) SendDelivery(delivery);
                 });
             }
@@ -1180,10 +1180,11 @@ namespace ZoneEngine_New.Core.Trade
             if (ModuleHooks.WantsItemMoves(player.Playfield))
             {
                 ItemPlace shop = ModuleHooks.Place(ItemPlaceKind.Shop, owner?.Identity ?? machine.Identity);
+                AORebirth.Modules.Events.StatChangeSource vendor = ModuleHooks.ShopSource(machine);
                 foreach (Item item in sold)
-                    ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Inventory), shop);
+                    ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Inventory), shop, source: vendor);
                 foreach (Delivery delivery in deliveries)
-                    ModuleHooks.ItemMoved(player, delivery.Item, shop, ModuleHooks.Place(ItemPlaceKind.Inventory));
+                    ModuleHooks.ItemMoved(player, delivery.Item, shop, ModuleHooks.Place(ItemPlaceKind.Inventory), source: vendor);
             }
 
             Unregister(player);
@@ -1475,7 +1476,7 @@ namespace ZoneEngine_New.Core.Trade
                     PersistPlan(player, finalCash, null, 0, [], given, npc.Identity);
                     durable = true;
                     offer.DrainAll();
-                    SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Dialogue);
+                    SetCash(player, finalCash, AORebirth.Modules.Events.StatChangeReason.Dialogue, ModuleHooks.SourceOf(npc));
                 });
             }
             catch (Exception exception)
@@ -2095,9 +2096,10 @@ namespace ZoneEngine_New.Core.Trade
                     Stats = { new((Stat)CharacterStat.SocialStatus, (uint)value) }
                 });
 
-        void SetCash(Player player, long cash, AORebirth.Modules.Events.StatChangeReason reason)
+        void SetCash(Player player, long cash, AORebirth.Modules.Events.StatChangeReason reason,
+            AORebirth.Modules.Events.StatChangeSource source = default)
         {
-            using (Modules.StatChangeScope.Begin(reason))
+            using (Modules.StatChangeScope.Begin(reason, source))
                 player.Stats.Set(
                     CharacterStat.Cash,
                     TradeRules.ClampCash(cash),
@@ -2107,9 +2109,9 @@ namespace ZoneEngine_New.Core.Trade
         }
 
         /// <summary>Sets Cash without queuing it for the next stat flush; <see cref="SendTradeCash"/> sends it.</summary>
-        static void SetCashQuietly(Player player, long cash)
+        static void SetCashQuietly(Player player, long cash, AORebirth.Modules.Events.StatChangeSource otherTrader)
         {
-            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Trade))
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Trade, otherTrader))
                 player.Stats.Set(CharacterStat.Cash, TradeRules.ClampCash(cash), StatDetail.Base, dirty: false);
         }
 

@@ -64,6 +64,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Unprovoked (proximity) aggro limits.</summary>
         public GameplayProximityAggro ProximityAggro { get; init; } = new();
 
+        /// <summary>How far an NPC may be pulled from home before it gives up and walks back.</summary>
+        public GameplayLeash Leash { get; init; } = new();
+
         /// <summary>How much of a fight a player's pet starts falls back on the player.</summary>
         public GameplayPets Pets { get; init; } = new();
 
@@ -87,6 +90,9 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>IP Reset Points (RP) granted on reaching level milestones; the starting pool is in NewCharacter.json.</summary>
         public GameplayResetPoints IpResetPoints { get; init; } = new();
+
+        /// <summary>Shadowlands faction standing moved by kills.</summary>
+        public GameplayFactions Factions { get; init; } = new();
 
         public static string ResolvePath(string gameDataRoot)
         {
@@ -164,11 +170,15 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": xp.doorPickXpPerLevel must be 0 (off) or more.");
             if (Xp.TeamMemberPercent == null || Array.Exists(Xp.TeamMemberPercent, x => !double.IsFinite(x) || x < 0))
                 throw new InvalidDataException(path + ": xp.teamMemberPercent must be a list of finite, non-negative percents (it may be empty).");
+            if (Leash == null
+                || !float.IsFinite(Leash.IndoorRange) || Leash.IndoorRange <= 0
+                || !float.IsFinite(Leash.OutdoorRange) || Leash.OutdoorRange <= 0)
+                throw new InvalidDataException(path + ": leash.indoorRange and outdoorRange must be finite distances above 0.");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
-                || Wander.Radius >= Ai.NpcAiRules.MaxLeashRange)
+                || Wander.Radius >= Leash.ShortestRange)
                 throw new InvalidDataException(path + ": wander.radius must be 0 (off) up to below the "
-                    + Ai.NpcAiRules.MaxLeashRange + " m leash range.");
+                    + Leash.ShortestRange + " m leash range.");
             if (!double.IsFinite(Wander.MinPauseSeconds) || !double.IsFinite(Wander.MaxPauseSeconds)
                 || Wander.MinPauseSeconds < 0 || Wander.MaxPauseSeconds < Wander.MinPauseSeconds)
                 throw new InvalidDataException(path + ": wander pause seconds must be non-negative with min <= max.");
@@ -196,12 +206,12 @@ namespace ZoneEngine_New.Core.Configuration
                 || !float.IsFinite(SocialAggro.NpcVsNpcDefaultRadius) || SocialAggro.NpcVsNpcDefaultRadius < 0
                 || !float.IsFinite(SocialAggro.GuardDefaultRadius) || SocialAggro.GuardDefaultRadius < 0
                 || !float.IsFinite(SocialAggro.MaxRadius) || SocialAggro.MaxRadius < 0
-                || SocialAggro.DefaultRadius >= Ai.NpcAiRules.MaxLeashRange
-                || SocialAggro.NpcVsNpcDefaultRadius >= Ai.NpcAiRules.MaxLeashRange
-                || SocialAggro.GuardDefaultRadius >= Ai.NpcAiRules.MaxLeashRange
-                || SocialAggro.MaxRadius >= Ai.NpcAiRules.MaxLeashRange)
+                || SocialAggro.DefaultRadius >= Leash.ShortestRange
+                || SocialAggro.NpcVsNpcDefaultRadius >= Leash.ShortestRange
+                || SocialAggro.GuardDefaultRadius >= Leash.ShortestRange
+                || SocialAggro.MaxRadius >= Leash.ShortestRange)
                 throw new InvalidDataException(path + ": socialAggro.defaultRadius, npcVsNpcDefaultRadius, guardDefaultRadius and maxRadius must be 0 up to below the "
-                    + Ai.NpcAiRules.MaxLeashRange + " m leash range.");
+                    + Leash.ShortestRange + " m leash range.");
             if (!float.IsFinite(SocialAggro.ThreatOnlyRadiusPercent) || SocialAggro.ThreatOnlyRadiusPercent < 0
                 || SocialAggro.ThreatOnlyRadiusPercent > 100)
                 throw new InvalidDataException(path + ": socialAggro.threatOnlyRadiusPercent must be 0 to 100.");
@@ -226,7 +236,137 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": inventory.maxCredits must be from 1 to " + int.MaxValue + ".");
             if (Events == null || Events.Halloween == null)
                 throw new InvalidDataException(path + ": events and events.halloween must be objects.");
+            if (Factions == null)
+                throw new InvalidDataException(path + ": factions must be an object (or omitted).");
+            Factions.Validate(path);
         }
+    }
+
+    /// <summary>
+    /// The factions section of Gameplay.json: kill faction for the Shadowlands standings (Faction with The Redeemed,
+    /// The Unredeemed, Guardian of Shadow). A monster belongs to a <see cref="Kills"/> rule's faction when its template
+    /// carries that rule's mob stat with a value above 0, that value being the most standing it can give. Each kill moves
+    /// the gain standing <see cref="LerpPercent"/> of the way to the monster's value (at least <see cref="MinGainPercent"/>
+    /// of the value, never past it) and takes <see cref="LossPercent"/> of that gain from the lose standing. A standing
+    /// already at or above the value changes nothing.
+    /// NOTE: the defaults and Gameplay.json values are stand-ins (12% lerp reaches the value in 28 kills from 0), not
+    /// retail's numbers.
+    /// </summary>
+    public sealed class GameplayFactions
+    {
+        /// <summary>Percent of the distance to the monster's value one kill closes.</summary>
+        public double LerpPercent { get; init; } = 12;
+
+        /// <summary>Smallest gain per kill as a percent of the monster's value (never below 1 point), so the last stretch does not crawl.</summary>
+        public double MinGainPercent { get; init; } = 1;
+
+        /// <summary>Lose-standing drop as a percent of the gain.</summary>
+        public double LossPercent { get; init; } = 100;
+
+        /// <summary>Lowest standing a kill loss takes a character to.</summary>
+        public int MinStanding { get; init; } = 0;
+
+        /// <summary>Highest standing a kill gain takes a character to (the 50,000 cap).</summary>
+        public int MaxStanding { get; init; } = 50000;
+
+        /// <summary>Which standing a monster of each faction raises and which it lowers. Empty turns kill faction off.</summary>
+        public IReadOnlyList<GameplayFactionKillRule> Kills { get; init; } =
+        [
+            new() { MobStat = (int)CharacterStat.OTUnredeemed,
+                Gain = (int)CharacterStat.ClanRedeemed,
+                Lose = (int)CharacterStat.OTUnredeemed },
+            new() { MobStat = (int)CharacterStat.ClanRedeemed,
+                Gain = (int)CharacterStat.OTUnredeemed,
+                Lose = (int)CharacterStat.ClanRedeemed },
+            new() { MobStat = (int)CharacterStat.GOS, Gain = (int)CharacterStat.GOS },
+        ];
+
+        /// <summary>
+        /// Standing ranks, lowest first, named in the rank-change messages. Empty sends none. Shared by every standing.
+        /// </summary>
+        public IReadOnlyList<GameplayFactionRank> Ranks { get; init; } = [];
+
+        internal void Validate(string path)
+        {
+            if (!double.IsFinite(LerpPercent) || LerpPercent <= 0 || LerpPercent > 100)
+                throw new InvalidDataException(path + ": factions.lerpPercent must be above 0, up to 100.");
+            if (!double.IsFinite(MinGainPercent) || MinGainPercent < 0 || MinGainPercent > 100)
+                throw new InvalidDataException(path + ": factions.minGainPercent must be 0 to 100.");
+            if (!double.IsFinite(LossPercent) || LossPercent < 0 || LossPercent > 1000)
+                throw new InvalidDataException(path + ": factions.lossPercent must be 0 to 1000.");
+            if (MinStanding > 0 || MaxStanding < 0 || MinStanding >= MaxStanding)
+                throw new InvalidDataException(path + ": factions.minStanding must be 0 or less and maxStanding 0 or more, min below max.");
+            if (Kills == null)
+                throw new InvalidDataException(path + ": factions.kills must be a list (it may be empty).");
+            var mobStats = new HashSet<int>();
+            foreach (GameplayFactionKillRule rule in Kills)
+            {
+                if (rule == null || !GameplayFactionKillRule.IsFactionStat(rule.MobStat)
+                    || !GameplayFactionKillRule.IsFactionStat(rule.Gain)
+                    || (rule.HasLoss && !GameplayFactionKillRule.IsFactionStat(rule.Lose)))
+                    throw new InvalidDataException(path + ": factions.kills mobStat, gain and lose (0 or omitted for none) must be faction stats ("
+                        + GameplayFactionKillRule.FirstFactionStat + " to " + GameplayFactionKillRule.LastFactionStat + ").");
+                if (rule.Gain == rule.Lose)
+                    throw new InvalidDataException(path + ": factions.kills gain and lose must be different stats (mobStat " + rule.MobStat + ").");
+                if (!mobStats.Add(rule.MobStat))
+                    throw new InvalidDataException(path + ": factions.kills has mobStat " + rule.MobStat + " more than once.");
+            }
+            if (Ranks == null)
+                throw new InvalidDataException(path + ": factions.ranks must be a list (it may be empty).");
+            for (int i = 0; i < Ranks.Count; i++)
+            {
+                GameplayFactionRank rank = Ranks[i];
+                if (rank == null || string.IsNullOrWhiteSpace(rank.Raised) || string.IsNullOrWhiteSpace(rank.Lowered)
+                    || rank.Raised.Length > Helpers.ClientFeedback.MaxTextArgumentLength
+                    || rank.Lowered.Length > Helpers.ClientFeedback.MaxTextArgumentLength)
+                    throw new InvalidDataException(path + ": factions.ranks entries need raised and lowered text of 1 to "
+                        + Helpers.ClientFeedback.MaxTextArgumentLength + " characters.");
+                if (i > 0 && rank.Min <= Ranks[i - 1].Min)
+                    throw new InvalidDataException(path + ": factions.ranks must be in rising min order without repeats.");
+            }
+        }
+    }
+
+    /// <summary>One factions.kills rule: a monster carrying <see cref="MobStat"/> raises <see cref="Gain"/> and lowers <see cref="Lose"/>.</summary>
+    public sealed class GameplayFactionKillRule
+    {
+        /// <summary>Faction with Omni-Armed Forces, the first of the client's faction standings.</summary>
+        public const int FirstFactionStat = (int)CharacterStat.OTArmedForces;
+
+        /// <summary>Faction with The Redeemed, the last of the client's faction standings.</summary>
+        public const int LastFactionStat = (int)CharacterStat.ClanRedeemed;
+
+        /// <summary>The faction stat whose value on a monster's template makes it this faction's (its value the most it gives).</summary>
+        public int MobStat { get; init; }
+
+        /// <summary>The killer's standing the kill raises.</summary>
+        public int Gain { get; init; }
+
+        /// <summary>The killer's standing the kill lowers; 0 (or omitted) for none, as Guardian of Shadow only goes up.</summary>
+        public int Lose { get; init; }
+
+        internal bool HasLoss => Lose != 0;
+
+        internal CharacterStat MobCharacterStat => (CharacterStat)MobStat;
+
+        internal CharacterStat GainStat => (CharacterStat)Gain;
+
+        internal CharacterStat LoseStat => (CharacterStat)Lose;
+
+        internal static bool IsFactionStat(int stat) => stat >= FirstFactionStat && stat <= LastFactionStat;
+    }
+
+    /// <summary>
+    /// One factions.ranks entry: the standing from <see cref="Min"/> up to the next rank's. The client says "They now see
+    /// you as {Raised} them!" on rising into it and "You are now a {Lowered} them!" on falling into it.
+    /// </summary>
+    public sealed class GameplayFactionRank
+    {
+        public int Min { get; init; }
+
+        public string Raised { get; init; } = string.Empty;
+
+        public string Lowered { get; init; } = string.Empty;
     }
 
     /// <summary>
@@ -397,6 +537,27 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Percent of an NPC's ProximityRangeOutdoors used as its aggro range on an outdoor playfield. 100 leaves it as it is.</summary>
         public float OutdoorRangePercent { get; init; } = 100f;
+    }
+
+    /// <summary>
+    /// The leash section of Gameplay.json: how far (metres) an NPC may be from its home point before it drops the
+    /// fight and walks back. The target it is already chasing stays engageable out to the same range.
+    /// </summary>
+    public sealed class GameplayLeash
+    {
+        /// <summary>Settings used where a playfield has no Gameplay.json service (tests, tools).</summary>
+        public static readonly GameplayLeash Default = new();
+
+        /// <summary>Leash on an indoor playfield (and one with no metadata).</summary>
+        public float IndoorRange { get; init; } = 70f;
+
+        /// <summary>Leash on an outdoor playfield.</summary>
+        public float OutdoorRange { get; init; } = 200f;
+
+        /// <summary>The shorter leash: wander and social-aggro radii must stay inside it on every playfield.</summary>
+        public float ShortestRange => Math.Min(IndoorRange, OutdoorRange);
+
+        public float RangeFor(bool indoor) => indoor ? IndoorRange : OutdoorRange;
     }
 
     public sealed class GameplaySocialAggro

@@ -103,6 +103,7 @@ namespace WorldEngine.State
                 candidate.Build = message.Build;
                 candidate.GameData = message.GameData;
                 candidate.HasHandoffHook = message.HandoffHook;
+                candidate.Ready = message.Ready;
                 candidate.Slot = AssignSlot(candidate.Name, message.PreferredSlot, candidate.Role);
                 _instances[candidate.Name] = candidate;
                 _sessions[candidate.Session] = candidate;
@@ -302,6 +303,10 @@ namespace WorldEngine.State
             {
                 if (instance.Removed) return;
                 instance.LastHeartbeatMs = now;
+                if (heartbeat.Ready != instance.Ready)
+                    _log.LogInformation("{Role} {Instance} is {State}", instance.Role, instance.Name,
+                        heartbeat.Ready ? "ready" : "no longer ready");
+                instance.Ready = heartbeat.Ready;
                 instance.Players = heartbeat.Players;
                 instance.PlayfieldLoads.Clear();
                 foreach (PlayfieldLoad load in heartbeat.Playfields)
@@ -467,15 +472,34 @@ namespace WorldEngine.State
 
         // ------------------------------------------------------------------------------------------ sessions
 
-        public string BeginLogin(string account)
+        /// <summary>
+        /// Starts a login, or refuses it (<paramref name="refused"/> set, empty generation) while the server is not ready.
+        /// </summary>
+        public string BeginLogin(string account, out string? refused)
         {
             ValidateAccount(account);
             lock (_sync)
             {
+                refused = NotReadyForLogin(Now);
+                if (refused != null) return string.Empty;
                 string generation = Guid.NewGuid().ToString("N");
                 _logins[account] = generation;
                 return generation;
             }
+        }
+
+        /// <summary>
+        /// Why a login cannot start yet, or null: World is past recovery, ChatEngine is up and ready, and at least one
+        /// zone in rotation has finished starting.
+        /// </summary>
+        string? NotReadyForLogin(long now)
+        {
+            if (Recovering(now)) return "world_recovering";
+            if (!_instances.Values.Any(i => !i.Removed && i.Role == ServiceRole.RoleChat && i.Ready && IsAlive(i, now)))
+                return "chat_not_ready";
+            if (!_instances.Values.Any(i => IsRoutable(i, now) && i.Ready && !i.Draining))
+                return "zone_not_ready";
+            return null;
         }
 
         public SelectCharacterReply SelectCharacter(SelectCharacterRequest request) => SelectCharacter(request, out _);
@@ -506,7 +530,7 @@ namespace WorldEngine.State
                     if (lease.State != LeaseState.InPlay) return SelectRefused("character_busy");
                     routed = Instance(lease.Owner);
                     if (routed == null || routed.Role != ServiceRole.RoleZone) return SelectRefused("character_busy");
-                    if (!IsRoutable(routed, now)) return SelectRefused("zone_unavailable");
+                    if (!IsRoutable(routed, now) || !routed.Ready) return SelectRefused("zone_unavailable");
                 }
                 else
                 {
@@ -813,18 +837,18 @@ namespace WorldEngine.State
             if (_playfields.TryGetValue(playfieldId, out PlayfieldAssignment? assignment))
             {
                 ServiceInstance? owner = Instance(assignment.Instance);
-                if (owner != null && IsRoutable(owner, now))
+                if (owner != null && IsRoutable(owner, now) && owner.Ready)
                 {
                     assignment.LastRoutedMs = now;
                     return owner;
                 }
 
-                // An owner that is only briefly unreachable still runs the playfield; never start a second copy.
+                // An owner that is only briefly unreachable (or still starting) runs the playfield; never start a second copy.
                 if (IsLive(assignment.Instance, now)) return null;
                 _playfields.Remove(playfieldId);
             }
 
-            List<ServiceInstance> candidates = _instances.Values.Where(i => IsRoutable(i, now) && !i.Draining).ToList();
+            List<ServiceInstance> candidates = _instances.Values.Where(i => IsRoutable(i, now) && i.Ready && !i.Draining).ToList();
             if (candidates.Count == 0) return null;
             var playfieldCounts = _playfields.Values.GroupBy(p => p.Instance, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
@@ -1165,6 +1189,7 @@ namespace WorldEngine.State
                         slot = i.Slot,
                         endpoint = Describe(i.Game),
                         connected = i.Connected,
+                        ready = i.Ready,
                         players = i.Players,
                         playfields = i.PlayfieldLoads.Count,
                         heartbeatAgeMs = now - i.LastHeartbeatMs,

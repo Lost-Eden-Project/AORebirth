@@ -166,11 +166,12 @@ namespace ZoneEngine_New.Core.Modules
 
             // The player can change playfield before the queued work runs: it then runs on (or is passed to) the new one.
             var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            AORebirth.Modules.Events.StatChangeSource source = OperationSource();
             playfield.DispatchPlayerProjection(player, () =>
             {
                 try
                 {
-                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Module))
+                    using (StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.Module, source))
                         done.TrySetResult(_manager.Value.FindPlayer(characterId, out Player current)
                             && ReferenceEquals(current, player) ? action(player) : notHere);
                 }

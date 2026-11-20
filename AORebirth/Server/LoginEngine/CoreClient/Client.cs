@@ -321,8 +321,13 @@ namespace LoginEngine.CoreClient
             => AORebirth.World.Contracts.WorldSessionClient.Shared(
                 Utility.Config.WorldSettings.ResolveUrl(Utility.Config.ConfigReadWrite.Instance.CurrentConfig.World));
 
-        internal bool CompleteAuthentication(string attemptedAccountName, long attemptedGeneration)
+        /// <param name="notReady">
+        /// Set when the credentials were good but the server is not ready for logins yet (World unreachable or
+        /// recovering, ChatEngine or every zone still starting).
+        /// </param>
+        internal bool CompleteAuthentication(string attemptedAccountName, long attemptedGeneration, out string notReady)
         {
+            notReady = string.Empty;
             lock (this.authenticationSync)
             {
                 if (this.authenticationState != AuthenticationState.Authenticating
@@ -336,8 +341,22 @@ namespace LoginEngine.CoreClient
                     return false;
                 }
 
-                try { this.ZoneHandoffGeneration = World.BeginLogin(attemptedAccountName); }
-                catch { return false; } // World unavailable: never authorize a zone ticket.
+                AORebirth.World.Contracts.V1.BeginLoginReply begun;
+                try { begun = World.BeginLogin(attemptedAccountName); }
+                catch
+                {
+                    // World unavailable: never authorize a zone ticket.
+                    notReady = "world_unavailable";
+                    return false;
+                }
+
+                if (!string.IsNullOrEmpty(begun.Refused) || string.IsNullOrEmpty(begun.Generation))
+                {
+                    notReady = string.IsNullOrEmpty(begun.Refused) ? "world_refused" : begun.Refused;
+                    return false;
+                }
+
+                this.ZoneHandoffGeneration = begun.Generation;
                 this.accountName = attemptedAccountName;
                 this.authenticatedAccountName = attemptedAccountName;
                 this.authenticationState = AuthenticationState.Authenticated;
@@ -431,7 +450,11 @@ namespace LoginEngine.CoreClient
 
         /// <summary>
         /// </summary>
-        internal void RejectAuthentication()
+        /// <param name="invalidCredentials">
+        /// False when the credentials were fine but the login cannot go ahead (server still starting): the client is
+        /// disconnected without being told its password was wrong.
+        /// </param>
+        internal void RejectAuthentication(bool invalidCredentials = true)
         {
             lock (this.authenticationSync)
             {
@@ -453,7 +476,8 @@ namespace LoginEngine.CoreClient
 
             try
             {
-                this.Send(0x00001F83, new LoginErrorMessage { Error = LoginError.InvalidUserNamePassword });
+                if (invalidCredentials)
+                    this.Send(0x00001F83, new LoginErrorMessage { Error = LoginError.InvalidUserNamePassword });
             }
             finally
             {

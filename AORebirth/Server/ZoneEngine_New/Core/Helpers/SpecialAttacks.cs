@@ -143,8 +143,8 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         /// <summary>
-        /// Aimed Shot or Sneak Attack an NPC target would notice, or a Backstab from in front of the target or at a target
-        /// fighting the attacker. Against a player target (PvP) Aimed Shot and Sneak Attack need no stealth.
+        /// Aimed Shot or Sneak Attack an NPC target would notice, or a Backstab from in front of the target. Against a
+        /// player target (PvP) Aimed Shot and Sneak Attack need no stealth.
         /// </summary>
         static bool IsNoticedStealthStrike(Character attacker, Character target, CharacterStat special)
         {
@@ -152,7 +152,10 @@ namespace ZoneEngine_New.Core.Helpers
             {
                 CharacterStat.AimedShot or CharacterStat.SneakAttack =>
                     target is not Player && (!IsSneaking(attacker) || CanSee(target, attacker)),
-                CharacterStat.Backstab => !IsBehindDistractedTarget(attacker, target),
+                // Backstab's only position rule: behind the target. The target need not be distracted or unaware of the
+                // attacker, and the attacker need not be sneaking. The server judges it; the client never works out
+                // "behind" itself.
+                CharacterStat.Backstab => !IsBehind(attacker, target),
                 _ => false
             };
         }
@@ -593,16 +596,6 @@ namespace ZoneEngine_New.Core.Helpers
         /// </summary>
         public static bool HasBackstabSkill(Character attacker)
             => attacker.Stats.GetOrZero(CharacterStat.SneakAttack) >= BackstabMinSneakAttack;
-
-        /// <summary>
-        /// Backstab's position rule: behind a target that is fighting someone else. It stops working as soon as the
-        /// target turns on the attacker. The server judges it; the client never works out "behind" itself.
-        /// </summary>
-        static bool IsBehindDistractedTarget(Character attacker, Character target)
-        {
-            Identity fighting = target.FightingTarget;
-            return fighting.Instance != 0 && fighting != attacker.Identity && IsBehind(attacker, target);
-        }
 
         /// <summary>True when <paramref name="attacker"/> is in the half-space behind <paramref name="target"/>'s facing.</summary>
         internal static bool IsBehind(Character attacker, Character target)

@@ -13,7 +13,13 @@ namespace ZoneEngine_New.Core.Inventory
     using ZoneEngine_New.Core.Modules;
     using ZoneEngine_New.Core.Network;
 
-    /// <summary>Plan first, commit all durable rows, then publish one inventory mutation.</summary>
+    /// <summary>
+    /// Inventory mutations the client requests. Rows that only this player owns (split, join, and the moves in
+    /// <see cref="InventoryMoveService"/>) are applied on the tick and written by the coalesced flush: one transaction
+    /// per player per window, never one per packet, so no client can turn a stream of cheap requests into a stream of
+    /// database round trips on the playfield thread. Deletes, and anything whose durable guard must be checked
+    /// against storage before memory changes, still plan first, commit, then publish through <see cref="TryCommit"/>.
+    /// </summary>
     public sealed class InventoryActionService
     {
         readonly IInventoryMutationPersistence _persistence;
@@ -142,16 +148,15 @@ namespace ZoneEngine_New.Core.Inventory
                 LowId = item.LowId, HighId = item.HighId, Quality = item.Quality,
                 StackCount = amount, Source = item.Source, Definition = item.Definition
             };
-            return TryCommit(player,
-                [new InventoryRowChange(item, page.Identity, placement, originalCount - amount),
-                 new InventoryRowChange(split, page.Identity, destination, amount)],
-                () => IsCurrent(page, placement, item, expectedInstanceId)
-                    && item.StackCount == originalCount && !page.Content.ContainsKey(destination),
-                () =>
-                {
-                    item.StackCount = originalCount - amount;
-                    if (!page.Add(destination, split)) throw new InvalidOperationException("Reserved split slot changed.");
-                });
+            // Applied on the tick, stored by the coalesced flush: the remainder as a location update carrying its new
+            // count, the split half as an insert. A split-join loop from a hostile client costs memory work only.
+            player.InvalidateOwnedItemCache();
+            item.StackCount = originalCount - amount;
+            if (!page.Add(destination, split)) throw new InvalidOperationException("Reserved split slot changed.");
+            player.Inventory.MarkDirty(item, page, placement);
+            player.Inventory.MarkDirty(split, page, destination);
+            _flush.NotifyDirty(player);
+            return true;
         }
 
         /// <summary>
@@ -173,16 +178,36 @@ namespace ZoneEngine_New.Core.Inventory
             if (keptCount <= 0 || mergedCount <= 0 || (long)keptCount + mergedCount > MaxStackCount) return false;
             int total = keptCount + mergedCount;
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
-            return TryCommit(player,
-                [new InventoryRowChange(kept, page.Identity, targetSlot, total),
-                 new InventoryRowChange(merged, graveyard, mergedId, mergedCount, Retired: true)],
-                () => IsCurrent(page, targetSlot, kept, keptId) && IsCurrent(page, sourceSlot, merged, mergedId)
-                    && kept.StackCount == keptCount && merged.StackCount == mergedCount,
-                () =>
-                {
-                    page.Content.Remove(sourceSlot);
-                    kept.StackCount = total;
-                });
+            // Applied on the tick, stored by the coalesced flush: the kept stack as a location update carrying its new
+            // count, the merged row retired to the graveyard (dropped outright when it never had a row).
+            player.InvalidateOwnedItemCache();
+            page.Content.Remove(sourceSlot);
+            kept.StackCount = total;
+            player.Inventory.MarkDirty(kept, page, targetSlot);
+            player.Inventory.MarkOrphaned(merged, graveyard);
+            _flush.NotifyDirty(player);
+            return true;
+        }
+
+        /// <summary>
+        /// Durable half of a take from a shared container that the tick has already applied in memory. The row moves
+        /// to <paramref name="container"/> in its own transaction that first locks it exactly as this server last saw it
+        /// (<paramref name="expectedSource"/>). It runs off the tick through the player's ordered commit queue: ahead of
+        /// their dirty inventory, so a later move of the same item is written after it, and ahead of every hard flush,
+        /// so logout, zone change, trade and the chest's next open all see it stored. A row that no longer matches means
+        /// memory and storage disagree about who holds the item: the commit throws, the player is quarantined and the
+        /// next login loads storage, which the chest's next open reads as well.
+        /// </summary>
+        internal void QueueSharedSourceRelocation(Player player, Item item, ItemInstanceRecord expectedSource,
+            Identity container, int placement)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(item);
+            ArgumentNullException.ThrowIfNull(expectedSource);
+            int characterId = player.Identity.Instance;
+            var location = new ItemLocationUpdate(item.InstanceId, (int)container.Type, container.Instance, placement);
+            _flush.Enqueue(player, () => _persistence.Persist(
+                new InventoryMutationBatch(characterId, [], [location], [], []) { ExpectedSources = [expectedSource] }));
         }
 
         /// <summary>

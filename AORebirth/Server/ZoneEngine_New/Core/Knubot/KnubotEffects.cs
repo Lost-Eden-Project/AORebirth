@@ -297,7 +297,7 @@ public sealed record KnubotSpawnItem(string Hash, int? Quality, int Count) : Knu
                 continue;
             }
 
-            KnubotItems.Give(context.Player, item, services.Flush);
+            KnubotItems.Give(context.Player, item, services.Flush, context.Npc);
         }
 
         return true;
@@ -560,7 +560,8 @@ public static class KnubotItems
         return page.Capacity - used;
     }
 
-    public static void Give(Player player, Item item, InventoryFlushService flush)
+    /// <param name="npc">The NPC giving it, for the module audit source (module API 1.17); null when none.</param>
+    public static void Give(Player player, Item item, InventoryFlushService flush, NpcCharacter? npc = null)
     {
         if (AutoConsumedItems.TryConsume(player, item))
             return;
@@ -573,7 +574,7 @@ public static class KnubotItems
 
         player.Inventory.MarkDirty(item, page, slot);
         flush.NotifyDirty(player);
-        using (StatChangeScope.Begin(StatChangeReason.Dialogue))
+        using (StatChangeScope.Begin(StatChangeReason.Dialogue, ModuleHooks.SourceOf(npc)))
             ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.None), ModuleHooks.Place(ItemPlaceKind.Inventory));
         if (ReferenceEquals(page, player.Inventory.Overflow))
         {

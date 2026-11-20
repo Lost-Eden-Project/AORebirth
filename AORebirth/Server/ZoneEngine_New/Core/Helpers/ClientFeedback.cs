@@ -229,6 +229,33 @@ namespace ZoneEngine_New.Core.Helpers
         /// </summary>
         public const int LootedItemFrom = 60420421;
 
+        /// <summary>Client text category of the faction lines below (beside "Welcome to Shadowlevel %d.", id 5).</summary>
+        public const int FactionCategoryId = 101;
+
+        /// <summary>
+        /// "You gained faction with %s: %d faction points." (category 101): the faction's name (<see cref="FactionNameCategoryId"/>
+        /// reference), the points. Not seen in a capture; sent as FormatFeedback like the category 110 lines.
+        /// </summary>
+        public const int FactionGained = 9;
+
+        /// <summary>"You lost faction with %s: %d faction points." (category 101): the faction's name, the points. Not captured.</summary>
+        public const int FactionLost = 10;
+
+        /// <summary>
+        /// "Congratulations! You just improved your faction standing with %s to a whole new degree! They now see you as %s
+        /// them!" (category 101): the faction's name, the rank's raised text. Not captured.
+        /// </summary>
+        public const int FactionRankRaised = 11;
+
+        /// <summary>
+        /// "You just decreased your faction standing with %s to a whole new level! You are now a %s them!" (category 101):
+        /// the faction's name, the rank's lowered text. Not captured.
+        /// </summary>
+        public const int FactionRankLowered = 12;
+
+        /// <summary>Client text category naming a faction stat by its id ("The Redeemed" 572, "The Unredeemed" 569, "Guardian of Shadow" 566).</summary>
+        public const int FactionNameCategoryId = 2014;
+
         /// <summary>
         /// Longest 's' argument: the client reads its length as one UTF-8 coded character holding length + 1, and the
         /// message string goes out as ASCII, so length + 1 must stay a single byte (0x7F).
@@ -260,6 +287,13 @@ namespace ZoneEngine_New.Core.Helpers
 
         /// <summary><see cref="SendFormatted"/> with the FormatFeedback Unknown1 live uses for that message.</summary>
         public static void SendFormattedWithUnknown1(Character character, int unknown1, int messageId, params object[] args)
+            => SendFormattedText(character, unknown1, FormatText(messageId, args));
+
+        /// <summary><see cref="SendFormatted"/> for a message of client text category <paramref name="category"/> instead of 110.</summary>
+        public static void SendFormattedInCategory(Character character, int category, int messageId, params object[] args)
+            => SendFormattedText(character, 0, FormatCategoryText(category, messageId, args));
+
+        static void SendFormattedText(Character character, int unknown1, string message)
         {
             if (character is not Player player || player.Session == null)
                 return;
@@ -270,7 +304,7 @@ namespace ZoneEngine_New.Core.Helpers
                 Unknown = 1,
                 Unknown1 = unknown1,
                 Unknown2 = 0,
-                Message = FormatText(messageId, args)
+                Message = message
             });
         }
 
@@ -279,8 +313,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <see cref="SendFormatted"/> sends it. The chat server carries the same text (a loot line).
         /// </summary>
         public static string FormatText(int messageId, params object[] args)
+            => FormatCategoryText(CategoryId, messageId, args);
+
+        /// <summary><see cref="FormatText"/> for a message of client text category <paramref name="category"/>.</summary>
+        public static string FormatCategoryText(int category, int messageId, params object[] args)
         {
-            var text = new StringBuilder("~&").Append(Base85(CategoryId)).Append(Base85(messageId));
+            var text = new StringBuilder("~&").Append(Base85(category)).Append(Base85(messageId));
             foreach (object arg in args)
             {
                 if (arg is int number)

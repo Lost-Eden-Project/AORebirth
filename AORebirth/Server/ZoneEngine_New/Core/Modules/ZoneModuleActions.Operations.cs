@@ -65,7 +65,39 @@ namespace ZoneEngine_New.Core.Modules
                         descriptor.Name + " needs '" + parameter.Name + "' as " + parameter.Type + "."));
             }
 
-            return registered.Run(target, args, issuer);
+            // The operation's own work queues its player action synchronously here, which reads who asked (OnPlayer).
+            (string? Issuer, string? Operation) previous = (t_issuer, t_operation);
+            t_issuer = issuer;
+            t_operation = descriptor.Name;
+            try
+            {
+                return registered.Run(target, args, issuer);
+            }
+            finally
+            {
+                (t_issuer, t_operation) = previous;
+            }
+        }
+
+        [ThreadStatic]
+        static string? t_issuer;
+
+        [ThreadStatic]
+        static string? t_operation;
+
+        /// <summary>
+        /// The module audit source (module API 1.17) of the operation being invoked on this thread: <c>Name</c> the module
+        /// id (or <see cref="UnknownModuleIssuer"/>), <c>Detail</c> the operation name, empty outside a named operation.
+        /// </summary>
+        static AORebirth.Modules.Events.StatChangeSource OperationSource()
+        {
+            string issuer = t_issuer ?? UnknownModuleIssuer;
+            const string prefix = "module:";
+            return new AORebirth.Modules.Events.StatChangeSource
+            {
+                Name = issuer.StartsWith(prefix, StringComparison.Ordinal) ? issuer.Substring(prefix.Length) : issuer,
+                Detail = t_operation ?? string.Empty
+            };
         }
 
         public Task<IReadOnlyList<AccountSanctionInfo>> AccountSanctions(string account, int limit = 20)

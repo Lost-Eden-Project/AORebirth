@@ -1,0 +1,7 @@
+- Added: Killing Redeemed or Unredeemed monsters raises your standing with the opposing faction and lowers it with theirs. Each kill moves you part of the way toward the monster's own standing, so weaker monsters stop helping once you pass them.
+- Added: Killing Guardian of Shadow monsters raises your standing with the Guardians of Shadow the same way, without lowering any other standing.
+- Changed: Monsters outdoors chase you further before giving up and returning home; indoor monsters are unchanged.
+- Changed: Logging in while the server is still starting up no longer reports a wrong password.
+- Added: More team mission building styles now generate multi-floor dungeons with lifts between floors.
+- Fixed: A zone door that did not take you anywhere now leads to its destination, and one zone no longer treats dry land as water.
+- Fixed: Reopening a chest right after someone looted it could show an item that was already taken.

@@ -4,7 +4,7 @@ ZoneEngine_New loads external modules: trusted .NET assemblies that run in the z
 against `AORebirth.Modules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.Modules.Abstractions`). That
 assembly is the whole contract. It holds primitives, strings and small records only, and no ZoneEngine type.
 
-The current version is **1.16**.
+The current version is **1.17**.
 
 ## Loading
 
@@ -52,6 +52,7 @@ The current version is **1.16**.
 | 1.14 | `Database` (`IModuleDatabase`): a module's own `mod_<id>_*` tables, created by migrations it ships and DatabaseMigrationTool applies; the `database` capability; module.json `Capabilities` (what the module cannot load without) |
 | 1.15 | `MissionCompletedEvent.Mission`: the `Missions/Missions.json` mission a completed quest ran |
 | 1.16 | `Events.PlayerStatChanged` (credits, experience, level, alien experience and alien level, with a `StatChangeReason`); `Events.GmCommandUsed`; `CombatResolvedEvent.AttackerOwner` and `TargetOwner` (a pet's owner); `ItemMovedEvent.Reason` |
+| 1.17 | `StatChangeSource`; `PlayerStatChangedEvent.Source` and `ItemMovedEvent.Source`: who or what caused the change (the monster killed, the vendor, the other trader, the quest, the GM, the module) |
 
 ## Context members
 
@@ -437,7 +438,11 @@ rewards look the same: `Item`, `Count`, `From` and `To` (an `ItemPlace`: the kin
 the corpse, the shop NPC or the other trader). `From None` means created (a reward, a GM spawn) and `To Destroyed`
 deleted or consumed. Rearranging slots within one place of one character is not raised. From 1.16 `Reason` (a
 `StatChangeReason`) is `Gm` for anything a GM command moves and `Module` for a module operation; `Quest`, `Daily`,
-`Tradeskill` and `Dialogue` for items those create; otherwise `Other`, where `From` and `To` tell the story.
+`Tradeskill` and `Dialogue` for items those create; otherwise `Other`, where `From` and `To` tell the story. From 1.17
+`Source` (a `StatChangeSource`, see Audit sources) names who was on the other side, resolved as the item moved: the GM or
+module under those reasons, else what the engine path names (the reward, the shop's vendor, a Need or Greed corpse), else
+the owner of a `Corpse`, `Shop`, `Trade` or `World` place in `From` (or else `To`). For corpse loot that is who died,
+with their template hash, name and level, even after the corpse or NPC is gone.
 
 ## Chat
 
@@ -466,6 +471,34 @@ character raises nothing, and a buff never changes a stored value.
 `Trade`, `Shop`, `Dialogue`, `Loot`, `OrgBank`, `Fee`, `Death`, `Gm` or `Module`. A GM command or a module operation
 stays the reason for everything it causes, so a GM-given level or a module payout never reads as earned. `Other` is a
 path the engine does not label; for an audit it is the one worth a second look. The event needs no capability.
+
+### Audit sources (1.17)
+
+`Source` (`StatChangeSource`) says who or what caused the change, filled by the engine as it happens: `Entity` (the
+dynel on the other side), `TemplateId` (a terminal's item template id), `Hash` (an NPC's template hash, the key of
+`NpcSpawnEvent.NpcHash`, or a vending terminal's vendor template hash), `Name`, `Level`, `DetailId` and `Detail`. Unused
+fields are empty (0 or ""; strings are never null) and `IsEmpty` is true when none is set. Per reason:
+
+| Reason | Source |
+| --- | --- |
+| `Kill` | The NPC killed (`Entity`, `Hash`, `Name`, `Level`). `DetailId` 0 when the player's team share was credited to them, else the teammate it was credited to (the team's highest damager). |
+| `Quest` | `Name` the quest's title, `Detail` its quest id. |
+| `Daily` | `DetailId` the reward item id; `Name` its name for the daily login reward. |
+| `Tradeskill` | `DetailId` the result item id, `Name` its name, `Detail` `source+target` item ids. |
+| `Lockpick` | The door (`Entity`, `Level` its lock difficulty). |
+| `Trade` | The other player. |
+| `Shop` | The vendor NPC, or the vending terminal when no NPC runs it (`Hash` its vendor template hash); `TemplateId` the terminal's item template id, `DetailId` its vendor id. |
+| `Dialogue` | The NPC talked to. |
+| `Loot` | Who died (`Entity`, `Hash`, `Name`, `Level`, captured at death), `DetailId` the corpse. |
+| `OrgBank` | `DetailId` the org id, `Name` its name. |
+| `Fee` | `TemplateId` the save terminal's item template id, `Name` its name. |
+| `Death` | The killer when known. |
+| `Gm` | The GM (`Entity`, `Name`, `Level`), `Detail` the command name, `DetailId` the GM level it ran at. |
+| `Module` | `Name` the module id, `Detail` the operation name. |
+| `Other` | Empty. |
+
+A GM command or module operation keeps its own source for everything it causes, so a GM's `.set cash` on another player
+carries the GM's character in `Source.Entity` and joins `GmCommandUsed` without guessing.
 
 ## GM command audit (1.16)
 

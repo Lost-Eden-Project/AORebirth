@@ -238,13 +238,18 @@ public sealed class MissionChestProtocolTests
         Assert.AreEqual(handle, chest.InventoryHandle);
         request.Identity = expected.Identity = expected.Target = world.Player.Identity;
         world.Session.Messages.Clear();
-        world.Persistence.BeforeCommit = _ => Assert.AreEqual(0, world.Session.Messages.Count);
+        world.Persistence.BeforeCommit = batch => Assert.AreEqual(chestInstance, batch.ExpectedSources.Single().ContainerInstance);
 
         new InventoryMoveService(new StubLogger(), world.Flush, world.Actions).Handle(world.Player, request);
 
-        Assert.AreEqual(1, world.Persistence.Calls);
+        // Acknowledged on the tick; the row changes owner in the queued commit the player's flush runs.
+        Assert.AreEqual(0, world.Persistence.Calls);
         Assert.IsFalse(chest.Loot.Content.ContainsKey(slot));
         Assert.AreSame(item, world.Player.Inventory.Inventory.Content[world.Player.Inventory.Inventory.Offset]);
+        Assert.AreEqual(chestInstance, world.Persistence.Rows[item.InstanceId].ContainerInstance);
+        world.Flush.HardFlush(world.Player);
+        Assert.AreEqual(1, world.Persistence.Calls);
+        Assert.AreEqual(world.Player.Identity.Instance, world.Persistence.Rows[item.InstanceId].ContainerInstance);
         Assert.AreEqual(world.Player.Inventory.Inventory.Offset, world.Persistence.Rows[item.InstanceId].ContainerPlacement);
         Assert.AreEqual(count, world.Persistence.Rows[item.InstanceId].StackCount);
         var actual = world.Session.Messages.OfType<ContainerAddItemMessage>().Single();
@@ -339,7 +344,7 @@ public sealed class MissionChestProtocolTests
     internal static ServiceProvider AttachChestServices(InventoryActionTests.World world, DynelRegistry registry)
     {
         ServiceProvider services = new ServiceCollection().AddSingleton(registry)
-            .AddSingleton(new PlayfieldLocality(4582, null)).BuildServiceProvider();
+            .AddSingleton(new PlayfieldLocality(4582, null)).AddSingleton(world.Flush).BuildServiceProvider();
         typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(world.Player.Playfield, services);
         world.Player.Inventory.SeedClientContainerHandle(117);

@@ -68,7 +68,7 @@ namespace ZoneEngine_New.Core.Organizations
                 return;
 
             int after = cash - amount;
-            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.OrgBank))
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.OrgBank, BankSource(organizationId)))
                 player.Stats.Set(CharacterStat.Cash, after, StatDetail.Base, dirty: true);
             player.FlushDirtyStats();
             var record = new StatRecord { StatId = (int)CharacterStat.Cash, StatValue = after };
@@ -90,7 +90,7 @@ namespace ZoneEngine_New.Core.Organizations
 
                     Outcome done = outcome!;
                     if (done.State == null)
-                        Dispatch(player, () => Refund(player, amount, done));
+                        Dispatch(player, () => Refund(player, organizationId, amount, done));
                     else
                         Deliver(player, done);
                 });
@@ -118,11 +118,11 @@ namespace ZoneEngine_New.Core.Organizations
             }
         }
 
-        void Refund(Player player, int amount, Outcome outcome)
+        void Refund(Player player, int organizationId, int amount, Outcome outcome)
         {
             int current = player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
             int refunded = Math.Min(amount, CashLimit.Room(current));
-            PayOnTick(player, refunded);
+            PayOnTick(player, organizationId, refunded);
             if (refunded < amount)
                 _logger.Warn(string.Format(CultureInfo.InvariantCulture,
                     "Organization bank refund capped character={0} amount={1} refunded={2}", player.Identity.Instance, amount, refunded));
@@ -164,7 +164,7 @@ namespace ZoneEngine_New.Core.Organizations
         {
             int current = player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
             int paid = Math.Min(amount, CashLimit.Room(current));
-            PayOnTick(player, paid);
+            PayOnTick(player, organizationId, paid);
             if (paid < amount)
                 ReturnToBank(organizationId, amount - paid);
         }
@@ -187,13 +187,17 @@ namespace ZoneEngine_New.Core.Organizations
             });
         }
 
+        /// <summary>The organization bank as a module audit source (module API 1.17): the org id and its name.</summary>
+        AORebirth.Modules.Events.StatChangeSource BankSource(int organizationId)
+            => new() { DetailId = organizationId, Name = Cached(organizationId)?.Name ?? string.Empty };
+
         /// <summary>On the player's tick: adds credits and stores them through its write-behind lane.</summary>
-        static void PayOnTick(Player player, int amount)
+        void PayOnTick(Player player, int organizationId, int amount)
         {
             if (amount <= 0)
                 return;
             int value = CashLimit.Clamp((long)player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base) + amount);
-            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.OrgBank))
+            using (Modules.StatChangeScope.Begin(AORebirth.Modules.Events.StatChangeReason.OrgBank, BankSource(organizationId)))
                 player.Stats.Set(CharacterStat.Cash, value, StatDetail.Base, dirty: true);
             player.FlushDirtyStats();
             if (player.IsPersistenceQuarantined || player.Playfield is not Playfield playfield
