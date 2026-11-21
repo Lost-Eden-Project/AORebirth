@@ -56,6 +56,15 @@ namespace ZoneEngine_New.Core.World
         readonly CancellationTokenSource _stop = new();
         readonly ConcurrentDictionary<int, LocalLease> _leases = new();
         readonly ConcurrentDictionary<int, ulong> _playfields = new();
+
+        // Playfields a zone swap handed to another instance: never claimed here again, though they still run here until
+        // their last player has left.
+        readonly ConcurrentDictionary<int, byte> _handedOver = new();
+
+        SwapNotice? _swapNotice;
+
+        /// <summary>What this build supports, advertised at registration.</summary>
+        static readonly string[] Capabilities = ["swap/1"];
         readonly Channel<ReleaseRequest> _releases = System.Threading.Channels.Channel.CreateUnbounded<ReleaseRequest>(new UnboundedChannelOptions { SingleReader = true });
         readonly ConcurrentDictionary<ulong, long> _heartbeatsSent = new();
         readonly TaskCompletionSource _firstRegistration = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -237,12 +246,16 @@ namespace ZoneEngine_New.Core.World
                 new ResolveRequest { PlayfieldId = playfieldId, Affinity = Instance.Name },
                 _channel.Call(CallTimeout, cancellation)).ResponseAsync.ConfigureAwait(false);
             if (reply.Accepted && string.Equals(reply.Instance, Instance.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                // Given back (a swap rolled back): this instance runs it again.
+                _handedOver.TryRemove(playfieldId, out _);
                 _playfields[playfieldId] = reply.Assignment;
+            }
             return reply;
         }
 
         /// <summary>True when World assigned <paramref name="playfieldId"/> here (known locally, no call).</summary>
-        public bool HostsPlayfield(int playfieldId) => _playfields.ContainsKey(playfieldId);
+        public bool HostsPlayfield(int playfieldId) => _playfields.ContainsKey(playfieldId) && !_handedOver.ContainsKey(playfieldId);
 
         /// <summary>An empty playfield was unloaded; World may run it elsewhere next time.</summary>
         public void PlayfieldUnloaded(int playfieldId)
@@ -397,7 +410,11 @@ namespace ZoneEngine_New.Core.World
                 {
                     IsDutyHolder = false;
                     _logger.Info("World duty holder=False (registry stream ended)");
-                    try { _handlers?.DutyChanged(false); }
+                    try
+                    {
+                        _handlers?.DutyChanged(false);
+                        _modules?.SetPrimary(false);
+                    }
                     catch (Exception exception) { _logger.Warn("Duty change handler failed: " + exception.GetType().Name); }
                 }
 
@@ -433,6 +450,9 @@ namespace ZoneEngine_New.Core.World
                 HandoffHook = _modules?.HasHandoffHook ?? false,
                 Ready = _ready
             };
+            register.Capabilities.AddRange(Capabilities);
+            if (Volatile.Read(ref _swapNotice) is SwapNotice swap)
+                register.Swap = swap;
             Dictionary<int, PlayerPresence> presence = SafePresence().ToDictionary(p => p.CharacterId);
             foreach (KeyValuePair<int, LocalLease> lease in _leases)
             {
@@ -528,11 +548,12 @@ namespace ZoneEngine_New.Core.World
             do
             {
                 sequence++;
-                var heartbeat = new Heartbeat { Sequence = sequence, Ready = _ready };
+                var heartbeat = new Heartbeat { Sequence = sequence, Ready = _ready, RssBytes = Environment.WorkingSet };
                 IReadOnlyList<PlayfieldLoad> loads = SafeLoad();
                 heartbeat.Playfields.AddRange(loads);
                 heartbeat.Players = loads.Sum(load => load.Players);
-                foreach (PlayfieldLoad load in loads) _playfields.TryAdd(load.PlayfieldId, 0);
+                foreach (PlayfieldLoad load in loads)
+                    if (!_handedOver.ContainsKey(load.PlayfieldId)) _playfields.TryAdd(load.PlayfieldId, 0);
                 _heartbeatsSent[sequence] = Now;
                 outbound.TryWrite(new ServiceToWorld { Heartbeat = heartbeat });
                 SyncPresence();
@@ -585,10 +606,37 @@ namespace ZoneEngine_New.Core.World
                     IsDutyHolder = message.Duty.Holder;
                     _logger.Info("World duty holder=" + message.Duty.Holder);
                     _handlers?.DutyChanged(message.Duty.Holder);
+                    // Modules follow the duty as "primary" (module API 1.19).
+                    _modules?.SetPrimary(message.Duty.Holder);
                     break;
 
                 case WorldToService.BodyOneofCase.Announcement:
                     _handlers?.Announce(message.Announcement.Text);
+                    break;
+
+                case WorldToService.BodyOneofCase.Swap:
+                    // Kept and given back at registration, so a restarted World takes the swap up again.
+                    SwapNotice notice = message.Swap;
+                    Volatile.Write(ref _swapNotice, notice.Phase is "completed" or "aborted" ? null : notice);
+                    _logger.Info("Zone swap " + notice.SwapId + " " + notice.From + " -> " + notice.To + ": " + notice.Phase);
+                    break;
+
+                case WorldToService.BodyOneofCase.HandOver:
+                    HandOver handOver = message.HandOver;
+                    if (handOver.Cancel)
+                    {
+                        _handedOver.Clear();
+                    }
+                    else
+                    {
+                        foreach (int playfield in handOver.PlayfieldIds)
+                        {
+                            _handedOver[playfield] = 0;
+                            _playfields.TryRemove(playfield, out _);
+                        }
+                    }
+
+                    _handlers?.HandOver(handOver);
                     break;
 
                 case WorldToService.BodyOneofCase.Shutdown:

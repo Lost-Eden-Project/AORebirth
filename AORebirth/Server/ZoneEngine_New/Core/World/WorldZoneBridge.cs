@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.World
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
+    using System.Threading;
     using System.Threading.Tasks;
 
     using AORebirth.World.Contracts.V1;
@@ -209,6 +210,11 @@ namespace ZoneEngine_New.Core.World
         public void DutyChanged(bool holder)
         {
         }
+
+        ZoneHandOver? _handOver;
+
+        public void HandOver(HandOver handOver)
+            => LazyInitializer.EnsureInitialized(ref _handOver, () => new ZoneHandOver(_manager, _logger)).Apply(handOver);
 
         public void Announce(string text)
         {

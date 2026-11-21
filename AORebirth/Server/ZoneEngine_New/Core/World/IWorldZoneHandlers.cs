@@ -37,6 +37,9 @@ namespace ZoneEngine_New.Core.World
         /// <summary>An operator asked World to remove this instance: count down, save everyone and exit (or cancel that).</summary>
         void Shutdown(ShutdownRequest request);
 
+        /// <summary>An operator's zone swap gave these playfields to another instance: move their players there (or stop).</summary>
+        void HandOver(HandOver handOver);
+
         /// <summary>The teams this instance mirrors, for World's registration.</summary>
         IReadOnlyList<TeamState> Teams();
     }

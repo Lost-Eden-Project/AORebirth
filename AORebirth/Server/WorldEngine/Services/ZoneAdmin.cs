@@ -401,7 +401,67 @@ namespace WorldEngine.Services
                     ? Results.Json(state.Zone(name), statusCode: StatusCodes.Status202Accepted)
                     : Outcome(outcome, name, state);
             });
+
+            MapSwap(admin);
         }
+
+        public sealed record StartSwapRequest(string? From, string? To, string? Build, string? GameData, int? ExpiresSeconds);
+
+        public sealed record HandOverRequest(int? TimeoutSeconds, int? CombatWaitSeconds, string? Dungeons, bool? Force);
+
+        public sealed record CompleteSwapRequest(int? Seconds);
+
+        /// <summary>
+        /// The zone swap (World SwapEnabled): preflight, start (a grant for the new instance), cutover, rollback, abort and
+        /// complete. Every refusal is 409 with {"error":"refused","reasons":[{"code","detail"}]} and changes nothing.
+        /// </summary>
+        static void MapSwap(RouteGroupBuilder admin)
+        {
+            admin.MapGet("/swap/preflight", (string? from, WorldState state) => Results.Json(state.SwapPreflight(from).Swap));
+
+            admin.MapGet("/swap", (WorldState state) =>
+            {
+                object? swap = state.SwapView();
+                return swap == null ? Error(StatusCodes.Status404NotFound, "no swap has run since World started") : Results.Json(swap);
+            });
+
+            admin.MapPost("/swap", (StartSwapRequest? request, HttpContext http, WorldState state)
+                => Swap(state.StartSwap(request?.From, request?.To, request?.Build, request?.GameData, request?.ExpiresSeconds ?? 600,
+                    Caller(http)), StatusCodes.Status202Accepted));
+
+            admin.MapPost("/swap/cutover", (HandOverRequest? request, HttpContext http, WorldState state) =>
+            {
+                if (!WorldState.TryParseDungeons(request?.Dungeons, out AORebirth.World.Contracts.V1.HandOverDungeons dungeons))
+                    return Refused("bad_request", "dungeons must be wait, move or logout");
+                return Swap(state.Cutover(request?.TimeoutSeconds ?? 120, request?.CombatWaitSeconds ?? 20, dungeons, Caller(http)),
+                    StatusCodes.Status202Accepted);
+            });
+
+            admin.MapPost("/swap/rollback", (HandOverRequest? request, HttpContext http, WorldState state) =>
+            {
+                if (!WorldState.TryParseDungeons(request?.Dungeons, out AORebirth.World.Contracts.V1.HandOverDungeons dungeons))
+                    return Refused("bad_request", "dungeons must be wait, move or logout");
+                return Swap(state.Rollback(request?.TimeoutSeconds ?? 120, request?.CombatWaitSeconds ?? 20, dungeons, request?.Force == true, Caller(http)),
+                    StatusCodes.Status202Accepted);
+            });
+
+            admin.MapPost("/swap/abort", (HttpContext http, WorldState state) => Swap(state.AbortSwap(Caller(http)), StatusCodes.Status200OK));
+
+            admin.MapPost("/swap/complete", (CompleteSwapRequest? request, HttpContext http, WorldState state)
+                => Swap(state.CompleteSwap(request?.Seconds ?? 5, Caller(http)), StatusCodes.Status202Accepted));
+        }
+
+        static IResult Swap(WorldState.SwapOutcome outcome, int status)
+            => outcome.Accepted
+                ? Results.Json(outcome.Swap, statusCode: status)
+                : Results.Json(new
+                {
+                    error = "refused",
+                    reasons = outcome.Reasons.Select(r => new { code = r.Code, detail = r.Detail }).ToList()
+                }, statusCode: StatusCodes.Status409Conflict);
+
+        static IResult Refused(string code, string detail)
+            => Results.Json(new { error = "refused", reasons = new[] { new { code, detail } } }, statusCode: StatusCodes.Status409Conflict);
 
         static string Caller(HttpContext http)
             => "admin@" + (http.Connection.RemoteIpAddress?.ToString() ?? "unknown");

@@ -70,6 +70,9 @@ namespace ZoneEngine_New
                 RedirectConsoleLog(args, "/stdout-log", "--stdout-log", false);
                 RedirectConsoleLog(args, "/stderr-log", "--stderr-log", true);
                 RuntimeStartup.ValidateConfiguration();
+                // What a zone swap compares between the running build and a candidate; no database, no World.
+                if (HasArgument(args, "--compat-fingerprint"))
+                    return ZoneEngine_New.Core.World.CompatFingerprint.Run(GetEitherArgumentValue(args, "--engine-root", "--engine-root"));
                 if (HasArgument(args, "--validate-database"))
                     return CheckDatabase();
 
@@ -131,10 +134,11 @@ namespace ZoneEngine_New
                 {
                     debugMcp = DebugMcpHost.Start(rootServices, logger);
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
-                    Shutdown();
-                    throw;
+                    // A diagnostics port must not take the zone down (a second instance beside a running one, a port in use).
+                    debugMcp = null;
+                    logger.Error("Debug MCP not started; the zone runs without it: " + exception.GetBaseException().Message);
                 }
                 CompactStartupHeap(logger);
                 // World admits logins only once every required engine reports ready.

@@ -70,6 +70,21 @@ namespace ZoneEngine_New.Core.Modules
 
         public ZoneModuleEvents Events { get; }
 
+        private volatile bool _primary;
+
+        /// <summary>Whether this instance holds World's duty (module API 1.19 IsPrimary); false until World says so.</summary>
+        public bool IsPrimary => _primary;
+
+        /// <summary>World gave this instance the duty or took it away: tell the modules that follow it.</summary>
+        public void SetPrimary(bool primary)
+        {
+            if (_primary == primary)
+                return;
+            _primary = primary;
+            _logger.Info("Modules: this instance is " + (primary ? "now" : "no longer") + " primary.");
+            Events.PrimaryChanged.Raise(primary);
+        }
+
         /// <summary>The world view every playfield tick publishes into while a module reads it.</summary>
         internal ZoneModuleWorld World { get; }
 
@@ -308,7 +323,8 @@ namespace ZoneEngine_New.Core.Modules
         private LoadedModule LoadModule(string id, string moduleDirectory, string sourceDirectory, int generation)
         {
             (ModuleManifest manifest, string assemblyPath) = ReadManifest(id, sourceDirectory);
-            bool collectible = _hotReload.Enabled && manifest.SupportsHotReload;
+            // Without a private staging folder the module loads for good, as with hot reload off.
+            bool collectible = _hotReload.Enabled && manifest.SupportsHotReload && _stagingRoot != null;
             string? stagedDirectory = null;
             string loadPath = assemblyPath;
             if (collectible)
@@ -618,6 +634,14 @@ namespace ZoneEngine_New.Core.Modules
             }
 
             public AORebirth.Modules.Data.IModuleDatabase Database { get; }
+
+            public bool IsPrimary => _host.IsPrimary;
+
+            public event Action<bool> PrimaryChanged
+            {
+                add { _gate.ThrowIfRevoked(); _host.Events.PrimaryChanged.Add(ModuleId, value); }
+                remove => _host.Events.PrimaryChanged.Remove(ModuleId, value);
+            }
 
             public IZoneWorld World { get; }
 

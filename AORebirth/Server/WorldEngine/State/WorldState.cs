@@ -17,7 +17,7 @@ namespace WorldEngine.State
     /// Everything World knows, behind one lock. Every operation is a short in-memory step; nothing here waits on I/O,
     /// so a single lock keeps the rules simple without becoming a bottleneck.
     /// </summary>
-    public sealed class WorldState
+    public sealed partial class WorldState
     {
         readonly object _sync = new();
         readonly WorldOptions _options;
@@ -108,6 +108,7 @@ namespace WorldEngine.State
                 candidate.GameData = message.GameData;
                 candidate.HasHandoffHook = message.HandoffHook;
                 candidate.Ready = message.Ready;
+                candidate.Capabilities.UnionWith(message.Capabilities);
                 candidate.Slot = AssignSlot(candidate.Name, message.PreferredSlot, candidate.Role);
                 _instances[candidate.Name] = candidate;
                 _sessions[candidate.Session] = candidate;
@@ -128,6 +129,13 @@ namespace WorldEngine.State
 
                 ReconcileLeases(candidate, message, recovering, accepted);
                 ReconcilePlayfields(candidate, message, now, accepted);
+                // A swap World forgot in a restart comes back with the zones that were part of it. (Readiness and duty are
+                // handled from the heartbeat and the sweep: nothing may reach the instance before its acceptance.)
+                if (candidate.Role == ServiceRole.RoleZone)
+                {
+                    AdoptSwap(message.Swap, now);
+                    ApplySwapDrain(candidate);
+                }
 
                 _log.LogInformation(
                     "Registered {Role} {Instance} slot={Slot} endpoint={Endpoint} leases={Leases} playfields={Playfields} lost={Lost} recovering={Recovering} handoffHook={HandoffHook}",
@@ -164,6 +172,9 @@ namespace WorldEngine.State
                     + "clients on other machines cannot reach it. Set ZoneIP on that host.", name, Describe(message.Game));
 
             bool fresh = message.LastEpoch == 0;
+            // An operator's swap grant: this one instance may run the build and GameData it was granted.
+            if (SwapGrantsRegistration(name, message, live))
+                return;
             ServiceInstance? otherBuild = live.FirstOrDefault(i => Differs(i.Build, message.Build));
             if (otherBuild != null)
             {
@@ -312,6 +323,8 @@ namespace WorldEngine.State
                         heartbeat.Ready ? "ready" : "no longer ready");
                 instance.Ready = heartbeat.Ready;
                 instance.Players = heartbeat.Players;
+                instance.RssBytes = heartbeat.RssBytes;
+                SwapInstanceReady(instance);
                 instance.PlayfieldLoads.Clear();
                 foreach (PlayfieldLoad load in heartbeat.Playfields)
                 {
@@ -322,6 +335,8 @@ namespace WorldEngine.State
                         _playfields[load.PlayfieldId] = new PlayfieldAssignment(load.PlayfieldId, instance.Name, ++_assignment, now);
                     }
                     else if (!string.Equals(assignment.Instance, instance.Name, StringComparison.OrdinalIgnoreCase)
+                        // A swap's leaving instance runs what it handed over until its last player is gone.
+                        && !(_swap is { Active: true } swap && string.Equals(swap.HandingFrom, instance.Name, StringComparison.OrdinalIgnoreCase))
                         && (!_conflictLoggedMs.TryGetValue(load.PlayfieldId, out long logged) || now - logged > 60_000))
                     {
                         _conflictLoggedMs[load.PlayfieldId] = now;
@@ -428,6 +443,7 @@ namespace WorldEngine.State
                 foreach (KeyValuePair<int, long> logged in _conflictLoggedMs.Where(c => now - c.Value > 300_000).ToList())
                     _conflictLoggedMs.Remove(logged.Key);
 
+                SweepSwap(now);
                 AssignDuty();
                 FlushClearOnline();
             }
@@ -768,6 +784,7 @@ namespace WorldEngine.State
                     || !string.Equals(lease.Owner, instance.Name, StringComparison.OrdinalIgnoreCase)
                     || !LeaseTokens.SameAs(lease.Token, request.Token) || lease.State != LeaseState.InPlay)
                     return TransferRefused("stale_lease");
+                HandPlayfieldOnTransfer(instance, request.Envelope.DestinationPlayfield, now);
                 ServiceInstance? target = ResolveCore(request.Envelope.DestinationPlayfield, null, now);
                 if (target == null) return TransferRefused("no_zone_available");
                 if (ReferenceEquals(target, instance)) return TransferRefused("same_instance");

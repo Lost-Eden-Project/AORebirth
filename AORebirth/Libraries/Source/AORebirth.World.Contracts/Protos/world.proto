@@ -67,7 +67,43 @@ message WorldToService {
     InstanceCommand command = 11;
     // An operator asked World to take this zone instance out of service.
     ShutdownRequest shutdown = 12;
+    // An operator's zone swap moved these playfields to another instance: move their players there.
+    HandOver hand_over = 13;
+    // The zone swap this instance is part of, as it stands now; an ended one (completed, aborted) clears it.
+    SwapNotice swap = 14;
   }
+}
+
+// A zone swap as World last told the instances in it. They give it back when they register, so a World that restarted
+// in the middle takes the swap up again.
+message SwapNotice {
+  string swap_id = 1;
+  string from = 2;
+  string to = 3;
+  string build = 4;
+  string game_data = 5;
+  string phase = 6;
+}
+
+// What to do with players in a quest dungeon when their zone is handed over.
+enum HandOverDungeons {
+  // Leave them until they come out or the deadline is near, then move them (the dungeon is rebuilt from its seed).
+  HAND_OVER_DUNGEONS_WAIT = 0;
+  HAND_OVER_DUNGEONS_MOVE = 1;
+  HAND_OVER_DUNGEONS_LOGOUT = 2;
+}
+
+// Move every player on these playfields to target_instance, where they stand, saving first (one loading screen). Who is
+// still here at the deadline is saved and logged out. cancel stops a hand-over under way; those not moved stay.
+message HandOver {
+  string swap_id = 1;
+  string target_instance = 2;
+  repeated int32 playfield_ids = 3;
+  int32 deadline_seconds = 4;
+  // A player in combat is left alone this long before being moved anyway.
+  int32 combat_wait_seconds = 5;
+  HandOverDungeons dungeons = 6;
+  bool cancel = 7;
 }
 
 message Register {
@@ -92,6 +128,10 @@ message Register {
   string game_data = 12;
   // True when this process already accepts clients (it is re-registering after a dropped stream or World restart).
   bool ready = 13;
+  // What this build supports, e.g. "swap/1" (it carries out a HandOver). World refuses a swap the zone cannot do.
+  repeated string capabilities = 14;
+  // The swap World last told this instance about (SwapNotice), unless it ended.
+  SwapNotice swap = 15;
 }
 
 message LeaseAssertion {
@@ -133,6 +173,8 @@ message Heartbeat {
   repeated PlayfieldLoad playfields = 3;
   // Startup finished and the client listener is open. World admits no login until every required engine says so.
   bool ready = 4;
+  // The process's resident memory, for an operator deciding whether a second instance fits on the host.
+  int64 rss_bytes = 5;
 }
 
 message PlayfieldLoad {

@@ -22,12 +22,12 @@ namespace ZoneEngine_New
             {
                 "/headless", "--headless", "/autostart", "--autostart",
                 "--validate-startup", "--validate-database", "--validate-official-placements",
-                "/skip-playfield-package-pin", "--skip-playfield-package-pin"
+                "/skip-playfield-package-pin", "--skip-playfield-package-pin", "--compat-fingerprint"
             };
             var values = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "/shutdown-file", "--shutdown-file", "/stdout-log", "--stdout-log",
-                "/stderr-log", "--stderr-log", "--instance", "--zone-port", "--debug-mcp-port"
+                "/stderr-log", "--stderr-log", "--instance", "--zone-port", "--debug-mcp-port", "--engine-root"
             };
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int validationModes = 0;

@@ -37,8 +37,12 @@ namespace ZoneEngine_New.Core.Modules
             MissionCompleted = new HandlerList<MissionCompletedEvent>("MissionCompleted", logger);
             PlayerStatChanged = new HandlerList<PlayerStatChangedEvent>("PlayerStatChanged", logger);
             GmCommandUsed = new HandlerList<GmCommandUsedEvent>("GmCommandUsed", logger);
+            PrimaryChanged = new HandlerList<bool>("PrimaryChanged", logger);
             Visibility = new ModuleVisibilityObservers(logger);
         }
+
+        // Module API 1.19: raised on a World link thread, not a playfield tick.
+        public HandlerList<bool> PrimaryChanged { get; }
 
         /// <summary>The visibility observers (module API 1.6), reached through the playfield service like the events.</summary>
         public ModuleVisibilityObservers Visibility { get; }
@@ -88,6 +92,7 @@ namespace ZoneEngine_New.Core.Modules
 
         internal void RemoveModule(string moduleId)
         {
+            PrimaryChanged.RemoveModule(moduleId);
             MissionCompleted.RemoveModule(moduleId);
             PlayerStatChanged.RemoveModule(moduleId);
             GmCommandUsed.RemoveModule(moduleId);

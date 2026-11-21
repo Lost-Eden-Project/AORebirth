@@ -71,6 +71,12 @@ namespace WorldEngine.State
 
         public int Players { get; set; }
 
+        /// <summary>What the instance's build supports (Register.capabilities), e.g. "swap/1".</summary>
+        public HashSet<string> Capabilities { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Resident memory from the last heartbeat; 0 from a build that does not report it.</summary>
+        public long RssBytes { get; set; }
+
         public Dictionary<int, int> PlayfieldLoads { get; } = new();
 
         public ChannelReader<WorldToService> Outbound => _outbound.Reader;

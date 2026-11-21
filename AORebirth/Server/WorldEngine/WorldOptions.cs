@@ -54,6 +54,9 @@ namespace WorldEngine
 
         public IReadOnlyList<ZoneHostSettings> ZoneHosts { get; init; } = Array.Empty<ZoneHostSettings>();
 
+        /// <summary>The admin API's zone swap (World SwapEnabled); off by default.</summary>
+        public bool SwapEnabled { get; init; }
+
         /// <summary>After a restart, only re-registrations are served for this long; then World is authoritative.</summary>
         public TimeSpan RecoveryWindow => LeaseTtl + LeaseGrace;
 
@@ -114,7 +117,8 @@ namespace WorldEngine
                 AdminPort = adminPort,
                 AdminAddress = adminAddress,
                 AdminToken = adminToken,
-                ZoneHosts = ValidateHosts(settings?.ZoneHosts)
+                ZoneHosts = ValidateHosts(settings?.ZoneHosts),
+                SwapEnabled = settings?.SwapEnabled == true && adminPort > 0
             };
         }
 

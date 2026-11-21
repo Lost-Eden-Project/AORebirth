@@ -329,6 +329,12 @@ namespace Utility.Config
         [System.Xml.Serialization.XmlArrayItem("ZoneHost")]
         public System.Collections.Generic.List<ZoneHostSettings> ZoneHosts { get; set; }
 
+        /// <summary>
+        /// Lets the admin API run a same-host zone swap (/admin/swap): a second zone instance on a new build takes over
+        /// from the running one while players stay logged in. Off unless set; needs AdminPort.
+        /// </summary>
+        public bool SwapEnabled { get; set; }
+
         public static string ResolveAdminListenIP(WorldSettings settings)
             => settings == null || string.IsNullOrWhiteSpace(settings.AdminListenIP) ? ResolveListenIP(settings) : settings.AdminListenIP.Trim();
 

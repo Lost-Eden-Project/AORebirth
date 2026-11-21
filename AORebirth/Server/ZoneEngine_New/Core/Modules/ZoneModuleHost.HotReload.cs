@@ -257,8 +257,21 @@ namespace ZoneEngine_New.Core.Modules
                 return "memory_headroom";
             }
 
+            if (_stagingRoot == null)
+            {
+                detail = "the staging folder could not be made private at startup; see the log";
+                return "staging_unsafe";
+            }
+
             moduleDirectory = Path.GetFullPath(Path.Combine(_modulesDirectory, id));
             sourceDirectory = string.IsNullOrWhiteSpace(source) ? moduleDirectory : Path.GetFullPath(source.Trim());
+            // Code only ever comes from the configured modules folder, the same place a restart would load it from.
+            if (!IsInside(_modulesDirectory, sourceDirectory) || HasLink(_modulesDirectory, sourceDirectory))
+            {
+                detail = "source must be a real folder inside " + _modulesDirectory;
+                return "source_outside_modules";
+            }
+
             if (!Directory.Exists(sourceDirectory))
             {
                 detail = sourceDirectory;
@@ -289,6 +302,27 @@ namespace ZoneEngine_New.Core.Modules
             }
 
             return null;
+        }
+
+        private static bool IsInside(string root, string path)
+        {
+            string prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            return (Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar).StartsWith(prefix, comparison);
+        }
+
+        /// <summary>Whether any folder from below <paramref name="root"/> down to <paramref name="path"/> is a link (which could lead outside).</summary>
+        private static bool HasLink(string root, string path)
+        {
+            string full = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+            for (var directory = new DirectoryInfo(Path.GetFullPath(path)); directory != null
+                && directory.FullName.TrimEnd(Path.DirectorySeparatorChar).Length > full.Length; directory = directory.Parent)
+            {
+                if (directory.Exists && (directory.LinkTarget != null || (directory.Attributes & FileAttributes.ReparsePoint) != 0))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>The module API major the assembly was built against, read from its metadata without loading it; -1 for none.</summary>
@@ -507,13 +541,26 @@ namespace ZoneEngine_New.Core.Modules
         /// <summary>This process's own staging folder; leftovers of processes that are gone are removed.</summary>
         private void PrepareStaging()
         {
-            string root = _hotReload.ResolveStagingDirectory();
+            string root;
             string own = "p" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "-"
                 + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-            _stagingRoot = Path.Combine(root, own);
             try
             {
-                Directory.CreateDirectory(_stagingRoot);
+                // The zone runs whatever lands here: it must be this account's alone, or hot reload stays off.
+                root = _hotReload.ResolveStagingDirectory();
+                HotReloadSettings.EnsurePrivateDirectory(root);
+                HotReloadSettings.EnsurePrivateDirectory(Path.Combine(root, own));
+                _stagingRoot = Path.Combine(root, own);
+            }
+            catch (Exception exception)
+            {
+                _stagingRoot = null;
+                _logger.Error("Modules: hot reload is unavailable: " + exception.Message);
+                return;
+            }
+
+            try
+            {
                 foreach (string directory in Directory.GetDirectories(root, "p*"))
                 {
                     string name = Path.GetFileName(directory);
@@ -555,8 +602,11 @@ namespace ZoneEngine_New.Core.Modules
             string target = Path.Combine(_stagingRoot, id, ".gen-" + generation.ToString(CultureInfo.InvariantCulture));
             if (Directory.Exists(target))
                 Directory.Delete(target, recursive: true);
-            Directory.CreateDirectory(target);
-            foreach (string file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            HotReloadSettings.EnsurePrivateDirectory(Path.Combine(_stagingRoot, id));
+            HotReloadSettings.EnsurePrivateDirectory(target);
+            // Links (to files or folders) are skipped: they could pull in code from outside the module folder.
+            var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+            foreach (string file in Directory.EnumerateFiles(sourceDirectory, "*", options))
             {
                 string relative = Path.GetRelativePath(sourceDirectory, file);
                 if (!IsCode(relative))
@@ -598,5 +648,98 @@ namespace ZoneEngine_New.Core.Modules
 
         private static ModuleReloadResult Refused(string id, string code, string? detail)
             => new(ModuleReloadOutcome.Refused, id, code, detail);
+
+        /// <summary>
+        /// For <c>--compat-fingerprint</c>: every enabled module, its version and hash, the module API major it was built
+        /// against, and whether this engine can load it (its types resolve in a throwaway context; Initialize is never
+        /// called, so a member missing only inside a method body is not caught).
+        /// </summary>
+        internal static IReadOnlyList<object> ProbeModules(string gameDataRoot)
+        {
+            string? settingsPath = ModulesSettings.ResolvePath(gameDataRoot);
+            if (settingsPath == null)
+                return Array.Empty<object>();
+            ModulesSettings settings = ModulesSettings.Load(settingsPath);
+            string modulesDirectory = settings.ResolveModulesDirectory(settingsPath);
+            var required = new HashSet<string>(settings.Required, StringComparer.OrdinalIgnoreCase);
+            var modules = new List<object>();
+            foreach (string id in settings.Enabled.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                string? version = null, sha256 = null, error = null, migrations = null;
+                int apiMajor = -1;
+                bool hotReload = false, primaryAware = false, loads = false;
+                try
+                {
+                    (ModuleManifest manifest, string assemblyPath) = ReadManifest(id, Path.GetFullPath(Path.Combine(modulesDirectory, id)));
+                    version = manifest.Version;
+                    hotReload = manifest.SupportsHotReload;
+                    primaryAware = manifest.PrimaryAware;
+                    migrations = MigrationsDigest(Path.Combine(Path.GetDirectoryName(assemblyPath)!, "Migrations"));
+                    sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(assemblyPath))).ToLowerInvariant();
+                    apiMajor = ReferencedApiMajor(assemblyPath);
+                    if (apiMajor != ApiMajorVersion)
+                        error = string.Format(CultureInfo.InvariantCulture, "built against module API {0}; this engine provides {1}", apiMajor, ApiMajorVersion);
+                    else
+                        loads = TryLoadTypes(id, assemblyPath, out error);
+                }
+                catch (Exception exception)
+                {
+                    error = exception.GetBaseException().Message;
+                }
+
+                modules.Add(new { id, version, sha256, migrations, required = required.Contains(id), enabled = true, apiMajor, hotReload, primaryAware, loads, error });
+            }
+
+            return modules;
+        }
+
+        /// <summary>The module's own schema migrations (name and content of each), so a swap sees a module schema change.</summary>
+        private static string MigrationsDigest(string folder)
+        {
+            var text = new System.Text.StringBuilder();
+            if (Directory.Exists(folder))
+                foreach (string path in Directory.EnumerateFiles(folder, "*.sql").OrderBy(p => Path.GetFileName(p), StringComparer.Ordinal))
+                    text.Append(Path.GetFileName(path)).Append(':')
+                        .Append(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)))).Append('\n');
+            return "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString()))).ToLowerInvariant();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryLoadTypes(string id, string assemblyPath, out string? error)
+        {
+            var context = new ModuleLoadContext(id, assemblyPath, collectible: true);
+            try
+            {
+                System.Reflection.Assembly assembly = context.LoadFromAssemblyPath(assemblyPath);
+                Type[] types;
+                try
+                {
+                    types = assembly.GetTypes();
+                }
+                catch (System.Reflection.ReflectionTypeLoadException exception)
+                {
+                    error = exception.LoaderExceptions.FirstOrDefault(e => e != null)?.Message ?? exception.Message;
+                    return false;
+                }
+
+                if (!types.Any(type => type.IsPublic && type.IsClass && !type.IsAbstract && typeof(IZoneModule).IsAssignableFrom(type)))
+                {
+                    error = "the assembly has no public IZoneModule";
+                    return false;
+                }
+
+                error = null;
+                return true;
+            }
+            catch (Exception exception)
+            {
+                error = exception.GetBaseException().Message;
+                return false;
+            }
+            finally
+            {
+                context.Unload();
+            }
+        }
     }
 }

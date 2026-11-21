@@ -32,7 +32,7 @@ namespace ZoneEngine_New.Core.World
 
         public int Port { get; }
 
-        /// <summary>Overrides DebugMcp Port for this instance; null keeps the configured one.</summary>
+        /// <summary>Overrides DebugMcp Port for this instance; null keeps the configured one, 0 turns it off.</summary>
         public int? DebugMcpPort { get; }
 
         public static ZoneInstanceOptions Current
@@ -47,7 +47,9 @@ namespace ZoneEngine_New.Core.World
                 ?? throw new InvalidOperationException("Configuration is required.");
             int port = ParsePort(Value(args, "--zone-port", "AO_REBIRTH_ZONE_PORT")) ?? config.ZonePort;
             if (port < 1 || port > ushort.MaxValue) throw new InvalidOperationException("ZonePort must be between 1 and 65535.");
-            int? mcp = ParsePort(Value(args, "--debug-mcp-port", "AO_REBIRTH_DEBUG_MCP_PORT"));
+            // 0 turns the debug MCP server off for this instance.
+            string? mcpValue = Value(args, "--debug-mcp-port", "AO_REBIRTH_DEBUG_MCP_PORT");
+            int? mcp = mcpValue == "0" ? 0 : ParsePort(mcpValue);
             string name = Value(args, "--instance", "AO_REBIRTH_ZONE_INSTANCE")
                 ?? (string.IsNullOrWhiteSpace(config.World?.InstanceName) ? null : config.World!.InstanceName.Trim())
                 ?? "zone-" + port.ToString(CultureInfo.InvariantCulture);

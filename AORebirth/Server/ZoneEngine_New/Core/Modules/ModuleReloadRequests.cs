@@ -36,7 +36,20 @@ namespace ZoneEngine_New.Core.Modules
             ArgumentNullException.ThrowIfNull(logger);
             if (!host.HotReload.Enabled)
                 return null;
-            var requests = new ModuleReloadRequests(host, logger, host.HotReload.ResolveRequestFile());
+            string requestFile;
+            try
+            {
+                // Whoever can write this file decides what the zone reloads: its folder must be this account's alone.
+                requestFile = host.HotReload.ResolveRequestFile();
+                HotReloadSettings.EnsurePrivateDirectory(Path.GetDirectoryName(requestFile)!);
+            }
+            catch (Exception exception)
+            {
+                logger.Error("Module reload requests are off: " + exception.Message);
+                return null;
+            }
+
+            var requests = new ModuleReloadRequests(host, logger, requestFile);
             // A request left from before this process is not for it.
             try
             {

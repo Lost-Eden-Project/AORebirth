@@ -99,6 +99,12 @@ namespace ZoneEngine_New.Core.Modules
         /// started (threads, timers, listeners) in Shutdown; see <c>IZoneModuleStateTransfer</c> to carry state across.
         /// </summary>
         public bool SupportsHotReload { get; init; }
+
+        /// <summary>
+        /// The module holds its fixed listener ports, single-writer files and world-wide timers only while
+        /// IZoneModuleContext.IsPrimary (module API 1.19), so it can run on two instances during a zone swap.
+        /// </summary>
+        public bool PrimaryAware { get; init; }
     }
 
     /// <summary>
@@ -114,10 +120,16 @@ namespace ZoneEngine_New.Core.Modules
 
         public bool Enabled { get; init; }
 
-        /// <summary>Where each loaded generation's code is copied; env AO_REBIRTH_MODULE_STAGING_DIR, else this, else the temp folder.</summary>
+        /// <summary>
+        /// Where each loaded generation's code is copied: env AO_REBIRTH_MODULE_STAGING_DIR, else this, else the user's
+        /// private data folder. It must be writable by nobody else (checked at startup), since the zone runs what is there.
+        /// </summary>
         public string? StagingDirectory { get; init; }
 
-        /// <summary>The operator request file; env AO_REBIRTH_MODULE_RELOAD_REQUEST_FILE, else this, else the temp folder.</summary>
+        /// <summary>
+        /// The operator request file: env AO_REBIRTH_MODULE_RELOAD_REQUEST_FILE, else this, else the user's private data
+        /// folder. Its folder must be writable by nobody else (checked at startup).
+        /// </summary>
         public string? RequestFile { get; init; }
 
         /// <summary>Unloads that left their code in memory before this process refuses any further reload.</summary>
@@ -128,14 +140,44 @@ namespace ZoneEngine_New.Core.Modules
 
         public string ResolveStagingDirectory()
             => Pick(Environment.GetEnvironmentVariable(StagingVariable), StagingDirectory)
-                ?? Path.Combine(Path.GetTempPath(), "aorebirth-modules");
+                ?? Path.Combine(PrivateRoot(), "module-staging");
 
         public string ResolveRequestFile()
             => Pick(Environment.GetEnvironmentVariable(RequestFileVariable), RequestFile)
-                ?? Path.Combine(Path.GetTempPath(), "aorebirth-module-reload-request");
+                ?? Path.Combine(PrivateRoot(), "module-reload-request");
 
         static string? Pick(string? first, string? second)
             => !string.IsNullOrWhiteSpace(first) ? Path.GetFullPath(first.Trim())
                 : !string.IsNullOrWhiteSpace(second) ? Path.GetFullPath(second.Trim()) : null;
+
+        /// <summary>The account's own data folder (never the shared temp folder, where anyone could plant files).</summary>
+        static string PrivateRoot()
+        {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(local))
+                throw new InvalidOperationException("No private data folder (HOME is unset); set " + StagingVariable + " and "
+                    + RequestFileVariable + " to a folder only the zone's account can write.");
+            return Path.Combine(local, "AORebirth");
+        }
+
+        /// <summary>
+        /// Creates <paramref name="directory"/> for this account only and refuses one others can write: whatever is there
+        /// becomes code the zone runs, or a request it follows.
+        /// </summary>
+        public static void EnsurePrivateDirectory(string directory)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                System.IO.Directory.CreateDirectory(directory);
+                return;
+            }
+
+            const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+            System.IO.Directory.CreateDirectory(directory, OwnerOnly);
+            if ((File.GetUnixFileMode(directory) & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
+                throw new InvalidOperationException(directory + " is writable by other accounts; module hot reload stays off.");
+            if (new DirectoryInfo(directory).LinkTarget != null)
+                throw new InvalidOperationException(directory + " is a symbolic link; module hot reload stays off.");
+        }
     }
 }

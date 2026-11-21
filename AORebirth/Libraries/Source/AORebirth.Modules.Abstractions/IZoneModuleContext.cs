@@ -41,6 +41,25 @@ namespace AORebirth.Modules
         Data.IModuleDatabase Database => throw new System.NotSupportedException("The module database needs a module API 1.14 host.");
 
         /// <summary>
+        /// Whether this zone instance is the primary one (module API 1.19): the one World gives the world-wide jobs. While
+        /// a zone swap runs two instances side by side, only the primary should hold anything there is one of: fixed
+        /// listener ports, files only one process may write, timers that act on the whole world. It turns true shortly
+        /// after startup on a world with one zone, and moves from the old instance to the new one during a swap. A host
+        /// older than 1.19 always says true. A module that follows it sets <c>"PrimaryAware": true</c> in module.json.
+        /// </summary>
+        bool IsPrimary => true;
+
+        /// <summary>
+        /// Raised with the new value when <see cref="IsPrimary"/> changes (module API 1.19), on a background thread, not a
+        /// playfield tick. Release what the primary holds when it turns false; take it when it turns true.
+        /// </summary>
+        event System.Action<bool> PrimaryChanged
+        {
+            add { }
+            remove { }
+        }
+
+        /// <summary>
         /// Reads Modules/&lt;Id&gt;/config.json (case-insensitive, comments allowed), or returns null when it is absent.
         /// </summary>
         T? GetConfig<T>() where T : class;
