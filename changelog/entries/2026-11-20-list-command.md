@@ -1,0 +1,1 @@
+- Added: /list opens a popup of the players in your current zone, grouped by profession and highest level first.

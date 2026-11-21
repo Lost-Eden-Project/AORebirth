@@ -7,8 +7,9 @@ namespace ZoneEngine_New.Core.Teams
     using ZoneEngine_New.Core.MessageHandlers;
     using ZoneEngine_New.Core.Network;
 
-    /// <summary>The N3 ChatCmd route: /team, /invite, /stuck and /terminate; never consumes ordinary vicinity text.</summary>
-    public sealed class TeamChatMessageHandler(TeamService teams, Characters.StuckService stuck) : IMessageHandler<ChatCmdMessage>
+    /// <summary>The N3 ChatCmd route: /team, /invite, /stuck, /terminate and /list; never consumes ordinary vicinity text.</summary>
+    public sealed class TeamChatMessageHandler(TeamService teams, Characters.StuckService stuck,
+        Commands.PlayfieldListCommand playfieldList) : IMessageHandler<ChatCmdMessage>
     {
         public Type MessageBodyType => typeof(ChatCmdMessage);
         public void Handle(MessageBody body, IZoneSession session) => Handle((ChatCmdMessage)body, session);
@@ -30,6 +31,8 @@ namespace ZoneEngine_New.Core.Teams
                 player.Playfield?.GetService<Loot.LootRollService>()?.HandleCommand(player, args);
             else if (args[0].Equals("stuck", StringComparison.OrdinalIgnoreCase))
                 stuck.TryUnstick(player);
+            else if (args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+                playfieldList.Execute(player, session);
             else if (args[0].Equals("terminate", StringComparison.OrdinalIgnoreCase))
             {
                 // Retail: this line, then the death a minute later (capture 2026-10-20T18:11:17Z).

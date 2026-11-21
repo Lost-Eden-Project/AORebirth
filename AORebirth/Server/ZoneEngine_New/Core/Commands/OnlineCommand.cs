@@ -36,7 +36,7 @@ namespace ZoneEngine_New.Core.Commands
             _teleportGmLevel = permissions?.CommandLevel("tp", TeleportCommand.GmLevel) ?? TeleportCommand.GmLevel;
         }
 
-        sealed record Entry(string Name, bool Teleportable, int Level, int Profession);
+        internal sealed record Entry(string Name, bool Teleportable, int Level, int Profession);
 
         public string Name => "online";
 
@@ -119,7 +119,13 @@ namespace ZoneEngine_New.Core.Commands
 
         static void Send(GmCommandContext context, List<Entry> entries)
         {
+            string title = string.Format(CultureInfo.InvariantCulture, "Players Online ({0})", entries.Count);
+            GmCommandFeedback.SendLines(context.Session, context.Player, Pages(title, entries));
+        }
 
+        /// <summary>The popup link(s) for <paramref name="entries"/>: grouped by profession, highest level first.</summary>
+        internal static IReadOnlyList<string> Pages(string title, IReadOnlyList<Entry> entries)
+        {
             // One block per profession so a page break never separates a heading from its players.
             var blocks = new List<string>();
             foreach (var group in entries
@@ -149,8 +155,7 @@ namespace ZoneEngine_New.Core.Commands
                 blocks.Add(block.ToString());
             }
 
-            string title = string.Format(CultureInfo.InvariantCulture, "Players Online ({0})", entries.Count);
-            GmCommandFeedback.SendLines(context.Session, context.Player, DiagAoml.Pages(title, header: null, blocks));
+            return DiagAoml.Pages(title, header: null, blocks);
         }
 
         /// <summary>Level tiers at a glance: grey under 50, green under 100, cyan under 150, yellow under 200, orange 200+.</summary>

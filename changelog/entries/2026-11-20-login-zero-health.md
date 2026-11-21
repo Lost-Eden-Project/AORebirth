@@ -1,0 +1,2 @@
+- Fixed: Characters with low maximum health could log in alive at 0 health.
+- Fixed: A character that logged out while dead now respawns at its respawn point at full health when logging back in.

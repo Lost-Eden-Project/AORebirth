@@ -865,18 +865,13 @@ namespace ZoneEngine_New.Core.Trade
         /// 2026-10-21T20:04:28Z and 20:04:35Z: Complete pair, then only the social status, no AddTemplate). An AddTemplate
         /// on top made the client add the item from it and keep the rendered copy in the partner's trade pane, so the next
         /// trade with that player showed it again. A stack merge still needs its JoinItems to fold the copy the client
-        /// placed. Overflow arrivals keep their overflow grant.
+        /// placed. An overflow arrival gets no grant either: the overflow window sent by OverflowGrants.Trim already
+        /// holds it, and a TemplateAction Overflow on top showed a second, unmovable copy.
         /// </summary>
         static void SendTradeDelivery(Delivery delivery)
         {
             if (delivery.MergeTarget != null)
-            {
                 InventoryStacking.SendJoin(delivery.Receiver, delivery.Page, delivery.MergeSlot, delivery.Slot);
-                return;
-            }
-
-            if (delivery.Page.Identity.Type == IdentityType.OverflowWindow)
-                SendGrant(delivery.Receiver, delivery.Item, delivery.Page);
         }
 
         static void SendDelivery(Delivery delivery)

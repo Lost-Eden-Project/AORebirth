@@ -1,0 +1,2 @@
+- Fixed: High-level monsters such as Lord of the Void and the Beast now hit as hard as they should, instead of far less than on retail.
+- Fixed: Add All Offense and Add All Defense debuffs now keep working when they push a monster or player below zero.

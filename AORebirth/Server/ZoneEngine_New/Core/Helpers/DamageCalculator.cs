@@ -117,7 +117,7 @@ namespace ZoneEngine_New.Core.Helpers
             // Specials use the weapon's own attack rating; the special's skill only shortens its recharge.
             // Backstab uses the Sneak Attack skill as its attack rating instead of the weapon's attack lines.
             int attackRating = attackSkillOverride.HasValue
-                ? NormalizeStat(attackSkillOverride.Value) + NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.AMSModifier))
+                ? NormalizeStat(attackSkillOverride.Value) + AddAllOffense(attacker)
                 : ResolveAttackRating(attacker, attackDefendSource);
             int defenseRating = ResolveDefenseRating(target, attackDefendSource);
             int cappedAttackRating = amsCap > 0 ? Math.Min(attackRating, amsCap) : attackRating;
@@ -264,14 +264,22 @@ namespace ZoneEngine_New.Core.Helpers
                     // An AMS-checked action (Force Opponent 252315) then adds Add All Off. again below. The weapon's
                     // own rating never expands AMS, so it cannot recurse.
                     int skill = entry.Key == CharacterStat.AMS
-                        ? (expandAms ? ResolveAttackRating(attacker) : 0)
+                        ? (expandAms ? Math.Max(0, ResolveAttackRating(attacker)) : 0)
                         : NormalizeStat(attacker.Stats.GetOrZero(entry.Key));
                     attackRating += (int)((long)entry.Value * skill / 100);
                 }
             }
 
-            return attackRating + NormalizeStat(attacker.Stats.GetOrZero(CharacterStat.AMSModifier));
+            return attackRating + AddAllOffense(attacker);
         }
+
+        /// <summary>
+        /// Add All Off. keeps its sign: a debuff below zero takes attack rating off the weapon skill (live: a -499
+        /// Add All Off. debuff cuts a Nascense heckler's hits from 100 to 44). Only the final rating stops at zero, in the
+        /// hit chance and the damage multiplier.
+        /// </summary>
+        static int AddAllOffense(Character attacker)
+            => StatCollection.Normalize(attacker.Stats.GetOrZero(CharacterStat.AMSModifier));
 
         static int ResolveDefenseRating(Character target, ItemTemplate? template)
         {
@@ -282,7 +290,9 @@ namespace ZoneEngine_New.Core.Helpers
                     defenseRating += (int)((long)entry.Value * NormalizeStat(target.Stats.GetOrZero(entry.Key)) / 100);
             }
 
-            return defenseRating + NormalizeStat(target.Stats.GetOrZero(CharacterStat.DMSModifier));
+            // Add All Def. keeps its sign like Add All Off.: a debuff below zero takes defense rating off the defense
+            // skills. The hit chance counts a total under 1 as 1.
+            return defenseRating + StatCollection.Normalize(target.Stats.GetOrZero(CharacterStat.DMSModifier));
         }
 
         static double HitPercentage(int attackRating, int defenseRating, int aggDef)

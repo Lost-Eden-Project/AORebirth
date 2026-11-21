@@ -1003,6 +1003,7 @@ namespace ZoneEngine_New.Core.Playfield
             session.State = SessionState.InPlay;
             player.SendPerkActions();
             player.SendGrantedGlobalResearch();
+            player.RespawnIfLoggedOutDead();
 
             Metrics.TickStallWatch.Stage("arrive.teams", characterId);
             _playfieldManager.Teams.AttachPlayer(player);

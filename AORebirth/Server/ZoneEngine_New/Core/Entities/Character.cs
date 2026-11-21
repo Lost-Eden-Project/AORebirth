@@ -495,6 +495,16 @@ namespace ZoneEngine_New.Core.Entities
         public bool IsDead => _deathNotified;
 
         /// <summary>
+        /// Dead with none of a death's effects (no death action, corpse, XP loss or kill credit): a death that already
+        /// happened (a character that left the world dead) and now waits only for its respawn.
+        /// </summary>
+        protected void MarkDeadAwaitingRespawn()
+        {
+            _deathNotified = true;
+            SetFightingTarget(Identity.None);
+        }
+
+        /// <summary>
         /// Idempotent death entry: death action + clear fight state immediately;
         /// corpse spawn and <see cref="Died"/> after <see cref="CorpseSwapDelayMilliseconds"/>.
         /// </summary>
@@ -2918,10 +2928,10 @@ namespace ZoneEngine_New.Core.Entities
         protected int ResolveVitalPercent(CharacterStat percentStat, CharacterStat currentStat, CharacterStat maxStat)
         {
             int stored = Stats.Get(percentStat);
-            // A player is never loaded dead: login is not a death, so nothing would ever respawn them. A stored 0% health
-            // (a logout while dead, before that was settled) loads as 1%.
+            // A stored 0% health (a logout while dead, before that was settled) loads at 0 HP; the login respawns that
+            // player (Player.RespawnIfLoggedOutDead) rather than loading them alive at a token 1%.
             if (!StatCollection.IsUnset(stored))
-                return Math.Clamp(stored, IsPlayer && percentStat == CharacterStat.PercentRemainingHealth ? 1 : 0, 100);
+                return Math.Clamp(stored, 0, 100);
 
             int max = Stats.GetOrZero(maxStat);
             if (max <= 0)
@@ -2984,6 +2994,10 @@ namespace ZoneEngine_New.Core.Entities
         {
             int clampedPercent = Math.Clamp(percent, 0, 100);
             int value = newMax <= 0 ? 0 : (int)((long)newMax * clampedPercent / 100);
+            // Any percent above 0 is at least 1 point: 1% of a max under 100 rounded down to 0, and a living player
+            // loaded at 0 HP (1% of 73).
+            if (clampedPercent > 0 && newMax > 0 && value < 1)
+                value = 1;
             if (value < 0)
                 value = 0;
             else if (value > newMax)

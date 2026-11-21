@@ -12,7 +12,9 @@ namespace ZoneEngine_New.Core.Helpers
     /// profession uses AR / 400 + 1. Past it each profession follows its own measured curve: the samples are linearly
     /// interpolated from the soft cap on, and past the last sample the multiplier holds (the hardcap). No closed formula
     /// fits the curves, so the table is the rule. A profession without a curve (Monster, None) gains a flat
-    /// fallbackGainPer400 per 400 AR past the soft cap. Without the file every profession uses that flat gain.
+    /// fallbackGainPer400 per 400 AR past the soft cap; 1.0 keeps NPCs on AR / 400 + 1 with no soft cap (live: mob
+    /// damage scales linearly with Add All Off. debuffs well past AR 1000). Without the file every profession uses that
+    /// flat gain.
     /// </summary>
     public static class ArMultiplierTable
     {
@@ -46,7 +48,7 @@ namespace ZoneEngine_New.Core.Helpers
             public double[][] Points { get; set; } = [];
         }
 
-        static readonly Table Default = new(1000, 3.5, 400, 0.3, []);
+        static readonly Table Default = new(1000, 3.5, 400, 1.0, []);
 
         static readonly object Gate = new();
         static string? _loadedFrom;

@@ -2159,6 +2159,23 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
+        /// A character that left the world dead (saved at 0 HP before its death was settled) entered at 0 HP. It is
+        /// respawned the way a death is settled in game, on its next tick: full health at its respawn destination, not
+        /// left alive at 0 HP or a token 1% where it fell. Call once the character is in play.
+        /// </summary>
+        internal void RespawnIfLoggedOutDead()
+        {
+            if (IsDead || _respawnPending || Playfield == null || Stats.GetOrZero(CharacterStat.Health) > 0)
+                return;
+
+            MarkDeadAwaitingRespawn();
+            _respawnObserversCleared = false;
+            _respawnPending = true;
+            _respawnRemainingSeconds = 0;
+            Logger.Info("Logged out dead; respawning at login character=" + Identity.Instance.ToString(CultureInfo.InvariantCulture) + ".");
+        }
+
+        /// <summary>
         /// Where a death brings this character back: the stuck location after a failed resolution, else the last save
         /// point, else the new-character start (Arete Landing), else Respawn.json. Throws when none is configured.
         /// </summary>

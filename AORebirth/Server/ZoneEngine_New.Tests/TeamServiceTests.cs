@@ -1048,7 +1048,7 @@ namespace ZoneEngine_New.Tests
             Player a = f.Player(1), b = f.Player(2);
             var stuck = new StuckService(new GameplaySettings(), new Lazy<PlayfieldManager>(() =>
                 throw new InvalidOperationException("Team command routing must not resolve stuck-service playfields.")));
-            var handler = new TeamChatMessageHandler(f.Teams, stuck);
+            var handler = new TeamChatMessageHandler(f.Teams, stuck, new ZoneEngine_New.Core.Commands.PlayfieldListCommand());
             var invite = new ChatCmdMessage { Identity = a.Identity, Command = "/command invite  Member2\0" };
             handler.Handle(invite, f.Session(a));
             handler.Handle(new ChatCmdMessage { Identity = b.Identity, Command = ".team accept" }, f.Session(b));

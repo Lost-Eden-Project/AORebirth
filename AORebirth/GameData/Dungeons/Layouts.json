@@ -7,6 +7,9 @@
     "Floors": 1
   },
   "rkTeam": {
+    // 128 m like the mothership: style 324/351 rooms reach 100 m above their floor, and at 64 m the client's room
+    // lookup kept a lower floor's tall room after a lift landed the team on the floor above.
+    "FloorHeight": 128,
     "Bands": [
       { "Quality": [1, 24], "Styles": [321, 324, 341, 351], "Rooms": [8, 12], "Floors": 2 },
       { "Quality": [25, 99], "Styles": [321, 324, 341, 351], "Rooms": [9, 14], "Floors": 3 },
