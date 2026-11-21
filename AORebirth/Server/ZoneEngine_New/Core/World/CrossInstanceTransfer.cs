@@ -50,7 +50,7 @@ namespace ZoneEngine_New.Core.World
 
         /// <summary>Runs on the player's own playfield tick. False when the move could not start.</summary>
         public bool Start(Player player, int destinationPlayfield, Vector3 landing, Quaternion heading,
-            ArrivalKind arrival = ArrivalKind.ArrivalZone, int exitProxyDoor = 0)
+            ArrivalKind arrival = ArrivalKind.ArrivalZone, int exitProxyDoor = 0, PlayfieldSpawnState? spawnState = null)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(landing);
@@ -101,7 +101,7 @@ namespace ZoneEngine_New.Core.World
                 TransferReply? reply;
                 try
                 {
-                    reply = await _world.BeginTransferAsync(characterId, cookie1, cookie2, envelope).ConfigureAwait(false);
+                    reply = await _world.BeginTransferAsync(characterId, cookie1, cookie2, envelope, spawnState).ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {

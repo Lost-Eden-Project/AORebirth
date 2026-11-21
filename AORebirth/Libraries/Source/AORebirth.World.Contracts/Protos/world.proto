@@ -417,6 +417,26 @@ message TransferRequest {
   fixed32 cookie1 = 3;
   fixed32 cookie2 = 4;
   TransferEnvelope envelope = 5;
+  // During a zone swap hand-over: the spawn state of the playfield being handed over, for the instance taking it.
+  PlayfieldSpawnState spawn_state = 6;
+}
+
+// A playfield's spawn points that are not in their starting state (killed, waiting to respawn, or gone for good), so
+// the instance taking the playfield over in a zone swap does not bring them all back at once. Everything else
+// (living NPCs, their health and positions) starts fresh.
+message PlayfieldSpawnState {
+  int32 playfield_id = 1;
+  int64 captured_unix_ms = 2;
+  repeated SpawnPointState points = 3;
+}
+
+message SpawnPointState {
+  // The spawn point's key (hash, position and ordinal), the same on every instance running the same GameData.
+  string key = 1;
+  // When it may spawn again.
+  int64 next_spawn_unix_ms = 2;
+  // A one-shot point (quest dungeon) that was killed: it never spawns again.
+  bool retired = 3;
 }
 
 message TransferReply {
@@ -498,6 +518,8 @@ message ResolveReply {
   string instance = 3;
   Endpoint endpoint = 4;
   uint64 assignment = 5;
+  // To the instance a zone swap just handed this playfield to: the spawn state the leaving instance had.
+  PlayfieldSpawnState spawn_state = 6;
 }
 
 message PlayfieldReleaseRequest {

@@ -268,6 +268,8 @@ namespace ZoneEngine_New.Core.Playfield
             LoadSpawns(locality.Grid);
             LoadDistrictSpawns(locality.Grid);
             AssignSpawnPointKeys();
+            // Before the cells attach (and anything spawns): a zone swap's carried-over kills and timers.
+            TakeInheritedState();
             locality.AttachHashSpawns(
                 _pointsByCell.Keys,
                 ScriptedSpawnCells(),
@@ -438,15 +440,11 @@ namespace ZoneEngine_New.Core.Playfield
 
         private void AssignSpawnPointKeys()
         {
-            var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
             var keys = new List<string>(_allPoints.Count);
             foreach (HashSpawnPoint point in _allPoints)
             {
-                Vector3 centre = point.Sites[0].Centre;
-                string baseKey = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, 1);
-                ordinals[baseKey] = ordinals.TryGetValue(baseKey, out int seen) ? seen + 1 : 1;
-                point.Key = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, ordinals[baseKey]);
-                keys.Add(point.Key);
+                AssignKey(point);
+                keys.Add(point.Key!);
             }
 
             _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.ReportUnmatchedSpawnPoints(_playfield.ResourceId, keys);
@@ -675,6 +673,89 @@ namespace ZoneEngine_New.Core.Playfield
 
             list.Add(point);
             AddPoint(point);
+            // Placed after load, in the same order on every instance building the same dungeon: keyed the same way, so a
+            // zone swap's spawn state finds it.
+            AssignKey(point);
+            ApplyInheritedState(point);
+            return true;
+        }
+
+        // ------------------------------------------------------------------ zone swap: spawn state carried across
+
+        // Ordinals per base key, shared by load-time and placed points so stacked points number the same everywhere.
+        private readonly Dictionary<string, int> _keyOrdinals = new(StringComparer.Ordinal);
+
+        // What the instance that handed this playfield over had, by point key; applied as each point appears.
+        private Dictionary<string, AORebirth.World.Contracts.V1.SpawnPointState>? _inherited;
+
+        private void AssignKey(HashSpawnPoint point)
+        {
+            Vector3 centre = point.Sites[0].Centre;
+            string baseKey = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, 1);
+            _keyOrdinals[baseKey] = _keyOrdinals.TryGetValue(baseKey, out int seen) ? seen + 1 : 1;
+            point.Key = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, _keyOrdinals[baseKey]);
+        }
+
+        /// <summary>
+        /// The points not in their starting state, for a zone swap hand-over: killed ones with when they may spawn again,
+        /// and one-shot ones gone for good. Living NPCs are left out; they start fresh where the playfield is taken over.
+        /// Playfield thread.
+        /// </summary>
+        internal AORebirth.World.Contracts.V1.PlayfieldSpawnState CaptureHandOverState()
+        {
+            var state = new AORebirth.World.Contracts.V1.PlayfieldSpawnState
+            {
+                PlayfieldId = _playfield.Identity.Instance,
+                CapturedUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+            foreach (HashSpawnPoint point in _allPoints)
+            {
+                if (point.Key == null || !(point.Retired || (point.HasSpawned && point.State == HashSpawnState.Dead)))
+                    continue;
+                DateTime next = point.NextSpawnTime.Kind == DateTimeKind.Utc ? point.NextSpawnTime : point.NextSpawnTime.ToUniversalTime();
+                state.Points.Add(new AORebirth.World.Contracts.V1.SpawnPointState
+                {
+                    Key = point.Key,
+                    NextSpawnUnixMs = next == DateTime.MaxValue ? long.MaxValue : new DateTimeOffset(next).ToUnixTimeMilliseconds(),
+                    Retired = point.Retired
+                });
+            }
+
+            return state;
+        }
+
+        /// <summary>Takes the spawn state World handed this instance for the playfield (zone swap), and applies it.</summary>
+        private void TakeInheritedState()
+        {
+            AORebirth.World.Contracts.V1.PlayfieldSpawnState? state =
+                _playfield.GetService<PlayfieldManager>()?.World?.TakeHandedSpawnState(_playfield.Identity.Instance);
+            if (state == null || state.Points.Count == 0)
+                return;
+            _inherited = new Dictionary<string, AORebirth.World.Contracts.V1.SpawnPointState>(StringComparer.Ordinal);
+            foreach (AORebirth.World.Contracts.V1.SpawnPointState point in state.Points)
+                if (!string.IsNullOrEmpty(point.Key))
+                    _inherited[point.Key] = point;
+            int applied = 0;
+            foreach (HashSpawnPoint point in _allPoints)
+                if (ApplyInheritedState(point))
+                    applied++;
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Spawn state carried over playfield={0} points={1} applied={2} (zone swap)", _playfield.Identity.Instance,
+                state.Points.Count, applied));
+        }
+
+        private bool ApplyInheritedState(HashSpawnPoint point)
+        {
+            if (_inherited == null || point.Key == null || !_inherited.Remove(point.Key, out var carried))
+                return false;
+            // Dead as it was: it waits out the rest of its timer and then rolls its respawn chance like any respawn.
+            point.State = HashSpawnState.Dead;
+            point.HasSpawned = true;
+            point.NextSpawnTime = carried.NextSpawnUnixMs >= DateTimeOffset.MaxValue.ToUnixTimeMilliseconds()
+                ? DateTime.MaxValue
+                : DateTimeOffset.FromUnixTimeMilliseconds(carried.NextSpawnUnixMs).UtcDateTime;
+            if (carried.Retired)
+                point.Retired = true;
             return true;
         }
 

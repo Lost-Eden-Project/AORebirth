@@ -785,6 +785,7 @@ namespace WorldEngine.State
                     || !LeaseTokens.SameAs(lease.Token, request.Token) || lease.State != LeaseState.InPlay)
                     return TransferRefused("stale_lease");
                 HandPlayfieldOnTransfer(instance, request.Envelope.DestinationPlayfield, now);
+                KeepHandedSpawnState(instance, request, now);
                 ServiceInstance? target = ResolveCore(request.Envelope.DestinationPlayfield, null, now);
                 if (target == null) return TransferRefused("no_zone_available");
                 if (ReferenceEquals(target, instance)) return TransferRefused("same_instance");
@@ -842,13 +843,18 @@ namespace WorldEngine.State
                 if (Recovering(now)) return new ResolveReply { Accepted = false, Reason = "world_recovering" };
                 ServiceInstance? target = ResolveCore(request.PlayfieldId, request.Affinity, now);
                 if (target == null) return new ResolveReply { Accepted = false, Reason = "no_zone_available" };
-                return new ResolveReply
+                var reply = new ResolveReply
                 {
                     Accepted = true,
                     Instance = target.Name,
                     Endpoint = target.Game!.Clone(),
                     Assignment = _playfields[request.PlayfieldId].Assignment
                 };
+                // The instance a zone swap handed this playfield to, about to build it: what the leaving one had.
+                if (string.Equals(target.Name, request.Affinity, StringComparison.OrdinalIgnoreCase)
+                    && TakeHandedSpawnState(request.PlayfieldId, request.Affinity) is PlayfieldSpawnState spawns)
+                    reply.SpawnState = spawns;
+                return reply;
             }
         }
 

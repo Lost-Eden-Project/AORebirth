@@ -29,6 +29,12 @@ namespace WorldEngine.State
 
         ZoneSwap? _swap;
 
+        /// <summary>How long a handed-over playfield's spawn state waits for the taking instance to build it.</summary>
+        const long SpawnStateLifetimeMs = 5 * 60_000;
+
+        // Spawn state the leaving instance sent with a hand-over's moves, by playfield, until the taking instance builds it.
+        readonly Dictionary<int, (PlayfieldSpawnState State, string For, long ExpiresMs)> _handedSpawnState = new();
+
         public enum SwapPhase
         {
             AwaitingRegistration,
@@ -393,6 +399,7 @@ namespace WorldEngine.State
         /// <summary>Called from Sweep: readiness, expiry, lost instances and finished hand-overs; then the notices.</summary>
         void SweepSwap(long now)
         {
+            ExpireHandedSpawnState(now);
             if (_swap is not ZoneSwap swap)
                 return;
             if (swap.Active)
@@ -616,6 +623,38 @@ namespace WorldEngine.State
             if (!swap.Handing.Remove(playfieldId) && !swap.Adopted)
                 return;
             _playfields[playfieldId] = new PlayfieldAssignment(playfieldId, swap.HandingTo, ++_assignment, now);
+        }
+
+        /// <summary>
+        /// Keeps the spawn state a hand-over move carried (only from the leaving instance, only for the playfield being
+        /// moved into) for the taking instance, which gets it when it resolves that playfield to build it.
+        /// </summary>
+        void KeepHandedSpawnState(ServiceInstance instance, TransferRequest request, long now)
+        {
+            PlayfieldSpawnState? state = request.SpawnState;
+            if (state == null || _swap is not { Active: true } swap
+                || swap.Phase is not (SwapPhase.HandingOff or SwapPhase.RollingBack)
+                || !string.Equals(swap.HandingFrom, instance.Name, StringComparison.OrdinalIgnoreCase)
+                || state.PlayfieldId != request.Envelope.DestinationPlayfield)
+                return;
+            if (!_handedSpawnState.ContainsKey(state.PlayfieldId))
+                _handedSpawnState[state.PlayfieldId] = (state, swap.HandingTo, now + SpawnStateLifetimeMs);
+        }
+
+        /// <summary>The kept spawn state of <paramref name="playfieldId"/>, once, when the instance it was kept for asks.</summary>
+        PlayfieldSpawnState? TakeHandedSpawnState(int playfieldId, string? asking)
+        {
+            if (string.IsNullOrEmpty(asking) || !_handedSpawnState.TryGetValue(playfieldId, out var kept)
+                || !string.Equals(kept.For, asking, StringComparison.OrdinalIgnoreCase))
+                return null;
+            _handedSpawnState.Remove(playfieldId);
+            return kept.State;
+        }
+
+        void ExpireHandedSpawnState(long now)
+        {
+            foreach (int playfield in _handedSpawnState.Where(p => now >= p.Value.ExpiresMs).Select(p => p.Key).ToList())
+                _handedSpawnState.Remove(playfield);
         }
 
         /// <summary>The hand-over ended: whatever is still assigned to the leaving instance goes over too.</summary>

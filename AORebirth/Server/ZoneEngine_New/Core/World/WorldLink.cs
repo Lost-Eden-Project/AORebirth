@@ -250,9 +250,18 @@ namespace ZoneEngine_New.Core.World
                 // Given back (a swap rolled back): this instance runs it again.
                 _handedOver.TryRemove(playfieldId, out _);
                 _playfields[playfieldId] = reply.Assignment;
+                // Handed over by a zone swap: the spawn state the leaving instance had, for the build about to start.
+                if (reply.SpawnState != null)
+                    _handedSpawnState[playfieldId] = reply.SpawnState;
             }
             return reply;
         }
+
+        readonly ConcurrentDictionary<int, PlayfieldSpawnState> _handedSpawnState = new();
+
+        /// <summary>The spawn state a zone swap handed over with <paramref name="playfieldId"/>, once; null when none.</summary>
+        public PlayfieldSpawnState? TakeHandedSpawnState(int playfieldId)
+            => _handedSpawnState.TryRemove(playfieldId, out PlayfieldSpawnState? state) ? state : null;
 
         /// <summary>True when World assigned <paramref name="playfieldId"/> here (known locally, no call).</summary>
         public bool HostsPlayfield(int playfieldId) => _playfields.ContainsKey(playfieldId) && !_handedOver.ContainsKey(playfieldId);
@@ -281,14 +290,15 @@ namespace ZoneEngine_New.Core.World
 
         // ------------------------------------------------------------------------------------------ transfers
 
-        public async Task<TransferReply> BeginTransferAsync(int characterId, uint cookie1, uint cookie2, TransferEnvelope envelope)
+        public async Task<TransferReply> BeginTransferAsync(int characterId, uint cookie1, uint cookie2, TransferEnvelope envelope,
+            PlayfieldSpawnState? spawnState = null)
         {
             LeaseToken? token = TokenOf(characterId);
             if (token == null) return new TransferReply { Accepted = false, Reason = "no_lease" };
             if (!IsServing) return new TransferReply { Accepted = false, Reason = "world_unavailable" };
-            return await _channel.Leases.BeginTransferAsync(
-                new TransferRequest { CharacterId = characterId, Token = token, Cookie1 = cookie1, Cookie2 = cookie2, Envelope = envelope },
-                _channel.Call(CallTimeout)).ResponseAsync.ConfigureAwait(false);
+            var request = new TransferRequest { CharacterId = characterId, Token = token, Cookie1 = cookie1, Cookie2 = cookie2, Envelope = envelope };
+            if (spawnState != null) request.SpawnState = spawnState;
+            return await _channel.Leases.BeginTransferAsync(request, _channel.Call(CallTimeout)).ResponseAsync.ConfigureAwait(false);
         }
 
         /// <summary>World moved the lease to the destination: this instance no longer owns the character.</summary>

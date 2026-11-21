@@ -134,6 +134,17 @@ namespace ZoneEngine_New.Core.World
                         {
                             if (stop.IsCancellationRequested)
                                 return;
+                            // What is dead here goes with the moves, so the new instance does not bring it all back.
+                            PlayfieldSpawnState? spawns = null;
+                            try
+                            {
+                                spawns = playfield.GetService<HashSpawnSystem>()?.CaptureHandOverState();
+                            }
+                            catch (Exception exception)
+                            {
+                                _logger.Error(exception, "Zone swap: spawn state of playfield " + id.ToString(CultureInfo.InvariantCulture) + " not captured");
+                            }
+
                             foreach (Player player in players)
                             {
                                 if (!ReferenceEquals(player.Playfield, playfield))
@@ -141,7 +152,7 @@ namespace ZoneEngine_New.Core.World
                                 if (logout)
                                     LogOut(playfield, player, loggedOut, LoggedOut);
                                 else
-                                    Move(manager, playfield, player, dungeon, loggedOut);
+                                    Move(manager, playfield, player, dungeon, loggedOut, spawns);
                             }
                         });
                     }
@@ -169,7 +180,8 @@ namespace ZoneEngine_New.Core.World
         }
 
         /// <summary>On the playfield tick: moves one player where they stand, or logs them out when that is not possible.</summary>
-        void Move(PlayfieldManager manager, PlayfieldInstance playfield, Player player, bool dungeon, ConcurrentDictionary<int, byte> loggedOut)
+        void Move(PlayfieldManager manager, PlayfieldInstance playfield, Player player, bool dungeon, ConcurrentDictionary<int, byte> loggedOut,
+            PlayfieldSpawnState? spawns)
         {
             if (player.Session is not IZoneSession session || player.ConnectionPhase == PlayerConnectionPhase.LinkDead || player.IsDead)
             {
@@ -183,7 +195,7 @@ namespace ZoneEngine_New.Core.World
             CrossInstanceTransfer? transfer = manager.CrossInstance;
             var landing = new AORebirth.Core.Vector.Vector3(player.Position.x, player.Position.y, player.Position.z);
             if (transfer == null || !transfer.Start(player, playfield.Identity.Instance, landing, player.Rotation,
-                dungeon ? ArrivalKind.ArrivalDungeon : ArrivalKind.ArrivalZone))
+                dungeon ? ArrivalKind.ArrivalDungeon : ArrivalKind.ArrivalZone, spawnState: spawns))
                 LogOut(playfield, player, loggedOut, LoggedOut);
         }
 
