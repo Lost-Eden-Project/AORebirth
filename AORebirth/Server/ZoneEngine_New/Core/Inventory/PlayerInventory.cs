@@ -30,6 +30,9 @@ namespace ZoneEngine_New.Core.Inventory
         private readonly Dictionary<int, Identity> _handleToLoot = new();
         private int _nextClientHandle = 1;
         private readonly Dictionary<int, DirtyEntry> _dirty = new();
+        // Items whose row a transaction queued in this character's lane decides and has not written yet (inserted, or
+        // never written): a dirty entry for one waits in _dirty until that transaction runs (see NoteRowQueued, TakeDirty).
+        private readonly Dictionary<int, int> _rowsQueued = new();
         private readonly object _dirtyGate = new();
         private static long s_dirtySequence;
 
@@ -924,6 +927,46 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
+        /// A transaction queued in this character's lane, not run yet, decides the row of <paramref name="instanceId"/>
+        /// from what the tick saw when it was planned: it inserts the row of an item that had none (the item counts as
+        /// persisted from now on), moves a stored row, or leaves a never-stored item unwritten (handed in, sold, deleted,
+        /// merged away). Until every such transaction has called <see cref="NoteRowCommitted"/> (claims are counted),
+        /// dirty entries for the item stay pending, because a lane action queued ahead of the transaction takes the dirty
+        /// inventory when it runs. Taking them there would write ahead of the plan:
+        /// <list type="bullet">
+        /// <item>an update of a row that does not exist yet (the store refuses it and the character is quarantined);</item>
+        /// <item>an insert for an item the plan then drops (a row stays on the player's page for an item they no longer hold);</item>
+        /// <item>a move newer than the plan, which the plan's older place then overwrites.</item>
+        /// </list>
+        /// Use <see cref="QueuedRowClaim"/>, under the persistence gate, in the same section that plans the rows and
+        /// queues the transaction.
+        /// </summary>
+        public void NoteRowQueued(int instanceId)
+        {
+            if (instanceId <= 0)
+                return;
+            lock (_dirtyGate)
+                _rowsQueued[instanceId] = _rowsQueued.GetValueOrDefault(instanceId) + 1;
+        }
+
+        /// <summary>
+        /// One queued transaction that decides the row of <paramref name="instanceId"/> has run, or is the one about to
+        /// take the dirty inventory. When no other claim is left, the item's dirty entries are taken again.
+        /// </summary>
+        public void NoteRowCommitted(int instanceId)
+        {
+            lock (_dirtyGate)
+            {
+                if (!_rowsQueued.TryGetValue(instanceId, out int claims))
+                    return;
+                if (claims <= 1)
+                    _rowsQueued.Remove(instanceId);
+                else
+                    _rowsQueued[instanceId] = claims - 1;
+            }
+        }
+
+        /// <summary>
         /// Hard-flush dirty inventory. Inserts newly looted (unpersisted) rows and updates
         /// existing locations in one repository transaction.
         /// </summary>
@@ -950,8 +993,9 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>
         /// Takes the pending entries and resolves each to an INSERT or an UPDATE. Callers hold the player's
         /// persistence gate, so no commit is in flight and <see cref="Item.IsPersisted"/> is exact here: a retired
-        /// item with a row is moved to its graveyard, a retired item without one is dropped. Null when nothing is
-        /// left to write.
+        /// item with a row is moved to its graveyard, a retired item without one is dropped. An entry for an item whose
+        /// row a queued transaction decides (<see cref="NoteRowQueued"/>) is not taken: it stays pending until that
+        /// transaction runs, so whatever takes it writes behind it. Null when nothing is left to write.
         /// </summary>
         public InventoryDirtyFlush? TakeDirty()
         {
@@ -961,9 +1005,24 @@ namespace ZoneEngine_New.Core.Inventory
                 if (_dirty.Count == 0)
                     return null;
 
-                pending = new DirtyEntry[_dirty.Count];
-                _dirty.Values.CopyTo(pending, 0);
-                _dirty.Clear();
+                if (_rowsQueued.Count == 0)
+                {
+                    pending = new DirtyEntry[_dirty.Count];
+                    _dirty.Values.CopyTo(pending, 0);
+                    _dirty.Clear();
+                }
+                else
+                {
+                    var ready = new List<DirtyEntry>(_dirty.Count);
+                    foreach (DirtyEntry entry in _dirty.Values)
+                        if (!_rowsQueued.ContainsKey(entry.InstanceId))
+                            ready.Add(entry);
+                    if (ready.Count == 0)
+                        return null;
+                    foreach (DirtyEntry entry in ready)
+                        _dirty.Remove(entry.InstanceId);
+                    pending = [.. ready];
+                }
             }
 
             var inserts = new List<ItemInstanceRecord>();

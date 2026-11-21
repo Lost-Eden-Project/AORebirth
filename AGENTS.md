@@ -350,6 +350,41 @@ stored hashes, generated inventories, generated reports, or unit-test
 expectations. Treat those failures as diagnostic information unless the task
 explicitly establishes the test or fixture as an authoritative contract.
 
+## Tests ship with every player-facing change
+
+Every change a player can notice (gameplay, dialogue, quests, missions, trade,
+inventory, persistence, login, chat) adds tests in the same commit, in
+`AORebirth/Server/ZoneEngine_New.Tests`, that drive the player's path the way
+the engine runs it (the dialogue line, the trade, the quest step, the save on
+its lane and under its gate) and fail if the player would be hurt: an
+exception, a quarantine or disconnect, a lost item, a missing reward or
+mission, a failed playfield tick, a lost save. A fix for a live defect first
+reproduces that defect in a test, then makes it pass. Run the new tests before
+reporting the change done; they are part of the change, not a broader suite,
+so the rule above about not running unrelated suites does not apply to them.
+A change without such tests is not finished.
+
+## Exploit review (MANDATORY)
+
+Every change must consider the exploits it could open or widen before it is
+built. Duplication exploits are never permitted: no change may let a player end
+up with more items, stack counts, credits, currency, XP, rewards or quest
+completions than the design grants, whether by repeating an action, racing two
+actions, disconnecting, relogging, trading, or any ordering of queued writes.
+
+For any change that touches inventory, trade, shop, loot, quest rewards,
+persistence or the write-behind lanes:
+
+- state which exploit paths were considered (duplicate, loss, stale state,
+  replay, cross-player);
+- show that storage ends equal to memory for every ordering of the queued
+  writes, not only the order the happy path produces;
+- add or extend a test that fails on the exploit (the lane ordering soak and
+  the reviewed-site guards in
+  `AORebirth/Server/ZoneEngine_New.Tests/TradeQueuedInsertOrderTests.cs`);
+- treat an exploit found while implementing or testing as a blocker for the
+  task, not a note for later.
+
 ## Gameplay content boundary
 
 Gameplay and content data must remain data-driven. NPC-specific data, stats,

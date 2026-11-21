@@ -207,8 +207,15 @@ namespace ZoneEngine_New.Core.Inventory
             ArgumentNullException.ThrowIfNull(expectedSource);
             int characterId = player.Identity.Instance;
             var location = new ItemLocationUpdate(item.InstanceId, (int)container.Type, container.Instance, placement);
-            _flush.Enqueue(player, () => _persistence.Persist(
-                new InventoryMutationBatch(characterId, [], [location], [], []) { ExpectedSources = [expectedSource] }));
+            // A later move of the item waits for this write: lane work queued ahead of it must not store that move
+            // first, or this older place would overwrite it.
+            var claim = new QueuedRowClaim([player.Inventory], [item.InstanceId]);
+            _flush.Enqueue(player, () =>
+            {
+                _persistence.Persist(new InventoryMutationBatch(characterId, [], [location], [], []) { ExpectedSources = [expectedSource] });
+                lock (player.PersistenceGate)
+                    claim.Release();
+            });
         }
 
         /// <summary>
@@ -349,12 +356,15 @@ namespace ZoneEngine_New.Core.Inventory
                 foreach (PlannedRow row in rows)
                     if (!row.Retired && !row.HadRow)
                         row.Item.IsPersisted = true; // Its insert is queued below, ahead of any later move or retire.
+                // The transaction queued below decides these rows: lane work queued ahead of it leaves their dirty
+                // entries for it.
+                var claim = new QueuedRowClaim([player.Inventory], rows.Select(row => row.Item.InstanceId));
 
                 var writes = new InventoryWriteSet();
                 int characterId = player.Identity.Instance;
                 IReadOnlyList<StatRecord> stats = finalStats ?? [];
                 IReadOnlyList<ItemInstanceRecord> sources = expectedSources ?? [];
-                _flush.Enqueue(player, () => Persist(player, characterId, writes, rows, planSequence, stats, sources, emptyContainersBeforeRetire));
+                _flush.Enqueue(player, () => Persist(player, characterId, writes, rows, claim, planSequence, stats, sources, emptyContainersBeforeRetire));
             }
             return true;
         }
@@ -363,11 +373,14 @@ namespace ZoneEngine_New.Core.Inventory
         /// The queued transaction, in the player's lane. <paramref name="writes"/> keeps what was taken across a retry
         /// of a transient failure, so dirty entries taken by a failed attempt are written by the next.
         /// </summary>
-        void Persist(Player player, int characterId, InventoryWriteSet writes, PlannedRow[] rows, long planSequence,
-            IReadOnlyList<StatRecord> finalStats, IReadOnlyList<ItemInstanceRecord> expectedSources, int[] emptyContainersBeforeRetire)
+        void Persist(Player player, int characterId, InventoryWriteSet writes, PlannedRow[] rows, QueuedRowClaim claim,
+            long planSequence, IReadOnlyList<StatRecord> finalStats, IReadOnlyList<ItemInstanceRecord> expectedSources,
+            int[] emptyContainersBeforeRetire)
         {
             lock (player.PersistenceGate)
             {
+                // The plan's rows are decided with what is taken now: their dirty entries are folded in.
+                claim.Release();
                 PlayerInventory.InventoryDirtyFlush? taken = player.Inventory.TakeDirty();
                 taken?.MarkNewlyPersisted();
                 writes.Fold(taken, player.DrainDirtyUploadedNanos());

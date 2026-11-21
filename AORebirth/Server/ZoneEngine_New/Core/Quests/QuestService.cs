@@ -311,8 +311,19 @@ namespace ZoneEngine_New.Core.Quests
 
             if (template.Dungeon != null)
             {
-                string? refused = template.Dungeon.Problem(template.Action)
-                    ?? (DungeonAssigner == null ? "Mission dungeons are unavailable." : DungeonAssigner(player, template, quality));
+                string? refused = template.Dungeon.Problem(template.Action);
+                if (refused == null && System.Threading.Monitor.IsEntered(player.PersistenceGate))
+                {
+                    if (TryDeferDungeon(player, template, quality))
+                    {
+                        result = string.Format(CultureInfo.InvariantCulture, "Dungeon quest {0} ({1}) queued for {2}.", template.Hash, template.Name, player.Name);
+                        return true;
+                    }
+
+                    refused = "Mission acceptance is unavailable right now.";
+                }
+
+                refused ??= DungeonAssigner == null ? "Mission dungeons are unavailable." : DungeonAssigner(player, template, quality);
                 if (refused != null)
                 {
                     _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Dungeon quest {0} not given char={1}: {2}",
@@ -328,6 +339,67 @@ namespace ZoneEngine_New.Core.Quests
             Assign(player, log, template.Hash, QuestSource.Template, template, expiresAtUtc: null, acgJson: null);
             result = string.Format(CultureInfo.InvariantCulture, "Gave quest {0} ({1}) to {2}.", template.Hash, template.Name, player.Name);
             return true;
+        }
+
+        /// <summary>
+        /// A dungeon quest given while the caller holds the player's persistence gate: a Knubot line applies its effects
+        /// under it, and a completed quest gives its NextStep under it. Accepting a dungeon quest hard-flushes the
+        /// player's write-behind lane before it takes that gate (lane first, then gate), so the give is queued on the
+        /// player's playfield and runs once the gate is released: in the same drain when the caller is itself inbound
+        /// work (a dialog answer), else on the next tick. Never run inline: <see cref="Playfield.Playfield.DispatchPlayerProjection"/>
+        /// would run it here, still under the gate. False when the player has no playfield or it takes no more work.
+        /// </summary>
+        bool TryDeferDungeon(Player player, QuestTemplate template, int? quality)
+        {
+            if (player.Playfield is not ZoneEngine_New.Core.Playfield.Playfield playfield)
+                return false;
+
+            return playfield.TryEnqueue(new ZoneEngine_New.Core.Playfield.PlayerProjectionInboundItem
+            {
+                Player = player,
+                Projection = () => GiveDeferredDungeon(player, template, quality)
+            });
+        }
+
+        /// <summary>
+        /// Runs a deferred dungeon give on the player's tick, outside their gate. Every check is made again: a quest
+        /// that became active meanwhile (a second answer) is skipped, so it is never given twice. A refusal reaches the
+        /// player as a message, since the line that gave it has already been said.
+        /// </summary>
+        void GiveDeferredDungeon(Player player, QuestTemplate template, int? quality)
+        {
+            string? refused;
+            if (System.Threading.Monitor.IsEntered(player.PersistenceGate))
+                // Never queued again: a drain that somehow runs under the gate would requeue it forever.
+                refused = "Mission acceptance is unavailable right now.";
+            else if (GetLog(player).TryFind(template.Hash, out PlayerQuest? held) && held.IsActive)
+            {
+                _logger.Info(string.Format(CultureInfo.InvariantCulture, "Deferred dungeon quest {0} skipped char={1}: already active",
+                    template.Hash, player.Identity.Instance));
+                return;
+            }
+            else
+            {
+                try
+                {
+                    refused = DungeonAssigner == null ? "Mission dungeons are unavailable." : DungeonAssigner(player, template, quality);
+                }
+                catch (Exception exception)
+                {
+                    // Inbound work: an escape would fail the whole playfield heartbeat.
+                    _logger.Error(exception, string.Format(CultureInfo.InvariantCulture, "Deferred dungeon quest {0} failed char={1}",
+                        template.Hash, player.Identity.Instance));
+                    refused = "Mission acceptance is unavailable right now.";
+                }
+            }
+
+            if (refused == null)
+                return;
+
+            _logger.Warn(string.Format(CultureInfo.InvariantCulture, "Deferred dungeon quest {0} not given char={1}: {2}",
+                template.Hash, player.Identity.Instance, refused));
+            if (player.Session != null)
+                ClientFeedback.Send(player, refused);
         }
 
         /// <summary>

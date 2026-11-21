@@ -62,6 +62,11 @@
     <Compile Include="DoorStateTests.cs" />
     <Compile Include="DoorNetworkIntegrationTests.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(PersistenceLaneFocusedTests)' == 'true'">
+    <!-- Self-contained: real flush lanes, trade and inventory-action services against an in-memory store. -->
+    <Compile Remove="@(Compile)" />
+    <Compile Include="TradeQueuedInsertOrderTests.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(DailyLoginFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />
     <Compile Include="TestDoubles.cs" />

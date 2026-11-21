@@ -99,6 +99,7 @@ public sealed class NpcScriptRunner
 
     // CastNano RandomNearby: the locality query's buffer, reused across casts.
     List<NpcCharacter>? _nearby;
+    List<Player>? _nearbyPlayers;
 
     // CastNano with Warp: the cast whose landing moves its recipient to the NPC's feet.
     int _pendingWarpNano;
@@ -631,6 +632,10 @@ public sealed class NpcScriptRunner
 
                 case ScriptOpCode.Signal:
                     DoSignal(op);
+                    break;
+
+                case ScriptOpCode.CompleteQuest:
+                    DoCompleteQuest(op);
                     break;
 
                 case ScriptOpCode.CastNano:
@@ -1512,6 +1517,36 @@ public sealed class NpcScriptRunner
                 continue;
 
             other.Scripts.Raise(NpcScriptTrigger.Signal, op.C);
+        }
+
+        nearby.Clear();
+    }
+
+    /// <summary>
+    /// Completes the op's Quests.json step, as an NPC turn-in does (<see cref="Quests.QuestService.TryComplete"/>:
+    /// reward, mission bit, NextStep), for every living player from the locality query within B metres edge to edge
+    /// who holds it active; anyone else is left alone. The locality query is this playfield instance's own, so another
+    /// instance's players are never reached. A Death handler may complete; any other handler stops once the NPC is dead.
+    /// </summary>
+    void DoCompleteQuest(ScriptOp op)
+    {
+        Playfield? playfield = _npc.Playfield;
+        if (playfield == null || (_npc.IsDead && !InDeathHandler) || op.A < 0 || op.A >= _program.Strings.Length
+            || playfield.GetService<Quests.QuestService>() is not Quests.QuestService quests)
+            return;
+
+        string hash = _program.Strings[op.A];
+        List<Player> nearby = _nearbyPlayers ??= new List<Player>();
+        playfield.GetRequiredService<PlayfieldLocality>().CollectNearby(_npc, op.B, nearby);
+        for (int i = 0; i < nearby.Count; i++)
+        {
+            Player player = nearby[i];
+            if (player.IsDead || !ReferenceEquals(player.Playfield, playfield) || _npc.GetEdgeDistanceTo(player) > op.B)
+                continue;
+            if (!quests.GetLog(player).TryFind(hash, out Quests.PlayerQuest? held) || !held.IsActive)
+                continue;
+
+            quests.TryComplete(player, hash, out _);
         }
 
         nearby.Clear();

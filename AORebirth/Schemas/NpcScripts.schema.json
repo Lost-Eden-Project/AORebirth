@@ -248,6 +248,16 @@
             "Event": { "type": "integer", "minimum": 1, "description": "The event number the receivers' On: Signal handlers filter on." }
           }
         },
+        "CompleteQuest": {
+          "type": "object",
+          "description": "Completes the Quests.json step Hash, as an NPC turn-in does (reward, mission bit, NextStep given), for every living player of the same playfield instance within Radius metres, edge to edge, who holds it active. Players without the step are left alone. Does not block. A Death handler may complete; any other handler does nothing once the NPC is dead.",
+          "additionalProperties": false,
+          "required": ["Hash", "Radius"],
+          "properties": {
+            "Hash": { "type": "string", "minLength": 1, "description": "A Quests.json quest hash; an unknown hash fails to compile." },
+            "Radius": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Metres, edge to edge, from the NPC." }
+          }
+        },
         "Despawn": { "type": "boolean", "description": "The NPC leaves the world as a GM despawn would." },
         "SetStat": {
           "type": "object",

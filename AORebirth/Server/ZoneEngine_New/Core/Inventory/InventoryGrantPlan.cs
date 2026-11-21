@@ -34,6 +34,7 @@ namespace ZoneEngine_New.Core.Inventory
         readonly Container[] _pages;
         readonly int[] _slots;
         bool _published;
+        QueuedRowClaim? _claim;
 
         InventoryGrantPlan(Player player, Item[] items, Container[] pages, int[] slots)
         {
@@ -168,6 +169,7 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 foreach (Item item in _items)
                     item.IsPersisted = true;
+                _claim?.Release();
             }
         }
 
@@ -179,6 +181,10 @@ namespace ZoneEngine_New.Core.Inventory
                 if (_pages[i].Content.ContainsKey(_slots[i]) || _items[i].InstanceId != Rows[i].InstanceId || _items[i].IsPersisted)
                     throw new InvalidOperationException("Mission inventory grant plan changed before publication.");
             _published = true;
+            // Each item's move into its slot waits for the queued insert: a lane action queued ahead of it must not
+            // write that move as an update of a row that does not exist yet.
+            if (!committed)
+                _claim = new QueuedRowClaim([_player.Inventory], _items.Select(item => item.InstanceId));
             for (int i = 0; i < _items.Length; i++)
             {
                 _pages[i].Add(_slots[i], _items[i]);

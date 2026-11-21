@@ -862,6 +862,23 @@ disposable MySQL fixture, accepts no database connection or engine arguments,
 and checks actual creation/rollback without starting backend engines or reading
 application database settings. Default test configurations are unchanged.
 
+## Persistence Lane Ordering Tests
+
+Required for any change to inventory, trade, shop, loot, quest rewards,
+persistence or the write-behind lanes (see "Exploit review" in `AGENTS.md`):
+
+```cmd
+cmd /d /c dotnet test AORebirth\Server\ZoneEngine_New.Tests\ZoneEngine_New.Tests.csproj --configuration Debug --nologo -p:PersistenceLaneFocusedTests=true
+```
+
+Self-contained: real flush lanes, `TradeService` and `InventoryActionService`
+against an in-memory store that refuses what MySQL refuses. It holds the named
+ordering cases, a randomized interleaving soak (storage must end equal to
+memory; a failure prints the seed and steps), and two guards that fail when a
+new `Item.IsPersisted` site or a new queued lane commit appears unreviewed. A
+new queued commit that writes item rows planned on the tick must claim them
+with `QueuedRowClaim` and get a case here.
+
 ## AOtomation Messaging Tests
 
 Build and run the legacy MSTest assembly through the repo-owned wrapper:

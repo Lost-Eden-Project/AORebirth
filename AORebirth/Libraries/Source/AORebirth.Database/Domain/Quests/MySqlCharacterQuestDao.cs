@@ -518,11 +518,15 @@ namespace AORebirth.Database.Domain.Quests
                     throw new InvalidOperationException("The exact mission artifact item definition changed.");
                 if (item.ContainerType == 0)
                     return null;
-                if (!(IsCharacterItemPage(item.ContainerType) && item.ContainerInstance == artifact.ContainerInstance)
-                    && !(item.ContainerType == 0xC749 && IsCharacterItemPage(item.ParentContainerType)
-                        && item.ParentContainerInstance == artifact.ContainerInstance))
-                    throw new InvalidOperationException("The mission artifact is no longer held by its exact owner.");
-                return item;
+                bool inBag = item.ContainerType == 0xC749;
+                if (IsCharacterItemPage(item.ContainerType) && item.ContainerInstance == artifact.ContainerInstance
+                    || inBag && IsCharacterItemPage(item.ParentContainerType) && item.ParentContainerInstance == artifact.ContainerInstance)
+                    return item;
+                // Not on any character's pages: sold to a shop or handed to an NPC re-homes the row under that dynel's
+                // identity. The artifact has left play, so there is nothing to retire and the row stays as history.
+                if (!IsCharacterItemPage(item.ContainerType) && !(inBag && IsCharacterItemPage(item.ParentContainerType)))
+                    return null;
+                throw new InvalidOperationException("The mission artifact is no longer held by its exact owner.");
             }
         }
 

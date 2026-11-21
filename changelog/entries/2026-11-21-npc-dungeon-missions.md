@@ -1,0 +1,1 @@
+- Fixed: NPCs that hand out missions through dialogue, such as the Unicorn Recruiter's Alien Mothership missions, give the mission and its key again.

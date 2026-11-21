@@ -130,7 +130,14 @@ public enum ScriptOpCode : byte
     /// this one or a player's pet) within B metres, edge to edge, whose spawn or template hash is in
     /// <see cref="NpcScriptProgram.HashLists"/>[A]. Does not block; each receiver starts its handler on its own tick.
     /// </summary>
-    Signal
+    Signal,
+
+    /// <summary>
+    /// Completes the Quests.json quest step <see cref="NpcScriptProgram.Strings"/>[A], as an NPC turn-in does, for
+    /// every living player of the same playfield instance within B metres, edge to edge, who holds it active. Players
+    /// without it are left alone. Does not block.
+    /// </summary>
+    CompleteQuest
 }
 
 /// <summary>Who a <see cref="ScriptOpCode.CastNano"/> lands on.</summary>

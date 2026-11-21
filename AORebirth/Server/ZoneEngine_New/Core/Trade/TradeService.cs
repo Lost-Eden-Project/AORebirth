@@ -941,6 +941,7 @@ namespace ZoneEngine_New.Core.Trade
             public List<PlannedTradeRow> Rows { get; } = new();
             public List<TradeCharacterWrite> Characters { get; }
             public long Sequence { get; }
+            public QueuedRowClaim Claim { get; set; } = null!;
             public InventoryWriteSet FirstWrites { get; } = new();
             public InventoryWriteSet? SecondWrites { get; }
 
@@ -951,7 +952,9 @@ namespace ZoneEngine_New.Core.Trade
 
         /// <summary>
         /// Decides the trade's rows on the tick, before the deliveries are applied in memory: which items are inserted
-        /// (no row yet; they count as persisted from here on), moved, retired to a graveyard or never written.
+        /// (no row yet; they count as persisted from here on), moved, retired to a graveyard or never written. Nothing
+        /// changes until every check has passed; then the plan claims its rows (<see cref="QueuedRowClaim"/>) in both
+        /// participants, so lane work queued ahead of its transaction leaves their dirty entries for it.
         /// </summary>
         static TradePlan PlanRows(Player first, int firstCash, Player? second, int secondCash,
             List<Delivery> deliveries, IReadOnlyList<Item> retired, Identity graveyard,
@@ -974,7 +977,6 @@ namespace ZoneEngine_New.Core.Trade
                 if (delivery.MergeTarget == null)
                 {
                     plan.Rows.Add(new(TradeRowKind.Place, item, delivery.Receiver, item.IsPersisted, delivery.Page.Identity, delivery.Slot, item.StackCount));
-                    item.IsPersisted = true;
                     continue;
                 }
 
@@ -1004,6 +1006,13 @@ namespace ZoneEngine_New.Core.Trade
                     ? new(TradeRowKind.Retire, item, first, true, graveyard, item.InstanceId, 0)
                     : new(TradeRowKind.Drop, item, first, false, Identity.None, 0, 0));
             }
+
+            // Inserted by this plan's transaction: persisted to every later move or retire, whose write follows it.
+            foreach (PlannedTradeRow row in plan.Rows)
+                if (row.Kind == TradeRowKind.Place && !row.HadRow)
+                    row.Item.IsPersisted = true;
+            plan.Claim = new QueuedRowClaim(second == null ? [first.Inventory] : [first.Inventory, second.Inventory],
+                plan.Rows.Select(row => row.Item.InstanceId));
             return plan;
         }
 
@@ -1017,6 +1026,8 @@ namespace ZoneEngine_New.Core.Trade
             Player[] players = plan.Second == null ? [plan.First] : [plan.First, plan.Second];
             WithGates(plan.First, plan.Second, () =>
             {
+                // The plan's rows are decided with what is taken now: their dirty entries are folded in.
+                plan.Claim.Release();
                 foreach (Player player in players)
                 {
                     PlayerInventory.InventoryDirtyFlush? taken = player.Inventory.TakeDirty();

@@ -1234,7 +1234,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         }
 
         /// <summary>Periodic work off every playfield thread: idle dungeons, expired quests, stored-quest cleanup.</summary>
-        void Sweep()
+        internal void Sweep()
         {
             if (Interlocked.Exchange(ref _sweeping, 1) == 1)
                 return;
@@ -1264,17 +1264,16 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
                 foreach (string questId in _store.LoadExpiredQuestsWithKeys(now.Ticks, SweepBatch))
                 {
-                    GeneratedQuestRow? row = _store.LoadGenerated(questId);
-                    if (row != null && QuestDungeonParameters.TryParse(row.AcgBuildingGeneratorJson, out QuestDungeonParameters parameters))
-                        EndDungeon(questId, parameters, evict: true, row.OwnerId);
-                    else
-                        _store.EndQuestKeys(questId);
-
-                    _store.CloseCharacterQuests(questId, (int)QuestState.Expired, now.Ticks);
-
-                    // An online owner's log closes it (journal entry, "quest expired") on their own playfield.
-                    if (row != null && playfields.FindPlayer(row.OwnerId, out Player owner) && owner.Playfield is Playfield at)
-                        at.DispatchPlayerProjection(owner, () => _quests.GetLog(owner));
+                    try
+                    {
+                        EndExpiredQuest(questId, now, playfields);
+                    }
+                    catch (Exception exception)
+                    {
+                        // The batch is ordered by expiry, so one quest failing every time would otherwise hold back
+                        // every later expiry and the purge; it keeps its key links and is retried next interval.
+                        _logger.Error(exception, "Ending expired dungeon quest " + questId + " failed; the sweep retries it next interval");
+                    }
                 }
 
                 _store.PurgeEndedGeneratedQuests(now.Ticks - EndedQuestRetention.Ticks, SweepBatch);
@@ -1287,6 +1286,22 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 Volatile.Write(ref _sweeping, 0);
             }
+        }
+
+        /// <summary>Ends one expired quest's dungeon and keys and closes its character rows.</summary>
+        void EndExpiredQuest(string questId, DateTime now, PlayfieldManager playfields)
+        {
+            GeneratedQuestRow? row = _store.LoadGenerated(questId);
+            if (row != null && QuestDungeonParameters.TryParse(row.AcgBuildingGeneratorJson, out QuestDungeonParameters parameters))
+                EndDungeon(questId, parameters, evict: true, row.OwnerId);
+            else
+                _store.EndQuestKeys(questId);
+
+            _store.CloseCharacterQuests(questId, (int)QuestState.Expired, now.Ticks);
+
+            // An online owner's log closes it (journal entry, "quest expired") on their own playfield.
+            if (row != null && playfields.FindPlayer(row.OwnerId, out Player owner) && owner.Playfield is Playfield at)
+                at.DispatchPlayerProjection(owner, () => _quests.GetLog(owner));
         }
 
         bool TryGetDungeon(string questId, out CachedDungeon dungeon)

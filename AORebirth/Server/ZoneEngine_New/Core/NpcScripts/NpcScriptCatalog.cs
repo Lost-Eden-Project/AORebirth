@@ -84,15 +84,17 @@ public sealed class NpcScriptCatalog
 
     readonly IZoneLogger _logger;
     readonly IGameData _gameData;
+    readonly Quests.QuestCatalog? _quests;
     readonly System.Threading.Lock _reloadLock = new();
     volatile Snapshot _current;
 
-    public NpcScriptCatalog(IGameData gameData, IZoneLogger logger)
+    public NpcScriptCatalog(IGameData gameData, IZoneLogger logger, Quests.QuestCatalog? quests = null)
     {
         ArgumentNullException.ThrowIfNull(gameData);
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
         _gameData = gameData;
+        _quests = quests;
         Root = Path.Combine(gameData.RootPath, DirectoryName);
         _current = Build();
         LogLoaded(_current.Result);
@@ -182,7 +184,7 @@ public sealed class NpcScriptCatalog
         if (files.Count == 0)
             return new NpcScriptLoadResult(0, 0, problems);
 
-        var compiler = new NpcScriptCompiler(_gameData);
+        var compiler = new NpcScriptCompiler(_gameData, _quests);
 
         // Programs first, so a sibling .bindings.json can name any of them.
         var bindingFiles = new List<(string File, JsonDocument Document)>();

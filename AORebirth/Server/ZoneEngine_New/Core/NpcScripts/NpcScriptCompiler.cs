@@ -37,11 +37,14 @@ public sealed class NpcScriptCompiler
     public const int MaxRandomWeight = 10_000;
 
     readonly IGameData _gameData;
+    readonly Quests.QuestCatalog? _quests;
 
-    public NpcScriptCompiler(IGameData gameData)
+    /// <param name="quests">Quests.json, for CompleteQuest hashes; without it every CompleteQuest is refused.</param>
+    public NpcScriptCompiler(IGameData gameData, Quests.QuestCatalog? quests = null)
     {
         ArgumentNullException.ThrowIfNull(gameData);
         _gameData = gameData;
+        _quests = quests;
     }
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -460,6 +463,10 @@ public sealed class NpcScriptCompiler
 
             case "Signal":
                 CompileSignal(value, ctx);
+                return;
+
+            case "CompleteQuest":
+                CompileCompleteQuest(value, ctx);
                 return;
 
             case "Despawn":
@@ -1147,6 +1154,39 @@ public sealed class NpcScriptCompiler
 
         ctx.HashLists.Add(unique.ToArray());
         ctx.Ops.Add(new ScriptOp(ScriptOpCode.Signal, ctx.HashLists.Count - 1, radius, signalEvent));
+    }
+
+    /// <summary>Largest CompleteQuest Radius in metres.</summary>
+    public const int MaxCompleteQuestRadius = 100;
+
+    /// <summary>
+    /// <c>{ "Hash": "QBCA", "Radius": 1..100 }</c>: completes that Quests.json step for every player within Radius who
+    /// holds it active, as an NPC turn-in does. The hash must name a loaded Quests.json quest.
+    /// </summary>
+    void CompileCompleteQuest(JsonElement value, ProgramContext ctx)
+    {
+        if (value.ValueKind != JsonValueKind.Object
+            || !value.TryGetProperty("Hash", out JsonElement hashElement) || hashElement.ValueKind != JsonValueKind.String)
+        {
+            ctx.Error("CompleteQuest: an object with Hash and Radius");
+            return;
+        }
+
+        string hash = (hashElement.GetString() ?? string.Empty).Trim();
+        if (_quests == null || !_quests.TryGet(hash, out _))
+        {
+            ctx.Error("CompleteQuest: Hash: no Quests.json quest '" + hash + "'");
+            return;
+        }
+
+        int radius = GetInt(value, "Radius", -1);
+        if (radius < 1 || radius > MaxCompleteQuestRadius)
+        {
+            ctx.Error("CompleteQuest: Radius must be 1.." + MaxCompleteQuestRadius + " metres");
+            return;
+        }
+
+        ctx.Ops.Add(new ScriptOp(ScriptOpCode.CompleteQuest, ctx.String(hash), radius));
     }
 
     static bool ParseNanoId(JsonElement element, out int id)

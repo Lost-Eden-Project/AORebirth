@@ -1,0 +1,1 @@
+- Fixed: An expired mission whose mission item had been sold or handed in now closes properly, and no longer stops other expired missions from closing and releasing their dungeons.

@@ -6,6 +6,7 @@ namespace AORebirth.Database.Domain.Characters
     using System.Globalization;
     using System.Linq;
     using System.Text;
+    using System.Threading;
     using AORebirth.Interfaces.Persistence.Characters;
 #if AOREBIRTH_ZONE_NEW
     using LostEden.Protocol.GameData;
@@ -50,6 +51,21 @@ namespace AORebirth.Database.Domain.Characters
             finally { DisposePreserving(connection, failure, committedWrite); }
         }
 
+        /// <summary>Attempts a transaction gets before an InnoDB deadlock (ER_LOCK_DEADLOCK, 1213) reaches the caller.</summary>
+        public const int DeadlockAttempts = 3;
+        private const int DeadlockRetryPauseMilliseconds = 25;
+        private static long deadlockRetries;
+
+        /// <summary>Transactions re-run here after InnoDB chose them as a deadlock victim, since the process started.</summary>
+        public static long DeadlockRetries => Interlocked.Read(ref deadlockRetries);
+
+        /// <summary>
+        /// ER_LOCK_DEADLOCK: InnoDB rolled the whole transaction back before anything was committed and asks for it to
+        /// be restarted. A hard flush (mission accept, trade) has no retry of its own, and the lane's retry waits a
+        /// second and logs an error; a restart here keeps a rare deadlock invisible to the player.
+        /// </summary>
+        internal static bool IsDeadlock(Exception exception) => exception is MySqlConnector.MySqlException { Number: 1213 };
+
         private T Transaction<T>(Func<IDbConnection, IDbTransaction, T> action,
             IsolationLevel isolation = IsolationLevel.Unspecified)
         {
@@ -59,6 +75,24 @@ namespace AORebirth.Database.Domain.Characters
                     throw new InvalidOperationException("The caller transaction does not provide the required isolation level.");
                 return action(callerConnection, callerTransaction);
             }
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return OwnTransaction(action, isolation);
+                }
+                catch (Exception exception) when (attempt < DeadlockAttempts && IsDeadlock(exception))
+                {
+                    // Only a failure before COMMIT surfaces as the raw MySqlException: a commit failure is wrapped as
+                    // outcome-unknown below and is never retried here.
+                    Interlocked.Increment(ref deadlockRetries);
+                    Thread.Sleep(DeadlockRetryPauseMilliseconds * attempt);
+                }
+            }
+        }
+
+        private T OwnTransaction<T>(Func<IDbConnection, IDbTransaction, T> action, IsolationLevel isolation)
+        {
             return Read(connection =>
             {
                 IDbTransaction transaction = null;
@@ -444,11 +478,64 @@ namespace AORebirth.Database.Domain.Characters
         // Well under MySQL's 65535 placeholder limit while keeping each statement a single round trip.
         private const int StatRowsPerStatement = 256;
 
+        /// <summary>
+        /// Writes a character's stats as UPDATEs of the rows it already has and INSERTs of only the new ones. A
+        /// multi-row INSERT ... ON DUPLICATE KEY UPDATE that hits existing rows leaves next-key locks at the end of
+        /// the auto-increment primary index, so two characters saving at the same moment deadlocked each other even
+        /// though they touch different rows (seen live: ~1,400 deadlocks in 10 hours, all in this path). Updating
+        /// through the unique (Type,Instance,StatId) key locks only the character's own records.
+        /// </summary>
         private static void WriteStats(IDbConnection c, IDbTransaction t, int characterId, IList<CharacterStatData> stats)
         {
-            for (int start = 0; start < stats.Count; start += StatRowsPerStatement)
+            if (stats.Count == 0) return;
+
+            // Last value wins for a stat listed twice, as the single ON DUPLICATE KEY UPDATE statement did.
+            var values = new Dictionary<int, int>(stats.Count);
+            foreach (CharacterStatData stat in stats) values[stat.StatId] = stat.StatValue;
+
+            // A consistent (non-locking) read: it takes no gap locks. A checkpoint already serializes a character's
+            // writers on its characters row; any other racing insert of the same stat is absorbed by the ON DUPLICATE
+            // KEY UPDATE on the (rare) insert path below.
+            var existing = new HashSet<int>();
+            using (IDbCommand command = Command(c, t, "SELECT StatId FROM stats WHERE Type=@Type AND Instance=@Instance",
+                "@Type", (int)IdentityType.SimpleChar, "@Instance", characterId))
+            using (IDataReader reader = command.ExecuteReader())
+                while (reader.Read()) existing.Add(reader.GetInt32(0));
+
+            var updates = new List<KeyValuePair<int, int>>(values.Count);
+            var inserts = new List<KeyValuePair<int, int>>();
+            foreach (KeyValuePair<int, int> value in values)
+                (existing.Contains(value.Key) ? updates : inserts).Add(value);
+
+            for (int start = 0; start < updates.Count; start += StatRowsPerStatement)
             {
-                int count = Math.Min(StatRowsPerStatement, stats.Count - start);
+                int count = Math.Min(StatRowsPerStatement, updates.Count - start);
+                var cases = new StringBuilder("UPDATE stats SET StatValue=CASE StatId");
+                var list = new StringBuilder();
+                var parameters = new object[4 + count * 4];
+                parameters[0] = "@Type";
+                parameters[1] = (int)IdentityType.SimpleChar;
+                parameters[2] = "@Instance";
+                parameters[3] = characterId;
+                for (int i = 0; i < count; i++)
+                {
+                    KeyValuePair<int, int> stat = updates[start + i];
+                    string index = i.ToString(CultureInfo.InvariantCulture);
+                    cases.Append(" WHEN @S").Append(index).Append(" THEN @V").Append(index);
+                    if (i > 0) list.Append(',');
+                    list.Append("@S").Append(index);
+                    parameters[4 + i * 4] = "@S" + index;
+                    parameters[5 + i * 4] = stat.Key;
+                    parameters[6 + i * 4] = "@V" + index;
+                    parameters[7 + i * 4] = stat.Value;
+                }
+                cases.Append(" ELSE StatValue END WHERE Type=@Type AND Instance=@Instance AND StatId IN (").Append(list).Append(')');
+                Execute(c, t, cases.ToString(), parameters);
+            }
+
+            for (int start = 0; start < inserts.Count; start += StatRowsPerStatement)
+            {
+                int count = Math.Min(StatRowsPerStatement, inserts.Count - start);
                 var sql = new StringBuilder("INSERT INTO stats (Type,Instance,StatId,StatValue) VALUES ");
                 var parameters = new object[4 + count * 4];
                 parameters[0] = "@Type";
@@ -457,14 +544,14 @@ namespace AORebirth.Database.Domain.Characters
                 parameters[3] = characterId;
                 for (int i = 0; i < count; i++)
                 {
-                    CharacterStatData stat = stats[start + i];
+                    KeyValuePair<int, int> stat = inserts[start + i];
                     string index = i.ToString(CultureInfo.InvariantCulture);
                     if (i > 0) sql.Append(',');
                     sql.Append("(@Type,@Instance,@S").Append(index).Append(",@V").Append(index).Append(')');
                     parameters[4 + i * 4] = "@S" + index;
-                    parameters[5 + i * 4] = stat.StatId;
+                    parameters[5 + i * 4] = stat.Key;
                     parameters[6 + i * 4] = "@V" + index;
-                    parameters[7 + i * 4] = stat.StatValue;
+                    parameters[7 + i * 4] = stat.Value;
                 }
                 // VALUES() rather than the "AS alias" row reference: the alias form needs MySQL 8.0.19+ and fails on
                 // MariaDB and older MySQL; VALUES() works on all of them (newer MySQL only flags it as deprecated).
