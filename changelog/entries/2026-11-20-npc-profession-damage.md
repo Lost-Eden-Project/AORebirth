@@ -1,0 +1,1 @@
+- Fixed: Monsters that carry a profession, such as the Beast, no longer have their damage held back by player profession damage limits at high attack rating.

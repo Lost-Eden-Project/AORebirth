@@ -149,10 +149,11 @@ namespace ZoneEngine_New.Core.Helpers
                 weaponMin = weaponMax;
             }
 
-            // AR / 400 + 1 up to AR 1000, then the attacker's profession curve (GameData/ArMultipliers.json).
+            // AR / 400 + 1 up to AR 1000, then a player's profession curve (GameData/ArMultipliers.json). NPCs and pets
+            // never use a profession curve, whatever their Profession stat (The Beast is a Nano-Technician).
             double multiplier = ArMultiplierTable.For(
                 attacker.Playfield?.GetService<IGameData>()?.RootPath,
-                attacker.Stats.GetOrZero(CharacterStat.Profession),
+                attacker.IsPlayer ? attacker.Stats.GetOrZero(CharacterStat.Profession) : null,
                 cappedAttackRating);
             int minDamage = (int)(weaponMin * multiplier + damageBonus);
             // AC/10 comes off the maximum once, never below the minimum.

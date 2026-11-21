@@ -11,10 +11,10 @@ namespace ZoneEngine_New.Core.Helpers
     /// The weapon damage attack rating multiplier, from GameData/ArMultipliers.json. Up to the soft cap (AR 1000) every
     /// profession uses AR / 400 + 1. Past it each profession follows its own measured curve: the samples are linearly
     /// interpolated from the soft cap on, and past the last sample the multiplier holds (the hardcap). No closed formula
-    /// fits the curves, so the table is the rule. A profession without a curve (Monster, None) gains a flat
-    /// fallbackGainPer400 per 400 AR past the soft cap; 1.0 keeps NPCs on AR / 400 + 1 with no soft cap (live: mob
-    /// damage scales linearly with Add All Off. debuffs well past AR 1000). Without the file every profession uses that
-    /// flat gain.
+    /// fits the curves, so the table is the rule. The curves are player rules: an NPC, whatever its Profession stat, and
+    /// a profession without a curve (Monster, None) gain a flat fallbackGainPer400 per 400 AR past the soft cap; 1.0 keeps
+    /// NPCs on AR / 400 + 1 with no soft cap (live: mob damage scales linearly with Add All Off. debuffs well past AR
+    /// 1000). Without the file every attacker uses that flat gain.
     /// </summary>
     public static class ArMultiplierTable
     {
@@ -54,15 +54,19 @@ namespace ZoneEngine_New.Core.Helpers
         static string? _loadedFrom;
         static Table _table = Default;
 
-        /// <summary>The damage multiplier for an attacker of <paramref name="profession"/> (the Profession stat) at <paramref name="attackRating"/>.</summary>
-        public static double For(string? gameDataRoot, int profession, int attackRating)
+        /// <summary>
+        /// The damage multiplier at <paramref name="attackRating"/> for a player of <paramref name="profession"/> (the
+        /// Profession stat), or for an NPC when <paramref name="profession"/> is null.
+        /// </summary>
+        public static double For(string? gameDataRoot, int? profession, int attackRating)
         {
             Table table = gameDataRoot != null ? Load(gameDataRoot) : Default;
             double ar = Math.Max(0, attackRating);
             if (ar <= table.SoftCapAr)
                 return 1 + (ar / table.ArPerPoint);
 
-            if (!table.Curves.TryGetValue(profession, out (double Ar, double Multiplier)[]? curve))
+            if (profession is not int playerProfession
+                || !table.Curves.TryGetValue(playerProfession, out (double Ar, double Multiplier)[]? curve))
                 return table.SoftCapMultiplier + ((ar - table.SoftCapAr) * table.FallbackGainPer400 / 400);
 
             if (ar >= curve[^1].Ar)
