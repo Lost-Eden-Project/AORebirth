@@ -8,7 +8,9 @@ namespace ZoneEngine_New.Core.Modules
 
     /// <summary>
     /// One per module, so each module resolves its own dependencies from its own folder. The module API assembly always
-    /// comes from the engine, so the module's IZoneModule is the engine's IZoneModule.
+    /// comes from the engine, so the module's IZoneModule is the engine's IZoneModule. Collectible only for a module
+    /// loaded for hot reload (Modules.json HotReload and module.json SupportsHotReload); every other module keeps a
+    /// context that is never unloaded.
     /// </summary>
     internal sealed class ModuleLoadContext : AssemblyLoadContext
     {
@@ -16,8 +18,8 @@ namespace ZoneEngine_New.Core.Modules
 
         private readonly AssemblyDependencyResolver _resolver;
 
-        public ModuleLoadContext(string moduleId, string mainAssemblyPath)
-            : base("module:" + moduleId, isCollectible: false)
+        public ModuleLoadContext(string moduleId, string mainAssemblyPath, bool collectible = false)
+            : base("module:" + moduleId, isCollectible: collectible)
         {
             _resolver = new AssemblyDependencyResolver(mainAssemblyPath);
         }

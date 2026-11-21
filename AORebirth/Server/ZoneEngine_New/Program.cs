@@ -49,6 +49,7 @@ namespace ZoneEngine_New
         private static IChatEngineLink? chatEngineLink;
         private static WorldLink? worldLink;
         private static ZoneEngine_New.Core.Modules.ZoneModuleHost? modules;
+        private static ZoneEngine_New.Core.Modules.ModuleReloadRequests? moduleReloadRequests;
         private static int shutdownStarted;
         private static volatile bool shutdownFailed;
         private static readonly ManualResetEventSlim shutdownCompleted = new(false);
@@ -141,6 +142,8 @@ namespace ZoneEngine_New
                 RuntimeStartup.NotifyService("READY=1\nSTATUS=ZoneEngine_New ready");
                 Console.WriteLine("ZONEENGINE_NEW_READY");
                 logger.Info("ZoneEngine_New root container started.");
+                // Only with Modules.json HotReload enabled.
+                moduleReloadRequests = ZoneEngine_New.Core.Modules.ModuleReloadRequests.Start(modules, logger);
                 StartShutdownFileWatcher(args);
                 CommandLoop(args);
                 return Shutdown() ? 0 : 3;
@@ -447,6 +450,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, PlayfieldCommand>();
             services.AddSingleton<IGmCommand, ClearShopStockCommand>(); // TEMP: remove once shops are fixed.
             services.AddSingleton<IGmCommand, VisibilityCommand>();
+            services.AddSingleton<IGmCommand, ModuleCommand>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.IEngineShutdown, ProgramShutdown>();
             services.AddSingleton<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>();
             services.AddSingleton(provider => new Lazy<ZoneEngine_New.Core.Lifecycle.ShutdownScheduler>(
@@ -555,6 +559,8 @@ namespace ZoneEngine_New
             Cleanup(() => rootServices?.GetService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>()?.Dispose());
             Cleanup(() => playfieldManager?.Dispose());
             playfieldManager = null;
+            Cleanup(() => moduleReloadRequests?.Dispose());
+            moduleReloadRequests = null;
             Cleanup(() => modules?.Shutdown());
             modules = null;
             Cleanup(() => rootServices?.GetRequiredService<TeamService>().Shutdown());

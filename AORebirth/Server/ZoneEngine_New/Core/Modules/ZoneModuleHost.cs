@@ -23,9 +23,10 @@ namespace ZoneEngine_New.Core.Modules
     /// <summary>
     /// Loads the external modules named in Config/Modules.json once at startup, each into its own load context, and
     /// holds what they registered. With no Modules.json nothing is loaded and every hook point is a no-op.
-    /// Modules are trusted code running in the zone process; there is no unloading or hot reload.
+    /// Modules are trusted code running in the zone process. With Modules.json HotReload enabled, a module that opts in
+    /// (module.json SupportsHotReload) can be unloaded and loaded again while the zone runs (ZoneModuleHost.HotReload.cs).
     /// </summary>
-    public sealed class ZoneModuleHost
+    public sealed partial class ZoneModuleHost
     {
         private static readonly int ApiMajorVersion = typeof(IZoneModule).Assembly.GetName().Version?.Major ?? 0;
 
@@ -55,6 +56,7 @@ namespace ZoneEngine_New.Core.Modules
             ModuleReloadables reloadables, string? databaseConnection)
         {
             _logger = logger;
+            _playfields = playfields;
             _knubot = knubot;
             _gameData = gameData;
             _reloadables = reloadables;
@@ -106,6 +108,10 @@ namespace ZoneEngine_New.Core.Modules
 
             ModulesSettings settings = ModulesSettings.Load(settingsPath);
             string modulesDirectory = settings.ResolveModulesDirectory(settingsPath);
+            host._modulesDirectory = modulesDirectory;
+            host._hotReload = settings.HotReload ?? new HotReloadSettings();
+            if (host._hotReload.Enabled)
+                host.PrepareStaging();
             HashSet<string> required = host._required;
             required.UnionWith(settings.Required);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -119,7 +125,8 @@ namespace ZoneEngine_New.Core.Modules
 
                 try
                 {
-                    host.LoadModule(id, modulesDirectory);
+                    string moduleDirectory = Path.GetFullPath(Path.Combine(modulesDirectory, id));
+                    host._modules.Add(host.LoadModule(id, moduleDirectory, moduleDirectory, generation: 0));
                 }
                 catch (Exception exception)
                 {
@@ -248,16 +255,30 @@ namespace ZoneEngine_New.Core.Modules
 
         public void Shutdown()
         {
-            for (int i = _modules.Count - 1; i >= 0; i--)
-                ShutdownModule(_modules[i]);
+            _shuttingDown = true;
+            // A hot reload under way finishes first, so it cannot put a module back after this.
+            bool gated = _reloadGate.Wait(TimeSpan.FromSeconds(30));
+            try
+            {
+                lock (_sync)
+                {
+                    for (int i = _modules.Count - 1; i >= 0; i--)
+                        ShutdownModule(_modules[i]);
 
-            _modules.Clear();
+                    _modules.Clear();
+                }
+            }
+            finally
+            {
+                if (gated)
+                    _reloadGate.Release();
+            }
         }
 
-        private void LoadModule(string id, string modulesDirectory)
+        /// <summary>Reads module.json from <paramref name="sourceDirectory"/> and checks the assembly it names.</summary>
+        private static (ModuleManifest Manifest, string AssemblyPath) ReadManifest(string id, string sourceDirectory)
         {
-            string moduleDirectory = Path.GetFullPath(Path.Combine(modulesDirectory, id));
-            string manifestPath = Path.Combine(moduleDirectory, ModuleManifest.FileName);
+            string manifestPath = Path.Combine(sourceDirectory, ModuleManifest.FileName);
             if (!File.Exists(manifestPath))
                 throw new FileNotFoundException("Module manifest not found.", manifestPath);
 
@@ -270,55 +291,111 @@ namespace ZoneEngine_New.Core.Modules
             if (string.IsNullOrWhiteSpace(manifest.Assembly))
                 throw new InvalidDataException("Module manifest names no assembly: " + manifestPath);
 
-            string assemblyPath = Path.GetFullPath(Path.Combine(moduleDirectory, manifest.Assembly));
-            if (!assemblyPath.StartsWith(moduleDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            string assemblyPath = Path.GetFullPath(Path.Combine(sourceDirectory, manifest.Assembly));
+            if (!assemblyPath.StartsWith(sourceDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Module assembly must be inside the module folder: " + manifest.Assembly);
             if (!File.Exists(assemblyPath))
                 throw new FileNotFoundException("Module assembly not found.", assemblyPath);
+            return (manifest, assemblyPath);
+        }
 
-            var context = new ModuleLoadContext(id, assemblyPath);
-            Assembly assembly = context.LoadFromAssemblyPath(assemblyPath);
-            CheckApiVersion(assembly);
+        /// <summary>
+        /// Loads and initializes one module. <paramref name="moduleDirectory"/> is the module's own folder (its config and
+        /// data, IZoneModuleContext.ModuleDirectory); <paramref name="sourceDirectory"/> holds the code to load, the same
+        /// folder except for a hot reload from elsewhere. A hot-reloadable module runs a staged copy of that code in a
+        /// collectible context, so the files on disk can be replaced while it runs.
+        /// </summary>
+        private LoadedModule LoadModule(string id, string moduleDirectory, string sourceDirectory, int generation)
+        {
+            (ModuleManifest manifest, string assemblyPath) = ReadManifest(id, sourceDirectory);
+            bool collectible = _hotReload.Enabled && manifest.SupportsHotReload;
+            string? stagedDirectory = null;
+            string loadPath = assemblyPath;
+            if (collectible)
+            {
+                stagedDirectory = Stage(manifest.Id, sourceDirectory, generation);
+                loadPath = Path.Combine(stagedDirectory, Path.GetRelativePath(sourceDirectory, assemblyPath));
+            }
 
-            Type[] entryTypes = assembly.GetExportedTypes()
-                .Where(type => type.IsClass && !type.IsAbstract && typeof(IZoneModule).IsAssignableFrom(type))
-                .ToArray();
-            if (entryTypes.Length == 0)
-                throw new InvalidDataException("Module assembly has no public IZoneModule: " + assemblyPath);
-
-            _capabilities.TryGetValue(manifest.Id, out List<string>? granted);
-            var gate = new CapabilityGate(manifest.Id, granted, _logger);
-            CheckOperations(manifest, gate);
-            ModuleDatabase.RequireCurrent(manifest.Id, moduleDirectory, gate, _databaseConnection);
-            var moduleContext = new ZoneModuleContext(this, manifest.Id, moduleDirectory, gate);
-            var entries = new List<IZoneModule>(entryTypes.Length);
-            _initializing = manifest.Id;
+            var context = new ModuleLoadContext(id, loadPath, collectible);
+            bool loaded = false;
             try
             {
-                foreach (Type type in entryTypes)
+                Assembly assembly = context.LoadFromAssemblyPath(loadPath);
+                CheckApiVersion(assembly);
+
+                Type[] entryTypes = assembly.GetExportedTypes()
+                    .Where(type => type.IsClass && !type.IsAbstract && typeof(IZoneModule).IsAssignableFrom(type))
+                    .ToArray();
+                if (entryTypes.Length == 0)
+                    throw new InvalidDataException("Module assembly has no public IZoneModule: " + assemblyPath);
+
+                _capabilities.TryGetValue(manifest.Id, out List<string>? granted);
+                var gate = new CapabilityGate(manifest.Id, granted, _logger);
+                CheckOperations(manifest, gate);
+                ModuleDatabase.RequireCurrent(manifest.Id, sourceDirectory, gate, _databaseConnection);
+                var moduleContext = new ZoneModuleContext(this, manifest.Id, moduleDirectory, gate);
+                var entries = new List<IZoneModule>(entryTypes.Length);
+                _initializing = manifest.Id;
+                try
                 {
-                    var entry = (IZoneModule)(Activator.CreateInstance(type)
-                        ?? throw new InvalidOperationException("Could not create " + type.FullName));
-                    entry.Initialize(moduleContext);
-                    entries.Add(entry);
+                    foreach (Type type in entryTypes)
+                    {
+                        var entry = (IZoneModule)(Activator.CreateInstance(type)
+                            ?? throw new InvalidOperationException("Could not create " + type.FullName));
+                        entry.Initialize(moduleContext);
+                        entries.Add(entry);
+                    }
                 }
+                catch
+                {
+                    // Whatever already started stops again, so a failed (re)load leaves nothing running.
+                    foreach (IZoneModule started in entries)
+                    {
+                        try { started.Shutdown(); }
+                        catch (Exception exception) { _logger.Error(exception, "Module " + manifest.Id + " failed to shut down."); }
+                    }
+
+                    gate.Revoke();
+                    throw;
+                }
+                finally
+                {
+                    _initializing = null;
+                }
+
+                string sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assemblyPath)));
+                var module = new LoadedModule(manifest.Id, entries)
+                {
+                    Version = string.IsNullOrWhiteSpace(manifest.Version) ? "?" : manifest.Version,
+                    Sha256 = sha256,
+                    Context = collectible ? context : null,
+                    Gate = gate,
+                    Generation = generation,
+                    SourceDirectory = sourceDirectory,
+                    StagedDirectory = stagedDirectory
+                };
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Module loaded id={0} version={1} assembly={2} sha256={3} entries={4} connectionFilter={5} handoffHook={6} missionRolls={7} hotReload={8} generation={9}",
+                    manifest.Id,
+                    module.Version,
+                    Path.GetFileName(assemblyPath),
+                    sha256,
+                    entries.Count,
+                    string.Equals(_connectionFilterOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no",
+                    string.Equals(_handoffHookOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no",
+                    string.Equals(_missionRollHookOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no",
+                    collectible ? "yes" : "no",
+                    generation));
+                loaded = true;
+                return module;
             }
             finally
             {
-                _initializing = null;
+                // A module that failed to load leaves nothing behind to collect.
+                if (!loaded && collectible)
+                    context.Unload();
             }
-
-            _modules.Add(new LoadedModule(manifest.Id, entries));
-            _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                "Module loaded id={0} version={1} assembly={2} sha256={3} entries={4} connectionFilter={5} handoffHook={6} missionRolls={7}",
-                manifest.Id,
-                string.IsNullOrWhiteSpace(manifest.Version) ? "?" : manifest.Version,
-                Path.GetFileName(assemblyPath),
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assemblyPath))),
-                entries.Count,
-                string.Equals(_connectionFilterOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no",
-                string.Equals(_handoffHookOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no",
-                string.Equals(_missionRollHookOwner, manifest.Id, StringComparison.OrdinalIgnoreCase) ? "yes" : "no"));
         }
 
         private static void CheckApiVersion(Assembly assembly)
@@ -416,6 +493,9 @@ namespace ZoneEngine_New.Core.Modules
         private void RegisterConnectionFilter(string moduleId, IConnectionFilterProvider provider)
         {
             ArgumentNullException.ThrowIfNull(provider);
+            // Sessions keep the filter they were given: one that appears or changes mid-run would split them.
+            if (_reloading)
+                throw new InvalidOperationException("A connection filter cannot be registered by a hot reload; restart the zone.");
             if (_connectionFilter != null)
                 throw new InvalidOperationException(
                     "Module " + _connectionFilterOwner + " already registered the connection filter; only one is allowed.");
@@ -442,6 +522,9 @@ namespace ZoneEngine_New.Core.Modules
             ArgumentNullException.ThrowIfNull(hook);
             if (!string.Equals(_initializing, moduleId, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("A handoff hook can only be registered during Initialize.");
+            // World learns at registration whether this zone has a handoff hook.
+            if (_reloading)
+                throw new InvalidOperationException("A handoff hook cannot be registered by a hot reload; restart the zone.");
             if (_handoffHook != null)
                 throw new InvalidOperationException(
                     "Module " + _handoffHookOwner + " already registered the handoff hook; only one is allowed.");
@@ -484,12 +567,40 @@ namespace ZoneEngine_New.Core.Modules
                 + " files=" + string.Join(",", reloadable.Files ?? []));
         }
 
-        private sealed record LoadedModule(string Id, List<IZoneModule> Entries);
+        private sealed class LoadedModule(string id, List<IZoneModule> entries)
+        {
+            public string Id { get; } = id;
+
+            public List<IZoneModule> Entries { get; } = entries;
+
+            public string Version { get; init; } = "?";
+
+            public string Sha256 { get; init; } = string.Empty;
+
+            /// <summary>The collectible context of a hot-reloadable module; null for one loaded for good.</summary>
+            public ModuleLoadContext? Context { get; set; }
+
+            public CapabilityGate? Gate { get; init; }
+
+            public int Generation { get; init; }
+
+            public string SourceDirectory { get; init; } = string.Empty;
+
+            public string? StagedDirectory { get; init; }
+        }
 
         private sealed class ZoneModuleContext : IZoneModuleContext
         {
             private readonly ZoneModuleHost _host;
             private readonly CapabilityGate _gate;
+
+            // Its own options and resolver, so the metadata cached for the module's config types goes when the module is
+            // unloaded: options with equal settings share one process-wide metadata cache, and a resolver of their own
+            // makes these unequal to every other.
+            private readonly JsonSerializerOptions _configJson = new(ModulesSettings.JsonOptions)
+            {
+                TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+            };
 
             public ZoneModuleContext(ZoneModuleHost host, string moduleId, string moduleDirectory, CapabilityGate gate)
             {
@@ -532,7 +643,7 @@ namespace ZoneEngine_New.Core.Modules
                 if (!File.Exists(path))
                     return null;
                 using FileStream stream = File.OpenRead(path);
-                return JsonSerializer.Deserialize<T>(stream, ModulesSettings.JsonOptions);
+                return JsonSerializer.Deserialize<T>(stream, _configJson);
             }
 
             public void RegisterConnectionFilter(IConnectionFilterProvider provider)
@@ -612,13 +723,13 @@ namespace ZoneEngine_New.Core.Modules
 
             public event Action<PlayerMovementCorrectedEvent> PlayerMovementCorrected
             {
-                add => _events.PlayerMovementCorrected.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerMovementCorrected.Add(_moduleId, value); }
                 remove => _events.PlayerMovementCorrected.Remove(_moduleId, value);
             }
 
             public event Action<ItemMovedEvent> ItemMoved
             {
-                add => _events.ItemMoved.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.ItemMoved.Add(_moduleId, value); }
                 remove => _events.ItemMoved.Remove(_moduleId, value);
             }
 
@@ -664,79 +775,79 @@ namespace ZoneEngine_New.Core.Modules
 
             public event Action<CombatResolvedEvent> CombatResolved
             {
-                add => _events.CombatResolved.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.CombatResolved.Add(_moduleId, value); }
                 remove => _events.CombatResolved.Remove(_moduleId, value);
             }
 
             public event Action<NpcKilledEvent> NpcKilled
             {
-                add => _events.NpcKilled.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.NpcKilled.Add(_moduleId, value); }
                 remove => _events.NpcKilled.Remove(_moduleId, value);
             }
 
             public event Action<PlayerDiedEvent> PlayerDied
             {
-                add => _events.PlayerDied.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerDied.Add(_moduleId, value); }
                 remove => _events.PlayerDied.Remove(_moduleId, value);
             }
 
             public event Action<PlayerPlayfieldEvent> PlayerEnteredPlayfield
             {
-                add => _events.PlayerEnteredPlayfield.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerEnteredPlayfield.Add(_moduleId, value); }
                 remove => _events.PlayerEnteredPlayfield.Remove(_moduleId, value);
             }
 
             public event Action<PlayerPlayfieldEvent> PlayerLeftPlayfield
             {
-                add => _events.PlayerLeftPlayfield.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerLeftPlayfield.Add(_moduleId, value); }
                 remove => _events.PlayerLeftPlayfield.Remove(_moduleId, value);
             }
 
             public event Action<PlayerSessionEvent> PlayerLoggedIn
             {
-                add => _events.PlayerLoggedIn.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerLoggedIn.Add(_moduleId, value); }
                 remove => _events.PlayerLoggedIn.Remove(_moduleId, value);
             }
 
             public event Action<PlayerSessionEvent> PlayerLoggedOut
             {
-                add => _events.PlayerLoggedOut.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerLoggedOut.Add(_moduleId, value); }
                 remove => _events.PlayerLoggedOut.Remove(_moduleId, value);
             }
 
             public event Action<NpcSpawnEvent> NpcSpawned
             {
-                add => _events.NpcSpawned.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.NpcSpawned.Add(_moduleId, value); }
                 remove => _events.NpcSpawned.Remove(_moduleId, value);
             }
 
             public event Action<NpcSpawnEvent> NpcDespawned
             {
-                add => _events.NpcDespawned.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.NpcDespawned.Add(_moduleId, value); }
                 remove => _events.NpcDespawned.Remove(_moduleId, value);
             }
 
             public event Action<KnubotChatOpenedEvent> KnubotChatOpened
             {
-                add => _events.KnubotChatOpened.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.KnubotChatOpened.Add(_moduleId, value); }
                 remove => _events.KnubotChatOpened.Remove(_moduleId, value);
             }
 
             public event Action<MissionCompletedEvent> MissionCompleted
             {
-                add => _events.MissionCompleted.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.MissionCompleted.Add(_moduleId, value); }
                 remove => _events.MissionCompleted.Remove(_moduleId, value);
             }
 
             public event Action<PlayerStatChangedEvent> PlayerStatChanged
             {
-                add => _events.PlayerStatChanged.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.PlayerStatChanged.Add(_moduleId, value); }
                 remove => _events.PlayerStatChanged.Remove(_moduleId, value);
             }
 
             public event Action<GmCommandUsedEvent> GmCommandUsed
             {
-                add => _events.GmCommandUsed.Add(_moduleId, value);
+                add { _gate.ThrowIfRevoked(); _events.GmCommandUsed.Add(_moduleId, value); }
                 remove => _events.GmCommandUsed.Remove(_moduleId, value);
             }
         }

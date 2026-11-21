@@ -99,6 +99,10 @@ namespace WorldEngine.State
 
                 if (candidate.Role == ServiceRole.RoleZone) CheckZoneRegistration(candidate.Name, message, now);
 
+                // A zone drops its duty when its stream ends, so a holder registering again must be told again: forget
+                // it here and AfterRegister assigns duty afresh (to this instance or a better one).
+                if (string.Equals(_dutyHolder, candidate.Name, StringComparison.OrdinalIgnoreCase)) _dutyHolder = null;
+
                 candidate.Game = message.Game;
                 candidate.Build = message.Build;
                 candidate.GameData = message.GameData;

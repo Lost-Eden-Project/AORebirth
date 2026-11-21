@@ -41,9 +41,20 @@ namespace ZoneEngine_New.Core.Modules
             _logger = logger;
         }
 
+        // Set when the module this gate belongs to was unloaded for a hot reload: whatever it still holds stops working.
+        private volatile bool _revoked;
+
         public string ModuleId => _moduleId;
 
-        public bool Allows(string capability) => _granted == null || _granted.Contains(capability);
+        internal void Revoke() => _revoked = true;
+
+        internal void ThrowIfRevoked()
+        {
+            if (_revoked)
+                throw new ObjectDisposedException("module:" + _moduleId, "Module " + _moduleId + " was unloaded; this context no longer works.");
+        }
+
+        public bool Allows(string capability) => !_revoked && (_granted == null || _granted.Contains(capability));
 
         /// <summary>Whether the module may invoke <paramref name="operation"/>: its name, or the old capability for it.</summary>
         public bool AllowsOperation(string operation)
@@ -60,6 +71,8 @@ namespace ZoneEngine_New.Core.Modules
 
         public void Require(string capability)
         {
+            if (_revoked)
+                throw new ObjectDisposedException("module:" + _moduleId, "Module " + _moduleId + " was unloaded; this context no longer works.");
             if (_granted == null || _granted.Contains(capability))
                 return;
 

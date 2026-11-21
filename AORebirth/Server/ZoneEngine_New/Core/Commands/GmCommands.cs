@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.Commands
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
+    using System.Threading;
 
     using LostEden.Protocol.GameData;
     using LostEden.Protocol.Messages.N3Messages;
@@ -240,7 +241,14 @@ namespace ZoneEngine_New.Core.Commands
 
     public sealed class GmCommandDispatcher
     {
-        private readonly Dictionary<string, IGmCommand> _commands;
+        // Never changed once published: a module hot reload swaps in a new table, so playfield ticks read it without a lock.
+        private Dictionary<string, IGmCommand> _commands;
+
+        // Which module owns each module command, for a hot reload to replace exactly those.
+        private readonly Dictionary<string, string> _moduleOwners = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _rebindSync = new();
+        private readonly ZoneEngine_New.Core.Logging.IZoneLogger? _logger;
+        private readonly ZoneEngine_New.Core.Configuration.GmPermissions? _permissions;
 
         public GmCommandDispatcher(
             IEnumerable<IGmCommand> commands,
@@ -249,42 +257,85 @@ namespace ZoneEngine_New.Core.Commands
             ZoneEngine_New.Core.Configuration.GmPermissions? permissions = null)
         {
             ArgumentNullException.ThrowIfNull(commands);
-            _commands = new Dictionary<string, IGmCommand>(StringComparer.OrdinalIgnoreCase);
+            _logger = logger;
+            _permissions = permissions;
+            var table = new Dictionary<string, IGmCommand>(StringComparer.OrdinalIgnoreCase);
             foreach (IGmCommand command in commands)
             {
                 ArgumentNullException.ThrowIfNull(command);
-                _commands[command.Name] = command;
+                table[command.Name] = command;
             }
 
             // Module commands never replace a built-in: a clash unloads that module (BindGmCommands).
             if (modules != null)
             {
-                foreach ((string moduleId, AORebirth.Modules.Commands.ModuleGmCommand command) in modules.BindGmCommands(_commands.Keys.ToArray()))
-                    _commands.Add(command.Name, new ZoneEngine_New.Core.Modules.ModuleGmCommandAdapter(moduleId, command, logger));
+                foreach ((string moduleId, AORebirth.Modules.Commands.ModuleGmCommand command) in modules.BindGmCommands(table.Keys.ToArray()))
+                {
+                    table.Add(command.Name, new ZoneEngine_New.Core.Modules.ModuleGmCommandAdapter(moduleId, command, logger));
+                    _moduleOwners[command.Name] = moduleId;
+                }
+
+                modules.AttachGmCommandBinder(RebindModule);
             }
 
             if (permissions != null)
-                ApplyPermissions(permissions, logger);
+            {
+                ApplyPermissions(table, table.Keys.ToArray());
+                foreach (string name in permissions.Commands.Keys)
+                {
+                    if (!table.ContainsKey(name))
+                        logger?.Warn("GmPermissions.json lists ." + name + ", which is not a command; it is ignored.");
+                }
+            }
+
+            _commands = table;
         }
 
         /// <summary>
         /// Gives each command the level GmPermissions.json sets for it. The level travels with the command, so the
         /// check, its help popup and the command index all show the same one.
         /// </summary>
-        void ApplyPermissions(ZoneEngine_New.Core.Configuration.GmPermissions permissions, ZoneEngine_New.Core.Logging.IZoneLogger? logger)
+        void ApplyPermissions(Dictionary<string, IGmCommand> table, IEnumerable<string> names)
         {
-            foreach (string name in _commands.Keys.ToArray())
+            if (_permissions == null)
+                return;
+            foreach (string name in names)
             {
-                IGmCommand command = _commands[name];
-                int level = permissions.CommandLevel(name, command.RequiredGmLevel);
+                IGmCommand command = table[name];
+                int level = _permissions.CommandLevel(name, command.RequiredGmLevel);
                 if (level != command.RequiredGmLevel)
-                    _commands[name] = new ConfiguredLevelCommand(command, level);
+                    table[name] = new ConfiguredLevelCommand(command, level);
             }
+        }
 
-            foreach (string name in permissions.Commands.Keys)
+        /// <summary>
+        /// Replaces the commands of one module (a hot reload): its old ones go, the new ones come in with their
+        /// GmPermissions.json levels. Null when done; otherwise why nothing changed (a name already taken).
+        /// </summary>
+        string? RebindModule(string moduleId, IReadOnlyList<AORebirth.Modules.Commands.ModuleGmCommand> commands)
+        {
+            lock (_rebindSync)
             {
-                if (!_commands.ContainsKey(name))
-                    logger?.Warn("GmPermissions.json lists ." + name + ", which is not a command; it is ignored.");
+                var table = new Dictionary<string, IGmCommand>(Volatile.Read(ref _commands), StringComparer.OrdinalIgnoreCase);
+                string[] previous = _moduleOwners.Where(x => string.Equals(x.Value, moduleId, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.Key).ToArray();
+                foreach (string name in previous)
+                    table.Remove(name);
+
+                foreach (AORebirth.Modules.Commands.ModuleGmCommand command in commands)
+                {
+                    if (table.ContainsKey(command.Name))
+                        return "Module " + moduleId + " GM command ." + command.Name + " clashes with an existing command.";
+                    table[command.Name] = new ZoneEngine_New.Core.Modules.ModuleGmCommandAdapter(moduleId, command, _logger);
+                }
+
+                ApplyPermissions(table, commands.Select(c => c.Name));
+                foreach (string name in previous)
+                    _moduleOwners.Remove(name);
+                foreach (AORebirth.Modules.Commands.ModuleGmCommand command in commands)
+                    _moduleOwners[command.Name] = moduleId;
+                Volatile.Write(ref _commands, table);
+                return null;
             }
         }
 
@@ -329,10 +380,11 @@ namespace ZoneEngine_New.Core.Commands
 
             // A player with no GmLevel stat is level 0, which still runs RequiredGmLevel 0 commands such as .online.
             int gmLevel = player.Stats.GetOrZero(CharacterStat.GmLevel);
-            if (!_commands.TryGetValue(name, out IGmCommand? command))
+            Dictionary<string, IGmCommand> commands = Volatile.Read(ref _commands);
+            if (!commands.TryGetValue(name, out IGmCommand? command))
             {
                 GmCommandFeedback.SendError(session, player, "Unknown command: ." + name);
-                GmCommandFeedback.Send(session, player, GmCommandHelpAoml.BuildIndexLink(_commands.Values, gmLevel));
+                GmCommandFeedback.Send(session, player, GmCommandHelpAoml.BuildIndexLink(commands.Values, gmLevel));
                 return;
             }
 

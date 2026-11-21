@@ -391,6 +391,16 @@ namespace ZoneEngine_New.Core.World
             finally
             {
                 _connected = false;
+                // Duty belongs to this stream. World may hand it to another instance while this one is cut off and
+                // could never tell it so; it is assigned again on the next registration.
+                if (IsDutyHolder)
+                {
+                    IsDutyHolder = false;
+                    _logger.Info("World duty holder=False (registry stream ended)");
+                    try { _handlers?.DutyChanged(false); }
+                    catch (Exception exception) { _logger.Warn("Duty change handler failed: " + exception.GetType().Name); }
+                }
+
                 Interlocked.CompareExchange(ref _outbound, null, outbound.Writer);
                 session.Cancel();
                 outbound.Writer.TryComplete();

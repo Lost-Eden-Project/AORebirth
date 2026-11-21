@@ -35,6 +35,9 @@ namespace ZoneEngine_New.Core.Modules
         /// </summary>
         public Dictionary<string, List<string>>? Capabilities { get; init; }
 
+        /// <summary>Module hot reload; off unless this section says Enabled. See <see cref="HotReloadSettings"/>.</summary>
+        public HotReloadSettings? HotReload { get; init; }
+
         public static string? ResolvePath(string gameDataRoot)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
@@ -90,5 +93,49 @@ namespace ZoneEngine_New.Core.Modules
         /// capability granted by Modules.json Capabilities, or the module does not load, before it initializes.
         /// </summary>
         public List<string>? Capabilities { get; init; }
+
+        /// <summary>
+        /// The module may be unloaded and loaded again while the zone runs (module API 1.18). It must stop everything it
+        /// started (threads, timers, listeners) in Shutdown; see <c>IZoneModuleStateTransfer</c> to carry state across.
+        /// </summary>
+        public bool SupportsHotReload { get; init; }
+    }
+
+    /// <summary>
+    /// Modules.json "HotReload". With Enabled false (the default) every module loads as it always did and nothing can be
+    /// reloaded. With Enabled true, a module whose module.json sets SupportsHotReload loads from a staged copy of its code
+    /// into a collectible context and can be reloaded with the GM command <c>.module reload</c> or the request file.
+    /// </summary>
+    public sealed class HotReloadSettings
+    {
+        public const string StagingVariable = "AO_REBIRTH_MODULE_STAGING_DIR";
+
+        public const string RequestFileVariable = "AO_REBIRTH_MODULE_RELOAD_REQUEST_FILE";
+
+        public bool Enabled { get; init; }
+
+        /// <summary>Where each loaded generation's code is copied; env AO_REBIRTH_MODULE_STAGING_DIR, else this, else the temp folder.</summary>
+        public string? StagingDirectory { get; init; }
+
+        /// <summary>The operator request file; env AO_REBIRTH_MODULE_RELOAD_REQUEST_FILE, else this, else the temp folder.</summary>
+        public string? RequestFile { get; init; }
+
+        /// <summary>Unloads that left their code in memory before this process refuses any further reload.</summary>
+        public int MaxLeaks { get; init; } = 2;
+
+        /// <summary>How long the old version's Shutdown may take.</summary>
+        public int ShutdownTimeoutSeconds { get; init; } = 10;
+
+        public string ResolveStagingDirectory()
+            => Pick(Environment.GetEnvironmentVariable(StagingVariable), StagingDirectory)
+                ?? Path.Combine(Path.GetTempPath(), "aorebirth-modules");
+
+        public string ResolveRequestFile()
+            => Pick(Environment.GetEnvironmentVariable(RequestFileVariable), RequestFile)
+                ?? Path.Combine(Path.GetTempPath(), "aorebirth-module-reload-request");
+
+        static string? Pick(string? first, string? second)
+            => !string.IsNullOrWhiteSpace(first) ? Path.GetFullPath(first.Trim())
+                : !string.IsNullOrWhiteSpace(second) ? Path.GetFullPath(second.Trim()) : null;
     }
 }
