@@ -29,6 +29,10 @@ namespace ZoneEngine_New.Core.World
     {
         static readonly TimeSpan Pass = TimeSpan.FromSeconds(1);
 
+        const string Moving = "Server update: reloading the zone.";
+
+        const string LoggedOut = "Server update: you were logged out. You can log in again right away.";
+
         /// <summary>How long a playfield's moves may take once started before its stragglers are logged out.</summary>
         static readonly TimeSpan MoveGrace = TimeSpan.FromSeconds(15);
 
@@ -105,15 +109,12 @@ namespace ZoneEngine_New.Core.World
                         List<Player> players = group.ToList();
                         foreach (Player player in players)
                             if (told.Add(player.Identity.Instance))
-                                Dispatch(playfield, player, stop, () => Tell(player,
-                                    "This zone is being updated: you will zone into the new one where you stand (one loading screen)."));
+                                Dispatch(playfield, player, stop, () => Tell(player, Moving));
 
                         if (final || (moved.TryGetValue(id, out DateTime movedAt) && now - movedAt > MoveGrace))
                         {
                             foreach (Player player in players)
-                                Dispatch(playfield, player, stop, () => LogOut(playfield, player, loggedOut, final
-                                    ? "The zone update could not move you in time; you are logged out and can log in again right away."
-                                    : "Your move to the updated zone did not go through; you are logged out and can log in again right away."));
+                                Dispatch(playfield, player, stop, () => LogOut(playfield, player, loggedOut, LoggedOut));
                             continue;
                         }
 
@@ -138,7 +139,7 @@ namespace ZoneEngine_New.Core.World
                                 if (!ReferenceEquals(player.Playfield, playfield))
                                     continue;
                                 if (logout)
-                                    LogOut(playfield, player, loggedOut, "This zone is being updated; you are logged out and can log in again right away.");
+                                    LogOut(playfield, player, loggedOut, LoggedOut);
                                 else
                                     Move(manager, playfield, player, dungeon, loggedOut);
                             }
@@ -173,7 +174,7 @@ namespace ZoneEngine_New.Core.World
             if (player.Session is not IZoneSession session || player.ConnectionPhase == PlayerConnectionPhase.LinkDead || player.IsDead)
             {
                 // No client to redirect, or nothing to stand on: saved; logging in again lands on the new instance.
-                LogOut(playfield, player, loggedOut, "This zone is being updated; you are logged out and can log in again right away.");
+                LogOut(playfield, player, loggedOut, LoggedOut);
                 return;
             }
 
@@ -183,7 +184,7 @@ namespace ZoneEngine_New.Core.World
             var landing = new AORebirth.Core.Vector.Vector3(player.Position.x, player.Position.y, player.Position.z);
             if (transfer == null || !transfer.Start(player, playfield.Identity.Instance, landing, player.Rotation,
                 dungeon ? ArrivalKind.ArrivalDungeon : ArrivalKind.ArrivalZone))
-                LogOut(playfield, player, loggedOut, "This zone is being updated; you are logged out and can log in again right away.");
+                LogOut(playfield, player, loggedOut, LoggedOut);
         }
 
         static void LogOut(PlayfieldInstance playfield, Player player, ConcurrentDictionary<int, byte> loggedOut, string message)
