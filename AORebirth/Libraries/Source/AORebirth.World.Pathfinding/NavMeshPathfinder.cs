@@ -99,6 +99,21 @@ namespace AORebirth.World.Pathfinding
 
         public NavMeshBuildSettings Settings { get; }
 
+        /// <summary>
+        /// The playfield's shut passages (its locked doors); null when it has none. Routes and reach answers through
+        /// a shut passage fail. Tick-thread state, like every query here.
+        /// </summary>
+        public INavPassageGate? PassageGate { get; set; }
+
+        /// <summary>
+        /// Added to a reach flood's walk cost when looking for shut passages near a walker: the cost runs between polygon
+        /// edges, so the walk itself can be a polygon longer.
+        /// </summary>
+        const float ShutPassageSlack = 16f;
+
+        /// <summary>Waypoints of the route <see cref="Reaches"/> confirms past a shut passage.</summary>
+        readonly List<Vector3> _gateScratch = new(32);
+
         /// <summary>How the most recent <see cref="TryFindPath"/> ended. Diagnostics only; tick-thread state.</summary>
         public PathSearchOutcome LastOutcome { get; private set; }
 
@@ -344,6 +359,11 @@ namespace AORebirth.World.Pathfinding
 
         public bool TryCanReach(Vector3 start, Vector3 end)
         {
+            // A shut passage is judged on the walked line, which only the full route has.
+            if (PassageGate is { AnyShut: true })
+                return TryFindPath(start, end, _gateScratch)
+                    && Vector3.DistanceSquared(_gateScratch[_gateScratch.Count - 1], end) <= OnMeshHorizontal * OnMeshHorizontal;
+
             EnsurePathRegion(start, end, widest: false);
             if (!TryResolveEnds(start, end, out PolyEnds ends))
                 return false;
@@ -407,6 +427,14 @@ namespace AORebirth.World.Pathfinding
 
             for (int i = first; i < straightCount; i++)
                 waypoints.Add(straight[i].pos);
+
+            // The mesh runs through every doorway; a locked door's is no way through.
+            if (waypoints.Count > 0 && PassageGate is { AnyShut: true } gate && gate.BlocksRoute(start, waypoints))
+            {
+                waypoints.Clear();
+                LastOutcome = PathSearchOutcome.ShutPassage;
+                return false;
+            }
 
             LastOutcome = waypoints.Count > 0 ? PathSearchOutcome.Found : PathSearchOutcome.NoStraightPath;
             return waypoints.Count > 0;
@@ -488,7 +516,17 @@ namespace AORebirth.World.Pathfinding
             if (status.Failed() || startRef == 0)
                 return ReachAnswer.Reachable;
 
-            return map.Contains(startRef) ? ReachAnswer.Reachable : ReachAnswer.Unreachable;
+            if (!map.TryGetCost(startRef, out float walk))
+                return ReachAnswer.Unreachable;
+
+            // The flood crossed every doorway on the mesh. With a locked door within the walk, only a route that keeps
+            // out of it counts: the walker's own search, as the chase that follows would run it. A route that long
+            // stays within its length of the walker, so farther doors (and playfields without one) cost nothing.
+            if (PassageGate is { } gate && gate.AnyShutWithin(start, walk + ShutPassageSlack)
+                && !TryFindPath(start, map.EndPoint, _gateScratch))
+                return LastOutcome == PathSearchOutcome.ShutPassage ? ReachAnswer.Unreachable : ReachAnswer.Reachable;
+
+            return ReachAnswer.Reachable;
         }
 
         /// <summary>
@@ -711,6 +749,9 @@ namespace AORebirth.World.Pathfinding
         NoStraightPath,
 
         /// <summary>Start and end are on separate navmesh islands; answered without searching.</summary>
-        Disconnected
+        Disconnected,
+
+        /// <summary>The route went through a shut passage (<see cref="INavPassageGate"/>): a locked door.</summary>
+        ShutPassage
     }
 }

@@ -168,6 +168,12 @@
         /// <summary>Same, from coordinates: the hot path (every NPC engage and aggro check) allocates nothing.</summary>
         public bool HasLineOfSight(float fromX, float fromY, float fromZ, float toX, float toY, float toZ)
         {
+            // Doors are tested on the exact points, never from the cache: a quarter-metre cache cell can straddle a
+            // door's panel, and a sight line cached from the near side then let an NPC see through the closed door
+            // (bug #632). The door test is a few comparisons per door; the cache is for the mesh ray.
+            if (_doors.Count > 0 && _doors.Blocks(new Vec3(fromX, fromY, fromZ), new Vec3(toX, toY, toZ)))
+                return false;
+
             long nowMs = Environment.TickCount64;
             // Quantize to ~0.25u. Include all axes; the prior 8-bit to.xz key collided often.
             int key = HashCode.Combine(
@@ -352,8 +358,6 @@
         {
             if ((to - from).LengthSquared < 1e-8f)
                 return true;
-            if (_doors.Count > 0 && _doors.Blocks(from, to))
-                return false;
             if (Surface == null)
                 return true;
 

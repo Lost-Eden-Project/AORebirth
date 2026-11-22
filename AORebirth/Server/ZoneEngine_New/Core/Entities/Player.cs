@@ -1731,9 +1731,9 @@ namespace ZoneEngine_New.Core.Entities
                 return (_items.CreateTemplate(id, id, quality: 1), id, id, 1);
             }
 
-            PerkActionTier first = definition.Tiers[0];
-            ItemTemplate skillSource = _items.CreateTemplate(first.LowId, first.LowId, first.LowQl);
-            (PerkActionTier tier, int quality) = definition.Resolve(WeightedSkill(skillSource.Attack));
+            IReadOnlyDictionary<CharacterStat, int> skills = definition.Skills
+                ?? _items.CreateTemplate(definition.Tiers[0].LowId, definition.Tiers[0].LowId, definition.Tiers[0].LowQl).Attack;
+            (PerkActionTier tier, int quality) = definition.Resolve(WeightedSkill(skills));
             return (_items.CreateTemplate(tier.LowId, tier.HighId, quality), tier.LowId, tier.HighId, quality);
         }
 
@@ -3456,12 +3456,20 @@ namespace ZoneEngine_New.Core.Entities
             // monster path and stuck the official client on "Please wait".
             // Do not copy Name into FirstName — official 0x40 uses the DB first/last
             // strings (often empty). Unique name already arrives in SCFU.Name.
+            // An organization member's info carries the org block: its rank name (retail captures 0x43 / 0x47: "Veteran",
+            // "Applicant"), then the member's city (0 without one). Without it the info window shows no rank.
+            Organizations.PlayerOrganization? organization = Organization;
             InfoPacketMessage message = BuildCharacterInfoPacket(
                 0,
-                InfoPacketType.Character,
+                organization != null ? InfoPacketType.CharacterOrg : InfoPacketType.Character,
                 FirstName,
                 LastName);
             InfoPacket info = message.Info;
+            if (organization != null)
+            {
+                info.ClanLevel = organization.RankName ?? string.Empty;
+                info.ClanCity = 0;
+            }
             Logger.Info(
                 string.Format(
                     CultureInfo.InvariantCulture,

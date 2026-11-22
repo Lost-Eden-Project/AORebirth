@@ -97,17 +97,30 @@ namespace ChatEngine.PacketHandlers
                 return;
             }
 
-            bool persisted = CharacterDao.Instance.AddBuddy(
-                (int)client.Character.CharacterId, (int)playerId);
-            if (!persisted)
+            // The status byte says what kind of add this is: 1 is a friend the player added, 0 is the temporary entry
+            // the client makes for a tell partner so it can show their online state. Only a friend is stored; a
+            // temporary entry lives for this session only, so whoever sends a tell does not come back as a friend
+            // after relog. A temporary add for someone already stored keeps the stored friend's flags.
+            bool permanent = IsPermanent(unknown2);
+            bool persisted = false;
+            if (permanent)
             {
-                client.Server.Debug(
-                    client,
-                    "{0} << BuddyAdd persistence verification failed: OwnerCharacterID {1} BuddyID {2}",
-                    client.Character.characterName,
-                    client.Character.CharacterId,
-                    playerId);
-                return;
+                persisted = CharacterDao.Instance.AddBuddy(
+                    (int)client.Character.CharacterId, (int)playerId);
+                if (!persisted)
+                {
+                    client.Server.Debug(
+                        client,
+                        "{0} << BuddyAdd persistence verification failed: OwnerCharacterID {1} BuddyID {2}",
+                        client.Character.characterName,
+                        client.Character.CharacterId,
+                        playerId);
+                    return;
+                }
+            }
+            else if (client.IsStoredBuddy(playerId))
+            {
+                unknown2 = PermanentStatus;
             }
 
             client.Send(PlayerName.Create(playerId, buddyName));
@@ -142,7 +155,7 @@ namespace ChatEngine.PacketHandlers
                 unknown2
             };
             client.SetBuddyStatusFlags(playerId, requestFlags);
-            client.AddBuddyId(playerId);
+            client.AddBuddyId(playerId, permanent);
             client.Send(BuddyOnlineStatus.Create(playerId, online, requestFlags));
             client.Server.Debug(
                 client,
@@ -155,6 +168,15 @@ namespace ChatEngine.PacketHandlers
                 persisted,
                 unknown1,
                 unknown2);
+        }
+
+        /// <summary>The status byte of a friend the player added (as opposed to a temporary tell-partner entry).</summary>
+        public const byte PermanentStatus = 0x01;
+
+        /// <summary>Whether a BuddyAdd status byte asks for a stored friend rather than a session-only entry.</summary>
+        public static bool IsPermanent(byte status)
+        {
+            return status != 0;
         }
 
         #endregion

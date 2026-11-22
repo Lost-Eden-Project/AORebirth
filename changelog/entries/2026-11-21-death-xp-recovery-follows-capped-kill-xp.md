@@ -1,0 +1,1 @@
+- Fixed: Killing a much higher level monster no longer gives back a huge chunk of your lost death experience at once; the amount recovered now follows the experience you actually earn from the kill.

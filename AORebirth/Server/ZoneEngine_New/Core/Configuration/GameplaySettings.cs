@@ -848,7 +848,8 @@ namespace ZoneEngine_New.Core.Configuration
         public int NeedGreedRollSeconds { get; init; } = 45;
 
         /// <summary>
-        /// How close to the corpse (metres) a team member must be, on its playfield, when it drops to roll on its items.
+        /// How close to the corpse (metres) a team member must be, on its playfield, when it drops to roll on its items;
+        /// for a chest, how close when a teammate opens it.
         /// </summary>
         public float NeedGreedRange { get; init; } = 100f;
     }

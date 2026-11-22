@@ -38,7 +38,8 @@ namespace ZoneEngine_New.Core.Playfield.Locality
     /// Outdoor cell tick cadence by heat tier. Indoor and disabled-heat paths tick every dynel every heartbeat.
     /// Warm/Cold pass accumulated wall-clock delta since the cell's last successful tick.
     /// Cells default Asleep until Hot/Warm (player proximity or forced hot); Cold is only the
-    /// post-Hot/Warm cooldown before sleep, except the cells of living vendors and scripted NPCs, which stay Cold.
+    /// post-Hot/Warm cooldown before sleep, except the cells of living vendors and scripted or Persistent NPCs, which
+    /// stay Cold.
     /// Heat candidates = occupied ∪ spawn-bearing ∪ cells
     /// within Warm range of connected players (so empty neighbor heat transitions are tracked).
     /// </summary>
@@ -52,14 +53,16 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         private readonly Dictionary<int, CellHeat> _heatByCell = new();
         private readonly HashSet<int> _spawnCellIds = new();
 
-        /// <summary>Spawn cells with a scripted NPC's point: Cold from load, whether or not the NPC is up.</summary>
-        private readonly HashSet<int> _scriptedSpawnCellIds = new();
+        /// <summary>Spawn cells with a scripted or Persistent NPC's point: Cold from load, whether or not the NPC is up.</summary>
+        private readonly HashSet<int> _alwaysColdSpawnCellIds = new();
         private readonly List<int> _playerCells = new();
         private readonly HashSet<int> _forcedHotCells = new();
         private readonly HashSet<int> _vendorCells = new();
 
-        /// <summary>Cells a living scripted NPC is in: Cold, but they only spawn when something else keeps them awake.</summary>
-        private readonly HashSet<int> _scriptedNpcCells = new();
+        /// <summary>
+        /// Cells a living scripted or Persistent NPC is in: Cold, but they only spawn when something else keeps them awake.
+        /// </summary>
+        private readonly HashSet<int> _heldNpcCells = new();
         private readonly List<int> _heatCellBuffer = new();
         private readonly List<int> _neighborBuffer = new();
         private readonly List<Dynel> _tickDynelBuffer = new();
@@ -99,12 +102,12 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             Action<int> onCellSleep,
             Action<int> onCellTick,
             Action onIndoorSpawnTick,
-            IEnumerable<int>? scriptedSpawnCellIds = null)
+            IEnumerable<int>? alwaysColdSpawnCellIds = null)
         {
             ArgumentNullException.ThrowIfNull(spawnCellIds);
-            _scriptedSpawnCellIds.Clear();
-            foreach (int cellId in scriptedSpawnCellIds ?? [])
-                _scriptedSpawnCellIds.Add(cellId);
+            _alwaysColdSpawnCellIds.Clear();
+            foreach (int cellId in alwaysColdSpawnCellIds ?? [])
+                _alwaysColdSpawnCellIds.Add(cellId);
             ArgumentNullException.ThrowIfNull(onCellSleep);
             ArgumentNullException.ThrowIfNull(onCellTick);
             ArgumentNullException.ThrowIfNull(onIndoorSpawnTick);
@@ -156,7 +159,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             _playerCells.Clear();
             _forcedHotCells.Clear();
             _vendorCells.Clear();
-            _scriptedNpcCells.Clear();
+            _heldNpcCells.Clear();
 
             HashSet<int> connectedPlayerInstances = _connectedPlayerInstances;
             connectedPlayerInstances.Clear();
@@ -184,10 +187,11 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                     _playerCells.Add(dynel.Cell.Id);
                 if (dynel is VendingMachine || dynel is NpcCharacter { Shop: not null, IsDead: false })
                     _vendorCells.Add(dynel.Cell.Id);
-                // A living NPC that runs a script keeps its cell Cold: it ticks its script once a second and is not
-                // despawned by the cell sleeping when no player is near.
-                else if (dynel is NpcCharacter { Scripts: not null, IsDead: false })
-                    _scriptedNpcCells.Add(dynel.Cell.Id);
+                // A living NPC that runs a script, or is Persistent, keeps its cell Cold: it ticks once a second and is
+                // not despawned by the cell sleeping when no player is near.
+                else if (dynel is NpcCharacter { IsDead: false } npc
+                         && (npc.Scripts != null || npc.HasFeature(Mobs.NpcFeature.Persistent)))
+                    _heldNpcCells.Add(dynel.Cell.Id);
             }
         }
 
@@ -376,14 +380,14 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             if (minDistance <= _policy.WarmNeighborLevel)
                 return CellHeat.Warm;
 
-            if (_vendorCells.Contains(cellId) || _scriptedSpawnCellIds.Contains(cellId)) return CellHeat.Cold;
+            if (_vendorCells.Contains(cellId) || _alwaysColdSpawnCellIds.Contains(cellId)) return CellHeat.Cold;
 
             // No cooling timer → never woken (or fully slept) → Asleep. Cold only while cooling.
             if (_coldSinceUtcByCell.TryGetValue(cellId, out DateTime coldSince)
                 && (DateTime.UtcNow - coldSince).TotalSeconds < _policy.CellSleepTimeSeconds)
                 return CellHeat.Cold;
 
-            heldByScript = _scriptedNpcCells.Contains(cellId);
+            heldByScript = _heldNpcCells.Contains(cellId);
             return heldByScript ? CellHeat.Cold : CellHeat.Asleep;
         }
 

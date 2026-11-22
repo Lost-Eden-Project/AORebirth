@@ -33,7 +33,12 @@ namespace ChatEngine.PacketHandlers
 {
     #region Usings ...
 
+    using System;
+
+    using AORebirth.Database.Dao;
+
     using ChatEngine.CoreClient;
+    using ChatEngine.Packets;
 
     #endregion
 
@@ -75,6 +80,34 @@ namespace ChatEngine.PacketHandlers
                 client.Character.characterName,
                 this.playerId);
             reader.Finish();
+
+            if (client.Character == null || this.playerId == 0 || this.playerId > int.MaxValue)
+            {
+                return;
+            }
+
+            // Only a stored friend has a row to delete; a session-only tell partner is just forgotten.
+            if (client.IsStoredBuddy(this.playerId))
+            {
+                try
+                {
+                    CharacterDao.Instance.RemoveBuddy((int)client.Character.CharacterId, (int)this.playerId);
+                }
+                catch (Exception exception)
+                {
+                    client.Server.Debug(
+                        client,
+                        "{0} << BuddyRemove failed: OwnerCharacterID {1} BuddyID {2}: {3}",
+                        client.Character.characterName,
+                        client.Character.CharacterId,
+                        this.playerId,
+                        exception.Message);
+                    return;
+                }
+            }
+
+            client.RemoveBuddyId(this.playerId);
+            client.Send(BuddyRemoved.Create(this.playerId));
         }
 
         #endregion

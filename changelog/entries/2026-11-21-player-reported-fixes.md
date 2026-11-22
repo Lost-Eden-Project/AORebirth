@@ -1,0 +1,10 @@
+- Fixed: Someone who sends you a tell no longer shows up on your friends list after you relog, and removing a friend now stays removed.
+- Fixed: Your organization rank shows in the character info window.
+- Fixed: Changing sides now takes you out of your organization; a leader hands the lead to the highest ranking member.
+- Fixed: Spending IP no longer shows the spent points as still available when you reopen the skill window.
+- Fixed: Garden keys work on their statue while worn in a HUD slot.
+- Fixed: Trader Accumulator now drains nano and gives you your share.
+- Fixed: Keeper Ward now blocks an incoming weapon attack, and both you and the attacker are told.
+- Fixed: Red Dawn's heal now grows with your Martial Arts skill.
+- Fixed: Looting a corpse no longer shows the name of a different corpse.
+- Changed: Founding an organization now needs all six team members in the same zone.

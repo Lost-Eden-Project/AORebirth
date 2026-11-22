@@ -292,12 +292,14 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>
         /// DrainHit args: Stat, Min, Max, AC, Percent (Shade Dimach 213269-213274: Health, Melee AC, 70-80).
         /// Damages <paramref name="target"/> like a hostile Hit, then heals the source by Percent of the
-        /// damage actually dealt. Only Health damage is supported.
+        /// damage actually dealt. Health, or nano (Trader Accumulator proc 210941: [214, -20, -20, 0, 50] takes 20 nano
+        /// and gives the trader half of it).
         /// </summary>
         static bool DrainHit(Character target, Character? source, ItemSpell spell, bool addDamage,
             (CombatSource Source, int Id) origin)
         {
-            if (!spell.TryReadInt(0, out int statId) || (CharacterStat)statId != CharacterStat.Health
+            if (!spell.TryReadInt(0, out int statId)
+                || (CharacterStat)statId is not (CharacterStat.Health or CharacterStat.CurrentNano)
                 || !spell.TryReadInt(1, out int minHit) || !spell.TryReadInt(2, out int maxHit))
                 return false;
             spell.TryReadInt(3, out int acStat);
@@ -306,6 +308,19 @@ namespace ZoneEngine_New.Core.Inventory
                 (minHit, maxHit) = (maxHit, minHit);
             if (maxHit >= 0 || source == null || ReferenceEquals(source, target) || target.IsDead)
                 return false;
+
+            if ((CharacterStat)statId == CharacterStat.CurrentNano)
+            {
+                // Only what the target actually had is taken, and only a share of that comes back (capped at the
+                // source's max nano), so the drain never makes nano.
+                int nanoBefore = Math.Max(0, target.Stats.GetOrZero(CharacterStat.CurrentNano));
+                ApplyNanoDelta(target, Random.Shared.Next(minHit, maxHit + 1));
+                int taken = nanoBefore - Math.Max(0, target.Stats.GetOrZero(CharacterStat.CurrentNano));
+                int returned = (int)((long)taken * Math.Clamp(percent, 0, 100) / 100);
+                if (returned > 0 && !source.IsDead)
+                    ApplyNanoDelta(source, returned);
+                return true;
+            }
 
             int before = Math.Max(0, target.Stats.GetOrZero(CharacterStat.Health));
             ApplyHealthDelta(target, source, Random.Shared.Next(minHit, maxHit + 1), acStat, addDamage, direct: addDamage,

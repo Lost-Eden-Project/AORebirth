@@ -2121,6 +2121,7 @@
     {
       "Hash": "REDW",
       "Name": "Red Dawn",
+      "Skills": { "MartialArts": 100 },
       "Tiers": [
         { "Tier": 1, "LowId": 254454, "HighId": 254455, "LowQl": 1, "HighQl": 500 },
         { "Tier": 2, "LowId": 254456, "HighId": 254457, "LowQl": 1, "HighQl": 500 },

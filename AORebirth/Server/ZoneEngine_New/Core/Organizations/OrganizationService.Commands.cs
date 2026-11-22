@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.Organizations
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
+    using System.Threading.Tasks;
 
     using LostEden.Protocol.GameData;
     using LostEden.Protocol.Messages.N3Messages;
@@ -386,6 +387,103 @@ namespace ZoneEngine_New.Core.Organizations
             }));
         }
 
+        /// <summary>
+        /// A member whose side changed leaves its organization: one organization holds one side (invite, join and create
+        /// all check it; retail 508/247974149 "All players must have the same side in your organization"). A leader with
+        /// other members first hands the lead to the highest ranked of them (longest serving on a tie); a sole member's
+        /// organization ends, as its last member leaving ends it. Unlike a command this is never dropped while another
+        /// of the player's commands runs: it waits for that one, then runs in the organization's transaction.
+        /// </summary>
+        internal void LeaveForSideChange(Player player)
+        {
+            if (_disposed || !Rules.Enabled || player.Organization is not { } organization)
+                return;
+            int organizationId = organization.Id;
+            int id = player.Identity.Instance;
+            _ = Task.Run(async () =>
+            {
+                for (int attempt = 0; !_busy.TryAdd(id, 0); attempt++)
+                {
+                    if (_disposed || attempt >= SideChangeBusyAttempts)
+                    {
+                        _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                            "Organization side-change leave skipped character={0} org={1}: a command stayed busy", id, organizationId));
+                        return;
+                    }
+
+                    await Task.Delay(SideChangeBusyDelay).ConfigureAwait(false);
+                }
+
+                Outcome? outcome = null;
+                try
+                {
+                    outcome = _store.Transact(organizationId, tx =>
+                    {
+                        // Not a member any more (left or kicked meanwhile): nothing to say.
+                        if (tx.Row == null)
+                            return new Outcome();
+                        OrgState state = OrgState.From(tx.Row, tx.Members, Rules);
+                        if (state.Member(id) is not { } me)
+                            return new Outcome();
+
+                        Outcome left = SideChangeLeaveIn(tx, player, state, me);
+                        left.OrganizationId = organizationId;
+                        if (tx.Changed)
+                        {
+                            var after = tx.Reload();
+                            left.Previous = state;
+                            left.State = after is { } row ? OrgState.From(row.Row, row.Members, Rules) : OrgState.Tombstone(organizationId, state.Name);
+                        }
+
+                        return left;
+                    });
+                }
+                catch (Exception exception)
+                {
+                    _logger.Error(exception, "Organization side-change leave failed character=" + id);
+                }
+                finally
+                {
+                    _busy.TryRemove(id, out _);
+                }
+
+                if (outcome != null)
+                    Deliver(player, outcome);
+            });
+        }
+
+        const int SideChangeBusyAttempts = 100;
+        static readonly TimeSpan SideChangeBusyDelay = TimeSpan.FromMilliseconds(100);
+
+        static Outcome SideChangeLeaveIn(OrgTransaction tx, Player player, OrgState state, OrgMember me)
+        {
+            if (state.IsLeader(me.CharacterId))
+            {
+                OrgMember? heir = state.Members.Values
+                    .Where(member => member.CharacterId != me.CharacterId)
+                    .OrderBy(member => member.Rank)
+                    .ThenBy(member => member.JoinedAtUtc)
+                    .ThenBy(member => member.CharacterId)
+                    .FirstOrDefault();
+                if (heir == null)
+                    return DisbandIn(tx, player, me);
+
+                tx.SetLeader(heir.CharacterId);
+                tx.SetRank(heir.CharacterId, 0);
+                tx.RemoveMember(me.CharacterId);
+                Outcome handedOver = ActorFeedback(player, OrgText.OrgCategory, OrgText.YouLeft);
+                handedOver.OrgMessages.Add(OrgText.Org(OrgText.MemberLeft, me.Name));
+                handedOver.OrgMessages.Add(OrgText.Org(OrgText.LeadershipGiven, heir.Name));
+                handedOver.Notices.Add((heir.CharacterId, OrgText.Ref(OrgText.FeedbackCategory, OrgText.LeadershipGivenToYou, me.Name)));
+                return handedOver;
+            }
+
+            tx.RemoveMember(me.CharacterId);
+            Outcome outcome = ActorFeedback(player, OrgText.OrgCategory, OrgText.YouLeft);
+            outcome.OrgMessages.Add(OrgText.Org(OrgText.MemberLeft, me.Name));
+            return outcome;
+        }
+
         /// <param name="targetId">The selected character (0x0C), or 0 when kicking by <paramref name="name"/> (0x0D).</param>
         void Kick(Player player, int targetId, string? name)
         {
@@ -509,8 +607,8 @@ namespace ZoneEngine_New.Core.Organizations
 
         /// <summary>
         /// The characters a new organization starts with: the leader's full team (Create.TeamSize members, the actor
-        /// leading, one side, nobody in an organization as far as this instance knows; the store checks again), or the
-        /// GM alone when the rules let a GM found one without a team. Null when neither applies.
+        /// leading, one side, every member in play in the leader's zone, nobody in an organization; the store checks
+        /// again), or the GM alone when the rules let a GM found one without a team. Null when neither applies.
         /// </summary>
         IReadOnlyList<int>? CreatingTeam(Player player)
         {
@@ -519,11 +617,24 @@ namespace ZoneEngine_New.Core.Organizations
             var roster = _playfields.Value.Teams.GetRoster(player);
             if (roster is { } team && !team.IsRaid && team.LeaderId == leaderId && team.Members.Count == Rules.CreateTeamSize
                 && team.Members.All(m => m.Side == side && m.Name.Length > 0)
-                && team.Members.All(m => !_playfields.Value.FindPlayer(m.CharacterId, out Player local) || local.Organization == null))
+                && team.Members.All(m => InLeadersZone(player, m.CharacterId, out Player member) && member.Organization == null))
                 return team.Members.Select(m => m.CharacterId).ToArray();
             if (player.IsGm && Rules.GmCreateWithoutTeam && (roster == null || roster.Value.Members.Count <= 1))
                 return [leaderId];
             return null;
+        }
+
+        /// <summary>
+        /// The team member <paramref name="characterId"/> when it is in play on this instance on the leader's playfield.
+        /// A member on another zone or instance is not standing with the leader, so the team cannot found an organization.
+        /// </summary>
+        bool InLeadersZone(Player leader, int characterId, out Player member)
+        {
+            if (_playfields.Value.FindPlayer(characterId, out member) && member.Session != null
+                && member.Playfield != null && ReferenceEquals(member.Playfield, leader.Playfield))
+                return true;
+            member = null!;
+            return false;
         }
 
         /// <summary>Retail's name refusals (Feedback 501), in the order the captures show them; null for a valid name.</summary>

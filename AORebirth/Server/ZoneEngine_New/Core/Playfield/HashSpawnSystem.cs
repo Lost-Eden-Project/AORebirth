@@ -272,7 +272,7 @@ namespace ZoneEngine_New.Core.Playfield
             TakeInheritedState();
             locality.AttachHashSpawns(
                 _pointsByCell.Keys,
-                ScriptedSpawnCells(),
+                AlwaysColdSpawnCells(),
                 OnCellSleep,
                 OnCellTick,
                 OnIndoorSpawnTick);
@@ -420,22 +420,41 @@ namespace ZoneEngine_New.Core.Playfield
         /// position are numbered in load order. Bindings that match no point are reported once per playfield.
         /// </summary>
         /// <summary>
-        /// Cells holding a spawn point whose NPC runs a script. They stay Cold from load (CellHeatScheduler), so the NPC
-        /// spawns at once, runs its script with no player near, and respawns on its own timer after a death.
+        /// Cells holding a spawn point whose NPC runs a script or is <see cref="NpcFeature.Persistent"/>. They stay Cold
+        /// from load (CellHeatScheduler), so the NPC spawns at once, runs with no player near, and respawns on its own
+        /// timer after a death.
         /// </summary>
-        private List<int> ScriptedSpawnCells()
+        private List<int> AlwaysColdSpawnCells()
         {
             var cells = new List<int>();
-            if (_playfield.GetService<NpcScripts.NpcScriptCatalog>() is not { } scripts)
-                return cells;
-
+            NpcScripts.NpcScriptCatalog? scripts = _playfield.GetService<NpcScripts.NpcScriptCatalog>();
+            var templates = new List<MobTemplate>();
             foreach (KeyValuePair<int, List<HashSpawnPoint>> pair in _pointsByCell)
             {
-                if (pair.Value.Exists(point => scripts.BindsProgram(point.HashText, _playfield.ResourceId, point.Key)))
+                if (pair.Value.Exists(point =>
+                        scripts?.BindsProgram(point.HashText, _playfield.ResourceId, point.Key) == true
+                        || IsPersistent(point, templates)))
                     cells.Add(pair.Key);
             }
 
             return cells;
+        }
+
+        /// <summary>A mob point any of whose templates at its level range is <see cref="NpcFeature.Persistent"/>.</summary>
+        private bool IsPersistent(HashSpawnPoint point, List<MobTemplate> scratch)
+        {
+            if (point.IsStatic)
+                return false;
+
+            MobTemplate[]? fixedTemplates = point.FrozenTemplates;
+            if (fixedTemplates != null)
+                return Array.Exists(fixedTemplates, template => template.Has(NpcFeature.Persistent));
+
+            scratch.Clear();
+            _gameData.CollectMobSpawns(point.HashText, point.MinLevel, scratch);
+            if (point.MaxLevel != point.MinLevel)
+                _gameData.CollectMobSpawns(point.HashText, point.MaxLevel, scratch);
+            return scratch.Exists(template => template.Has(NpcFeature.Persistent));
         }
 
         private void AssignSpawnPointKeys()
@@ -1213,14 +1232,16 @@ namespace ZoneEngine_New.Core.Playfield
 
             // The point sleeps with its own cell, wherever its members are. A member serving a player as a charmed pet
             // is out with its owner, not idle here: the point stays awake until the charm ends and it comes home.
-            // Nor is a living scripted NPC: its script keeps running with no player near (its own cell stays Cold, see
-            // CellHeatScheduler), so it stays even when it has wandered out of the point's cell.
+            // Nor is a living scripted or Persistent NPC: it keeps running with no player near (its own cell stays Cold,
+            // see CellHeatScheduler), so it stays even when it has wandered out of the point's cell.
             // Nor is a living member that is fighting or walking home from a fight: a rotation spawn can stand cells away
             // from its primary point (Remur-Nefer REMU in 4311 fights at (256, 642), four cells from (215, 495)), and
             // the home cell going to sleep took it out of the world mid-fight (bug #433).
             for (int i = 0; i < members.Length; i++)
             {
                 if (members[i] is NpcCharacter { Pet: not null } or NpcCharacter { Scripts: not null, IsDead: false })
+                    return;
+                if (members[i] is NpcCharacter { IsDead: false } persistent && persistent.HasFeature(NpcFeature.Persistent))
                     return;
                 if (members[i] is NpcCharacter { IsDead: false } npc && (npc.IsInCombat || npc.IsEvading))
                     return;

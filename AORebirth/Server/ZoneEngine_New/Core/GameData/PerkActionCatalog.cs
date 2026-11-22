@@ -9,6 +9,8 @@ namespace ZoneEngine_New.Core.GameData
 
     using Utility;
 
+    using ZoneEngine_New.Core.Characters;
+
     /// <summary>
     /// Perk action templates from PerkActions.json, keyed by the 4-char action hash packed big-endian
     /// ("CNRE" = 0x434E5245, the AddPerkAction / UsePerk Parameter2). An action is one template or QL
@@ -67,7 +69,22 @@ namespace ZoneEngine_New.Core.GameData
                 if (actionId <= 0 || row.SkillModifier is <= 0)
                     throw Invalid("action " + row.Hash);
 
-                if (!actions.TryAdd(PackHash(row.Hash), new PerkActionDefinition(actionId, tiers.ToArray(), row.SkillModifier ?? 1.0)))
+                Dictionary<CharacterStat, int>? skills = null;
+                if (row.Skills != null)
+                {
+                    skills = new Dictionary<CharacterStat, int>();
+                    foreach ((string name, int percent) in row.Skills)
+                    {
+                        if (!Enum.TryParse(name, ignoreCase: true, out CharacterStat stat) || percent <= 0 || !skills.TryAdd(stat, percent))
+                            throw Invalid("skill " + name + " of " + row.Hash);
+                    }
+
+                    if (skills.Count == 0 || tiers.Count == 0)
+                        throw Invalid("skills of " + row.Hash);
+                }
+
+                if (!actions.TryAdd(PackHash(row.Hash),
+                        new PerkActionDefinition(actionId, tiers.ToArray(), row.SkillModifier ?? 1.0) { Skills = skills }))
                     throw Invalid("duplicate hash " + row.Hash);
             }
 
@@ -103,6 +120,9 @@ namespace ZoneEngine_New.Core.GameData
 
             public double? SkillModifier { get; set; }
 
+            /// <summary>Stat name to percent; see <see cref="PerkActionDefinition.Skills"/>.</summary>
+            public Dictionary<string, int>? Skills { get; set; }
+
             public TierRow?[]? Tiers { get; set; }
         }
 
@@ -123,6 +143,12 @@ namespace ZoneEngine_New.Core.GameData
     /// <summary>One perk action: its granted template, optional QL tiers and the skill rate that picks them.</summary>
     public sealed record PerkActionDefinition(int ActionId, PerkActionTier[] Tiers, double SkillModifier)
     {
+        /// <summary>
+        /// The skills (stat to percent) that pick the tier, when the tier templates carry no Attack map to read them
+        /// from (Red Dawn 254454-254459 heals by Martial Arts but has none). Null: the first tier's Attack map.
+        /// </summary>
+        public IReadOnlyDictionary<CharacterStat, int>? Skills { get; init; }
+
         /// <summary>
         /// The tier and QL for <paramref name="skill"/>: skill x <see cref="SkillModifier"/>, each
         /// <see cref="PerkActionCatalog.SkillPerTier"/> one tier, QL interpolated inside it; past the last tier

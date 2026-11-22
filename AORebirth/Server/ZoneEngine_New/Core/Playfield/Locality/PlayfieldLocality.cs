@@ -168,7 +168,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         internal void AttachHashSpawns(
             IEnumerable<int> spawnCellIds,
-            IEnumerable<int> scriptedSpawnCellIds,
+            IEnumerable<int> alwaysColdSpawnCellIds,
             Action<int> onCellSleep,
             Action<int> onCellTick,
             Action onIndoorSpawnTick)
@@ -178,7 +178,7 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                 onCellSleep,
                 onCellTick,
                 onIndoorSpawnTick,
-                scriptedSpawnCellIds);
+                alwaysColdSpawnCellIds);
         }
 
         // Players sneaking as of the last tick, and when sneakers were last re-checked against everyone's Perception.

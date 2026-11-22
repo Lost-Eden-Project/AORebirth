@@ -1,0 +1,1 @@
+- Changed: Some NPCs players wait on, such as the Unionist Foreman and his Reward Pulse buff, now stay in the world and keep their timers running when no one is nearby, and appear as soon as their zone opens.

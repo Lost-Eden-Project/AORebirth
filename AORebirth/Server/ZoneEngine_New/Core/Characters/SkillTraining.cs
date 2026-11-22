@@ -100,6 +100,9 @@ namespace ZoneEngine_New.Core.Characters
             foreach (GameTuple<Stat, uint> pair in pairs)
                 stats.Set((CharacterStat)pair.Value1, (int)pair.Value2, StatDetail.Base);
             stats.Set(CharacterStat.UsedIP, stats.GetOrZero(CharacterStat.UsedIP, StatDetail.Base) + (int)cost, StatDetail.Base);
+            // UsedIP is server-only; the client's IP stat is what is left to spend (WireValueOverride). Without this
+            // the client kept the IP it had before training, so the skill window showed the spent IP again.
+            stats.MarkDirty(CharacterStat.IP);
             player.RebaseStats();
             return true;
         }

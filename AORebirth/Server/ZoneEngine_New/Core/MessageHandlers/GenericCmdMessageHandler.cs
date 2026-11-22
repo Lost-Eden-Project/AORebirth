@@ -428,9 +428,11 @@ namespace ZoneEngine_New.Core.MessageHandlers
         /// </summary>
         bool TryUseItemOnItem(Player player, Playfield playfield, Identity sourceSlot, Identity target)
         {
-            // The used item comes from the inventory or a carried bag (packed Backpack handle/slot), as a plain use does.
+            // The used item comes from the inventory, a carried bag (packed Backpack handle/slot) or a wear page, as a
+            // plain use does: a garden key is worn in a HUD slot and picked up from there onto its statue.
+            bool worn = IsWearPage(sourceSlot.Type);
             if (!player.Inventory.IsHydrated
-                || sourceSlot.Type is not (IdentityType.Inventory or IdentityType.Backpack))
+                || !(worn || sourceSlot.Type is IdentityType.Inventory or IdentityType.Backpack))
                 return false;
             if (!player.Inventory.TryGetUseItem(sourceSlot, out Item source) || source.Locked)
                 return false;
@@ -456,7 +458,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
                 template = staticDynel.Template;
             }
-            else if (player.Inventory.TryGetUseItem(target, out Item targetItem))
+            else if (!worn && player.Inventory.TryGetUseItem(target, out Item targetItem))
             {
                 // Same reach as a plain use: carried pages and bags, never the bank or overflow; a locked item is never used on.
                 if (targetItem.Locked || ReferenceEquals(targetItem, source))
@@ -466,6 +468,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
             if (template == null)
                 return false;
+            // A worn item goes only on a world item, and ExecuteSpells refuses one the world item would use up.
             if (!template.SpellList.ContainsKey(EventType.OnUseItemOn))
                 return questUsed;
             if (!template.MeetsActionRequirements(stat => player.Stats.Get(stat), ActionType.UseItemOnItem))
@@ -557,6 +560,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
             return text.ToString();
         }
+
+        static bool IsWearPage(IdentityType type)
+            => type is IdentityType.WeaponPage or IdentityType.ArmorPage or IdentityType.ImplantPage or IdentityType.SocialPage;
 
         static string FormatPageSlots(Player player, IdentityType pageType)
         {

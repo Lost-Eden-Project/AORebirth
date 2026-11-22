@@ -353,6 +353,7 @@ namespace ZoneEngine_New.Core.Commands
             AppendOutcome(text, row, PathSearchOutcome.SearchFailed, "search-fail");
             AppendOutcome(text, row, PathSearchOutcome.NoStraightPath, "no-straight");
             AppendOutcome(text, row, PathSearchOutcome.Disconnected, "disconnected");
+            AppendOutcome(text, row, PathSearchOutcome.ShutPassage, "locked-door");
             text.Append(Field("hit cap", capped > 0 ? Color(Red, capped.ToString(CultureInfo.InvariantCulture)) : Color(Green, "0")))
                 .Append(Field("iters", Severity(row.MaxIterations, cap * 0.5, cap,
                     row.MaxIterations.ToString(CultureInfo.InvariantCulture)) + Muted("/" + cap.ToString(CultureInfo.InvariantCulture))));

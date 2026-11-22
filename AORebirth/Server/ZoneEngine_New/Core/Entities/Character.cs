@@ -695,10 +695,12 @@ namespace ZoneEngine_New.Core.Entities
                     suppressed = researcher;
             }
 
+            long grantCap = long.MaxValue;
             if (current.NextLevelXp > 0 && source != XpSource.Daily)
             {
                 double capPercent = source == XpSource.Kill ? XpCaps.KillXp : XpCaps.Quest;
-                amount = (int)Math.Min(amount, GameplayXpCaps.Of(capPercent, current.NextLevelXp));
+                grantCap = GameplayXpCaps.Of(capPercent, current.NextLevelXp);
+                amount = (int)Math.Min(amount, grantCap);
             }
 
             // XP gain turned off: what research did not take goes into the death pool instead, to come back later.
@@ -709,11 +711,12 @@ namespace ZoneEngine_New.Core.Entities
             }
 
             // A kill also gives back part of the XP lost on deaths since the last save (the death pool), in proportion to
-            // the kill's own XP before the side bonus.
+            // the kill's own XP before the side bonus, held to the same per-kill cap: a far higher mob's uncapped XP
+            // must not empty the pool in one kill.
             int recouped = 0;
             if (source == XpSource.Kill && this is Player recovering)
             {
-                recouped = recovering.TakeDeathPoolRecovery(earned);
+                recouped = recovering.TakeDeathPoolRecovery((int)Math.Min(earned, grantCap));
                 amount += recouped;
             }
 
@@ -2451,6 +2454,19 @@ namespace ZoneEngine_New.Core.Entities
             // The target's reflect takes its share off before the hit is shown. Reflect and damage shield are announced
             // ahead of the AttackInfo, as live does, and taken off this attacker once the hit has landed.
             int damageType = DamageCalculator.ResolveDamageType(this, characterWeapon.DamageTypeItem);
+            // An attack shield charge (Keeper Ward) takes the whole hit: nothing is reflected, absorbed in layers or
+            // dealt, and the hit procs nothing. Each side gets its feedback line (110/25272340 to the attacker,
+            // 110/236786603 with the charges left to the shielded character).
+            if (target.TryConsumeAttackShield(out int shieldsLeft))
+            {
+                ClientFeedback.Send(this, ClientFeedback.AttackBlockedByAttackShield);
+                ClientFeedback.SendFormatted(target, ClientFeedback.AttackShieldBlocked, shieldsLeft);
+                Modules.ModuleHooks.CombatResolved(this, target, AutoAttackSource, 0,
+                    AORebirth.Modules.Events.CombatResult.Hit, 0, damageType);
+                OnSwingShown(characterWeapon);
+                return;
+            }
+
             int damage = DamageReturn.Resolve(this, target, ScaleOutgoingDamage(target, result.Damage), damageType, shield: true,
                 out DamageReturn.Returned returned);
             DamageReturn.Announce(this, target, returned);
@@ -2597,6 +2613,45 @@ namespace ZoneEngine_New.Core.Entities
             if (damage <= 0)
                 return 0;
             return Playfield?.GetService<Configuration.GameplaySettings>()?.Pvp.CapHit(attacker, this, damage) ?? damage;
+        }
+
+        /// <summary>
+        /// Spends an attack shield charge on a weapon hit: Keeper Ward 210508 is ChangeVariable [AttackShield 516, 1], so
+        /// the stat reads 1 while that NCU entry is up. The hit is absorbed whole and the entry that gave the charge
+        /// leaves NCU (Ward 210512 lands a new one every 60 s). A shield no NCU entry grants is never spent, so it cannot
+        /// absorb without end. False when there is no charge; <paramref name="left"/> is the charges still up after this one.
+        /// </summary>
+        public bool TryConsumeAttackShield(out int left)
+        {
+            left = 0;
+            int charges = Stats.GetOrZero(CharacterStat.AttackShield);
+            if (charges <= 0)
+                return false;
+
+            for (int i = 0; i < _buffs.Count; i++)
+            {
+                Buff buff = _buffs[i];
+                if (!GrantsAttackShield(buff) || !Nanos.NanoRuntime.StripBuff(this, buff.Id))
+                    continue;
+                left = charges - 1;
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool GrantsAttackShield(Buff buff)
+        {
+            IReadOnlyList<ItemSpell> spells = buff.ModifierSpells;
+            for (int i = 0; i < spells.Count; i++)
+            {
+                if (spells[i].Is(FunctionType.ChangeVariable)
+                    && spells[i].TryReadInt(0, out int stat) && (CharacterStat)stat == CharacterStat.AttackShield
+                    && spells[i].TryReadInt(1, out int charges) && charges > 0)
+                    return true;
+            }
+
+            return false;
         }
 
         // The absorb pools (238-246) are never sent as stat updates: live does not, the client keeps its own count from

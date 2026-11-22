@@ -31,6 +31,12 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"Target resisted." (category 110).</summary>
         public const int TargetResisted = 205237300;
 
+        /// <summary>"Your attack was blocked by an attack shield!" (category 110): to the attacker a Keeper Ward stopped.</summary>
+        public const int AttackBlockedByAttackShield = 25272340;
+
+        /// <summary>"Your attack shield blocked the attack! (%d) left." (category 110): to the shielded character, with the charges left.</summary>
+        public const int AttackShieldBlocked = 236786603;
+
         /// <summary>"A too high level player in your team prevents you from receiving any experience." (category 110).</summary>
         public const int TeammateTooHighForXp = 121950320;
 

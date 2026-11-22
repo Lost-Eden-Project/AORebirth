@@ -26,7 +26,9 @@ namespace ZoneEngine_New.Core.Loot
     /// <summary>
     /// Need or Greed team loot for one playfield. When the corpse of an NPC a team in <see cref="TeamLootMode.NeedOrGreed"/>
     /// won drops, every item in it except Trash rarity is held (locked: nobody can take it from the corpse) and rolled for by the members on
-    /// this playfield within Gameplay.json loot.needGreedRange of the corpse. Each answers once: Need, Greed or Pass
+    /// this playfield within Gameplay.json loot.needGreedRange of the corpse. A chest a member of such a team opens is rolled
+    /// for the same way (<see cref="OnChestOpened"/>): its stored items are held by instance id until their rolls close, and a
+    /// won item's row moves to the winner exactly as a take from the chest moves it. Each answers once: Need, Greed or Pass
     /// (<see cref="LootRollChoiceMessage"/>, or /loot need|greed|pass [roll] from the stock client). The roll closes when
     /// all have answered or loot.needGreedRollSeconds pass (silence passes). Need beats Greed, the higher 1-100 roll wins,
     /// and the server puts the item straight into the winner's inventory; when nobody wants it, or no roller can take it
@@ -51,7 +53,8 @@ namespace ZoneEngine_New.Core.Loot
         sealed class Roll
         {
             public required int Id { get; init; }
-            public required Corpse Corpse { get; init; }
+            /// <summary>The corpse or chest the item is held in.</summary>
+            public required LootableDynel Source { get; init; }
             public required Item Item { get; init; }
             public required string ItemName { get; init; }
             public required DateTime ClosesAtUtc { get; init; }
@@ -87,8 +90,40 @@ namespace ZoneEngine_New.Core.Loot
         {
             ArgumentNullException.ThrowIfNull(corpse);
             if (corpse.LootWinner == Identity.None || corpse.Loot.Content.Count == 0
-                || !_registry.TryGet(corpse.LootWinner, out Dynel? winnerDynel) || winnerDynel is not Player winner
-                || _playfield.GetService<TeamService>()?.GetTeam(winner) is not { LootMode: TeamLootMode.NeedOrGreed } team)
+                || !_registry.TryGet(corpse.LootWinner, out Dynel? winnerDynel) || winnerDynel is not Player winner)
+                return;
+            StartRolls(corpse, winner, item =>
+            {
+                if (item.Locked || IsTrash(item))
+                    return false;
+                item.Locked = true;
+                return true;
+            });
+        }
+
+        /// <summary>
+        /// A player newly opened a chest (under its loot gate, its stored rows just reloaded). When their team rolls for
+        /// loot and at least two members are there to roll, each stored item not rolled for on this chest before goes up
+        /// for a roll: held by instance id, so no take path hands it out (<see cref="Chest.CanDistribute"/>), and never
+        /// rolled twice. Trash, auto-consumed items and items the chest's policy refuses stay ordinary loot.
+        /// </summary>
+        public void OnChestOpened(Chest chest, Player opener)
+        {
+            ArgumentNullException.ThrowIfNull(chest);
+            ArgumentNullException.ThrowIfNull(opener);
+            if (chest.Loot.Content.Count == 0)
+                return;
+            StartRolls(chest, opener, item => !item.Locked && item.IsPersisted && !IsTrash(item)
+                && !AutoConsumedItems.IsAutoConsumed(item) && chest.CanDistribute(item) && chest.TryHoldForRoll(item));
+        }
+
+        /// <summary>
+        /// Opens a roll for each item <paramref name="tryHold"/> holds, for the members of <paramref name="anchor"/>'s
+        /// Need or Greed team on this playfield within range of <paramref name="source"/>; nothing when fewer than two.
+        /// </summary>
+        void StartRolls(LootableDynel source, Player anchor, Func<Item, bool> tryHold)
+        {
+            if (_playfield.GetService<TeamService>()?.GetTeam(anchor) is not { LootMode: TeamLootMode.NeedOrGreed } team)
                 return;
 
             Configuration.GameplayLoot settings = Settings;
@@ -98,13 +133,13 @@ namespace ZoneEngine_New.Core.Loot
             {
                 if (_registry.TryGet(new Identity { Type = IdentityType.SimpleChar, Instance = memberId }, out Dynel? dynel)
                     && dynel is Player member && ReferenceEquals(member.Playfield, _playfield) && member.Session != null
-                    && member.GetEdgeDistanceTo(corpse) <= settings.NeedGreedRange)
+                    && member.GetEdgeDistanceTo(source) <= settings.NeedGreedRange)
                 {
                     rollers.Add(memberId);
                     present.Add(member);
                 }
             }
-            // Alone there is nobody to roll against: the winner loots as usual.
+            // Alone there is nobody to roll against: the winner or opener loots as usual.
             if (rollers.Count < 2)
                 return;
 
@@ -114,17 +149,16 @@ namespace ZoneEngine_New.Core.Loot
 
             DateTime closes = DateTime.UtcNow.AddSeconds(settings.NeedGreedRollSeconds);
             int opened = 0;
-            foreach (Item item in corpse.Loot.Content.OrderBy(pair => pair.Key).Select(pair => pair.Value).ToArray())
+            foreach (Item item in source.Loot.Content.OrderBy(pair => pair.Key).Select(pair => pair.Value).ToArray())
             {
                 if (opened == MaxRollsPerCorpse)
                     break;
-                if (item.Locked || IsTrash(item))
+                if (!tryHold(item))
                     continue;
-                item.Locked = true;
                 var roll = new Roll
                 {
                     Id = Interlocked.Increment(ref _nextRollId) & int.MaxValue,
-                    Corpse = corpse,
+                    Source = source,
                     Item = item,
                     ItemName = string.IsNullOrEmpty(item.Name) ? "an item" : item.Name,
                     ClosesAtUtc = closes,
@@ -140,7 +174,7 @@ namespace ZoneEngine_New.Core.Loot
                     {
                         Identity = member.Identity,
                         RollId = roll.Id,
-                        Corpse = corpse.Identity,
+                        Corpse = source.Identity,
                         LowId = item.LowId,
                         HighId = item.HighId,
                         Quality = item.Quality,
@@ -152,7 +186,8 @@ namespace ZoneEngine_New.Core.Loot
 
             if (opened > 0)
                 _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                    "Need or Greed corpse={0} team={1} rolls={2} rollers={3}", corpse.Identity.Instance, team.TeamId, opened,
+                    "Need or Greed {0}={1} team={2} rolls={3} rollers={4}", source is Chest ? "chest" : "corpse",
+                    source.Identity.Instance, team.TeamId, opened,
                     string.Join(",", rollers)));
         }
 
@@ -239,7 +274,7 @@ namespace ZoneEngine_New.Core.Loot
             _due.Clear();
             foreach (Roll roll in _rolls.Values)
             {
-                if (now >= roll.ClosesAtUtc || !ReferenceEquals(roll.Corpse.Playfield, _playfield))
+                if (now >= roll.ClosesAtUtc || !SourcePresent(roll))
                     _due.Add(roll);
             }
             foreach (Roll roll in _due)
@@ -252,7 +287,7 @@ namespace ZoneEngine_New.Core.Loot
             if (!_rolls.Remove(roll.Id))
                 return;
 
-            bool inCorpse = ReferenceEquals(roll.Corpse.Playfield, _playfield) && TryFindSlot(roll.Corpse, roll.Item, out _);
+            bool inCorpse = SourcePresent(roll) && TryFindHeld(roll, out _, out _);
             var entries = roll.Rollers
                 .Select(id => roll.Answers.TryGetValue(id, out var answer)
                     ? new LootRollEntry(id, answer.Choice, answer.Value)
@@ -281,14 +316,18 @@ namespace ZoneEngine_New.Core.Loot
 
             string text;
             if (!inCorpse)
-                text = string.Format(CultureInfo.InvariantCulture, "The roll for {0} ended: the remains are gone.", roll.ItemName);
+            {
+                Release(roll);
+                text = string.Format(CultureInfo.InvariantCulture, "The roll for {0} ended: the {1} gone.", roll.ItemName,
+                    roll.Source is Chest ? "chest is" : "remains are");
+            }
             else if (winner != null)
                 text = string.Format(CultureInfo.InvariantCulture, "{0} won {1} with {2} {3}.", winner.Name, roll.ItemName,
                     won.Choice == LootRollChoice.Need ? "Need" : "Greed", won.Roll);
             else
             {
-                // Nobody wanted it, or nobody who wanted it could take it: it is ordinary loot in the corpse now.
-                roll.Item.Locked = false;
+                // Nobody wanted it, or nobody who wanted it could take it: it is ordinary loot in the corpse or chest now.
+                Release(roll);
                 text = string.Format(CultureInfo.InvariantCulture, "Nobody won {0}; it is free to loot.", roll.ItemName);
             }
 
@@ -311,7 +350,7 @@ namespace ZoneEngine_New.Core.Loot
             }
             Tell(roll.Rollers, text, RollsLink(roll, entries, winner != null ? won.CharacterId : 0));
             _logger.Info(string.Format(CultureInfo.InvariantCulture,
-                "Need or Greed roll={0} corpse={1} item={2} winner={3} answers={4}", roll.Id, roll.Corpse.Identity.Instance,
+                "Need or Greed roll={0} source={1} item={2} winner={3} answers={4}", roll.Id, roll.Source.Identity.Instance,
                 roll.Item.LowId, winner?.Identity.Instance ?? 0,
                 string.Join(",", entries.Select(e => e.CharacterId + ":" + e.Choice + ":" + e.Roll))));
         }
@@ -371,17 +410,45 @@ namespace ZoneEngine_New.Core.Loot
             return int.MaxValue;
         }
 
-        /// <summary>
-        /// Moves the rolled item out of the corpse into the winner's inventory: onto a stack it joins, else a free
-        /// inventory slot, else overflow while it is under capacity (never trimming an older overflow item). False leaves
-        /// it in the corpse, locked, for the next roller.
-        /// </summary>
+        /// <summary>A roll that awarded nothing hands its item back as ordinary loot.</summary>
+        static void Release(Roll roll)
+        {
+            if (roll.Source is Chest chest)
+                chest.ReleaseRollHold(roll.Item.InstanceId);
+            else
+                roll.Item.Locked = false;
+        }
+
+        /// <summary>The corpse or chest is still on this playfield (a chest also still registered as itself).</summary>
+        bool SourcePresent(Roll roll)
+            => ReferenceEquals(roll.Source.Playfield, _playfield)
+                && (roll.Source is not Chest chest
+                    || (_registry.TryGet(chest.Identity, out Dynel? registered) && ReferenceEquals(registered, chest)));
+
         bool TryAward(Roll roll, int characterId, out Player receiver)
         {
             receiver = null!;
             if (!TryGetLocalPlayer(characterId, out Player player) || player.Session == null || player.IsPersistenceQuarantined
                 || !player.Inventory.IsHydrated)
                 return false;
+            if (roll.Source is Chest chest)
+            {
+                if (!TryAwardFromChest(roll, chest, player))
+                    return false;
+                receiver = player;
+                return true;
+            }
+            return TryAwardFromCorpse(roll, (Corpse)roll.Source, player, out receiver);
+        }
+
+        /// <summary>
+        /// Moves the rolled item out of the corpse into the winner's inventory: onto a stack it joins, else a free
+        /// inventory slot, else overflow while it is under capacity (never trimming an older overflow item). False leaves
+        /// it in the corpse, locked, for the next roller.
+        /// </summary>
+        bool TryAwardFromCorpse(Roll roll, Corpse corpse, Player player, out Player receiver)
+        {
+            receiver = null!;
             Item item = roll.Item;
             if (UniqueItems.WouldDuplicate(player, item, out string uniqueName))
             {
@@ -394,8 +461,7 @@ namespace ZoneEngine_New.Core.Loot
                 RequirementFeedback.SendText(player, "Your inventory and overflow are full: you could not take " + roll.ItemName + ".");
                 return false;
             }
-            Corpse corpse = roll.Corpse;
-            if (!TryFindSlot(corpse, item, out int slot))
+            if (!TryFindHeld(roll, out int slot, out _))
                 return false;
 
             // The opener's loot window would still show the item: it closes, and they open the remains again.
@@ -458,17 +524,85 @@ namespace ZoneEngine_New.Core.Loot
             => player.Inventory.Overflow.Content.Count < OverflowGrants.Capacity(player)
                 && player.Inventory.Overflow.FindFreeSlot() >= 0;
 
-        static bool TryFindSlot(Corpse corpse, Item item, out int slot)
+        /// <summary>
+        /// The won chest item moves to a free inventory slot as a take from the chest moves it
+        /// (<c>InventoryMoveService.TakeSharedLoot</c>): under the winner's persistence gate and the chest's loot gate, its
+        /// row's move is queued on the winner's commit lane locking the chest row as last seen, then memory changes, and the
+        /// chest writes the take before it reloads its rows for a new opener. No stack join or overflow: those paths grant
+        /// new rows, and this item already has one. False leaves it in the chest, held, for the next roller.
+        /// </summary>
+        bool TryAwardFromChest(Roll roll, Chest chest, Player player)
         {
-            foreach ((int key, Item held) in corpse.Loot.Content)
+            InventoryActionService? actions = _playfield.GetService<InventoryActionService>();
+            if (actions == null || player.Session?.State != SessionState.InPlay)
+                return false;
+            Container page = player.Inventory.Inventory;
+            Item item;
+            lock (player.PersistenceGate)
             {
-                if (ReferenceEquals(held, item))
+                lock (chest.LootGate)
+                {
+                    if (!TryFindHeld(roll, out int slot, out item) || !item.IsPersisted || item.Locked
+                        || !chest.PassesLootPolicy(item) || chest.AccessValidator?.Invoke(player) == false)
+                        return false;
+                    if (UniqueItems.WouldDuplicate(player, item, out string uniqueName))
+                    {
+                        ClientFeedback.SendFormatted(player, ClientFeedback.AlreadyHaveUniqueItem, uniqueName);
+                        return false;
+                    }
+                    int free = page.FindFreeSlot();
+                    if (free < 0)
+                    {
+                        RequirementFeedback.SendText(player, "Your inventory is full: you could not take " + roll.ItemName + ".");
+                        return false;
+                    }
+
+                    // The opener's loot window would still show the item: it closes, and they open the chest again.
+                    if (chest.IsOpen)
+                        chest.Close();
+                    // Queued before memory changes; the commit cannot run before this returns (the gate is held).
+                    actions.QueueSharedSourceRelocation(player, item,
+                        item.ToRecord(chest.Loot.Identity, slot, item.StackCount), page.Identity, free);
+                    chest.Loot.Content.Remove(slot);
+                    chest.ReleaseRollHold(item.InstanceId);
+                    if (!page.Add(free, item))
+                        throw new InvalidOperationException("Reserved inventory slot changed.");
+                    chest.RecordPendingTake(player);
+                    chest.NotifyLootChanged();
+                }
+            }
+
+            player.InvalidateOwnedItemCache();
+            ModuleHooks.ItemMoved(player, item, ItemPlaces.Of(chest.Loot, chest), ModuleHooks.Place(ItemPlaceKind.Inventory));
+            player.Session?.Send(new AddTemplateMessage
+            {
+                Identity = player.Identity,
+                HighId = item.HighId,
+                LowId = item.LowId,
+                Quality = item.Quality,
+                Count = item.StackCount
+            });
+            return true;
+        }
+
+        /// <summary>
+        /// Where the rolled item is held now. A chest rebuilds its items from their rows on every new open, so a chest
+        /// roll finds its item by instance id; corpse loot is never rebuilt and is found as the very item.
+        /// </summary>
+        static bool TryFindHeld(Roll roll, out int slot, out Item item)
+        {
+            bool byInstance = roll.Source is Chest;
+            foreach ((int key, Item held) in roll.Source.Loot.Content)
+            {
+                if (byInstance ? held.InstanceId == roll.Item.InstanceId : ReferenceEquals(held, roll.Item))
                 {
                     slot = key;
+                    item = held;
                     return true;
                 }
             }
             slot = -1;
+            item = null!;
             return false;
         }
 

@@ -1,0 +1,1 @@
+- Fixed: Monsters no longer notice you through a locked door, and neither monsters nor pets can walk through one.

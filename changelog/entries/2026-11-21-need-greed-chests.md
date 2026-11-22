@@ -1,0 +1,1 @@
+- Added: Need or Greed team loot now covers chests: when a teammate opens a chest, the team rolls for its items the same way as for corpse loot.

@@ -4,8 +4,11 @@ namespace ZoneEngine_New.Core.Organizations
     using System.Collections.Generic;
     using System.Linq;
 
-    /// <summary>What a player shows of its organization: the id (Clan stat, 0xDEAA identity) and the name.</summary>
-    public sealed record PlayerOrganization(int Id, string Name);
+    /// <summary>
+    /// What a player shows of its organization: the id (Clan stat, 0xDEAA identity), the name, and the player's rank name
+    /// under the organization's governing form (the info window's rank line, InfoPacket ClanLevel).
+    /// </summary>
+    public sealed record PlayerOrganization(int Id, string Name, string RankName = "");
 
     /// <summary>A character's membership as stored, read at login: the organization, its name, form and leader, the stored rank.</summary>
     public sealed record OrgMembershipRow(int OrganizationId, string Name, int GoverningForm, int LeaderId, int StoredRank);

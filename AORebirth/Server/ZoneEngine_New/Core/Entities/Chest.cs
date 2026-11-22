@@ -9,6 +9,7 @@ namespace ZoneEngine_New.Core.Entities
 
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Inventory;
+    using ZoneEngine_New.Core.Loot;
     using ZoneEngine_New.Core.Playfield;
     using ZoneEngine_New.Core.Playfield.Locality;
 
@@ -116,7 +117,46 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Generated mission chests bind the current RK policy; generic containers retain their own rules.</summary>
         public Func<Item, bool>? LootItemValidator { get; set; }
 
-        public bool CanDistribute(Item item) => LootItemValidator?.Invoke(item) != false;
+        /// <summary>
+        /// Every take path (move, stack join, delete) asks this before an item leaves the chest: an item up for a Need or
+        /// Greed roll stays put until the roll closes.
+        /// </summary>
+        public bool CanDistribute(Item item) => !IsHeldForRoll(item) && PassesLootPolicy(item);
+
+        internal bool PassesLootPolicy(Item item) => LootItemValidator?.Invoke(item) != false;
+
+        /// <summary>Instance ids up for an open Need or Greed roll (<see cref="LootRollService"/>).</summary>
+        readonly HashSet<int> _heldForRoll = new();
+
+        /// <summary>Instance ids already rolled for on this chest: a later opener's team does not roll them again.</summary>
+        readonly HashSet<int> _rolled = new();
+
+        /// <summary>
+        /// Holds a stored item for a roll, keyed by instance id because a reopen rebuilds the chest's items from their rows.
+        /// False when it has no row id or was rolled for already.
+        /// </summary>
+        internal bool TryHoldForRoll(Item item)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            lock (LootGate)
+                return item.InstanceId > 0 && _rolled.Add(item.InstanceId) && _heldForRoll.Add(item.InstanceId);
+        }
+
+        internal void ReleaseRollHold(int instanceId)
+        {
+            lock (LootGate)
+                _heldForRoll.Remove(instanceId);
+        }
+
+        internal bool IsHeldForRoll(Item item)
+        {
+            lock (LootGate)
+                return _heldForRoll.Contains(item.InstanceId);
+        }
+
+        /// <summary>A Need or Greed team member opening the chest puts its items up for rolls.</summary>
+        protected override void OnOpened(Player player)
+            => Playfield?.GetService<LootRollService>()?.OnChestOpened(this, player);
 
         /// <summary>Stat 299 a lockable chest must carry for the client to allow a lock pick on it.</summary>
         public int LockDifficulty { get; }

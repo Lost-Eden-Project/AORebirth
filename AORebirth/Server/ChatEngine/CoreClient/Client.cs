@@ -185,26 +185,57 @@ namespace ChatEngine.CoreClient
         /// </summary>
         private readonly HashSet<uint> buddyIds = new HashSet<uint>();
 
+        /// <summary>
+        /// The subset of <see cref="buddyIds"/> stored in the database: friends the player added. The rest are
+        /// session-only tell partners.
+        /// </summary>
+        private readonly HashSet<uint> storedBuddyIds = new HashSet<uint>();
+
         internal void SetBuddies(IEnumerable<int> ids)
         {
             lock (this.buddyStatusSync)
             {
                 this.buddyIds.Clear();
+                this.storedBuddyIds.Clear();
                 foreach (int id in ids)
                 {
                     if (id > 0)
                     {
                         this.buddyIds.Add(unchecked((uint)id));
+                        this.storedBuddyIds.Add(unchecked((uint)id));
                     }
                 }
             }
         }
 
-        internal void AddBuddyId(uint buddyId)
+        internal void AddBuddyId(uint buddyId, bool stored)
         {
             lock (this.buddyStatusSync)
             {
                 this.buddyIds.Add(buddyId);
+                if (stored)
+                {
+                    this.storedBuddyIds.Add(buddyId);
+                }
+            }
+        }
+
+        internal bool IsStoredBuddy(uint buddyId)
+        {
+            lock (this.buddyStatusSync)
+            {
+                return this.storedBuddyIds.Contains(buddyId);
+            }
+        }
+
+        /// <summary>Forgets <paramref name="buddyId"/> as a buddy of either kind, with its status flags.</summary>
+        internal void RemoveBuddyId(uint buddyId)
+        {
+            lock (this.buddyStatusSync)
+            {
+                this.buddyIds.Remove(buddyId);
+                this.storedBuddyIds.Remove(buddyId);
+                this.buddyStatusFlags.Remove(buddyId);
             }
         }
 

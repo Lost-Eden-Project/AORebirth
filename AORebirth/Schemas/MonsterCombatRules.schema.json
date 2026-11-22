@@ -42,7 +42,8 @@
             "SpawnsExitDevice",
             "NoXp",
             "HealsSpawner",
-            "AggroesAllSides"
+            "AggroesAllSides",
+            "Persistent"
           ]
         }
       },

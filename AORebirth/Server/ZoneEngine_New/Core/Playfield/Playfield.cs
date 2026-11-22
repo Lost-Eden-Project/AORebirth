@@ -245,7 +245,27 @@ namespace ZoneEngine_New.Core.Playfield
         /// Null when the playfield is a style template or GameData has no usable Navmesh.dat. A generated dungeon
         /// sets its own from the bake cache (<see cref="DungeonNavMeshes"/>) while it builds.
         /// </summary>
-        public NavMeshPathfinder? Pathfinder { get; protected set; }
+        public NavMeshPathfinder? Pathfinder
+        {
+            get => _pathfinder;
+            protected set
+            {
+                _pathfinder = value;
+                BindPassageGate();
+            }
+        }
+
+        NavMeshPathfinder? _pathfinder;
+
+        /// <summary>
+        /// Routes keep out of locked doors: the pathfinder takes the world's doors as its shut passages, whichever of
+        /// the two is set last.
+        /// </summary>
+        void BindPassageGate()
+        {
+            if (_pathfinder != null)
+                _pathfinder.PassageGate = _serviceProvider?.GetService<WorldSimulationAccess>()?.Instance?.Doors;
+        }
 
         /// <summary>Suppression gas per zone, from the resource playfield's Districts.json.</summary>
         public DistrictFightModes FightModes { get; }
@@ -357,6 +377,7 @@ namespace ZoneEngine_New.Core.Playfield
         {
             ArgumentNullException.ThrowIfNull(world);
             WorldAccess.Instance = world;
+            BindPassageGate();
         }
 
         /// <summary>

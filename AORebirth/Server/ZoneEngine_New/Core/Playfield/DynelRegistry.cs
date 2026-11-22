@@ -25,7 +25,14 @@ namespace ZoneEngine_New.Core.Playfield
         /// and keeps its identity, so no two NPCs on any playfield may ever share one.
         /// </summary>
         private static int _nextNpcInstance = FirstNpcInstance - 1;
-        private int _nextCorpseInstance = FirstCorpseInstance - 1;
+        /// <summary>
+        /// Engine-wide too, and from World's block when there is one: the client keeps a container's name by its identity
+        /// (as it keeps a bag's), so a corpse id handed out again on another playfield (each mission floor is one) opened
+        /// with the name of the corpse that had it before (bugs #619, #574, #589).
+        /// </summary>
+        private static int _nextCorpseInstance = FirstCorpseInstance - 1;
+        private static int _firstCorpseInstance = FirstCorpseInstance;
+        private static int _lastCorpseInstance = int.MaxValue;
         private int _nextVendingMachineInstance = FirstVendingMachineInstance - 1;
         private int _nextTempBagInstance = FirstTempBagInstance - 1;
         private int _nextStaticDynelInstance = FirstStaticDynelInstance - 1;
@@ -48,6 +55,11 @@ namespace ZoneEngine_New.Core.Playfield
             Volatile.Write(ref _firstNpcInstance, first);
             Volatile.Write(ref _lastNpcInstance, (int)Math.Min(int.MaxValue, first + (long)count - 1));
             Volatile.Write(ref _nextNpcInstance, first - 1);
+            // Corpses are their own identity type, so they take the same block without meeting an NPC id, and two zone
+            // instances never hand out the same corpse.
+            Volatile.Write(ref _firstCorpseInstance, first);
+            Volatile.Write(ref _lastCorpseInstance, (int)Math.Min(int.MaxValue, first + (long)count - 1));
+            Volatile.Write(ref _nextCorpseInstance, first - 1);
             return true;
         }
 
@@ -63,14 +75,28 @@ namespace ZoneEngine_New.Core.Playfield
             };
         }
 
+        /// <summary>
+        /// A corpse identity no other corpse on this engine has had since the block last wrapped. A death must always get
+        /// a corpse, so the end of the block wraps to its start (millions of corpses later) instead of failing.
+        /// </summary>
         public Identity AllocateCorpseIdentity()
-        {
-            int instance = Interlocked.Increment(ref _nextCorpseInstance);
-            return new Identity
+            => new()
             {
                 Type = IdentityType.Corpse,
-                Instance = instance
+                Instance = NextCorpseInstance()
             };
+
+        internal static int NextCorpseInstance()
+        {
+            while (true)
+            {
+                int first = Volatile.Read(ref _firstCorpseInstance);
+                int last = Volatile.Read(ref _lastCorpseInstance);
+                int current = Volatile.Read(ref _nextCorpseInstance);
+                int next = current >= last || current < first - 1 ? first : current + 1;
+                if (Interlocked.CompareExchange(ref _nextCorpseInstance, next, current) == current)
+                    return next;
+            }
         }
 
         /// <summary>Identity for a shop attached to an NPC vendor rather than placed by Dynels.dat.</summary>

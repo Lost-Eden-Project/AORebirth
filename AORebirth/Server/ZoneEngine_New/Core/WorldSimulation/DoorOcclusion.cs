@@ -38,8 +38,13 @@ namespace ZoneEngine_New.Core.WorldSimulation
     /// or the sphere's top for one centred at the base) and half width (the rest of the radius), and the touch reach
     /// (sphere radius plus the player's).
     /// </para>
+    /// <para>
+    /// A locked, closed door is also a shut passage for the playfield's pathfinder (<see cref="AORebirth.World.Pathfinding.INavPassageGate"/>):
+    /// the navmesh runs through every doorway, so without it an NPC or pet chased straight through a locked door
+    /// (bug #632).
+    /// </para>
     /// </summary>
-    public sealed class DoorOcclusion
+    public sealed class DoorOcclusion : AORebirth.World.Pathfinding.INavPassageGate
     {
         /// <summary>Seconds between contact checks: how far the server may trail a client's door.</summary>
         const double TouchIntervalSeconds = 0.1;
@@ -166,30 +171,103 @@ namespace ZoneEngine_New.Core.WorldSimulation
         /// <summary>True when the segment passes through a closed door's panel.</summary>
         public bool Blocks(Vec3 from, Vec3 to)
         {
-            float minX = MathF.Min(from.X, to.X), maxX = MathF.Max(from.X, to.X);
-            float minZ = MathF.Min(from.Z, to.Z), maxZ = MathF.Max(from.Z, to.Z);
             foreach (Blocker d in _blockers)
             {
-                if (d.IsOpen
-                    || maxX < d.X - d.HalfWidth || minX > d.X + d.HalfWidth
-                    || maxZ < d.Z - d.HalfWidth || minZ > d.Z + d.HalfWidth)
-                    continue;
-
-                // Signed distances to the panel's plane (vertical, normal = its facing).
-                float sa = ((from.X - d.X) * d.FacingX) + ((from.Z - d.Z) * d.FacingZ);
-                float sb = ((to.X - d.X) * d.FacingX) + ((to.Z - d.Z) * d.FacingZ);
-                if ((sa > 0f && sb > 0f) || (sa < 0f && sb < 0f) || sa == sb)
-                    continue;
-
-                float t = sa / (sa - sb);
-                float hx = from.X + ((to.X - from.X) * t) - d.X;
-                float hy = from.Y + ((to.Y - from.Y) * t) - d.Y;
-                float hz = from.Z + ((to.Z - from.Z) * t) - d.Z;
-                if (MathF.Abs((hx * d.AcrossX) + (hz * d.AcrossZ)) <= d.HalfWidth && hy >= 0f && hy <= d.Height)
+                if (!d.IsOpen && Crosses(d, from.X, from.Y, from.Z, to.X, to.Y, to.Z, 0f))
                     return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Height above the floor a walked route is tested at: route points are feet on the navmesh, which can sit a
+        /// little under the door's base.
+        /// </summary>
+        const float PassageLift = 0.5f;
+
+        /// <summary>
+        /// How far past a door's panel edge a walked route still counts as going through it. A route through a doorway
+        /// keeps an agent radius off its frame; only a wall lies past the frame, and no route runs through a wall.
+        /// </summary>
+        const float PassageSideMargin = 0.5f;
+
+        /// <summary>A door is locked and closed: no one walks through it (a locked door never opens to a touch).</summary>
+        public bool AnyShut
+        {
+            get
+            {
+                foreach (Blocker d in _blockers)
+                {
+                    if (d.IsLocked && !d.IsOpen)
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        /// <summary>A locked, closed door's panel lies within <paramref name="radius"/> (XZ) of <paramref name="at"/>.</summary>
+        public bool AnyShutWithin(System.Numerics.Vector3 at, float radius)
+        {
+            foreach (Blocker d in _blockers)
+            {
+                float reach = radius + d.HalfWidth;
+                float dx = d.X - at.X, dz = d.Z - at.Z;
+                if ((dx * dx) + (dz * dz) <= reach * reach && d.IsLocked && !d.IsOpen)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when the walked route from <paramref name="start"/> along <paramref name="waypoints"/> goes through a
+        /// locked, closed door. Feet positions; each leg is tested at <see cref="PassageLift"/> above them.
+        /// </summary>
+        public bool BlocksRoute(System.Numerics.Vector3 start, IReadOnlyList<System.Numerics.Vector3> waypoints)
+        {
+            ArgumentNullException.ThrowIfNull(waypoints);
+            foreach (Blocker d in _blockers)
+            {
+                if (!d.IsLocked || d.IsOpen)
+                    continue;
+
+                System.Numerics.Vector3 from = start;
+                for (int i = 0; i < waypoints.Count; i++)
+                {
+                    System.Numerics.Vector3 to = waypoints[i];
+                    if (Crosses(d, from.X, from.Y + PassageLift, from.Z, to.X, to.Y + PassageLift, to.Z, PassageSideMargin))
+                        return true;
+                    from = to;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The segment crosses <paramref name="d"/>'s panel, widened by <paramref name="sideMargin"/> past each edge. A
+        /// segment that only touches the panel's plane at one end counts as crossing.
+        /// </summary>
+        static bool Crosses(Blocker d, float fromX, float fromY, float fromZ, float toX, float toY, float toZ, float sideMargin)
+        {
+            float half = d.HalfWidth + sideMargin;
+            if (MathF.Max(fromX, toX) < d.X - half || MathF.Min(fromX, toX) > d.X + half
+                || MathF.Max(fromZ, toZ) < d.Z - half || MathF.Min(fromZ, toZ) > d.Z + half)
+                return false;
+
+            // Signed distances to the panel's plane (vertical, normal = its facing).
+            float sa = ((fromX - d.X) * d.FacingX) + ((fromZ - d.Z) * d.FacingZ);
+            float sb = ((toX - d.X) * d.FacingX) + ((toZ - d.Z) * d.FacingZ);
+            if ((sa > 0f && sb > 0f) || (sa < 0f && sb < 0f) || sa == sb)
+                return false;
+
+            float t = sa / (sa - sb);
+            float hx = fromX + ((toX - fromX) * t) - d.X;
+            float hy = fromY + ((toY - fromY) * t) - d.Y;
+            float hz = fromZ + ((toZ - fromZ) * t) - d.Z;
+            return MathF.Abs((hx * d.AcrossX) + (hz * d.AcrossZ)) <= half && hy >= 0f && hy <= d.Height;
         }
 
         /// <summary>

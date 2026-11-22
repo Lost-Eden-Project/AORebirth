@@ -58,6 +58,7 @@ namespace ZoneEngine_New.Core.Organizations
         readonly ConcurrentDictionary<int, byte> _busy = new();
         readonly ConcurrentDictionary<int, Invitation> _invitations = new();
         readonly ConcurrentDictionary<int, PendingTransfer> _transfers = new();
+        readonly Dictionary<int, (Player Player, Action<CharacterStat, int, int, bool> Observer)> _sideObservers = new();
         Timer? _syncTimer;
         Timer? _voteTimer;
         int _syncing;
@@ -140,10 +141,12 @@ namespace ZoneEngine_New.Core.Organizations
                 return;
             }
 
-            player.Organization = new PlayerOrganization(membership.OrganizationId, membership.Name);
+            int rank = rules.EffectiveRank(membership.GoverningForm, membership.StoredRank,
+                membership.LeaderId == player.Identity.Instance);
+            player.Organization = new PlayerOrganization(membership.OrganizationId, membership.Name,
+                rules.FormOf(membership.GoverningForm).RankName(rank));
             player.Stats.Set(CharacterStat.Clan, membership.OrganizationId, StatDetail.Base);
-            player.Stats.Set(CharacterStat.ClanLevel, rules.EffectiveRank(membership.GoverningForm, membership.StoredRank,
-                membership.LeaderId == player.Identity.Instance), StatDetail.Base);
+            player.Stats.Set(CharacterStat.ClanLevel, rank, StatDetail.Base);
         }
 
         // A player is now this instance's: read its membership again (anything that changed between the login read and
@@ -152,6 +155,7 @@ namespace ZoneEngine_New.Core.Organizations
         {
             if (_disposed || !Rules.Enabled)
                 return;
+            WatchSide(player);
             _ = Task.Run(() =>
             {
                 try
@@ -178,6 +182,50 @@ namespace ZoneEngine_New.Core.Organizations
                     _logger.Error(exception, "Organization membership check failed character=" + player.Identity.Instance);
                 }
             });
+        }
+
+        /// <summary>
+        /// Watches the player's Side once per Player object (a zone change registers the same one again): a change after
+        /// login takes the player out of its organization (<see cref="LeaveForSideChange"/>).
+        /// </summary>
+        void WatchSide(Player player)
+        {
+            int id = player.Identity.Instance;
+            lock (_sideObservers)
+            {
+                if (_sideObservers.TryGetValue(id, out var watched))
+                {
+                    if (ReferenceEquals(watched.Player, player))
+                        return;
+                    watched.Player.Stats.StatChanged -= watched.Observer;
+                }
+
+                Action<CharacterStat, int, int, bool> observer = (stat, previous, current, initial) =>
+                {
+                    if (stat == CharacterStat.Side && !initial && previous != current)
+                        LeaveForSideChange(player);
+                };
+                _sideObservers[id] = (player, observer);
+                player.Stats.StatChanged += observer;
+            }
+        }
+
+        /// <summary>
+        /// Stops watching players that have left this instance (no session) and are not in its snapshot. The session test
+        /// keeps a player registered after the snapshot was taken watched.
+        /// </summary>
+        void ForgetGoneSideWatches(IReadOnlyList<Player> players)
+        {
+            lock (_sideObservers)
+            {
+                foreach ((int id, (Player player, Action<CharacterStat, int, int, bool> observer)) in _sideObservers.ToArray())
+                {
+                    if (player.Session != null || players.Any(p => ReferenceEquals(p, player)))
+                        continue;
+                    player.Stats.StatChanged -= observer;
+                    _sideObservers.Remove(id);
+                }
+            }
         }
 
         // ------------------------------------------------------------------------------------------------ cache
@@ -344,10 +392,16 @@ namespace ZoneEngine_New.Core.Organizations
             bool visibleChange = false;
             if (member != null)
             {
+                string rankName = Rules.FormOf(state.GoverningForm).RankName(member.Rank);
                 if (before == null || before.Id != state.Id || !string.Equals(before.Name, state.Name, StringComparison.Ordinal))
                 {
-                    player.Organization = new PlayerOrganization(state.Id, state.Name);
+                    player.Organization = new PlayerOrganization(state.Id, state.Name, rankName);
                     visibleChange = true;
+                }
+                else if (!string.Equals(before.RankName, rankName, StringComparison.Ordinal))
+                {
+                    // A promotion or demotion: the info window's rank line only; the spawn carries no rank.
+                    player.Organization = before with { RankName = rankName };
                 }
 
                 SetStat(player, CharacterStat.Clan, state.Id);
@@ -464,6 +518,7 @@ namespace ZoneEngine_New.Core.Organizations
                         _transfers.TryRemove(id, out _);
 
                 IReadOnlyList<Player> players = _playfields.Value.SnapshotPlayers();
+                ForgetGoneSideWatches(players);
                 var shown = new HashSet<int>(players.Select(p => p.Organization?.Id ?? 0).Where(id => id > 0));
                 foreach (int id in _cache.Keys)
                     if (!shown.Contains(id))

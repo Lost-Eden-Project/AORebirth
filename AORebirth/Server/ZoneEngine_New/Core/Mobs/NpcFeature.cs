@@ -71,5 +71,14 @@ namespace ZoneEngine_New.Core.Mobs
         /// population (Dungeons/Population.json "Features": Rubi-Ka mission humanoids).
         /// </summary>
         AggroesAllSides,
+
+        /// <summary>
+        /// Always in the world, like a scripted NPC: its spawn point's cell stays Cold from playfield load (ticks once a
+        /// second with no player near), so it spawns as soon as the playfield loads, without a player waking the cell,
+        /// and is never despawned by a cell going to sleep. A living one keeps whatever cell it stands in Cold, so it
+        /// keeps ticking (its nanos and buffs keep their timers) after it walks off its point. After a death it respawns
+        /// on its own Spawns.json respawnTime and respawnChance, with no player needed. For world NPCs players wait on.
+        /// </summary>
+        Persistent,
     }
 }

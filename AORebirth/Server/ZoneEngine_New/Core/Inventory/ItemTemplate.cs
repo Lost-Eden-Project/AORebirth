@@ -510,6 +510,14 @@ namespace ZoneEngine_New.Core.Inventory
             bool consumeFirst = eventType == EventType.OnUseItemOn && criteria.Subject != null;
             if (consumeFirst)
             {
+                // A worn item is never destroyed where it is (Item.DestroyOne refuses wear pages): a use that would use it
+                // up does nothing, or it would pay out and leave the item worn. One that keeps it (a garden key worn in a
+                // HUD slot on its statue: teleport, no DestroyItem for the key) runs.
+                if (criteria.SubjectSlot.Type is IdentityType.WeaponPage or IdentityType.ArmorPage or IdentityType.ImplantPage
+                        or IdentityType.SocialPage
+                    && spells.Exists(spell => spell.Is(FunctionType.DestroyItem) && SpellRequirementsMet(target, source, spell, criteria)))
+                    return false;
+
                 foreach (ItemSpell spell in spells)
                 {
                     if (spell.Is(FunctionType.DestroyItem))
@@ -602,6 +610,30 @@ namespace ZoneEngine_New.Core.Inventory
                 player.Playfield.GetRequiredService<IItemBuilder>(), false, criteria,
                 skipRequirements: requirementsAlreadyChecked);
 
+        /// <summary>
+        /// Whether <paramref name="spell"/>'s requirements pass: unselected leaves against the character it applies to
+        /// (with <paramref name="criteria"/>'s overrides, e.g. the used item's id in stat 273), OnUser / OnCaster leaves
+        /// against the user, OnTarget leaves against the selected world object or else the event target.
+        /// </summary>
+        bool SpellRequirementsMet(Character eventTarget, Character? source, ItemSpell spell, SpellCriteria criteria)
+        {
+            Character user = source ?? eventTarget;
+            Character applyOn = ResolveApplyOn(eventTarget, source, spell);
+            Identity usedFrom = criteria.SubjectSlot;
+            // An item used with a world object selected tests that object with its OnTarget leaves (Incarnator crystals).
+            Dynel? selected = criteria.SelectedDynel;
+            return ItemTemplate.MeetsRequirements(
+                spell.Requirements,
+                new RequirementSubject(stat => criteria.Resolve(stat, id => applyOn.Stats.Get(id)),
+                    WithUseLocation(applyOn.ResolveRequirement, usedFrom)),
+                new RequirementSubject(stat => user.Stats.Get(stat), WithUseLocation(user.ResolveRequirement, usedFrom)),
+                selected != null
+                    ? new RequirementSubject(stat => UseTargetRules.SelectedDynelStat(selected, stat),
+                        WithUseLocation(null, usedFrom))
+                    : new RequirementSubject(stat => eventTarget.Stats.Get(stat),
+                        WithUseLocation(eventTarget.ResolveRequirement, usedFrom)));
+        }
+
         bool ExecuteSpell(
             Character target,
             Character? source,
@@ -619,24 +651,10 @@ namespace ZoneEngine_New.Core.Inventory
             // leaves read the user and OnTarget leaves the event target, so staged functions (Ritual of Devotion
             // 225317: stage 1 while no line-495 nano runs on the user, each later stage while the previous one runs)
             // pick exactly one branch.
-            Character eventTarget = target;
-            Character user = source ?? target;
-            target = ResolveApplyOn(target, source, spell);
-            Character applyOn = target;
-            Identity usedFrom = criteria.SubjectSlot;
-            // An item used with a world object selected tests that object with its OnTarget leaves (Incarnator crystals).
-            Dynel? selected = criteria.SelectedDynel;
-            if (!skipRequirements && !ItemTemplate.MeetsRequirements(
-                    spell.Requirements,
-                    new RequirementSubject(stat => criteria.Resolve(stat, id => applyOn.Stats.Get(id)),
-                        WithUseLocation(applyOn.ResolveRequirement, usedFrom)),
-                    new RequirementSubject(stat => user.Stats.Get(stat), WithUseLocation(user.ResolveRequirement, usedFrom)),
-                    selected != null
-                        ? new RequirementSubject(stat => UseTargetRules.SelectedDynelStat(selected, stat),
-                            WithUseLocation(null, usedFrom))
-                        : new RequirementSubject(stat => eventTarget.Stats.Get(stat),
-                            WithUseLocation(eventTarget.ResolveRequirement, usedFrom))))
+            Character applyOn = ResolveApplyOn(target, source, spell);
+            if (!skipRequirements && !SpellRequirementsMet(target, source, spell, criteria))
                 return false;
+            target = applyOn;
 
             if (spell.Is(FunctionType.Modify) || spell.Is(FunctionType.ScalingModify) || spell.Is(FunctionType.Skill)
                 || spell.Is(FunctionType.ModifyPercentage) || spell.Is(FunctionType.MonsterShape)
