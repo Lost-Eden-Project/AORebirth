@@ -547,36 +547,41 @@ namespace ZoneEngine_New
                 catch (Exception) { Console.Error.WriteLine("ZONEENGINE_NEW_STOP_NOTIFICATION_FAILED"); }
             }
 
-            void Cleanup(Action action)
+            void Cleanup(string step, Action action)
             {
                 try { action(); }
                 catch (Exception exception)
                 {
                     shutdownFailed = true;
-                    Console.Error.WriteLine("ZONEENGINE_NEW_SHUTDOWN_FAILED type=" + exception.GetType().Name);
+                    // The step, message and stack: the type alone cannot say what failed.
+                    string line = "ZONEENGINE_NEW_SHUTDOWN_FAILED step=" + step + " type=" + exception.GetType().Name + " " + exception;
+                    try { Console.Error.WriteLine(line); }
+                    catch (Exception) { }
+                    try { LogManager.GetCurrentClassLogger().Error(line); }
+                    catch (Exception) { }
                 }
             }
-            Cleanup(() => debugMcp?.DisposeAsync().AsTask().GetAwaiter().GetResult());
+            Cleanup("debug-mcp", () => debugMcp?.DisposeAsync().AsTask().GetAwaiter().GetResult());
             debugMcp = null;
-            Cleanup(() => networkHost?.DisposeAsync().AsTask().GetAwaiter().GetResult());
+            Cleanup("network-host", () => networkHost?.DisposeAsync().AsTask().GetAwaiter().GetResult());
             networkHost = null;
-            Cleanup(() => rootServices?.GetService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>()?.Dispose());
-            Cleanup(() => playfieldManager?.Dispose());
+            Cleanup("quest-dungeons", () => rootServices?.GetService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>()?.Dispose());
+            Cleanup("playfields", () => playfieldManager?.Dispose());
             playfieldManager = null;
-            Cleanup(() => moduleReloadRequests?.Dispose());
+            Cleanup("module-reload", () => moduleReloadRequests?.Dispose());
             moduleReloadRequests = null;
-            Cleanup(() => modules?.Shutdown());
+            Cleanup("modules", () => modules?.Shutdown());
             modules = null;
-            Cleanup(() => rootServices?.GetRequiredService<TeamService>().Shutdown());
-            Cleanup(() => chatEngineLink?.Dispose());
+            Cleanup("teams", () => rootServices?.GetRequiredService<TeamService>().Shutdown());
+            Cleanup("chat-link", () => chatEngineLink?.Dispose());
             chatEngineLink = null;
             // After every logout: their lease releases go out before the link closes.
-            Cleanup(() => worldLink?.FlushReleases(TimeSpan.FromSeconds(3)));
-            Cleanup(() => worldLink?.Dispose());
+            Cleanup("world-releases", () => worldLink?.FlushReleases(TimeSpan.FromSeconds(3)));
+            Cleanup("world-link", () => worldLink?.Dispose());
             worldLink = null;
-            Cleanup(() => rootServices?.DisposeAsync().AsTask().GetAwaiter().GetResult());
+            Cleanup("services", () => rootServices?.DisposeAsync().AsTask().GetAwaiter().GetResult());
             rootServices = null;
-            Cleanup(LogManager.Shutdown);
+            Cleanup("logging", LogManager.Shutdown);
         }
 
         private static bool InitializeLogging(ZoneInstanceOptions instance)

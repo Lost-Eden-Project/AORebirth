@@ -90,6 +90,9 @@ namespace WorldEngine.Services
                             foreach (PresenceUpdate update in message.Presence.Updates)
                                 state.UpdatePresence(instance, update);
                             break;
+                        case ServiceToWorld.BodyOneofCase.DutyReleased:
+                            state.DutyReleased(instance);
+                            break;
                     }
                 }
             }

@@ -44,7 +44,13 @@ message ServiceToWorld {
     // Chat traffic rides the stream so it keeps its order.
     ChatEvent chat = 4;
     PresenceBatch presence = 5;
+    // This instance let go of the duty World took from it (DutyAssignment holder=false): its sweeps and its modules'
+    // primary-only work have stopped. Sent by a build advertising "duty-ack/1".
+    DutyReleased duty_released = 6;
   }
+}
+
+message DutyReleased {
 }
 
 // Presence that changed since the last heartbeat, in one message.

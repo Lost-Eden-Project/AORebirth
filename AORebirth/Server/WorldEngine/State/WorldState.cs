@@ -44,6 +44,17 @@ namespace WorldEngine.State
         bool _recoveryLogged;
         string? _dutyHolder;
 
+        /// <summary>A zone build that confirms letting go of the duty (ServiceToWorld.duty_released).</summary>
+        public const string DutyAckCapability = "duty-ack/1";
+
+        /// <summary>How long World waits for that confirmation before giving the duty to the next zone anyway.</summary>
+        public static readonly TimeSpan DutyReleaseTimeout = TimeSpan.FromSeconds(10);
+
+        // The instance the duty was taken from, until it confirms, its stream drops or the timeout passes. Nobody holds the
+        // duty meanwhile, so two zones never run the sweeps or primary-only module work at once.
+        ServiceInstance? _dutyReleasing;
+        long _dutyReleaseDeadlineMs;
+
         public WorldState(WorldOptions options, ILogger<WorldState> log, Func<long>? clock = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -354,6 +365,8 @@ namespace WorldEngine.State
                 instance.Connected = false;
                 _log.LogWarning("{Role} {Instance} disconnected; it keeps what it owns for {Seconds}s",
                     instance.Role, instance.Name, (int)_options.InstanceExpiry.TotalSeconds);
+                // A zone drops its duty when its stream ends: the one waiting for it need not wait any longer.
+                if (ReferenceEquals(_dutyReleasing, instance)) AssignDuty();
             }
         }
 
@@ -479,15 +492,50 @@ namespace WorldEngine.State
         void AssignDuty()
         {
             long now = Now;
+            if (_dutyReleasing is ServiceInstance releasing)
+            {
+                bool live = !releasing.Removed && releasing.Connected;
+                if (live && now < _dutyReleaseDeadlineMs) return;
+                if (live)
+                    _log.LogWarning("{Instance} did not confirm releasing the duty within {Seconds}s; assigning it anyway",
+                        releasing.Name, (int)DutyReleaseTimeout.TotalSeconds);
+                _dutyReleasing = null;
+            }
+
             if (_dutyHolder != null && Instance(_dutyHolder) is ServiceInstance holder && IsRoutable(holder, now) && !holder.Draining) return;
             // A draining zone is on its way out: hand the sweeps to one that is staying, when there is one.
             ServiceInstance? next = _instances.Values.Where(i => IsRoutable(i, now)).OrderBy(i => i.Draining).ThenBy(i => i.Slot).FirstOrDefault();
             if (next == null || string.Equals(next.Name, _dutyHolder, StringComparison.OrdinalIgnoreCase)) return;
             if (_dutyHolder != null && Instance(_dutyHolder) is ServiceInstance previous)
+            {
                 previous.Send(new WorldToService { Duty = new DutyAssignment { Holder = false } });
+                // A live holder that confirms waits for its confirmation; one whose stream is gone has already let go.
+                if (!previous.Removed && previous.Connected && previous.Capabilities.Contains(DutyAckCapability))
+                {
+                    _dutyHolder = null;
+                    _dutyReleasing = previous;
+                    _dutyReleaseDeadlineMs = now + (long)DutyReleaseTimeout.TotalMilliseconds;
+                    _log.LogInformation("Duty taken from {Instance}; {Next} gets it once released", previous.Name, next.Name);
+                    return;
+                }
+            }
+
             _dutyHolder = next.Name;
             next.Send(new WorldToService { Duty = new DutyAssignment { Holder = true } });
             _log.LogInformation("Duty holder is {Instance}", next.Name);
+        }
+
+        /// <summary>The instance the duty was taken from confirmed letting go: give it to the next one now.</summary>
+        public void DutyReleased(ServiceInstance instance)
+        {
+            ArgumentNullException.ThrowIfNull(instance);
+            lock (_sync)
+            {
+                if (!ReferenceEquals(_dutyReleasing, instance)) return;
+                _dutyReleasing = null;
+                _log.LogInformation("{Instance} released the duty", instance.Name);
+                AssignDuty();
+            }
         }
 
         // ------------------------------------------------------------------------------------------ sessions
@@ -1208,6 +1256,7 @@ namespace WorldEngine.State
                     recovering = Recovering(now),
                     uptimeSeconds = (now - _startedMs) / 1000,
                     dutyHolder = _dutyHolder,
+                    dutyReleasing = _dutyReleasing?.Name,
                     gameClockOffsetSeconds = _gameClockOffsetSeconds,
                     instances = _instances.Values.OrderBy(i => i.Slot).Select(i => new
                     {

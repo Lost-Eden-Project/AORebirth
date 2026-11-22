@@ -64,7 +64,7 @@ namespace ZoneEngine_New.Core.World
         SwapNotice? _swapNotice;
 
         /// <summary>What this build supports, advertised at registration.</summary>
-        static readonly string[] Capabilities = ["swap/1"];
+        static readonly string[] Capabilities = ["swap/1", "duty-ack/1"];
         readonly Channel<ReleaseRequest> _releases = System.Threading.Channels.Channel.CreateUnbounded<ReleaseRequest>(new UnboundedChannelOptions { SingleReader = true });
         readonly ConcurrentDictionary<ulong, long> _heartbeatsSent = new();
         readonly TaskCompletionSource _firstRegistration = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -81,6 +81,10 @@ namespace ZoneEngine_New.Core.World
         volatile bool _connected;
         int _fenceLogoutStarted;
         long _gameClockOffsetSeconds;
+
+        // Releases queued or still being sent; the single-reader channel cannot count its items.
+        int _releasesPending;
+        int _disposed;
 
         public WorldLink(IZoneLogger logger)
         {
@@ -220,7 +224,14 @@ namespace ZoneEngine_New.Core.World
         }
 
         void QueueRelease(int characterId, LeaseToken token)
-            => _releases.Writer.TryWrite(new ReleaseRequest { CharacterId = characterId, Token = token });
+        {
+            Interlocked.Increment(ref _releasesPending);
+            if (!_releases.Writer.TryWrite(new ReleaseRequest { CharacterId = characterId, Token = token }))
+                Interlocked.Decrement(ref _releasesPending);
+        }
+
+        /// <summary>Releases queued for World or still on their way.</summary>
+        public int PendingReleases => Volatile.Read(ref _releasesPending);
 
         /// <summary>
         /// True while this instance may write the character: it holds the lease and the deadline has not passed.
@@ -615,9 +626,20 @@ namespace ZoneEngine_New.Core.World
                 case WorldToService.BodyOneofCase.Duty:
                     IsDutyHolder = message.Duty.Holder;
                     _logger.Info("World duty holder=" + message.Duty.Holder);
-                    _handlers?.DutyChanged(message.Duty.Holder);
-                    // Modules follow the duty as "primary" (module API 1.19).
-                    _modules?.SetPrimary(message.Duty.Holder);
+                    try
+                    {
+                        _handlers?.DutyChanged(message.Duty.Holder);
+                        // Modules follow the duty as "primary" (module API 1.19). Their handlers run here, so once
+                        // this returns they have let go.
+                        _modules?.SetPrimary(message.Duty.Holder);
+                    }
+                    finally
+                    {
+                        // World gives the duty to the next instance only after this (or after this stream ends).
+                        if (!message.Duty.Holder)
+                            outbound.TryWrite(new ServiceToWorld { DutyReleased = new DutyReleased() });
+                    }
+
                     break;
 
                 case WorldToService.BodyOneofCase.Announcement:
@@ -796,30 +818,37 @@ namespace ZoneEngine_New.Core.World
         {
             await foreach (ReleaseRequest release in _releases.Reader.ReadAllAsync(stop).ConfigureAwait(false))
             {
-                while (!stop.IsCancellationRequested)
+                try
                 {
-                    // A registration in the meantime already told World what is still held.
-                    if (_leases.ContainsKey(release.CharacterId) && LeaseTokens.SameAs(TokenOf(release.CharacterId), release.Token)) break;
-                    if (!_connected)
+                    while (!stop.IsCancellationRequested)
                     {
-                        await Task.Delay(500, stop).ConfigureAwait(false);
-                        if (!_connected) continue;
-                    }
+                        // A registration in the meantime already told World what is still held.
+                        if (_leases.ContainsKey(release.CharacterId) && LeaseTokens.SameAs(TokenOf(release.CharacterId), release.Token)) break;
+                        if (!_connected)
+                        {
+                            await Task.Delay(500, stop).ConfigureAwait(false);
+                            if (!_connected) continue;
+                        }
 
-                    try
-                    {
-                        await _channel.Leases.ReleaseAsync(release, _channel.Call(CallTimeout, stop)).ResponseAsync.ConfigureAwait(false);
-                        break;
+                        try
+                        {
+                            await _channel.Leases.ReleaseAsync(release, _channel.Call(CallTimeout, stop)).ResponseAsync.ConfigureAwait(false);
+                            break;
+                        }
+                        catch (RpcException exception) when (exception.StatusCode == StatusCode.FailedPrecondition)
+                        {
+                            // Our session was superseded; the next registration reconciles.
+                            break;
+                        }
+                        catch (RpcException)
+                        {
+                            await Task.Delay(500, stop).ConfigureAwait(false);
+                        }
                     }
-                    catch (RpcException exception) when (exception.StatusCode == StatusCode.FailedPrecondition)
-                    {
-                        // Our session was superseded; the next registration reconciles.
-                        break;
-                    }
-                    catch (RpcException)
-                    {
-                        await Task.Delay(500, stop).ConfigureAwait(false);
-                    }
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _releasesPending);
                 }
             }
         }
@@ -857,6 +886,8 @@ namespace ZoneEngine_New.Core.World
 
         public void Dispose()
         {
+            // Shutdown disposes the link itself, then the service container disposes the same singleton again.
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _stop.Cancel();
             _releases.Writer.TryComplete();
             try { Task.WhenAll(new[] { _connectLoop, _releaseLoop, _fenceLoop }.Where(t => t != null)!).Wait(TimeSpan.FromSeconds(2)); }
@@ -869,7 +900,7 @@ namespace ZoneEngine_New.Core.World
         public void FlushReleases(TimeSpan timeout)
         {
             DateTime until = DateTime.UtcNow + timeout;
-            while (_releases.Reader.Count > 0 && DateTime.UtcNow < until) Thread.Sleep(25);
+            while (PendingReleases > 0 && DateTime.UtcNow < until) Thread.Sleep(25);
         }
 
         sealed class LocalLease(LeaseToken token)
