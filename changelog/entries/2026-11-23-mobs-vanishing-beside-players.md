@@ -1,0 +1,1 @@
+- Fixed: Monsters that spawn at one of their alternate locations no longer vanish while you are standing next to them.

@@ -1,0 +1,2 @@
+- Changed: Loot chests in Alien Mothership missions are now alien cocoons that burst open when you loot them and close again afterwards.
+- Fixed: Mission loot chests no longer float above the floor.

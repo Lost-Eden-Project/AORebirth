@@ -12,23 +12,33 @@ namespace ZoneEngine_New.Core.Entities
         /// The generated mission chest's spawn appearance. Retail mission-20261011-004128-b8e7bf2e, ordinal 480:
         /// state machine 1000015:7, chest template 162447, header stat bytes 111 and lockable marker 15. Only the
         /// verified Locked flag is cleared from the captured Flags (0x20001841) for an ordinary unlocked chest.
+        /// <paramref name="template"/> is the chest item template the client draws (the Mothership boss room's cocoon,
+        /// 10000002, is the same chest with a CATMesh body); everything else is the captured mission chest's.
         /// </summary>
-        public static ChestSpawnDefinition MissionChest() => new()
+        public static ChestSpawnDefinition MissionChest(int template = MissionChestTemplate)
         {
-            StateMachineType = 1000015,
-            StateMachineInstance = 7,
-            HeaderStatBytes = 111,
-            LockableValue = 15,
-            Stats =
-            [
-                new() { StatId = (int)CharacterStat.Flags, Value = 0x20001801 },
-                new() { StatId = (int)CharacterStat.StaticInstance, Value = 162447 },
-                new() { StatId = (int)CharacterStat.ACGItemLevel, Value = 1 },
-                new() { StatId = (int)CharacterStat.ACGItemTemplateID, Value = 162447 },
-                new() { StatId = (int)CharacterStat.ACGItemTemplateID2, Value = 162447 },
-                new() { StatId = (int)CharacterStat.MultipleCount, Value = 1 }
-            ]
-        };
+            if (template <= 0)
+                throw new ArgumentOutOfRangeException(nameof(template));
+            return new()
+            {
+                StateMachineType = 1000015,
+                StateMachineInstance = 7,
+                HeaderStatBytes = 111,
+                LockableValue = 15,
+                Stats =
+                [
+                    new() { StatId = (int)CharacterStat.Flags, Value = 0x20001801 },
+                    new() { StatId = (int)CharacterStat.StaticInstance, Value = (uint)template },
+                    new() { StatId = (int)CharacterStat.ACGItemLevel, Value = 1 },
+                    new() { StatId = (int)CharacterStat.ACGItemTemplateID, Value = (uint)template },
+                    new() { StatId = (int)CharacterStat.ACGItemTemplateID2, Value = (uint)template },
+                    new() { StatId = (int)CharacterStat.MultipleCount, Value = 1 }
+                ]
+            };
+        }
+
+        /// <summary>The captured mission chest's item template (mesh 43621).</summary>
+        public const int MissionChestTemplate = 162447;
 
         public int StateMachineType { get; set; }
         public int StateMachineInstance { get; set; }

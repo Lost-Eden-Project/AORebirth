@@ -1,0 +1,1 @@
+- Fixed: The choking fumes of Adonis Abyss hurt you again unless you wear protection, and they stop when you leave the Abyss.

@@ -25,7 +25,9 @@ namespace ZoneEngine_New.Core.Nanos
             StackingOrder = ReadStat(CharacterStat.StackingOrder);
             NcuCost = Math.Max(0, ReadStat(CharacterStat.Level));
             NanoPointCost = Math.Max(0, ReadStat(CharacterStat.NanoPoints));
-            DurationCentiseconds = Math.Max(0, ReadStat(CharacterStat.TimeExist));
+            int timeExist = ReadStat(CharacterStat.TimeExist);
+            DurationCentiseconds = Math.Max(0, timeExist);
+            RunsUntilRemoved = timeExist < 0;
             AttackDelayCentiseconds = Math.Max(0, ReadStat(CharacterStat.AttackDelay));
             AttackDelayCapCentiseconds = Math.Max(0, ReadStat(CharacterStat.AttackDelayCap));
             RechargeDelayCentiseconds = Math.Max(0, ReadStat(CharacterStat.RechargeDelay));
@@ -170,6 +172,12 @@ namespace ZoneEngine_New.Core.Nanos
 
         /// <summary>Buff lifetime; 0 for instant nanos.</summary>
         public int DurationCentiseconds { get; }
+
+        /// <summary>
+        /// TimeExist below 0 (Effect of Adonis Abyss 231227: -1): as an NCU entry it runs until something ends it (a strip,
+        /// death, leaving the playfield whose item cast it) instead of for a duration.
+        /// </summary>
+        public bool RunsUntilRemoved { get; }
 
         public int AttackDelayCentiseconds { get; }
 

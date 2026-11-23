@@ -1712,6 +1712,38 @@ namespace ZoneEngine_New.Core.Nanos
 
         static void AnnounceBuffRemoved(Character owner, Buff buff)
         {
+            AnnounceBuffCleared(owner, buff);
+
+            // End effects run after the clear: an OnTerminate that recasts the same nano (Minor Regeneration of
+            // Health and Nano 291081) lands a fresh copy the client must not then see removed.
+            ExecuteBuffEnd(owner, buff);
+        }
+
+        /// <summary>
+        /// Ends every NCU entry of <paramref name="owner"/> whose nano is in <paramref name="nanoIds"/>, as a strip
+        /// does but without its OnTerminate: what a playfield ended does not carry on from its end functions (Effect of
+        /// Adonis Abyss 274322 and its watch 274323 recast each other when they end). Returns how many went.
+        /// </summary>
+        public static int EndWithoutTerminate(Character owner, IReadOnlySet<int> nanoIds)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            ArgumentNullException.ThrowIfNull(nanoIds);
+            if (nanoIds.Count == 0 || owner.Buffs.Count == 0)
+                return 0;
+
+            List<Buff> removed = owner.RemoveBuffs(buff => nanoIds.Contains(buff.Id));
+            for (int i = 0; i < removed.Count; i++)
+            {
+                AnnounceBuffCleared(owner, removed[i]);
+                if (owner is not Player)
+                    owner.MarkRebaseDirty();
+            }
+
+            return removed.Count;
+        }
+
+        static void AnnounceBuffCleared(Character owner, Buff buff)
+        {
             var message = new BuffMessage
             {
                 Identity = owner.Identity,
@@ -1726,10 +1758,6 @@ namespace ZoneEngine_New.Core.Nanos
             SessionOf(owner)?.Send(message);
             // Owner already has the direct copy. Everyone else who can see them needs the clear.
             owner.Cell?.Announce(message, exclude: owner);
-
-            // End effects run after the clear: an OnTerminate that recasts the same nano (Minor Regeneration of
-            // Health and Nano 291081) lands a fresh copy the client must not then see removed.
-            ExecuteBuffEnd(owner, buff);
         }
 
         /// <summary>

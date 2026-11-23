@@ -71,8 +71,7 @@ public sealed class MissionChestPopulation
             return Defer("chest-loot-table-empty");
         IGameData data = world.GetRequiredService<IGameData>();
         IItemTemplateCatalog templates = world.GetRequiredService<IItemTemplateCatalog>();
-        ChestSpawnDefinition appearance = ChestSpawnDefinition.MissionChest();
-        if (!MissionChestPlacement.TryGetChestSphere(data, templates, appearance, out var sphere))
+        if (!TryGetAppearance(data, templates, out ChestSpawnDefinition appearance, out AORebirth.Core.GameData.CollisionSphereData sphere))
             return Defer("chest-collision-sphere-unavailable-or-invalid");
 
         // Placement is a function of the seed, so it is the same on every build of this dungeon.
@@ -139,7 +138,9 @@ public sealed class MissionChestPopulation
             var chest = new Chest(new Identity { Type = IdentityType.Container, Instance = stored[index] }, Chest.LootCapacity, lockDifficulty)
             {
                 Playfield = world,
-                Position = sites[index].Position,
+                // The district points sit about 0.4 m above the floor (style 386: y 8.4 over a floor at 8.01); the chest
+                // stands on the floor under its point, as an NPC spawned there does. No floor known: the point itself.
+                Position = world.SnapFeetToFloor(sites[index].Position),
                 Rotation = Door.Heading(heading.Next(360)),
                 SpawnSource = SpawnSource.ContentPlacement,
                 SpawnDefinition = appearance,
@@ -157,6 +158,26 @@ public sealed class MissionChestPopulation
         _materialized = true;
         DeferredReason = null;
         return true;
+    }
+
+    /// <summary>
+    /// What the chests are drawn as and their collision sphere: the chest block's template (<see cref="DungeonChestBlock.Template"/>),
+    /// else the mission chest. A template the server cannot size (not in items.dat, no collision data) is drawn as the
+    /// mission chest, with a warning, so the dungeon keeps its chests. False only when the mission chest cannot be sized.
+    /// </summary>
+    internal bool TryGetAppearance(IGameData data, IItemTemplateCatalog templates,
+        out ChestSpawnDefinition appearance, out AORebirth.Core.GameData.CollisionSphereData sphere)
+    {
+        int template = _chests.ChestTemplate;
+        appearance = ChestSpawnDefinition.MissionChest(template);
+        if (MissionChestPlacement.TryGetChestSphere(data, templates, appearance, out sphere))
+            return true;
+        if (template == ChestSpawnDefinition.MissionChestTemplate)
+            return false;
+        _logger.Warn("Mission chest template " + template + " has no item template or collision sphere; using the mission chest "
+            + Context);
+        appearance = ChestSpawnDefinition.MissionChest();
+        return MissionChestPlacement.TryGetChestSphere(data, templates, appearance, out sphere);
     }
 
     internal bool Defer(string reason)

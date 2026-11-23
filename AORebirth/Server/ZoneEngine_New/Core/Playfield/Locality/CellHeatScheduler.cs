@@ -97,6 +97,12 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             }
         }
 
+        /// <summary>
+        /// A cell's heat as of the latest heartbeat (this one, for cells it has already reached); Asleep when untracked.
+        /// Read on the playfield tick thread.
+        /// </summary>
+        internal CellHeat HeatOf(int cellId) => _heatByCell.TryGetValue(cellId, out CellHeat heat) ? heat : CellHeat.Asleep;
+
         internal void ConfigureSpawnHooks(
             IEnumerable<int> spawnCellIds,
             Action<int> onCellSleep,

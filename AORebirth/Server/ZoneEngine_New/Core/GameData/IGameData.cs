@@ -137,6 +137,16 @@ namespace ZoneEngine_New.Core.GameData
         bool TryGetCatMesh(int monsterData, out int catMesh);
 
         /// <summary>
+        /// The CharRadius (stat 421) the MonsterData records drawn with <paramref name="catMesh"/> give that CAT body. False
+        /// when no record with a radius uses the mesh, or the records disagree.
+        /// </summary>
+        bool TryGetCatMeshCharRadius(int catMesh, out int charRadius)
+        {
+            charRadius = 0;
+            return false;
+        }
+
+        /// <summary>
         /// Mass (stat 2) and CharRadius (stat 421) from a MonsterData record. The client writes a MonsterData record's
         /// stats onto an NPC when its MonsterData is set (Gamecode.dll 0x10052466 -> 0x100523d3; players are skipped).
         /// </summary>

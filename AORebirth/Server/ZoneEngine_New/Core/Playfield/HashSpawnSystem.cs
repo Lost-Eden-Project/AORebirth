@@ -236,6 +236,10 @@ namespace ZoneEngine_New.Core.Playfield
         private readonly List<HashSpawnPoint> _allPoints = new();
         private readonly Dictionary<string, List<HashSpawnPoint>> _pointsByHash = new(StringComparer.Ordinal);
         private readonly Dictionary<Dynel, HashSpawnPoint> _pointBySpawned = new();
+
+        /// <summary>Scratch for <see cref="OnCellSleep"/>: the sleeping cell's occupants and the away points they serve.</summary>
+        private readonly List<Dynel> _sleepOccupants = new();
+        private readonly List<HashSpawnPoint> _sleepStragglerPoints = new();
         private int _spawnRate = 1;
         private bool _initialized;
         private CellGrid? _grid;
@@ -1344,11 +1348,31 @@ namespace ZoneEngine_New.Core.Playfield
 
         private void OnCellSleep(int cellId)
         {
-            if (!_pointsByCell.TryGetValue(cellId, out List<HashSpawnPoint>? points))
-                return;
+            if (_pointsByCell.TryGetValue(cellId, out List<HashSpawnPoint>? points))
+            {
+                foreach (HashSpawnPoint point in points)
+                    DespawnForSleep(point);
+            }
 
-            foreach (HashSpawnPoint point in points)
-                DespawnForSleep(point);
+            // A member standing here for a point whose own cell already slept (kept up because a player was near it)
+            // sleeps with this cell instead.
+            _sleepOccupants.Clear();
+            _sleepStragglerPoints.Clear();
+            _locality?.Grid.CopyOccupants(cellId, _sleepOccupants);
+            for (int i = 0; i < _sleepOccupants.Count; i++)
+            {
+                if (_pointBySpawned.TryGetValue(_sleepOccupants[i], out HashSpawnPoint? point)
+                    && point.CellId != cellId
+                    && !_locality!.IsCellAwake(point.CellId)
+                    && !_sleepStragglerPoints.Contains(point))
+                    _sleepStragglerPoints.Add(point);
+            }
+
+            for (int i = 0; i < _sleepStragglerPoints.Count; i++)
+                DespawnForSleep(_sleepStragglerPoints[i]);
+
+            _sleepOccupants.Clear();
+            _sleepStragglerPoints.Clear();
         }
 
         private void OnCellTick(int cellId)
@@ -1703,6 +1727,12 @@ namespace ZoneEngine_New.Core.Playfield
                 if (members[i] is NpcCharacter { IsDead: false } persistent && persistent.HasFeature(NpcFeature.Persistent))
                     return;
                 if (members[i] is NpcCharacter { IsDead: false } npc && (npc.IsInCombat || npc.IsEvading))
+                    return;
+                // Nor is a member standing in a cell that is still awake: a rotation spawn can roll a site cells from
+                // its point, right next to a player, and vanished when the point's own empty cell slept (Mooching
+                // Dryad MODY in 4872 at (1702, 2928), point at (1750, 2835)). It sleeps with the cell it stands in.
+                if (members[i] is not NpcCharacter { IsDead: true } && members[i].Cell is { } cell
+                    && _locality?.IsCellAwake(cell.Id) == true)
                     return;
             }
 

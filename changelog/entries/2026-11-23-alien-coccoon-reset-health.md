@@ -1,0 +1,1 @@
+- Fixed: Alien Coccoons on the Mothership no longer heal to full when a drain or other nano that doesn't kill them is cast on them.

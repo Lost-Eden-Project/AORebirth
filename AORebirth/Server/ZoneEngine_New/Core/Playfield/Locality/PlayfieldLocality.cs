@@ -166,6 +166,9 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         /// <summary>Outdoor world depth (Z), or 0 for indoor.</summary>
         public float WorldSizeZ => _grid.WorldSizeZ;
 
+        /// <summary>False when the cell is asleep (or not tracked); read on the playfield tick thread.</summary>
+        internal bool IsCellAwake(int cellId) => _heatScheduler.HeatOf(cellId) != CellHeat.Asleep;
+
         internal void AttachHashSpawns(
             IEnumerable<int> spawnCellIds,
             IEnumerable<int> alwaysColdSpawnCellIds,

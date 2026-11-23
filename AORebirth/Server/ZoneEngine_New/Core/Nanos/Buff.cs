@@ -238,7 +238,14 @@ namespace ZoneEngine_New.Core.Nanos
             return buff;
         }
 
-        static int ClampedDuration(NanoSpell spell) => Math.Clamp(spell.DurationCentiseconds, 1, MaxDurationCentiseconds);
+        /// <summary>
+        /// The NCU entry's lifetime: its duration within 1 cs and the ceiling, or the ceiling for one that runs until
+        /// removed (TimeExist -1 read as 0 used to make it 1 cs, so it ended before its first tick).
+        /// </summary>
+        static int ClampedDuration(NanoSpell spell)
+            => spell.RunsUntilRemoved
+                ? MaxDurationCentiseconds
+                : Math.Clamp(spell.DurationCentiseconds, 1, MaxDurationCentiseconds);
 
         public bool IsExpired(DateTime nowUtc) => nowUtc >= ExpiresAtUtc;
 

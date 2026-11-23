@@ -961,6 +961,8 @@ namespace ZoneEngine_New.Core.Playfield
             Player player = SpawnPlayer(session, command.Hydration);
             // Worn items this playfield's playshift requirements forbid go ineffective before FullCharacter.
             ZoneEngine_New.Core.Inventory.PlayshiftItems.Refresh(player);
+            // NCU restored at login, or carried from another zone instance, drops other playfields' item effects.
+            PlayfieldEntryItems.EndOtherPlayfieldsEffects(player);
             if (command.Envelope != null)
             {
                 // Arriving from another zone instance: the zone-change rules a same-instance arrival applies.
@@ -1481,6 +1483,8 @@ namespace ZoneEngine_New.Core.Playfield
             // Buffs with a playshift requirement the character no longer meets here end on arrival, before the
             // FullCharacter the client gets lists its NCU.
             Nanos.NanoRuntime.StripPlayshiftFailures(player);
+            // The playfield just left keeps its own item's effects (the Adonis Abyss fumes stay in the Abyss).
+            PlayfieldEntryItems.EndOtherPlayfieldsEffects(player);
             // Worn items go ineffective (or work again) by the same requirements.
             ZoneEngine_New.Core.Inventory.PlayshiftItems.Refresh(player);
             ReapplyWornCasts(player);

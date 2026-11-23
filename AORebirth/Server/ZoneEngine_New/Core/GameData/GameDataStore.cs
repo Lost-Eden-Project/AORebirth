@@ -58,6 +58,8 @@ namespace ZoneEngine_New.Core.GameData
         private readonly Dictionary<int, int> _catMeshByMonsterData = new();
         private readonly Dictionary<int, (int? Mass, int? CharRadius)> _bodyStatsByMonsterData = new();
         private readonly Dictionary<int, int> _featuresByMonsterData = new();
+        // CATMesh -> the CharRadius every MonsterData record with that mesh gives it; 0 when the records disagree.
+        private readonly Dictionary<int, int> _charRadiusByCatMesh = new();
         private readonly Dictionary<int, XpLevelEntry> _xpLevels = new();
         private readonly Dictionary<int, AlienXpLevelEntry> _alienXpLevels = new();
         private readonly Dictionary<int, PlayfieldMetaData?> _playfieldMetaData = new();
@@ -262,6 +264,12 @@ namespace ZoneEngine_New.Core.GameData
             }
 
             return _catMeshByMonsterData.TryGetValue(monsterData, out catMesh);
+        }
+
+        public bool TryGetCatMeshCharRadius(int catMesh, out int charRadius)
+        {
+            charRadius = 0;
+            return catMesh > 0 && _charRadiusByCatMesh.TryGetValue(catMesh, out charRadius) && charRadius > 0;
         }
 
         public bool TryGetMonsterBodyStats(int monsterData, out int? mass, out int? charRadius)
@@ -800,6 +808,9 @@ namespace ZoneEngine_New.Core.GameData
                         _bodyStatsByMonsterData.TryAdd(pairing.MonsterData, (pairing.Mass, pairing.CharRadius));
                     if (pairing.MonsterData > 0 && pairing.Features is int features)
                         _featuresByMonsterData.TryAdd(pairing.MonsterData, features);
+                    if (pairing.MonsterData > 0 && pairing.CatMesh > 0 && pairing.CharRadius is int radius && radius > 0
+                        && !_charRadiusByCatMesh.TryAdd(pairing.CatMesh, radius) && _charRadiusByCatMesh[pairing.CatMesh] != radius)
+                        _charRadiusByCatMesh[pairing.CatMesh] = 0;
 
                     // A record without a mesh has body stats only.
                     if (pairing.MonsterData > 0 && pairing.CatMesh <= 0)

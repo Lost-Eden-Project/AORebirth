@@ -40,7 +40,8 @@ using Vector3 = AORebirth.Core.Vector.Vector3;
 /// way a zone change runs: <see cref="SpawnService.ArriveFromTransfer"/> on the destination's tick, then the client's
 /// reconnect (<see cref="SpawnService.CompletePendingReconnect"/>) once it has loaded. Real playfields, items.dat and nanos
 /// from the runtime GameData (AO_REBIRTH_GAMEDATA_PATH): 4873 Adonis Abyss (239736: zone effect 231227, whose fumes 274322
-/// choke anyone without stat 467 bit 0, which the Metawater Repellent Spiritech Suit 227633 sets), 4582 ICC Shuttleport (256413, eject 256412 above level 19). Only the network and persistence are doubles.
+/// choke anyone without stat 467 bit 0, which the Metawater Repellent Spiritech Suit 227633 sets), 4582 ICC Shuttleport (256413, eject 256412 above level 19). 231227 has TimeExist -1: it runs until the player
+/// leaves, and leaving ends it with the fumes it keeps going. Only the network and persistence are doubles.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -74,6 +75,7 @@ public sealed class PlayfieldEntryItemTests
         w.Enter(player, w.Playfield(AdonisAbyss));
         w.Wait(player, 6);
 
+        Assert.IsFalse(player.IsDead, "the rig's character survives the first fumes");
         Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisAbyssEffect), "the zone effect lands on entry");
         Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisChoke), "no suit: the fumes start");
         Assert.IsTrue(w.SessionOf(player).Texts.Any(t => t.Contains(ChokeMessage)), "the player is told");
@@ -98,6 +100,76 @@ public sealed class PlayfieldEntryItemTests
         Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisWatch), "the effect keeps watching in case the suit comes off");
         Assert.IsFalse(w.SessionOf(player).Texts.Any(t => t.Contains(ChokeMessage)));
         Assert.AreEqual(Rig.StartHealth, player.Stats.Get(CharacterStat.Health));
+    }
+
+    [TestMethod]
+    public void The_zone_effect_keeps_choking_while_the_player_stays()
+    {
+        using var w = new Rig(Mapped());
+        Player player = w.Player(10, level: 60);
+
+        w.Enter(player, w.Playfield(AdonisAbyss));
+        w.Wait(player, 6);
+        int afterFirst = player.Stats.Get(CharacterStat.Health);
+        w.Wait(player, 12);
+        w.Wait(player, 18);
+
+        Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisAbyssEffect), "the zone effect runs until something ends it");
+        Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisChoke), "the fumes recast themselves as they end");
+        Assert.IsTrue(player.Stats.Get(CharacterStat.Health) < afterFirst, "and keep hurting");
+    }
+
+    [TestMethod]
+    public void Leaving_adonis_abyss_ends_the_fumes()
+    {
+        using var w = new Rig(Mapped());
+        Player player = w.Player(11, level: 60);
+        w.Enter(player, w.Playfield(AdonisAbyss));
+        w.Wait(player, 6);
+        Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisChoke), "choking before leaving");
+
+        w.Enter(player, w.Playfield(Unmapped));
+        int texts = w.SessionOf(player).Texts.Count(t => t.Contains(ChokeMessage));
+        int health = player.Stats.Get(CharacterStat.Health);
+        w.Wait(player, 6);
+        w.Wait(player, 12);
+
+        Assert.IsFalse(player.Buffs.Any(b => b.Id is AdonisAbyssEffect or AdonisChoke or AdonisWatch),
+            "the Abyss effect and its fumes stay behind");
+        Assert.AreEqual(texts, w.SessionOf(player).Texts.Count(t => t.Contains(ChokeMessage)), "no more choking outside");
+        Assert.AreEqual(health, player.Stats.Get(CharacterStat.Health), "no more damage outside");
+        Assert.AreEqual(SessionState.InPlay, w.SessionOf(player).State, "the zone-in completes");
+    }
+
+    [TestMethod]
+    public void Leaving_adonis_abyss_in_a_metawater_suit_ends_the_watch()
+    {
+        using var w = new Rig(Mapped());
+        Player player = w.Player(12, level: 60);
+        w.Wear(player, MetawaterSuit);
+        w.Enter(player, w.Playfield(AdonisAbyss));
+        w.Wait(player, 6);
+        Assert.IsTrue(player.Buffs.Any(b => b.Id == AdonisWatch), "watching before leaving");
+
+        w.Enter(player, w.Playfield(IccShuttleport));
+        w.Wait(player, 12);
+
+        Assert.IsFalse(player.Buffs.Any(b => b.Id is AdonisAbyssEffect or AdonisChoke or AdonisWatch));
+    }
+
+    [TestMethod]
+    public void A_nano_with_negative_time_exist_runs_until_removed()
+    {
+        using var w = new Rig(Mapped());
+        Assert.IsTrue(w.Templates.TryGet(AdonisAbyssEffect, out ItemTemplate template));
+        NanoSpell spell = NanoSpell.From(template);
+        Assert.IsTrue(spell.RunsUntilRemoved, "231227 carries TimeExist -1");
+
+        DateTime now = DateTime.UtcNow;
+        Buff buff = Buff.Create(spell, new Identity { Type = IdentityType.SimpleChar, Instance = 1 }, 1, now);
+
+        Assert.IsFalse(buff.IsExpired(now.AddHours(1)), "it does not end on its own");
+        Assert.IsTrue(buff.IsExpired(now.AddMilliseconds(Buff.MaxDurationCentiseconds * 10L)), "the NCU ceiling still bounds it");
     }
 
     [TestMethod]
@@ -240,6 +312,8 @@ public sealed class PlayfieldEntryItemTests
 
         internal PlayfieldManager Manager { get; }
 
+        internal ItemTemplateCatalog Templates { get; }
+
         internal Rig(GameplaySettings gameplay)
         {
             var logger = new StubLogger();
@@ -250,6 +324,7 @@ public sealed class PlayfieldEntryItemTests
                     Assert.Inconclusive("The runtime GameData at " + data.RootPath + " lacks playfield " + id + ".");
             }
             var templates = new ItemTemplateCatalog(data, logger);
+            Templates = templates;
             foreach (int id in new[] { AdonisItem, IccItem, AdonisAbyssEffect, AdonisChoke, AdonisWatch, MetawaterSuit, IccEjectNano })
             {
                 if (!templates.TryGet(id, out _))
@@ -299,6 +374,9 @@ public sealed class PlayfieldEntryItemTests
             player.Stats.Set(CharacterStat.HeadMesh, 40683, StatDetail.Base);
             player.Stats.Set(CharacterStat.MaxNCU, 1200, StatDetail.Base);
             player.Stats.Set(CharacterStat.Level, level, StatDetail.Base);
+            // The fumes' Modify rebases the character, which recomputes max health from Body Development: enough of it
+            // that a few 1000-point fume hits never kill the character mid-test (death would empty NCU).
+            player.Stats.Set(CharacterStat.BodyDevelopment, 3000, StatDetail.Base);
             player.Rebase();
             player.Stats.Set(CharacterStat.MaxHealth, StartHealth);
             player.Stats.Set(CharacterStat.Health, StartHealth);

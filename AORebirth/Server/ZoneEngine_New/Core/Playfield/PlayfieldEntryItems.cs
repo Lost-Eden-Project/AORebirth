@@ -4,11 +4,16 @@ namespace ZoneEngine_New.Core.Playfield
     using System.Collections.Generic;
     using System.Globalization;
 
+    using AORebirth.Enums;
+
+    using LostEden.Protocol.GameData;
+
     using ZoneEngine_New.Core.Configuration;
     using ZoneEngine_New.Core.Data;
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
     using ZoneEngine_New.Core.Logging;
+    using ZoneEngine_New.Core.Nanos;
 
     /// <summary>
     /// A playfield's "Playfield Item" (Gameplay.json <see cref="GameplaySettings.PlayfieldItems"/>): its OnUse runs on each
@@ -74,6 +79,80 @@ namespace ZoneEngine_New.Core.Playfield
 
             player.FlushDirtyStats();
             return ran;
+        }
+
+        /// <summary>
+        /// A player arriving on a playfield (by transfer, or at login with restored NCU) leaves behind every other
+        /// playfield's item effect: the nanos another mapped item casts, and those they cast in turn, end without their
+        /// OnTerminate (Adonis Abyss 239736: 231227 runs until removed and its fumes 274322 / watch 274323 recast each
+        /// other, so they would otherwise follow the player out). This playfield's own item effects stay. Returns how
+        /// many NCU entries went.
+        /// </summary>
+        public static int EndOtherPlayfieldsEffects(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            Playfield? playfield = player.Playfield;
+            if (playfield == null || player.Buffs.Count == 0)
+                return 0;
+
+            Dictionary<int, int>? map = playfield.GetService<GameplaySettings>()?.PlayfieldItems;
+            if (map == null || map.Count == 0
+                || playfield.GetService<IItemTemplateCatalog>() is not IItemTemplateCatalog catalog)
+                return 0;
+
+            int ownItem = TryGetItemId(playfield, out int id) ? id : 0;
+            HashSet<int>? own = null;
+            HashSet<int>? foreign = null;
+            foreach (int itemId in map.Values)
+            {
+                if (itemId == ownItem)
+                    continue;
+                CollectEffectNanos(itemId, catalog, foreign ??= new HashSet<int>());
+            }
+
+            if (foreign == null || foreign.Count == 0)
+                return 0;
+
+            if (ownItem != 0)
+            {
+                CollectEffectNanos(ownItem, catalog, own = new HashSet<int>());
+                foreign.ExceptWith(own);
+            }
+
+            return NanoRuntime.EndWithoutTerminate(player, foreign);
+        }
+
+        /// <summary>
+        /// The nanos <paramref name="itemId"/> sets going: what its OnUse casts and, through every event of each, what
+        /// those cast, followed to the end of the chain (the item itself is not one).
+        /// </summary>
+        static void CollectEffectNanos(int itemId, IItemTemplateCatalog catalog, HashSet<int> nanos)
+        {
+            if (!catalog.TryGet(itemId, out ItemTemplate item)
+                || !item.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? onUse))
+                return;
+
+            var pending = new Stack<int>();
+            PushCasts(onUse, pending);
+            while (pending.Count > 0)
+            {
+                int nanoId = pending.Pop();
+                if (nanoId == itemId || !nanos.Add(nanoId) || !catalog.TryGet(nanoId, out ItemTemplate nano))
+                    continue;
+                foreach (List<ItemSpell> spells in nano.SpellList.Values)
+                    PushCasts(spells, pending);
+            }
+        }
+
+        static void PushCasts(List<ItemSpell> spells, Stack<int> pending)
+        {
+            foreach (ItemSpell spell in spells)
+            {
+                if ((FunctionType)spell.FunctionType is FunctionType.CastNano or FunctionType.CastNanoIfPossible
+                        or FunctionType.NpcCastNanoIfPossible or FunctionType.TeamCastNano or FunctionType.AreaCastNano
+                    && spell.TryReadInt(0, out int nanoId) && nanoId > 0)
+                    pending.Push(nanoId);
+            }
         }
     }
 }

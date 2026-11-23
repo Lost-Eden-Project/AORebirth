@@ -385,10 +385,21 @@ public sealed class DungeonChestBlock : IDungeonBlock<DungeonChestBlock>
     /// <summary>Percent of chests that are locked (a Break and Enter lock at the mission quality).</summary>
     public int? LockedChancePercent { get; set; }
 
+    /// <summary>
+    /// The item template every chest is drawn as (the Mothership's alien cocoon, 10000002); null: the mission chest
+    /// 162447. Appearance only: the loot, lock, Need or Greed and persistence are any mission chest's.
+    /// </summary>
+    public int? Template { get; set; }
+
     public const double MaxRoomDensity = 4;
+
+    /// <summary>The chest template the chests are drawn as: <see cref="Template"/>, else the mission chest.</summary>
+    [JsonIgnore]
+    public int ChestTemplate => Template ?? Entities.ChestSpawnDefinition.MissionChestTemplate;
 
     public DungeonChestBlock Over(DungeonChestBlock under) => new()
     {
+        Template = Template ?? under.Template,
         LockedChancePercent = LockedChancePercent ?? under.LockedChancePercent,
         Enabled = Enabled ?? under.Enabled,
         RoomDensity = RoomDensity ?? under.RoomDensity,
@@ -429,6 +440,8 @@ public sealed class DungeonChestBlock : IDungeonBlock<DungeonChestBlock>
             return "Chests.ExcludedRooms must be a list of name parts (it may be empty)";
         if (LootTable != null && !LootTable.TrueForAll(Mobs.MobItemTableEntry.IsWellFormed))
             return "Chests.LootTable " + DungeonPopulationBlock.LootRowRule;
+        if (Template is <= 0)
+            return "Chests.Template must be an item template id or left out";
         return null;
     }
 }

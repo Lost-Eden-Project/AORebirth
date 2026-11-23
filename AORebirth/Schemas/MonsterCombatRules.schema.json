@@ -44,6 +44,7 @@
             "NoXp",
             "HealsSpawner",
             "AggroesAllSides",
+            "Passive",
             "Persistent"
           ]
         }
@@ -55,24 +56,6 @@
         ],
         "items": {
           "type": "integer"
-        }
-      },
-      "IgnoresSides": {
-        "type": [
-          "array",
-          "null"
-        ],
-        "items": {
-          "enum": [
-            "Neutral",
-            "Clan",
-            "OmniTek",
-            "Monster",
-            "Advisor",
-            "Guardian",
-            "Gm",
-            "Mixed"
-          ]
         }
       }
     },

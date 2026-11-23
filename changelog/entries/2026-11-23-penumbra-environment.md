@@ -1,0 +1,1 @@
+- Fixed: Penumbra's environmental effects apply again when you enter Penumbra Forest, Penumbra Valley and Penumbra Hollows.

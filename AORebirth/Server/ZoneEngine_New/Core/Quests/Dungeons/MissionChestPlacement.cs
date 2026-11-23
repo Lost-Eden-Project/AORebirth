@@ -99,7 +99,11 @@ public static class MissionChestPlacement
         return result;
     }
 
-    /// <summary>The chest dynel's collision sphere from its spawn definition's template, mesh and scale.</summary>
+    /// <summary>
+    /// The chest dynel's collision sphere from its spawn definition's template, mesh and scale. A template drawn as a CAT
+    /// body (CATMesh, no Mesh: the Mothership cocoon 10000002) is sized as the client sizes a character, CharRadius * Scale
+    /// / 100, with the CharRadius the MonsterData records give that body; the sphere stands on the floor.
+    /// </summary>
     public static bool TryGetChestSphere(IGameData gameData, IItemTemplateCatalog templates,
         ChestSpawnDefinition appearance, out CollisionSphereData sphere)
     {
@@ -115,9 +119,17 @@ public static class MissionChestPlacement
             return placed != null ? unchecked((int)placed.Value)
                 : template.Stats.TryGetValue(stat, out int value) ? value : fallback;
         }
-        if (!gameData.TryGetDynelCollisionSphere((int)rawId, Stat(CharacterStat.Mesh, 0), Stat(CharacterStat.Scale, 100),
-                out float radius, out float centerY)
-            || !float.IsFinite(radius) || !float.IsFinite(centerY) || radius <= 0 || centerY <= 0)
+        int mesh = Stat(CharacterStat.Mesh, 0);
+        int scale = Stat(CharacterStat.Scale, 100);
+        if (!gameData.TryGetDynelCollisionSphere((int)rawId, mesh, scale, out float radius, out float centerY))
+        {
+            int catMesh = Stat(CharacterStat.CATMesh, 0);
+            if (mesh > 0 || catMesh <= 0 || !gameData.TryGetCatMeshCharRadius(catMesh, out int charRadius))
+                return false;
+            radius = charRadius * Math.Max(1, scale) / 100f;
+            centerY = radius;
+        }
+        if (!float.IsFinite(radius) || !float.IsFinite(centerY) || radius <= 0 || centerY <= 0)
             return false;
         sphere = new CollisionSphereData { Radius = radius, CenterY = centerY };
         return true;
