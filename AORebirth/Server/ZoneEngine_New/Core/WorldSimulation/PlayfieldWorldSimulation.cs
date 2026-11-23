@@ -1384,12 +1384,58 @@
                 return;
             }
 
-            events.ExecuteSpells(
-                pad.StaticEvent,
-                player,
-                playfield.GetRequiredService<IInventoryRepository>(),
-                playfield.GetRequiredService<IItemBuilder>(),
-                criteria);
+            if (rows == null || !rows.Exists(IsOwnerRow))
+            {
+                events.ExecuteSpells(
+                    pad.StaticEvent,
+                    player,
+                    playfield.GetRequiredService<IInventoryRepository>(),
+                    playfield.GetRequiredService<IItemBuilder>(),
+                    criteria);
+                return;
+            }
+
+            // On a vicinity or entry event ApplyOn Wearer (2) is the character in range and User (1) the item itself, as
+            // AreaTriggerService resolves them. The Scheol spider trap (Collision Item GASD 228380) runs SpawnMonster2 and
+            // its text on the player, then Set Health 0 and Set TimeExist 1 on itself: those end the trap, never the player.
+            bool fired = false;
+            bool destroysOwner = false;
+            foreach (ItemSpell row in rows)
+            {
+                if (IsOwnerRow(row))
+                {
+                    destroysOwner |= IsSelfDestruct(row);
+                    continue;
+                }
+                fired |= events.ExecuteStaticSpell(row, player, criteria);
+            }
+
+            // Nothing ran on the player (its criteria failed: a GM, an NPC): the trap stays armed.
+            if (fired && destroysOwner)
+                DestroyVicinityOwner(playfield, pad.DynelIdentity);
+        }
+
+        static bool IsOwnerRow(ItemSpell row) => row.Target == (int)AORebirth.Enums.ItemTarget.User;
+
+        /// <summary>A Set that ends the dynel it runs on: Health to 0 or below, or a TimeExist countdown.</summary>
+        static bool IsSelfDestruct(ItemSpell row)
+            => row.Is(AORebirth.Enums.FunctionType.Set)
+                && row.TryReadInt(0, out int stat)
+                && (stat == (int)CharacterStat.TimeExist
+                    || (stat == (int)CharacterStat.Health && row.TryReadInt(1, out int value) && value <= 0));
+
+        /// <summary>
+        /// Removes a vicinity pad's owner as if picked up (GM <c>.despawn</c>): a spawn point's static comes back on its
+        /// own timer, a loose world item just goes. A placed playfield static is left alone.
+        /// </summary>
+        static void DestroyVicinityOwner(PlayfieldType playfield, Identity owner)
+        {
+            if (!playfield.GetRequiredService<DynelRegistry>().TryGet(owner, out ZoneEngine_New.Core.Entities.Dynel? dynel)
+                || dynel is not StaticDynel staticDynel || !ReferenceEquals(staticDynel.Playfield, playfield))
+                return;
+            if (!playfield.GetRequiredService<HashSpawnSystem>().TryDespawnStaticAsDeath(staticDynel)
+                && staticDynel is WorldItem worldItem)
+                playfield.GetRequiredService<SpawnService>().DespawnStatic(worldItem);
         }
 
         void BakeVicinityTriggers(PlayfieldDynels? dynels, IItemTemplateCatalog? itemTemplates)

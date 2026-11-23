@@ -1,0 +1,1 @@
+- Fixed: The spider cracks around Scheol no longer kill you when you walk into them. They release their spiders and close up until they reappear later.
