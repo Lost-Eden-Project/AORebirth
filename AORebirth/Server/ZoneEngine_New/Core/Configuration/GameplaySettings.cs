@@ -38,6 +38,20 @@ namespace ZoneEngine_New.Core.Configuration
         public IReadOnlyList<int> StuckToRespawnPlayfields { get; init; } = Array.Empty<int>();
 
         /// <summary>
+        /// Playfields no one may be summoned to or from (Summon Player, Summon Team Members), matched by playfield id or by
+        /// the resource a proxy instance copies. The Shadowlands refuse summons both ways without being listed.
+        /// </summary>
+        public IReadOnlyList<int> NoSummonPlayfields { get; init; } = Array.Empty<int>();
+
+        /// <summary>
+        /// Playfield id (or the resource a proxy instance copies) to its "Playfield Item": an item whose OnUse runs on
+        /// every player entering that playfield, by login, zone change or transfer (239736 Adonis Abyss casts its
+        /// environmental protection, 256413 ICC Shuttleport ejects characters above level 19). The item's own criteria
+        /// decide who it acts on.
+        /// </summary>
+        public Dictionary<int, int> PlayfieldItems { get; init; } = new();
+
+        /// <summary>
         /// A reload takes rounds from a stack of the weapon's ammo. Off, clips still run dry and reload (with the same
         /// pause), but fill without any ammo in the inventory.
         /// </summary>
@@ -153,6 +167,13 @@ namespace ZoneEngine_New.Core.Configuration
                 if (playfield <= 0)
                     throw new InvalidDataException(path + ": stuckToRespawnPlayfields entries must be positive playfield ids.");
             }
+            if (PlayfieldItems == null)
+                throw new InvalidDataException(path + ": playfieldItems must be an object of playfield id to item id (or omitted).");
+            foreach ((int playfield, int item) in PlayfieldItems)
+            {
+                if (playfield <= 0 || item <= 0)
+                    throw new InvalidDataException(path + ": playfieldItems maps positive playfield ids to positive item ids.");
+            }
             if (!double.IsFinite(ZoneInGraceSeconds) || ZoneInGraceSeconds < 0)
                 throw new InvalidDataException(path + ": zoneInGraceSeconds must be a finite number, 0 or more.");
             if (Xp == null || !double.IsFinite(Xp.KillPercentPerLevelDifference) || Xp.KillPercentPerLevelDifference < 0)
@@ -181,6 +202,9 @@ namespace ZoneEngine_New.Core.Configuration
                 || !float.IsFinite(Leash.IndoorRange) || Leash.IndoorRange <= 0
                 || !float.IsFinite(Leash.OutdoorRange) || Leash.OutdoorRange <= 0)
                 throw new InvalidDataException(path + ": leash.indoorRange and outdoorRange must be finite distances above 0.");
+            if (!float.IsFinite(Leash.OutOfSightSeconds) || Leash.OutOfSightSeconds < 0
+                || !float.IsFinite(Leash.OutOfSightCloseRange) || Leash.OutOfSightCloseRange < 0)
+                throw new InvalidDataException(path + ": leash.outOfSightSeconds and outOfSightCloseRange must be 0 or more.");
             // A wanderer more than the leash range from its spawn point would be sent home mid-stroll.
             if (Wander == null || !float.IsFinite(Wander.Radius) || Wander.Radius < 0
                 || Wander.Radius >= Leash.ShortestRange)
@@ -598,6 +622,19 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>Leash on an outdoor playfield.</summary>
         public float OutdoorRange { get; init; } = 200f;
+
+        /// <summary>
+        /// Seconds an NPC keeps after an enemy it can no longer see. Past this it gives up on that enemy, and with
+        /// nobody else to fight it leashes home, however short the walk to the enemy still is: a player who ran off
+        /// through corridors is not chased through the rest of the dungeon. 0 turns it off.
+        /// </summary>
+        public float OutOfSightSeconds { get; init; } = 10f;
+
+        /// <summary>
+        /// An unseen enemy this close (metres, edge to edge) still counts as seen: one ducked behind a pillar next to
+        /// the NPC is found, not given up on.
+        /// </summary>
+        public float OutOfSightCloseRange { get; init; } = 10f;
 
         /// <summary>The shorter leash: wander and social-aggro radii must stay inside it on every playfield.</summary>
         public float ShortestRange => Math.Min(IndoorRange, OutdoorRange);

@@ -40,7 +40,7 @@ using Vector3 = AORebirth.Core.Vector.Vector3;
 /// <summary>
 /// Static dungeons (team request 2): the captured Shadowlands dungeons behind world doors, read from the runtime
 /// GameData's Dungeons/Static files (AO_REBIRTH_GAMEDATA_PATH), built as a player entering would get them, and the
-/// service that hands out one instance per team. Drives the real catalog, the real style geometry, the real spawn
+/// service that hands out each door's one shared instance. Drives the real catalog, the real style geometry, the real spawn
 /// system and the real chest roll; only persistence and the network are doubles.
 /// </summary>
 [TestClass]
@@ -178,8 +178,40 @@ public sealed class StaticDungeonTests
                 foreach (Item item in chest.Loot.Content.Values)
                     Assert.IsFalse(item.IsPersisted, "chest loot is held in memory until a player takes it");
             }
-            Assert.IsTrue(chests.Any(chest => chest.Loot.Content.Count > 0), "the loot table rolled something");
+            if (blueprint.Chests!.LootTable.Count > 0)
+                Assert.IsTrue(chests.Any(chest => chest.Loot.Content.Count > 0), "the loot table rolled something");
+            else
+                Assert.IsTrue(chests.All(chest => chest.Loot.Content.Count == 0), "a block with no loot rows spawns empty chests");
             Assert.AreEqual(chests.Count, chests.Select(chest => chest.Identity.Instance).Distinct().Count(), "chest identities are unique");
+        }
+        finally
+        {
+            Assert.IsTrue(R.Manager.TryReleaseStaticDungeon(world.Identity.Instance));
+        }
+    }
+
+    [TestMethod]
+    public void AChestBlockWithNoLootRowsKeepsTheDungeonAndSpawnsEmptyChests()
+    {
+        // Every static dungeon that names a chest block still loads when the block has no rows (it used to be left out).
+        foreach (string problem in R.Catalog.Problems)
+            Assert.IsFalse(problem.Contains("LootTable", StringComparison.Ordinal), "a dungeon was left out over its chest table: " + problem);
+        Assert.IsTrue(R.Catalog.TryGet((uint)IdentityType.ACGEntrance, NascenceDoor, out StaticDungeonBlueprint captured));
+        Assert.IsNotNull(captured.Chests);
+
+        // The same dungeon with its chest table emptied: the chests still stand on their spots, hold nothing, and the
+        // rest of the dungeon builds as before.
+        var empty = new StaticDungeonBlueprint(captured.FileName, captured.Name, captured.Entrance, captured.Layout, captured.Quality,
+            captured.RespawnSeconds, captured.Npcs, captured.UnresolvedNpcs, captured.Chests! with { LootTable = [] }, captured.Turrets,
+            captured.Mines, captured.Controllers, captured.Sites);
+        StaticDungeonPlayfield world = R.Manager.GetOrCreateStaticDungeon(StaticDungeonIds.FirstPlayfield + 104, empty, chestSeed: 7);
+        try
+        {
+            List<Chest> chests = world.GetRequiredService<DynelRegistry>().Dynels().OfType<Chest>().ToList();
+            Assert.IsTrue(chests.Count > 0, "the chests are placed");
+            Assert.AreEqual(chests.Count, world.Placed.Chests);
+            Assert.IsTrue(chests.All(chest => chest.Loot.Content.Count == 0), "every chest is empty");
+            Assert.AreEqual(empty.Npcs.Count, world.Placed.Npcs, "the monsters are placed as with a full table");
         }
         finally
         {
@@ -213,46 +245,42 @@ public sealed class StaticDungeonTests
     }
 
     [TestMethod]
-    public void OneInstancePerOwnerRecordedAndReleased()
+    public void OneSharedInstancePerDoorRecordedAndReleased()
     {
         Assert.IsTrue(R.Catalog.TryGet((uint)IdentityType.ACGEntrance, NascenceDoor, out StaticDungeonBlueprint blueprint));
-        (int character, int team) = StaticDungeonService.OwnerKinds;
-        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, team, 5001, out int teamInstance));
-        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, team, 5001, out int again));
-        Assert.AreEqual(teamInstance, again, "a teammate entering later joins the team's instance");
-        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, team, 5002, out int otherTeam));
-        Assert.AreNotEqual(teamInstance, otherTeam, "two teams at one door get separate instances");
-        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, character, 9001, out int solo));
-        Assert.AreNotEqual(teamInstance, solo);
-        Assert.IsTrue(StaticDungeonIds.IsStaticDungeonPlayfield(teamInstance));
-        Assert.IsNotNull(R.Store.Load(teamInstance), "the instance is recorded for other zones and for login after a restart");
-        Assert.AreEqual((uint)NascenceDoor, R.Store.Load(teamInstance)!.EntranceInstance);
+        Assert.AreEqual(0, R.Service.InstanceOf(blueprint.Entrance.Identity), "no instance is left over from another test");
 
-        // Another zone made the team's instance first: this zone adopts its row instead of making a second one.
+        // Another zone made the door's instance first: this zone adopts its row instead of making a second one.
+        (int ownerKind, int ownerId) = StaticDungeonService.SharedOwner;
         var elsewhere = new StaticDungeonInstanceRow
         {
             PlayfieldId = StaticDungeonIds.FirstPlayfield + 777, EntranceType = blueprint.Entrance.IdentityType,
-            EntranceInstance = blueprint.Entrance.IdentityInstance, OwnerKind = team, OwnerId = 6001, CreatedAtUtcTicks = DateTime.UtcNow.Ticks
+            EntranceInstance = blueprint.Entrance.IdentityInstance, OwnerKind = ownerKind, OwnerId = ownerId, CreatedAtUtcTicks = DateTime.UtcNow.Ticks
         };
         Assert.IsTrue(R.Store.TryInsert(elsewhere));
-        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, team, 6001, out int adopted));
-        Assert.AreEqual(elsewhere.PlayfieldId, adopted);
+        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, out int instance));
+        Assert.AreEqual(elsewhere.PlayfieldId, instance);
+        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, out int again));
+        Assert.AreEqual(instance, again, "whoever enters later joins the door's one instance");
+        Assert.IsTrue(StaticDungeonIds.IsStaticDungeonPlayfield(instance));
 
-        // Built, logged into while live, then released: the row and the owner's record go with it.
-        StaticDungeonPlayfield world = R.Manager.GetOrCreateStaticDungeon(teamInstance, blueprint, chestSeed: 3, released: R.Service.OnReleased);
-        (Playfield login, Vector3? position, PlayfieldAdmission? admission) = R.Service.ResolveLogin(teamInstance);
+        // Built, logged into while live, then released: the row and the door's record go with it.
+        StaticDungeonPlayfield world = R.Manager.GetOrCreateStaticDungeon(instance, blueprint, chestSeed: 3, released: R.Service.OnReleased);
+        (Playfield login, Vector3? position, PlayfieldAdmission? admission) = R.Service.ResolveLogin(instance);
         Assert.AreSame(world, login, "a login inside a live instance goes back into it");
         Assert.IsNull(position, "the stored position stands");
         Assert.IsNull(admission);
-        Assert.IsTrue(R.Service.TryReset(teamInstance));
-        Assert.IsNull(R.Store.Load(teamInstance), "a released instance leaves no row");
-        Assert.AreEqual(0, R.Service.InstanceOf(blueprint.Entrance.Identity, team, 5001), "the next entry builds a fresh one");
-        Assert.IsFalse(R.Manager.TryGetStaticDungeon(teamInstance, out _));
+        Assert.IsTrue(R.Service.TryReset(instance));
+        Assert.IsNull(R.Store.Load(instance), "a released instance leaves no row");
+        Assert.AreEqual(0, R.Service.InstanceOf(blueprint.Entrance.Identity), "the next entry builds a fresh one");
+        Assert.IsFalse(R.Manager.TryGetStaticDungeon(instance, out _));
     }
 
     [TestMethod]
-    public void WalkingIntoTheDoorWithoutAKeyBuildsAndEntersTheTeamsInstance()
+    public void TwoUnteamedPlayersWalkingIntoTheDoorShareOneInstance()
     {
+        // Live defect: two players who were not in a team walked through the same door at the same moment and each got
+        // a separate instance of the dungeon, so neither could see the other inside.
         Assert.IsTrue(R.Catalog.TryGet((uint)IdentityType.ACGEntrance, NascenceDoor, out StaticDungeonBlueprint blueprint));
         MissionEntrancePlacement entrance = blueprint.Entrance;
         var session = new Session();
@@ -266,25 +294,43 @@ public sealed class StaticDungeonTests
         player.Stats.Set(CharacterStat.MaxHealth, 100);
         player.Session = session;
         session.BindPlayer(player);
-        R.Service.OwnerOverride = _ => (StaticDungeonService.OwnerKinds.Team, 8080);
+        // A second player, in no team with the first, at the same door.
+        var otherSession = new Session();
+        Player other = CreatePlayer(4243, "Companion");
+        other.Playfield = exterior;
+        other.Position = new Vector3(entrance.LocalX - 1f, entrance.LocalY, entrance.LocalZ + 1f);
+        other.Stats.Set(CharacterStat.Health, 100);
+        other.Stats.Set(CharacterStat.MaxHealth, 100);
+        other.Session = otherSession;
+        otherSession.BindPlayer(other);
         var target = new Identity { Type = IdentityType.ACGEntrance, Instance = unchecked((int)NascenceDoor) };
         int playfieldId = 0;
         try
         {
             // First use: the entrance is taken (true) and the instance builds off the tick.
             Assert.IsTrue(R.Service.TryEnter(player, target));
-            playfieldId = R.Service.InstanceOf(entrance.Identity, StaticDungeonService.OwnerKinds.Team, 8080);
+            playfieldId = R.Service.InstanceOf(entrance.Identity);
             Assert.IsTrue(playfieldId != 0);
+            Assert.IsNotNull(R.Store.Load(playfieldId), "the instance is recorded for other zones and for login after a restart");
+            Assert.AreEqual((uint)NascenceDoor, R.Store.Load(playfieldId)!.EntranceInstance);
+            // The second player arrives while it builds: they wait on the same build, not a second instance.
+            Assert.IsTrue(R.Service.TryEnter(other, target));
+            Assert.AreEqual(playfieldId, R.Service.InstanceOf(entrance.Identity));
             Assert.IsTrue(R.Service.WaitForBuild(playfieldId, TimeSpan.FromMinutes(2)), "the build finishes");
             Assert.IsTrue(R.Manager.TryGetStaticDungeon(playfieldId, out StaticDungeonPlayfield live));
             Assert.AreEqual(0, session.Transfers.Count, "nothing moves until the instance is live");
+            Assert.AreEqual(1, R.Manager.SnapshotStaticDungeons().Count(d => d.Blueprint.Entrance.Identity.Equals(entrance.Identity)),
+                "one instance of the dungeon exists");
 
-            // The retry a live instance gets: the player is handed over to it, facing into the entrance room.
+            // The retry a live instance gets: each player is handed over to it, facing into the entrance room.
             Thread.Sleep(800); // past the use cooldown
             Assert.IsTrue(R.Service.TryEnter(player, target));
             Assert.AreEqual(1, session.Transfers.Count);
             Assert.AreSame(live, session.Transfers[0].World);
             Assert.AreEqual(blueprint.Layout.Spawn, session.Transfers[0].Position);
+            Assert.IsTrue(R.Service.TryEnter(other, target));
+            Assert.AreEqual(1, otherSession.Transfers.Count);
+            Assert.AreSame(live, otherSession.Transfers[0].World, "both players land in the same instance and see each other");
 
             // The same door from inside a dungeon, dead, or from another playfield does nothing.
             Thread.Sleep(800);
@@ -297,7 +343,6 @@ public sealed class StaticDungeonTests
         }
         finally
         {
-            R.Service.OwnerOverride = null;
             if (playfieldId != 0)
                 R.Service.TryReset(playfieldId);
         }
@@ -322,7 +367,6 @@ public sealed class StaticDungeonTests
         player.Session = session;
         session.BindPlayer(player);
         player.Playfield = exterior;
-        R.Service.OwnerOverride = _ => (StaticDungeonService.OwnerKinds.Team, 9090);
         DynelRegistry registry = exterior.GetRequiredService<DynelRegistry>();
         int playfieldId = 0;
         try
@@ -331,19 +375,18 @@ public sealed class StaticDungeonTests
             player.Position = new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ - 15f);
             registry.Register(player);
             world!.TickSoftTriggers(exterior, 0.1);
-            Assert.AreEqual(0, R.Service.InstanceOf(entrance.Identity, StaticDungeonService.OwnerKinds.Team, 9090), "nothing away from the door");
+            Assert.AreEqual(0, R.Service.InstanceOf(entrance.Identity), "nothing away from the door");
 
             player.Position = new Vector3(entrance.LocalX, entrance.LocalY, entrance.LocalZ);
             world.TickSoftTriggers(exterior, 0.1);
-            playfieldId = R.Service.InstanceOf(entrance.Identity, StaticDungeonService.OwnerKinds.Team, 9090);
-            Assert.AreNotEqual(0, playfieldId, "walking into the door makes the team's instance");
+            playfieldId = R.Service.InstanceOf(entrance.Identity);
+            Assert.AreNotEqual(0, playfieldId, "walking into the door makes the door's instance");
             Assert.IsTrue(R.Service.WaitForBuild(playfieldId, TimeSpan.FromMinutes(2)), "the build finishes");
             Assert.IsTrue(R.Manager.TryGetStaticDungeon(playfieldId, out _), "the instance is live to hand the player into");
         }
         finally
         {
             registry.UnregisterExact(player);
-            R.Service.OwnerOverride = null;
             if (playfieldId != 0)
                 R.Service.TryReset(playfieldId);
         }

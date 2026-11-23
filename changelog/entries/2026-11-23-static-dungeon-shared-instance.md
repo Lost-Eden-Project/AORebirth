@@ -1,0 +1,1 @@
+- Fixed: Everyone who enters a Shadowlands static dungeon now shares the same dungeon, so players who are not teamed can see and meet each other inside instead of each getting a separate copy.

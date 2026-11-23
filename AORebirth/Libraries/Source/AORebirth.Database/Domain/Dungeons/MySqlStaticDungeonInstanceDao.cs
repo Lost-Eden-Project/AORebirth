@@ -8,7 +8,7 @@ namespace AORebirth.Database.Domain.Dungeons
 
     /// <summary>
     /// One row of <c>staticdungeoninstances</c>: a live static dungeon instance, from its build until it is released,
-    /// held by one owner (a team or a lone character) at one world entrance.
+    /// held by one owner at one world entrance (the zone records every instance under one shared owner per entrance).
     /// </summary>
     public sealed class StaticDungeonInstanceRow
     {

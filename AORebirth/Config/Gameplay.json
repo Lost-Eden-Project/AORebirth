@@ -3,6 +3,11 @@
   "stuckCooldownSeconds": 300,
   "stuckLocation": { "playfield": 566, "x": 440, "y": 29, "z": 285 },
   "stuckToRespawnPlayfields": [4582, 6553],
+  "noSummonPlayfields": [120, 127, 1404, 1931, 1933, 1941, 1943, 4121, 4380, 4381, 4382, 4383, 4384, 4385, 4386, 4387, 4388, 4582, 4604, 4805, 4833],
+  "playfieldItems": {
+    "4582": 256413,
+    "4873": 239736
+  },
   "requireAmmo": true,
   "zoneInGraceSeconds": 1,
   "aggroIntervalSeconds": 2,
@@ -45,7 +50,9 @@
   },
   "leash": {
     "indoorRange": 70,
-    "outdoorRange": 200
+    "outdoorRange": 200,
+    "outOfSightSeconds": 10,
+    "outOfSightCloseRange": 10
   },
   "socialAggro": {
     "enabled": true,

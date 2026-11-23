@@ -9,7 +9,7 @@ namespace ZoneEngine_New.Core.Commands
 
     /// <summary>
     /// <c>.staticdungeon list|enter &lt;entrance instance&gt;|reset &lt;instance playfield&gt;</c>: the catalog's
-    /// entrances and the live instances, a GM's own instance of any catalog dungeon from anywhere, and releasing an
+    /// entrances and the live instances, entering any catalog dungeon's shared instance from anywhere, and releasing an
     /// empty instance.
     /// </summary>
     public sealed class StaticDungeonCommand : IGmCommand
@@ -32,7 +32,7 @@ namespace ZoneEngine_New.Core.Commands
             "Static dungeons: the fixed ACG dungeons behind world doors (GameData/Dungeons/Static).",
             [
                 new(".staticdungeon list", "The catalog's entrances (with what their files left out) and the live instances on this zone: playfield, entrance, owner, players, NPCs left."),
-                new(".staticdungeon enter <entrance instance>", "Enter that dungeon from anywhere, in your own instance; the range check is skipped."),
+                new(".staticdungeon enter <entrance instance>", "Enter that dungeon's shared instance from anywhere; the range check is skipped."),
                 new(".staticdungeon reset <instance playfield>", "Release that instance now if nobody is inside; the next entry builds a fresh one."),
             ],
             [

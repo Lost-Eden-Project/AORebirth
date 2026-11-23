@@ -51,6 +51,14 @@ namespace ZoneEngine_New.Core.Mobs
         SpawnsExitDevice,
 
         /// <summary>
+        /// Leaves an Exit Portal where it dies: runs the NpcScripts program bound to this feature
+        /// (<c>GameData/NpcScripts/Mission_ExitPortal.json</c>) beside whatever program the NPC's own binding gives it.
+        /// Given to a mission's objective NPC by its objective block (Dungeons/Objectives.json "Features": the Rubi-Ka
+        /// terminal missions' boss), so the same template elsewhere leaves none. The item and its lifetime are the script's.
+        /// </summary>
+        SpawnsExitPortal,
+
+        /// <summary>
         /// Its kill gives no XP at all: no regular kill XP, not even the grey 1 XP, and no alien XP
         /// (<see cref="Entities.Character"/> kill rewards). Loot, quest kill credit and the rest of the kill are unchanged.
         /// Pets never give kill XP, with or without it.
@@ -66,11 +74,19 @@ namespace ZoneEngine_New.Core.Mobs
 
         /// <summary>
         /// Attacks players on sight whatever their side: its own Side (a Clan or Omni soldier, a Neutral civilian) does
-        /// not choose whom it goes for, and neither its IgnoresSides nor a guard's opposing-faction rule applies. It still
-        /// needs aggressiveness of its own (BreedHostility above 0). Listed for a hash, or for every monster of a dungeon
-        /// population (Dungeons/Population.json "Features": Rubi-Ka mission humanoids).
+        /// not choose whom it goes for, and a guard's opposing-faction rule does not apply. It still needs aggressiveness
+        /// of its own (BreedHostility above 0), and <see cref="Passive"/> wins over it. Listed for a hash, or for every
+        /// monster of a dungeon population (Dungeons/Population.json "Features": Rubi-Ka mission humanoids).
         /// </summary>
         AggroesAllSides,
+
+        /// <summary>
+        /// Never starts a fight with a player: no aggro on sight from its own aggressiveness (BreedHostility) or, as a
+        /// guard, from the opposing-faction rule (an Omni guard that leaves Clans alone). It still fights back when
+        /// attacked and answers its kind's calls for help, and a guard still defends players against NPCs and attacks
+        /// the families it Hates.
+        /// </summary>
+        Passive,
 
         /// <summary>
         /// Always in the world, like a scripted NPC: its spawn point's cell stays Cold from playfield load (ticks once a

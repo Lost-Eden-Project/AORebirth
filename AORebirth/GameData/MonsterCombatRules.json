@@ -111,10 +111,8 @@
   },
   "UITR": {
     "Features": [
-      "Guard"
-    ],
-    "IgnoresSides": [
-      "Clan"
+      "Guard",
+      "Passive"
     ]
   },
   "UOTP": {

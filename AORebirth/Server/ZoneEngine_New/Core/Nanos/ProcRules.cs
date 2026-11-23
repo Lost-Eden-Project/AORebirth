@@ -16,11 +16,12 @@ namespace ZoneEngine_New.Core.Nanos
     /// Weapon-hit procs. AddOffProc [chance %, nano] fires on a connecting weapon hit the holder makes; AddDefProc fires
     /// when a weapon hit connects with the holder. A proc lives on an active buff's OnUse (Ritualistic Touch 210353
     /// [25, 210341]), a worn item's OnWear (Ofab helmets' AddDefProc) or the swinging weapon's OnHit. A worn weapon's
-    /// offensive procs only fire on that weapon's own hits. Each source rolls its own chance. A hostile proc nano lands
-    /// on the opponent (210341 drains the struck target); any other lands on the proc's owner. So does a hostile-flagged
-    /// one whose every function names only the User or Wearer: LE research Ferocious Hits 266724 (+15 damage
-    /// modifiers) and Aesir Absorption 263362 (+50 AddAllDef) carry the flag but are the holder's own buffs, while every
-    /// hostile LE proc meant for the enemy names the Fightingtarget or Target.
+    /// offensive procs only fire on that weapon's own hits. Each source rolls its own chance. A proc nano whose every
+    /// function names only the User or Wearer is the holder's own (Healing Herbs 266736; Ferocious Hits 266724 and
+    /// Aesir Absorption 263362 carry the hostile flag but are the holder's buffs); any other lands on the opponent,
+    /// hostile or not (210341 drains the struck target). Shade's Caress 275242 is a defensive proc on the Shade's enemy
+    /// whose friendly heal 275243 names the Target: it heals whoever hits that enemy, not the enemy (bug #677). A proc
+    /// is not the holder's choice, so a friendly one landed on an opponent does not mark the holder as helping them.
     /// </summary>
     internal static class ProcRules
     {
@@ -145,10 +146,10 @@ namespace ZoneEngine_New.Core.Nanos
                     continue;
 
                 NanoSpell spell = NanoSpell.From(template);
-                Character recipient = spell.IsHostile && !spell.ActsOnlyOnRunner ? opponent : holder;
+                Character recipient = spell.ActsOnlyOnRunner ? holder : opponent;
                 if (recipient.IsDead)
                     continue;
-                NanoRuntime.TryApplyImmediate(holder, recipient, nanoId, items, inventory, now);
+                NanoRuntime.TryApplyImmediate(holder, recipient, nanoId, items, inventory, now, fromProc: true);
             }
         }
     }

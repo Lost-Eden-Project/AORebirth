@@ -48,6 +48,9 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Gives this NPC alone a feature its template does not list.</summary>
         public void AddFeature(Mobs.NpcFeature feature) => (_addedFeatures ??= new()).Add(feature);
 
+        /// <summary>The features given to this NPC alone (<see cref="AddFeature"/>); null when none were.</summary>
+        public IReadOnlyCollection<Mobs.NpcFeature>? AddedFeatures => _addedFeatures;
+
         /// <summary>The feature from its template (MonsterCombatRules.json) or given to this NPC alone (<see cref="AddFeature"/>).</summary>
         public bool HasFeature(Mobs.NpcFeature feature)
             => MobTemplate?.Has(feature) == true || _addedFeatures?.Contains(feature) == true;

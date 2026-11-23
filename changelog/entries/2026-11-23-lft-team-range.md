@@ -1,0 +1,1 @@
+- Added: The Looking For Team search can now show only players you can team with, and marks who is in your team range.

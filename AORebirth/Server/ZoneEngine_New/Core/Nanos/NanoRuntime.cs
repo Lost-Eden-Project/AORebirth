@@ -800,7 +800,8 @@ namespace ZoneEngine_New.Core.Nanos
             IInventoryRepository inventory,
             DateTime nowUtc,
             bool gmApply = false,
-            bool areaSpread = false)
+            bool areaSpread = false,
+            bool fromProc = false)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(target);
@@ -814,13 +815,15 @@ namespace ZoneEngine_New.Core.Nanos
             if (template.Id != nanoId)
                 return false;
 
-            return LandImmediate(source, target, NanoSpell.From(template), inventory, items, nowUtc, gmApply, areaSpread);
+            return LandImmediate(source, target, NanoSpell.From(template), inventory, items, nowUtc, gmApply, areaSpread,
+                fromProc);
         }
 
         /// <summary>
         /// Lands <paramref name="spell"/> at once. <paramref name="gmApply"/> (a GM's .give nano): combat legality does
         /// not apply, so a hostile-flagged nano such as PvP Enabled (202732) lands on any living character, and the
-        /// target does not treat the GM as an attacker. NCU and strain rules still apply.
+        /// target does not treat the GM as an attacker. NCU and strain rules still apply. <paramref name="fromProc"/>: a
+        /// weapon-hit proc, which its holder does not choose, so a friendly one does not mark them as helping its recipient.
         /// </summary>
         static bool LandImmediate(
             Character source,
@@ -830,7 +833,8 @@ namespace ZoneEngine_New.Core.Nanos
             IItemBuilder items,
             DateTime nowUtc,
             bool gmApply = false,
-            bool areaSpread = false)
+            bool areaSpread = false,
+            bool fromProc = false)
         {
             bool ownPet = false;
             if (!gmApply)
@@ -855,7 +859,7 @@ namespace ZoneEngine_New.Core.Nanos
                     return false;
 
                 // Team buffs, auras and other nanos a player's nano lands: helping a PvP-enabled player flags them.
-                if (!spell.IsHostile && source is Player helper)
+                if (!spell.IsHostile && !fromProc && source is Player helper)
                     PvpAttackerFlag.OnFriendlyAction(helper, target);
             }
 

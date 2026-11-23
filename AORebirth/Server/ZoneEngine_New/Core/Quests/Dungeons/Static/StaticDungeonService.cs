@@ -20,22 +20,22 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
     using ZoneEngine_New.Core.Logging;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
-    using ZoneEngine_New.Core.Teams;
 
     using Vector3 = AORebirth.Core.Vector.Vector3;
 
     /// <summary>
     /// Walk-in dungeons behind world doors (<see cref="StaticDungeonCatalog"/>). Using or walking into an ACG entrance
-    /// the catalog knows, with no mission key for a quest dungeon behind it, puts the player in their team's instance of
-    /// that dungeon: one live instance per team and entrance (a player with no team gets their own), built off the
+    /// the catalog knows, with no mission key for a quest dungeon behind it, puts the player in that dungeon's one
+    /// shared instance: every player at an entrance, teamed or not, meets in the same live instance. It is built off the
     /// tick on first entry and released by the same empty-dungeon sweep as quest dungeons. Instances are recorded in
     /// <c>staticdungeoninstances</c> so every zone instance shares them and a login inside one finds its entrance
     /// after a restart.
     /// </summary>
     public sealed class StaticDungeonService : IDisposable
     {
-        const int OwnerCharacter = 0;
-        const int OwnerTeam = 1;
+        /// <summary>The owner every instance row is recorded under: one instance per entrance, shared by everyone.</summary>
+        const int OwnerShared = 2;
+        const int SharedOwnerId = 0;
 
         /// <summary>Minimum time between one player's entrance requests: they can cost a database read.</summary>
         static readonly TimeSpan RequestCooldown = TimeSpan.FromMilliseconds(750);
@@ -47,8 +47,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
 
         const int PurgeBatch = 50;
 
-        /// <summary>A live or building instance: the owner's dungeon at an entrance.</summary>
-        sealed record Instance(int PlayfieldId, MissionPlacementIdentity Entrance, int OwnerKind, int OwnerId);
+        /// <summary>A live or building instance: the dungeon at an entrance.</summary>
+        sealed record Instance(int PlayfieldId, MissionPlacementIdentity Entrance);
 
         readonly StaticDungeonCatalog _catalog;
         readonly MissionDestinationCatalog _entrances;
@@ -58,7 +58,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         readonly IGameData _gameData;
         readonly IZoneLogger _logger;
         readonly ZoneEngine_New.Core.World.WorldLink? _world;
-        readonly ConcurrentDictionary<(MissionPlacementIdentity Entrance, int OwnerKind, int OwnerId), int> _byOwner = new();
+        readonly ConcurrentDictionary<MissionPlacementIdentity, int> _byEntrance = new();
         readonly ConcurrentDictionary<int, Instance> _byPlayfield = new();
         readonly ConcurrentDictionary<int, long> _lastRequest = new();
         /// <summary>Instance builds in flight, by dungeon playfield: every entrant waits on the one build.</summary>
@@ -87,7 +87,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
 
         /// <summary>
         /// The player used or walked into a MissionEntrance that no carried mission key opened. When the catalog has a
-        /// dungeon behind it, they are sent into their team's instance (built if needed). False when the entrance is
+        /// dungeon behind it, they are sent into its shared instance (built if needed). False when the entrance is
         /// not a static dungeon's, so other entrance handling can take the use.
         /// </summary>
         public bool TryEnter(Player player, Identity target)
@@ -104,13 +104,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
                     || !QuestDungeonService.WithinEntrance(player, blueprint.Entrance) || !TryBeginRequest(player))
                     return false;
 
-                (int ownerKind, int ownerId) = OwnerOf(player);
-                return Enter(player, session, playfield, target, blueprint, ownerKind, ownerId);
+                return Enter(player, session, playfield, target, blueprint);
             }
         }
 
         /// <summary>
-        /// A GM enters the dungeon behind <paramref name="entranceInstance"/> from anywhere, in their own instance (no
+        /// A GM enters the dungeon behind <paramref name="entranceInstance"/> from anywhere, into its shared instance (no
         /// range check; the use cooldown still applies). False when the catalog has no such entrance or the GM cannot
         /// be moved now.
         /// </summary>
@@ -125,18 +124,18 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
                     || player.Playfield is not Playfield playfield || !TryBeginRequest(player))
                     return false;
                 var target = new Identity { Type = IdentityType.ACGEntrance, Instance = unchecked((int)entranceInstance) };
-                return Enter(player, session, playfield, target, blueprint, OwnerCharacter, player.Identity.Instance, gm: true);
+                return Enter(player, session, playfield, target, blueprint, gm: true);
             }
         }
 
         bool Enter(Player player, IZoneSession session, Playfield playfield, Identity target, StaticDungeonBlueprint blueprint,
-            int ownerKind, int ownerId, bool gm = false)
+            bool gm = false)
         {
             PlayfieldManager playfields = _playfields.Value;
             // The dungeon's navmesh bakes while the player waits; the same mesh serves every instance of this entrance.
             _ = playfields.DungeonNavMeshes.GetOrStart(blueprint.Layout);
 
-            if (!TryGetOrCreateInstance(blueprint, ownerKind, ownerId, out Instance instance))
+            if (!TryGetOrCreateInstance(blueprint, out Instance instance))
             {
                 _logger.Warn("Static dungeon " + blueprint.Name + ": no instance id could be allocated; the entrance did nothing");
                 return true;
@@ -183,24 +182,24 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         }
 
         /// <summary>
-        /// The owner's instance at the entrance: the one in memory, else the one the shared table holds (another zone
-        /// instance may have made it), else a new one from the durable allocator, recorded in both. A raced insert
-        /// (two zones, one team) re-reads the row and takes the winner's.
+        /// The entrance's one instance: the one in memory, else the one the shared table holds (another zone instance may
+        /// have made it), else a new one from the durable allocator, recorded in both. A raced insert (two zones, one
+        /// door) re-reads the row and takes the winner's.
         /// </summary>
-        internal bool TryGetOrCreateInstance(StaticDungeonBlueprint blueprint, int ownerKind, int ownerId, out int playfieldId)
+        internal bool TryGetOrCreateInstance(StaticDungeonBlueprint blueprint, out int playfieldId)
         {
-            bool found = TryGetOrCreateInstance(blueprint, ownerKind, ownerId, out Instance instance);
+            bool found = TryGetOrCreateInstance(blueprint, out Instance instance);
             playfieldId = found ? instance.PlayfieldId : 0;
             return found;
         }
 
-        bool TryGetOrCreateInstance(StaticDungeonBlueprint blueprint, int ownerKind, int ownerId, out Instance instance)
+        bool TryGetOrCreateInstance(StaticDungeonBlueprint blueprint, out Instance instance)
         {
-            var key = (blueprint.Entrance.Identity, ownerKind, ownerId);
-            if (_byOwner.TryGetValue(key, out int known) && _byPlayfield.TryGetValue(known, out instance!))
+            MissionPlacementIdentity key = blueprint.Entrance.Identity;
+            if (_byEntrance.TryGetValue(key, out int known) && _byPlayfield.TryGetValue(known, out instance!))
                 return true;
 
-            StaticDungeonInstanceRow? row = _store.Find(blueprint.Entrance.IdentityType, blueprint.Entrance.IdentityInstance, ownerKind, ownerId);
+            StaticDungeonInstanceRow? row = _store.Find(blueprint.Entrance.IdentityType, blueprint.Entrance.IdentityInstance, OwnerShared, SharedOwnerId);
             if (row == null)
             {
                 if (!StaticDungeonIds.TryCreate(_ids.Allocate(), out int playfieldId))
@@ -211,15 +210,15 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
                 row = new StaticDungeonInstanceRow
                 {
                     PlayfieldId = playfieldId, EntranceType = blueprint.Entrance.IdentityType, EntranceInstance = blueprint.Entrance.IdentityInstance,
-                    OwnerKind = ownerKind, OwnerId = ownerId, CreatedAtUtcTicks = DateTime.UtcNow.Ticks
+                    OwnerKind = OwnerShared, OwnerId = SharedOwnerId, CreatedAtUtcTicks = DateTime.UtcNow.Ticks
                 };
                 if (!_store.TryInsert(row))
-                    row = _store.Find(blueprint.Entrance.IdentityType, blueprint.Entrance.IdentityInstance, ownerKind, ownerId) ?? row;
+                    row = _store.Find(blueprint.Entrance.IdentityType, blueprint.Entrance.IdentityInstance, OwnerShared, SharedOwnerId) ?? row;
             }
 
-            instance = new Instance(row.PlayfieldId, blueprint.Entrance.Identity, ownerKind, ownerId);
+            instance = new Instance(row.PlayfieldId, blueprint.Entrance.Identity);
             _byPlayfield[instance.PlayfieldId] = instance;
-            _byOwner[key] = instance.PlayfieldId;
+            _byEntrance[key] = instance.PlayfieldId;
             return true;
         }
 
@@ -264,7 +263,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         {
             int playfieldId = dungeon.Identity.Instance;
             if (_byPlayfield.TryRemove(playfieldId, out Instance? instance))
-                _byOwner.TryRemove((instance.Entrance, instance.OwnerKind, instance.OwnerId), out _);
+                _byEntrance.TryRemove(new KeyValuePair<MissionPlacementIdentity, int>(instance.Entrance, playfieldId));
             _store.Delete(playfieldId);
         }
 
@@ -322,9 +321,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
             var rows = new List<(int, StaticDungeonBlueprint, string, int, int)>();
             foreach (StaticDungeonPlayfield dungeon in _playfields.Value.SnapshotStaticDungeons())
             {
-                string owner = _byPlayfield.TryGetValue(dungeon.Identity.Instance, out Instance? instance)
-                    ? (instance.OwnerKind == OwnerTeam ? "team " : "character ") + instance.OwnerId.ToString(CultureInfo.InvariantCulture)
-                    : "unknown";
+                string owner = _byPlayfield.ContainsKey(dungeon.Identity.Instance) ? "shared" : "unknown";
                 int players = 0;
                 int npcs = 0;
                 foreach (Dynel dynel in dungeon.GetRequiredService<DynelRegistry>().Dynels())
@@ -337,24 +334,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
             return rows;
         }
 
-        /// <summary>Tests: decides the owner of a player's instance in place of the team service.</summary>
-        internal Func<Player, (int Kind, int Id)>? OwnerOverride { get; set; }
+        /// <summary>The owner every instance row is recorded under.</summary>
+        internal static (int Kind, int Id) SharedOwner => (OwnerShared, SharedOwnerId);
 
-        /// <summary>The owner kinds instances are recorded under.</summary>
-        internal static (int Character, int Team) OwnerKinds => (OwnerCharacter, OwnerTeam);
-
-        /// <summary>The team's id when the player is in a team of more than one, else the character's own.</summary>
-        (int Kind, int Id) OwnerOf(Player player)
-        {
-            if (OwnerOverride != null)
-                return OwnerOverride(player);
-            TeamSnapshot? team = _playfields.Value.Teams.GetImmediateTeam(player);
-            return team != null && team.MemberIds.Count > 1 ? (OwnerTeam, team.TeamId) : (OwnerCharacter, player.Identity.Instance);
-        }
-
-        /// <summary>Tests: the instance id recorded for an owner at an entrance, or 0.</summary>
-        internal int InstanceOf(MissionPlacementIdentity entrance, int ownerKind, int ownerId)
-            => _byOwner.TryGetValue((entrance, ownerKind, ownerId), out int playfieldId) ? playfieldId : 0;
+        /// <summary>Tests: the instance id recorded for an entrance, or 0.</summary>
+        internal int InstanceOf(MissionPlacementIdentity entrance)
+            => _byEntrance.TryGetValue(entrance, out int playfieldId) ? playfieldId : 0;
 
         /// <summary>Tests: whether a build for <paramref name="playfieldId"/> is still running; waits for it when it is.</summary>
         internal bool WaitForBuild(int playfieldId, TimeSpan timeout)

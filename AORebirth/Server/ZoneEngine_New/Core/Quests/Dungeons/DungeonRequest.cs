@@ -444,17 +444,44 @@ public sealed class DungeonObjectiveBlock : IDungeonBlock<DungeonObjectiveBlock>
     /// <summary>Percent added to the mission quality for an objective NPC's level (-90 to 400).</summary>
     public int? LevelPercent { get; set; }
 
+    /// <summary>
+    /// <see cref="Mobs.NpcFeature"/> names the objective NPC carries besides its template's own, in this mission only:
+    /// <see cref="ObjectiveFeatures"/>.
+    /// </summary>
+    public string[]? Features { get; set; }
+
     public const int MaxRoomChoices = 10;
+
+    /// <summary>The features an objective block may list.</summary>
+    public static readonly Mobs.NpcFeature[] ObjectiveFeatures = [Mobs.NpcFeature.SpawnsExitPortal];
 
     public DungeonObjectiveBlock Over(DungeonObjectiveBlock under) => new()
     {
         RoomChoices = RoomChoices ?? under.RoomChoices,
-        LevelPercent = LevelPercent ?? under.LevelPercent
+        LevelPercent = LevelPercent ?? under.LevelPercent,
+        Features = Features ?? under.Features
     };
 
     /// <summary>The objective NPC's level for a mission of <paramref name="quality"/>.</summary>
     public int LevelFor(int quality)
         => Math.Max(1, (int)Math.Round(quality * (100 + (LevelPercent ?? 0)) / 100.0, MidpointRounding.AwayFromZero));
+
+    /// <summary>Gives the objective NPC this block's <see cref="Features"/>.</summary>
+    internal void ApplyTo(Entities.NpcCharacter npc)
+    {
+        ArgumentNullException.ThrowIfNull(npc);
+        if (Features != null)
+            foreach (string name in Features)
+                if (TryParseFeature(name, out Mobs.NpcFeature feature))
+                    npc.AddFeature(feature);
+    }
+
+    static bool TryParseFeature(string? name, out Mobs.NpcFeature feature)
+    {
+        feature = default;
+        return name != null && Enum.TryParse(name.Trim(), ignoreCase: false, out feature) && Enum.IsDefined(feature)
+            && Array.IndexOf(ObjectiveFeatures, feature) >= 0;
+    }
 
     internal string? Problem()
     {
@@ -462,6 +489,8 @@ public sealed class DungeonObjectiveBlock : IDungeonBlock<DungeonObjectiveBlock>
             return "Objective.RoomChoices must be 1-" + MaxRoomChoices;
         if (LevelPercent is not (>= -90 and <= 400))
             return "Objective.LevelPercent must be -90 to 400";
+        if (Features != null && !Array.TrueForAll(Features, name => TryParseFeature(name, out _)))
+            return "Objective.Features may only list " + string.Join(", ", ObjectiveFeatures);
         return null;
     }
 }

@@ -428,6 +428,7 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
                     Layout.Population.ApplyTo(actor);
                 else
                     Layout.Population.ApplyScale(actor);
+                Layout.Objective.ApplyTo(actor);
                 // The policy percent scales the template's own size (Master of Time and Space is 600, a human 100), or
                 // the population's Scales entry for it; it is not an absolute Scale, or a large boss would shrink to a
                 // fifth of its catalog size.

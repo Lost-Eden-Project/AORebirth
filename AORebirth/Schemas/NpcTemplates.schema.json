@@ -61,28 +61,7 @@
               }
             },
             "TextureOverrides": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "Material": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "Texture": {
-                    "type": "integer"
-                  },
-                  "Unknown1": {
-                    "type": "integer"
-                  },
-                  "Unknown2": {
-                    "type": "integer"
-                  }
-                },
-                "additionalProperties": false
-              }
+              "type": "array"
             },
             "CorpseFullUpdateTemplate": {
               "type": [
@@ -160,6 +139,9 @@
                   },
                   "IgnoreLevel": {
                     "type": "boolean"
+                  },
+                  "QualityPercent": {
+                    "type": "integer"
                   }
                 },
                 "additionalProperties": false

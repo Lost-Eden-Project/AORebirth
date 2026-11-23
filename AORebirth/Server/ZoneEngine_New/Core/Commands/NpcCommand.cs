@@ -229,12 +229,23 @@ namespace ZoneEngine_New.Core.Commands
             MobTemplate? template = npc.MobTemplate;
             Vector3 pos = npc.Position;
             string title = "Source: " + DiagAoml.Safe(npc.Name ?? string.Empty);
+
+            // The hash the spawn asked for, when it is not the template that came up: a family parent that picked a
+            // child, or a hash missing from NpcTemplates.json that fell back to the placeholder.
+            string requested = string.Empty;
+            if (!string.IsNullOrEmpty(npc.SpawnHash) && !string.Equals(npc.SpawnHash, template?.Hash, StringComparison.Ordinal))
+            {
+                requested = template?.UnresolvedPlaceholder == true
+                    ? DiagAoml.Field("requested", DiagAoml.Color(DiagAoml.Orange, DiagAoml.Safe(npc.SpawnHash) + " (not in NpcTemplates)"))
+                    : F("requested", npc.SpawnHash);
+            }
+
             var blocks = new List<string>
             {
                 DiagAoml.Color(DiagAoml.Gold, "NPC") + "<br>"
                     + F("id", npc.Identity.Instance) + F("spawn", npc.SpawnSource) + F("level", npc.Stats.GetOrZero(CharacterStat.Level))
-                    + "<br>" + F("template", string.IsNullOrEmpty(template?.Hash) ? "-" : template!.Hash)
-                    + F("pos", Coords(pos.xf, pos.yf, pos.zf))
+                    + "<br>" + F("template", string.IsNullOrEmpty(template?.Hash) ? "-" : template!.Hash) + requested
+                    + "<br>" + F("pos", Coords(pos.xf, pos.yf, pos.zf))
                     + F("cell", npc.Cell != null ? npc.Cell.Id.ToString(CultureInfo.InvariantCulture) : "-")
             };
 

@@ -119,6 +119,12 @@ namespace ZoneEngine_New.Core.Inventory
                     return target is Player proxyDoorPlayer && TeleportProxy(proxyDoorPlayer, spell, criteria);
                 case FunctionType.TeleportProxy2:
                     return target is Player proxyPlayer && TeleportProxy2(proxyPlayer, spell);
+                // Engineer Summon Player 154914 / Summon Team Members 154913 (no arguments, applied to the caster): judged
+                // only now, as the nano lands, never when the cast starts.
+                case FunctionType.SummonPlayer:
+                    return target is Player summoner && Teams.SummonService.SummonSelected(summoner);
+                case FunctionType.SummonTeamMates:
+                    return target is Player teamSummoner && Teams.SummonService.SummonTeam(teamSummoner);
                 case FunctionType.SpawnMonster2:
                     return SpawnMonster2(target, spell);
                 case FunctionType.SummonPet:

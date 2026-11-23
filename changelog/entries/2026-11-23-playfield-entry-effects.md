@@ -1,0 +1,2 @@
+- Added: Entering Adonis Abyss now protects you from its environmental damage.
+- Added: Characters level 20 or higher entering the ICC Shuttleport are warned and ejected after 10 seconds.

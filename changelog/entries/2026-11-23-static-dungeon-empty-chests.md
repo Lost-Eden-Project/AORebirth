@@ -1,0 +1,1 @@
+- Changed: Chests in the Shadowlands static dungeons are empty for now while their own loot is put together; they no longer drop the same items as alien mission chests.

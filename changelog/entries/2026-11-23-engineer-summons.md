@@ -1,0 +1,2 @@
+- Added: Engineers can now use Summon Player, which brings the team member you have selected when the cast finishes, and Summon Team Members, which brings your whole team to you.
+- Added: Summons never reach into or out of the Shadowlands, and some areas allow no summons to or from them.

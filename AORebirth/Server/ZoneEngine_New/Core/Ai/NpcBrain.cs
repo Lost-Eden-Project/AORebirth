@@ -837,7 +837,7 @@ namespace ZoneEngine_New.Core.Ai
             // range is how far it notices players, defends them as a guard, and spots NPCs it hates.
             var locality = Npc.Playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>();
             float range = ProximityRange();
-            if (hostile || guard)
+            if ((hostile || guard) && !Npc.HasFeature(Mobs.NpcFeature.Passive))
             {
                 locality.CollectNearby(Npc, range, _nearbyPlayers);
                 for (int i = 0; i < _nearbyPlayers.Count; i++)
@@ -863,43 +863,23 @@ namespace ZoneEngine_New.Core.Ai
         /// </summary>
         IReadOnlySet<int>? HatedFamilies()
         {
-            LookUpCombatRules();
-            return _hated;
-        }
-
-        /// <summary>
-        /// The sides this NPC never starts a fight with (GameData MonsterCombatRules.json "IgnoresSides", by its spawn
-        /// hash or its template's); null when none.
-        /// </summary>
-        IReadOnlySet<int>? IgnoredSides()
-        {
-            LookUpCombatRules();
-            return _ignoredSides;
-        }
-
-        /// <summary>Reads this NPC's MonsterCombatRules.json "Hates" and "IgnoresSides" once; the spawn hash's entry wins.</summary>
-        void LookUpCombatRules()
-        {
-            if (_combatRulesLookedUp)
-                return;
-            _combatRulesLookedUp = true;
+            if (_hatedLookedUp)
+                return _hated;
+            _hatedLookedUp = true;
             if (Pet == null && Npc.Playfield?.GetService<GameData.IGameData>()?.RootPath is string root && root.Length > 0)
             {
                 var catalog = Mobs.MonsterCombatRulesCatalog.For(root);
-                Mobs.MonsterCombatRules? bySpawn = catalog.TryGet(Npc.SpawnHash, out Mobs.MonsterCombatRules spawnRules) ? spawnRules : null;
-                Mobs.MonsterCombatRules? byTemplate = catalog.TryGet(Npc.MobTemplate?.Hash, out Mobs.MonsterCombatRules templateRules) ? templateRules : null;
-                _hated = bySpawn?.HatedFamilies ?? byTemplate?.HatedFamilies;
-                _ignoredSides = bySpawn?.IgnoredSides ?? byTemplate?.IgnoredSides;
+                if (catalog.TryGet(Npc.SpawnHash, out Mobs.MonsterCombatRules rules) && rules.HatedFamilies is { } bySpawn)
+                    _hated = bySpawn;
+                else if (catalog.TryGet(Npc.MobTemplate?.Hash, out rules))
+                    _hated = rules.HatedFamilies;
             }
+
+            return _hated;
         }
 
-        /// <summary>This NPC's rules do not let it start a fight with <paramref name="target"/>'s side.</summary>
-        bool IgnoresSideOf(Character target)
-            => IgnoredSides() is { } ignored && ignored.Contains(target.Stats.GetOrZero(CharacterStat.Side));
-
         IReadOnlySet<int>? _hated;
-        IReadOnlySet<int>? _ignoredSides;
-        bool _combatRulesLookedUp;
+        bool _hatedLookedUp;
 
         /// <summary>The NPC this one was fighting started resetting and nobody else is left: reset as well.</summary>
         bool _resetForTargetReset;
@@ -919,8 +899,6 @@ namespace ZoneEngine_New.Core.Ai
             bool defend = guard && other.MobTemplate?.Has(Mobs.NpcFeature.Guard) != true && IsFightingAPlayer(other);
             bool hates = hated != null && hated.Contains(other.Stats.GetOrZero(CharacterStat.NPCFamily));
             if (!defend && !hates)
-                return;
-            if (IgnoresSideOf(other))
                 return;
             if (!ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(Npc, other) || Npc.GetEdgeDistanceTo(other) > range)
                 return;
@@ -952,7 +930,8 @@ namespace ZoneEngine_New.Core.Ai
                 return;
             if (player is Player zoning && zoning.InZoneInGrace(DateTime.UtcNow))
                 return;
-            if (!Npc.Attackable || _evading || Npc.IsPacified)
+            // Passive: never starts a fight with a player, whatever its aggressiveness, guard faction or AggroesAllSides.
+            if (!Npc.Attackable || _evading || Npc.IsPacified || Npc.HasFeature(Mobs.NpcFeature.Passive))
                 return;
             bool hostile = NpcAiRules.IsProximityHostile(Npc.Stats.GetOrZero(CharacterStat.BreedHostility));
             bool guard = Npc.MobTemplate?.Has(Mobs.NpcFeature.Guard) == true;
@@ -971,9 +950,6 @@ namespace ZoneEngine_New.Core.Ai
                     return;
                 // A guard that is not hostile on its own only goes for the opposing faction.
                 if (!hostile && !NpcAiRules.IsOpposingFaction(npcSide, playerSide))
-                    return;
-                // MonsterCombatRules.json "IgnoresSides": e.g. an Omni guard that leaves Clans alone.
-                if (IgnoresSideOf(player))
                     return;
             }
             if (guard && IsPvping(player))
@@ -1065,12 +1041,34 @@ namespace ZoneEngine_New.Core.Ai
         }
 
         /// <summary>This NPC's Gameplay.json leash range on its playfield: indoor or outdoor (no metadata counts as indoor).</summary>
-        float LeashRange()
-        {
-            var playfield = Npc.Playfield;
-            var leash = playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Leash
+        float LeashRange() => LeashRules().RangeFor(Npc.Playfield?.MetaData?.IsIndoor ?? true);
+
+        ZoneEngine_New.Core.Configuration.GameplayLeash LeashRules()
+            => Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Leash
                 ?? ZoneEngine_New.Core.Configuration.GameplayLeash.Default;
-            return leash.RangeFor(playfield?.MetaData?.IsIndoor ?? true);
+
+        /// <summary>
+        /// This NPC has not seen <paramref name="target"/>, a hated enemy, for leash.outOfSightSeconds (Gameplay.json)
+        /// and it is further than outOfSightCloseRange: the NPC gives up on it. A route can still lead to a player who
+        /// has run round many corners into a far part of a dungeon; without this the NPC followed it all the way. A
+        /// sighting, or the enemy coming close, starts the count again. Pets keep to their owner's fight.
+        /// </summary>
+        bool LostFromSight(Character target)
+        {
+            if (Pet != null || !Hate.Contains(target.Identity))
+                return false;
+            ZoneEngine_New.Core.Configuration.GameplayLeash rules = LeashRules();
+            if (rules.OutOfSightSeconds <= 0f)
+                return false;
+
+            DateTime now = DateTime.UtcNow;
+            if (Npc.GetEdgeDistanceTo(target) <= rules.OutOfSightCloseRange || Npc.HasLineOfSightTo(target))
+            {
+                Hate.MarkSeen(target.Identity, now);
+                return false;
+            }
+
+            return (now - Hate.LastSeenUtc(target.Identity)).TotalSeconds >= rules.OutOfSightSeconds;
         }
 
         public bool ShouldLeash()
@@ -2182,6 +2180,7 @@ namespace ZoneEngine_New.Core.Ai
             Character? target = Resolve(identity);
             return target != null
                 && Npc.GetEdgeDistanceTo(target) <= NpcAiRules.EngageRange(identity == _currentTarget || OwnsCurrentPetTarget(identity), LeashRange())
+                && !LostFromSight(target)
                 && HasChanceWithGrace(target);
         }
 

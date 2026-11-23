@@ -1,0 +1,1 @@
+- Added: The boss of a Rubi-Ka terminal mission now leaves an Exit Portal when it dies, returning your team to the start of the mission.

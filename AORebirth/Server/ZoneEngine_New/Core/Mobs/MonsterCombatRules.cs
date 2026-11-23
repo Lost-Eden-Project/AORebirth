@@ -4,12 +4,11 @@ namespace ZoneEngine_New.Core.Mobs
     using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.IO;
-    using System.Linq;
     using System.Text.Json;
 
     /// <summary>
     /// GameData/MonsterCombatRules.json: combat behaviour keyed by mob hash, e.g.
-    /// <c>{ "ASSU": { "Pets": { "MaxPets": 2 } }, "NEBG": { "Features": [ "Guard" ] }, "MUSN": { "Hates": [ 42 ] }, "UITR": { "IgnoresSides": [ "Clan" ] } }</c>.
+    /// <c>{ "ASSU": { "Pets": { "MaxPets": 2 } }, "NEBG": { "Features": [ "Guard" ] }, "MUSN": { "Hates": [ 42 ] }, "UITR": { "Features": [ "Guard", "Passive" ] } }</c>.
     /// Keys are NpcTemplates.json leaf hashes. Loaded once per GameData root (through the GameData override folder) and
     /// swapped whole by <see cref="Reload"/>: a lookup sees the old rules or the new, never a mix. NPCs already spawned
     /// keep what they read at spawn until they respawn.
@@ -122,7 +121,7 @@ namespace ZoneEngine_New.Core.Mobs
 
         public MonsterPetRule? Pets { get; set; }
 
-        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard, Boss, Social, Summoner, SpawnsExitDevice, NoXp, HealsSpawner, AggroesAllSides (<see cref="NpcFeature"/>).</summary>
+        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard, Boss, Social, Summoner, SpawnsExitDevice, NoXp, HealsSpawner, AggroesAllSides, Passive (<see cref="NpcFeature"/>).</summary>
         public List<NpcFeature>? Features { get; set; }
 
         /// <summary>
@@ -135,21 +134,6 @@ namespace ZoneEngine_New.Core.Mobs
         [System.Text.Json.Serialization.JsonIgnore]
         public IReadOnlySet<int>? HatedFamilies
             => Hates is not { Length: > 0 } ? null : _hatedFamilies ??= new HashSet<int>(Hates);
-
-        /// <summary>
-        /// Sides (Side stat 33: Neutral, Clan, OmniTek, Monster) this NPC never starts a fight with: it does not aggro a
-        /// player of one of these sides on sight, even as a guard of the opposing faction, and does not attack an NPC
-        /// of one on sight (a guard defending a player, or a family it hates). It still fights back when attacked, and
-        /// still answers its kind's calls for help.
-        /// </summary>
-        public List<LostEden.Protocol.GameData.Side>? IgnoresSides { get; set; }
-
-        /// <summary><see cref="IgnoresSides"/> as a set of Side stat values; null when none. Not part of the file.</summary>
-        [System.Text.Json.Serialization.JsonIgnore]
-        public IReadOnlySet<int>? IgnoredSides
-            => IgnoresSides is not { Count: > 0 } ? null : _ignoredSides ??= IgnoresSides.Select(side => (int)side).ToHashSet();
-
-        HashSet<int>? _ignoredSides;
     }
 
     /// <summary>

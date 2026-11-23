@@ -26,7 +26,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
     /// <summary>One fixed NPC of a static dungeon, resolved: the hash spawns at this level on this room's district point, facing this way.</summary>
     public sealed record StaticNpcPlacement(string Hash, int Level, int Room, int Point, int HeadingDegrees);
 
-    /// <summary>The dungeon's chests: appearances, QL, the loot rows each rolls, and the trap share (recorded).</summary>
+    /// <summary>The dungeon's chests: appearances, QL, the loot rows each rolls (none: the chests spawn empty), and the trap share (recorded).</summary>
     public sealed record StaticChestPlan(IReadOnlyList<int> Templates, int Quality, IReadOnlyList<MobItemTableEntry> LootTable,
         int LockDifficulty, int TrapChancePercent, IReadOnlyList<int> Traps);
 
@@ -425,8 +425,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
                 foreach (int template in chestTemplates.Concat(chestData.Traps ?? []))
                     if (!_items.TryGet(template, out _))
                         return "chest or trap template " + template.ToString(CultureInfo.InvariantCulture) + " is not in items.dat";
-                if (resolved.Chests.LootTable is not { Count: > 0 } lootTable)
-                    return "Chests.Loot '" + chestData.Loot + "' has no LootTable rows";
+                // A block with no LootTable rows still places its chests; they spawn empty.
+                IReadOnlyList<MobItemTableEntry> lootTable = resolved.Chests.LootTable ?? [];
                 chests = new StaticChestPlan(chestTemplates.ToArray(), chestData.Quality, lootTable.ToArray(), chestData.LockDifficulty,
                     chestData.TrapChancePercent, (chestData.Traps ?? []).ToArray());
             }

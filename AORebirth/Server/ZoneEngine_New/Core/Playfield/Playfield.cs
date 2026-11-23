@@ -954,6 +954,8 @@ namespace ZoneEngine_New.Core.Playfield
                 services.AddSingleton(_playfieldManager.NpcScripts);
             if (_playfieldManager.Gameplay != null)
                 services.AddSingleton(_playfieldManager.Gameplay);
+            if (_playfieldManager.Summons != null)
+                services.AddSingleton(_playfieldManager.Summons);
             if (_playfieldManager.ModuleEvents != null)
                 services.AddSingleton(_playfieldManager.ModuleEvents);
             services.AddSingleton(_playfieldManager.ItemTemplates);

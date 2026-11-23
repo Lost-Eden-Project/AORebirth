@@ -36,6 +36,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public DungeonPopulationBlock Population { get; init; } = new();
 
+        /// <summary>The mission's resolved objective block: the objective NPC's extra features.</summary>
+        public DungeonObjectiveBlock Objective { get; init; } = new();
+
         /// <summary>Rows every NPC corpse in the dungeon rolls besides its template's own table; empty: none.</summary>
         public IReadOnlyList<Mobs.MobItemTableEntry> MobLoot { get; init; } = [];
     }
@@ -449,6 +452,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     ObjectiveRoomChoices = dungeon.Objective.RoomChoices ?? 1,
                     SpawnHeading = DungeonLayout.YawHeading(result.SpawnYaw),
                     Population = dungeon.Population,
+                    Objective = dungeon.Objective,
                     MobLoot = dungeon.Population.Loot?.Where(Mobs.MobItemTableEntry.IsWellFormed).ToArray() ?? []
                 };
                 return true;

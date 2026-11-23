@@ -1,9 +1,11 @@
 {
   // Named objective blocks over Defaults.json: how far from the entrance the objective stands (RoomChoices farthest
-  // rooms) and how strong an objective NPC is (LevelPercent over the mission quality).
+  // rooms) and how strong an objective NPC is (LevelPercent over the mission quality). Features (MonsterCombatRules.json
+  // names; only SpawnsExitPortal) go on the objective NPC in that mission alone.
   "boss": {
     "RoomChoices": 1,
-    "LevelPercent": 20
+    "LevelPercent": 20,
+    "Features": ["SpawnsExitPortal"]
   },
   "mothership": {
     "RoomChoices": 1,

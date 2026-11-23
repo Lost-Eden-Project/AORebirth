@@ -26,6 +26,10 @@ namespace ZoneEngine_New.Core.Ai
     {
         readonly Dictionary<ulong, HateEntry> _entries = new();
 
+        // When the NPC last saw each entry (the out-of-sight leash counts from here). Kept apart from _entries so
+        // marking a sighting while the leash and target choice enumerate the entries does not touch that dictionary.
+        readonly Dictionary<ulong, DateTime> _lastSeenUtc = new();
+
         public int Count => _entries.Count;
 
         public bool IsEmpty => _entries.Count == 0;
@@ -43,7 +47,22 @@ namespace ZoneEngine_New.Core.Ai
             }
 
             _entries[key] = new HateEntry(identity, amount);
+            // A new enemy counts as just seen: one hated from out of sight (a call for help) gets the whole
+            // out-of-sight window to be found.
+            _lastSeenUtc[key] = DateTime.UtcNow;
         }
+
+        /// <summary>The NPC sees (or senses close by) <paramref name="identity"/> at <paramref name="now"/>.</summary>
+        public void MarkSeen(Identity identity, DateTime now)
+        {
+            ulong key = identity.Long();
+            if (identity.Instance != 0 && _entries.ContainsKey(key))
+                _lastSeenUtc[key] = now;
+        }
+
+        /// <summary>When the NPC last saw <paramref name="identity"/>; default when it is not on the list.</summary>
+        public DateTime LastSeenUtc(Identity identity)
+            => identity.Instance != 0 && _lastSeenUtc.TryGetValue(identity.Long(), out DateTime seen) ? seen : default;
 
         public bool Contains(Identity identity)
             => identity.Instance != 0 && _entries.ContainsKey(identity.Long());
@@ -58,9 +77,14 @@ namespace ZoneEngine_New.Core.Ai
             if (identity.Instance == 0)
                 return;
             _entries.Remove(identity.Long());
+            _lastSeenUtc.Remove(identity.Long());
         }
 
-        public void Clear() => _entries.Clear();
+        public void Clear()
+        {
+            _entries.Clear();
+            _lastSeenUtc.Clear();
+        }
 
         /// <summary>The entries, as the dictionary's own collection so a foreach over it does not allocate.</summary>
         public Dictionary<ulong, HateEntry>.ValueCollection Entries => _entries.Values;

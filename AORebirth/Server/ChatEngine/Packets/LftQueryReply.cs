@@ -13,6 +13,8 @@ namespace ChatEngine.Packets
     ///   S comment
     /// Empty capture 20260727-104625 matches mode=2 with all-zero fields.
     /// One chat message per row (not a counted array).
+    /// The mode 2 row's level and playfield fields carry the searcher's team range (lowest, highest level);
+    /// the Lost Eden client marks rows in or out of range from them, stock clients ignore them. 0/0 = no range.
     /// </summary>
     public static class LftQueryReply
     {
@@ -37,15 +39,15 @@ namespace ChatEngine.Packets
             public string Comment;
         }
 
-        public static byte[] CreateClear()
+        public static byte[] CreateClear(uint teamRangeMinimum = 0, uint teamRangeMaximum = 0)
         {
-            // Exact empty reply from live capture 20260727-104625.
+            // Exact empty reply from live capture 20260727-104625 when no team range is given.
             PacketWriter writer = new PacketWriter(1501);
             writer.WriteByte(ModeClear);
             writer.WriteUInt32(0);
             WritePpjString(writer, string.Empty);
-            writer.WriteUInt32(0);
-            writer.WriteUInt32(0);
+            writer.WriteUInt32(teamRangeMinimum);
+            writer.WriteUInt32(teamRangeMaximum);
             writer.WriteByte(0);
             writer.WriteByte(0);
             WritePpjString(writer, string.Empty);

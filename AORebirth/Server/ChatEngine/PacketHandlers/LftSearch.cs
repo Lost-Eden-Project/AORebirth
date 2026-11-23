@@ -44,7 +44,9 @@ namespace ChatEngine.PacketHandlers
     ///     2 = Rubi-Ka
     ///     3 = Shadowlands
     ///
-    /// filter3 = unknown / unused
+    /// filter3 = team range
+    ///     1 = only candidates inside the searcher's team range (LevelEligibility.json)
+    ///     anything else (stock sends 0xFFFFFFFF) = no level filter
     ///
     /// IMPORTANT:
     ///
@@ -73,6 +75,9 @@ namespace ChatEngine.PacketHandlers
 
         private const uint LocationShadowlands =
             3;
+
+        public const uint TeamRangeOnly =
+            1;
 
         /*
          * ============================================================
@@ -257,6 +262,19 @@ namespace ChatEngine.PacketHandlers
                 ResolvePlayfield(
                     client.Character.CharacterId);
 
+            int searcherLevel =
+                ReadStat(
+                    client.Character.CharacterId,
+                    LevelStatId);
+
+            uint teamRangeMinimum;
+            uint teamRangeMaximum;
+
+            TryGetTeamRange(
+                searcherLevel,
+                out teamRangeMinimum,
+                out teamRangeMaximum);
+
             /*
              * ========================================================
              * DEBUG COUNTERS
@@ -267,6 +285,7 @@ namespace ChatEngine.PacketHandlers
             int skippedSide = 0;
             int skippedProfession = 0;
             int skippedLocation = 0;
+            int skippedLevel = 0;
             int registryCount = 0;
 
             List<LftQueryReply.Entry> matches =
@@ -515,6 +534,22 @@ namespace ChatEngine.PacketHandlers
 
                 /*
                  * ====================================================
+                 * TEAM RANGE FILTER
+                 * ====================================================
+                 */
+
+                if (!PassesTeamRange(
+                        filter3,
+                        teamRangeMinimum,
+                        teamRangeMaximum,
+                        candidateLevel))
+                {
+                    skippedLevel++;
+                    continue;
+                }
+
+                /*
+                 * ====================================================
                  * MATCH
                  * ====================================================
                  */
@@ -557,7 +592,7 @@ namespace ChatEngine.PacketHandlers
 
             client.Server.Info(
                 client,
-                "{0} >> LftSearch: f0={1} f1={2} f2={3} f3={4} matches={5} searcherSide={6} searcherPF={7} registry={8} skipOffline={9} skipSide={10} skipProfession={11} skipLocation={12}",
+                "{0} >> LftSearch: f0={1} f1={2} f2={3} f3={4} matches={5} searcherSide={6} searcherPF={7} registry={8} skipOffline={9} skipSide={10} skipProfession={11} skipLocation={12} searcherLevel={13} teamRange={14}-{15} skipLevel={16}",
                 client.Character.characterName,
                 filter0,
                 filter1,
@@ -570,7 +605,11 @@ namespace ChatEngine.PacketHandlers
                 skippedOffline,
                 skippedSide,
                 skippedProfession,
-                skippedLocation);
+                skippedLocation,
+                searcherLevel,
+                teamRangeMinimum,
+                teamRangeMaximum,
+                skippedLevel);
 
             /*
              * ========================================================
@@ -621,7 +660,9 @@ namespace ChatEngine.PacketHandlers
              */
 
             client.Send(
-                LftQueryReply.CreateClear());
+                LftQueryReply.CreateClear(
+                    teamRangeMinimum,
+                    teamRangeMaximum));
 
             for (int i = 0;
                  i < matches.Count;
@@ -635,6 +676,56 @@ namespace ChatEngine.PacketHandlers
                     client,
                     matches[i]);
             }
+        }
+
+        /// <summary>
+        /// The searcher's team range (the team XP share window from LevelEligibility.json).
+        /// 0/0 when the searcher's level is unknown: the reply then carries no range and nothing is filtered.
+        /// </summary>
+        public static bool TryGetTeamRange(
+            int searcherLevel,
+            out uint minimum,
+            out uint maximum)
+        {
+            int min;
+            int max;
+
+            if (searcherLevel < 1
+                || !TeamLevelRanges.TryGetRange(
+                    searcherLevel,
+                    out min,
+                    out max)
+                || min < 1
+                || max < min)
+            {
+                minimum = 0;
+                maximum = 0;
+                return false;
+            }
+
+            minimum = (uint)min;
+            maximum = (uint)max;
+            return true;
+        }
+
+        /// <summary>
+        /// With "Team range only" (filter3 == 1) a candidate must be inside the searcher's team range.
+        /// Any other filter3, or an unknown range, filters nothing.
+        /// </summary>
+        public static bool PassesTeamRange(
+            uint filter3,
+            uint teamRangeMinimum,
+            uint teamRangeMaximum,
+            int candidateLevel)
+        {
+            if (filter3 != TeamRangeOnly
+                || teamRangeMinimum == 0)
+            {
+                return true;
+            }
+
+            return candidateLevel >= teamRangeMinimum
+                   && candidateLevel <= teamRangeMaximum;
         }
 
         /// <summary>

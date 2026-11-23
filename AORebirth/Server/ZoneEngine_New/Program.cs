@@ -344,6 +344,7 @@ namespace ZoneEngine_New
                 MySqlConnectionSettings.GetRequiredConnectionString()));
             services.AddSingleton<ZoneEngine_New.Core.Accounts.IAccountSanctionRepository, ZoneEngine_New.Core.Accounts.MySqlAccountSanctionRepository>();
             services.AddSingleton<ZoneEngine_New.Core.Accounts.AccountSanctionService>();
+            services.AddSingleton<ZoneEngine_New.Core.Teams.SummonService>();
             services.AddSingleton<ZoneEngine_New.Core.Characters.StuckService>();
             services.AddSingleton<ZoneEngine_New.Core.Commands.PlayfieldListCommand>();
             services.AddSingleton<HashItemMinter>();

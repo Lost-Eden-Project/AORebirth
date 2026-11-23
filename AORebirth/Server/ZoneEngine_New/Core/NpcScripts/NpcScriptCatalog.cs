@@ -393,23 +393,32 @@ public sealed class NpcScriptCatalog
             attached = AttachPrimary(npc, binding);
 
         // Feature overlays: a template lists a handful of features at most, and the lookups only run when a feature
-        // binding exists at all.
-        if (current.FeatureBindingCount > 0 && npc.MobTemplate?.Features is { Count: > 0 } features)
+        // binding exists at all. Features given to this NPC alone (a mission objective's) count as well, once each.
+        if (current.FeatureBindingCount > 0)
         {
-            foreach (NpcFeature feature in features)
-            {
-                NpcScriptBinding? overlay = ResolveFeature(current, feature, playfieldId);
-                if (overlay?.Program == null)
-                    continue;
-
-                var runner = new NpcScriptRunner(overlay.Program, overlay.Args, npc);
-                npc.AttachScript(runner);
-                runner.Raise(NpcScriptTrigger.Spawned);
-                attached = true;
-            }
+            HashSet<NpcFeature>? templateFeatures = npc.MobTemplate?.Features;
+            if (templateFeatures is { Count: > 0 })
+                foreach (NpcFeature feature in templateFeatures)
+                    attached |= AttachOverlay(current, npc, feature, playfieldId);
+            if (npc.AddedFeatures is { Count: > 0 } added)
+                foreach (NpcFeature feature in added)
+                    if (templateFeatures?.Contains(feature) != true)
+                        attached |= AttachOverlay(current, npc, feature, playfieldId);
         }
 
         return attached;
+    }
+
+    bool AttachOverlay(Snapshot current, NpcCharacter npc, NpcFeature feature, int playfieldId)
+    {
+        NpcScriptBinding? overlay = ResolveFeature(current, feature, playfieldId);
+        if (overlay?.Program == null)
+            return false;
+
+        var runner = new NpcScriptRunner(overlay.Program, overlay.Args, npc);
+        npc.AttachScript(runner);
+        runner.Raise(NpcScriptTrigger.Spawned);
+        return true;
     }
 
     bool AttachPrimary(NpcCharacter npc, NpcScriptBinding binding)

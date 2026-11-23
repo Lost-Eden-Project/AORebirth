@@ -1023,6 +1023,8 @@ namespace ZoneEngine_New.Core.Playfield
             else
                 Modules.ModuleHooks.PlayerLoggedIn(_playfield, player);
             Modules.ModuleHooks.PlayerEntered(_playfield, player);
+            // Logging in or zoning into a playfield with a playfield item runs it on the player, now the client is in play.
+            PlayfieldEntryItems.Run(player, _logger);
             // What the client was just given: the line to compare against what the player saw before zoning.
             Logging.PlayerActionLog.Write(player, command.Envelope != null ? "zone-in" : "login",
                 Logging.PlayerActionLog.IpState(player));
@@ -1125,6 +1127,9 @@ namespace ZoneEngine_New.Core.Playfield
             TryRestorePostSpawnContent(player);
             if (freshClient)
                 OverflowGrants.Resend(player);
+            else
+                // The client finished a transfer into this playfield: that is an entry. A plain reconnect is not.
+                PlayfieldEntryItems.Run(player, _logger);
 
             _logger.Info(
                 string.Format(

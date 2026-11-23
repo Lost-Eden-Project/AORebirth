@@ -144,6 +144,15 @@
           },
           "Xp": {
             "type": "integer"
+          },
+          "XpByLevel": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            }
           }
         },
         "additionalProperties": false
@@ -211,16 +220,10 @@
           "null"
         ],
         "properties": {
-          "Floors": {
+          "Mission": {
             "type": "string"
           },
           "Quality": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "Style": {
             "type": [
               "integer",
               "null"
@@ -235,92 +238,32 @@
               "null"
             ]
           },
-          "MobLevelPercent": {
-            "type": "integer"
-          },
-          "ObjectiveLevelPercent": {
-            "type": "integer"
-          },
-          "Npcs": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "AwardsTokens": {
-            "type": "boolean"
-          },
-          "Chests": {
+          "Sliders": {
             "type": [
               "object",
               "null"
             ],
             "properties": {
-              "Enabled": {
-                "type": "boolean"
+              "GoodBad": {
+                "type": "integer"
               },
-              "RoomDensity": {
-                "type": [
-                  "number",
-                  "null"
-                ],
-                "minimum": 0,
-                "maximum": 4
+              "OrderChaos": {
+                "type": "integer"
               },
-              "CountVariationFraction": {
-                "type": [
-                  "number",
-                  "null"
-                ],
-                "minimum": 0,
-                "maximum": 1
+              "OpenHidden": {
+                "type": "integer"
               },
-              "LootTable": {
-                "type": [
-                  "array",
-                  "null"
-                ],
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "Hash": {
-                      "type": "string"
-                    },
-                    "Repeats": {
-                      "type": "integer"
-                    },
-                    "Chance": {
-                      "type": "integer"
-                    },
-                    "LevelMod": {
-                      "type": "integer"
-                    },
-                    "IgnoreLevel": {
-                      "type": "boolean"
-                    },
-                    "QualityPercent": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 1000
-                    }
-                  },
-                  "additionalProperties": false
-                }
+              "PhysicalMystical": {
+                "type": "integer"
+              },
+              "HeadOnStealth": {
+                "type": "integer"
+              },
+              "MoneyExperience": {
+                "type": "integer"
               }
             },
             "additionalProperties": false
-          },
-          "MobLoot": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/items/properties/Dungeon/properties/Chests/properties/LootTable/items"
-            }
           }
         },
         "additionalProperties": false

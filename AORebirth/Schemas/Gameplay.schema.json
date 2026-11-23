@@ -41,6 +41,18 @@
         "type": "integer"
       }
     },
+    "noSummonPlayfields": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "playfieldItems": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
     "requireAmmo": {
       "type": "boolean"
     },
@@ -210,6 +222,12 @@
           "type": "number"
         },
         "outdoorRange": {
+          "type": "number"
+        },
+        "outOfSightSeconds": {
+          "type": "number"
+        },
+        "outOfSightCloseRange": {
           "type": "number"
         },
         "shortestRange": {

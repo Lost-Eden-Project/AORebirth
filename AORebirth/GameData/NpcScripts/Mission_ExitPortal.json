@@ -1,0 +1,18 @@
+{
+  "$schema": "../../Schemas/NpcScripts.schema.json",
+  "Id": "Mission_ExitPortal",
+  "Handlers": [
+    {
+      "On": "Death",
+      "Do": [
+        { "SpawnWorldItem": { "Item": "ARLHAK", "LifetimeSeconds": 3600 } }
+      ]
+    }
+  ],
+  "Bindings": [
+    {
+      "Feature": "SpawnsExitPortal",
+      "Provenance": "Rubi-Ka terminal missions (Missions.json rkSolo, rkTeam): Dungeons/Objectives.json \"boss\" gives the objective NPC SpawnsExitPortal, so its death leaves an Exit Portal (301689, ARLHAK) that returns the team to the start of the dungeon. The same template outside those missions has no such feature. An overlay, so it runs beside any program the NPC's own binding gives it."
+    }
+  ]
+}

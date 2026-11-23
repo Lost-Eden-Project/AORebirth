@@ -1,0 +1,1 @@
+- Changed: Monsters that lose sight of you for about 10 seconds now give up and return home, instead of following you through every corridor into far parts of a dungeon. Ducking behind cover right next to a monster still won't shake it.
