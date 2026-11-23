@@ -5,6 +5,7 @@
   "stuckToRespawnPlayfields": [4582, 6553],
   "requireAmmo": true,
   "zoneInGraceSeconds": 1,
+  "aggroIntervalSeconds": 2,
   "shops": { "preferDatabaseStock": true },
   "loot": { "qualityVariancePercent": 25, "needGreedRollSeconds": 45, "needGreedRange": 100 },
   "xp": {
@@ -62,7 +63,8 @@
   "pets": {
     "ownerThreatSharePercent": 50,
     "ownerAlwaysOnHateList": true,
-    "ownerSharesPetEngageRange": true
+    "ownerSharesPetEngageRange": true,
+    "ownerAggroChance": { "ceilingPercent": 79.181, "scalePercent": 28.683, "perAggressiveness": 0.0088877 }
   },
   "worldClock": {
     "epochUtc": "2026-01-01T00:00:00Z",

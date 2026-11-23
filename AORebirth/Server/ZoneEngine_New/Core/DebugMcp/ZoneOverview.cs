@@ -149,7 +149,7 @@ namespace ZoneEngine_New.Core.DebugMcp
             dynels.Clear();
             return new PlayfieldRow(
                 id,
-                playfield is QuestDungeonPlayfield ? "quest-dungeon" : "ordinary",
+                playfield is QuestDungeonPlayfield ? "quest-dungeon" : playfield is StaticDungeonPlayfield ? "static-dungeon" : "ordinary",
                 players,
                 count,
                 npcs,

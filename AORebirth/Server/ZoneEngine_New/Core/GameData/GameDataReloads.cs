@@ -100,6 +100,29 @@ namespace ZoneEngine_New.Core.GameData
                 }
             }
         }
+
+        /// <summary>
+        /// The Playfields reload with its report per playfield (module API 1.20), under the same one-at-a-time lock.
+        /// Reads files and waits on playfield ticks: never call it on a playfield tick.
+        /// </summary>
+        public PlayfieldReloadResult ReloadPlayfields(IReadOnlyCollection<int>? playfieldIds)
+        {
+            if (!_byName.TryGetValue(PlayfieldsReload.ReloadName, out IReloadableGameData? catalog)
+                || catalog is not PlayfieldsReload playfields)
+                return new PlayfieldReloadResult(false, 0, [], ["this zone does not reload Playfields"]);
+
+            lock (_reloadLock)
+            {
+                try
+                {
+                    return playfields.Reload(playfieldIds);
+                }
+                catch (Exception exception)
+                {
+                    return new PlayfieldReloadResult(false, 0, [], [exception.GetType().Name + ": " + exception.Message]);
+                }
+            }
+        }
     }
 
     /// <summary>MonsterCombatRules.json: NPC features (via NpcTemplates' RuleFeatures), hates and pets.</summary>
@@ -244,7 +267,9 @@ namespace ZoneEngine_New.Core.GameData
     /// <summary>
     /// GameData/Playfields: every playfield that is not running reads its files (Spawns.json, Npcs, metadata, Dynels.dat,
     /// ExitProxyDoors.json, ...) from disk again the next time it is built, and the exit-proxy door index is rebuilt.
-    /// A running playfield keeps what it was built from until it unloads, or until <c>.playfield reload</c> rebuilds it.
+    /// Every running playfield reads its Spawns.json and Districts.json again and applies them in place
+    /// (<see cref="ZoneEngine_New.Core.Playfield.PlayfieldManager.ReloadRunningPlayfieldSpawns"/>); its other files apply
+    /// when it unloads, or when <c>.playfield reload</c> rebuilds it.
     /// </summary>
     public sealed class PlayfieldsReload(Lazy<ZoneEngine_New.Core.Playfield.PlayfieldManager> playfields) : IReloadableGameData
     {
@@ -254,7 +279,24 @@ namespace ZoneEngine_New.Core.GameData
 
         public IReadOnlyList<string> Files { get; } = [GameDataPaths.PlayfieldsFolderName];
 
-        public GameDataReloadResult Reload() => playfields.Value.ReloadIdlePlayfieldData();
+        /// <summary>Entries: the idle playfields released. Problems: each playfield's, prefixed with its id.</summary>
+        public GameDataReloadResult Reload()
+        {
+            PlayfieldReloadResult result = Reload(null);
+            var problems = new List<string>(result.Problems);
+            foreach (PlayfieldSpawnReload playfield in result.Playfields)
+            {
+                foreach (string problem in playfield.Problems)
+                    problems.Add("playfield " + playfield.PlayfieldId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        + ": " + problem);
+            }
+
+            return new GameDataReloadResult(Name, result.Ok, result.Released, problems);
+        }
+
+        /// <summary>The same with its report per playfield (module API 1.20), for <paramref name="playfieldIds"/> or all.</summary>
+        public PlayfieldReloadResult Reload(IReadOnlyCollection<int>? playfieldIds)
+            => playfields.Value.ReloadPlayfields(playfieldIds);
     }
 
     /// <summary>GameData/Knubot plus its own AO_REBIRTH_KNUBOT_PATH overlay (<see cref="KnubotCatalog.Reload"/>).</summary>

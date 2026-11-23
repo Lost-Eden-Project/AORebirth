@@ -281,6 +281,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>True when new dungeons can be generated.</summary>
         public bool IsAvailable => _generator != null && _policy != null && _presets != null && _missions != null;
 
+        /// <summary>The DungeonDoorStyles.json row for an ACG <paramref name="style"/>; false when the style has no doors configured.</summary>
+        public bool TryGetDoorStyle(int style, out DungeonDoorStyle doors)
+            => _doorStyles.TryGetValue(style, out doors!);
+
         /// <summary>The named mission definition (GameData/Missions/Missions.json), or null.</summary>
         public MissionDefinition? Mission(string? name) => _missions?.Get(name);
 

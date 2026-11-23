@@ -115,7 +115,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 if (parsed == null || parsed.GeneratorVersion != DungeonLayoutGenerator.CurrentVersion
                     || parsed.Dungeon == null || parsed.Dungeon.Problem() != null || parsed.LayoutPlan?.IsValid != true
                     || parsed.IsTeam != parsed.LayoutPlan.BossFloor
-                    || !QuestDungeonIds.IsDungeonPlayfield(parsed.DungeonPlayfield)
+                    || !QuestDungeonIds.IsQuestDungeonPlayfield(parsed.DungeonPlayfield)
                     || parsed.EntranceType != (int)IdentityType.ACGEntrance
                     || (parsed.ObjectiveItem != null && !parsed.ObjectiveItem.IsValid)
                     || (parsed.ObjectiveTool != null && (!parsed.ObjectiveTool.IsValid || !parsed.ObjectiveTool.IsSourceItem))

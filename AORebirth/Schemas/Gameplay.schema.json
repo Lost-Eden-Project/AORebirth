@@ -47,16 +47,17 @@
     "zoneInGraceSeconds": {
       "type": "number"
     },
+    "aggroIntervalSeconds": {
+      "type": "number"
+    },
     "xp": {
       "type": "object",
       "properties": {
         "globalModifier": {
-          "type": "number",
-          "minimum": 0
+          "type": "number"
         },
         "shadowlandsModifier": {
-          "type": "number",
-          "minimum": 0
+          "type": "number"
         },
         "sideBonusPercent": {
           "type": "number"
@@ -86,8 +87,7 @@
           "type": "integer"
         },
         "doorPickXpPerLevel": {
-          "type": "integer",
-          "minimum": 0
+          "type": "integer"
         },
         "caps": {
           "type": "object",
@@ -164,15 +164,11 @@
         "guardDefaultRadius": {
           "type": "number"
         },
-        "radiusPercent": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100
-        },
         "threatOnlyRadiusPercent": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100
+          "type": "number"
+        },
+        "radiusPercent": {
+          "type": "number"
         },
         "searchRadius": {
           "type": "number"
@@ -199,12 +195,10 @@
           "type": "number"
         },
         "indoorRangePercent": {
-          "type": "number",
-          "minimum": 0
+          "type": "number"
         },
         "outdoorRangePercent": {
-          "type": "number",
-          "minimum": 0
+          "type": "number"
         }
       },
       "additionalProperties": false
@@ -213,12 +207,13 @@
       "type": "object",
       "properties": {
         "indoorRange": {
-          "type": "number",
-          "exclusiveMinimum": 0
+          "type": "number"
         },
         "outdoorRange": {
-          "type": "number",
-          "exclusiveMinimum": 0
+          "type": "number"
+        },
+        "shortestRange": {
+          "type": "number"
         }
       },
       "additionalProperties": false
@@ -234,6 +229,24 @@
         },
         "ownerSharesPetEngageRange": {
           "type": "boolean"
+        },
+        "ownerAggroChance": {
+          "type": "object",
+          "properties": {
+            "ceilingPercent": {
+              "type": "number"
+            },
+            "scalePercent": {
+              "type": "number"
+            },
+            "perAggressiveness": {
+              "type": "number"
+            },
+            "isValid": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -299,13 +312,10 @@
           "type": "integer"
         },
         "needGreedRollSeconds": {
-          "type": "integer",
-          "minimum": 5,
-          "maximum": 120
+          "type": "integer"
         },
         "needGreedRange": {
-          "type": "number",
-          "minimum": 0
+          "type": "number"
         }
       },
       "additionalProperties": false

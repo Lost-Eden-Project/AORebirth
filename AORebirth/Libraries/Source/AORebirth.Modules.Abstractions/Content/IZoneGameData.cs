@@ -24,6 +24,20 @@ namespace AORebirth.Modules.Content
         /// are read on a worker, never on a playfield tick. Needs <c>gamedata-reload</c>.
         /// </summary>
         Task<GameDataReloadResult> Reload(string name);
+
+        /// <summary>
+        /// The Playfields reload with a report per playfield (module API 1.20): playfields that are not running drop their
+        /// cached files (as <c>Reload("Playfields")</c>), and every running playfield in <paramref name="playfieldIds"/>
+        /// (all of them when null) reads its Spawns.json and Districts.json again and applies them in place, with no
+        /// teardown and nobody zoned: unchanged points keep their NPCs, removed and changed points' NPCs despawn, added
+        /// points spawn on their normal rules. An id matches a playfield's instance or resource id. Its other files
+        /// (geometry, Npcs, dynels) apply when the playfield next loads or on <c>.playfield reload</c>. Quest dungeons and
+        /// generated or static dungeons are not reloaded. <c>Reload("Playfields")</c> does the same for every playfield
+        /// since 1.20. Files are read on a worker; each playfield applies on its own tick. Needs <c>gamedata-reload</c>.
+        /// A host older than 1.20 throws <see cref="System.NotSupportedException"/>.
+        /// </summary>
+        Task<PlayfieldReloadResult> ReloadPlayfields(IReadOnlyCollection<int>? playfieldIds)
+            => throw new System.NotSupportedException("ReloadPlayfields needs a module API 1.20 host.");
     }
 
     /// <summary>What a <see cref="IZoneGameData.Reload"/> installed, or why it kept the old data.</summary>

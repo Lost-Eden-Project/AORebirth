@@ -86,6 +86,7 @@ namespace ZoneEngine_New.Core.Network
                 AllowSynchronousContinuations = false
             });
         private readonly List<byte> _receiveBuffer = new(ReceiveChunkSize);
+        private readonly InboundPacketLimiter _inboundLimit = new();
         private readonly object _compressSync = new();
         private const int CompressedSendTimeoutMilliseconds = 60_000;
         private SocketSendStream? _sendStream;
@@ -795,6 +796,13 @@ namespace ZoneEngine_New.Core.Network
                             return;
                         }
 
+                        if (!AdmitInbound(received))
+                        {
+                            if (_closed)
+                                return;
+                            continue;
+                        }
+
                         try
                         {
                             // A type a module handles (module API 1.12) has no codec reader: it is kept as bytes and
@@ -854,6 +862,35 @@ namespace ZoneEngine_New.Core.Network
                     _logger.Error(exception, "ZoneSession socket read failed.");
                 }
             }
+        }
+
+        /// <summary>
+        /// The inbound packet budget (<see cref="InboundPacketLimiter"/>): false drops the packet before it is decoded or
+        /// queued, and a flood that outlasts the grace period closes the connection through the normal close path.
+        /// </summary>
+        private bool AdmitInbound(long received)
+        {
+            InboundPacketVerdict verdict = _inboundLimit.Consume(received);
+            if (verdict == InboundPacketVerdict.Accept)
+                return true;
+
+            if (verdict == InboundPacketVerdict.FirstDrop)
+            {
+                _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                    "Inbound packet limit reached: dropping packets remote={0} character={1} peakPerSecond={2} burst={3} refillPerSecond={4}",
+                    RemoteEndPoint(), Player?.Identity.Instance ?? 0, _inboundLimit.PeakPerSecond,
+                    InboundPacketLimiter.Burst, InboundPacketLimiter.RefillPerSecond));
+            }
+            else if (verdict == InboundPacketVerdict.Disconnect)
+            {
+                _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                    "Inbound packet flood: closing connection remote={0} character={1} peakPerSecond={2} dropped={3} seconds={4}",
+                    RemoteEndPoint(), Player?.Identity.Instance ?? 0, _inboundLimit.PeakPerSecond, _inboundLimit.Dropped,
+                    InboundPacketLimiter.DisconnectAfter.TotalSeconds));
+                Close();
+            }
+
+            return false;
         }
 
         /// <summary>Runs raw socket bytes through the module filter and appends the AO bytes it yields.</summary>

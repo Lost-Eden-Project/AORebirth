@@ -80,7 +80,7 @@ namespace ZoneEngine_New.Core.DebugMcp
                 rows.Add(new
                 {
                     id = playfield.Identity.Instance,
-                    kind = playfield is QuestDungeonPlayfield ? "quest-dungeon" : "ordinary",
+                    kind = playfield is QuestDungeonPlayfield ? "quest-dungeon" : playfield is StaticDungeonPlayfield ? "static-dungeon" : "ordinary",
                     players,
                     dynels
                 });

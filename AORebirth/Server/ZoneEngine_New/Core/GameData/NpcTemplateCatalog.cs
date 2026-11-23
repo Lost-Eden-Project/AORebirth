@@ -284,13 +284,67 @@ namespace ZoneEngine_New.Core.GameData
         }
 
         /// <summary>
+        /// True when every NPC one spawn of <paramref name="hash"/> at <paramref name="level"/> could create (each branch
+        /// of a SpawnAll parent, each child <see cref="PickChild"/> may draw otherwise) comes up at a level from
+        /// <paramref name="low"/> to <paramref name="high"/>, each leaf's level clamped to its range as
+        /// <see cref="Materialize"/> does, and at least one NPC would spawn.
+        /// </summary>
+        public bool SpawnsWithin(string hash, int level, int low, int high)
+        {
+            bool reached = false;
+            return SpawnsWithin(hash, level, low, high, new HashSet<string>(StringComparer.Ordinal), ref reached) && reached;
+        }
+
+        bool SpawnsWithin(string hash, int level, int low, int high, HashSet<string> trail, ref bool reached)
+        {
+            // Nothing spawns from an unknown hash or a cycle, as in CollectSpawns.
+            if (string.IsNullOrEmpty(hash) || !trail.Add(hash))
+                return true;
+
+            try
+            {
+                if (_families.TryGetValue(hash, out string[]? children) && children.Length > 0)
+                {
+                    IEnumerable<string> drawn = _spawnAll.Contains(hash) ? children : EligibleChildren(children, level);
+                    foreach (string child in drawn)
+                    {
+                        if (!SpawnsWithin(child, level, low, high, trail, ref reached))
+                            return false;
+                    }
+
+                    return true;
+                }
+
+                if (!_leaves.TryGetValue(hash, out NpcLeaf? leaf))
+                    return true;
+
+                reached = true;
+                int min = Math.Min(leaf.MinLevel, leaf.MaxLevel);
+                int max = Math.Max(leaf.MinLevel, leaf.MaxLevel);
+                int spawned = level > 0 ? Math.Clamp(level, min, max) : min;
+                return spawned >= low && spawned <= high;
+            }
+            finally
+            {
+                trail.Remove(hash);
+            }
+        }
+
+        /// <summary>
         /// Random child. With a requested level, only children whose template range covers it are
         /// eligible; when none do, the children whose range lies closest to the level are used instead.
         /// </summary>
         string? PickChild(string[] children, int? level)
         {
+            List<string> eligible = EligibleChildren(children, level);
+            return eligible.Count == 0 ? null : eligible[_random.Next(eligible.Count)];
+        }
+
+        /// <summary>The children <see cref="PickChild"/> draws from for <paramref name="level"/>.</summary>
+        List<string> EligibleChildren(string[] children, int? level)
+        {
             if (level is not > 0)
-                return PickAny(children);
+                return AnyChildren(children);
 
             var eligible = new List<string>(children.Length);
             int bestDistance = int.MaxValue;
@@ -316,35 +370,19 @@ namespace ZoneEngine_New.Core.GameData
                 eligible.Add(child);
             }
 
-            if (eligible.Count == 0)
-                return PickAny(children);
-
-            return eligible[_random.Next(eligible.Count)];
+            return eligible.Count == 0 ? AnyChildren(children) : eligible;
         }
 
-        string? PickAny(string[] children)
+        static List<string> AnyChildren(string[] children)
         {
-            int viable = 0;
+            var viable = new List<string>(children.Length);
             for (int i = 0; i < children.Length; i++)
             {
                 if (!string.IsNullOrEmpty(children[i]))
-                    viable++;
+                    viable.Add(children[i]);
             }
 
-            if (viable == 0)
-                return null;
-
-            int index = _random.Next(viable);
-            for (int i = 0; i < children.Length; i++)
-            {
-                if (string.IsNullOrEmpty(children[i]))
-                    continue;
-                if (index == 0)
-                    return children[i];
-                index--;
-            }
-
-            return null;
+            return viable;
         }
 
         /// <summary>Union of the template level ranges of every leaf reachable from <paramref name="hash"/>.</summary>

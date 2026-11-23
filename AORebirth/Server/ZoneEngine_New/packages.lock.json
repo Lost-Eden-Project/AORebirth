@@ -35,9 +35,9 @@
       },
       "LostEden.Protocol": {
         "type": "Direct",
-        "requested": "[0.4.1, )",
-        "resolved": "0.4.1",
-        "contentHash": "lMunFAJmaLLy5F/xIbXUu5SpMOFsoVqxDL6EDzT6ku+LhS2kPq571R6mV/yWp1V2Em4g6kIdJBkRFIwRvVAMMQ=="
+        "requested": "[0.4.3, )",
+        "resolved": "0.4.3",
+        "contentHash": "+gESfLig12vsRKOdgfHFmAuqU8BWw9LUJ1dzUooOGS6gq4xsJ5RucCNRo+AKhl9onac3OrcQzGcOy7ZBEMOXFw=="
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "Direct",
@@ -317,7 +317,7 @@
         "type": "Project",
         "dependencies": {
           "AORebirth.World.Collision": "[1.0.0, )",
-          "LostEden.Protocol": "[0.4.1, )"
+          "LostEden.Protocol": "[0.4.3, )"
         }
       },
       "AORebirth.Interfaces": {
@@ -331,7 +331,7 @@
         "dependencies": {
           "AODB": "[1.0.13, )",
           "AORebirth.Core": "[1.0.0, )",
-          "LostEden.Protocol": "[0.4.1, )",
+          "LostEden.Protocol": "[0.4.3, )",
           "N3Lite": "[0.1.13, )",
           "StbImageSharp": "[2.30.15, )"
         }

@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.Playfield
     using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Globalization;
+    using System.IO;
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
@@ -23,6 +24,7 @@ namespace ZoneEngine_New.Core.Playfield
     using ZoneEngine_New.Core.Trade;
     using ZoneEngine_New.Core.Teams;
     using ZoneEngine_New.Core.WorldSimulation;
+    using AORebirth.Core.GameData;
     using AORebirth.Interfaces.Persistence.Missions;
     using AORebirth.Interfaces.Persistence.Shops;
 
@@ -90,9 +92,11 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.Chat.VicinityChatRelay? vicinity = null,
             ZoneEngine_New.Core.World.WorldLink? world = null,
             ZoneEngine_New.Core.World.CrossInstanceTransfer? crossInstance = null,
-            ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? npcScripts = null)
+            ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? npcScripts = null,
+            ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService? staticDungeons = null)
         {
             World = world;
+            StaticDungeons = staticDungeons;
             _crossInstance = crossInstance;
             Vicinity = vicinity;
             NpcScripts = npcScripts;
@@ -171,6 +175,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Root quest dungeon service, forwarded into every playfield container.</summary>
         public ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService? QuestDungeons { get; }
+
+        /// <summary>Root static dungeon service, forwarded into every playfield container (walking into a static dungeon's door).</summary>
+        public ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService? StaticDungeons { get; }
 
         /// <summary>Root Gameplay.json settings, forwarded into every playfield container.</summary>
         public ZoneEngine_New.Core.Configuration.GameplaySettings? Gameplay { get; }
@@ -576,6 +583,154 @@ namespace ZoneEngine_New.Core.Playfield
             return new(name, true, released, []);
         }
 
+        /// <summary>How long a spawn reload waits for each playfield's tick to apply it before reporting it as pending.</summary>
+        internal static TimeSpan SpawnReloadTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+        // One spawn reload at a time, whoever asks (the Playfields GameData reload, the module API, the GM command).
+        private readonly Lock _spawnReloadSync = new();
+
+        /// <summary>
+        /// The Playfields reload with its per-playfield report (module API 1.20): <see cref="ReloadIdlePlayfieldData"/>, then
+        /// <see cref="ReloadRunningPlayfieldSpawns"/>. Off every tick.
+        /// </summary>
+        internal AORebirth.Modules.Content.PlayfieldReloadResult ReloadPlayfields(IReadOnlyCollection<int>? playfieldIds)
+        {
+            AORebirth.Modules.Content.GameDataReloadResult idle = ReloadIdlePlayfieldData();
+            AORebirth.Modules.Content.PlayfieldReloadResult spawns = ReloadRunningPlayfieldSpawns(playfieldIds);
+            return new(idle.Ok && spawns.Ok, idle.Entries, spawns.Playfields, [.. idle.Problems, .. spawns.Problems]);
+        }
+
+        /// <summary>
+        /// Applies Spawns.json and Districts.json read again from disk (through the override folder) to the running
+        /// playfields in <paramref name="playfieldIds"/> (instance or resource id; every running one when null), in place:
+        /// <see cref="HashSpawnSystem.ApplyReload"/> on each playfield's own tick. The files are read and compared here, off
+        /// every tick; a file that fails to read keeps that playfield's points as they are. Quest dungeons and generated or
+        /// static dungeons are left out (listed as not applied when asked for by id). Blocks up to
+        /// <see cref="SpawnReloadTimeout"/> per playfield: never call it on a playfield tick.
+        /// </summary>
+        internal AORebirth.Modules.Content.PlayfieldReloadResult ReloadRunningPlayfieldSpawns(IReadOnlyCollection<int>? playfieldIds)
+        {
+            if (_gameData is not GameDataStore store)
+                return new(false, 0, [], ["this zone's GameData does not reload playfield spawns"]);
+
+            lock (_spawnReloadSync)
+            {
+                HashSet<int>? wanted = playfieldIds == null ? null : new HashSet<int>(playfieldIds);
+                var running = new List<Playfield>();
+                lock (_sync)
+                {
+                    foreach (Playfield playfield in _playfields.Values)
+                    {
+                        if (!playfield.IsDisposed && !_reloading.ContainsKey(playfield.Identity.Instance)
+                            && (wanted == null || wanted.Contains(playfield.Identity.Instance) || wanted.Contains(playfield.ResourceId)))
+                            running.Add(playfield);
+                    }
+                }
+
+                var results = new List<AORebirth.Modules.Content.PlayfieldSpawnReload>();
+                bool ok = true;
+                if (wanted != null)
+                {
+                    var found = new HashSet<int>();
+                    foreach (Playfield playfield in running)
+                    {
+                        found.Add(playfield.Identity.Instance);
+                        found.Add(playfield.ResourceId);
+                    }
+
+                    foreach (int id in wanted.Where(id => !found.Contains(id)).Order())
+                        results.Add(HashSpawnSystem.NotReloaded(id,
+                            "not running on this zone instance; it reads its files when it next loads"));
+                }
+
+                var files = new Dictionary<int, (PlayfieldSpawnsData? Spawns, PlayfieldDistrictsData? Districts, string? Problem)>();
+                var pending = new List<(int Id, Task<AORebirth.Modules.Content.PlayfieldSpawnReload> Applied)>();
+                foreach (Playfield playfield in running.OrderBy(playfield => playfield.Identity.Instance))
+                {
+                    int id = playfield.Identity.Instance;
+                    HashSpawnSystem? spawns = playfield.GetService<HashSpawnSystem>();
+                    if (playfield is QuestDungeonPlayfield || spawns == null || !spawns.IsReloadable)
+                    {
+                        if (wanted != null)
+                            results.Add(HashSpawnSystem.NotReloaded(id, "dungeons place their own spawn points; they are not reloaded"));
+                        continue;
+                    }
+
+                    if (!files.TryGetValue(playfield.ResourceId, out var read))
+                        files[playfield.ResourceId] = read = ReadSpawnFiles(store, playfield.ResourceId);
+                    if (read.Problem != null)
+                    {
+                        ok = false;
+                        results.Add(HashSpawnSystem.NotReloaded(id, read.Problem));
+                        continue;
+                    }
+
+                    HashSpawnSystem.SpawnReloadInput input = spawns.PrepareReload(read.Spawns!, read.Districts);
+                    pending.Add((id, DispatchSpawnReload(playfield, spawns, input)));
+                }
+
+                foreach ((int id, Task<AORebirth.Modules.Content.PlayfieldSpawnReload> applied) in pending)
+                {
+                    AORebirth.Modules.Content.PlayfieldSpawnReload result;
+                    try
+                    {
+                        result = applied.Wait(SpawnReloadTimeout)
+                            ? applied.Result
+                            : HashSpawnSystem.NotReloaded(id, string.Format(CultureInfo.InvariantCulture,
+                                "its tick did not apply the reload within {0:0} s; it applies when the tick gets to it",
+                                SpawnReloadTimeout.TotalSeconds));
+                    }
+                    catch (AggregateException exception)
+                    {
+                        _logger.Error(exception.GetBaseException(), "Spawn reload failed playfield=" + id.ToString(CultureInfo.InvariantCulture));
+                        result = HashSpawnSystem.NotReloaded(id, "the reload failed: " + exception.GetBaseException().Message);
+                    }
+
+                    ok &= result.Applied;
+                    results.Add(result);
+                }
+
+                return new(ok, 0, results, []);
+            }
+        }
+
+        /// <summary>A playfield's Districts.json then Spawns.json, read again; the spawns cache takes the new file.</summary>
+        static (PlayfieldSpawnsData? Spawns, PlayfieldDistrictsData? Districts, string? Problem) ReadSpawnFiles(
+            GameDataStore store, int resourceId)
+        {
+            try
+            {
+                PlayfieldDistrictsData? districts = HashSpawnSystem.ReadDistricts(store.RootPath, resourceId);
+                return (store.ReloadPlayfieldSpawns(resourceId), districts, null);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+            {
+                return (null, null, exception.Message + "; it keeps its spawn points");
+            }
+        }
+
+        static Task<AORebirth.Modules.Content.PlayfieldSpawnReload> DispatchSpawnReload(Playfield playfield,
+            HashSpawnSystem spawns, HashSpawnSystem.SpawnReloadInput input)
+        {
+            var done = new TaskCompletionSource<AORebirth.Modules.Content.PlayfieldSpawnReload>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            bool queued = playfield.Dispatch(() =>
+            {
+                try
+                {
+                    playfield.RequireTick();
+                    done.TrySetResult(spawns.ApplyReload(input));
+                }
+                catch (Exception exception)
+                {
+                    done.TrySetException(exception);
+                }
+            });
+            if (!queued)
+                done.TrySetResult(HashSpawnSystem.NotReloaded(playfield.Identity.Instance, "the playfield is shutting down"));
+            return done.Task;
+        }
+
         /// <summary>How long a reload in place waits for everyone to leave the old instance before disposing it.</summary>
         internal static readonly TimeSpan ReloadDrainTimeout = TimeSpan.FromSeconds(30);
 
@@ -800,7 +955,7 @@ namespace ZoneEngine_New.Core.Playfield
 
                     var pendingDestinations = new HashSet<int>(_pendingMoveByCharacter.Values);
                     candidates = _playfields.Values
-                        .Where(playfield => playfield is not QuestDungeonPlayfield
+                        .Where(playfield => playfield is not AcgDungeonPlayfield
                             && !playfield.IsDisposed
                             && !_building.ContainsKey(playfield.Identity.Instance)
                             && !_reloading.ContainsKey(playfield.Identity.Instance)
@@ -923,6 +1078,128 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
+        /// The live static dungeon instance <paramref name="playfieldId"/>, built from <paramref name="blueprint"/> when none
+        /// exists; <paramref name="chestSeed"/> rolls this instance's chest and turret spots and <paramref name="released"/>
+        /// hears of its disposal. Requesting it restarts its empty timer, as for a quest dungeon.
+        /// </summary>
+        public StaticDungeonPlayfield GetOrCreateStaticDungeon(int playfieldId,
+            ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonBlueprint blueprint, int chestSeed,
+            Action<StaticDungeonPlayfield>? released = null)
+        {
+            ArgumentNullException.ThrowIfNull(blueprint);
+            if (!ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonIds.IsStaticDungeonPlayfield(playfieldId))
+                throw new ArgumentOutOfRangeException(nameof(playfieldId), "Not a static dungeon instance id.");
+
+            lock (_sync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_playfields.TryGetValue(playfieldId, out var existing))
+                {
+                    _dungeonEmptySince.Remove(playfieldId);
+                    return RequireStaticDungeon(existing, blueprint);
+                }
+            }
+
+            RequireHostedHere(playfieldId);
+            StaticDungeonPlayfield created = new(playfieldId, blueprint, chestSeed, _logger.CreateForPlayfield(playfieldId),
+                _router, this, _playerHydrator, _gameData, _items, _hashItems, _inventoryRepository, _instanceIds,
+                _inventoryMoves, _inventoryFlush, _trades, _characterSnapshot, _metricsRegistry, _shopDao)
+            {
+                Released = released
+            };
+            try
+            {
+                ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("pf.build", playfieldId);
+                created.Build();
+                lock (_sync)
+                {
+                    ObjectDisposedException.ThrowIf(_disposed, this);
+                    if (_playfields.TryGetValue(playfieldId, out var raced))
+                    {
+                        StaticDungeonPlayfield winner = RequireStaticDungeon(raced, blueprint);
+                        _dungeonEmptySince.Remove(playfieldId);
+                        // The loser never became the instance: its records must not be dropped when it goes.
+                        created.Released = null;
+                        created.Dispose();
+                        return winner;
+                    }
+
+                    _playfields.Add(playfieldId, created);
+                    _dungeonEmptySince.Remove(playfieldId);
+                }
+            }
+            catch
+            {
+                created.Released = null;
+                created.Dispose();
+                throw;
+            }
+
+            created.StartHeartbeat();
+            _logger.Info(string.Format(CultureInfo.InvariantCulture, "Static dungeon created playfield={0} entrance={1}", playfieldId,
+                blueprint.Entrance.IdentityInstance));
+            return created;
+        }
+
+        /// <summary>The live static instance <paramref name="playfieldId"/>, kept from the empty-dungeon sweep; false when it is not live here.</summary>
+        public bool TryReuseStaticDungeon(int playfieldId, out StaticDungeonPlayfield dungeon)
+        {
+            lock (_sync)
+            {
+                dungeon = null!;
+                if (_disposed || !_playfields.TryGetValue(playfieldId, out var existing) || existing is not StaticDungeonPlayfield live)
+                    return false;
+                _dungeonEmptySince.Remove(playfieldId);
+                dungeon = live;
+                return true;
+            }
+        }
+
+        public bool TryGetStaticDungeon(int playfieldId, out StaticDungeonPlayfield dungeon)
+        {
+            lock (_sync)
+            {
+                dungeon = (_playfields.TryGetValue(playfieldId, out var existing) ? existing as StaticDungeonPlayfield : null)!;
+                return dungeon != null;
+            }
+        }
+
+        /// <summary>The static dungeon instances running here.</summary>
+        public IReadOnlyList<StaticDungeonPlayfield> SnapshotStaticDungeons()
+        {
+            lock (_sync)
+            {
+                return _playfields.Values.OfType<StaticDungeonPlayfield>().ToList();
+            }
+        }
+
+        /// <summary>Releases a static instance now if it is empty. False while occupied or when it is not live here.</summary>
+        public bool TryReleaseStaticDungeon(int playfieldId)
+        {
+            StaticDungeonPlayfield released;
+            lock (_sync)
+            {
+                if (_disposed || !_playfields.TryGetValue(playfieldId, out var existing) || existing is not StaticDungeonPlayfield dungeon
+                    || IsOccupied(dungeon))
+                    return false;
+
+                _playfields.Remove(playfieldId);
+                _dungeonEmptySince.Remove(playfieldId);
+                released = dungeon;
+            }
+
+            DisposeReleased([released]);
+            return true;
+        }
+
+        static StaticDungeonPlayfield RequireStaticDungeon(Playfield candidate, ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonBlueprint blueprint)
+        {
+            if (candidate is not StaticDungeonPlayfield dungeon || !dungeon.Blueprint.Entrance.Identity.Equals(blueprint.Entrance.Identity))
+                throw new InvalidOperationException("Static dungeon id is held by a different playfield.");
+            return dungeon;
+        }
+
+        /// <summary>
         /// The live dungeon for <paramref name="questId"/>, kept from the empty-dungeon sweep the way
         /// <see cref="GetOrCreateQuestDungeon"/> keeps an existing one, without building anything. False when it is not live here.
         /// </summary>
@@ -950,12 +1227,13 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
-        /// Releases quest dungeons that have had nobody in them for <paramref name="emptyLifetime"/>. A player still
-        /// linked to the dungeon (in it, transferring, or link-dead) keeps it alive. Run off every playfield tick.
+        /// Releases dungeons (quest dungeons and static instances) that have had nobody in them for
+        /// <paramref name="emptyLifetime"/>. A player still linked to the dungeon (in it, transferring, or link-dead)
+        /// keeps it alive. Run off every playfield tick.
         /// </summary>
         public void SweepQuestDungeons(DateTime nowUtc, TimeSpan emptyLifetime)
         {
-            var released = new List<QuestDungeonPlayfield>();
+            var released = new List<AcgDungeonPlayfield>();
             lock (_sync)
             {
                 if (_disposed) return;
@@ -966,7 +1244,7 @@ namespace ZoneEngine_New.Core.Playfield
 
                 foreach (Playfield playfield in _playfields.Values)
                 {
-                    if (playfield is not QuestDungeonPlayfield dungeon) continue;
+                    if (playfield is not AcgDungeonPlayfield dungeon) continue;
                     int id = dungeon.Identity.Instance;
                     if (withPlayers.Contains(dungeon) || dungeon.GetRequiredService<DynelRegistry>().HasPlayers())
                     {
@@ -984,7 +1262,7 @@ namespace ZoneEngine_New.Core.Playfield
                         released.Add(dungeon);
                 }
 
-                foreach (QuestDungeonPlayfield dungeon in released)
+                foreach (AcgDungeonPlayfield dungeon in released)
                 {
                     _playfields.Remove(dungeon.Identity.Instance);
                     _dungeonEmptySince.Remove(dungeon.Identity.Instance);
@@ -1019,17 +1297,19 @@ namespace ZoneEngine_New.Core.Playfield
             => playfield.GetRequiredService<DynelRegistry>().HasPlayers()
                 || _playersByCharacterId.Values.Any(player => ReferenceEquals(player.Playfield, playfield));
 
-        void DisposeReleased(List<QuestDungeonPlayfield> released)
+        void DisposeReleased(List<AcgDungeonPlayfield> released)
         {
             // Never dispose (join a heartbeat) while holding the manager lock.
-            foreach (QuestDungeonPlayfield dungeon in released)
+            foreach (AcgDungeonPlayfield dungeon in released)
             {
                 try
                 {
                     dungeon.Dispose();
                     World?.PlayfieldUnloaded(dungeon.Identity.Instance);
-                    _logger.Info(string.Format(CultureInfo.InvariantCulture, "Quest dungeon released playfield={0} quest={1}",
-                        dungeon.Identity.Instance, dungeon.QuestId));
+                    _logger.Info(string.Format(CultureInfo.InvariantCulture, "Dungeon released playfield={0} {1}",
+                        dungeon.Identity.Instance, dungeon is QuestDungeonPlayfield quest ? "quest=" + quest.QuestId
+                            : dungeon is StaticDungeonPlayfield fixedDungeon ? "static entrance=" + fixedDungeon.Blueprint.Entrance.IdentityInstance.ToString(CultureInfo.InvariantCulture)
+                            : string.Empty));
                 }
                 catch (Exception exception)
                 {

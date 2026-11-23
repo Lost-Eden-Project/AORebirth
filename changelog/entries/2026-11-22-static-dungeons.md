@@ -1,0 +1,1 @@
+- Added: Shadowlands dungeons behind the doors in Nascence, Elysium, Scheol, Adonis and Penumbra can now be entered without a mission: walk into the door and your team gets its own copy, with the monsters, lifts and treasure chests where the live dungeons have them.

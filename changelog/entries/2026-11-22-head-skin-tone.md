@@ -1,0 +1,1 @@
+- Fixed: Solitus characters made with a dark-skinned or Asian head now have a body skin tone that matches their face, instead of a light-skinned body.

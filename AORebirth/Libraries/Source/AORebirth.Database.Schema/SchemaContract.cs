@@ -39,7 +39,8 @@ public static class SchemaContract
         "20261102_account_sanctions.sql",
         "20261117_organizations.sql",
         "20261118_module_schema_migrations.sql",
-        "20261118_player_bag_names.sql"
+        "20261118_player_bag_names.sql",
+        "20261122_static_dungeon_instances.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -62,7 +63,7 @@ public static class SchemaContract
         "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames", "characterbagnames", "dailyloginclaims",
         "account_sanctions",
         "org_organizations", "org_members", "org_votes", "org_vote_ballots",
-        "module_schema_migrations"
+        "module_schema_migrations", "staticdungeoninstances"
     });
 
     public static readonly IReadOnlyList<(string Table, string Columns)> UniqueKeys = Array.AsReadOnly(new[]
@@ -86,6 +87,7 @@ public static class SchemaContract
         ("characternanolinelocks", "CharacterId,NanoStrain"),
         ("characterpetnames", "CharacterId,PetType"),
         ("characterbagnames", "CharacterId,BagInstanceId"),
+        ("staticdungeoninstances", "PlayfieldId"), ("staticdungeoninstances", "EntranceType,EntranceInstance,OwnerKind,OwnerId"),
         ("dailyloginclaims", "Id"), ("dailyloginclaims", "ClaimToken"), ("dailyloginclaims", "CharacterId,ClaimDateUtc"),
         ("account_sanctions", "SanctionId"),
         ("org_organizations", "OrganizationId"), ("org_organizations", "Name"), ("org_members", "CharacterId"),

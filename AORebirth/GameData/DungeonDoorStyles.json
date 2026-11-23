@@ -27,6 +27,11 @@
       "Style": 386,
       "DoorTemplate": 262487,
       "ExitTemplate": 263907
+    },
+    {
+      "Style": 362,
+      "DoorTemplate": 223686,
+      "ExitTemplate": 223686
     }
   ]
 }

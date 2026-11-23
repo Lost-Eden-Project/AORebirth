@@ -265,7 +265,7 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 if (stat == CharacterStat.Health)
                     return ApplyHealthDelta(target, source, percentDelta, acStat, addDamage: false, direct: addDamage, origin: origin);
-                return ApplyNanoDelta(target, percentDelta);
+                return ApplyNanoDelta(target, source, percentDelta);
             }
 
             if (minHit > maxHit)
@@ -283,7 +283,7 @@ namespace ZoneEngine_New.Core.Inventory
                 return ApplyHealthDelta(target, source, delta, acStat, addDamage, direct: addDamage, origin: origin);
 
             if (stat == CharacterStat.CurrentNano || stat == CharacterStat.NanoPool)
-                return ApplyNanoDelta(target, delta);
+                return ApplyNanoDelta(target, source, delta);
 
             target.Stats.Set(stat, target.Stats.GetOrZero(stat, StatDetail.Base) + delta, StatDetail.Base, dirty: true);
             return true;
@@ -314,11 +314,11 @@ namespace ZoneEngine_New.Core.Inventory
                 // Only what the target actually had is taken, and only a share of that comes back (capped at the
                 // source's max nano), so the drain never makes nano.
                 int nanoBefore = Math.Max(0, target.Stats.GetOrZero(CharacterStat.CurrentNano));
-                ApplyNanoDelta(target, Random.Shared.Next(minHit, maxHit + 1));
+                ApplyNanoDelta(target, source, Random.Shared.Next(minHit, maxHit + 1));
                 int taken = nanoBefore - Math.Max(0, target.Stats.GetOrZero(CharacterStat.CurrentNano));
                 int returned = (int)((long)taken * Math.Clamp(percent, 0, 100) / 100);
                 if (returned > 0 && !source.IsDead)
-                    ApplyNanoDelta(source, returned);
+                    ApplyNanoDelta(source, source, returned);
                 return true;
             }
 
@@ -504,6 +504,7 @@ namespace ZoneEngine_New.Core.Inventory
             target.Stats.Set(CharacterStat.Health, healed, StatDetail.Base, dirty: true);
             target.Stats.ClearDirty(CharacterStat.Health);
             target.AnnounceHealthDamage(caster, healed, applied, damageTypeStat: 0);
+            GiveFeedback.HealthGiven(caster, target, applied);
             return true;
         }
 
@@ -535,7 +536,11 @@ namespace ZoneEngine_New.Core.Inventory
             return true;
         }
 
-        static bool ApplyNanoDelta(Character target, int delta)
+        /// <summary>
+        /// CurrentNano changed by <paramref name="delta"/>, held to 0..MaxNanoEnergy. Nano another character
+        /// (<paramref name="source"/>) gives is reported to both of them.
+        /// </summary>
+        static bool ApplyNanoDelta(Character target, Character? source, int delta)
         {
             int maxNano = Math.Max(0, target.Stats.GetOrZero(CharacterStat.MaxNanoEnergy));
             int current = Math.Max(0, target.Stats.GetOrZero(CharacterStat.CurrentNano));
@@ -547,6 +552,8 @@ namespace ZoneEngine_New.Core.Inventory
                 return true;
 
             target.Stats.Set(CharacterStat.CurrentNano, next, StatDetail.Base, dirty: true);
+            if (next > current)
+                GiveFeedback.NanoGiven(source ?? target, target, next - current);
             return true;
         }
 
@@ -1057,7 +1064,7 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 Vector3 local = source.SnapFeetToFloor(new Vector3(x, y, z));
                 // The Exit Device's (1, 0, 1) is in no room: the client vetoes it to the middle of room 0.
-                if (source is QuestDungeonPlayfield dungeon && dungeon.TryVetoLanding(local, out Vector3 safe))
+                if (source is AcgDungeonPlayfield dungeon && dungeon.TryVetoLanding(local, out Vector3 safe))
                     local = safe;
 
                 FinishSamePlayfieldMove(player, source, local, heading: null, source.Identity.Instance);

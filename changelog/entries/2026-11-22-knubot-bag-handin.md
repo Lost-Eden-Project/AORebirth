@@ -1,0 +1,1 @@
+- Fixed: Items dragged into an NPC's Give Item window straight from an open backpack are now accepted. Before, the item was bounced and your inventory could show it in a slot it was not really in until you zoned, so it could not be handed in, used or combined.

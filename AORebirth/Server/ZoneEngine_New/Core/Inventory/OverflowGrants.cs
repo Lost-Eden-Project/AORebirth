@@ -96,10 +96,40 @@ namespace ZoneEngine_New.Core.Inventory
             => player.Playfield?.GetService<GameplaySettings>()?.Inventory.OverflowCapacity ?? GameplayInventory.DefaultOverflowCapacity;
 
         /// <summary>
-        /// Tells the client <paramref name="item"/> arrived in its overflow window: TemplateAction Overflow, then
-        /// ContainerAddItem into the window's next free slot.
+        /// The overflow placement the client gives the next item it is told about (TemplateAction Overflow, or an item
+        /// update into the window): its first empty placement from 0 (stock 1004d68c -> 1002a371(0) -> 1002aa8a), which
+        /// the overflow page mirrors because it fills first-free too. 0 when the page is full.
+        /// </summary>
+        public static int NextClientPlacement(Player player)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            int free = player.Inventory.Overflow.FindFreeSlot();
+            return free < 0 ? 0 : free;
+        }
+
+        /// <summary>
+        /// Tells the client <paramref name="item"/> arrived in its overflow window at <paramref name="placement"/>, the
+        /// overflow slot it holds there (it fills first-free, as the client does): TemplateAction Overflow, then
+        /// ContainerAddItem from that placement into the next free inventory slot.
         /// </summary>
         public static void Send(Player player, Item item)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(item);
+            int placement = player.Inventory.Overflow.Content.FirstOrDefault(entry => ReferenceEquals(entry.Value, item)) is { Value: not null } held
+                ? held.Key
+                : NextClientPlacement(player);
+            SendArrival(player, item, placement);
+        }
+
+        /// <summary>
+        /// TemplateAction Overflow, which the client places at its first empty overflow placement
+        /// (<see cref="NextClientPlacement"/>), then ContainerAddItem moving overflow <paramref name="placement"/> into
+        /// the next free inventory slot. The ContainerAddItem moves whatever the client holds at that placement, so it
+        /// must name the one the new item took, not 0 (rubi-ka.org team request 10: with an older item at 0 that one
+        /// moved instead).
+        /// </summary>
+        public static void SendArrival(Player player, Item item, int placement)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(item);
@@ -115,6 +145,7 @@ namespace ZoneEngine_New.Core.Inventory
                 Quality = item.Quality,
                 Count = item.StackCount,
                 Action = TemplateActionType.Overflow,
+                // As captured; the client ignores it and takes its first empty placement.
                 Placement = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
                 Unknown3 = 0,
                 Unknown4 = 0
@@ -123,7 +154,7 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 Identity = player.Identity,
                 Unknown = 0,
-                Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
+                Source = new Identity { Type = IdentityType.OverflowWindow, Instance = placement },
                 Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
                 Slot = NextFreeSlotMarker
             });

@@ -24,13 +24,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
         private readonly IInventoryRepository _inventoryRepository;
         private readonly IItemBuilder _items;
         private readonly Quests.Dungeons.QuestDungeonService? _dungeons;
+        private readonly Quests.Dungeons.Static.StaticDungeonService? _staticDungeons;
         private readonly Tradeskills.TradeskillService? _tradeskills;
 
         public GenericCmdMessageHandler(IInventoryRepository inventoryRepository, IItemBuilder items,
             Quests.Dungeons.QuestDungeonService? dungeons = null,
-            Tradeskills.TradeskillService? tradeskills = null)
+            Tradeskills.TradeskillService? tradeskills = null,
+            Quests.Dungeons.Static.StaticDungeonService? staticDungeons = null)
         {
             _dungeons = dungeons;
+            _staticDungeons = staticDungeons;
             _tradeskills = tradeskills;
             ArgumentNullException.ThrowIfNull(inventoryRepository);
             ArgumentNullException.ThrowIfNull(items);
@@ -345,8 +348,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
             }
 
-            // A carried mission key for a quest dungeon behind this entrance takes the use.
-            if (_dungeons?.TryEnter(player, target) == true)
+            // A carried mission key for a quest dungeon behind this entrance takes the use; without one, a static dungeon
+            // behind it does.
+            if (_dungeons?.TryEnter(player, target) == true || _staticDungeons?.TryEnter(player, target) == true)
             {
                 Acknowledge(session, message, target);
                 return;

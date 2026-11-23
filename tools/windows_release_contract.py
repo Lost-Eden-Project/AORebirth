@@ -137,7 +137,7 @@ def runtime_content_path(value):
         if parts[0] == "Playfields":
             return parts[2] in RUNTIME_PLAYFIELD_FILES
         if parts[0] == "PlayfieldContent":
-            return parts[2] in {"Npcs.json", "CharacterAppearance.json", "ExitProxyDoors.json"}
+            return parts[2] in {"Npcs.json", "CharacterAppearance.json", "ExitProxyDoors.json", "DoorLandings.json"}
     return False
 
 

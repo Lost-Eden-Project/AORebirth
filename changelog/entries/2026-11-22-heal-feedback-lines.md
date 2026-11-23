@@ -1,0 +1,1 @@
+- Fixed: Healing another player or giving them nano now shows "You healed ..." / "You increased ...'s nano" in your combat window, and the one you helped sees who healed them and by how much.

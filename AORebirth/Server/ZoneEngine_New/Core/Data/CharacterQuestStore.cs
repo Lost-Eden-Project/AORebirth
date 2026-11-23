@@ -44,6 +44,9 @@ namespace ZoneEngine_New.Core.Data
         /// <summary>The characters still holding the quest active.</summary>
         IList<int> LoadActiveQuestHolders(string questId) => Array.Empty<int>();
 
+        /// <summary>The characters still holding the quest active with its objective not earned yet.</summary>
+        IList<int> LoadUnearnedQuestHolders(string questId) => Array.Empty<int>();
+
         /// <summary>Whether another character has earned the quest's objective (earned and pending, or completed).</summary>
         bool HasOtherHolderEarned(string questId, int characterId) => false;
 
@@ -111,6 +114,8 @@ namespace ZoneEngine_New.Core.Data
             => Run(() => _dao.TryJoinTeamDungeonQuest(characterRow, key, maxKeys, nowUtcTicks), _logger);
 
         public IList<int> LoadActiveQuestHolders(string questId) => Run(() => _dao.LoadActiveQuestHolders(questId), _logger);
+
+        public IList<int> LoadUnearnedQuestHolders(string questId) => Run(() => _dao.LoadUnearnedQuestHolders(questId), _logger);
 
         public bool HasOtherHolderEarned(string questId, int characterId)
             => Run(() => _dao.HasOtherHolderEarned(questId, characterId), _logger);

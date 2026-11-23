@@ -236,6 +236,9 @@ namespace ZoneEngine_New.Core.GameData
         public void CollectMobSpawns(string hash, int? level, List<MobTemplate> into)
             => _npcTemplates.CollectSpawns(hash, level, into);
 
+        public bool MobSpawnsWithin(string hash, int level, int low, int high)
+            => _npcTemplates.SpawnsWithin(hash, level, low, high);
+
         public void CollectHashLeafInstances(string hash, List<HashInstance> into)
             => _hashItems.CollectLeafInstances(hash, into);
 
@@ -329,6 +332,20 @@ namespace ZoneEngine_New.Core.GameData
                 _playfieldSpawns[playfieldId] = loaded;
                 return loaded;
             }
+        }
+
+        /// <summary>
+        /// Reads <paramref name="playfieldId"/>'s Spawns.json from disk again and caches it in place of what the playfield
+        /// was built from (the running-playfield spawn reload). A file that fails to read or validate throws
+        /// <see cref="InvalidDataException"/> and leaves the cache as it was. Reads a file: never call it on a tick.
+        /// </summary>
+        internal PlayfieldSpawnsData ReloadPlayfieldSpawns(int playfieldId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
+            PlayfieldSpawnsData loaded = ReadPlayfieldSpawns(playfieldId);
+            lock (_playfieldSync)
+                _playfieldSpawns[playfieldId] = loaded;
+            return loaded;
         }
 
 
@@ -1037,9 +1054,10 @@ namespace ZoneEngine_New.Core.GameData
 
         #region Playfield loads
 
+        /// <summary>The override folder's Spawns.json when it has one (staff spawn edits), else the shipped file.</summary>
         private PlayfieldSpawnsData ReadPlayfieldSpawns(int playfieldId)
         {
-            string spawnsPath = Path.Combine(
+            string spawnsPath = GameDataPaths.ResolveFile(
                 RootPath,
                 GameDataPaths.PlayfieldSpawnsRelativePath(playfieldId));
 
@@ -1383,7 +1401,8 @@ namespace ZoneEngine_New.Core.GameData
                 Walls = walls,
                 Dynels = dynels,
                 Doors = doors,
-                Collision = collision.HasCollision ? collision : null
+                Collision = collision.HasCollision ? collision : null,
+                DoorLandings = DoorLandingCatalog.Load(RootPath, playfieldId)
             };
         }
 

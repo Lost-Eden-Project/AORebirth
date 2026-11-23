@@ -184,6 +184,18 @@ namespace ZoneEngine_New.Core.Playfield
         internal HashInstance[]? RolledStatics { get; set; }
 
         /// <summary>
+        /// A Districts.json point; its district is <c>Source.DistrictIndex</c>. A spawn reload keeps or replaces a district's
+        /// points together, since each load shuffles them over the district's locations.
+        /// </summary>
+        internal bool FromDistrictsFile { get; init; }
+
+        /// <summary>
+        /// The Spawns.json entry this point was built from, hashed: a spawn reload keeps the point (and its NPCs) when its
+        /// entry is unchanged. Null until the first reload of its playfield.
+        /// </summary>
+        internal string? Fingerprint { get; set; }
+
+        /// <summary>
         /// A sleep-despawned roll: the point wakes with these NPCs (or statics) at this level instead of rolling again, so
         /// leaving and returning cannot re-roll a category point for its rare. Only a kill frees the point to roll anew.
         /// </summary>
@@ -227,6 +239,16 @@ namespace ZoneEngine_New.Core.Playfield
         private int _spawnRate = 1;
         private bool _initialized;
         private CellGrid? _grid;
+        private PlayfieldLocality? _locality;
+
+        // What the spawn reload compares against: the Spawns.json the load-time points were built from, each district's
+        // spawn table hashed, and the entries already reported as skipped (a reload reports only new ones).
+        private volatile PlayfieldSpawnsData? _loadedSpawns;
+        private Dictionary<int, string> _districtFingerprints = new();
+        private HashSet<string> _reportedSkips = new(StringComparer.Ordinal);
+
+        // A generated or static dungeon places points after load (AddPlaced*): those are not Spawns.json points to reload.
+        private bool _hasPlacedPoints;
 
         public HashSpawnSystem(
             Playfield playfield,
@@ -265,17 +287,18 @@ namespace ZoneEngine_New.Core.Playfield
             _initialized = true;
             _spawnRate = locality.Policy.SpawnRate;
             _grid = locality.Grid;
-            LoadSpawns(locality.Grid);
-            LoadDistrictSpawns(locality.Grid);
+            _locality = locality;
+            var skips = new List<string>();
+            PlayfieldSpawnsData spawns = _gameData.GetPlayfieldSpawns(_playfield.ResourceId);
+            _loadedSpawns = spawns;
+            foreach (HashSpawnPoint point in BuildSpawnPoints(spawns, locality.Grid, skips))
+                Insert(point);
+            LoadDistrictSpawns(locality.Grid, skips);
+            _reportedSkips = new HashSet<string>(skips, StringComparer.Ordinal);
             AssignSpawnPointKeys();
             // Before the cells attach (and anything spawns): a zone swap's carried-over kills and timers.
             TakeInheritedState();
-            locality.AttachHashSpawns(
-                _pointsByCell.Keys,
-                AlwaysColdSpawnCells(),
-                OnCellSleep,
-                OnCellTick,
-                OnIndoorSpawnTick);
+            AttachSpawnCells();
 
             _logger.Info(
                 string.Format(
@@ -287,9 +310,13 @@ namespace ZoneEngine_New.Core.Playfield
                     _spawnRate));
         }
 
-        private void LoadSpawns(CellGrid grid)
+        /// <summary>
+        /// The points <paramref name="data"/>'s Spawns.json entries make, in file order, not yet inserted or keyed. Entries
+        /// that cannot spawn are logged as before and, when they name a hash, described in <paramref name="skips"/>.
+        /// </summary>
+        private List<HashSpawnPoint> BuildSpawnPoints(PlayfieldSpawnsData data, CellGrid grid, List<string> skips)
         {
-            PlayfieldSpawnsData data = _gameData.GetPlayfieldSpawns(_playfield.ResourceId);
+            var points = new List<HashSpawnPoint>();
             PlayfieldSpawnEntry[] entries = data.Spawns ?? [];
             SpawnExclusionCatalog exclusions = _gameData.SpawnExclusions;
             int skipped = 0;
@@ -326,6 +353,8 @@ namespace ZoneEngine_New.Core.Playfield
                 if (entry.StaticTemplateId is int templateId && !_spawnService.HasStaticTemplate(templateId))
                 {
                     _logger.Warn($"Skipping static placement hash={spawnHash}: template={templateId} not found");
+                    skips.Add(DescribeSkip(spawnHash, entry.Position, "static template "
+                        + templateId.ToString(CultureInfo.InvariantCulture) + " not found"));
                     skipped++;
                     continue;
                 }
@@ -340,6 +369,8 @@ namespace ZoneEngine_New.Core.Playfield
                             "Hash spawn skipped: unresolved or invalid template={0}, playfield={1}",
                             spawnHash,
                             _playfield.Identity.Instance));
+                    skips.Add(DescribeSkip(spawnHash, entry.Position, "no NpcTemplates entry that can spawn at level "
+                        + entry.MinLevel.ToString(CultureInfo.InvariantCulture)));
                     skipped++;
                     continue;
                 }
@@ -362,6 +393,7 @@ namespace ZoneEngine_New.Core.Playfield
                             primaryPosition.yf,
                             primaryPosition.zf,
                             _playfield.Identity.Instance));
+                    skips.Add(DescribeSkip(hashText, entry.Position, "outside the playfield"));
                     skipped++;
                     continue;
                 }
@@ -384,14 +416,7 @@ namespace ZoneEngine_New.Core.Playfield
                     entry,
                     isStatic);
 
-                if (!_pointsByCell.TryGetValue(cell.Id, out List<HashSpawnPoint>? list))
-                {
-                    list = new List<HashSpawnPoint>();
-                    _pointsByCell[cell.Id] = list;
-                }
-
-                list.Add(point);
-                AddPoint(point);
+                points.Add(point);
             }
 
             if (skipped > 0)
@@ -413,7 +438,38 @@ namespace ZoneEngine_New.Core.Playfield
                         excluded,
                         _playfield.Identity.Instance));
             }
+
+            return points;
         }
+
+        /// <summary>A skipped spawn entry, as a reload reports it: hash, position and why.</summary>
+        private static string DescribeSkip(string hash, float[]? position, string reason)
+            => position is { Length: >= 3 }
+                ? string.Format(CultureInfo.InvariantCulture, "{0} at ({1:F1}, {2:F1}, {3:F1}): {4}", hash, position[0],
+                    position[1], position[2], reason)
+                : hash + ": " + reason;
+
+        /// <summary>Puts a built point in its cell and the hash index.</summary>
+        private void Insert(HashSpawnPoint point)
+        {
+            if (!_pointsByCell.TryGetValue(point.CellId, out List<HashSpawnPoint>? list))
+            {
+                list = new List<HashSpawnPoint>();
+                _pointsByCell[point.CellId] = list;
+            }
+
+            list.Add(point);
+            AddPoint(point);
+        }
+
+        /// <summary>Hands the spawn-bearing cells (and which of them stay Cold) to cell heat; again after a spawn reload.</summary>
+        private void AttachSpawnCells()
+            => _locality!.AttachHashSpawns(
+                _pointsByCell.Keys,
+                AlwaysColdSpawnCells(),
+                OnCellSleep,
+                OnCellTick,
+                OnIndoorSpawnTick);
 
         /// <summary>
         /// Every point gets its NpcScripts key, derived from the fields Spawns.json already has; points stacked at one
@@ -484,113 +540,32 @@ namespace ZoneEngine_New.Core.Playfield
         /// respawn chance and timer, and level rolls work the same as Spawns.json. Locations are shuffled and
         /// shared round-robin across the district's entries. District RespawnTime is minutes (Spawns.json uses seconds).
         /// </summary>
-        private void LoadDistrictSpawns(CellGrid grid)
+        private void LoadDistrictSpawns(CellGrid grid, List<string> skips)
         {
             int playfieldId = _playfield.ResourceId;
-            string path = Path.Combine(_gameData.RootPath, GameDataPaths.PlayfieldDistrictsRelativePath(playfieldId));
-            if (!File.Exists(path))
-                return;
-
             PlayfieldDistrictsData? data;
             try
             {
-                data = JsonSerializer.Deserialize<PlayfieldDistrictsData>(File.ReadAllText(path), DistrictJsonOptions);
+                data = ReadDistricts(_gameData.RootPath, playfieldId);
             }
-            catch (Exception exception)
+            catch (InvalidDataException exception)
             {
-                _logger.Error(exception, "Failed to read district spawns from " + path);
+                _logger.Error(exception, exception.Message);
                 return;
             }
 
+            if (data == null)
+                return;
+
+            _districtFingerprints = DistrictFingerprints(data);
             int added = 0;
             int skipped = 0;
-            foreach (PlayfieldDistrictEntry district in data?.Districts ?? [])
+            foreach (PlayfieldDistrictEntry district in data.Districts ?? [])
             {
-                if (district?.SpawnInfos is not { Length: > 0 } infos)
-                    continue;
-
-                List<PlayfieldDistrictSpawnPoint> locations = new();
-                foreach (PlayfieldDistrictSpawnPoint location in district.SpawnPoints ?? [])
+                foreach (HashSpawnPoint point in BuildDistrictPoints(district, grid, skips, ref skipped))
                 {
-                    if (location?.Position is { Length: >= 3 })
-                        locations.Add(location);
-                }
-
-                if (locations.Count == 0)
-                {
-                    skipped += infos.Length;
-                    continue;
-                }
-
-                Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(locations));
-                int next = 0;
-                foreach (PlayfieldDistrictSpawnInfo info in infos)
-                {
-                    string hash = info?.HashText ?? string.Empty;
-                    if (info == null || info.Count <= 0 || string.IsNullOrEmpty(hash))
-                        continue;
-
-                    bool isStatic = _gameData.IsStaticSpawnHash(hash);
-                    if (!isStatic && !HasSpawnableMob(hash, Math.Max(1, district.NpcMinLevel)))
-                    {
-                        _logger.Warn(
-                            string.Format(
-                                CultureInfo.InvariantCulture,
-                                "District spawn skipped: unresolved template={0} district={1} playfield={2}",
-                                hash,
-                                district.DistrictIndex,
-                                playfieldId));
-                        skipped++;
-                        continue;
-                    }
-
-                    for (int i = 0; i < info.Count; i++)
-                    {
-                        PlayfieldDistrictSpawnPoint location = locations[next++ % locations.Count];
-                        var centre = new Vector3(location.Position[0], location.Position[1], location.Position[2]);
-                        if (!grid.TryResolveCell(centre, out Cell cell))
-                        {
-                            skipped++;
-                            continue;
-                        }
-
-                        var entry = new PlayfieldSpawnEntry
-                        {
-                            DistrictIndex = district.DistrictIndex,
-                            Hash = info.Hash,
-                            HashText = hash,
-                            MinLevel = district.NpcMinLevel,
-                            MaxLevel = district.NpcMaxLevel,
-                            RespawnChance = district.RespawnChance,
-                            RespawnTime = DistrictRespawnSeconds(district),
-                            AngleW = DistrictFacingWidthDegrees,
-                            Position = location.Position,
-                            Radius = location.Radius
-                        };
-                        var point = new HashSpawnPoint(
-                            hash,
-                            [new SpawnSite(centre, 0, DistrictFacingWidthDegrees, location.Radius)],
-                            DistrictRespawnSeconds(district),
-                            district.RespawnChance,
-                            district.NpcMinLevel,
-                            district.NpcMaxLevel,
-                            cell.Id,
-                            entry,
-                            isStatic)
-                        {
-                            Wanders = !isStatic
-                        };
-
-                        if (!_pointsByCell.TryGetValue(cell.Id, out List<HashSpawnPoint>? list))
-                        {
-                            list = new List<HashSpawnPoint>();
-                            _pointsByCell[cell.Id] = list;
-                        }
-
-                        list.Add(point);
-                        AddPoint(point);
-                        added++;
-                    }
+                    Insert(point);
+                    added++;
                 }
             }
 
@@ -601,6 +576,119 @@ namespace ZoneEngine_New.Core.Playfield
                     playfieldId,
                     added,
                     skipped));
+        }
+
+        /// <summary>
+        /// <paramref name="playfieldId"/>'s Districts.json, the override folder's copy when it has one; null when there is
+        /// none. A file that cannot be read or parsed throws <see cref="InvalidDataException"/>. Reads a file: off the tick.
+        /// </summary>
+        internal static PlayfieldDistrictsData? ReadDistricts(string root, int playfieldId)
+        {
+            string path = GameDataPaths.ResolveFile(root, GameDataPaths.PlayfieldDistrictsRelativePath(playfieldId));
+            if (!File.Exists(path))
+                return null;
+
+            try
+            {
+                return JsonSerializer.Deserialize<PlayfieldDistrictsData>(File.ReadAllText(path), DistrictJsonOptions);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException("Failed to read district spawns from " + path + " ("
+                    + exception.GetType().Name + ": " + exception.Message + ")", exception);
+            }
+        }
+
+        /// <summary>The points one district's spawn table makes, its locations shuffled, not yet inserted or keyed.</summary>
+        private List<HashSpawnPoint> BuildDistrictPoints(PlayfieldDistrictEntry? district, CellGrid grid, List<string> skips,
+            ref int skipped)
+        {
+            var points = new List<HashSpawnPoint>();
+            if (district?.SpawnInfos is not { Length: > 0 } infos)
+                return points;
+
+            int playfieldId = _playfield.ResourceId;
+            List<PlayfieldDistrictSpawnPoint> locations = new();
+            foreach (PlayfieldDistrictSpawnPoint location in district.SpawnPoints ?? [])
+            {
+                if (location?.Position is { Length: >= 3 })
+                    locations.Add(location);
+            }
+
+            if (locations.Count == 0)
+            {
+                skipped += infos.Length;
+                return points;
+            }
+
+            Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(locations));
+            int next = 0;
+            foreach (PlayfieldDistrictSpawnInfo info in infos)
+            {
+                string hash = info?.HashText ?? string.Empty;
+                if (info == null || info.Count <= 0 || string.IsNullOrEmpty(hash))
+                    continue;
+
+                bool isStatic = _gameData.IsStaticSpawnHash(hash);
+                if (!isStatic && !HasSpawnableMob(hash, Math.Max(1, district.NpcMinLevel)))
+                {
+                    _logger.Warn(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "District spawn skipped: unresolved template={0} district={1} playfield={2}",
+                            hash,
+                            district.DistrictIndex,
+                            playfieldId));
+                    skips.Add(string.Format(CultureInfo.InvariantCulture,
+                        "district {0} {1}: no NpcTemplates entry that can spawn at level {2}", district.DistrictIndex, hash,
+                        Math.Max(1, district.NpcMinLevel)));
+                    skipped++;
+                    continue;
+                }
+
+                for (int i = 0; i < info.Count; i++)
+                {
+                    PlayfieldDistrictSpawnPoint location = locations[next++ % locations.Count];
+                    var centre = new Vector3(location.Position[0], location.Position[1], location.Position[2]);
+                    if (!grid.TryResolveCell(centre, out Cell cell))
+                    {
+                        skips.Add(DescribeSkip("district " + district.DistrictIndex.ToString(CultureInfo.InvariantCulture)
+                            + " " + hash, location.Position, "outside the playfield"));
+                        skipped++;
+                        continue;
+                    }
+
+                    var entry = new PlayfieldSpawnEntry
+                    {
+                        DistrictIndex = district.DistrictIndex,
+                        Hash = info.Hash,
+                        HashText = hash,
+                        MinLevel = district.NpcMinLevel,
+                        MaxLevel = district.NpcMaxLevel,
+                        RespawnChance = district.RespawnChance,
+                        RespawnTime = DistrictRespawnSeconds(district),
+                        AngleW = DistrictFacingWidthDegrees,
+                        Position = location.Position,
+                        Radius = location.Radius
+                    };
+                    points.Add(new HashSpawnPoint(
+                        hash,
+                        [new SpawnSite(centre, 0, DistrictFacingWidthDegrees, location.Radius)],
+                        DistrictRespawnSeconds(district),
+                        district.RespawnChance,
+                        district.NpcMinLevel,
+                        district.NpcMaxLevel,
+                        cell.Id,
+                        entry,
+                        isStatic)
+                    {
+                        Wanders = !isStatic,
+                        FromDistrictsFile = true
+                    });
+                }
+            }
+
+            return points;
         }
 
         /// <summary>
@@ -692,11 +780,374 @@ namespace ZoneEngine_New.Core.Playfield
 
             list.Add(point);
             AddPoint(point);
+            _hasPlacedPoints = true;
             // Placed after load, in the same order on every instance building the same dungeon: keyed the same way, so a
             // zone swap's spawn state finds it.
             AssignKey(point);
             ApplyInheritedState(point);
             return true;
+        }
+
+        /// <summary>
+        /// Adds one spawn point placed after the playfield loaded that belongs to no district: a static dungeon's captured
+        /// monster, standing at <paramref name="centre"/> facing <paramref name="facingDegrees"/>, at <paramref name="level"/>.
+        /// With <paramref name="respawnSeconds"/> null its NPC spawns once and never again after it is killed; otherwise a
+        /// killed NPC comes back at its own spot after that many seconds, every time. The point never wanders.
+        /// <paramref name="assistanceRadius"/> and <paramref name="configure"/> are as for <see cref="AddPlacedDistrictPoint"/>.
+        /// Keyed like every placed point, so a zone swap's spawn state finds it.
+        /// </summary>
+        internal bool AddPlacedPoint(string hash, Vector3 centre, int facingDegrees, int? respawnSeconds, int level,
+            int assistanceRadius = 0, Action<NpcCharacter>? configure = null)
+        {
+            if (level <= 0)
+                throw new ArgumentOutOfRangeException(nameof(level));
+            if (respawnSeconds is < 0)
+                throw new ArgumentOutOfRangeException(nameof(respawnSeconds));
+            if (string.IsNullOrEmpty(hash) || _grid == null)
+                return false;
+
+            bool isStatic = _gameData.IsStaticSpawnHash(hash);
+            if (!isStatic && !HasSpawnableMob(hash, level))
+                return false;
+            if (!_grid.TryResolveCell(centre, out Cell cell))
+                return false;
+
+            int facing = ((facingDegrees % 360) + 360) % 360;
+            var entry = new PlayfieldSpawnEntry
+            {
+                DistrictIndex = -1,
+                HashText = hash,
+                MinLevel = level,
+                MaxLevel = level,
+                RespawnChance = 100,
+                RespawnTime = respawnSeconds ?? 0,
+                AngleW = 0,
+                Position = [centre.xf, centre.yf, centre.zf],
+                Radius = 0f,
+                AssistanceRadius = Math.Max(0, assistanceRadius)
+            };
+            var point = new HashSpawnPoint(
+                hash,
+                [new SpawnSite(centre, facing, 0, 0f)],
+                respawnSeconds ?? 0,
+                100,
+                level,
+                level,
+                cell.Id,
+                entry,
+                isStatic)
+            {
+                RespawnsAfterDeath = respawnSeconds != null,
+                Configure = configure
+            };
+
+            if (!_pointsByCell.TryGetValue(cell.Id, out List<HashSpawnPoint>? list))
+            {
+                list = new List<HashSpawnPoint>();
+                _pointsByCell[cell.Id] = list;
+            }
+
+            list.Add(point);
+            AddPoint(point);
+            _hasPlacedPoints = true;
+            AssignKey(point);
+            ApplyInheritedState(point);
+            return true;
+        }
+
+        // ------------------------------------------------------------------ spawn reload: staff spawn edits, applied live
+
+        /// <summary>
+        /// A running playfield's spawn reload, prepared off the tick (<see cref="PrepareReload"/>) from files read off the
+        /// tick: the new Spawns.json and Districts.json, every Spawns.json entry (the loaded ones and the new ones) hashed,
+        /// and each new district's spawn table hashed.
+        /// </summary>
+        internal sealed class SpawnReloadInput
+        {
+            internal SpawnReloadInput(PlayfieldSpawnsData spawns, PlayfieldDistrictsData? districts,
+                Dictionary<PlayfieldSpawnEntry, string> entryFingerprints, Dictionary<int, string> districtFingerprints)
+            {
+                Spawns = spawns;
+                Districts = districts;
+                EntryFingerprints = entryFingerprints;
+                DistrictFingerprints = districtFingerprints;
+            }
+
+            internal PlayfieldSpawnsData Spawns { get; }
+
+            internal PlayfieldDistrictsData? Districts { get; }
+
+            internal Dictionary<PlayfieldSpawnEntry, string> EntryFingerprints { get; }
+
+            internal Dictionary<int, string> DistrictFingerprints { get; }
+        }
+
+        /// <summary>
+        /// False for a playfield whose points are placed by a generated or static dungeon, or not loaded yet: its spawns are
+        /// not reloaded. Readable off the tick; <see cref="ApplyReload"/> checks again on it.
+        /// </summary>
+        internal bool IsReloadable => _initialized && !_hasPlacedPoints;
+
+        /// <summary>
+        /// Hashes what <see cref="ApplyReload"/> compares, so the tick does no serializing. Off the tick: reads only the
+        /// loaded and new file data, which nothing changes once read.
+        /// </summary>
+        internal SpawnReloadInput PrepareReload(PlayfieldSpawnsData spawns, PlayfieldDistrictsData? districts)
+        {
+            ArgumentNullException.ThrowIfNull(spawns);
+            var prints = new Dictionary<PlayfieldSpawnEntry, string>();
+            foreach (PlayfieldSpawnsData? data in new[] { _loadedSpawns, spawns })
+            {
+                foreach (PlayfieldSpawnEntry entry in data?.Spawns ?? [])
+                {
+                    if (entry != null)
+                        prints.TryAdd(entry, Fingerprint(entry));
+                }
+            }
+
+            return new SpawnReloadInput(spawns, districts, prints, DistrictFingerprints(districts));
+        }
+
+        /// <summary>
+        /// Rebuilds this playfield's Spawns.json and Districts.json points from <paramref name="input"/> without tearing the
+        /// playfield down. A Spawns.json point whose entry is unchanged (same key: hash, position and stack ordinal; same
+        /// entry) is kept with its NPCs, state and timers; so is every point of a district whose spawn table is unchanged.
+        /// A removed or changed point's NPCs and statics are despawned (no corpse, loot or XP), except a charmed pet, which
+        /// stays its owner's and only leaves the point. A changed point that was waiting out a death timer keeps the timer
+        /// (capped at its new respawn time), so an edit cannot respawn a just-killed NPC. Added points spawn on their normal
+        /// rules once their cell is awake. NpcScripts bindings and SpawnExclusions.json apply as at load. Tick thread only.
+        /// </summary>
+        internal AORebirth.Modules.Content.PlayfieldSpawnReload ApplyReload(SpawnReloadInput input)
+        {
+            ArgumentNullException.ThrowIfNull(input);
+            int playfieldId = _playfield.Identity.Instance;
+            if (!_initialized || _grid == null || _locality == null)
+                return NotReloaded(playfieldId, "its spawn points are not loaded yet");
+            if (_hasPlacedPoints)
+                return NotReloaded(playfieldId, "a generated or static dungeon places its own spawn points; they are not reloaded");
+
+            var skips = new List<string>();
+            var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+            var next = new List<HashSpawnPoint>(_allPoints.Count);
+            var retiring = new List<HashSpawnPoint>();
+            var oldByKey = new Dictionary<string, HashSpawnPoint>(StringComparer.Ordinal);
+            var oldByDistrict = new Dictionary<int, List<HashSpawnPoint>>();
+            foreach (HashSpawnPoint point in _allPoints)
+            {
+                if (point.FromDistrictsFile)
+                {
+                    if (!oldByDistrict.TryGetValue(point.Source.DistrictIndex, out List<HashSpawnPoint>? group))
+                        oldByDistrict[point.Source.DistrictIndex] = group = new List<HashSpawnPoint>();
+                    group.Add(point);
+                }
+                else if (point.Key == null || !oldByKey.TryAdd(point.Key, point))
+                {
+                    retiring.Add(point);
+                }
+            }
+
+            int kept = 0, added = 0, changed = 0, removed = retiring.Count;
+            DateTime now = DateTime.UtcNow;
+            foreach (HashSpawnPoint point in BuildSpawnPoints(input.Spawns, _grid, skips))
+            {
+                AssignKey(point, ordinals);
+                point.Fingerprint = input.EntryFingerprints.GetValueOrDefault(point.Source) ?? Fingerprint(point.Source);
+                if (oldByKey.Remove(point.Key!, out HashSpawnPoint? old))
+                {
+                    string? before = old.Fingerprint ?? input.EntryFingerprints.GetValueOrDefault(old.Source);
+                    if (string.Equals(before, point.Fingerprint, StringComparison.Ordinal))
+                    {
+                        old.Fingerprint = before;
+                        next.Add(old);
+                        kept++;
+                        continue;
+                    }
+
+                    CarryDeathTimer(old, point, now);
+                    retiring.Add(old);
+                    changed++;
+                }
+                else
+                {
+                    added++;
+                }
+
+                next.Add(point);
+            }
+
+            removed += oldByKey.Count;
+            retiring.AddRange(oldByKey.Values);
+
+            // Districts as a whole: a load shuffles a district's points over its locations, so no point maps to one before.
+            var keptDistricts = new HashSet<int>();
+            foreach (PlayfieldDistrictEntry district in input.Districts?.Districts ?? [])
+            {
+                if (district == null)
+                    continue;
+
+                int index = district.DistrictIndex;
+                if (_districtFingerprints.TryGetValue(index, out string? before)
+                    && input.DistrictFingerprints.TryGetValue(index, out string? after)
+                    && string.Equals(before, after, StringComparison.Ordinal))
+                {
+                    if (keptDistricts.Add(index) && oldByDistrict.Remove(index, out List<HashSpawnPoint>? same))
+                    {
+                        foreach (HashSpawnPoint point in same)
+                        {
+                            NextOrdinal(point, ordinals);
+                            next.Add(point);
+                            kept++;
+                        }
+                    }
+
+                    continue;
+                }
+
+                int ignored = 0;
+                foreach (HashSpawnPoint point in BuildDistrictPoints(district, _grid, skips, ref ignored))
+                {
+                    AssignKey(point, ordinals);
+                    next.Add(point);
+                    added++;
+                }
+            }
+
+            foreach (List<HashSpawnPoint> group in oldByDistrict.Values)
+            {
+                retiring.AddRange(group);
+                removed += group.Count;
+            }
+
+            // Skips of a kept district were not looked at again: they stay reported.
+            foreach (string skip in _reportedSkips)
+            {
+                if (skip.StartsWith("district ", StringComparison.Ordinal)
+                    && int.TryParse(skip.AsSpan(9, Math.Max(0, skip.IndexOf(' ', 9) - 9)), NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out int index)
+                    && keptDistricts.Contains(index))
+                    skips.Add(skip);
+            }
+
+            var problems = new List<string>();
+            foreach (string skip in skips)
+            {
+                if (!_reportedSkips.Contains(skip))
+                    problems.Add("skipped " + skip);
+            }
+
+            _reportedSkips = new HashSet<string>(skips, StringComparer.Ordinal);
+            _loadedSpawns = input.Spawns;
+            _districtFingerprints = new Dictionary<int, string>(input.DistrictFingerprints);
+
+            int despawned = 0;
+            if (added + changed + removed > 0)
+            {
+                foreach (HashSpawnPoint point in retiring)
+                    despawned += Retire(point);
+
+                _allPoints.Clear();
+                _pointsByCell.Clear();
+                _pointsByHash.Clear();
+                foreach (HashSpawnPoint point in next)
+                    Insert(point);
+                _keyOrdinals.Clear();
+                foreach (KeyValuePair<string, int> pair in ordinals)
+                    _keyOrdinals[pair.Key] = pair.Value;
+
+                _playfield.GetService<NpcScripts.NpcScriptCatalog>()?.ReportUnmatchedSpawnPoints(_playfield.ResourceId,
+                    next.ConvertAll(point => point.Key!));
+                AttachSpawnCells();
+            }
+
+            _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                "Spawn points reloaded playfield={0} kept={1} added={2} changed={3} removed={4} despawned={5} newSkips={6}",
+                playfieldId, kept, added, changed, removed, despawned, problems.Count));
+            return new AORebirth.Modules.Content.PlayfieldSpawnReload(playfieldId, true, kept, added, changed, removed,
+                despawned, problems);
+        }
+
+        internal static AORebirth.Modules.Content.PlayfieldSpawnReload NotReloaded(int playfieldId, string why)
+            => new(playfieldId, false, 0, 0, 0, 0, 0, [why]);
+
+        /// <summary>
+        /// Takes a removed or changed point out of play: its NPCs and statics despawn (no corpse, loot or XP). A charmed pet
+        /// is out with its owner: it stays theirs and only stops belonging to the point. The number despawned.
+        /// </summary>
+        private int Retire(HashSpawnPoint point)
+        {
+            int despawned = 0;
+            foreach (Dynel member in point.MembersSnapshot())
+            {
+                _pointBySpawned.Remove(member);
+                point.RemoveMember(member);
+                if (member is NpcCharacter npc)
+                {
+                    npc.Died -= OnSpawnedDied;
+                    if (npc.Pet != null || npc.Playfield == null)
+                        continue;
+
+                    LogSpawn("reload-despawn", point, npc.Identity.Instance, npc.Name, npc.Position);
+                    _spawnService.DespawnNpc(npc);
+                    despawned++;
+                }
+                else if (member is StaticDynel dynel && dynel.Playfield != null)
+                {
+                    LogSpawn("reload-despawn", point, dynel.Identity.Instance, dynel.Template.Name, dynel.Position);
+                    _spawnService.DespawnStatic(dynel);
+                    despawned++;
+                }
+            }
+
+            point.Retired = true;
+            return despawned;
+        }
+
+        /// <summary>A changed point replacing one that waits out a death timer waits too, at most its own respawn time.</summary>
+        private static void CarryDeathTimer(HashSpawnPoint old, HashSpawnPoint replacement, DateTime now)
+        {
+            if (!old.HasSpawned || old.State != HashSpawnState.Dead || old.MemberCount > 0)
+                return;
+
+            replacement.HasSpawned = true;
+            replacement.State = HashSpawnState.Dead;
+            DateTime latest = now.AddSeconds(replacement.RespawnTimeSeconds);
+            replacement.NextSpawnTime = old.NextSpawnTime < latest ? old.NextSpawnTime : latest;
+        }
+
+        private static readonly JsonSerializerOptions FingerprintJsonOptions = new();
+
+        private static string Fingerprint<T>(T value)
+            => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                JsonSerializer.SerializeToUtf8Bytes(value, FingerprintJsonOptions)), 0, 16);
+
+        /// <summary>
+        /// Each district's spawn table hashed (levels, respawn chance and time, spawn infos and locations), by district
+        /// index; districts sharing an index hash together. Its name, music and fight mode do not count.
+        /// </summary>
+        private static Dictionary<int, string> DistrictFingerprints(PlayfieldDistrictsData? data)
+        {
+            var grouped = new Dictionary<int, List<object>>();
+            foreach (PlayfieldDistrictEntry district in data?.Districts ?? [])
+            {
+                if (district == null)
+                    continue;
+                if (!grouped.TryGetValue(district.DistrictIndex, out List<object>? group))
+                    grouped[district.DistrictIndex] = group = new List<object>();
+                group.Add(new
+                {
+                    district.NpcMinLevel,
+                    district.NpcMaxLevel,
+                    district.RespawnChance,
+                    district.RespawnTime,
+                    district.SpawnInfos,
+                    district.SpawnPoints
+                });
+            }
+
+            var prints = new Dictionary<int, string>(grouped.Count);
+            foreach (KeyValuePair<int, List<object>> pair in grouped)
+                prints[pair.Key] = Fingerprint(pair.Value);
+            return prints;
         }
 
         // ------------------------------------------------------------------ zone swap: spawn state carried across
@@ -707,12 +1158,20 @@ namespace ZoneEngine_New.Core.Playfield
         // What the instance that handed this playfield over had, by point key; applied as each point appears.
         private Dictionary<string, AORebirth.World.Contracts.V1.SpawnPointState>? _inherited;
 
-        private void AssignKey(HashSpawnPoint point)
+        private void AssignKey(HashSpawnPoint point) => AssignKey(point, _keyOrdinals);
+
+        private static void AssignKey(HashSpawnPoint point, Dictionary<string, int> ordinals)
+            => point.Key = NpcScripts.SpawnPointKey.Build(point.HashText, point.Sites[0].Centre.xf,
+                point.Sites[0].Centre.yf, point.Sites[0].Centre.zf, NextOrdinal(point, ordinals));
+
+        /// <summary>Counts <paramref name="point"/> among the points stacked at its hash and position; its 1-based ordinal.</summary>
+        private static int NextOrdinal(HashSpawnPoint point, Dictionary<string, int> ordinals)
         {
             Vector3 centre = point.Sites[0].Centre;
             string baseKey = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, 1);
-            _keyOrdinals[baseKey] = _keyOrdinals.TryGetValue(baseKey, out int seen) ? seen + 1 : 1;
-            point.Key = NpcScripts.SpawnPointKey.Build(point.HashText, centre.xf, centre.yf, centre.zf, _keyOrdinals[baseKey]);
+            int ordinal = ordinals.TryGetValue(baseKey, out int seen) ? seen + 1 : 1;
+            ordinals[baseKey] = ordinal;
+            return ordinal;
         }
 
         /// <summary>

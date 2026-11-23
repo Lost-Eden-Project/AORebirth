@@ -345,6 +345,172 @@ public sealed class TradeQueuedInsertOrderTests
     }
 
     /// <summary>
+    /// Team request 8 (bug #648, Shuttleport hand-ins): an item dragged into the Give Item window from an open bag was
+    /// refused with a return the client answers by moving its copy into its first free main-inventory slot, while the
+    /// server kept the item in the bag; from then on every action naming either slot reached the wrong item until the
+    /// player zoned. The client allows the drag, so the server takes the item from the bag, as it does from the inventory.
+    /// </summary>
+    [TestMethod]
+    public void KnubotAddFromAnOpenBagTakesTheItemFromTheBag()
+    {
+        using var rig = new Rig();
+        Item bagged = rig.InBag(51222010);
+        TradeSession knubot = rig.OpenKnubot();
+        rig.TakeContainerAdds();
+
+        rig.OfferToKnubotFromBag(knubot, bagged);
+
+        Assert.AreSame(bagged, knubot.InitiatorOffer.Items.Values.Single(), "the item is on the table");
+        Assert.AreEqual(0, rig.Bag.Content.Count, "the bag slot is empty, as it is on the client");
+        Assert.AreEqual(0, rig.TakeContainerAdds().Length, "the client's own move stands; nothing is sent back");
+
+        Assert.IsTrue(rig.Trades.TryCommitKnubot(rig.Player, rig.Npc, 0));
+        rig.Flush.HardFlush(rig.Player);
+
+        rig.AssertHealthy();
+        rig.Store.AssertRow(bagged, (int)rig.Npc.Identity.Type, NpcId, bagged.InstanceId);
+    }
+
+    /// <summary>The client takes an item back out of the window into its main inventory, wherever it came from; so does the server.</summary>
+    [TestMethod]
+    public void KnubotItemFromABagTakenBackOutOfTheWindowLandsInTheMainInventory()
+    {
+        using var rig = new Rig();
+        Item bagged = rig.InBag(51222011);
+        TradeSession knubot = rig.OpenKnubot();
+        rig.OfferToKnubotFromBag(knubot, bagged);
+
+        rig.RemoveFromKnubot(knubot, knubot.InitiatorOffer.Items.Single().Key);
+
+        Assert.AreEqual(0, knubot.InitiatorOffer.Count);
+        Assert.AreEqual(rig.Player.Inventory.Inventory.FindFreeSlot() - 1, rig.SlotOf(bagged), "the first free main-inventory slot");
+        Assert.AreEqual(0, rig.Bag.Content.Count);
+        rig.Flush.HardFlush(rig.Player);
+
+        rig.AssertHealthy();
+        rig.AssertStoredWhereHeld(bagged);
+        rig.AssertStorageMatchesMemory();
+    }
+
+    /// <summary>
+    /// The client moves a locked item into its window as well. The server keeps a locked item where it is, so the
+    /// client's copy is walked back: the return (which the client always answers by taking the item into its first free
+    /// main-inventory slot) and then the ordinary move acknowledgement from that slot to the server's slot.
+    /// </summary>
+    [TestMethod]
+    public void KnubotAddOfALockedItemWalksTheClientCopyBackToTheServerSlot()
+    {
+        using var rig = new Rig();
+        Item gap = rig.Carried(51222012, persisted: true);
+        Item locked = rig.Carried(51222013, persisted: true);
+        int gapSlot = rig.SlotOf(gap);
+        int lockedSlot = rig.SlotOf(locked);
+        Assert.IsTrue(rig.Delete(rig.Player, gap), "the earlier slot is free again");
+        locked.Locked = true;
+        TradeSession knubot = rig.OpenKnubot();
+        rig.TakeContainerAdds();
+
+        rig.OfferToKnubot(knubot, locked);
+
+        Assert.AreEqual(0, knubot.InitiatorOffer.Count, "a locked item is not taken");
+        Assert.AreSame(locked, rig.Player.Inventory.Inventory.Content[lockedSlot], "the server did not move it");
+        ContainerAddItem[] told = rig.TakeContainerAdds();
+        Assert.AreEqual(2, told.Length, "the return, then the move to the server's slot");
+        Assert.AreEqual(IdentityType.KnuBotTradeWindow, told[0].Source.Type);
+        Assert.AreEqual(0, told[0].Source.Instance, "the window index the client put it in");
+        Assert.AreEqual(0x6F, told[0].Slot);
+        Assert.IsTrue(told[1].Source == new Identity { Type = IdentityType.Inventory, Instance = gapSlot }, "from the client's first free slot");
+        Assert.IsTrue(told[1].Target == rig.Player.Identity);
+        Assert.AreEqual(lockedSlot, told[1].Slot, "to where the server holds it");
+
+        locked.Locked = false;
+        rig.Flush.HardFlush(rig.Player);
+        rig.AssertHealthy();
+        rig.AssertStorageMatchesMemory();
+    }
+
+    /// <summary>With no free slot before the item's own, the client's return already lands it where the server holds it.</summary>
+    [TestMethod]
+    public void KnubotAddOfALockedItemWithNoEarlierGapNeedsOnlyTheReturn()
+    {
+        using var rig = new Rig();
+        Item locked = rig.Carried(51222016, persisted: true);
+        locked.Locked = true;
+        TradeSession knubot = rig.OpenKnubot();
+        rig.TakeContainerAdds();
+
+        rig.OfferToKnubot(knubot, locked);
+
+        ContainerAddItem[] told = rig.TakeContainerAdds();
+        Assert.AreEqual(1, told.Length);
+        Assert.AreEqual(IdentityType.KnuBotTradeWindow, told[0].Source.Type);
+        Assert.AreEqual(0x6F, told[0].Slot);
+        Assert.AreSame(locked, rig.Player.Inventory.Inventory.Content[rig.SlotOf(locked)]);
+        locked.Locked = false;
+        rig.AssertHealthy();
+    }
+
+    /// <summary>
+    /// A locked bag item stays in the bag at its slot: the client's copy is returned (first free main-inventory slot),
+    /// deleted from that slot, and the open bag's contents are sent again, so a gap below the item's slot cannot put
+    /// the copy in the wrong bag slot.
+    /// </summary>
+    [TestMethod]
+    public void KnubotAddOfALockedBagItemReturnsTheCopyAndShowsTheBagAsItIs()
+    {
+        using var rig = new Rig();
+        Item gone = rig.InBag(51222019);
+        Item bagged = rig.InBag(51222017);
+        int bagSlot = rig.Bag.Content.Single(pair => ReferenceEquals(pair.Value, bagged)).Key;
+        Assert.IsTrue(rig.Bag.Remove(rig.Bag.Content.Single(pair => ReferenceEquals(pair.Value, gone)).Key) != null, "a gap below the item");
+        bagged.Locked = true;
+        TradeSession knubot = rig.OpenKnubot();
+        rig.TakeSent();
+
+        rig.OfferToKnubotFromBag(knubot, bagged);
+
+        Assert.AreEqual(0, knubot.InitiatorOffer.Count);
+        Assert.AreSame(bagged, rig.Bag.Content[bagSlot], "the server did not move it");
+        MessageBody[] told = rig.TakeSent();
+        Assert.AreEqual(3, told.Length, "the return, the delete of the landed copy, the bag's contents");
+        var back = (ContainerAddItem)told[0];
+        Assert.AreEqual(IdentityType.KnuBotTradeWindow, back.Source.Type);
+        Assert.AreEqual(0x6F, back.Slot);
+        var delete = (CharacterActionMessage)told[1];
+        Assert.AreEqual(CharacterActionType.DeleteItem, delete.Action);
+        Assert.IsTrue(delete.Target == new Identity { Type = IdentityType.Inventory, Instance = rig.Player.Inventory.Inventory.FindFreeSlot() },
+            "the client's first free main-inventory slot, where its copy landed");
+        var contents = (InventoryUpdateMessage)told[2];
+        Assert.IsTrue(contents.InventoryIdentity == rig.Bag.Identity);
+        Assert.AreEqual(Rig.BagHandle, contents.Handle);
+        Assert.AreEqual(1, contents.Items.Length);
+        Assert.AreEqual(bagSlot, contents.Items[0].Placement, "the item at its real bag slot");
+        Assert.AreEqual(bagged.LowId, contents.Items[0].ItemLowId);
+        bagged.Locked = false;
+        rig.AssertHealthy();
+    }
+
+    /// <summary>An add naming an empty server slot: the client's copy is sent where the client will put it; nothing on the server moves.</summary>
+    [TestMethod]
+    public void KnubotAddNamingAnEmptySlotOnlyReturnsTheClientCopy()
+    {
+        using var rig = new Rig();
+        Item kept = rig.Carried(51222018, persisted: true);
+        TradeSession knubot = rig.OpenKnubot();
+        rig.TakeContainerAdds();
+
+        rig.OfferToKnubotAt(knubot, new Identity { Type = IdentityType.Inventory, Instance = rig.SlotOf(kept) + 5 });
+
+        Assert.AreEqual(0, knubot.InitiatorOffer.Count);
+        ContainerAddItem[] told = rig.TakeContainerAdds();
+        Assert.AreEqual(1, told.Length);
+        Assert.AreEqual(IdentityType.KnuBotTradeWindow, told[0].Source.Type);
+        Assert.AreEqual(0x6F, told[0].Slot);
+        Assert.AreSame(kept, rig.Player.Inventory.Inventory.Content[rig.SlotOf(kept)]);
+        rig.AssertHealthy();
+    }
+
+    /// <summary>
     /// Every queued commit in random order against everything else that queues, moves or dirties an item, with the lanes
     /// driven at random points. This catches an ordering hole that no case above names. Whatever the interleaving, no
     /// write may reach a row ahead of its insert, nothing is quarantined, and storage ends exactly where memory holds each
@@ -640,7 +806,7 @@ public sealed class TradeQueuedInsertOrderTests
             string side = who == Player ? "P" : "Q";
             int free = who.Inventory.Inventory.Capacity - who.Inventory.Inventory.Content.Count;
             Item? held = Pick(random, who);
-            switch (random.Next(11))
+            switch (random.Next(12))
             {
                 case 0 when free > 4:
                     Carried(who, Interlocked.Increment(ref _nextLooted), persisted: false);
@@ -692,6 +858,23 @@ public sealed class TradeQueuedInsertOrderTests
                 case 9 when free > 4:
                     TakeFromChest(who, Interlocked.Increment(ref _nextLooted));
                     return side + " chest-take";
+                case 10 when who == Player && Bag.FindFreeSlot() >= 0:
+                {
+                    // Handed in straight from an open bag, or taken back out of the window into the main inventory.
+                    Item bagged = InBag(Interlocked.Increment(ref _nextLooted));
+                    TradeSession knubot = OpenKnubot();
+                    OfferToKnubotFromBag(knubot, bagged);
+                    Assert.IsTrue(knubot.InitiatorOffer.Items.Values.Any(offered => ReferenceEquals(offered, bagged)), "the bag item is on the table");
+                    if (random.Next(2) == 0 || free == 0)
+                    {
+                        Assert.IsTrue(Trades.TryCommitKnubot(Player, Npc, 0), "the hand-in went through");
+                        return "P bag hand-in " + bagged.InstanceId;
+                    }
+                    Invoke("RemoveKnubotItem", Player, knubot, knubot.InitiatorOffer, knubot.InitiatorOffer.Items.Single(pair => ReferenceEquals(pair.Value, bagged)).Key);
+                    Assert.AreSame(Player, Holder(bagged), "the item came back into the main inventory, where the client puts it");
+                    Invoke("Unregister", Player);
+                    return "P bag take-back " + bagged.InstanceId;
+                }
                 default:
                     return "-";
             }
@@ -701,9 +884,10 @@ public sealed class TradeQueuedInsertOrderTests
             => Player.Inventory.Inventory.Capacity - Player.Inventory.Inventory.Content.Count > 4
                 && Partner.Inventory.Inventory.Capacity - Partner.Inventory.Inventory.Content.Count > 4;
 
+        /// <summary>A carried item other than the open bag, which the bag steps need in place.</summary>
         static Item? Pick(Random random, Player player)
         {
-            Item[] items = player.Inventory.Inventory.Content.Values.ToArray();
+            Item[] items = player.Inventory.Inventory.Content.Values.Where(item => !InventoryMoveService.IsBagItem(item)).ToArray();
             return items.Length == 0 ? null : items[random.Next(items.Length)];
         }
 
@@ -726,6 +910,70 @@ public sealed class TradeQueuedInsertOrderTests
         internal void OfferToKnubot(TradeSession session, Item item)
             => Invoke("AddKnubotItem", Player, session, session.InitiatorOffer,
                 new Identity { Type = IdentityType.Inventory, Instance = SlotOf(item) });
+
+        /// <summary>The add the client sends for a slot of an open bag: the bag's handle in the high 16 bits, the slot below.</summary>
+        internal void OfferToKnubotFromBag(TradeSession session, Item item)
+        {
+            int slot = Bag.Content.Single(pair => ReferenceEquals(pair.Value, item)).Key;
+            Invoke("AddKnubotItem", Player, session, session.InitiatorOffer,
+                new Identity { Type = IdentityType.Backpack, Instance = (BagHandle << 16) | slot });
+        }
+
+        internal const int BagHandle = 3;
+        const int BagId = 51222900;
+        Container? _bag;
+
+        /// <summary>A carried, open bag the client knows by <see cref="BagHandle"/>.</summary>
+        internal Container Bag
+        {
+            get
+            {
+                if (_bag != null)
+                    return _bag;
+                var bagIdentity = new Identity { Type = IdentityType.Container, Instance = BagId };
+                Container inventory = Player.Inventory.Inventory;
+                int slot = inventory.FindFreeSlot();
+                Item bag = _items.Create(99228, 99228, 1, ItemSource.Loot, instanceId: BagId, identity: bagIdentity);
+                bag.IsPersisted = true;
+                Assert.IsTrue(inventory.Add(slot, bag));
+                Store.Seed(bag, (int)inventory.Identity.Type, Player.Identity.Instance, slot);
+                _bag = Player.Inventory.GetOrCreateBackpackPage(bag, bagIdentity, new Identity { Type = IdentityType.Inventory, Instance = slot });
+                _bag.IsHydrated = true;
+                _bag.IsOpen = true;
+                _bag.InventoryHandle = BagHandle;
+                Player.Inventory.RegisterBackpackHandle(BagHandle, bagIdentity);
+                return _bag;
+            }
+        }
+
+        /// <summary>A stored item in the bag's next free slot.</summary>
+        internal Item InBag(int instanceId)
+        {
+            Container bag = Bag;
+            int slot = bag.FindFreeSlot();
+            Assert.IsTrue(slot >= 0, "a free bag slot");
+            Item item = _items.Create(5000, 5000, 1, ItemSource.Loot, instanceId: instanceId);
+            item.IsPersisted = true;
+            Assert.IsTrue(bag.Add(slot, item));
+            Store.Seed(item, (int)bag.Identity.Type, bag.Identity.Instance, slot);
+            return item;
+        }
+
+        /// <summary>Everything the client was told since the last call, oldest first.</summary>
+        internal MessageBody[] TakeSent()
+        {
+            MessageBody[] sent = Session.Sent.ToArray();
+            Session.Sent.Clear();
+            return sent;
+        }
+
+        /// <summary>The ContainerAddItem frames the client was told since the last call, oldest first.</summary>
+        internal ContainerAddItem[] TakeContainerAdds()
+        {
+            ContainerAddItem[] adds = Session.Sent.OfType<ContainerAddItem>().ToArray();
+            Session.Sent.Clear();
+            return adds;
+        }
 
         internal TradeSession OpenShop()
         {
@@ -810,7 +1058,13 @@ public sealed class TradeQueuedInsertOrderTests
             }
         }
 
-        int SlotOf(Item item) => SlotOf(Player, item);
+        internal int SlotOf(Item item) => SlotOf(Player, item);
+
+        internal void OfferToKnubotAt(TradeSession session, Identity source)
+            => Invoke("AddKnubotItem", Player, session, session.InitiatorOffer, source);
+
+        internal void RemoveFromKnubot(TradeSession session, int tradeSlot)
+            => Invoke("RemoveKnubotItem", Player, session, session.InitiatorOffer, tradeSlot);
 
         static int SlotOf(Player player, Item item) => player.Inventory.Inventory.Content.Single(pair => ReferenceEquals(pair.Value, item)).Key;
 
@@ -954,13 +1208,16 @@ public sealed class TradeQueuedInsertOrderTests
 
     sealed class Session : IZoneSession
     {
+        /// <summary>What the client was told, in order.</summary>
+        internal readonly List<MessageBody> Sent = [];
+
         public SessionState State { get; set; } = SessionState.InPlay;
         public Player? Player { get; private set; }
         public void BindPlayer(Player player) => Player = player;
         public void UnbindPlayer() => Player = null;
         public bool TransferToPlayfield(Playfield destination, Vector3 landing) => false;
         public void Send(byte[] packet) { }
-        public void Send(MessageBody body) { }
+        public void Send(MessageBody body) => Sent.Add(body);
         public void Send(MessageBody body, int sender, int receiver) { }
         public void SendInitiateCompression() { }
         public void Close() => State = SessionState.Closed;

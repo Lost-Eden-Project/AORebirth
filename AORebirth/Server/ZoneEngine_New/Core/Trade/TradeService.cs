@@ -1445,38 +1445,49 @@ namespace ZoneEngine_New.Core.Trade
                 RemoveKnubotItem(player, session, session.InitiatorOffer, message.Container.Instance);
         }
 
+        /// <summary>
+        /// The client moves the item into its trade table before it sends the add (N3Msg_NPCChatAddTradeItem), from
+        /// the main inventory, an open bag or overflow; it refuses worn and bank items itself. Every outcome here
+        /// leaves the client holding the item where the server holds it.
+        /// </summary>
         void AddKnubotItem(Player player, TradeSession session, TradeOffer offer, Identity source)
         {
-            // Overflow items can only be deleted or moved into the inventory, not handed to an NPC from there.
-            Container page = source.Type switch
-            {
-                IdentityType.Inventory => player.Inventory.Inventory,
-                _ => null!
-            };
-
             // The client has already moved the item into the first free index of its trade container.
             int clientSlot = FirstFreeOfferSlot(offer);
-            if (page == null || !page.Content.TryGetValue(source.Instance, out Item? item) || player.Inventory.IsLockedForTransfer(item))
+            if (!TryResolveKnubotSource(player, source, out Container page, out int slot, out Item item))
             {
-                // Nothing the server can take: undo the client's move so its view matches.
+                // Nothing at that slot on the server: the client's view was already wrong. The best the server can do is
+                // put the client's copy where the client will put it (its first free main-inventory slot).
                 if (clientSlot >= 0)
                     SendReturnToInventory(player, clientSlot);
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "Knubot add names an empty slot player={0} source={1}/{2}", player.Identity.Instance, source.Type, source.Instance));
                 return;
             }
 
-            // No-drop items are allowed: the NPC only consumes them, they never reach another player.
-            string? refusal = InventoryMoveService.IsBagItem(item) ? "Feedback_ItemCantBeTraded"
+            if (player.Inventory.IsLockedForTransfer(item) || page.LinkedItem is { Locked: true })
+            {
+                // Mid-transfer: the server may not move it, so the client's copy goes back to the server's slot.
+                if (clientSlot >= 0)
+                    ReturnLockedKnubotAdd(player, page, slot, clientSlot);
+                return;
+            }
+
+            // No-drop items are allowed: the NPC only consumes them, they never reach another player. Overflow items can
+            // only be deleted or moved into the inventory, which is where the undo puts them.
+            string? refusal = InventoryMoveService.IsBagItem(item) || ReferenceEquals(page, player.Inventory.Overflow)
+                    ? "Feedback_ItemCantBeTraded"
                 : clientSlot < 0 ? "Feedback_CantTradeMoreItems"
                 : null;
             if (refusal != null)
             {
                 ClientFeedback.Send(player, refusal);
                 if (clientSlot >= 0)
-                    UndoKnubotAdd(player, page, source.Instance, item, clientSlot);
+                    UndoKnubotAdd(player, page, slot, item, clientSlot);
                 return;
             }
 
-            if (page.Remove(source.Instance) == null)
+            if (page.Remove(slot) == null)
                 return;
 
             offer.Add(item);
@@ -1484,8 +1495,45 @@ namespace ZoneEngine_New.Core.Trade
             player.Inventory.ParkOffered(item, player.Identity.Instance);
             _flush.NotifyDirty(player);
             if (TablePlace(session, player) is ItemPlace table)
-                ModuleHooks.ItemMoved(player, item, ModuleHooks.Place(ItemPlaceKind.Inventory), table);
+                ModuleHooks.ItemMoved(player, item, PagePlace(player, page), table);
         }
+
+        /// <summary>
+        /// The page and slot a Knubot add names: a main-inventory or overflow slot, or a slot of a carried bag the client
+        /// knows by the handle the server gave it (high 16 bits), as <see cref="InventoryMoveService"/> reads them.
+        /// </summary>
+        static bool TryResolveKnubotSource(Player player, Identity source, out Container page, out int slot, out Item item)
+        {
+            page = null!;
+            slot = -1;
+            item = null!;
+            switch (source.Type)
+            {
+                case IdentityType.Inventory:
+                    page = player.Inventory.Inventory;
+                    slot = source.Instance;
+                    break;
+                case IdentityType.OverflowWindow:
+                    page = player.Inventory.Overflow;
+                    slot = source.Instance;
+                    break;
+                case IdentityType.Backpack:
+                    int handle = InventoryMoveService.DecodeBackpackHandle(source);
+                    slot = InventoryMoveService.DecodeBackpackSlot(source);
+                    if (handle == 0 || !player.Inventory.TryGetOwnedBackpackPageByHandle(handle, out page) || !page.IsHydrated)
+                        return false;
+                    break;
+                default:
+                    return false;
+            }
+
+            return page.Content.TryGetValue(slot, out item!);
+        }
+
+        static ItemPlace PagePlace(Player player, Container page)
+            => ReferenceEquals(page, player.Inventory.Inventory) || ReferenceEquals(page, player.Inventory.Overflow)
+                ? ModuleHooks.Place(ItemPlaceKind.Inventory)
+                : ModuleHooks.Place(ItemPlaceKind.Bag, page.Identity);
 
         /// <summary>
         /// The client sends the item back to the first free main-inventory slot; the server re-homes it the same way
@@ -1501,6 +1549,68 @@ namespace ZoneEngine_New.Core.Trade
 
             SendReturnToInventory(player, clientSlot);
         }
+
+        /// <summary>
+        /// The server keeps a locked item where it is, so the client's copy is walked back there: the return puts it in
+        /// the client's first free main-inventory slot (the client ignores Slot for a return from its trade table and
+        /// searches from 0x40), then an ordinary move acknowledgement moves it from that slot to the server's. The slot
+        /// the client took it from is free on the client, so for a main-inventory item its first free slot is the lower
+        /// of the server's first free slot and that one. A move into a bag lands in the bag's first free slot on the
+        /// client, which is the item's slot only when the bag has no gap below it, so a bag item is instead deleted from
+        /// the slot it landed in and the open bag's contents are sent again, which the client shows as they are (how a
+        /// mission key retired from an open bag leaves it). With no free main-inventory slot the client leaves its copy
+        /// in the trade table; the window's end lists what is really returned and the client drops the copy then.
+        /// </summary>
+        static void ReturnLockedKnubotAdd(Player player, Container page, int slot, int clientSlot)
+        {
+            SendReturnToInventory(player, clientSlot);
+
+            Container main = player.Inventory.Inventory;
+            int landed = main.FindFreeSlot();
+            if (ReferenceEquals(page, main))
+            {
+                if (landed < 0 || landed > slot)
+                    landed = slot;
+                if (landed == slot)
+                    return;
+                SendMove(player, new Identity { Type = IdentityType.Inventory, Instance = landed }, player.Identity, slot);
+                return;
+            }
+
+            if (landed < 0)
+                return;
+            var landedSlot = new Identity { Type = IdentityType.Inventory, Instance = landed };
+            if (page.Identity.Type != IdentityType.Container || !page.IsOpen || page.InventoryHandle <= 0)
+            {
+                SendMove(player, landedSlot, page.Identity, slot);
+                return;
+            }
+
+            player.Session?.Send(new CharacterActionMessage
+            {
+                Identity = player.Identity,
+                Unknown = 0,
+                Action = CharacterActionType.DeleteItem,
+                Unknown1 = 0,
+                Target = landedSlot,
+                Parameter1 = 0,
+                Parameter2 = 0,
+                Unknown2 = string.Empty
+            });
+            player.Session?.Send(page.BuildInventoryUpdateMessage(player.Identity, page.Identity, page.InventoryHandle, unknown1: 3, unknown2: 1));
+        }
+
+        /// <summary>The move acknowledgement the client applies to its own containers (the shape of every accepted move).</summary>
+        static void SendMove(Player player, Identity source, Identity target, int slot)
+            => player.Session?.Send(
+                new ContainerAddItem
+                {
+                    Identity = player.Identity,
+                    Unknown = 0,
+                    Source = source,
+                    Target = target,
+                    Slot = slot
+                });
 
         void RemoveKnubotItem(Player player, TradeSession session, TradeOffer offer, int tradeSlot)
         {
@@ -2133,33 +2243,8 @@ namespace ZoneEngine_New.Core.Trade
                 return;
             }
 
-            player.Session.Send(
-                new TemplateActionMessage
-                {
-                    Identity = player.Identity,
-                    Unknown = 0,
-                    ItemLowId = item.LowId,
-                    ItemHighId = item.HighId,
-                    Quality = item.Quality,
-                    Count = item.StackCount,
-                    Action = TemplateActionType.Overflow,
-                    Placement = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
-                    Unknown3 = 0,
-                    Unknown4 = 0
-                });
-            player.Session.Send(
-                new ContainerAddItem
-                {
-                    Identity = player.Identity,
-                    Unknown = 0,
-                    Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
-                    Target = new Identity
-                    {
-                        Type = IdentityType.OverflowWindow,
-                        Instance = player.Identity.Instance
-                    },
-                    Slot = NextFreeSlotMarker
-                });
+            // From the overflow placement the item holds, never placement 0 (team request 10).
+            OverflowGrants.Send(player, item);
         }
 
         static void SendSocialStatus(Player player, int value)

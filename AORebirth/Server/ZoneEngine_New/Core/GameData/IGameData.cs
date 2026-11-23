@@ -122,6 +122,12 @@ namespace ZoneEngine_New.Core.GameData
         /// </summary>
         void CollectMobSpawns(string hash, int? level, List<MobTemplate> into);
 
+        /// <summary>
+        /// True when every NPC one spawn of <paramref name="hash"/> at <paramref name="level"/> could create comes up at a
+        /// level from <paramref name="low"/> to <paramref name="high"/> (and at least one would spawn).
+        /// </summary>
+        bool MobSpawnsWithin(string hash, int level, int low, int high) => true;
+
         /// <summary>Appends every leaf item family reachable from <paramref name="hash"/>.</summary>
         void CollectHashLeafInstances(string hash, List<HashInstance> into);
 

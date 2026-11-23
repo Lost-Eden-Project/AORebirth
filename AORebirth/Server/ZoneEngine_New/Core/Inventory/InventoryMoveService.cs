@@ -24,6 +24,16 @@ namespace ZoneEngine_New.Core.Inventory
 
         const int TemplateActionCount = 1;
 
+        /// <summary>
+        /// Server→client: the equip delay is over. The client starts its equip delay (timer kind 6) as it sends a move to
+        /// or from a worn slot, from the two items' EquipDelay (211), reading a missing stat as 1234567890, and refuses every
+        /// item move while it runs (Gamecode.dll N3Msg_MoveItemToInventory → FUN_1004b1f4 → FUN_1004824c). This action ends
+        /// it: FUN_1005d3ff case 0x30 → FUN_10049421 removes the character's equip delay timer, then refreshes the view
+        /// Target names (Target.Instance = absolute placement). Without it a delay built from an item lacking 211 never ends
+        /// before a zone or relog (rubi-ka.org team request 9).
+        /// </summary>
+        const CharacterActionType EquipDoneAction = (CharacterActionType)0x92;
+
         /// <summary>The automatic placement a loot take names, and the echo the client joins a looted stack on.</summary>
         const int LootAutoPlacement = 0x6F;
 
@@ -52,6 +62,7 @@ namespace ZoneEngine_New.Core.Inventory
             }
 
             SetMoveLock(pending, false);
+            SendEquipDone(pending.Player, WearSide(pending));
         }
 
         public bool HasPending(int characterId)
@@ -107,21 +118,71 @@ namespace ZoneEngine_New.Core.Inventory
 
             if (due != null)
                 foreach (PendingEquip pending in due)
+                {
                     CompletePending(pending);
+                    SendEquipDone(pending.Player, WearSide(pending));
+                }
         }
 
         public void Handle(Player player, ClientMoveItemToInventory message)
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(message);
+            Identity? wearSide = WearSide(player, message.SourceContainer, message.Slot);
             Chest? chest = FindChestSource(player, message.SourceContainer);
             if (chest != null)
             {
                 lock (player.PersistenceGate)
                     lock (chest.LootGate) HandleMove(player, message);
-                return;
             }
-            HandleMove(player, message);
+            else
+            {
+                HandleMove(player, message);
+            }
+            EndClientEquipDelay(player, wearSide);
+        }
+
+        /// <summary>
+        /// A request that touched a worn slot started the client's equip delay. Unless it left an equip pending (whose end
+        /// sends the action), it is over now: completed at once or refused, so the client's delay ends with it.
+        /// </summary>
+        void EndClientEquipDelay(Player player, Identity? wearSide)
+        {
+            if (wearSide is Identity side && !HasPending(player.Identity.Instance))
+                SendEquipDone(player, side);
+        }
+
+        /// <summary>The worn placement a move request names, as its source or its target; null when it touches none.</summary>
+        static Identity? WearSide(Player player, Identity source, int? targetPlacement)
+        {
+            if (source.Type.IsWearPage())
+                return source;
+            if (targetPlacement is int placement
+                && player.Inventory.TryResolveTargetSlot(placement, out Container page, out int slot, out bool isWear)
+                && isWear)
+                return new Identity { Type = page.Identity.Type, Instance = slot };
+            return null;
+        }
+
+        static Identity WearSide(PendingEquip pending)
+            => pending.DestPage.Identity.Type.IsWearPage()
+                ? new Identity { Type = pending.DestPage.Identity.Type, Instance = pending.DestSlot }
+                : new Identity { Type = pending.SourcePage.Identity.Type, Instance = pending.SourceSlot };
+
+        static void SendEquipDone(Player player, Identity wearSide)
+        {
+            player.Session?.Send(
+                new CharacterActionMessage
+                {
+                    Identity = player.Identity,
+                    Unknown = 0,
+                    Action = EquipDoneAction,
+                    Unknown1 = 0,
+                    Target = wearSide,
+                    Parameter1 = 0,
+                    Parameter2 = 0,
+                    Unknown2 = string.Empty
+                });
         }
 
         void HandleMove(Player player, ClientMoveItemToInventory message)
@@ -233,7 +294,12 @@ namespace ZoneEngine_New.Core.Inventory
         {
             ArgumentNullException.ThrowIfNull(player);
             ArgumentNullException.ThrowIfNull(message);
+            HandleAdd(player, message);
+            EndClientEquipDelay(player, WearSide(player, message.Source, targetPlacement: null));
+        }
 
+        void HandleAdd(Player player, ClientContainerAddItem message)
+        {
             if (!player.Inventory.IsHydrated || player.Session == null || player.Playfield == null)
                 return;
 

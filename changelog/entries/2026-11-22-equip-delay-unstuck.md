@@ -1,0 +1,1 @@
+- Fixed: Swapping or removing some worn items could leave you unable to move, trade or combine items until you zoned.

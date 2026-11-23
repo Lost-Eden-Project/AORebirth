@@ -15,6 +15,7 @@ using ZoneEngine_New.Core.Configuration;
 using ZoneEngine_New.Core.GameData;
 using ZoneEngine_New.Core.Mobs;
 using ZoneEngine_New.Core.Quests;
+using ZoneEngine_New.Core.Quests.Dungeons.Static;
 
 string output = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(FindRepositoryRoot(), "AORebirth", "Schemas");
 Directory.CreateDirectory(output);
@@ -35,6 +36,12 @@ Write("QuestRewards", "Quest rewards: the items a Quests.json reward hash gives,
     typeof(Dictionary<,>).MakeGenericType(typeof(string), rewardFile), LoaderOptions(typeof(QuestRewardTable)));
 Write("Quests", "Quests: Quests.json quest templates, a list keyed by Hash.", nameof(QuestTemplate),
     typeof(List<QuestTemplate>), LoaderOptions(typeof(QuestTemplate)));
+// Static dungeons: one GameData/Dungeons/Static/<entrance instance>.json per fixed dungeon behind a world door, and the
+// per-style site pool GameData/Dungeons/Sites/<style>.json its chests, mines and turrets are rolled from.
+Write("StaticDungeon", "Static dungeon: a fixed ACG dungeon behind a world door (Dungeons/Static/<entrance instance>.json).",
+    nameof(StaticDungeonFile), typeof(StaticDungeonFile), LoaderOptions(typeof(StaticDungeonFile)));
+Write("StaticDungeonSites", "Static dungeon site pool: chest, mine and turret spots per room template of one ACG style (Dungeons/Sites/<style>.json).",
+    nameof(StaticDungeonSitePoolFile), typeof(StaticDungeonSitePoolFile), LoaderOptions(typeof(StaticDungeonFile)));
 // Xp.json: level rows keyed by level number, plus the NoKillXpFamilies list beside them.
 Type xpLevelRow = typeof(GameDataStore).GetNestedType("XpLevelRow", BindingFlags.NonPublic)
     ?? throw new InvalidOperationException("GameDataStore.XpLevelRow not found.");

@@ -1,0 +1,2 @@
+- Changed: Monsters now decide who to attack every 2 seconds instead of switching the moment someone passes the current target on hate.
+- Changed: A monster fighting your pet now sometimes turns on you, about half the time with an untrimmed pet, if it can see you. Raising your pet's aggressiveness with a trimmer makes this much rarer.

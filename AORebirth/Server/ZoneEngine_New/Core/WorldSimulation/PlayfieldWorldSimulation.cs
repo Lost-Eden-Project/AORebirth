@@ -1694,15 +1694,17 @@
 
         /// <summary>
         /// Walking into a mission entrance. The quest dungeon service decides everything (carried key, the quest
-        /// behind this entrance, range, cooldown); without a matching key nothing happens and the character walks on.
+        /// behind this entrance, range, cooldown); without a matching key the static dungeon service takes the
+        /// entrance when a static dungeon is behind it, else nothing happens and the character walks on.
         /// The overlap memory keeps it from firing again until they step out and back in.
         /// </summary>
         void EnterMissionEntrance(PlayfieldType playfield, Player player, ZoneTriggerVolume entrance)
         {
             try
             {
-                playfield.GetService<Quests.Dungeons.QuestDungeonService>()?.TryEnter(
-                    player, new LostEden.Protocol.GameData.Identity { Type = IdentityType.ACGEntrance, Instance = entrance.DynelInstance });
+                var target = new LostEden.Protocol.GameData.Identity { Type = IdentityType.ACGEntrance, Instance = entrance.DynelInstance };
+                if (playfield.GetService<Quests.Dungeons.QuestDungeonService>()?.TryEnter(player, target) != true)
+                    playfield.GetService<Quests.Dungeons.Static.StaticDungeonService>()?.TryEnter(player, target);
             }
             catch (Exception exception)
             {

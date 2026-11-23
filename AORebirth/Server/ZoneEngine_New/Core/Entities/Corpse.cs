@@ -103,7 +103,7 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         static List<MobItemTableEntry>? WithPlayfieldLoot(List<MobItemTableEntry>? own, ZoneEngine_New.Core.Playfield.Playfield? playfield)
         {
-            if (playfield is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield { Layout.MobLoot: { Count: > 0 } extra })
+            if (playfield is not ZoneEngine_New.Core.Playfield.AcgDungeonPlayfield { Layout.MobLoot: { Count: > 0 } extra })
                 return own;
             var table = own == null ? new List<MobItemTableEntry>(extra.Count) : new List<MobItemTableEntry>(own);
             table.AddRange(extra);

@@ -291,12 +291,39 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
     public int RollLevel(Random roll, int quality)
     {
         ArgumentNullException.ThrowIfNull(roll);
+        if ((LevelSpreadPercent ?? 0) <= 0 || quality <= 0)
+            return quality;
+        (int low, int high) = LevelRange(quality);
+        return roll.Next(low, high + 1);
+    }
+
+    /// <summary>The lowest and highest level <see cref="RollLevel"/> gives a mission of <paramref name="quality"/>.</summary>
+    public (int Low, int High) LevelRange(int quality)
+    {
         int spread = LevelSpreadPercent ?? 0;
         if (spread <= 0 || quality <= 0)
-            return quality;
+            return (quality, quality);
         int low = Math.Max(1, (int)Math.Round(quality * (100 - spread) / 100.0, MidpointRounding.AwayFromZero));
         int high = Math.Max(low, (int)Math.Round(quality * (100 + spread) / 100.0, MidpointRounding.AwayFromZero));
-        return roll.Next(low, high + 1);
+        return (low, high);
+    }
+
+    /// <summary>
+    /// The levels of a mission of <paramref name="quality"/>'s range at which one spawn of <paramref name="hash"/> stays
+    /// in that range: a family with no member near a level comes up at its nearest member's level, which can be far
+    /// outside the mission's. Empty when the family cannot field the range at all; ascending otherwise.
+    /// </summary>
+    internal int[] FieldableLevels(IGameData gameData, string hash, int quality)
+    {
+        ArgumentNullException.ThrowIfNull(gameData);
+        if (quality <= 0)
+            return [];
+        (int low, int high) = LevelRange(quality);
+        var levels = new List<int>(high - low + 1);
+        for (int level = low; level <= high; level++)
+            if (gameData.MobSpawnsWithin(hash, level, low, high))
+                levels.Add(level);
+        return levels.ToArray();
     }
 
     internal string? Problem()
@@ -593,8 +620,11 @@ public sealed class DungeonPresets
         if (block.Mix == null)
             return block;
         // A Clan (1) or Omni (2) player never meets humans of their own side: only the other side's or neutral ones.
+        // A family whose Levels hold the quality can still have no member near it (members at 9-11, then 21-24): it would
+        // field monsters outside the mission's level range, so it is not fit.
         var fit = _families.Where(f => quality >= f.Low && quality <= f.High
-            && !(f.Category == "human" && playerSide is 1 or 2 && f.Side == playerSide)).ToList();
+            && !(f.Category == "human" && playerSide is 1 or 2 && f.Side == playerSide)
+            && block.FieldableLevels(_gameData, f.Hash, quality).Length > 0).ToList();
         if (fit.Count == 0)
         {
             problem = "no mission family holds quality " + quality.ToString(CultureInfo.InvariantCulture);
@@ -716,5 +746,68 @@ public sealed class DungeonPresets
                 throw new InvalidDataException(Folder + "/" + file + ": preset '" + name + "' names another preset; presets start from the defaults");
         }
         return new Dictionary<string, T>(named, StringComparer.Ordinal);
+    }
+}
+
+/// <summary>
+/// The NPC and level of each regular spawn in a mission dungeon of one quality. Only the population's NPCs that can stay
+/// in the mission's level range spawn (<see cref="DungeonPopulationBlock.FieldableLevels"/>), each at its rolled level
+/// when it holds that one, else at the nearest level it does (the lower on a tie). When none of them can, the population
+/// spawns as named at its rolled levels, as before, so the dungeon is not left empty.
+/// </summary>
+internal sealed class DungeonPopulationRoll
+{
+    readonly DungeonPopulationBlock _block;
+    readonly int _quality;
+    readonly string[] _npcs;
+    readonly Dictionary<string, int[]> _levels = new(StringComparer.Ordinal);
+
+    internal DungeonPopulationRoll(DungeonPopulationBlock block, IGameData gameData, int quality)
+    {
+        ArgumentNullException.ThrowIfNull(block);
+        ArgumentNullException.ThrowIfNull(gameData);
+        if (block.Npcs is not { Length: > 0 } named)
+            throw new ArgumentException("The population names no NPCs.", nameof(block));
+        _block = block;
+        _quality = quality;
+        var usable = new List<string>(named.Length);
+        var leftOut = new List<string>();
+        foreach (string hash in named)
+        {
+            if (!_levels.TryGetValue(hash, out int[]? levels))
+                _levels[hash] = levels = block.FieldableLevels(gameData, hash, quality);
+            if (levels.Length > 0)
+                usable.Add(hash);
+            else if (quality > 0 && !leftOut.Contains(hash))
+                leftOut.Add(hash);
+        }
+        FieldsRange = usable.Count > 0;
+        _npcs = FieldsRange ? usable.ToArray() : named;
+        LeftOut = leftOut;
+    }
+
+    /// <summary>The NPCs that spawn (each as often as the population names it).</summary>
+    internal IReadOnlyList<string> Npcs => _npcs;
+
+    /// <summary>The population's NPCs that cannot stay in the mission's level range.</summary>
+    internal IReadOnlyList<string> LeftOut { get; }
+
+    /// <summary>Whether at least one of the population's NPCs can stay in the mission's level range.</summary>
+    internal bool FieldsRange { get; }
+
+    /// <summary>One spawn's NPC and level, from the room's seeded <paramref name="roll"/> (an NPC, then a level).</summary>
+    internal (string Hash, int Level) Next(Random roll)
+    {
+        ArgumentNullException.ThrowIfNull(roll);
+        string hash = _npcs[roll.Next(_npcs.Length)];
+        int rolled = _block.RollLevel(roll, _quality);
+        int[] levels = _levels[hash];
+        if (levels.Length == 0 || Array.BinarySearch(levels, rolled) >= 0)
+            return (hash, rolled);
+        int nearest = levels[0];
+        foreach (int level in levels)
+            if (Math.Abs(level - rolled) < Math.Abs(nearest - rolled))
+                nearest = level;
+        return (hash, nearest);
     }
 }

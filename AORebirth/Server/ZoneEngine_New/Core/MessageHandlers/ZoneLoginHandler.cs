@@ -31,6 +31,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
         private readonly ICharacterRepository? _characters;
         private readonly ZoneLoginThrottle _throttle;
         private readonly Quests.Dungeons.QuestDungeonService? _dungeons;
+        private readonly Quests.Dungeons.Static.StaticDungeonService? _staticDungeons;
 
         public ZoneLoginHandler(
             ICharacterHydrationService hydration,
@@ -41,8 +42,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
             Quests.Dungeons.QuestDungeonService? dungeons = null,
             ZoneEngine_New.Core.World.WorldLink? world = null,
             ICharacterRepository? characters = null,
-            ZoneLoginThrottle? throttle = null)
+            ZoneLoginThrottle? throttle = null,
+            Quests.Dungeons.Static.StaticDungeonService? staticDungeons = null)
         {
+            _staticDungeons = staticDungeons;
             _throttle = throttle ?? new ZoneLoginThrottle();
             _world = world;
             _characters = characters;
@@ -154,7 +157,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
             {
                 Playfield playfield;
                 int storedPlayfield = hydration.Character.Playfield;
-                if (_dungeons != null && Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(storedPlayfield))
+                if (_staticDungeons != null && Quests.Dungeons.Static.StaticDungeonIds.IsStaticDungeonPlayfield(storedPlayfield))
+                {
+                    (Playfield dungeonOrExterior, AORebirth.Core.Vector.Vector3? landing, PlayfieldAdmission? admission)
+                        = _staticDungeons.ResolveLogin(storedPlayfield);
+                    playfield = dungeonOrExterior;
+                    playfieldAdmission = admission;
+                    if (landing is not null)
+                        hydration = WithLoginPosition(hydration, dungeonOrExterior.Identity.Instance, landing);
+                }
+                else if (_dungeons != null && Quests.Dungeons.QuestDungeonIds.IsDungeonPlayfield(storedPlayfield))
                 {
                     (Playfield dungeonOrExterior, AORebirth.Core.Vector.Vector3? landing, PlayfieldAdmission? admission)
                         = _dungeons.ResolveLogin(storedPlayfield);

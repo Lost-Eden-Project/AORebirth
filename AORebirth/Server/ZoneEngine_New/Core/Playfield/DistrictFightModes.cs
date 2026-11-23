@@ -91,7 +91,8 @@ namespace ZoneEngine_New.Core.Playfield
         public static DistrictFightModes Load(string root, int playfieldId, IZoneLogger logger)
         {
             ArgumentNullException.ThrowIfNull(logger);
-            string path = Path.Combine(root, GameDataPaths.PlayfieldDistrictsRelativePath(playfieldId));
+            // The same file the district spawns read: the override folder's copy when it has one.
+            string path = GameDataPaths.ResolveFile(root, GameDataPaths.PlayfieldDistrictsRelativePath(playfieldId));
             if (!File.Exists(path))
                 return None;
 

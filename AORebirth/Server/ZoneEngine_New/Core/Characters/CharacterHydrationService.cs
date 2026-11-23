@@ -138,7 +138,26 @@ namespace ZoneEngine_New.Core.Characters
             })
                 if (!persisted.Any(row => row.StatId == (int)stat))
                     result.Add(new StatRecord { StatId = (int)stat, StatValue = value });
+            ApplyHeadSkinRace(result);
             return result;
+        }
+
+        /// <summary>
+        /// Creation never stored Race, so every character carried the default light skin whatever head it chose.
+        /// An African or Asian head lifts a default Race to the head's race, as the client's own head table does;
+        /// any other stored race, and an unset sentinel, are left for the validator.
+        /// </summary>
+        static void ApplyHeadSkinRace(List<StatRecord> stats)
+        {
+            StatRecord? head = stats.FirstOrDefault(row => row.StatId == (int)CharacterStat.HeadMesh);
+            if (head == null || !HeadSkinRace.TryGet(head.StatValue, out int race))
+                return;
+
+            for (int i = 0; i < stats.Count; i++)
+            {
+                if (stats[i].StatId == (int)CharacterStat.Race && stats[i].StatValue == HeadSkinRace.Default)
+                    stats[i] = new StatRecord { StatId = (int)CharacterStat.Race, StatValue = race };
+            }
         }
     }
 }

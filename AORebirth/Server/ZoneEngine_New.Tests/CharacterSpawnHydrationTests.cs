@@ -286,7 +286,8 @@ namespace ZoneEngine_New.Tests
                 Stats = CharacterHydrationService.RestoreLegacyDefaults(raw.Stats)
             };
             Assert.IsTrue(CharacterHydrationValidator.Validate(hydration).IsValid);
-            Assert.AreEqual(1, Stat(hydration, CharacterStat.Race));
+            // 49 wears head 40626 (head_solitusfemale_asian04): the head's skin race, not the light default.
+            Assert.AreEqual(id == 49 ? HeadSkinRace.Asian : HeadSkinRace.Default, Stat(hydration, CharacterStat.Race));
             Assert.AreEqual(31, Stat(hydration, CharacterStat.VisualFlags));
             Assert.AreEqual(0, Stat(hydration, CharacterStat.Side));
             Assert.AreEqual(id == 39 ? 17 : 5, Stat(hydration, CharacterStat.RunSpeed));

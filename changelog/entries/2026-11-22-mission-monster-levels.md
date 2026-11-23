@@ -1,0 +1,1 @@
+- Fixed: Rubi-Ka mission monsters now stay within the mission's level range instead of sometimes being several levels higher.

@@ -45,8 +45,6 @@ namespace ZoneEngine_New.Core.Tradeskills
             Combined
         }
 
-        const int OverflowNextFreeSlot = 0x6f;
-
         /// <summary>UseItemOnItemNoCombination's Target and Parameter1 as live sends them (meaning unknown).</summary>
         static readonly Identity NoCombinationTarget = new() { Type = (IdentityType)2, Instance = 0 };
         const int NoCombinationParameter1 = 2;
@@ -338,19 +336,9 @@ namespace ZoneEngine_New.Core.Tradeskills
                     if (!page.Add(resultSlot, result))
                         throw new InvalidOperationException("Reserved tradeskill result slot changed.");
                     ClientFeedback.SendFormatted(player, ClientFeedback.CombinedResult, sourceName, targetName, result.Quality, NameOf(result));
-                    player.Session?.Send(new TemplateActionMessage
-                    {
-                        Identity = player.Identity, ItemLowId = result.LowId, ItemHighId = result.HighId, Quality = result.Quality,
-                        Count = result.StackCount, Action = TemplateActionType.Overflow,
-                        Placement = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 }
-                    });
-                    player.Session?.Send(new ContainerAddItem
-                    {
-                        Identity = player.Identity,
-                        Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
-                        Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
-                        Slot = OverflowNextFreeSlot
-                    });
+                    // The client parks the result at its first empty overflow placement and moves it from there to its
+                    // first free inventory slot; from placement 0 an older overflow item moved instead (team request 10).
+                    OverflowGrants.SendArrival(player, result, OverflowGrants.NextClientPlacement(player));
                 });
             if (!committed)
             {

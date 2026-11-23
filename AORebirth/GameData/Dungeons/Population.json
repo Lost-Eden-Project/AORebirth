@@ -15,5 +15,33 @@
   },
   "mothership": {
     "Npcs": ["ARZWEH"]
+  },
+  // Shadowlands static dungeons (Dungeons/Static, team request 2): the captured monsters are placed, so Npcs,
+  // SpawnChancePercent and the level spread are not used here. The captures show them attacking on sight (aggro at
+  // 4-5 m with no provocation) and pulling in ones; one clan per dungeon so they answer each other's calls for help.
+  "nascence": {
+    "Aggressiveness": 60,
+    "Clan": 900362,
+    "AssistanceRadius": 15
+  },
+  "elysium": {
+    "Aggressiveness": 60,
+    "Clan": 900362,
+    "AssistanceRadius": 15
+  },
+  "scheol": {
+    "Aggressiveness": 60,
+    "Clan": 900362,
+    "AssistanceRadius": 15
+  },
+  "adonis": {
+    "Aggressiveness": 60,
+    "Clan": 900362,
+    "AssistanceRadius": 15
+  },
+  "penumbra": {
+    "Aggressiveness": 60,
+    "Clan": 900362,
+    "AssistanceRadius": 15
   }
 }

@@ -1,0 +1,1 @@
+- Fixed: Combining items, or receiving an item while your overflow window already held something, no longer moves the wrong item into your inventory until you zone.

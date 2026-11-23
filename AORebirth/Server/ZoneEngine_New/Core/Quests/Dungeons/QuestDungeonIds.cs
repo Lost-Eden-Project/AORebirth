@@ -15,15 +15,23 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
 
         public const string QuestIdPrefix = "D";
 
-        /// <summary>Dungeon ids run from <see cref="FirstPlayfield"/> up to the proxy playfield block (<see cref="ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First"/>).</summary>
+        /// <summary>
+        /// Dungeon ids run from <see cref="FirstPlayfield"/> up to the proxy playfield block (<see cref="ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First"/>):
+        /// quest dungeons below <see cref="Static.StaticDungeonIds.FirstPlayfield"/>, static dungeon instances from it up.
+        /// Neither is ever built as an ordinary playfield.
+        /// </summary>
         public static bool IsDungeonPlayfield(int playfieldId)
             => playfieldId >= FirstPlayfield && playfieldId < ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First;
+
+        /// <summary>A quest dungeon's id: in the dungeon range and below the static instance range.</summary>
+        public static bool IsQuestDungeonPlayfield(int playfieldId)
+            => playfieldId >= FirstPlayfield && playfieldId < Static.StaticDungeonIds.FirstPlayfield;
 
         public static bool TryCreate(int number, out string questId, out int playfieldId)
         {
             questId = string.Empty;
             playfieldId = 0;
-            if (number <= 0 || number > int.MaxValue - FirstPlayfield)
+            if (number <= 0 || number >= Static.StaticDungeonIds.FirstPlayfield - FirstPlayfield)
                 return false;
 
             questId = QuestIdPrefix + number.ToString(CultureInfo.InvariantCulture);
@@ -34,7 +42,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         public static bool TryGetQuestId(int playfieldId, out string questId)
         {
             questId = string.Empty;
-            if (!IsDungeonPlayfield(playfieldId))
+            if (!IsQuestDungeonPlayfield(playfieldId))
                 return false;
 
             questId = QuestIdPrefix + (playfieldId - FirstPlayfield).ToString(CultureInfo.InvariantCulture);

@@ -49,6 +49,13 @@ namespace ZoneEngine_New.Core.Configuration
         /// </summary>
         public double ZoneInGraceSeconds { get; init; } = 1;
 
+        /// <summary>
+        /// How often a fighting NPC decides who to attack. Between those decisions it stays on its target even when
+        /// someone else has passed it on the hate list; it only picks again early when its target is gone, dead or out of
+        /// reach. 0 picks the top threat on every think.
+        /// </summary>
+        public double AggroIntervalSeconds { get; init; } = 2;
+
         /// <summary>XP rules.</summary>
         public GameplayXp Xp { get; init; } = new();
 
@@ -221,6 +228,10 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": socialAggro.maxHelpers must be 0 (no limit) or more.");
             if (Pets == null || !float.IsFinite(Pets.OwnerThreatSharePercent) || Pets.OwnerThreatSharePercent < 0)
                 throw new InvalidDataException(path + ": pets.ownerThreatSharePercent must be a finite, non-negative percent.");
+            if (Pets.OwnerAggroChance == null || !Pets.OwnerAggroChance.IsValid)
+                throw new InvalidDataException(path + ": pets.ownerAggroChance ceilingPercent, scalePercent and perAggressiveness must be finite numbers.");
+            if (!double.IsFinite(AggroIntervalSeconds) || AggroIntervalSeconds < 0)
+                throw new InvalidDataException(path + ": aggroIntervalSeconds must be a finite number, 0 or more.");
             if (WorldClock == null || !WorldClock.TryGetEpoch(out _) || WorldClock.DayAtEpoch < 0
                 || WorldClock.TimeOfDayAtEpochSeconds < 0 || WorldClock.TimeOfDayAtEpochSeconds >= Network.GameClock.SecondsPerDay)
                 throw new InvalidDataException(path + ": worldClock needs an ISO 8601 epochUtc, dayAtEpoch 0 or more, and "
@@ -514,6 +525,40 @@ namespace ZoneEngine_New.Core.Configuration
         /// of the shorter range a bystander must be within. An owner standing back behind their pet is in the fight.
         /// </summary>
         public bool OwnerSharesPetEngageRange { get; init; } = true;
+
+        /// <summary>
+        /// Aggro flicker between a player's pet and its owner. On each aggro decision (<see
+        /// cref="GameplaySettings.AggroIntervalSeconds"/>) where the pet is the NPC's top threat and the owner is on its
+        /// hate list, the NPC rolls this chance to attack the owner instead (it switches only to one it can see). The
+        /// pet's Aggressiveness (pet trimmers) lowers the chance. An owner above the pet on the hate list is simply the
+        /// NPC's target, with no roll.
+        /// </summary>
+        public GameplayPetOwnerAggroChance OwnerAggroChance { get; init; } = new();
+    }
+
+    /// <summary>
+    /// The pets.ownerAggroChance section of Gameplay.json: percent chance = ceilingPercent - scalePercent *
+    /// exp(perAggressiveness * pet Aggressiveness), held to 0-100. The defaults are the fit to live measurements: about
+    /// 50% for an untrimmed pet, about 15% at Aggressiveness 90, none from about 114. A scalePercent of 0 with a
+    /// ceilingPercent of 0 turns the flicker off.
+    /// </summary>
+    public sealed class GameplayPetOwnerAggroChance
+    {
+        public double CeilingPercent { get; init; } = 79.181;
+
+        public double ScalePercent { get; init; } = 28.683;
+
+        public double PerAggressiveness { get; init; } = 0.0088877;
+
+        public bool IsValid
+            => double.IsFinite(CeilingPercent) && double.IsFinite(ScalePercent) && double.IsFinite(PerAggressiveness);
+
+        /// <summary>The chance, 0 to 100, that the NPC attacks the owner instead of a pet with this Aggressiveness.</summary>
+        public double PercentFor(int aggressiveness)
+        {
+            double percent = CeilingPercent - ScalePercent * Math.Exp(PerAggressiveness * aggressiveness);
+            return double.IsFinite(percent) ? Math.Clamp(percent, 0, 100) : 0;
+        }
     }
 
     /// <summary>

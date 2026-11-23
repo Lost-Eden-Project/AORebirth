@@ -382,6 +382,20 @@ namespace AORebirth.Database.Domain.Quests
         }
 
         /// <summary>
+        /// The characters still holding <paramref name="questId"/> active with its objective unearned. A holder who has
+        /// earned it reads active until their reward transaction closes the row, but is finishing, not still playing it.
+        /// </summary>
+        public IList<int> LoadUnearnedQuestHolders(string questId)
+        {
+            if (string.IsNullOrEmpty(questId))
+                return new List<int>();
+
+            return Query("SELECT CharacterId FROM characterquests WHERE QuestId=@Quest AND State=1 "
+                + "AND (RequiredCount<=0 OR Progress<RequiredCount)",
+                r => r.GetInt32(0), "@Quest", questId);
+        }
+
+        /// <summary>
         /// Adds a copy of <paramref name="sourceKeyInstanceId"/> for the same quest: only while that key is still
         /// linked, its quest is unexpired and the quest has fewer than <paramref name="maxKeys"/> keys. The source
         /// link and the quest's key count are locked for the check. Returns the quest id, or null when refused.

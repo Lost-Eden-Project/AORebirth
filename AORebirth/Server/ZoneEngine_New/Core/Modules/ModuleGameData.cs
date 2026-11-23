@@ -2,6 +2,7 @@ namespace ZoneEngine_New.Core.Modules
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using System.Threading.Tasks;
 
     using AORebirth.Core.GameData;
@@ -31,6 +32,12 @@ namespace ZoneEngine_New.Core.Modules
 
         public Task<GameDataReloadResult> Reload(string name)
             => Task.Run(() => _registry.Value.Reload(name));
+
+        public Task<PlayfieldReloadResult> ReloadPlayfields(IReadOnlyCollection<int>? playfieldIds)
+        {
+            int[]? ids = playfieldIds?.ToArray();
+            return Task.Run(() => _registry.Value.ReloadPlayfields(ids));
+        }
     }
 
     /// <summary>Reload needs <c>gamedata-reload</c>; reading the override folder and the names needs nothing.</summary>
@@ -44,6 +51,12 @@ namespace ZoneEngine_New.Core.Modules
         {
             gate.Require(ModuleCapabilities.GameDataReload);
             return gameData.Reload(name);
+        }
+
+        public Task<PlayfieldReloadResult> ReloadPlayfields(IReadOnlyCollection<int>? playfieldIds)
+        {
+            gate.Require(ModuleCapabilities.GameDataReload);
+            return gameData.ReloadPlayfields(playfieldIds);
         }
     }
 }

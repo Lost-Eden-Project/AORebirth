@@ -19,6 +19,12 @@ namespace ZoneEngine_New.Core.GameData
         /// <summary>Normalized Collision.dat / Surfaces.dat meshes for World sim and tools.</summary>
         public PlayfieldCollisionSet? Collision { get; init; }
 
+        /// <summary>
+        /// PlayfieldContent DoorLandings.json: where arrivals at a listed door stand instead of in front of its frame,
+        /// keyed by door instance. Null when the playfield configures none.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyDictionary<int, (float X, float Y, float Z)>? DoorLandings { get; init; }
+
         public bool HasAny =>
             Walls != null
             || Dynels != null

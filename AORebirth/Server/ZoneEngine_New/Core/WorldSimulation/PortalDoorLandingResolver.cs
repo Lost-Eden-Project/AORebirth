@@ -312,6 +312,15 @@ namespace ZoneEngine_New.Core.WorldSimulation
                     continue;
 
                 heading = new Quaternion(dynel.Heading.X, dynel.Heading.Y, dynel.Heading.Z, dynel.Heading.W);
+                // A configured DoorLandings.json spot replaces the one in front of the frame, whatever the clearance.
+                if (identityType == (int)IdentityType.Door
+                    && geometry!.DoorLandings != null
+                    && geometry.DoorLandings.TryGetValue(destinationInstance, out (float X, float Y, float Z) configured))
+                {
+                    landing = new Vector3(configured.X, configured.Y, configured.Z);
+                    return true;
+                }
+
                 var position = new Vector3(dynel.Position.X, dynel.Position.Y, dynel.Position.Z);
                 landing = LandingInFront(position, heading, clearance);
                 return true;

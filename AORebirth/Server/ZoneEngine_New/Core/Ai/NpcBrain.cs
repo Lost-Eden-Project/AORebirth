@@ -575,6 +575,7 @@ namespace ZoneEngine_New.Core.Ai
             deltaTime = _thinkElapsed;
             _thinkElapsed = 0;
             _thinkSerial++;
+            _aggroHoldSeconds -= deltaTime;
             LastThinkUtc = DateTime.UtcNow;
 
             if (_treeResetPending)
@@ -730,7 +731,7 @@ namespace ZoneEngine_New.Core.Ai
             // its retinue, but a retinue mob with a short one does not reach the boss beside it.
             int callRadius = SpawnAssistanceRadius();
             // A mission dungeon's population scales how far the call carries (its HelpRangePercent).
-            float helpScale = playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon ? dungeon.HelpRangeScale : 1f;
+            float helpScale = playfield is ZoneEngine_New.Core.Playfield.AcgDungeonPlayfield dungeon ? dungeon.HelpRangeScale : 1f;
             playfield.GetRequiredService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>().CollectNearby(Npc,
                 rules.SearchRadius * Math.Max(1f, helpScale), _nearbyNpcs);
             _helpers.Clear();
@@ -806,6 +807,7 @@ namespace ZoneEngine_New.Core.Ai
             Hate.Clear();
             _threatOnlyCalls.Clear();
             _currentTarget = Identity.None;
+            _aggroHoldSeconds = 0;
             _approachTarget = Identity.None;
             _engageTarget = Identity.None;
             _lastChanceUtc = default;
@@ -845,7 +847,7 @@ namespace ZoneEngine_New.Core.Ai
 
             // A mission dungeon's NPCs are one population: none defends a player against another (a guard-flagged
             // mission mob would turn on the objective) or attacks a family it hates.
-            if ((guard || hated != null) && Npc.Playfield is not ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield)
+            if ((guard || hated != null) && Npc.Playfield is not ZoneEngine_New.Core.Playfield.AcgDungeonPlayfield)
             {
                 // Its own list: answering a call for help below collects into _nearbyNpcs.
                 locality.CollectNearby(Npc, range, _scanNpcs);
@@ -1039,7 +1041,7 @@ namespace ZoneEngine_New.Core.Ai
             bool indoor = playfield?.MetaData?.IsIndoor ?? true;
             var rules = playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.ProximityAggro;
             float range = NpcAiRules.ProximityAggroRangeFor(Npc.Stats, indoor, rules);
-            return playfield is ZoneEngine_New.Core.Playfield.QuestDungeonPlayfield dungeon ? range * dungeon.AggroRangeScale : range;
+            return playfield is ZoneEngine_New.Core.Playfield.AcgDungeonPlayfield dungeon ? range * dungeon.AggroRangeScale : range;
         }
 
         /// <summary>
@@ -1156,8 +1158,45 @@ namespace ZoneEngine_New.Core.Ai
                 return false;
             }
 
-            _currentTarget = BreakThreatTie(identity, top);
+            ZoneEngine_New.Core.Configuration.GameplaySettings? settings
+                = Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>();
+
+            // Aggro is decided on its own interval (Gameplay.json aggroIntervalSeconds): until the next decision the NPC
+            // stays on a target that is still on its hate list and in reach, whoever has passed it since.
+            if (_aggroHoldSeconds > 0 && _currentTarget.Instance != 0
+                && Hate.Contains(_currentTarget) && _isEngageable(_currentTarget))
+                return true;
+
+            _aggroHoldSeconds = settings?.AggroIntervalSeconds ?? 0;
+            _currentTarget = PetOwnerAggro(BreakThreatTie(identity, top), settings?.Pets);
             return true;
+        }
+
+        /// <summary>Seconds until this NPC next decides who to attack; at or below 0 the next selection decides.</summary>
+        double _aggroHoldSeconds;
+
+        /// <summary>Rolls the pet/owner aggro flicker. Replaced in tests for a fixed roll.</summary>
+        internal Random AggroRandom { get; set; } = Random.Shared;
+
+        /// <summary>
+        /// The pet/owner flicker (Gameplay.json pets.ownerAggroChance): when the top threat is a player's pet and the
+        /// owner is on the hate list and in reach, each aggro decision rolls whether the NPC attacks the owner or the
+        /// pet. The chance falls with the pet's Aggressiveness. The NPC only switches to one it can see; failing that it
+        /// stays on its current one of the two. Only pet and owner flicker: other players keep plain threat order.
+        /// </summary>
+        Identity PetOwnerAggro(Identity top, ZoneEngine_New.Core.Configuration.GameplayPets? rules)
+        {
+            if (rules?.OwnerAggroChance is not { } chance
+                || Resolve(top) is not NpcCharacter { PetOwner: Player owner } pet
+                || !Hate.Contains(owner.Identity) || !_isEngageable(owner.Identity))
+                return top;
+
+            double percent = chance.PercentFor(pet.Stats.GetOrZero(CharacterStat.Aggressiveness));
+            Character wanted = AggroRandom.NextDouble() * 100 < percent ? owner : pet;
+            if (wanted.Identity == _currentTarget || Npc.HasLineOfSightTo(wanted))
+                return wanted.Identity;
+
+            return _currentTarget == owner.Identity ? owner.Identity : top;
         }
 
         /// <summary>

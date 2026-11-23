@@ -946,6 +946,8 @@ namespace ZoneEngine_New.Core.Playfield
                 services.AddSingleton(_playfieldManager.Quests);
             if (_playfieldManager.QuestDungeons != null)
                 services.AddSingleton(_playfieldManager.QuestDungeons);
+            if (_playfieldManager.StaticDungeons != null)
+                services.AddSingleton(_playfieldManager.StaticDungeons);
             if (_playfieldManager.Knubot != null)
                 services.AddSingleton(_playfieldManager.Knubot.Catalog);
             if (_playfieldManager.NpcScripts != null)

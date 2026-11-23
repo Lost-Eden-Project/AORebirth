@@ -1,0 +1,1 @@
+- Fixed: Entering Camelot no longer leaves you stuck in the staircase by the door.

@@ -1,0 +1,7 @@
+{
+  "SchemaVersion": 1,
+  "PlayfieldId": 120,
+  "Doors": [
+    { "Instance": "C01F0078", "X": 218.0, "Y": 23.4, "Z": 187.5 }
+  ]
+}

@@ -309,6 +309,20 @@ copy acceptance state between checkouts or bypass the public-source checks.
   SHA (`git diff --name-only --diff-filter=A <live> <accepted> -- changelog/entries/`), grouped as Added, Changed,
   Fixed, Removed. Deployment never edits, moves or deletes entry files. An unknown live SHA means ask, not guess.
 
+## GameData and Config schemas
+
+`AORebirth/Schemas/*.schema.json` must match the C# types the server loads. The website copies these schemas
+and refuses any GameData upload that fails them, so a stale schema blocks content uploads.
+
+- Every commit that adds, removes, renames or retypes a property the server reads from a schema-covered file
+  (MonsterCombatRules, NpcTemplates, Gameplay, QuestRewards, Quests, Xp) regenerates the schemas in that same commit:
+  `dotnet run --project Tools/GameDataSchemas`. Commit every schema file the run changes.
+- Never hand-edit a generated schema. Extra constraints (`minimum`, `maximum`, `enum`, `pattern`, item shapes) go in
+  `Tools/GameDataSchemas/Program.cs` so the next regeneration keeps them.
+- `NpcScripts.schema.json` is not generated. Update it by hand in the same commit as any change to the NPC script
+  types it describes.
+- A new loaded GameData or Config file that people edit gets a schema the same way: a `Write` call in the generator.
+
 ## Existing architecture and scope
 
 Before introducing an abstraction, replacement system, build or configuration

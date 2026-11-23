@@ -90,7 +90,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly IItemBuilder _items;
         readonly IItemInstanceIdAllocator _ids;
         readonly InventoryFlushService _flush;
-        readonly InventoryActionService _inventoryActions;
         readonly Lazy<PlayfieldManager> _playfields;
         readonly IGameData _gameData;
         readonly HashItemMinter? _hashItems;
@@ -129,7 +128,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             _items = items ?? throw new ArgumentNullException(nameof(items));
             _ids = ids ?? throw new ArgumentNullException(nameof(ids));
             _flush = flush ?? throw new ArgumentNullException(nameof(flush));
-            _inventoryActions = inventoryActions ?? throw new ArgumentNullException(nameof(inventoryActions));
+            ArgumentNullException.ThrowIfNull(inventoryActions);
             _playfields = playfields ?? throw new ArgumentNullException(nameof(playfields));
             _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -699,7 +698,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             lock (player.PersistenceGate)
             {
                 if (player.IsPersistenceQuarantined || player.IsDead || player.Session is not IZoneSession session
-                    || player.Playfield is not Playfield playfield || playfield is QuestDungeonPlayfield
+                    || player.Playfield is not Playfield playfield || playfield is AcgDungeonPlayfield
                     || playfield.Identity.Instance != entrance.PlayfieldId || !WithinEntrance(player, entrance)
                     || !TryBeginRequest(player))
                     return false;
@@ -900,14 +899,19 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         {
             PlayfieldManager playfields = _playfields.Value;
             if (!QuestDungeonIds.TryGetQuestId(storedPlayfield, out string questId))
-                throw new ArgumentOutOfRangeException(nameof(storedPlayfield));
+            {
+                // Not a quest dungeon's id (a static instance with no static dungeon service): nothing to come back to.
+                if (!QuestDungeonIds.IsDungeonPlayfield(storedPlayfield))
+                    throw new ArgumentOutOfRangeException(nameof(storedPlayfield));
+                questId = string.Empty;
+            }
 
             if (playfields.TryGetQuestDungeon(storedPlayfield, out QuestDungeonPlayfield live))
             {
                 return (live, null, null);
             }
 
-            if (TryGetDungeon(questId, out CachedDungeon dungeon)
+            if (questId.Length > 0 && TryGetDungeon(questId, out CachedDungeon dungeon)
                 && _entrances.TryGetByIdentity(unchecked((uint)dungeon.Parameters.EntranceType), unchecked((uint)dungeon.Parameters.EntranceInstance), out MissionEntrancePlacement entrance))
             {
                 if (!dungeon.Ended && dungeon.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks && dungeon.Parameters.DungeonPlayfield == storedPlayfield
@@ -1093,7 +1097,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             {
                 // A team mission stays open while any member still holds it: one member finishing, leaving or deleting
                 // it ends only their part. The last holder's end (or expiry, through the sweep) ends the dungeon.
-                if (quest.Template.IsTeamScope && _store.LoadActiveQuestHolders(quest.QuestId).Count > 0)
+                if (quest.Template.IsTeamScope && OtherHoldersKeepItOpen(player, quest))
                 {
                     _logger.Info(string.Format(CultureInfo.InvariantCulture,
                         "Team mission part ended char={0} quest={1} state={2}; other members still hold it",
@@ -1109,6 +1113,22 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 // The expiry sweep retries: the quest's key links are still there.
                 _logger.Error(exception, "Ending dungeon for quest " + quest.QuestId + " failed; the sweep will retry");
             }
+        }
+
+        /// <summary>
+        /// Whether a team mission stays open after <paramref name="player"/>'s part ended. Their own row is not counted:
+        /// it is closed by their own commit (a completion's reward transaction) and still reads active here. A completion
+        /// waits only for holders who have not earned the objective; one who has is finishing too, and ends nothing by
+        /// waiting (bug #664: a key stayed in the finisher's inventory). Failing, abandoning or expiring a part evicts
+        /// whoever is inside, so then any other active holder, earned or not, keeps it open.
+        /// </summary>
+        internal bool OtherHoldersKeepItOpen(Player player, PlayerQuest quest)
+        {
+            IList<int> holders = quest.State == QuestState.Completed
+                ? _store.LoadUnearnedQuestHolders(quest.QuestId)
+                : _store.LoadActiveQuestHolders(quest.QuestId);
+            int self = player.Identity.Instance;
+            return holders.Any(holder => holder != self);
         }
 
         /// <summary>
@@ -1205,7 +1225,10 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                     if (artifact != null && instance == artifact.Instance)
                         at.DispatchPlayerProjection(online, () => RemoveMissionArtifactInMemory(online, artifact, key));
                     else
-                        at.DispatchPlayerProjection(online, () => RemoveKeyInMemory(online, instance));
+                    {
+                        int bag = key.ContainerType == (int)IdentityType.Container ? key.ContainerInstance : 0;
+                        at.DispatchPlayerProjection(online, () => RemoveKeyInMemory(online, instance, bag));
+                    }
                 }
             }
 
@@ -1481,31 +1504,86 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         }
 
         /// <summary>
-        /// Drops a retired key from the holder's pages through the normal inventory delete (so no pending save can
-        /// write it back) and tells the client. Keys inside bags are left until that bag next loads, where the
-        /// retired row is no longer read.
+        /// Drops a key whose row the store has already retired (EndQuestKeys, RetireUnlinkedKeys) from the holder's
+        /// pages, or from a bag whose page is loaded (opened this session), and tells the client. Memory follows the
+        /// committed retirement: the retired dirty entry replaces any queued location save of the key, so no later flush
+        /// writes it back. Nothing is committed here, so it also holds while the session is between zones (bug #664: a
+        /// mission ending during the zone-out reconnect was refused by the inventory delete, which needs InPlay, and the
+        /// key stayed until relog). A bag not loaded yet never reads the retired row when it loads.
         /// </summary>
-        void RemoveKeyInMemory(Player player, int keyInstanceId)
+        /// <param name="bagInstance">The bag the store last had the key in, or 0: other loaded bags are searched too,
+        /// since the key may have moved between bags after that row was read.</param>
+        internal void RemoveKeyInMemory(Player player, int keyInstanceId, int bagInstance = 0)
         {
-            if (!player.Inventory.IsHydrated)
-                return;
-
-            foreach ((IdentityType pageType, Container page) in DeletablePages(player))
+            lock (player.PersistenceGate)
             {
-                foreach (KeyValuePair<int, Item> entry in page.Content)
-                {
-                    if (entry.Value.InstanceId != keyInstanceId || entry.Value.LowId != KeyLowId)
-                        continue;
-
-                    var slot = new Identity { Type = pageType, Instance = entry.Key };
-                    if (_inventoryActions.TryDelete(player, slot, keyInstanceId))
-                        player.Session?.Send(new CharacterActionMessage
-                        {
-                            Identity = player.Identity,
-                            Action = CharacterActionType.DeleteItem,
-                            Target = slot
-                        });
+                if (!player.Inventory.IsHydrated)
                     return;
+
+                foreach ((IdentityType pageType, Container page) in DeletablePages(player))
+                {
+                    if (!TryDiscardKey(player, page, keyInstanceId, out int slot))
+                        continue;
+                    player.Session?.Send(new CharacterActionMessage
+                    {
+                        Identity = player.Identity,
+                        Action = CharacterActionType.DeleteItem,
+                        Target = new Identity { Type = pageType, Instance = slot }
+                    });
+                    return;
+                }
+
+                foreach (Container bag in LoadedBags(player, bagInstance))
+                {
+                    if (!TryDiscardKey(player, bag, keyInstanceId, out _))
+                        continue;
+                    // A closed bag shows its page as it is now when next opened.
+                    if (bag.IsOpen && bag.InventoryHandle > 0)
+                        player.Session?.Send(bag.BuildInventoryUpdateMessage(player.Identity, bag.Identity,
+                            bag.InventoryHandle, unknown1: 3, unknown2: 1));
+                    return;
+                }
+            }
+        }
+
+        bool TryDiscardKey(Player player, Container page, int keyInstanceId, out int slot)
+        {
+            foreach (KeyValuePair<int, Item> entry in page.Content)
+            {
+                Item key = entry.Value;
+                if (key.InstanceId != keyInstanceId || key.LowId != KeyLowId)
+                    continue;
+
+                slot = entry.Key;
+                player.InvalidateOwnedItemCache();
+                player.Inventory.Discard(key, new Identity { Type = IdentityType.None, Instance = 0 });
+                page.Content.Remove(slot);
+                _flush.NotifyDirty(player);
+                Modules.ModuleHooks.ItemMoved(player, key, ItemPlaces.Of(page),
+                    Modules.ModuleHooks.Place(AORebirth.Modules.Events.ItemPlaceKind.Destroyed));
+                return true;
+            }
+
+            slot = -1;
+            return false;
+        }
+
+        /// <summary>The loaded page of the named bag first, then those of every bag on the player's pages and bank.</summary>
+        static IEnumerable<Container> LoadedBags(Player player, int bagInstance)
+        {
+            PlayerInventory inventory = player.Inventory;
+            if (bagInstance > 0
+                && inventory.TryGetBackpackPage(new Identity { Type = IdentityType.Container, Instance = bagInstance }, out Container named)
+                && named.IsHydrated)
+                yield return named;
+
+            foreach ((_, Container page) in DeletablePages(player))
+            {
+                foreach (Item item in page.Content.Values.ToArray())
+                {
+                    if (item.Identity.Instance != bagInstance && InventoryMoveService.IsBagItem(item)
+                        && inventory.TryGetBackpackPage(item.Identity, out Container bag) && bag.IsHydrated)
+                        yield return bag;
                 }
             }
         }
@@ -1574,7 +1652,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             return Array.IndexOf(OwnedContainerTypes, key.ContainerType) >= 0 ? key.ContainerInstance : 0;
         }
 
-        static bool WithinEntrance(Player player, MissionEntrancePlacement entrance)
+        /// <summary>Whether the player stands at the entrance: within its walk-in reach horizontally and a storey vertically.</summary>
+        internal static bool WithinEntrance(Player player, MissionEntrancePlacement entrance)
         {
             double dx = player.Position.x - entrance.LocalX;
             double dz = player.Position.z - entrance.LocalZ;
@@ -1618,7 +1697,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>
         /// A new granted mission item (key or repair source item): SimpleItemFullUpdate creates the named item in
         /// the overflow window (the client takes the first free overflow placement), then ContainerAddItem moves
-        /// overflow placement 0 to the first free inventory slot. The client only places an item it already knows,
+        /// that placement to the first free inventory slot. The client only places an item it already knows,
         /// so the item update comes first. TemplateAction Use only plays the item's use animation; it moves nothing.
         /// No TemplateAction Overflow is sent: the client adds a second, template-named copy at overflow placement 0
         /// for it, and the next grant's ContainerAddItem then moves that copy into the inventory instead of the item
@@ -1632,12 +1711,15 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             if (player.Session == null || player.Playfield == null)
                 return;
 
+            // The client puts the item at its first empty overflow placement; the move names that one, not 0, or an
+            // older overflow item moves instead (team request 10).
+            int placement = OverflowGrants.NextClientPlacement(player);
             SendNamedMissionItem(player, item, name, OverflowSlot);
             player.Session.Send(new ContainerAddItem
             {
                 Identity = player.Identity,
                 Unknown = 0,
-                Source = new Identity { Type = IdentityType.OverflowWindow, Instance = 0 },
+                Source = new Identity { Type = IdentityType.OverflowWindow, Instance = placement },
                 Target = new Identity { Type = IdentityType.OverflowWindow, Instance = player.Identity.Instance },
                 Slot = OverflowSlot
             });

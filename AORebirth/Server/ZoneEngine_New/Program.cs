@@ -124,6 +124,7 @@ namespace ZoneEngine_New
                 _ = rootServices.GetRequiredService<InventoryFlushService>();
                 // Subscribes to quest endings and starts the dungeon expiry and idle-release sweep.
                 _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>();
+                _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService>();
                 // Starts the sweep that removes characters of accounts suspended or banned since they logged in.
                 _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Accounts.AccountSanctionService>();
                 // Hooks player registration and other instances' organization changes before any client connects.
@@ -406,6 +407,11 @@ namespace ZoneEngine_New
                 AORebirth.Core.GameData.GameDataPaths.ResolveRuntimeRoot()));
             services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.DungeonLayoutGenerator>();
             services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.QuestDungeonService>();
+            // Static dungeons (GameData/Dungeons/Static): fixed ACG dungeons behind world doors, one instance per team.
+            services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonCatalog>();
+            services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.Static.IStaticDungeonInstanceStore,
+                ZoneEngine_New.Core.Quests.Dungeons.Static.MySqlStaticDungeonInstanceStore>();
+            services.AddSingleton<ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService>();
             services.AddSingleton<ZoneEngine_New.Core.Modules.ModuleMissionRolls>();
 
             //NPC scripts (GameData/NpcScripts)
@@ -420,6 +426,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.MonsterCombatRulesReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcTemplatesReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NpcScriptsReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.ItemTemplatesReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.ItemsDatReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.KnubotReload>();
@@ -452,6 +459,7 @@ namespace ZoneEngine_New
             services.AddSingleton<IGmCommand, AnnounceCommand>();
             services.AddSingleton<IGmCommand, DespawnCommand>();
             services.AddSingleton<IGmCommand, PlayfieldCommand>();
+            services.AddSingleton<IGmCommand, StaticDungeonCommand>();
             services.AddSingleton<IGmCommand, ClearShopStockCommand>(); // TEMP: remove once shops are fixed.
             services.AddSingleton<IGmCommand, VisibilityCommand>();
             services.AddSingleton<IGmCommand, ModuleCommand>();
