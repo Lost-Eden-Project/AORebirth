@@ -1,0 +1,1 @@
+- Fixed: A pair of connecting doors that said the exit's destination is unknown now take you through to the other side, and you no longer arrive partly sunk into the floor.
