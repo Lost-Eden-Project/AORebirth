@@ -59,7 +59,8 @@ public sealed partial class QuestService
             if (!CanDeliver(player) || _completionDao == null || !quest.IsActive || quest.IsRewardPending
                 || !QuestDungeonParameters.TryParse(quest.AcgBuildingGeneratorJson, out var parameters)
                 || parameters.ObjectiveNpc is not { IsValid: true } binding
-                || binding.MissionType != (targeted ? 1 : 0)
+                // Selecting completes only Find Person; a kill completes Kill Person, and Find Person when its target dies.
+                || (targeted ? binding.MissionType != 1 : binding.MissionType is not (0 or 1))
                 // A team mission's target counts for every member holding it; the database binds the holder's own row.
                 || (binding.OwnerId != player.Identity.Instance && !quest.Template.IsTeamScope)
                 || binding.QuestId != quest.QuestId || npc.Identity != binding.Identity
@@ -501,7 +502,7 @@ public sealed partial class QuestService
                 if (quest.SharedEarnPending)
                     BeginBoundObjectiveEarn(player, quest, parameters, removal: null, quest.SharedRewardChance, share: false,
                         earned: null, failed: null);
-                else if (parameters.ObjectiveNpc is { IsValid: true, MissionType: 0 })
+                else if (parameters.ObjectiveNpc is { IsValid: true, MissionType: 0 or 1 })
                     BeginBoundObjectiveEarn(player, quest, parameters, removal: null, sharedChance: null, share: true,
                         earned: null, failed: null);
             }

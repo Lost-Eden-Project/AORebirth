@@ -1,0 +1,1 @@
+- Fixed: Locate a person missions now complete if you kill the person you were sent to find, instead of leaving the mission impossible to finish.

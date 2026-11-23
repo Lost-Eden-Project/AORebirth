@@ -553,7 +553,9 @@ namespace ZoneEngine_New.Core.Quests
                 List<PlayerQuest>? advanced = null;
                 foreach (PlayerQuest quest in GetLog(player).Quests.Values)
                 {
-                    if (quest.IsActive && quest.Template.IsKill && RequiresBoundObjective(quest))
+                    // A Find Person target can be fought; killing it locates it too, since nothing else can complete it then.
+                    if (quest.IsActive && RequiresBoundObjective(quest)
+                        && (quest.Template.IsKill || quest.Template.Action == QuestTemplate.TargetNpcAction))
                     {
                         TryEarnNpcObjective(player, quest, npc, targeted: false);
                         continue;
