@@ -349,6 +349,33 @@ namespace ZoneEngine_New.Core.Ai
                 : new Vector3(owner.x, owner.y, owner.z);
         }
 
+        /// <summary>
+        /// Where the pet stands to fight <paramref name="enemy"/>: its own spot around it
+        /// (<see cref="PetFormation.AttackPoint"/>), on the navmesh. That spot keeps the enemy's height, so beside an
+        /// enemy on a slope it lies under the ground uphill (or above it downhill) and no route ends there: the pet
+        /// stood still for ever. It is put on the ground under it; a spot that lands more than
+        /// <see cref="FollowSnapMeters"/> aside (inside a wall, past a ledge) is given up for the enemy's own spot.
+        /// </summary>
+        public static Vector3 AttackSpot(NpcBrain brain, Character enemy, int index)
+        {
+            Vector3 spot = PetFormation.AttackPoint(brain.Npc, enemy, index, AttackReach);
+            AORebirth.World.Pathfinding.NavMeshPathfinder? finder = brain.Npc.Playfield?.Pathfinder;
+            if (finder == null)
+                return spot;
+
+            var wanted = new System.Numerics.Vector3(spot.xf, spot.yf, spot.zf);
+            if (finder.IsDestinationOnMesh(wanted))
+                return spot;
+
+            if (finder.TrySnap(wanted, out System.Numerics.Vector3 onMesh)
+                && MathF.Abs(onMesh.X - wanted.X) <= FollowSnapMeters && MathF.Abs(onMesh.Z - wanted.Z) <= FollowSnapMeters
+                && finder.IsDestinationOnMesh(onMesh))
+                return new Vector3(onMesh.X, onMesh.Y, onMesh.Z);
+
+            Vector3 at = enemy.Position;
+            return new Vector3(at.x, at.y, at.z);
+        }
+
         /// <summary>Fighting the owner or the pet, or being fought by the owner.</summary>
         static bool IsEngaged(Character enemy, Character owner, NpcCharacter pet)
             => enemy.FightingTarget == owner.Identity || enemy.FightingTarget == pet.Identity
@@ -499,7 +526,11 @@ namespace ZoneEngine_New.Core.Ai
 
             // Each pet closes in at its own spot around the enemy, so several pets do not stack on one point.
             int index = _brain.Pet!.Owner.OwnedPets.FormationIndex(npc);
-            _brain.PathTo(PetFormation.AttackPoint(npc, enemy, index, PetAi.AttackReach));
+            _brain.PathTo(PetAi.AttackSpot(_brain, enemy, index));
+
+            // No route to its spot: close in on the enemy itself instead of standing still.
+            if (!npc.Motor.HasPath)
+                _brain.PathTo(enemy.Position);
             return _nodeState = NodeState.Running;
         }
     }

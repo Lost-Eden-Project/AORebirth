@@ -1,0 +1,1 @@
+- Fixed: Pets sent to attack a monster standing on a slope now go after it instead of standing still.
