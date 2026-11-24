@@ -134,10 +134,13 @@ namespace ZoneEngine_New.Core.Pets
 
         readonly Dictionary<string, int> _types;
 
-        PetTypeCatalog(int defaultType, Dictionary<string, int> types)
+        readonly HashSet<string> _mezzPets;
+
+        PetTypeCatalog(int defaultType, Dictionary<string, int> types, HashSet<string> mezzPets)
         {
             DefaultType = defaultType;
             _types = types;
+            _mezzPets = mezzPets;
         }
 
         public int DefaultType { get; }
@@ -154,19 +157,30 @@ namespace ZoneEngine_New.Core.Pets
         public int TypeOf(string hash)
             => !string.IsNullOrWhiteSpace(hash) && _types.TryGetValue(hash.Trim(), out int type) ? type : DefaultType;
 
+        /// <summary>
+        /// <paramref name="hash"/> is listed under MezzPets (the Metaphysicist's mezz pets): it follows when summoned
+        /// and when told to guard, and only fights when sent at a target. Other pets of its slot (an Engineer's dog,
+        /// a Bureaucrat's support pet) guard like any fighting pet.
+        /// </summary>
+        public bool IsMezzPet(string hash)
+            => !string.IsNullOrWhiteSpace(hash) && _mezzPets.Contains(hash.Trim());
+
         sealed class CatalogFile
         {
             public int DefaultType { get; set; } = PetTypes.Attack;
 
             public Dictionary<string, int> Types { get; set; } = new();
+
+            public List<string> MezzPets { get; set; } = new();
         }
 
         static PetTypeCatalog Load(string root)
         {
             var types = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var mezzPets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string path = Path.Combine(root, FileName);
             if (!File.Exists(path))
-                return new PetTypeCatalog(PetTypes.Attack, types);
+                return new PetTypeCatalog(PetTypes.Attack, types, mezzPets);
 
             CatalogFile? file = JsonSerializer.Deserialize<CatalogFile>(File.ReadAllText(path),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -176,8 +190,14 @@ namespace ZoneEngine_New.Core.Pets
                     types[entry.Key.Trim()] = entry.Value;
             }
 
+            foreach (string hash in file?.MezzPets ?? new())
+            {
+                if (!string.IsNullOrWhiteSpace(hash))
+                    mezzPets.Add(hash.Trim());
+            }
+
             int fallback = file?.DefaultType > 0 ? file.DefaultType : PetTypes.Attack;
-            return new PetTypeCatalog(fallback, types);
+            return new PetTypeCatalog(fallback, types, mezzPets);
         }
     }
 }

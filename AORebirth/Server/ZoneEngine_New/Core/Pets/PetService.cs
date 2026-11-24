@@ -79,7 +79,7 @@ namespace ZoneEngine_New.Core.Pets
 
             var controller = new PetController(owner, type, hash, level, expires, summonRequirements);
             if (owner is Player)
-                controller.Order(DefaultMode(type));
+                controller.Order(DefaultMode(type, hash));
 
             int index = owner.OwnedPets.Count;
             Vector3 at = _playfield.SnapNpcSpawn(PetFormation.PointFor(owner, index));
@@ -603,7 +603,7 @@ namespace ZoneEngine_New.Core.Pets
                             controller.Order(PetMode.Guard);
                             controller.EndHeal();
                         }
-                        else if (IsMezzPet(controller.Type))
+                        else if (IsMezzPet(controller.Hash))
                         {
                             controller.Order(PetMode.Follow);
                             StandDown(pet);
@@ -795,15 +795,18 @@ namespace ZoneEngine_New.Core.Pets
 
         static bool IsHealPet(int type) => PetTypes.Slot(type) == PetTypes.Slot(PetTypes.Heal);
 
-        /// <summary>The Metaphysicist's mezz pet: it only fights when sent at a target.</summary>
-        static bool IsMezzPet(int type) => PetTypes.Slot(type) == PetTypes.Slot(PetTypes.Support);
+        /// <summary>
+        /// The Metaphysicist's mezz pet (PetTypes.json MezzPets): it only fights when sent at a target. It shares the
+        /// Support slot with pets that do guard (an Engineer's dog), so the slot alone does not make a mezz pet.
+        /// </summary>
+        bool IsMezzPet(string hash) => Types.IsMezzPet(hash);
 
         /// <summary>
         /// A newly summoned heal pet follows until told to heal or guard, a mezz pet follows until sent at a
         /// target, and a social pet always follows; other pets guard.
         /// </summary>
-        static PetMode DefaultMode(int type)
-            => IsHealPet(type) || IsMezzPet(type) || PetTypes.NeverFights(type) ? PetMode.Follow : PetMode.Guard;
+        PetMode DefaultMode(int type, string hash)
+            => IsHealPet(type) || IsMezzPet(hash) || PetTypes.NeverFights(type) ? PetMode.Follow : PetMode.Guard;
 
         IEnumerable<NpcCharacter> ResolveOwned(Player owner, IReadOnlyList<Identity> petIdentities)
         {

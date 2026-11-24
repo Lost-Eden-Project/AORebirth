@@ -1,0 +1,1 @@
+- Fixed: Engineer support pets now guard you when told to guard, instead of only following.
