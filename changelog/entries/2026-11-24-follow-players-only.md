@@ -1,0 +1,1 @@
+- Changed: /follow now works only on other players; it no longer follows NPCs.

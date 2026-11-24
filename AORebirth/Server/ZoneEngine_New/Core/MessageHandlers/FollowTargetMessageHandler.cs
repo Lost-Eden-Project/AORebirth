@@ -66,10 +66,11 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (target.Instance == 0 || target.Instance == player.Identity.Instance)
                 return;
 
+            // Only another player can be followed; a /follow on an NPC gets no ack, so the client never starts it.
             Playfield? playfield = player.Playfield;
             if (playfield == null
                 || !playfield.GetRequiredService<DynelRegistry>().TryGet(target, out Dynel? dynel)
-                || dynel is not Character followed
+                || dynel is not Player followed
                 || followed.IsDead
                 || !playfield.GetRequiredService<PlayfieldLocality>().IsVisibleTo(followed, player))
                 return;
