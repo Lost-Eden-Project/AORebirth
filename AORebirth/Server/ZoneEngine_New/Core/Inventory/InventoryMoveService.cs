@@ -52,6 +52,9 @@ namespace ZoneEngine_New.Core.Inventory
             _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         }
 
+        /// <summary>The engine's one inventory action service, which each playfield's services expose too.</summary>
+        internal InventoryActionService Actions => _actions;
+
         public void CancelPending(int characterId)
         {
             PendingEquip? pending;

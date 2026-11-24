@@ -85,6 +85,32 @@ public sealed class ChestNeedGreedTests
         rig.AssertNoFailure();
     }
 
+    /// <summary>
+    /// Bug 651: one member needs, the other passes, and the chest roll ended "Nobody won; it is free to loot" because the
+    /// playfield's services had no inventory action service to move the won row with. The needer must get the item.
+    /// </summary>
+    [TestMethod]
+    public void TheOnlyNeedRollerGetsTheChestItemOnTheEnginesOwnPlayfieldServices()
+    {
+        using var rig = new Rig();
+        rig.FormTeam(TeamLootMode.NeedOrGreed);
+        Item rapier = rig.Stock(0, 51500051);
+        Assert.IsNotNull(rig.Playfield.GetService<InventoryActionService>(), "the playfield exposes the inventory action service");
+
+        Assert.IsTrue(rig.Chest.TryUse(rig.Member), "the member opens the chest");
+        rig.Loot(rig.Member, "need");
+        rig.Loot(rig.Leader, "pass");
+
+        Assert.AreEqual(0, rig.Chest.Loot.Content.Count, "the rapier left the chest");
+        Assert.AreSame(rapier, rig.Member.Inventory.Inventory.Content.Values.Single(), "the needer holds the rapier");
+        Assert.AreEqual(0, rig.Leader.Inventory.Inventory.Content.Count);
+        rig.Flush.HardFlush(rig.Member);
+        rig.AssertStorageMatchesMemory(rapier);
+        Assert.IsTrue(rig.Chest.TryUse(rig.Leader), "the leader reopens the chest");
+        Assert.AreEqual(0, rig.Chest.Loot.Content.Count, "a reopen does not offer the rapier again");
+        rig.AssertNoFailure();
+    }
+
     [TestMethod]
     public void HeldItemsStayHeldWhenAReopenRebuildsThemFromTheirRows()
     {
@@ -178,7 +204,7 @@ public sealed class ChestNeedGreedTests
         internal readonly Session MemberSession = new();
         internal readonly Player Leader;
         internal readonly Player Member;
-        internal readonly DynelRegistry Registry = new();
+        internal readonly DynelRegistry Registry;
         internal readonly InventoryFlushService Flush;
         internal readonly InventoryActionService Actions;
         internal readonly TeamService Teams;
@@ -199,13 +225,34 @@ public sealed class ChestNeedGreedTests
             Teams.AttachPlayer(Leader);
             Teams.AttachPlayer(Member);
 
+            // The playfield's own service graph, as the engine builds it (bug 651: a hand-built one registered the
+            // inventory action service the real one lacked, so every chest win fell through to "Nobody won").
             Playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
-            _services = new ServiceCollection().AddSingleton(Registry).AddSingleton(Flush).AddSingleton(Actions)
-                .AddSingleton(Teams).AddSingleton(new LootRollService(Playfield, Registry, Flush, Log))
-                .BuildServiceProvider();
+            var manager = (PlayfieldManager)RuntimeHelpers.GetUninitializedObject(typeof(PlayfieldManager));
+            SetOn(manager, "<Teams>k__BackingField", Teams);
+            SetOn(manager, "<ItemTemplates>k__BackingField", RuntimeHelpers.GetUninitializedObject(typeof(ItemTemplateCatalog)));
             SetField("<Identity>k__BackingField", new Identity { Type = IdentityType.Playfield, Instance = 4582 });
             SetField("<ResourceId>k__BackingField", 4582);
+            SetField("<Geometry>k__BackingField", new PlayfieldGeometryData());
+            SetField("_playfieldManager", manager);
+            SetField("_logger", Log);
+            SetField("_playerHydrator", RuntimeHelpers.GetUninitializedObject(typeof(PlayerHydrator)));
+            SetField("_gameData", RuntimeHelpers.GetUninitializedObject(typeof(GameDataStore)));
+            SetField("_items", _items);
+            SetField("_hashItems", RuntimeHelpers.GetUninitializedObject(typeof(HashItemMinter)));
+            SetField("_inventoryRepository", RuntimeHelpers.GetUninitializedObject(typeof(MySqlInventoryRepository)));
+            SetField("_instanceIds", new Ids());
+            SetField("_inventoryMoves", new InventoryMoveService(Log, Flush, Actions));
+            SetField("_inventoryFlush", Flush);
+            SetField("_trades", RuntimeHelpers.GetUninitializedObject(typeof(Core.Trade.TradeService)));
+            SetField("_characterSnapshot", RuntimeHelpers.GetUninitializedObject(typeof(CharacterSnapshotService)));
+            SetField("_shopDao", new Shops());
+            var build = (IServiceCollection)typeof(Playfield).GetMethod("BuildServices", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(Playfield, null)!;
+            _services = build.BuildServiceProvider();
             SetField("_serviceProvider", _services);
+            Registry = _services.GetRequiredService<DynelRegistry>();
+            SetField("_dynelRegistry", Registry);
 
             foreach (Player player in new[] { Leader, Member })
             {
@@ -226,8 +273,11 @@ public sealed class ChestNeedGreedTests
             Registry.Register(Chest);
         }
 
-        void SetField(string name, object value)
-            => typeof(Playfield).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Playfield, value);
+        void SetField(string name, object value) => SetOn(Playfield, name, value);
+
+        static void SetOn<T>(T target, string name, object value)
+            => (typeof(T).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(typeof(T).Name, name)).SetValue(target, value);
 
         Player Online(int id, string name, Session session)
         {
@@ -472,6 +522,11 @@ public sealed class ChestNeedGreedTests
         public ItemTemplate CreateTemplate(int lowId, int highId, int quality) => new() { Id = lowId, Quality = quality };
 
         public bool TryFromInstanceRecord(ItemInstanceRecord row, out Item item) => throw new NotSupportedException();
+    }
+
+    sealed class Shops : AORebirth.Interfaces.Persistence.Shops.IShopDao
+    {
+        public IList<AORebirth.Interfaces.Persistence.Shops.ShopVendorData> ListForPlayfield(int playfieldId) => [];
     }
 
     sealed class Ids : IItemInstanceIdAllocator

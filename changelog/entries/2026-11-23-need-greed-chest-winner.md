@@ -1,0 +1,2 @@
+- Fixed: Winning a Need or Greed roll on a chest item now puts the item in your inventory instead of leaving it free to loot.
+- Fixed: A connecting door that only led one way now also takes you back through to where you came from.

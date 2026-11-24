@@ -966,6 +966,8 @@ namespace ZoneEngine_New.Core.Playfield
             services.AddSingleton(_inventoryRepository);
             services.AddSingleton(_instanceIds);
             services.AddSingleton(_inventoryMoves);
+            // A Need or Greed chest win moves the item through it (LootRollService); without it no winner gets the item.
+            services.AddSingleton(_inventoryMoves.Actions);
             services.AddSingleton(_inventoryFlush);
             services.AddSingleton(_trades);
             services.AddSingleton(_characterSnapshot);
