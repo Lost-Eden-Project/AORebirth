@@ -61,12 +61,12 @@ public sealed class StaticDungeonFile
 
 public sealed class StaticDungeonEntrance
 {
-    /// <summary>The ACG entrance dynel type, 56006 (0xDAC6).</summary>
+    /// <summary>The entrance dynel type: an ACG entrance, 56006 (0xDAC6), or a door, 51016 (0xC748), in zones that build their dungeons behind doors.</summary>
     public uint IdentityType { get; set; }
 
     public uint IdentityInstance { get; set; }
 
-    /// <summary>The playfield the entrance stands on.</summary>
+    /// <summary>The playfield the entrance stands on (required for a door).</summary>
     public int? Playfield { get; set; }
 }
 

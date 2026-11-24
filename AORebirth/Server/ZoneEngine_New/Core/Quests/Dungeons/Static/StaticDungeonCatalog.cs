@@ -291,10 +291,23 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
                 return "SchemaVersion must be " + StaticDungeonFile.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture);
             if (data.Entrance is not { IdentityInstance: > 0 } entranceRef)
                 return "Entrance needs an IdentityType and IdentityInstance";
-            if (entranceRef.IdentityType != (uint)IdentityType.ACGEntrance)
-                return "Entrance.IdentityType must be " + ((uint)IdentityType.ACGEntrance).ToString(CultureInfo.InvariantCulture) + " (an ACG entrance)";
-            if (!_entrances.TryGetByIdentity(entranceRef.IdentityType, entranceRef.IdentityInstance, out MissionEntrancePlacement entrance))
-                return "entrance " + entranceRef.IdentityInstance.ToString(CultureInfo.InvariantCulture) + " is not in MissionEntrancePlacements.json";
+            MissionEntrancePlacement entrance;
+            if (entranceRef.IdentityType == (uint)IdentityType.ACGEntrance)
+            {
+                if (!_entrances.TryGetByIdentity(entranceRef.IdentityType, entranceRef.IdentityInstance, out entrance))
+                    return "entrance " + entranceRef.IdentityInstance.ToString(CultureInfo.InvariantCulture) + " is not in MissionEntrancePlacements.json";
+            }
+            else if (entranceRef.IdentityType == (uint)IdentityType.Door)
+            {
+                // Some zones (Scheol, Adonis' Pantheons) build their dungeons behind a door, which the entrance catalog
+                // does not hold: the door's own placement stands in for it.
+                string? doorProblem = ResolveDoorEntrance(entranceRef, data.Name, out entrance!);
+                if (doorProblem != null)
+                    return doorProblem;
+            }
+            else
+                return "Entrance.IdentityType must be " + ((uint)IdentityType.ACGEntrance).ToString(CultureInfo.InvariantCulture)
+                    + " (an ACG entrance) or " + ((uint)IdentityType.Door).ToString(CultureInfo.InvariantCulture) + " (a door)";
             if (entranceRef.Playfield is int playfield && playfield != entrance.PlayfieldId)
                 return "entrance " + entranceRef.IdentityInstance.ToString(CultureInfo.InvariantCulture) + " stands on playfield "
                     + entrance.PlayfieldId.ToString(CultureInfo.InvariantCulture) + ", not " + playfield.ToString(CultureInfo.InvariantCulture);
@@ -470,6 +483,27 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
                     + ".json site pool; its instances get no chests or turrets");
             blueprint = new StaticDungeonBlueprint(file, string.IsNullOrWhiteSpace(data.Name) ? entrance.DisplayName : data.Name, entrance, layout,
                 quality, data.RespawnSeconds, npcs.AsReadOnly(), unresolvedCount, chests, turrets, data.Mines, controllers.AsReadOnly(), pool);
+            return null;
+        }
+
+        /// <summary>
+        /// A door entrance: the door named on its playfield's Dynels.dat, which must carry the ACG building it opens
+        /// (stock's own data says which doors front a dungeon; an unrelated door is never one).
+        /// </summary>
+        string? ResolveDoorEntrance(StaticDungeonEntrance entranceRef, string? name, out MissionEntrancePlacement? entrance)
+        {
+            entrance = null;
+            string door = entranceRef.IdentityInstance.ToString(CultureInfo.InvariantCulture);
+            if (entranceRef.Playfield is not int playfield || playfield <= 0)
+                return "door entrance " + door + " needs its Playfield";
+            int instance = unchecked((int)entranceRef.IdentityInstance);
+            if (_gameData.FindPlacedDynel(playfield, (int)IdentityType.Door, instance) is not { } placed)
+                return "door " + door + " is not in playfield " + playfield.ToString(CultureInfo.InvariantCulture) + "'s Dynels.dat";
+            if (!AcgBuildingDoors.CarriesOwnBuilding(placed))
+                return "door " + door + " on playfield " + playfield.ToString(CultureInfo.InvariantCulture) + " has no ACG building behind it";
+            entrance = MissionEntrancePlacement.FromPlacedDynel(entranceRef.IdentityType, entranceRef.IdentityInstance, playfield,
+                placed.Position.X, placed.Position.Y, placed.Position.Z, placed.Heading.X, placed.Heading.Y, placed.Heading.Z, placed.Heading.W,
+                string.IsNullOrWhiteSpace(name) ? "Door" : name);
             return null;
         }
 

@@ -25,7 +25,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
 
     /// <summary>
     /// Walk-in dungeons behind world doors (<see cref="StaticDungeonCatalog"/>). Using or walking into an ACG entrance
-    /// the catalog knows, with no mission key for a quest dungeon behind it, puts the player in that dungeon's one
+    /// (or, in zones that build their dungeons behind doors, the door) the catalog knows, with no mission key for a quest dungeon behind it, puts the player in that dungeon's one
     /// shared instance: every player at an entrance, teamed or not, meets in the same live instance. It is built off the
     /// tick on first entry and released by the same empty-dungeon sweep as quest dungeons. Instances are recorded in
     /// <c>staticdungeoninstances</c> so every zone instance shares them and a login inside one finds its entrance
@@ -51,7 +51,6 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         sealed record Instance(int PlayfieldId, MissionPlacementIdentity Entrance);
 
         readonly StaticDungeonCatalog _catalog;
-        readonly MissionDestinationCatalog _entrances;
         readonly IStaticDungeonInstanceStore _store;
         readonly IItemInstanceIdAllocator _ids;
         readonly Lazy<PlayfieldManager> _playfields;
@@ -71,7 +70,9 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
             ZoneEngine_New.Core.World.WorldLink? world = null)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-            _entrances = entrances ?? throw new ArgumentNullException(nameof(entrances));
+            // Entrances resolve through the catalog (a door's placement is not in the entrance catalog); the parameter
+            // stays so the service is built as before.
+            ArgumentNullException.ThrowIfNull(entrances);
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _ids = ids ?? throw new ArgumentNullException(nameof(ids));
             _playfields = playfields ?? throw new ArgumentNullException(nameof(playfields));
@@ -93,7 +94,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         public bool TryEnter(Player player, Identity target)
         {
             ArgumentNullException.ThrowIfNull(player);
-            if (target.Type != IdentityType.ACGEntrance || !_catalog.TryGet(target, out StaticDungeonBlueprint blueprint))
+            if (target.Type is not (IdentityType.ACGEntrance or IdentityType.Door) || !_catalog.TryGet(target, out StaticDungeonBlueprint blueprint))
                 return false;
 
             lock (player.PersistenceGate)
@@ -110,20 +111,29 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
 
         /// <summary>
         /// A GM enters the dungeon behind <paramref name="entranceInstance"/> from anywhere, into its shared instance (no
-        /// range check; the use cooldown still applies). False when the catalog has no such entrance or the GM cannot
-        /// be moved now.
+        /// range check; the use cooldown still applies): the ACG entrance with that instance, else the door. False when
+        /// the catalog has no such entrance or the GM cannot be moved now.
         /// </summary>
         public bool TryEnterAsGm(Player player, uint entranceInstance)
         {
             ArgumentNullException.ThrowIfNull(player);
-            if (!_catalog.TryGet((uint)IdentityType.ACGEntrance, entranceInstance, out StaticDungeonBlueprint blueprint))
+            int instance = unchecked((int)entranceInstance);
+            var target = new Identity { Type = IdentityType.ACGEntrance, Instance = instance };
+            if (!_catalog.TryGet(target, out _))
+                target = new Identity { Type = IdentityType.Door, Instance = instance };
+            return TryEnterAsGm(player, target);
+        }
+
+        bool TryEnterAsGm(Player player, Identity target)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            if (!_catalog.TryGet(target, out StaticDungeonBlueprint blueprint))
                 return false;
             lock (player.PersistenceGate)
             {
                 if (player.IsPersistenceQuarantined || player.IsDead || player.Session is not IZoneSession session
                     || player.Playfield is not Playfield playfield || !TryBeginRequest(player))
                     return false;
-                var target = new Identity { Type = IdentityType.ACGEntrance, Instance = unchecked((int)entranceInstance) };
                 return Enter(player, session, playfield, target, blueprint, gm: true);
             }
         }
@@ -253,7 +263,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         {
             _lastRequest.TryRemove(player.Identity.Instance, out _);
             if (gm)
-                TryEnterAsGm(player, unchecked((uint)target.Instance));
+                TryEnterAsGm(player, target);
             else
                 TryEnter(player, target);
         }
@@ -280,12 +290,15 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
             if (playfields.TryGetStaticDungeon(storedPlayfield, out StaticDungeonPlayfield live))
                 return (live, null, null);
 
+            // The entrance as the catalog resolved it: a door's placement is not in the entrance catalog.
             MissionEntrancePlacement? entrance = null;
+            StaticDungeonBlueprint? behind = null;
             if (_byPlayfield.TryGetValue(storedPlayfield, out Instance? instance))
-                _entrances.TryGetByIdentity(instance.Entrance.IdentityType, instance.Entrance.IdentityInstance, out entrance!);
+                _catalog.TryGet(instance.Entrance.IdentityType, instance.Entrance.IdentityInstance, out behind!);
             else if (_store.Load(storedPlayfield) is { } row)
-                _entrances.TryGetByIdentity(row.EntranceType, row.EntranceInstance, out entrance!);
-            if (entrance != null && _catalog.TryGet(entrance.IdentityType, entrance.IdentityInstance, out _))
+                _catalog.TryGet(row.EntranceType, row.EntranceInstance, out behind!);
+            entrance = behind?.Entrance;
+            if (entrance != null)
             {
                 Vector3 landing = AcgDungeonPlayfield.ExitLanding(entrance, out _);
                 PlayfieldAdmission admission = AcquireForLogin(playfields, entrance.PlayfieldId, landing);

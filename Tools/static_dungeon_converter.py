@@ -10,7 +10,8 @@ is the ACG entrance's identity instance (signed).
         [--out <GameData root to write>] [--report <json file>]
 
 The converter never reads anything but the captures and the named GameData root (Playfields/<style>/Rooms.json and
-Districts.json, NpcTemplates.json, Missions/Destinations/MissionEntrancePlacements.json). Everything it writes is
+Districts.json, every Playfields/<id>/Dynels.dat, NpcTemplates.json, Missions/Destinations/MissionEntrancePlacements.json).
+A capture's entrance is the Dynels.dat dynel that carries its generator: an ACG entrance or, in some zones, a door. Everything it writes is
 runtime GameData; the report goes wherever --report points (default: beside the captures).
 """
 
@@ -23,10 +24,12 @@ import glob
 import json
 import math
 import os
+import re
 import struct
 import sys
 
 ENTRANCE_TYPE = 56006  # 0xDAC6 ACG entrance
+TYPE_DOOR = 51016  # 0xC748 door; some zones (Scheol, Adonis' Pantheons) build their dungeons behind doors
 BLOCK = 10.0  # one ACG grid block in world units
 FLOOR_GAP = 100.0  # stock's extra X gap between side-by-side floors (DungeonRoomPlacer.Place, FloorHeight 0)
 POINT_MATCH = 1.0  # an NPC this close to a district point stands on it
@@ -229,6 +232,46 @@ class NpcTemplates:
         return best[0]
 
 
+def load_generator_owners(gamedata):
+    """
+    ACG generator identity -> the Dynels.dat dynel that carries it, over every playfield. A capture's model is that
+    generator identity, not an entrance identity: the dynel can be an ACG entrance (0xDAC6) or a door (0xC748), and
+    each type numbers its instances separately, so a door and an unrelated mission entrance on one playfield can share
+    an instance (Lower Scheol's mausoleum door and its "Trial-Area" mission entrance are both 0xC0011311).
+
+    A Dynels.dat record starts with its identity (type, instance; both little-endian, the instance's low half is the
+    playfield) and 8 bytes, then a zero word and the playfield, then position (3 floats) and heading (4 floats). Its
+    name is stat 0x21: big-endian name length, description length, name, description.
+    """
+    owners = {}
+    for path in glob.glob(os.path.join(gamedata, "Playfields", "*", "Dynels.dat")):
+        try:
+            pf = int(os.path.basename(os.path.dirname(path)))
+        except ValueError:
+            continue
+        b = open(path, "rb").read()
+        start = re.compile(rb".{2}\x00\x00" + re.escape(struct.pack("<H", pf & 0xFFFF)) + rb".\xc0.{8}\x00\x00\x00\x00"
+                           + re.escape(struct.pack("<I", pf)), re.S)
+        starts = [m.start() for m in start.finditer(b)]
+        for k, s in enumerate(starts):
+            rec = b[s:starts[k + 1] if k + 1 < len(starts) else len(b)]
+            identity_type, instance = struct.unpack_from("<II", rec, 0)
+            name = None
+            stat = re.search(rb"\x00\x00\x00\x21(..)(..)", rec, re.S)
+            if stat:
+                length = struct.unpack(">H", stat.group(1))[0]
+                raw = rec[stat.end():stat.end() + length]
+                if len(raw) == length and raw.isascii():
+                    name = raw.decode("ascii")
+            for g in re.finditer(rb"\x00\x00\xc7\xa1(.{4})", rec, re.S):
+                generator = struct.unpack(">I", g.group(1))[0]
+                owners.setdefault(generator, []).append({
+                    "IdentityType": identity_type, "IdentityInstance": instance, "PlayfieldId": pf, "Name": name,
+                    "Position": list(struct.unpack_from("<fff", rec, 24)),
+                })
+    return owners
+
+
 def load_placements(gamedata):
     path = os.path.join(gamedata, "Missions", "Destinations", "MissionEntrancePlacements.json")
     data = json.load(open(path, encoding="utf-8"))
@@ -291,27 +334,36 @@ class SitePool:
         return {"SchemaVersion": 1, "Style": self.style, "Rooms": rooms}
 
 
-def convert_capture(folder, zone, style, npc_templates, placements, pool, report):
+def convert_capture(folder, zone, style, npc_templates, placements, generator_owners, pool, report):
     """One capture folder -> a static dungeon definition dict, or None (reported) when it cannot be converted."""
     name = os.path.basename(os.path.normpath(folder))
     parts = name.split("_")
-    model = int(parts[1])
-    entrance_instance = model & 0xFFFFFFFF
+    generator = int(parts[1]) & 0xFFFFFFFF
     layout = json.load(open(os.path.join(folder, "layout.json"), encoding="utf-8"))
     rooms = [RoomTransform(room) for room in layout["Rooms"]]
     by_instance = {room.instance: room for room in rooms}
     problems = []
 
-    placement = placements.get((ENTRANCE_TYPE, entrance_instance))
-    if placement is None:
-        problems.append("entrance " + str(entrance_instance) + " is not in MissionEntrancePlacements.json; its playfield is unknown")
+    # The entrance is the dynel that carries the captured generator, never "an ACG entrance with the same instance".
+    owners = generator_owners.get(generator, [])
+    owner = owners[0] if len(owners) == 1 else None
+    if owner is None:
+        problems.append("generator " + str(generator) + " is carried by " + str(len(owners))
+                        + " Dynels.dat dynels; the entrance is assumed to be the ACG entrance with that instance")
+    entrance_type = owner["IdentityType"] if owner else ENTRANCE_TYPE
+    entrance_instance = owner["IdentityInstance"] if owner else generator
+    placement = placements.get((entrance_type, entrance_instance)) if entrance_type == ENTRANCE_TYPE else None
+    if entrance_type == ENTRANCE_TYPE and placement is None:
+        problems.append("entrance " + str(entrance_instance) + " is not in MissionEntrancePlacements.json")
+    elif entrance_type not in (ENTRANCE_TYPE, TYPE_DOOR):
+        problems.append("entrance is a type " + str(entrance_type) + " dynel, neither an ACG entrance nor a door")
 
     # Building rows, exactly as stock sends them (checked against the captured PlayfieldAnarchyF where present).
     width = height = DEFAULT_GRID
     floor_height = 0
     ambient = [50, 50, 50]
     captured_rows = None
-    entrance_playfield = placement["PlayfieldId"] if placement else None
+    entrance_playfield = placement["PlayfieldId"] if placement else (owner["PlayfieldId"] if owner else None)
     anarchyf = os.path.join(folder, "anarchyf.hex")
     if os.path.exists(anarchyf):
         blob = open(anarchyf).read().strip()
@@ -542,9 +594,10 @@ def convert_capture(folder, zone, style, npc_templates, placements, pool, report
     turret_name = next(iter(turret_names), (None, None))
     definition = {
         "SchemaVersion": 1,
-        "Name": placement["DisplayName"] if placement else os.path.basename(os.path.dirname(folder)),
+        "Name": (placement["DisplayName"] if placement
+                 else owner["Name"] if owner and owner["Name"] else os.path.basename(os.path.dirname(folder))),
         "Entrance": {
-            "IdentityType": ENTRANCE_TYPE,
+            "IdentityType": entrance_type,
             "IdentityInstance": entrance_instance,
             "Playfield": entrance_playfield,
         },
@@ -602,6 +655,7 @@ def main(argv):
     style = Style(args.gamedata, args.style)
     npc_templates = NpcTemplates(args.gamedata)
     placements = load_placements(args.gamedata)
+    generator_owners = load_generator_owners(args.gamedata)
     pool = SitePool(args.style)
     report = {"dungeons": [], "unresolvedNpcs": {}, "unresolvedLevels": collections.defaultdict(set)}
 
@@ -614,7 +668,7 @@ def main(argv):
     for layout_path in sorted(glob.glob(os.path.join(args.captures, "*", "*", "*", "layout.json"))):
         folder = os.path.dirname(layout_path)
         zone = os.path.basename(os.path.dirname(os.path.dirname(folder)))
-        definition, problems = convert_capture(folder, zone, style, npc_templates, placements, pool, report)
+        definition, problems = convert_capture(folder, zone, style, npc_templates, placements, generator_owners, pool, report)
         path = os.path.join(static_dir, str(definition["Entrance"]["IdentityInstance"]) + ".json")
         with open(path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(definition, handle, indent=2)

@@ -387,6 +387,20 @@ namespace ZoneEngine_New.Core.GameData
             }
         }
 
+        /// <summary>From the cached geometry when the playfield has been built, else from Dynels.dat alone (not cached).</summary>
+        public PlayfieldDynel? FindPlacedDynel(int playfieldId, int identityType, int identityInstance)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playfieldId);
+            PlayfieldDynels? dynels;
+            lock (_playfieldSync)
+                dynels = _playfieldGeometry.TryGetValue(playfieldId, out PlayfieldGeometryData? cached) ? cached.Dynels : null;
+            dynels ??= ReadPlayfieldDynels(playfieldId);
+            foreach (PlayfieldDynel dynel in dynels?.Dynels ?? [])
+                if (dynel.IdentityType == identityType && dynel.IdentityInstance == identityInstance)
+                    return dynel;
+            return null;
+        }
+
         /// <summary>Drops reloadable data for a fully retired ordinary world, preserving global catalogs.</summary>
         internal void ReleasePlayfieldCache(int playfieldId)
         {

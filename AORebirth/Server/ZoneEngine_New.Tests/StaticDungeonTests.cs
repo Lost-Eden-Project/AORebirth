@@ -50,6 +50,14 @@ public sealed class StaticDungeonTests
     /// <summary>The Nascence door whose capture carried stock's own PlayfieldAnarchyF (A Door(5), 33 rooms).</summary>
     const uint NascenceDoor = 3221360854;
 
+    /// <summary>
+    /// Lower Scheol's mausoleum entrance: a door (0xC748) that carries the ACG building of the "A Mauseleum entrance"
+    /// capture. Its instance, 0xC0011311, is also the instance of the unrelated "Trial-Area" mission entrance (0xDAC6).
+    /// </summary>
+    const uint MausoleumDoor = 0xC0011311;
+
+    const int LowerScheol = 4881;
+
     static readonly Lazy<Rig> Shared = new(() => new Rig(), LazyThreadSafetyMode.ExecutionAndPublication);
 
     static Rig R => Shared.Value;
@@ -392,6 +400,152 @@ public sealed class StaticDungeonTests
         }
     }
 
+    static StaticDungeonBlueprint MausoleumBlueprint()
+    {
+        if (!R.Catalog.TryGet((uint)IdentityType.Door, MausoleumDoor, out StaticDungeonBlueprint blueprint))
+            Assert.Inconclusive("The runtime GameData has no static dungeon behind Lower Scheol's mausoleum door: "
+                + string.Join("\n", R.Catalog.Problems.Where(problem => problem.Contains(MausoleumDoor.ToString(), StringComparison.Ordinal))));
+        return blueprint;
+    }
+
+    [TestMethod]
+    public void ADoorDungeonLoadsBehindItsDoorAndNotTheMissionEntranceSharingItsNumber()
+    {
+        // Live defect: the mausoleum's dungeon was keyed to the Trial-Area mission entrance (same instance, other type),
+        // so walking into Trial-Area opened a dungeon that is not there, and the mausoleum door did nothing.
+        StaticDungeonBlueprint blueprint = MausoleumBlueprint();
+        Assert.IsFalse(R.Catalog.TryGet((uint)IdentityType.ACGEntrance, MausoleumDoor, out _), "no dungeon is behind the Trial-Area mission entrance");
+        Assert.AreEqual((uint)IdentityType.Door, blueprint.Entrance.IdentityType);
+        Assert.AreEqual(LowerScheol, blueprint.Entrance.PlayfieldId);
+        // The door's own placement (Dynels.dat), not Trial-Area's at (1356.9, 259.5, 1912).
+        Assert.AreEqual(1589.6f, blueprint.Entrance.LocalX, 0.1f);
+        Assert.AreEqual(1755.0f, blueprint.Entrance.LocalZ, 0.1f);
+        Assert.AreEqual("a mausoleum entrance", blueprint.Name);
+        foreach (string problem in R.Catalog.Problems)
+            Assert.IsFalse(problem.Contains("Entrance.IdentityType must be", StringComparison.Ordinal), "a door dungeon was left out: " + problem);
+
+        // The door stands in for a catalog row exactly as an entrance would: its heading is the Dynels heading, and the
+        // exit door puts people down in front of it.
+        var placed = R.Data.FindPlacedDynel(LowerScheol, (int)IdentityType.Door, unchecked((int)MausoleumDoor));
+        Assert.IsNotNull(placed);
+        Assert.IsTrue(AcgBuildingDoors.CarriesOwnBuilding(placed!), "stock's placement carries the door's ACG building");
+        Assert.AreEqual(placed!.Heading.W, blueprint.Entrance.RotationComponent0);
+        Assert.AreEqual(placed.Heading.X, blueprint.Entrance.RotationComponent1);
+        Vector3 landing = AcgDungeonPlayfield.ExitLanding(blueprint.Entrance, out _);
+        double away = Math.Sqrt(Math.Pow(landing.x - placed.Position.X, 2) + Math.Pow(landing.z - placed.Position.Z, 2));
+        Assert.IsTrue(away > 0.5 && away < 10, "the exit lands just in front of the mausoleum door: " + away);
+    }
+
+    [TestMethod]
+    public void OnlyDoorsCarryingTheirOwnBuildingAreDungeonDoors()
+    {
+        // The Trial-Area mission entrance and Lower Scheol's teleporters share instances with the dungeon doors but
+        // carry no building of their own; a plain door elsewhere never counts.
+        PlayfieldGeometryData geometry = R.Data.GetPlayfieldGeometry(LowerScheol);
+        var dynels = geometry.Dynels?.Dynels;
+        if (dynels == null)
+            Assert.Inconclusive("No Lower Scheol Dynels.dat in the runtime GameData.");
+        var doors = dynels.Where(AcgBuildingDoors.CarriesOwnBuilding).Select(d => unchecked((uint)d.IdentityInstance)).OrderBy(i => i).ToList();
+        CollectionAssert.AreEqual(new uint[] { 0xC0001311, 0xC0011311, 0xC0021311 }, doors,
+            "the swirling brink cave, the mausoleum and the underroot passage");
+        Assert.IsTrue(dynels.Where(d => d.IdentityType != (int)IdentityType.Door).All(d => !AcgBuildingDoors.CarriesOwnBuilding(d)));
+    }
+
+    [TestMethod]
+    public void WalkingIntoTheMausoleumDoorReachesItsDungeonAndTrialAreaDoesNothing()
+    {
+        StaticDungeonBlueprint blueprint = MausoleumBlueprint();
+        MissionEntrancePlacement door = blueprint.Entrance;
+        Playfield exterior = R.Manager.GetOrCreate(LowerScheol);
+        var world = exterior.GetRequiredService<ZoneEngine_New.Core.WorldSimulation.WorldSimulationAccess>().Instance;
+        Assert.IsNotNull(world, "Lower Scheol has its world simulation");
+        var session = new Session();
+        Player player = CreatePlayer(4444, "Mourner");
+        player.Stats.Set(CharacterStat.Health, 100);
+        player.Stats.Set(CharacterStat.MaxHealth, 100);
+        player.Session = session;
+        session.BindPlayer(player);
+        player.Playfield = exterior;
+        DynelRegistry registry = exterior.GetRequiredService<DynelRegistry>();
+        var trialArea = new MissionPlacementIdentity((uint)IdentityType.ACGEntrance, MausoleumDoor);
+        int playfieldId = 0;
+        try
+        {
+            registry.Register(player);
+            // Through the Trial-Area mission entrance first: nothing is built for it or for the door.
+            Assert.IsTrue(R.Entrances.TryGetByIdentity((uint)IdentityType.ACGEntrance, MausoleumDoor, out MissionEntrancePlacement trial));
+            player.Position = new Vector3(trial.LocalX, trial.LocalY, trial.LocalZ - 15f);
+            world!.TickSoftTriggers(exterior, 0.1);
+            player.Position = new Vector3(trial.LocalX, trial.LocalY, trial.LocalZ);
+            world.TickSoftTriggers(exterior, 0.1);
+            Assert.AreEqual(0, R.Service.InstanceOf(trialArea), "Trial-Area opens no static dungeon");
+            Assert.AreEqual(0, R.Service.InstanceOf(door.Identity), "nor the mausoleum's, from across the zone");
+            Assert.IsFalse(R.Service.TryEnter(player, new Identity { Type = IdentityType.ACGEntrance, Instance = unchecked((int)MausoleumDoor) }),
+                "using the Trial-Area entrance does not reach the door's dungeon");
+
+            // Then up to the mausoleum door from 15 m out, through the engine's own trigger pass.
+            Thread.Sleep(800); // past the use cooldown
+            player.Position = new Vector3(door.LocalX - 15f, door.LocalY, door.LocalZ);
+            world.TickSoftTriggers(exterior, 0.1);
+            Assert.AreEqual(0, R.Service.InstanceOf(door.Identity), "nothing away from the door");
+            player.Position = new Vector3(door.LocalX, door.LocalY, door.LocalZ);
+            world.TickSoftTriggers(exterior, 0.1);
+            playfieldId = R.Service.InstanceOf(door.Identity);
+            Assert.AreNotEqual(0, playfieldId, "walking into the door makes the door's instance");
+            Assert.AreEqual((uint)IdentityType.Door, R.Store.Load(playfieldId)!.EntranceType, "the instance is recorded under the door, not Trial-Area");
+            Assert.IsTrue(R.Service.WaitForBuild(playfieldId, TimeSpan.FromMinutes(2)), "the build finishes");
+            Assert.IsTrue(R.Manager.TryGetStaticDungeon(playfieldId, out StaticDungeonPlayfield live), "the instance is live to hand the player into");
+
+            // Once it is live the engine hands the player in by itself, once, at the dungeon's arrival point.
+            for (int wait = 0; wait < 100 && session.Transfers.Count == 0; wait++)
+                Thread.Sleep(50);
+            Assert.AreEqual(1, session.Transfers.Count, "handed into the live instance exactly once");
+            Assert.AreSame(live, session.Transfers[0].World);
+            Assert.AreEqual(blueprint.Layout.Spawn, session.Transfers[0].Position);
+
+            // Nobody enters a dungeon from inside one.
+            var target = new Identity { Type = IdentityType.Door, Instance = unchecked((int)MausoleumDoor) };
+            Thread.Sleep(800);
+            player.Playfield = live;
+            Assert.IsFalse(R.Service.TryEnter(player, target), "no dungeon is entered from inside one");
+            player.Playfield = exterior;
+        }
+        finally
+        {
+            registry.UnregisterExact(player);
+            if (playfieldId != 0)
+                R.Service.TryReset(playfieldId);
+        }
+    }
+
+    [TestMethod]
+    public void ALoginInAReleasedDoorDungeonLandsInFrontOfTheDoor()
+    {
+        // After a restart the instance is gone but its row remains: the character comes out at the mausoleum door on
+        // Lower Scheol, not at the respawn point and not at Trial-Area.
+        StaticDungeonBlueprint blueprint = MausoleumBlueprint();
+        Assert.IsTrue(R.Service.TryGetOrCreateInstance(blueprint, out int instance));
+        try
+        {
+            Assert.IsFalse(R.Manager.TryGetStaticDungeon(instance, out _), "not built");
+            (Playfield login, Vector3? position, PlayfieldAdmission? admission) = R.Service.ResolveLogin(instance);
+            Assert.AreEqual(LowerScheol, login.Identity.Instance);
+            Assert.IsNotNull(position);
+            Vector3 expected = AcgDungeonPlayfield.ExitLanding(blueprint.Entrance, out _);
+            Assert.AreEqual(expected.x, position!.x, 0.01);
+            Assert.AreEqual(expected.z, position.z, 0.01);
+            admission?.Dispose();
+        }
+        finally
+        {
+            R.Store.Delete(instance);
+            var released = Blank<StaticDungeonPlayfield>();
+            typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(released, new Identity { Type = IdentityType.Playfield, Instance = instance });
+            R.Service.OnReleased(released);
+        }
+    }
+
     [TestMethod]
     public void AReloadReportsABadFileAndKeepsTheRest()
     {
@@ -426,6 +580,8 @@ public sealed class StaticDungeonTests
     sealed class Rig
     {
         internal readonly string Root;
+        internal readonly GameDataStore Data;
+        internal readonly MissionDestinationCatalog Entrances;
         internal readonly StaticDungeonCatalog Catalog;
         internal readonly PlayfieldManager Manager;
         internal readonly StaticDungeonService Service;
@@ -443,6 +599,8 @@ public sealed class StaticDungeonTests
             if (!layouts.IsAvailable)
                 Assert.Inconclusive("The runtime GameData at " + Root + " cannot generate dungeons.");
             MissionDestinationCatalog entrances = MissionDestinationCatalog.Load(Root);
+            Data = data;
+            Entrances = entrances;
             Catalog = new StaticDungeonCatalog(data, entrances, layouts, templates, logger);
             if (Catalog.Dungeons.Count == 0)
                 Assert.Inconclusive("The runtime GameData at " + Root + " has no Dungeons/Static files: " + string.Join("; ", Catalog.Problems));

@@ -1075,7 +1075,12 @@
                     continue;
 
                 bool exit = ExitInstanceOf(d) > 0;
-                if (!exit && !_gameData.TryGetTeleportRoute(_playfieldId, (int)IdentityType.Door, unchecked((uint)d.IdentityInstance), out _, out _, out _))
+                bool hasRoute = _gameData.TryGetTeleportRoute(_playfieldId, (int)IdentityType.Door, unchecked((uint)d.IdentityInstance), out _, out _, out _);
+                if (!exit && !hasRoute)
+                    continue;
+                // A door with an ACG building behind it already walks in (BakeMissionEntranceTriggers); an unrouted exit
+                // trigger on it would only answer "destination unknown" over the dungeon.
+                if (!hasRoute && Quests.Dungeons.Static.AcgBuildingDoors.CarriesOwnBuilding(d))
                     continue;
                 // A door that teleports from its own vicinity pad (4001's C0000FA1, level-capped TeleportProxy2 into 4313)
                 // already zones by its own events: a route must not add a walk-in crossing that bypasses its criteria and
@@ -1748,8 +1753,10 @@
         {
             try
             {
-                var target = new LostEden.Protocol.GameData.Identity { Type = IdentityType.ACGEntrance, Instance = entrance.DynelInstance };
-                if (playfield.GetService<Quests.Dungeons.QuestDungeonService>()?.TryEnter(player, target) != true)
+                // An ACG entrance, or a door the ACG builds a dungeon behind (only a static dungeon is ever behind one).
+                IdentityType type = entrance.DynelIdentity.Type == IdentityType.Door ? IdentityType.Door : IdentityType.ACGEntrance;
+                var target = new LostEden.Protocol.GameData.Identity { Type = type, Instance = entrance.DynelInstance };
+                if (type == IdentityType.Door || playfield.GetService<Quests.Dungeons.QuestDungeonService>()?.TryEnter(player, target) != true)
                     playfield.GetService<Quests.Dungeons.Static.StaticDungeonService>()?.TryEnter(player, target);
             }
             catch (Exception exception)
@@ -1758,7 +1765,11 @@
             }
         }
 
-        /// <summary>One walk-in trigger per MissionEntrance dynel (0xDAC6) in this playfield's Dynels.dat.</summary>
+        /// <summary>
+        /// One walk-in trigger per MissionEntrance dynel (0xDAC6) in this playfield's Dynels.dat, and per door that
+        /// carries its own ACG building (<see cref="Quests.Dungeons.Static.AcgBuildingDoors"/>): walking into either is
+        /// how a static dungeon behind it is entered.
+        /// </summary>
         void BakeMissionEntranceTriggers(PlayfieldDynels? dynels)
         {
             if (dynels?.Dynels == null)
@@ -1767,6 +1778,11 @@
             for (int i = 0; i < dynels.Dynels.Count; i++)
             {
                 PlayfieldDynel d = dynels.Dynels[i];
+                if (Quests.Dungeons.Static.AcgBuildingDoors.CarriesOwnBuilding(d))
+                {
+                    BakeBuildingDoorTrigger(d);
+                    continue;
+                }
                 if (d.IdentityType != (int)IdentityType.ACGEntrance)
                     continue;
 
@@ -1795,6 +1811,38 @@
                 ApplyClientSphere(entrance, d, x, y, z);
                 _triggers.Add(entrance);
             }
+        }
+
+        /// <summary>
+        /// A door with an ACG building behind it walks in like a mission entrance, but through the door's own collision
+        /// sphere and plane (as an exit door does). Whether a dungeon is behind it is the static dungeon service's call.
+        /// </summary>
+        void BakeBuildingDoorTrigger(PlayfieldDynel d)
+        {
+            float x = d.Position.X;
+            float y = d.Position.Y;
+            float z = d.Position.Z;
+            const float r = TriggerVolumeCatalog.PortalRadius;
+            const float h = TriggerVolumeCatalog.PortalHalfHeight;
+            var volume = new ZoneTriggerVolume
+            {
+                Kind = ZoneTriggerKind.MissionEntrance,
+                Id = _nextTriggerId++,
+                MinX = x - r,
+                MaxX = x + r,
+                MinZ = z - r,
+                MaxZ = z + r,
+                MinY = y - h,
+                MaxY = y + h,
+                CenterX = x,
+                CenterY = y,
+                CenterZ = z,
+                Radius = r,
+                DynelInstance = d.IdentityInstance,
+                DynelIdentity = new LostEden.Protocol.GameData.Identity { Type = IdentityType.Door, Instance = d.IdentityInstance }
+            };
+            ApplyClientSphere(volume, d, x, y, z, DoorRotation(d));
+            _triggers.Add(volume);
         }
 
         void BakePortalTriggers(PlayfieldDynels? dynels, int playfieldId)

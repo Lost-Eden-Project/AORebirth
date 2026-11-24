@@ -72,6 +72,38 @@ namespace Utility.GameData.Missions
             RawNameHex = data.RawNameHex;
         }
 
+        /// <summary>
+        /// The placement of a Dynels.dat dynel the entrance catalog does not hold (a door an ACG dungeon is built
+        /// behind), shaped as a catalog row would be: <paramref name="headingX"/>..<paramref name="headingW"/> are the
+        /// Dynels reader's XYZW heading, stored as the catalog's raw WXYZ components.
+        /// </summary>
+        public static MissionEntrancePlacement FromPlacedDynel(uint identityType, uint identityInstance, int playfieldId,
+            float x, float y, float z, float headingX, float headingY, float headingZ, float headingW, string displayName)
+        {
+            if (identityType == 0 || identityInstance == 0)
+                throw new ArgumentException("A complete placement identity is required.");
+            if (playfieldId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(playfieldId));
+            return new MissionEntrancePlacement(new PlacementData
+            {
+                IdentityType = identityType,
+                IdentityInstance = identityInstance,
+                PlayfieldId = playfieldId,
+                LocalX = x,
+                LocalY = y,
+                LocalZ = z,
+                LocalXBits = BitConverter.ToUInt32(BitConverter.GetBytes(x), 0),
+                LocalYBits = BitConverter.ToUInt32(BitConverter.GetBytes(y), 0),
+                LocalZBits = BitConverter.ToUInt32(BitConverter.GetBytes(z), 0),
+                RotationComponent0 = headingW,
+                RotationComponent1 = headingX,
+                RotationComponent2 = headingY,
+                RotationComponent3 = headingZ,
+                DisplayName = displayName ?? string.Empty,
+                RawNameHex = string.Empty
+            });
+        }
+
         public MissionPlacementIdentity Identity { get; }
         public uint IdentityType { get { return Identity.IdentityType; } }
         public uint IdentityInstance { get { return Identity.IdentityInstance; } }

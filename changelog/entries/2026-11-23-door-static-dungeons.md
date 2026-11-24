@@ -1,0 +1,2 @@
+- Added: The Scheol dungeons, the Pantheons of Adonis and Underwood in Elysium can now be entered by walking through their doors.
+- Fixed: Trial-Area, The Uncharted Entrance and The Plunge no longer send you into a dungeon that belongs to a different door.

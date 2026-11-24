@@ -186,6 +186,19 @@ namespace ZoneEngine_New.Core.GameData
         PlayfieldGeometryData GetPlayfieldGeometry(int playfieldId);
 
         /// <summary>
+        /// One placed dynel of a playfield's Dynels.dat by its complete identity (instances repeat across types), for
+        /// catalog loads that need a single placement without the playfield's geometry. Null when the file or the
+        /// dynel is missing.
+        /// </summary>
+        AODB.Common.RDBObjects.PlayfieldDynel? FindPlacedDynel(int playfieldId, int identityType, int identityInstance)
+        {
+            foreach (AODB.Common.RDBObjects.PlayfieldDynel dynel in GetPlayfieldGeometry(playfieldId).Dynels?.Dynels ?? [])
+                if (dynel.IdentityType == identityType && dynel.IdentityInstance == identityInstance)
+                    return dynel;
+            return null;
+        }
+
+        /// <summary>
         /// Door instances on <paramref name="playfieldId"/> that are TeleportProxy return exits
         /// (static catalog, built once from all playfield Dynels.dat). Empty when none.
         /// </summary>
