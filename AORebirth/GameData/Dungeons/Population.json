@@ -11,10 +11,25 @@
     "Aggressiveness": 60,
     "Clan": 900000,
     "AssistanceRadius": 20,
-    "Features": ["AggroesAllSides"]
+    "Features": ["AggroesAllSides"],
+    // Team request 14: the monster count follows the mission quality. RoomChancePercent: the share of rooms that get
+    // monsters at all (live captures: 60-90%); SpawnScalePercent: percent of the slider's SpawnChancePercent each spawn
+    // point rolls at, so Head On / Stealth still moves it. Low levels also get a shorter call for help and wider spacing,
+    // so groups in a small layout's neighbouring rooms do not pull each other in.
+    "Bands": [
+      { "Quality": [1, 24], "RoomChancePercent": 65, "SpawnScalePercent": 60, "AssistanceRadius": 12, "GroupRadius": 12.0 },
+      { "Quality": [25, 74], "RoomChancePercent": 70, "SpawnScalePercent": 75, "AssistanceRadius": 15, "GroupRadius": 10.0 },
+      { "Quality": [75, 149], "RoomChancePercent": 75, "SpawnScalePercent": 85 },
+      { "Quality": [150, 250], "RoomChancePercent": 80, "SpawnScalePercent": 90 }
+    ]
   },
   "mothership": {
-    "Npcs": ["ARZWEH"]
+    "Npcs": ["ARZWEH"],
+    // Team request 32: at most 3 aliens within 16 m of each other, and at most 2 in a room a lift stands in (either
+    // end), so a player arriving by lift is not met by several aliens at once.
+    "MaxGroup": 3,
+    "GroupRadius": 16.0,
+    "LiftRoomMaxNpcs": 2
   },
   // Shadowlands static dungeons (Dungeons/Static, team request 2): the captured monsters are placed, so Npcs,
   // SpawnChancePercent and the level spread are not used here. The captures show them attacking on sight (aggro at

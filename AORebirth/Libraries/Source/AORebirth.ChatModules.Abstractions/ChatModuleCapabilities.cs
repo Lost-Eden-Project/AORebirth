@@ -18,5 +18,14 @@ namespace AORebirth.ChatModules
         /// hide matching channel lines and answer the issuer privately (1.1).
         /// </summary>
         public const string ConsumeCommands = "consume-commands";
+
+        /// <summary>
+        /// <see cref="IChatModuleContext.RegisterLineFilter"/>: replace or block player channel and vicinity lines before
+        /// delivery (1.2).
+        /// </summary>
+        public const string FilterChat = "filter-chat";
+
+        /// <summary><see cref="Players.IChatPlayers.SendSystemMessage"/>: system lines to one online character (1.2).</summary>
+        public const string MessagePlayers = "message-players";
     }
 }

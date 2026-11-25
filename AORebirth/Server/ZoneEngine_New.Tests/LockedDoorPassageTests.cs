@@ -19,6 +19,9 @@ using LostEden.Protocol.GameData;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+using ZoneEngine_New.Core.Ai;
+using ZoneEngine_New.Core.Characters;
+using ZoneEngine_New.Core.Configuration;
 using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
@@ -26,6 +29,7 @@ using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Movement;
 using ZoneEngine_New.Core.Playfield;
+using ZoneEngine_New.Core.Playfield.Locality;
 using ZoneEngine_New.Core.WorldSimulation;
 
 using NVector3 = System.Numerics.Vector3;
@@ -150,6 +154,155 @@ public sealed class LockedDoorPassageTests
     }
 
     /// <summary>
+    /// A closed door hides everything its open doorway shows, at every height. The Alien Mothership door (262487) has
+    /// a collision sphere 2 m tall in a doorway nearly 6 m tall, so a sight line crossing it above 2 m went over the
+    /// closed door.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Styles), DynamicDataSourceType.Method)]
+    public void AClosedDoorHidesItsWholeDoorway(int style)
+    {
+        using Rig rig = Rig.Build(style);
+        int proven = 0;
+        foreach (DoorPair pair in rig.Pairs())
+        {
+            Door door = pair.First;
+            NVector3 facing = Facing(door);
+            var across = new NVector3(facing.Z, 0f, -facing.X);
+            var panel = new NVector3(door.Position.xf, door.Position.yf, door.Position.zf);
+            bool Clear(NVector3 a, NVector3 b) => rig.World.HasLineOfSight(a.X, a.Y, a.Z, b.X, b.Y, b.Z);
+            for (float height = 0.25f; height <= 8f; height += 0.25f)
+            {
+                NVector3 front = panel + (facing * 2f) + new NVector3(0, height, 0);
+                NVector3 back = panel - (facing * 2f) + new NVector3(0, height, 0);
+                // Inside the doorway: the wall beside it stands at this height. Above the wall's top (a room open to
+                // the one next door over it) there is no doorway left for the door to close.
+                NVector3 aside = across * 2.5f;
+                pair.Open();
+                bool doorway = Clear(front, back) && !Clear(front + aside, back + aside) && !Clear(front - aside, back - aside);
+                pair.Unlock();
+                if (!doorway)
+                    continue;
+                Assert.IsFalse(rig.World.HasLineOfSight(front.X, front.Y, front.Z, back.X, back.Y, back.Z),
+                    "style " + style + ": seen over the closed door " + height + " m above its base");
+                proven++;
+            }
+        }
+
+        Assert.IsTrue(proven > 0, "style " + style + ": no doorway was open to sight");
+    }
+
+    /// <summary>
+    /// The player's report from an Alien Mothership: a monster behind a closed door answered a call for help from the
+    /// room in front of it. The two stand either side of the door, the helper on a raised spot so their sight line
+    /// crosses the doorway above 2 m; with the door open it answers (proving the call reaches it), closed it does not.
+    /// </summary>
+    [TestMethod]
+    public void NoCallForHelpReachesAMonsterBehindAClosedMothershipDoor()
+    {
+        using Rig rig = Rig.Build(386);
+        using ServiceProvider services = rig.BrainServices(new GameplaySettings
+        {
+            SocialAggro = new GameplaySocialAggro { DefaultRadius = 20, MaxRadius = 30 }
+        });
+        Playfield playfield = Rig.BrainPlayfield(services);
+        int proven = 0;
+        foreach (DoorPair pair in rig.Pairs())
+        {
+            if (!rig.TryRoomPoints(pair.First, out NVector3 front, out NVector3 back))
+                continue;
+
+            int id = 0x6320 + (proven * 8);
+            NpcCharacter caller = Rig.Monster(services, playfield, id + 1, front);
+            NpcCharacter helper = Rig.Monster(services, playfield, id + 2, back + new NVector3(0, 2.5f, 0));
+            Player attacker = Rig.Fighter(services, playfield, id + 3, front);
+            Player second = Rig.Fighter(services, playfield, id + 4, front);
+
+            pair.Open();
+            bool doorway = helper.HasLineOfSightTo(caller);
+            pair.Unlock();
+            if (!doorway)
+                continue;
+
+            Assert.IsFalse(helper.HasLineOfSightTo(caller), "the closed door hides the caller");
+            caller.Brain!.AddThreatFrom(attacker, 50f, fromDamage: true);
+            Assert.IsFalse(helper.Brain!.Hate.Contains(attacker.Identity), "a monster behind a closed door answered a call for help");
+
+            pair.Open();
+            caller.Brain.AddThreatFrom(second, 50f, fromDamage: true);
+            Assert.IsTrue(helper.Brain.Hate.Contains(second.Identity), "with the door open the call reaches it");
+            pair.Unlock();
+            proven++;
+        }
+
+        Assert.IsTrue(proven > 0, "no mothership doorway had a sight line through it");
+    }
+
+    /// <summary>
+    /// The room rule (characters in rooms no chain of open doors joins cannot see each other) never hides a sight line
+    /// the dungeon's own geometry leaves clear: with every door open, two characters anywhere in different rooms see
+    /// each other exactly when the ray does. With every door closed, neighbours either side of a doorway do not.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Styles), DynamicDataSourceType.Method)]
+    public void RoomsHideOnlyWhatClosedDoorsHide(int style)
+    {
+        using Rig rig = Rig.Build(style);
+        using ServiceProvider services = rig.BrainServices(new GameplaySettings());
+        Playfield playfield = Rig.BrainPlayfield(services);
+        var random = new Random(style);
+        var standing = new List<Player>();
+        foreach (DungeonRoomBounds room in rig.Layout.Rooms)
+        {
+            for (int k = 0; k < 8; k++)
+            {
+                var wanted = new NVector3(room.Min.X + ((float)random.NextDouble() * (room.Max.X - room.Min.X)), room.Min.Y + 1f,
+                    room.Min.Z + ((float)random.NextDouble() * (room.Max.Z - room.Min.Z)));
+                if (rig.Finder.TrySnap(wanted, out NVector3 at) && MathF.Abs(at.X - wanted.X) < 0.5f && MathF.Abs(at.Z - wanted.Z) < 0.5f)
+                    standing.Add(Rig.Fighter(services, playfield, 0x7000 + standing.Count, at));
+            }
+        }
+
+        foreach (DoorPair pair in rig.Pairs())
+            pair.Open();
+        const float eye = MovementConfig.LineOfSightEyeHeight;
+        int acrossRooms = 0;
+        for (int i = 0; i < standing.Count; i++)
+        {
+            for (int j = i + 1; j < standing.Count; j++)
+            {
+                Player a = standing[i], b = standing[j];
+                if (a.Cell?.Id == b.Cell?.Id || AORebirth.Core.Vector.Vector3.Abs(a.Position - b.Position) > 60)
+                    continue;
+                bool ray = rig.World.HasLineOfSight(a.Position.xf, a.Position.yf + eye, a.Position.zf,
+                    b.Position.xf, b.Position.yf + eye, b.Position.zf);
+                Assert.AreEqual(ray, a.HasLineOfSightTo(b), $"style {style}: rooms {a.Cell?.Id} and {b.Cell?.Id}, doors open");
+                if (ray)
+                    acrossRooms++;
+            }
+        }
+
+        Assert.IsTrue(acrossRooms > 0, "style " + style + ": no sight line ran between two rooms");
+
+        int closed = 0;
+        foreach (DoorPair pair in rig.Pairs())
+        {
+            foreach (DoorPair other in rig.Pairs())
+                other.Unlock();
+            if (!rig.TryRoomPoints(pair.First, out NVector3 front, out NVector3 back))
+                continue;
+            Player a = Rig.Fighter(services, playfield, 0x7F00 + closed * 2, front);
+            Player b = Rig.Fighter(services, playfield, 0x7F01 + closed * 2, back);
+            if (a.Cell?.Id == b.Cell?.Id)
+                continue;
+            Assert.IsFalse(a.HasLineOfSightTo(b), $"style {style}: seen across the closed doorway between rooms {a.Cell?.Id} and {b.Cell?.Id}");
+            closed++;
+        }
+
+        Assert.IsTrue(closed > 0, "style " + style + ": no doorway had a room on each side");
+    }
+
+    /// <summary>
     /// A player holding forward into a locked door stays in front of it, as the client holds him. The server's own step
     /// only met the floor, so between client updates it ran the player on into the locked room: the mobs there aggroed
     /// and the pet, with no route to that position, warped in after him. The same run through the door once it is
@@ -256,6 +409,12 @@ public sealed class LockedDoorPassageTests
             foreach (Door door in doors)
                 door.ApplyFlags(door.Flags & ~(Door.OpenFlag | Door.LockedFlag));
         }
+
+        public void Open()
+        {
+            foreach (Door door in doors)
+                door.ApplyFlags((door.Flags & ~Door.LockedFlag) | Door.OpenFlag);
+        }
     }
 
     sealed class Rig : IDisposable
@@ -283,6 +442,74 @@ public sealed class LockedDoorPassageTests
             var services = new ServiceCollection().AddSingleton(new WorldSimulationAccess { Instance = World }).BuildServiceProvider();
             typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(playfield, services);
             return playfield;
+        }
+
+        /// <summary>What NPC brains ask of their playfield on this dungeon's world: registry, locality and gameplay rules.</summary>
+        public ServiceProvider BrainServices(GameplaySettings gameplay)
+        {
+            // The dungeon's rooms over the locality cells, as AcgDungeonPlayfield.BuildWorld lays them.
+            var locality = new PlayfieldLocality(PlayfieldId, null);
+            locality.ApplyDungeonRooms(Layout);
+            return new ServiceCollection()
+                .AddSingleton(new DynelRegistry())
+                .AddSingleton(locality)
+                .AddSingleton(new WorldSimulationAccess { Instance = World })
+                .AddSingleton(gameplay)
+                .BuildServiceProvider();
+        }
+
+        public DungeonWorldLayout Layout { get; private init; } = null!;
+
+        /// <summary>A playfield built without its constructor, enough for brains, combat and line of sight.</summary>
+        public static Playfield BrainPlayfield(IServiceProvider services)
+        {
+            var playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
+            void Set(string field, object value)
+                => typeof(Playfield).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(playfield, value);
+            Set("<Identity>k__BackingField", new Identity { Type = IdentityType.Playfield2, Instance = PlayfieldId });
+            Set("_serviceProvider", services);
+            Set("_pendingStatRebases", new System.Collections.Concurrent.ConcurrentDictionary<Character, byte>());
+            Set("_lifecycleSync", new System.Threading.Lock());
+            Set("<FightModes>k__BackingField", DistrictFightModes.None);
+            return playfield;
+        }
+
+        /// <summary>An aggressive monster with a brain, standing at <paramref name="at"/>.</summary>
+        public static NpcCharacter Monster(IServiceProvider services, Playfield playfield, int id, NVector3 at)
+        {
+            var npc = new NpcCharacter(new Identity { Type = IdentityType.SimpleChar, Instance = id }, new Items())
+            {
+                Playfield = playfield,
+                Attackable = true,
+                Position = new AORebirth.Core.Vector.Vector3(at.X, at.Y, at.Z)
+            };
+            npc.Stats.Set(CharacterStat.Level, 60);
+            npc.Stats.Set(CharacterStat.MaxHealth, 1000);
+            npc.Stats.Set(CharacterStat.Health, 1000);
+            npc.Stats.Set(CharacterStat.BreedHostility, 100);
+            Place(services, npc);
+            NpcBrain.Create(npc, npc.Position);
+            return npc;
+        }
+
+        public static Player Fighter(IServiceProvider services, Playfield playfield, int id, NVector3 at)
+        {
+            var player = new Player(new Identity { Type = IdentityType.SimpleChar, Instance = id }, new Logger(), new Items())
+            {
+                Playfield = playfield,
+                Position = new AORebirth.Core.Vector.Vector3(at.X, at.Y, at.Z)
+            };
+            player.Stats.Set(CharacterStat.Level, 60);
+            player.Stats.Set(CharacterStat.MaxHealth, 100);
+            player.Stats.Set(CharacterStat.Health, 100);
+            Place(services, player);
+            return player;
+        }
+
+        static void Place(IServiceProvider services, Character character)
+        {
+            services.GetRequiredService<DynelRegistry>().Register(character);
+            services.GetRequiredService<PlayfieldLocality>().RegisterDynel(character);
         }
 
         public static Rig Build(int style)
@@ -315,7 +542,7 @@ public sealed class LockedDoorPassageTests
             Assert.IsTrue(NavMeshPathfinder.TryLoadSettings(root, out NavMeshBuildSettings? settings, out string? failure) && settings != null,
                 failure);
             byte[] mesh = NavMeshFile.ToBytes(NavMeshBaker.Bake(DungeonCollisionBuilder.Build(root, result.Generator), settings));
-            var rig = new Rig(world, NavMeshPathfinder.FromBytes(PlayfieldId, mesh, settings!));
+            var rig = new Rig(world, NavMeshPathfinder.FromBytes(PlayfieldId, mesh, settings!)) { Layout = layout };
 
             // The doors QuestDungeonPlayfield.SpawnDoors spawns, closed and unlocked to start.
             var byRooms = new Dictionary<int, List<Door>>();

@@ -136,8 +136,10 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
     /// The style playfield's Districts.json maps each template room (zone) to a district whose spawn points are in
     /// the style's world space; each placed room moves its district's points into the dungeon with the room's own
     /// transform, and they become ordinary hash spawn points of this playfield. Each room uses a random share of its
-    /// points (the population block's SpawnChancePercent), at least one, rolled from the dungeon seed so a rebuilt dungeon
-    /// spawns in the same places; a point that would put more than MaxGroup monsters within GroupRadius is skipped.
+    /// points (the population block's SpawnChancePercent, scaled by its SpawnScalePercent), at least one unless the room
+    /// rolled empty (its RoomChancePercent; at least one room still gets monsters), rolled from the dungeon seed so a rebuilt dungeon
+    /// spawns in the same places; a point that would put more than MaxGroup monsters within GroupRadius is skipped, and so
+    /// is one that would put more than LiftRoomMaxNpcs in a room a floor transition stands in.
     /// Quest dungeon NPCs do not respawn once killed.
     /// </summary>
     void AddDistrictSpawns(AORebirth.World.Collision.DungeonWorldLayout dungeon)
@@ -227,14 +229,43 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
             return false;
         }
 
+        // Lift rooms: the rooms a floor transition stands in, at either end, hold at most LiftRoomMaxNpcs monsters, the
+        // objective NPC and the kill target counted, so a player arriving by lift meets no more than that where they land.
+        int liftRoomMax = population.LiftRoomMaxNpcs ?? int.MaxValue;
+        var liftRooms = new HashSet<int>();
+        if (population.LiftRoomMaxNpcs != null)
+        {
+            foreach (AORebirth.DungeonGenerator.DungeonFloorTransition transition in Layout.FloorTransitions)
+            {
+                liftRooms.Add(transition.From.RoomIndex);
+                liftRooms.Add(transition.To.RoomIndex);
+            }
+        }
+
+        // Room occupancy (the population's RoomChancePercent): which rooms not holding the kill target get monsters at all,
+        // at least one of them; rolled on its own stream so each room's spawn roll below is unchanged by it.
+        bool HoldsTarget(int roomIndex) => _objectiveNpc?.RoomIndex == roomIndex || target is { } held && held.Room == roomIndex;
+        var openRooms = new List<int>();
+        foreach (var room in rooms)
+            if (!HoldsTarget(room.Placement.Index))
+                openRooms.Add(room.Placement.Index);
+        bool[] openOccupied = population.RollOccupiedRooms(openRooms.Count, Layout.Seed);
+        var emptyRooms = new HashSet<int>();
+        for (int i = 0; i < openRooms.Count; i++)
+            if (!openOccupied[i])
+                emptyRooms.Add(openRooms[i]);
+
         int added = 0;
         int skipped = 0;
         int crowded = 0;
+        int liftCapped = 0;
         foreach ((AORebirth.World.Collision.DungeonRoomPlacement placement, PlayfieldDistrictEntry district, List<PlayfieldDistrictSpawnPoint> points) in rooms)
         {
             // The target's point is taken; the target counts as that room's NPC.
             bool holdsFrozenTarget = _objectiveNpc?.RoomIndex == placement.Index;
-            bool holdsTarget = holdsFrozenTarget || target is { } held && held.Room == placement.Index;
+            bool holdsTarget = HoldsTarget(placement.Index);
+            bool liftRoom = liftRooms.Contains(placement.Index);
+            int roomMonsters = (holdsFrozenTarget ? 1 : 0) + (target is { } inRoom && inRoom.Room == placement.Index ? 1 : 0);
             var candidates = points.FindAll(point =>
                 !(target is { } legacyTarget && legacyTarget.Room == placement.Index && ReferenceEquals(point, legacyTarget.Point))
                 && !(holdsFrozenTarget && IsObjectiveNpcPoint(placement, point)));
@@ -243,15 +274,7 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
 
             var roll = new Random(unchecked((Layout.Seed * 7919) ^ ((placement.Index + 1) * 104729)));
             roll.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(candidates));
-            int wanted = 0;
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                if (roll.Next(100) < (population.SpawnChancePercent ?? 0))
-                    wanted++;
-            }
-
-            if (!holdsTarget)
-                wanted = Math.Max(1, wanted);
+            int wanted = population.RollRoomCount(roll, candidates.Count, holdsTarget, occupied: !emptyRooms.Contains(placement.Index));
             int placedInRoom = 0;
             foreach (PlayfieldDistrictSpawnPoint point in candidates)
             {
@@ -278,6 +301,11 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
                         continue;
                     }
                 }
+                if (liftRoom && roomMonsters + (branches?.Length ?? 1) > liftRoomMax)
+                {
+                    liftCapped++;
+                    continue;
+                }
                 if (Crowded(placed, branches?.Length ?? 1))
                 {
                     crowded++;
@@ -300,6 +328,7 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
                     _usedPoints.Add((placement.Index, Array.IndexOf(district.SpawnPoints!, point)));
                     for (int monster = 0; monster < (branches?.Length ?? 1); monster++)
                         placedMonsters.Add(placed);
+                    roomMonsters += branches?.Length ?? 1;
                     placedInRoom++;
                     added++;
                 }
@@ -312,7 +341,7 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
         }
 
         Logger.Info("Quest dungeon " + QuestId + " spawn points=" + added + " skipped=" + skipped + " crowded=" + crowded
-            + " maxGroup=" + (population.MaxGroup?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-")
+            + " liftCapped=" + liftCapped + " maxGroup=" + (population.MaxGroup?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-")
             + " requestedNpcLevel=" + Quality + (population.LevelSpreadPercent > 0 ? "±" + population.LevelSpreadPercent + "%" : string.Empty)
             + " families=" + string.Join(",", fielding.Npcs));
     }

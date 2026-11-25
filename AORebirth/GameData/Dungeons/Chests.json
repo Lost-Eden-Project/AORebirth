@@ -7,7 +7,8 @@
   },
   "mothership": {
     "Enabled": true,
-    "RoomDensity": 2.0,
+    // 15% fewer than 2.0 (team request 32).
+    "RoomDensity": 1.7,
     "LootTable": [
       { "Hash": "LEALRARE", "Repeats": 3, "Chance": 1, "LevelMod": 0, "IgnoreLevel": true },
       { "Hash": "LEALTS", "Repeats": 3, "Chance": 24, "LevelMod": 0, "IgnoreLevel": true },

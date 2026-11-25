@@ -1,0 +1,2 @@
+- Changed: Rubi-Ka terminal missions now grow with their level: low-level missions are smaller and hold fewer monsters, and some rooms are left empty.
+- Changed: Monster groups in low-level missions are spread further apart and are less likely to call in their neighbours.

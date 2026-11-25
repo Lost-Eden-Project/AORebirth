@@ -43,7 +43,7 @@
     <EmbeddedResource Include="Fixtures/LegacyProductionCharacterStats.json" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Remove="ChatNetworkTests.cs;ClientSendTests.cs;BuddyListPersistenceTests.cs;LftTeamRangeTests.cs" />
+    <Compile Remove="ChatNetworkTests.cs;ClientSendTests.cs;BuddyListPersistenceTests.cs;LftTeamRangeTests.cs;ChatLineFilterTests.cs" />
   </ItemGroup>
   <!-- Explicit focused run: the clean baseline contains unrelated stale test types.
        The default/full suite remains unchanged and continues reporting those failures. -->
@@ -55,6 +55,7 @@
     <Compile Include="ClientSendTests.cs" />
     <Compile Include="BuddyListPersistenceTests.cs" />
     <Compile Include="LftTeamRangeTests.cs" />
+    <Compile Include="ChatLineFilterTests.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(StaticDoorFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />

@@ -2051,6 +2051,22 @@ namespace ZoneEngine_New.Core.Ai
             _stuckWarps = 0;
         }
 
+        /// <summary>
+        /// The owner of this player's pet has just been moved within the playfield (a mission lift onto another floor):
+        /// the pet comes along at once, to its formation spot at the owner's landing, as it does when the owner zones.
+        /// A rooted or immobile pet (a tower) stays where it is, as <see cref="PetAi.ShouldRejoinOwner"/> keeps it.
+        /// False when the pet stays.
+        /// </summary>
+        internal bool TravelWithOwner()
+        {
+            if (Pet is not { IsPlayerPet: true, IsAwaitingOwner: false } pet || Npc.IsDead || Npc.IsImmobile || Npc.IsRooted
+                || Npc.Playfield == null || !ReferenceEquals(Npc.Playfield, pet.Owner.Playfield))
+                return false;
+
+            PetRejoinOwnerNode.Rejoin(this);
+            return true;
+        }
+
         /// <summary>A complete navmesh route from here ends at <paramref name="destination"/>. No navmesh: true.</summary>
         internal bool CanWalkTo(Vector3 destination)
         {

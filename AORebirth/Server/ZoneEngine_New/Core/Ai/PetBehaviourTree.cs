@@ -479,21 +479,26 @@ namespace ZoneEngine_New.Core.Ai
         public override NodeState Evaluate(float deltaTime)
         {
             TickStallWatch.Stage("node.pet-rejoin", _brain.Npc.Identity.Instance);
-            PetController pet = _brain.Pet!;
-            pet.WarpRequested = false;
+            Rejoin(_brain);
+            return _nodeState = NodeState.Success;
+        }
 
-            // A waiting pet pulled back to its owner has left its post: it follows from here on.
+        /// <summary>
+        /// Puts the pet at its formation spot beside its owner: a waiting pet has left its post and follows from here on,
+        /// and an attack order is over (the pet drops its target and goes back to what it did before).
+        /// </summary>
+        internal static void Rejoin(NpcBrain brain)
+        {
+            PetController pet = brain.Pet!;
+            pet.WarpRequested = false;
             if (pet.Mode == PetMode.Wait)
                 pet.Order(PetMode.Follow);
-
-            // Pulled back mid-attack: the order is over; the pet drops its target and goes back to what it did before.
             if (pet.Mode == PetMode.Attack)
                 pet.EndAttack();
-            _brain.SetCurrentTarget(LostEden.Protocol.GameData.Identity.None);
+            brain.SetCurrentTarget(LostEden.Protocol.GameData.Identity.None);
 
-            _brain.StopFighting();
-            _brain.WarpTo(PetAi.FollowPoint(_brain));
-            return _nodeState = NodeState.Success;
+            brain.StopFighting();
+            brain.WarpTo(PetAi.FollowPoint(brain));
         }
     }
 

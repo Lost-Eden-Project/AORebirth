@@ -2,6 +2,7 @@ namespace ChatEngine.Modules
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Globalization;
     using System.IO;
     using System.Linq;
@@ -12,6 +13,8 @@ namespace ChatEngine.Modules
 
     using AORebirth.ChatModules;
     using AORebirth.ChatModules.Channels;
+    using AORebirth.ChatModules.Moderation;
+    using AORebirth.ChatModules.Players;
     using AORebirth.Core.GameData;
 
     using ChatEngine.Channels;
@@ -25,7 +28,8 @@ namespace ChatEngine.Modules
     /// Loads the external chat modules named in Config/ChatModules.json once at startup, each into its own load context,
     /// and connects them to the channels: modules see what is said in channels (to relay it out of the game) and post into
     /// channels (to relay outside text in), and may claim channel commands such as !level that are hidden from the channel
-    /// and answered privately. With no ChatModules.json nothing is loaded and every hook is a no-op.
+    /// and answered privately, and may filter player lines (channels and vicinity) before anyone receives them. With no
+    /// ChatModules.json nothing is loaded and every hook is a no-op.
     /// Modules are trusted code running in the chat process; there is no unloading or hot reload.
     /// </summary>
     internal sealed class ChatModuleHost
@@ -45,6 +49,9 @@ namespace ChatEngine.Modules
         /// within <see cref="MaxSenderIdentities"/>.
         /// </summary>
         private const uint FirstSenderWireId = 0xD0000000;
+
+        /// <summary>A line filter slower than this is logged: it runs on the thread delivering chat.</summary>
+        internal const double SlowFilterMilliseconds = 20;
 
         private static readonly int ApiMajorVersion = typeof(IChatModule).Assembly.GetName().Version?.Major ?? 0;
 
@@ -69,6 +76,9 @@ namespace ChatEngine.Modules
 
         /// <summary>Built during load, before the listener opens, then only read; swapped whole.</summary>
         private CommandTable commandTable = CommandTable.Empty;
+
+        /// <summary>The modules' line filters in load order; swapped whole.</summary>
+        private LineFilterEntry[] lineFilters = Array.Empty<LineFilterEntry>();
 
         private ChatModuleHost(ChatServer server)
         {
@@ -175,8 +185,90 @@ namespace ChatEngine.Modules
             this.Publish(channel, ChatMessageSource.Bot, botWireId, botName, text, null);
         }
 
+        /// <summary>
+        /// Runs the modules' line filters over a player's line before anyone receives it: a channel line when
+        /// <paramref name="channel"/> is set, else a vicinity line of <paramref name="vicinityType"/>. A blocked line's
+        /// notice is sent to the speaker here. Called on the delivering thread; runs module code synchronously.
+        /// </summary>
+        public ChatFilterOutcome FilterPlayerLine(ChannelBase channel, VicinityChatType vicinityType, uint senderId,
+            string senderName, int senderGmLevel, string text)
+        {
+            LineFilterEntry[] filters = Volatile.Read(ref this.lineFilters);
+            if (filters.Length == 0 || string.IsNullOrEmpty(text))
+            {
+                return ChatFilterOutcome.Unchanged(text);
+            }
+
+            ChatLineScope scope = channel == null ? ChatLineScope.Vicinity : ChatLineScope.Channel;
+            ChatChannelInfo info = channel == null ? null : Describe(channel);
+            DateTime timestamp = DateTime.UtcNow;
+            string current = text;
+            string replacedBy = null;
+            foreach (LineFilterEntry entry in filters)
+            {
+                ChatFilterResult result;
+                long started = Stopwatch.GetTimestamp();
+                try
+                {
+                    result = entry.Filter.Filter(new ChatLine(scope, info, vicinityType, senderId, senderName, senderGmLevel,
+                        current, text, timestamp)) ?? ChatFilterResult.Pass;
+                }
+                catch (Exception exception)
+                {
+                    entry.ReportFailure(exception);
+                    continue;
+                }
+                finally
+                {
+                    entry.CheckDuration(started);
+                }
+
+                if (result.Action == ChatFilterAction.Block)
+                {
+                    string notice = (result.Notice ?? string.Empty).Trim();
+                    if (notice.Length > 0)
+                    {
+                        this.SendSystem(senderId, notice.Length > MaxTextLength ? notice.Substring(0, MaxTextLength) : notice);
+                    }
+
+                    return new ChatFilterOutcome(current, entry.ModuleId, replacedBy);
+                }
+
+                if (result.Action == ChatFilterAction.Replace)
+                {
+                    if (string.IsNullOrEmpty(result.Text) || result.Text.Length > MaxTextLength)
+                    {
+                        entry.ReportInvalidReplacement(result.Text?.Length ?? 0);
+                    }
+                    else if (!string.Equals(result.Text, current, StringComparison.Ordinal))
+                    {
+                        current = result.Text;
+                        replacedBy = replacedBy == null ? entry.ModuleId : replacedBy + "," + entry.ModuleId;
+                    }
+                }
+            }
+
+            return new ChatFilterOutcome(current, null, replacedBy);
+        }
+
+        /// <summary>Adds a module's line filter at the end of the chain; done while modules load.</summary>
+        internal void AddLineFilter(string moduleId, IChatLineFilter filter)
+        {
+            if (filter == null)
+            {
+                throw new ArgumentNullException(nameof(filter));
+            }
+
+            LineFilterEntry[] current = this.lineFilters;
+            var next = new LineFilterEntry[current.Length + 1];
+            Array.Copy(current, next, current.Length);
+            next[current.Length] = new LineFilterEntry(moduleId, filter);
+            Volatile.Write(ref this.lineFilters, next);
+        }
+
         public void Shutdown()
         {
+            Volatile.Write(ref this.lineFilters, Array.Empty<LineFilterEntry>());
             ChatModuleDelivery[] stopping = this.deliveries;
             this.deliveries = Array.Empty<ChatModuleDelivery>();
             foreach (ChatModuleDelivery delivery in stopping)
@@ -214,6 +306,8 @@ namespace ChatEngine.Modules
                 ChatModuleCapabilities.ReadChannels,
                 ChatModuleCapabilities.PostChannels,
                 ChatModuleCapabilities.ConsumeCommands,
+                ChatModuleCapabilities.FilterChat,
+                ChatModuleCapabilities.MessagePlayers,
             };
             var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             if (settings.Capabilities == null)
@@ -379,12 +473,24 @@ namespace ChatEngine.Modules
             catch
             {
                 context.View.EndRegistration();
+                context.EndFilterRegistration();
                 delivery.Stop(DeliveryStopTimeout);
                 ShutdownEntries(manifest.Id, entries);
                 throw;
             }
 
             List<CommandEntry> registered = context.View.EndRegistration();
+            List<IChatLineFilter> filters = context.EndFilterRegistration();
+            foreach (IChatLineFilter filter in filters)
+            {
+                this.AddLineFilter(manifest.Id, filter);
+            }
+
+            if (filters.Count > 0)
+            {
+                Log.Info("Chat module " + manifest.Id + " line filters: " + filters.Count);
+            }
+
             if (registered.Count > 0)
             {
                 CommandTable table = this.commandTable;
@@ -549,6 +655,57 @@ namespace ChatEngine.Modules
             }
         }
 
+        private static ChatPlayerInfo DescribePlayer(Client client)
+        {
+            return client == null || client.IsBot || client.Character == null
+                ? null
+                : new ChatPlayerInfo(client.Character.CharacterId, client.Character.characterName,
+                    client.Character.CharacterGMLevel);
+        }
+
+        private ChatPlayerInfo FindPlayer(uint characterId)
+        {
+            Client client;
+            return this.server.ConnectedClients.TryGetValue(characterId, out client) ? DescribePlayer(client) : null;
+        }
+
+        private ChatPlayerInfo FindPlayerByName(string name)
+        {
+            string wanted = (name ?? string.Empty).Trim();
+            if (wanted.Length == 0)
+            {
+                return null;
+            }
+
+            foreach (Client client in this.server.ConnectedClients.Values)
+            {
+                if (client != null && !client.IsBot && client.Character != null
+                    && string.Equals(client.Character.characterName, wanted, StringComparison.OrdinalIgnoreCase))
+                {
+                    return DescribePlayer(client);
+                }
+            }
+
+            return null;
+        }
+
+        private ChatPostResult SendPlayerSystemMessage(uint characterId, string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length > MaxTextLength)
+            {
+                return ChatPostResult.InvalidText;
+            }
+
+            Client client;
+            if (!this.server.ConnectedClients.TryGetValue(characterId, out client) || client == null || client.IsBot)
+            {
+                return ChatPostResult.RecipientOffline;
+            }
+
+            client.Send(MsgSystem.Create(text));
+            return ChatPostResult.Posted;
+        }
+
         /// <summary>
         /// One stable wire id per sender name: clients cache the name per id for the session, so an id must never change
         /// name. The first spelling seen is the one shown.
@@ -591,6 +748,63 @@ namespace ChatEngine.Modules
             public uint WireId { get; }
 
             public string Name { get; }
+        }
+
+        /// <summary>One module's line filter, with rate-limited reporting of its failures and slowness.</summary>
+        private sealed class LineFilterEntry
+        {
+            private long failures;
+
+            private long slow;
+
+            private long invalid;
+
+            public LineFilterEntry(string moduleId, IChatLineFilter filter)
+            {
+                this.ModuleId = moduleId;
+                this.Filter = filter;
+            }
+
+            public string ModuleId { get; }
+
+            public IChatLineFilter Filter { get; }
+
+            public void ReportFailure(Exception exception)
+            {
+                long count = Interlocked.Increment(ref this.failures);
+                if (count == 1 || count % 1000 == 0)
+                {
+                    Log.Error(exception, "Chat module " + this.ModuleId + " line filter failed (" + count
+                        + " so far); the line went on as it was.");
+                }
+            }
+
+            public void ReportInvalidReplacement(int length)
+            {
+                long count = Interlocked.Increment(ref this.invalid);
+                if (count == 1 || count % 1000 == 0)
+                {
+                    Log.Warn("Chat module " + this.ModuleId + " line filter replaced a line with " + length
+                        + " characters (1 to " + MaxTextLength + " allowed); ignored (" + count + " so far).");
+                }
+            }
+
+            public void CheckDuration(long started)
+            {
+                double elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                if (elapsed < SlowFilterMilliseconds)
+                {
+                    return;
+                }
+
+                long count = Interlocked.Increment(ref this.slow);
+                if (count == 1 || count % 1000 == 0)
+                {
+                    Log.Warn(string.Format(CultureInfo.InvariantCulture,
+                        "Chat module {0} line filter took {1:0.0} ms ({2} slow so far); it runs on the chat delivery thread.",
+                        this.ModuleId, elapsed, count));
+                }
+            }
         }
 
         private sealed class CommandTable
@@ -737,13 +951,54 @@ namespace ChatEngine.Modules
 
         private sealed class ModuleContext : IChatModuleContext
         {
+            private readonly Gate gate;
+
+            private readonly object filterSync = new object();
+
+            /// <summary>Filters added during Initialize; null once registration has ended.</summary>
+            private List<IChatLineFilter> pendingFilters = new List<IChatLineFilter>();
+
             public ModuleContext(ChatModuleHost host, string moduleId, string moduleDirectory, Gate gate,
                 ChatModuleDelivery delivery)
             {
+                this.gate = gate;
                 this.ModuleId = moduleId;
                 this.ModuleDirectory = moduleDirectory;
                 this.Log = new ModuleLogger(moduleId);
                 this.View = new ChannelsView(host, moduleId, gate, delivery);
+                this.Players = new PlayersView(host, gate);
+            }
+
+            public IChatPlayers Players { get; }
+
+            public void RegisterLineFilter(IChatLineFilter filter)
+            {
+                this.gate.Demand(ChatModuleCapabilities.FilterChat);
+                if (filter == null)
+                {
+                    throw new ArgumentNullException(nameof(filter));
+                }
+
+                lock (this.filterSync)
+                {
+                    if (this.pendingFilters == null)
+                    {
+                        throw new InvalidOperationException("Chat line filters can be registered only during Initialize.");
+                    }
+
+                    this.pendingFilters.Add(filter);
+                }
+            }
+
+            /// <summary>Ends filter registration and returns what was added; later RegisterLineFilter calls throw.</summary>
+            public List<IChatLineFilter> EndFilterRegistration()
+            {
+                lock (this.filterSync)
+                {
+                    List<IChatLineFilter> result = this.pendingFilters ?? new List<IChatLineFilter>();
+                    this.pendingFilters = null;
+                    return result;
+                }
             }
 
             public ChannelsView View { get; }
@@ -769,6 +1024,35 @@ namespace ChatEngine.Modules
                 {
                     return JsonSerializer.Deserialize<T>(stream, ChatModulesSettings.JsonOptions);
                 }
+            }
+        }
+
+        private sealed class PlayersView : IChatPlayers
+        {
+            private readonly ChatModuleHost host;
+
+            private readonly Gate gate;
+
+            public PlayersView(ChatModuleHost host, Gate gate)
+            {
+                this.host = host;
+                this.gate = gate;
+            }
+
+            public ChatPlayerInfo Find(uint characterId)
+            {
+                return this.host.FindPlayer(characterId);
+            }
+
+            public ChatPlayerInfo FindByName(string name)
+            {
+                return this.host.FindPlayerByName(name);
+            }
+
+            public ChatPostResult SendSystemMessage(uint characterId, string text)
+            {
+                this.gate.Demand(ChatModuleCapabilities.MessagePlayers);
+                return this.host.SendPlayerSystemMessage(characterId, text);
             }
         }
 
@@ -872,5 +1156,31 @@ namespace ChatEngine.Modules
                 }
             }
         }
+    }
+
+    /// <summary>What the line filters made of a player's line: the text to deliver, or which module blocked it.</summary>
+    internal readonly struct ChatFilterOutcome
+    {
+        public ChatFilterOutcome(string text, string blockedBy, string replacedBy)
+        {
+            this.Text = text;
+            this.BlockedBy = blockedBy;
+            this.ReplacedBy = replacedBy;
+        }
+
+        /// <summary>The text to deliver; meaningless when <see cref="Blocked"/>.</summary>
+        public string Text { get; }
+
+        /// <summary>The module whose filter blocked the line, or null.</summary>
+        public string BlockedBy { get; }
+
+        /// <summary>The modules (comma-separated) whose filters changed the text, or null.</summary>
+        public string ReplacedBy { get; }
+
+        public bool Blocked => this.BlockedBy != null;
+
+        public bool Replaced => this.ReplacedBy != null;
+
+        public static ChatFilterOutcome Unchanged(string text) => new ChatFilterOutcome(text, null, null);
     }
 }

@@ -1720,8 +1720,33 @@
             ArgumentNullException.ThrowIfNull(door);
             if (!_gameData.TryGetDynelCollisionSphere(door.TemplateId, out float radius, out float centerY))
                 return false;
-            _doors.Add(door, radius, centerY);
+            _doors.Add(door, radius, centerY, DoorwayHeight(door.Position));
             return true;
+        }
+
+        /// <summary>The tallest doorway a dungeon door is measured against (the Alien Mothership's stand about 6 m).</summary>
+        const float MaxDoorwayHeight = 12f;
+
+        /// <summary>Where the doorway measurement starts above the door's base, clear of the floor it stands on.</summary>
+        const float DoorwayProbeLift = 0.5f;
+
+        /// <summary>
+        /// How high the doorway through <paramref name="doorBase"/> stands open: the first surface straight above it (the
+        /// lintel), up to <see cref="MaxDoorwayHeight"/>. 0 when nothing is above it. Surfaces are one-sided, so the
+        /// line is cast both ways, as the sight test does.
+        /// </summary>
+        float DoorwayHeight(AoVector3 doorBase)
+        {
+            if (Surface == null)
+                return 0f;
+
+            float baseY = (float)doorBase.y;
+            var low = new Vec3((float)doorBase.x, baseY + DoorwayProbeLift, (float)doorBase.z);
+            var high = new Vec3(low.X, baseY + MaxDoorwayHeight, low.Z);
+            if (Surface.GetLineIntersection(low, high, out Vec3 hit, out _, false, null)
+                || Surface.GetLineIntersection(high, low, out hit, out _, false, null))
+                return hit.Y - baseY;
+            return 0f;
         }
 
         /// <summary>A door opened or closed: cached sight lines through it are stale.</summary>

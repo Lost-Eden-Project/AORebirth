@@ -100,30 +100,9 @@ public sealed class DungeonLayoutBlock : IDungeonBlock<DungeonLayoutBlock>
     /// </summary>
     internal DungeonLayoutBlock? ForQuality(int quality, out string? problem)
     {
-        problem = null;
-        if (Bands is not { Count: > 0 } bands)
-            return this;
-        foreach (DungeonLayoutBlock band in bands)
-        {
-            if (band?.Quality is not [int lowest, int highest] || highest < lowest)
-            {
-                problem = "Layout.Bands need a Quality [lowest, highest]";
-                return null;
-            }
-            if (band.Bands != null)
-            {
-                problem = "Layout.Bands cannot hold bands";
-                return null;
-            }
-        }
-        DungeonLayoutBlock? match = bands.FirstOrDefault(band => quality >= band.Quality![0] && quality <= band.Quality[1]);
-        if (match == null)
-        {
-            problem = "Layout.Bands have none for quality " + quality.ToString(CultureInfo.InvariantCulture);
-            return null;
-        }
-        DungeonLayoutBlock resolved = match.Over(this);
-        resolved.Bands = null;
+        DungeonLayoutBlock? resolved = QualityBands.Resolve(this, Bands, b => b.Bands, b => b.Quality, "Layout", quality, out problem);
+        if (resolved != null && !ReferenceEquals(resolved, this))
+            resolved.Bands = null;
         return resolved;
     }
 
@@ -149,6 +128,45 @@ public sealed class DungeonLayoutBlock : IDungeonBlock<DungeonLayoutBlock>
     }
 }
 
+/// <summary>
+/// A block's quality bands: the band whose Quality [lowest, highest] holds the mission's quality, over the block (the
+/// band's fields win). A banded block must have a band for every quality it is asked for; a band holds no bands.
+/// </summary>
+internal static class QualityBands
+{
+    internal static T? Resolve<T>(T block, List<T>? bands, Func<T, List<T>?> nested, Func<T, int[]?> range, string name,
+        int quality, out string? problem) where T : class, IDungeonBlock<T>
+    {
+        problem = null;
+        if (bands is not { Count: > 0 })
+            return block;
+        foreach (T band in bands)
+        {
+            if (band == null || range(band) is not [int lowest, int highest] || highest < lowest)
+            {
+                problem = name + ".Bands need a Quality [lowest, highest]";
+                return null;
+            }
+            if (nested(band) != null)
+            {
+                problem = name + ".Bands cannot hold bands";
+                return null;
+            }
+        }
+        T? match = bands.FirstOrDefault(band => quality >= range(band)![0] && quality <= range(band)![1]);
+        if (match == null)
+        {
+            problem = name + ".Bands have none for quality " + quality.ToString(CultureInfo.InvariantCulture);
+            return null;
+        }
+        return match.Over(block);
+    }
+
+    /// <summary>The lowest quality of each band (one check per band at load); [1] for a block without bands.</summary>
+    internal static IEnumerable<int> Lowest<T>(List<T>? bands, Func<T, int[]?> range)
+        => bands is { Count: > 0 } ? bands.Select(band => band != null && range(band) is [int lowest, _] ? lowest : 0) : [1];
+}
+
 /// <summary>The ordinary monsters: which, how many, how strong, how close together, and what they drop besides their own tables.</summary>
 public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBlock>
 {
@@ -157,8 +175,29 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
     /// <summary>NPC hashes; each spawn picks one.</summary>
     public string[]? Npcs { get; set; }
 
-    /// <summary>Chance, in percent, that a room's spawn point gets a monster.</summary>
+    /// <summary>Chance, in percent, that a room's spawn point gets a monster (before <see cref="SpawnScalePercent"/>).</summary>
     public int? SpawnChancePercent { get; set; }
+
+    /// <summary>
+    /// Percent of <see cref="SpawnChancePercent"/> each spawn point rolls at (null: 100). A quality band sets this, not
+    /// the chance itself, so the terminal's Head On / Stealth slider still moves the chance at every level.
+    /// </summary>
+    public int? SpawnScalePercent { get; set; }
+
+    /// <summary>
+    /// Chance, in percent, that a room with spawn points gets monsters at all (null: 100, every such room gets at least
+    /// one). The room holding the kill target keeps it either way, and at least one other room always gets monsters.
+    /// </summary>
+    public int? RoomChancePercent { get; set; }
+
+    /// <summary>
+    /// Populations by mission quality: the band whose <see cref="Quality"/> holds the mission's quality changes this
+    /// block (its fields win). A block with bands must have one for every quality it is asked for.
+    /// </summary>
+    public List<DungeonPopulationBlock>? Bands { get; set; }
+
+    /// <summary>In a band: the mission qualities it is for, [lowest, highest].</summary>
+    public int[]? Quality { get; set; }
 
     /// <summary>Each monster's level rolls this many percent either side of the mission quality (0 to 90).</summary>
     public int? LevelSpreadPercent { get; set; }
@@ -168,6 +207,12 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
 
     /// <summary>Distance at which two monsters count as one group.</summary>
     public float? GroupRadius { get; set; }
+
+    /// <summary>
+    /// Most monsters in a room a floor transition (lift) stands in, at either end, the objective NPC and the kill target
+    /// counted: a player arriving by lift meets no more than this many in the room they land in. Null: no limit.
+    /// </summary>
+    public int? LiftRoomMaxNpcs { get; set; }
 
     /// <summary>Rows every monster's corpse rolls besides its own table; empty: none.</summary>
     public List<Mobs.MobItemTableEntry>? Loot { get; set; }
@@ -234,13 +279,19 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
     public static readonly string[] Categories = ["human", "monster", "robot"];
     public static readonly string[] StyleNames = ["physical", "mystical", "mixed"];
 
+    public const int MaxSpawnScalePercent = 400;
+
     public DungeonPopulationBlock Over(DungeonPopulationBlock under) => new()
     {
+        Bands = Bands ?? under.Bands,
         Npcs = Npcs ?? under.Npcs,
         SpawnChancePercent = SpawnChancePercent ?? under.SpawnChancePercent,
+        SpawnScalePercent = SpawnScalePercent ?? under.SpawnScalePercent,
+        RoomChancePercent = RoomChancePercent ?? under.RoomChancePercent,
         LevelSpreadPercent = LevelSpreadPercent ?? under.LevelSpreadPercent,
         MaxGroup = MaxGroup ?? under.MaxGroup,
         GroupRadius = GroupRadius ?? under.GroupRadius,
+        LiftRoomMaxNpcs = LiftRoomMaxNpcs ?? under.LiftRoomMaxNpcs,
         Loot = Loot ?? under.Loot,
         Mix = Mix ?? under.Mix,
         Styles = Styles ?? under.Styles,
@@ -253,6 +304,69 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
         Features = Features ?? under.Features,
         Scales = Scales ?? under.Scales
     };
+
+    /// <summary>
+    /// This block for a mission of <paramref name="quality"/>: its band for that quality over it, without bands; null with
+    /// the reason when no band holds the quality.
+    /// </summary>
+    internal DungeonPopulationBlock? ForQuality(int quality, out string? problem)
+    {
+        DungeonPopulationBlock? resolved = QualityBands.Resolve(this, Bands, b => b.Bands, b => b.Quality, "Population", quality, out problem);
+        if (resolved != null && !ReferenceEquals(resolved, this))
+            resolved.Bands = null;
+        return resolved;
+    }
+
+    /// <summary>The chance, in percent, each spawn point rolls at: <see cref="SpawnChancePercent"/> scaled by <see cref="SpawnScalePercent"/>.</summary>
+    [JsonIgnore]
+    public int PointChancePercent => Math.Clamp(
+        (int)Math.Round((SpawnChancePercent ?? 0) * (SpawnScalePercent ?? 100) / 100.0, MidpointRounding.AwayFromZero), 0, 100);
+
+    /// <summary>
+    /// Which of <paramref name="rooms"/> rooms get monsters (<see cref="RoomChancePercent"/>), rolled from the dungeon
+    /// <paramref name="seed"/> on a stream of its own so each room's spawn roll stays as it was. At least one room gets
+    /// monsters when there is any; without a room chance every room does and nothing is rolled.
+    /// </summary>
+    internal bool[] RollOccupiedRooms(int rooms, int seed)
+    {
+        if (rooms < 0)
+            throw new ArgumentOutOfRangeException(nameof(rooms));
+        var occupied = new bool[rooms];
+        int chance = RoomChancePercent ?? 100;
+        if (chance >= 100)
+        {
+            Array.Fill(occupied, true);
+            return occupied;
+        }
+        var roll = new Random(unchecked((seed * 15485863) ^ 0x2D7F3A11));
+        bool any = false;
+        for (int i = 0; i < rooms; i++)
+            any |= occupied[i] = roll.Next(100) < chance;
+        if (!any && rooms > 0)
+            occupied[roll.Next(rooms)] = true;
+        return occupied;
+    }
+
+    /// <summary>
+    /// How many of a room's <paramref name="points"/> spawn points get a monster: each rolls at
+    /// <see cref="PointChancePercent"/> from the room's seeded <paramref name="roll"/>. A room holding the kill target
+    /// keeps its roll (the target is its monster); an occupied room gets at least one, an unoccupied one none. The points
+    /// are rolled either way, so the room's roll sequence after them does not depend on its occupancy.
+    /// </summary>
+    internal int RollRoomCount(Random roll, int points, bool holdsTarget, bool occupied)
+    {
+        ArgumentNullException.ThrowIfNull(roll);
+        int chance = PointChancePercent;
+        int wanted = 0;
+        for (int i = 0; i < points; i++)
+        {
+            if (roll.Next(100) < chance)
+                wanted++;
+        }
+        if (holdsTarget)
+            return wanted;
+        return occupied ? Math.Max(1, wanted) : 0;
+    }
 
     /// <summary>
     /// Puts the population's Aggressiveness and Clan on one of its monsters (each left as the template's when unset),
@@ -343,14 +457,22 @@ public sealed class DungeonPopulationBlock : IDungeonBlock<DungeonPopulationBloc
             return "Population.AggroRangePercent and HelpRangePercent must be 0-" + MaxRangePercent;
         if (Aggressiveness is < 0 || Clan is < 0 || AssistanceRadius is < 0)
             return "Population.Aggressiveness, Clan and AssistanceRadius must be 0 or more";
+        if (Bands != null)
+            return "Population.Bands were not resolved for a quality";
         if (SpawnChancePercent is not (>= 0 and <= 100))
             return "Population.SpawnChancePercent must be 0-100";
+        if (SpawnScalePercent is < 0 or > MaxSpawnScalePercent)
+            return "Population.SpawnScalePercent must be 0-" + MaxSpawnScalePercent + " or left out";
+        if (RoomChancePercent is < 0 or > 100)
+            return "Population.RoomChancePercent must be 0-100 or left out";
         if (LevelSpreadPercent is not (>= 0 and <= MaxSpreadPercent))
             return "Population.LevelSpreadPercent must be 0-" + MaxSpreadPercent;
         if (MaxGroup is not >= 1)
             return "Population.MaxGroup must be at least 1";
         if (GroupRadius is not { } radius || !float.IsFinite(radius) || radius < 0)
             return "Population.GroupRadius must be 0 or more";
+        if (LiftRoomMaxNpcs is < 0)
+            return "Population.LiftRoomMaxNpcs must be 0 or more";
         if (Loot != null && !Loot.TrueForAll(Mobs.MobItemTableEntry.IsWellFormed))
             return "Population.Loot " + LootRowRule;
         if (Features != null && !Array.TrueForAll(Features, name => TryParseFeature(name, out _)))
@@ -603,12 +725,24 @@ public sealed class DungeonPresets
         {
             string? problem = ResolveBlock(new DungeonLayoutBlock { Preset = name }, presets._layouts, defaults.Layout, out var b);
             // A banded layout is checked once per band, at the band's lowest quality.
-            foreach (int quality in b?.Bands?.Select(band => band?.Quality is [int lowest, _] ? lowest : 0) ?? [1])
+            foreach (int quality in QualityBands.Lowest(b?.Bands, band => band.Quality))
                 problem ??= b!.ForQuality(quality, out string? bandProblem)?.Problem() ?? bandProblem;
             Check("Layouts." + name, problem);
         }
         foreach (string name in presets._population.Keys)
-            Check("Population." + name, ResolveBlock(new DungeonPopulationBlock { Preset = name }, presets._population, defaults.Population, out var b) ?? presets.PopulationProblem(b!));
+        {
+            string? problem = ResolveBlock(new DungeonPopulationBlock { Preset = name }, presets._population, defaults.Population, out var b);
+            // A banded population is checked once per band, at the band's lowest quality, like a banded layout.
+            foreach (int quality in QualityBands.Lowest(b?.Bands, band => band.Quality))
+            {
+                if (problem != null)
+                    break;
+                DungeonPopulationBlock? band = b!.ForQuality(quality, out problem);
+                if (band != null)
+                    problem = presets.PopulationProblem(band);
+            }
+            Check("Population." + name, problem);
+        }
         foreach (string name in presets._chests.Keys)
             Check("Chests." + name, ResolveBlock(new DungeonChestBlock { Preset = name }, presets._chests, defaults.Chests, out var b) ?? b!.Problem());
         foreach (string name in presets._objectives.Keys)
@@ -623,8 +757,8 @@ public sealed class DungeonPresets
     }
 
     /// <summary>
-    /// The request's blocks over their presets over the defaults, the layout's band for <paramref name="quality"/>
-    /// applied; null with the reason when it does not resolve.
+    /// The request's blocks over their presets over the defaults, the layout's and the population's bands for
+    /// <paramref name="quality"/> applied; null with the reason when it does not resolve.
     /// </summary>
     public ResolvedDungeon? Resolve(DungeonRequest? request, int quality, out string? problem)
     {
@@ -638,6 +772,9 @@ public sealed class DungeonPresets
             return null;
         layout = layout!.ForQuality(quality, out problem);
         if (layout == null)
+            return null;
+        population = population!.ForQuality(quality, out problem);
+        if (population == null)
             return null;
         var resolved = new ResolvedDungeon { Layout = layout, Population = population!, Chests = chests!, Objective = objective! };
         problem = resolved.Problem() ?? PopulationProblem(resolved.Population);

@@ -151,6 +151,15 @@ namespace ZoneEngine_New.Core.Entities
             if ((dx * dx) + (dy * dy) + (dz * dz) > 200f * 200f)
                 return false;
 
+            // In a mission dungeon two characters in rooms no chain of open doors joins cannot see each other, whatever
+            // the walls let a ray through (an Alien Mothership door hid only the bottom 2 m of its doorway). Characters
+            // only: a door or chest stands on its room's edge, and a player must still see a door to open it.
+            if (this is Character && other is Character && world.Doors.Count > 0
+                && Playfield.GetService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>() is { } locality
+                && locality.TryGetSeparateRooms(this, other, out int room, out int otherRoom)
+                && world.Doors.SeparatesRooms(room, otherRoom, locality.DungeonRoomLinks))
+                return false;
+
             return world.HasLineOfSight(fx, fy, fz, tx, ty, tz);
         }
 

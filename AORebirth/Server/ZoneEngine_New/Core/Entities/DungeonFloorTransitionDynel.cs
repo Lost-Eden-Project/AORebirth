@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Entities;
 
 using System;
+using System.Collections.Generic;
 using LostEden.Protocol.GameData;
 using ZoneEngine_New.Core.Inventory;
 using Vector3 = AORebirth.Core.Vector.Vector3;
@@ -56,6 +57,11 @@ public sealed class DungeonFloorTransitionDynel : StaticDynel
         int lockedSeconds = player.LockSkill(levelStat, ReuseLockoutSeconds, nowUtc);
         player.ShowSkillLock(levelStat, ReuseLockoutSeconds, lockedSeconds);
         player.TeleportWithinPlayfield(Landing);
+        // The rider's pets ride along, landing in formation beside the rider. Left to walk, they had no route to the
+        // other floor and only caught up once they noticed they were too far away, a fighting pet not before its fight.
+        IReadOnlyList<NpcCharacter> pets = player.OwnedPets.All;
+        for (int i = 0; i < pets.Count; i++)
+            pets[i].Brain?.TravelWithOwner();
         return true;
     }
 

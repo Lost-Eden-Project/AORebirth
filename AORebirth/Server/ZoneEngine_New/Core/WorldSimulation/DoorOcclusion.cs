@@ -74,6 +74,103 @@ namespace ZoneEngine_New.Core.WorldSimulation
         /// <summary>Raised when a door changes state, so cached sight lines through it are dropped.</summary>
         public event Action? Changed;
 
+        void RaiseChanged() => Changed?.Invoke();
+
+        /// <summary>Room pair (low room &lt;&lt; 16 | high room) -> the quest dungeon doors in its doorways.</summary>
+        readonly Dictionary<int, List<Blocker>> _roomDoors = new();
+
+        /// <summary>Every door in <see cref="_roomDoors"/>, in the order <see cref="RoomGroups.Open"/> recorded them.</summary>
+        readonly List<Blocker> _roomDoorList = new();
+
+        /// <summary>
+        /// Room -> one id per group of rooms joined through open doorways, and each room door's open state when they
+        /// were grouped. A door's flags change on many paths (a touch, a use, a pick, an authored trigger), so the
+        /// groups are checked against the doors themselves rather than trusting every path to say so.
+        /// </summary>
+        sealed record RoomGroups(Dictionary<int, int> Group, bool[] Open, IReadOnlyDictionary<int, IReadOnlyList<int>> Links);
+
+        RoomGroups? _roomGroups;
+
+        /// <summary>
+        /// True when nothing in <paramref name="roomA"/> can see into <paramref name="roomB"/>: no chain of open doorways
+        /// joins the two rooms (<paramref name="links"/>: the dungeon's room links). In a mission dungeon the rooms meet
+        /// only at doorways, so a sight line from one room to another runs through every doorway between them, and one
+        /// closed door on each way hides them from each other whatever the walls let a ray through. A link with no quest
+        /// door in it (a static playfield's room links, a door without a collision sphere) counts as open, and a room
+        /// missing from the links decides nothing.
+        /// </summary>
+        public bool SeparatesRooms(int roomA, int roomB, IReadOnlyDictionary<int, IReadOnlyList<int>> links)
+        {
+            ArgumentNullException.ThrowIfNull(links);
+            if (roomA == roomB || _roomDoors.Count == 0 || !links.ContainsKey(roomA) || !links.ContainsKey(roomB))
+                return false;
+
+            Dictionary<int, int> groups = OpenRoomGroups(links);
+            return groups.TryGetValue(roomA, out int groupA) && groups.TryGetValue(roomB, out int groupB) && groupA != groupB;
+        }
+
+        Dictionary<int, int> OpenRoomGroups(IReadOnlyDictionary<int, IReadOnlyList<int>> links)
+        {
+            RoomGroups? cached = _roomGroups;
+            if (cached != null && ReferenceEquals(cached.Links, links) && cached.Open.Length == _roomDoorList.Count)
+            {
+                bool same = true;
+                for (int i = 0; i < cached.Open.Length && same; i++)
+                    same = cached.Open[i] == _roomDoorList[i].IsOpen;
+                if (same)
+                    return cached.Group;
+            }
+
+            var open = new bool[_roomDoorList.Count];
+            for (int i = 0; i < open.Length; i++)
+                open[i] = _roomDoorList[i].IsOpen;
+            var groups = new Dictionary<int, int>(links.Count);
+            var reached = new List<int>();
+            foreach (int start in links.Keys)
+            {
+                if (groups.ContainsKey(start))
+                    continue;
+                groups[start] = start;
+                reached.Clear();
+                reached.Add(start);
+                for (int i = 0; i < reached.Count; i++)
+                {
+                    int room = reached[i];
+                    if (!links.TryGetValue(room, out IReadOnlyList<int>? linked))
+                        continue;
+                    for (int j = 0; j < linked.Count; j++)
+                    {
+                        int next = linked[j];
+                        if (!groups.ContainsKey(next) && DoorwayOpen(room, next))
+                        {
+                            groups[next] = start;
+                            reached.Add(next);
+                        }
+                    }
+                }
+            }
+
+            _roomGroups = new RoomGroups(groups, open, links);
+            return groups;
+        }
+
+        /// <summary>Some doorway between the two rooms is open (or none of them has a quest door in it).</summary>
+        bool DoorwayOpen(int roomA, int roomB)
+        {
+            if (!_roomDoors.TryGetValue(RoomPair(roomA, roomB), out List<Blocker>? doors))
+                return true;
+            foreach (Blocker door in doors)
+            {
+                if (door.IsOpen)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static int RoomPair(int roomA, int roomB)
+            => (Math.Min(roomA, roomB) << 16) | (Math.Max(roomA, roomB) & 0xFFFF);
+
         /// <summary>
         /// Binds placed door stats after template and placement overrides have been applied. State publication
         /// does not require a collision sphere; a door without one still receives trigger and zone-in updates.
@@ -91,7 +188,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 if (blocker.StaticIdentity == door.Identity)
                     blocker.StaticEntity = door;
             }
-            Changed?.Invoke();
+            RaiseChanged();
         }
 
         /// <summary>
@@ -112,18 +209,35 @@ namespace ZoneEngine_New.Core.WorldSimulation
             _closeInhibited[door.Identity] = inhibit;
             if (((previous ^ flags) & (Door.OpenFlag | Door.LockedFlag)) != 0 || previousInhibit != inhibit)
             {
-                Changed?.Invoke();
+                RaiseChanged();
                 SendStaticStatus(playfield, door.Identity, flags, inhibit);
             }
             return true;
         }
 
-        /// <summary>A quest dungeon's door entity: its own flags say open and locked.</summary>
-        public void Add(Door door, float radius, float centerY)
+        /// <summary>
+        /// A quest dungeon's door entity: its own flags say open and locked. <paramref name="doorwayHeight"/> is how high
+        /// its doorway stands open above the door's base (0 when unknown); the panel reaches at least that high, so a
+        /// closed door hides its whole doorway even where its collision sphere is shorter than it.
+        /// </summary>
+        public void Add(Door door, float radius, float centerY, float doorwayHeight = 0f)
         {
             ArgumentNullException.ThrowIfNull(door);
-            Add(new Blocker(door, door.Position, door.Rotation.yf, door.Rotation.wf, radius, centerY,
-                door.IsOpen, door.IsLocked));
+            var blocker = new Blocker(door, door.Position, door.Rotation.yf, door.Rotation.wf, radius, centerY,
+                door.IsOpen, door.IsLocked, doorwayHeight);
+            if (!Add(blocker))
+                return;
+
+            // RoomLink is (room << 16) | linked room; the exit's 0xFFFF0000 leads outside and joins no two rooms.
+            int room = (door.RoomLink >> 16) & 0xFFFF;
+            int linkedRoom = door.RoomLink & 0xFFFF;
+            if (room == linkedRoom || room == 0xFFFF || linkedRoom == 0xFFFF)
+                return;
+            int pair = RoomPair(room, linkedRoom);
+            if (!_roomDoors.TryGetValue(pair, out List<Blocker>? doors))
+                _roomDoors[pair] = doors = new List<Blocker>(1);
+            doors.Add(blocker);
+            _roomDoorList.Add(blocker);
         }
 
         /// <summary>A door placed in the playfield's static data (Dynels.dat), which the client creates itself.</summary>
@@ -160,12 +274,13 @@ namespace ZoneEngine_New.Core.WorldSimulation
             }
         }
 
-        void Add(Blocker blocker)
+        bool Add(Blocker blocker)
         {
             if (blocker.Height <= 0f || blocker.HalfWidth <= 0f)
-                return;
+                return false;
             _blockers.Add(blocker);
-            Changed?.Invoke();
+            RaiseChanged();
+            return true;
         }
 
         /// <summary>True when the segment passes through a closed door's panel.</summary>
@@ -335,7 +450,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
             _nearby.Clear();
             if (changed)
-                Changed?.Invoke();
+                RaiseChanged();
         }
 
         /// <summary>
@@ -421,7 +536,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
             readonly bool _locked;
 
             public Blocker(Door? door, AoVector3 position, float rotationY, float rotationW, float radius, float centerY,
-                bool open, bool locked)
+                bool open, bool locked, float doorwayHeight = 0f)
             {
                 _door = door;
                 _open = open;
@@ -434,8 +549,10 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 CenterY = centerY;
                 // A sphere centred above the floor gives the panel inscribed in it from the floor up (twice the centre).
                 // One centred at or below the door's base (the Alien Mothership door 262487: CenterY 0) gives the
-                // sphere's span above the floor instead; twice the centre would be no panel at all.
-                Height = centerY > 0f ? 2f * centerY : centerY + radius;
+                // sphere's span above the floor instead; twice the centre would be no panel at all. That door's sphere
+                // is 2 m tall in a doorway nearly 6 m tall: the measured doorway raises the panel to fill it, or two
+                // NPCs on either side saw each other over the closed door and answered each other's calls for help.
+                Height = MathF.Max(centerY > 0f ? 2f * centerY : centerY + radius, doorwayHeight);
                 HalfWidth = MathF.Sqrt(MathF.Max(0f, (radius * radius) - (centerY * centerY)));
 
                 // Doors turn about the vertical axis only: facing is +Z turned by the yaw, across is +X.

@@ -1,12 +1,12 @@
 # Chat module API
 
 ChatEngine loads external modules: trusted .NET assemblies that run in the chat process. They are meant for relaying
-channels outside the game, for example to Discord or IRC, and back. A module builds against
+channels outside the game, for example to Discord or IRC, and back, and for moderating chat. A module builds against
 `AORebirth.ChatModules.Abstractions` (`AORebirth/Libraries/Source/AORebirth.ChatModules.Abstractions`). That assembly
 is the whole contract and holds no ChatEngine type. It is separate from the zone module API
 ([ZONE_MODULE_API.md](ZONE_MODULE_API.md)).
 
-The current version is **1.1** (1.1 adds channel commands). The major version of the Abstractions `AssemblyVersion` is the contract. ChatEngine
+The current version is **1.2** (1.1 adds channel commands; 1.2 adds line filters and players). The major version of the Abstractions `AssemblyVersion` is the contract. ChatEngine
 refuses a module built against a different major version, and minor versions only add members.
 
 ## Loading
@@ -18,7 +18,11 @@ refuses a module built against a different major version, and minor versions onl
   "Enabled": ["DiscordRelay"],
   "Required": [],
   "Directory": "ChatModules",
-  "Capabilities": { "DiscordRelay": ["read-channels", "post-channels"], "LevelBot": ["consume-commands"] }
+  "Capabilities": {
+    "DiscordRelay": ["read-channels", "post-channels"],
+    "LevelBot": ["consume-commands"],
+    "ChatModeration": ["filter-chat", "message-players", "consume-commands"]
+  }
 }
 ```
 
@@ -76,6 +80,43 @@ context.Channels.RegisterCommand("!level", cmd =>
   command stays registered. When the module's queue is full, the issuer is told it is busy.
 - Only channel lines from players are matched. Vicinity chat, tells, bot posts and module posts never are.
 
+## Line filters (1.2)
+
+During `Initialize`, a module adds a filter with `context.RegisterLineFilter(filter)`. An `IChatLineFilter` sees a
+player's line before anyone receives it and returns `ChatFilterResult.Pass`, `ChatFilterResult.Replace(text)` or
+`ChatFilterResult.Block(notice)`.
+
+```csharp
+context.RegisterLineFilter(new WordFilter(config));   // Filter(ChatLine line) => Pass / Replace / Block
+```
+
+- **What is filtered:** every player line in a channel (Global, Shopping, team, raid, organization and the other
+  ChatChannels.json channels) and every player say, whisper and shout in vicinity. `ChatLine` has `Scope` (`Channel` or
+  `Vicinity`), `Channel` (null for vicinity), `VicinityType` (`Say`, `Whisper`, `Shout`), `SenderId`, `SenderName`,
+  `SenderGmLevel`, `Text`, `OriginalText` and `Timestamp`.
+- **Not filtered:** chat commands (`.`, `/` and registered module commands), BotService bots, module posts, NPC speech
+  and tells.
+- **Thread:** `Filter` runs synchronously on the thread delivering the line (a client's network thread for a channel,
+  the World link for vicinity). It must be fast and in memory: no I/O, no waiting. A filter slower than 20 ms is logged.
+- **Chain:** filters run in module load order. Each sees the previous filter's text in `Text`. The first `Block` ends
+  the chain.
+- **Replace:** the new text goes to every recipient, BotService and the other modules' `MessagePosted`. It must be 1
+  to 1024 characters; anything else is ignored and logged. Channel text is sent as Latin-1, as the client sends it.
+- **Block:** nobody receives the line, and no bot or module sees it. A non-empty notice is shown to the speaker as a
+  system line.
+- **Chat log:** a channel line is logged as said, with `[filtered by <module>]` or `[blocked by <module>]` after the
+  sender.
+- **Failures:** a filter that throws is logged (the first time and every 1000th) and the line goes on as it was.
+
+## Players (1.2)
+
+`context.Players` is safe from any thread, including inside a filter. BotService bots are never returned.
+
+| Member | What it does |
+|---|---|
+| `Find(characterId)`, `FindByName(name)` | The online character (`CharacterId`, `Name`, `GmLevel`), or null. Names are compared ignoring case. |
+| `SendSystemMessage(characterId, text)` | A system line to one online character. Returns `RecipientOffline` when it is not online. |
+
 ## Capabilities
 
 The `Capabilities` entry is optional. A module with no entry may use everything. A module with an entry may use only
@@ -86,3 +127,5 @@ what it lists; any other member throws `UnauthorizedAccessException`, and the en
 | `read-channels` | subscribing to `MessagePosted` |
 | `post-channels` | `Post` |
 | `consume-commands` | `RegisterCommand` and `ReplyPrivate` (1.1) |
+| `filter-chat` | `RegisterLineFilter` (1.2) |
+| `message-players` | `Players.SendSystemMessage` (1.2) |

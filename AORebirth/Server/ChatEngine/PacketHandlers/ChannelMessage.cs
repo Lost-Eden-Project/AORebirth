@@ -34,9 +34,13 @@ namespace ChatEngine.PacketHandlers
     #region Usings ...
 
     using System;
+    using System.Text;
+
+    using AORebirth.ChatModules.Moderation;
 
     using ChatEngine.Channels;
     using ChatEngine.CoreClient;
+    using ChatEngine.Modules;
     using ChatEngine.Packets;
 
     #endregion
@@ -78,17 +82,44 @@ namespace ChatEngine.PacketHandlers
             reader.ReadByte();
             string text = reader.ReadString();
             string channelName = channel.ChannelName;
+            string logSender = client.Character.characterName;
+            ChatModuleHost modules = client.ChatServer().Modules;
 
             // '.' and '/' lines go to the zone; a chat module's registered command (such as !level) goes to that module.
             // Either way nobody in the channel sees the line.
             if (!ProcessServerCommand(text, client)
-                && client.ChatServer().Modules?.TryConsumeCommand(
+                && modules?.TryConsumeCommand(
                     channel,
                     client.Character.CharacterId,
                     client.Character.characterName,
                     client.Character.CharacterGMLevel,
                     text) != true)
             {
+                // A chat module's line filter may replace words or block the line before anyone receives it; the chat
+                // log keeps what was actually said.
+                ChatFilterOutcome filtered = modules == null
+                    ? ChatFilterOutcome.Unchanged(text)
+                    : modules.FilterPlayerLine(
+                        channel,
+                        VicinityChatType.Say,
+                        client.Character.CharacterId,
+                        client.Character.characterName,
+                        client.Character.CharacterGMLevel,
+                        text);
+                if (filtered.Blocked)
+                {
+                    ChatLogger.WriteString(channelName, text, logSender + " [blocked by " + filtered.BlockedBy + "]");
+                    return;
+                }
+
+                string shown = text;
+                if (filtered.Replaced)
+                {
+                    shown = filtered.Text;
+                    packet = ReplaceText(packet, shown);
+                    logSender += " [filtered by " + filtered.ReplacedBy + "]";
+                }
+
                 byte[] newpacket = InsertSender(packet, senderId, ChatLineFlags.IsGm(client));
 
                 foreach (Client recipient in client.ChatServer().ConnectedClients.Values)
@@ -114,22 +145,53 @@ namespace ChatEngine.PacketHandlers
                         channel.ChannelId,
                         client.Character.CharacterId,
                         client.Character.characterName,
-                        text);
+                        shown);
                 }
 
-                client.ChatServer().Modules?.PublishPlayerMessage(
+                modules?.PublishPlayerMessage(
                     channel,
                     client.Character.CharacterId,
                     client.Character.characterName,
-                    text);
+                    shown);
             }
 
-            ChatLogger.WriteString(channelName, text, client.Character.characterName);
+            ChatLogger.WriteString(channelName, text, logSender);
         }
 
         #endregion
 
         #region Methods
+
+        /// <summary>
+        /// The client's channel packet with its text string (at offset 9, after type, length, channel type and channel id)
+        /// replaced by <paramref name="text"/>; the block after it is kept as sent and the length header is rewritten.
+        /// </summary>
+        internal static byte[] ReplaceText(byte[] packet, string text)
+        {
+            const int TextOffset = 9;
+            if (packet == null || packet.Length < TextOffset + 2)
+            {
+                return packet;
+            }
+
+            int restStart = TextOffset + 2 + ((packet[TextOffset] << 8) | packet[TextOffset + 1]);
+            if (restStart > packet.Length)
+            {
+                return packet;
+            }
+
+            byte[] bytes = Encoding.Latin1.GetBytes(text ?? string.Empty);
+            byte[] result = new byte[TextOffset + 2 + bytes.Length + (packet.Length - restStart)];
+            Array.Copy(packet, 0, result, 0, TextOffset);
+            result[TextOffset] = (byte)(bytes.Length >> 8);
+            result[TextOffset + 1] = (byte)bytes.Length;
+            Array.Copy(bytes, 0, result, TextOffset + 2, bytes.Length);
+            Array.Copy(packet, restStart, result, TextOffset + 2 + bytes.Length, packet.Length - restStart);
+            int bodyLength = result.Length - 4;
+            result[2] = (byte)(bodyLength >> 8);
+            result[3] = (byte)bodyLength;
+            return result;
+        }
 
         /// <summary>
         /// The client's channel packet (type, length, channel type, channel id, text S, block S) relayed with the sender

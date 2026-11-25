@@ -60,6 +60,17 @@ namespace ZoneEngine_New.Core.Playfield.Locality
 
         internal bool IsDungeon => _rooms.Length > 0;
 
+        /// <summary>Room index -> the rooms its doorways open onto (both directions); empty without dungeon rooms.</summary>
+        internal IReadOnlyDictionary<int, IReadOnlyList<int>> RoomLinks => _roomLinks;
+
+        /// <summary>
+        /// Room <paramref name="room"/> holds <paramref name="position"/> on its own floor
+        /// (<see cref="DungeonRoomCellResolver.HoldsOnFloor"/>); false for an unknown room.
+        /// </summary>
+        internal bool HoldsOnFloor(int room, Vector3 position)
+            => _roomById.TryGetValue(room, out DungeonRoomBounds bounds)
+               && DungeonRoomCellResolver.HoldsOnFloor(_rooms, bounds, new System.Numerics.Vector3(position.xf, position.yf, position.zf));
+
         /// <summary>True when some dungeon room's box holds <paramref name="position"/>; false outside every room or with no rooms.</summary>
         internal bool IsInsideDungeonRoom(Vector3 position)
         {

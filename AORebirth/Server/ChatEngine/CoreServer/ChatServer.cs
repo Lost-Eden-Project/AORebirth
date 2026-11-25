@@ -1202,18 +1202,43 @@ namespace ChatEngine.CoreServer
         private void DistributeVicinityChat(VicinityChatMessage vicinityChatMessage)
         {
             // A player's line comes without a sender name (an NPC's carries one); only a player can be a GM.
-            Client sender;
-            bool gm = vicinityChatMessage.SenderName == null
-                      && this.ConnectedClients.TryGetValue((uint)vicinityChatMessage.SenderId, out sender)
-                      && ChatLineFlags.IsGm(sender);
+            bool player = vicinityChatMessage.SenderName == null;
+            Client sender = null;
+            bool online = player && this.ConnectedClients.TryGetValue((uint)vicinityChatMessage.SenderId, out sender)
+                          && sender != null && sender.Character != null;
+            bool gm = online && ChatLineFlags.IsGm(sender);
+
+            // An online speaker's chat session already has its name; only an offline one costs a database read.
+            string lookup = vicinityChatMessage.SenderName
+                            ?? (online && !string.IsNullOrEmpty(sender.Character.characterName)
+                                ? sender.Character.characterName
+                                : CharacterDao.Instance.GetCharacterNameById(vicinityChatMessage.SenderId));
+
+            // A player's say, whisper or shout goes through the chat modules' line filters before anyone hears it.
+            string text = vicinityChatMessage.Text;
+            ChatEngine.Modules.ChatModuleHost modules = this.Modules;
+            if (player && modules != null)
+            {
+                ChatEngine.Modules.ChatFilterOutcome filtered = modules.FilterPlayerLine(
+                    null,
+                    (AORebirth.ChatModules.Moderation.VicinityChatType)vicinityChatMessage.MessageType,
+                    (uint)vicinityChatMessage.SenderId,
+                    lookup,
+                    online ? sender.Character.CharacterGMLevel : 0,
+                    text);
+                if (filtered.Blocked)
+                {
+                    return;
+                }
+
+                text = filtered.Text;
+            }
+
             byte[] packet = MsgVicinity.Create(
                 (uint)vicinityChatMessage.SenderId,
-                vicinityChatMessage.Text,
+                text,
                 (byte)vicinityChatMessage.MessageType,
                 gm);
-
-            string lookup = vicinityChatMessage.SenderName
-                            ?? CharacterDao.Instance.GetCharacterNameById(vicinityChatMessage.SenderId);
             byte[] nameLookup = NameLookupResult.Create((uint)vicinityChatMessage.SenderId, lookup);
 
             foreach (int charId in vicinityChatMessage.CharacterIds)

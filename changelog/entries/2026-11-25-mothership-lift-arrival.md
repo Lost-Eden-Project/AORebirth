@@ -1,0 +1,2 @@
+- Changed: Alien Mothership missions no longer pack aliens together: at most three stand near each other, and no more than two wait in a room with a lift, so riding a lift to the next floor no longer drops you into a crowd.
+- Changed: Alien Mothership missions hold about 15% fewer cocoons.

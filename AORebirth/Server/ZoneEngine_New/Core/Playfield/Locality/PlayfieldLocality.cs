@@ -150,6 +150,26 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         public void ApplyDungeonRooms(AORebirth.World.Collision.DungeonWorldLayout layout)
             => _grid.ApplyDungeonRooms(layout);
 
+        /// <summary>Room index -> the rooms its doorways open onto (both directions); empty without dungeon rooms.</summary>
+        internal IReadOnlyDictionary<int, IReadOnlyList<int>> DungeonRoomLinks => _grid.RoomLinks;
+
+        /// <summary>
+        /// <paramref name="a"/> and <paramref name="b"/> stand in two different rooms of this dungeon: each one's cell is a
+        /// room that holds its position on its floor. False outside dungeons, in one room, or when either is between rooms
+        /// (its cell no longer holds it until the next locality update), so a caller never decides on a stale room.
+        /// </summary>
+        internal bool TryGetSeparateRooms(Dynel a, Dynel b, out int roomA, out int roomB)
+        {
+            roomA = roomB = CellGrid.NonLocalCellId;
+            if (!_grid.IsDungeon || a.Cell is not Cell cellA || b.Cell is not Cell cellB || cellA.Id == cellB.Id
+                || !_grid.HoldsOnFloor(cellA.Id, a.Position) || !_grid.HoldsOnFloor(cellB.Id, b.Position))
+                return false;
+
+            roomA = cellA.Id;
+            roomB = cellB.Id;
+            return true;
+        }
+
         /// <summary>A dungeon whose rooms are applied, and <paramref name="position"/> lies outside every one of them.</summary>
         public bool IsOutsideDungeonRooms(AORebirth.Core.Vector.Vector3 position)
             => _grid.IsDungeon && !_grid.IsInsideDungeonRoom(position);

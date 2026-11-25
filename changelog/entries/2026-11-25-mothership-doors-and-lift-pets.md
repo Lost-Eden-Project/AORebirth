@@ -1,0 +1,3 @@
+- Fixed: In missions, a closed door now always blocks sight between rooms. Monsters no longer notice you, answer a call for help, or attack and cast through a closed door, and neither can you. Alien Mothership doors used to hide only their lower part.
+- Fixed: In missions, monsters no longer see into rooms on another floor.
+- Changed: Pets now ride mission lifts with you and arrive beside you right away. A pet you told to wait comes too and follows you from there, and a pet you sent at a monster leaves that fight behind.

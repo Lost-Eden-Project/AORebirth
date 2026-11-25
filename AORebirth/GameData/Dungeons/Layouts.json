@@ -2,16 +2,23 @@
   // Named layouts over Defaults.json. Bands change the layout by mission quality; a banded layout needs a band for
   // every quality 1-250.
   "rkSolo": {
+    // Team request 14: low-level missions are smaller and grow toward high levels (our design; stock solo layouts stay
+    // 14-25 rooms at every level). The rubika population's bands thin the monsters out to match.
     "Styles": [321, 324, 341, 351],
-    "Rooms": [9, 16],
-    "Floors": 1
+    "Floors": 1,
+    "Bands": [
+      { "Quality": [1, 24], "Rooms": [6, 9] },
+      { "Quality": [25, 74], "Rooms": [7, 11] },
+      { "Quality": [75, 149], "Rooms": [9, 14] },
+      { "Quality": [150, 250], "Rooms": [10, 16] }
+    ]
   },
   "rkTeam": {
     // 128 m like the mothership: style 324/351 rooms reach 100 m above their floor, and at 64 m the client's room
     // lookup kept a lower floor's tall room after a lift landed the team on the floor above.
     "FloorHeight": 128,
     "Bands": [
-      { "Quality": [1, 24], "Styles": [321, 324, 341, 351], "Rooms": [8, 12], "Floors": 2 },
+      { "Quality": [1, 24], "Styles": [321, 324, 341, 351], "Rooms": [6, 10], "Floors": 2 },
       { "Quality": [25, 99], "Styles": [321, 324, 341, 351], "Rooms": [9, 14], "Floors": 3 },
       { "Quality": [100, 179], "Styles": [321, 324, 341, 351], "Rooms": [9, 14], "Floors": 4 },
       { "Quality": [180, 250], "Styles": [321, 324, 341, 351], "Rooms": [10, 14], "Floors": 5 }

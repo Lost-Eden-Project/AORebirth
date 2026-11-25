@@ -33,8 +33,8 @@ namespace AORebirth.Core.Text
             AllowTrailingCommas = true
         };
 
-        static readonly ConcurrentDictionary<string, NameFilter> ByRoot =
-            new ConcurrentDictionary<string, NameFilter>(StringComparer.OrdinalIgnoreCase);
+        static readonly ConcurrentDictionary<string, Loaded> ByRoot =
+            new ConcurrentDictionary<string, Loaded>(StringComparer.OrdinalIgnoreCase);
 
         static readonly string[] NoEntries = new string[0];
 
@@ -55,9 +55,37 @@ namespace AORebirth.Core.Text
 
         public bool Enabled { get; }
 
-        /// <summary>The filter for <paramref name="gameDataRoot"/>'s Config, read once per process.</summary>
+        /// <summary>
+        /// The filter for <paramref name="gameDataRoot"/>'s Config. Hot-reloadable: an edited, added or removed
+        /// NameFilter.json takes effect on the next name checked (one file stat per check; names are checked only at
+        /// character creation and pet naming). An edit that no longer parses keeps the last good filter, so a typo
+        /// never opens the filter or breaks character creation; only a file malformed from the first read throws.
+        /// </summary>
         public static NameFilter For(string gameDataRoot)
-            => ByRoot.GetOrAdd(gameDataRoot ?? string.Empty, root => Load(ResolvePath(root)));
+        {
+            string root = gameDataRoot ?? string.Empty;
+            string path = ResolvePath(root);
+            DateTime stamp = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+
+            ByRoot.TryGetValue(root, out Loaded current);
+            if (current != null && current.Stamp == stamp && string.Equals(current.Path, path, StringComparison.OrdinalIgnoreCase))
+                return current.Filter;
+
+            NameFilter filter;
+            try
+            {
+                filter = Load(path);
+            }
+            catch (Exception) when (current != null)
+            {
+                // Half-saved or mistyped edit: keep the last good filter and retry when the file changes again.
+                ByRoot[root] = new Loaded(path, stamp, current.Filter);
+                return current.Filter;
+            }
+
+            ByRoot[root] = new Loaded(path, stamp, filter);
+            return filter;
+        }
 
         /// <summary>Config/NameFilter.json beside the GameData tree, else beside the process.</summary>
         public static string ResolvePath(string gameDataRoot)
@@ -237,6 +265,22 @@ namespace AORebirth.Core.Text
 
             if (builder.Length > 0)
                 yield return builder.ToString();
+        }
+
+        sealed class Loaded
+        {
+            public Loaded(string path, DateTime stamp, NameFilter filter)
+            {
+                Path = path;
+                Stamp = stamp;
+                Filter = filter;
+            }
+
+            public string Path { get; }
+
+            public DateTime Stamp { get; }
+
+            public NameFilter Filter { get; }
         }
 
         sealed class FileModel
