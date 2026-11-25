@@ -192,7 +192,24 @@ namespace ZoneEngine_New.Core.Cities
 
         /// <summary>The footprint as the template stores it (rotation 0).</summary>
         public HouseFootprint Footprint { get; }
+
+        /// <summary>The playfield the house's inside is (CityHouseTemplate_c::GetInsideTemplateInstance); 0 for none.</summary>
+        public int InsideTemplate { get; init; }
+
+        /// <summary>The doors spawned with a standing house (DoorData_t), in record order.</summary>
+        public IReadOnlyList<HouseDoorDefinition> Doors { get; init; } = [];
+
+        /// <summary>The guards spawned with a standing house (GuardData_t), in record order.</summary>
+        public IReadOnlyList<HouseGuardDefinition> Guards { get; init; } = [];
     }
+
+    /// <summary>A house door: an item template spawned as a static, at a house-local position (metres from the layout's
+    /// corner, rotation 0) and turn in degrees as the record stores them.</summary>
+    public sealed record HouseDoorDefinition(int Template, float X, float Y, float Z, int Turn);
+
+    /// <summary>A house guard: an NPC hash, the int stored with it (GuardData_t +0x30), a house-local position and turn as
+    /// the record stores them.</summary>
+    public sealed record HouseGuardDefinition(string Hash, int Value, float X, float Y, float Z, int Turn);
 
     /// <summary>
     /// CityRules.json: the server's side of org cities, everything the client does not decide. Times are whole units so
@@ -257,6 +274,13 @@ namespace ZoneEngine_New.Core.Cities
         /// treats it as abandoned (a crash between the claim and the payment). Far above any healthy lane delay.
         /// </summary>
         public int PendingTimeoutMinutes { get; init; } = 30;
+
+        /// <summary>
+        /// The door of a house inside (by inside playfield) a character entering lands at. Stock's server chose it and
+        /// nothing in the client data says which: an inside with one door, or one whose placement marks an exit
+        /// (ExitInstance), needs no entry here; the Superior Player Market (4357) and the HQ insides have several.
+        /// </summary>
+        public IReadOnlyDictionary<int, int> InsideEntryDoors { get; init; } = new Dictionary<int, int>();
 
         public TimeSpan BillingPeriod => TimeSpan.FromDays(BillingPeriodDays);
         public TimeSpan UpkeepWarning => TimeSpan.FromHours(UpkeepWarningHours);
@@ -367,6 +391,9 @@ namespace ZoneEngine_New.Core.Cities
 
         public bool TryGetTemplate(int templateId, out HouseTemplateDefinition template)
             => _data.Templates.TryGetValue(templateId, out template!);
+
+        /// <summary>Every house template loaded.</summary>
+        public IEnumerable<HouseTemplateDefinition> AllTemplates => _data.Templates.Values;
 
         /// <summary>Raised off the tick after a reload swapped the data in, so open windows can get the new prices.</summary>
         public event Action? Reloaded;
@@ -501,7 +528,30 @@ namespace ZoneEngine_New.Core.Cities
                     continue;
                 }
 
-                templateMap[t.Id] = new HouseTemplateDefinition(t.Id, (HouseType)t.HouseType, t.Upkeep, footprint);
+                var doors = new List<HouseDoorDefinition>();
+                foreach (DoorRow door in t.Doors ?? [])
+                {
+                    if (door.Template <= 0)
+                        problems.Add(where + ": a door with no item template is left out.");
+                    else
+                        doors.Add(new HouseDoorDefinition(door.Template, door.X, door.Y, door.Z, door.Turn));
+                }
+
+                var guards = new List<HouseGuardDefinition>();
+                foreach (GuardRow guard in t.Guards ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(guard.Hash))
+                        problems.Add(where + ": a guard with no NPC hash is left out.");
+                    else
+                        guards.Add(new HouseGuardDefinition(guard.Hash, guard.Value, guard.X, guard.Y, guard.Z, guard.Turn));
+                }
+
+                templateMap[t.Id] = new HouseTemplateDefinition(t.Id, (HouseType)t.HouseType, t.Upkeep, footprint)
+                {
+                    InsideTemplate = t.InsideTemplate,
+                    Doors = doors,
+                    Guards = guards,
+                };
             }
 
             return new Snapshot(rules, playfields, templateMap);
@@ -533,6 +583,8 @@ namespace ZoneEngine_New.Core.Cities
             public int MaxHousesPerPlot { get; set; } = 40;
             public float InteractionRange { get; set; } = 15f;
             public int PendingTimeoutMinutes { get; set; } = 30;
+            /// <summary>Inside playfield id to its entry door's instance, as hex ("4357": "C0011105").</summary>
+            public Dictionary<string, string>? InsideEntryDoors { get; set; }
 
             internal CityRules ToRules() => new()
             {
@@ -549,7 +601,10 @@ namespace ZoneEngine_New.Core.Cities
                 ManageMinRanksAboveLowest = ManageMinRanksAboveLowest,
                 MaxHousesPerPlot = MaxHousesPerPlot,
                 InteractionRange = InteractionRange,
-                PendingTimeoutMinutes = PendingTimeoutMinutes
+                PendingTimeoutMinutes = PendingTimeoutMinutes,
+                InsideEntryDoors = (InsideEntryDoors ?? []).ToDictionary(
+                    pair => int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture),
+                    pair => unchecked((int)uint.Parse(pair.Value, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)))
             };
         }
 
@@ -608,6 +663,27 @@ namespace ZoneEngine_New.Core.Cities
             public int TilesZ { get; set; }
             /// <summary>TilesX * TilesZ bits of hex, bit z * TilesX + x, lowest bit first.</summary>
             public string? Layout { get; set; }
+            public List<DoorRow>? Doors { get; set; }
+            public List<GuardRow>? Guards { get; set; }
+        }
+
+        public sealed class DoorRow
+        {
+            public int Template { get; set; }
+            public float X { get; set; }
+            public float Y { get; set; }
+            public float Z { get; set; }
+            public int Turn { get; set; }
+        }
+
+        public sealed class GuardRow
+        {
+            public string? Hash { get; set; }
+            public int Value { get; set; }
+            public float X { get; set; }
+            public float Y { get; set; }
+            public float Z { get; set; }
+            public int Turn { get; set; }
         }
     }
 

@@ -299,7 +299,7 @@ namespace ZoneEngine_New.Core.Cities
                 return CityWriteResult.Fail(CityWriteStatus.NoPermission);
             List<CityHouse> houses = Houses(connection, transaction, controller.PlayfieldId, controller.Index);
             BuildRefusal refusal = CityPlacement.Check(controller, template, tileX, tileZ, rotation, houses,
-                id => catalog.TryGetTemplate(id, out HouseTemplateDefinition t) ? t : null, catalog.Rules.MaxHousesPerPlot, allowMarket: false);
+                id => catalog.TryGetTemplate(id, out HouseTemplateDefinition t) ? t : null, catalog.Rules.MaxHousesPerPlot, allowMarket: true);
             if (refusal != BuildRefusal.None)
                 return CityWriteResult.Fail(CityWriteStatus.Refused, refusal);
 

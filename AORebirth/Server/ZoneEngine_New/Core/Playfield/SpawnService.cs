@@ -436,6 +436,43 @@ namespace ZoneEngine_New.Core.Playfield
         }
 
         /// <summary>
+        /// Spawns item template <paramref name="templateId"/> (its own low and high id, QL 1) as a static world dynel with
+        /// its walk-in pad, as a hash-spawned static gets one: a city house's door (DoorData_t). Null when the template is
+        /// not in the item catalog.
+        /// </summary>
+        public StaticDynel? SpawnStaticTemplate(int templateId, Vector3 position, Quaternion heading, SpawnSource spawnSource = SpawnSource.None)
+        {
+            ArgumentNullException.ThrowIfNull(position);
+            if (!HasStaticTemplate(templateId))
+                return null;
+
+            ItemTemplate template = _items.CreateTemplate(templateId, templateId, 1);
+            var dynel = new WorldItem(_registry.AllocateStaticDynelIdentity(), template, templateId, templateId, 1)
+            {
+                Playfield = _playfield,
+                Position = position,
+                Rotation = heading,
+                SpawnSource = spawnSource
+            };
+
+            Identity identity = dynel.Identity;
+            _registry.Register(dynel);
+            _playfield.GetRequiredService<PlayfieldLocality>().RegisterDynel(dynel);
+            _playfield.WorldAccess.Instance?.RegisterVicinityDynel(identity, template, position.xf, position.yf, position.zf);
+            _logger.Info(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Spawned static template={0} name={1} id={2} at ({3},{4},{5})",
+                    templateId,
+                    template.Name,
+                    identity.Instance,
+                    position.xf,
+                    position.yf,
+                    position.zf));
+            return dynel;
+        }
+
+        /// <summary>
         /// Places a dropped inventory item in the world as a temporary <see cref="WorldItem"/> only
         /// <paramref name="owner"/> can pick up, removed after <paramref name="lifetime"/>.
         /// </summary>

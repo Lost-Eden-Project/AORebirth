@@ -178,6 +178,20 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 }
                 else
                 {
+                    if (ZoneEngine_New.Core.Cities.CityInsides.IsCityInside(storedPlayfield))
+                    {
+                        if (ZoneEngine_New.Core.Cities.CityInsides.TryDescribe(storedPlayfield, out ZoneEngine_New.Core.Cities.CityInsides.Target inside))
+                        {
+                            storedPlayfield = inside.CityPlayfieldId;
+                            hydration = WithLoginPosition(hydration, storedPlayfield, inside.Outside);
+                        }
+                        else
+                        {
+                            _logger.Warn(string.Format(CultureInfo.InvariantCulture,
+                                "Character {0} saved in city inside {1} whose house is gone", characterId, storedPlayfield));
+                        }
+                    }
+
                     // Saved inside a proxy instance whose door no longer leads to an interior: come back out in front of
                     // the source playfield's door instead of failing the login.
                     if (ProxyPlayfieldIds.IsProxy(storedPlayfield)

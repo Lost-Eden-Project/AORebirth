@@ -151,6 +151,8 @@ namespace ZoneEngine_New.Core.World
                     if (ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.IsProxy(destinationPlayfield)
                         && !ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.TryResolveResource(_gameData, destinationPlayfield, out clientPlayfieldId, out _, out _))
                         clientPlayfieldId = destinationPlayfield;
+                    if (ZoneEngine_New.Core.Cities.CityInsides.TryDescribe(destinationPlayfield, out ZoneEngine_New.Core.Cities.CityInsides.Target inside))
+                        clientPlayfieldId = inside.ResourceId;
 
                     foreach (byte[] packet in session.PrepareRemoteTransferPackets(player, landing, heading, clientPlayfieldId,
                         address, (ushort)reply.Target.Port))

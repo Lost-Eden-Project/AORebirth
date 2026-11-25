@@ -134,6 +134,9 @@ namespace ZoneEngine_New.Core.WorldSimulation
         /// <summary>OnTargetInVicinity spells for a <see cref="ZoneTriggerKind.TargetVicinity"/> pad.</summary>
         public Inventory.ItemTemplate? VicinityEvents;
 
+        /// <summary>A pad that runs this for the character stepping in instead of spells: a city house's door into its inside.</summary>
+        public Action<Entities.Player>? Entered;
+
         /// <summary>
         /// A walk-in pad NPCs set off as well as players (<see cref="DynelEventSpells.TargetsNpcs"/>): the Unicorn Laser
         /// Fence kills the alien that steps into it.

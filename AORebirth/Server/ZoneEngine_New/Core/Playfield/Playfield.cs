@@ -228,7 +228,8 @@ namespace ZoneEngine_New.Core.Playfield
         /// shown as the interior it copies, so the client loads that interior's own data and never sees the instance:
         /// only the server knows the instance apart. Every other playfield is shown as itself.
         /// </summary>
-        public int ClientPlayfieldId => ProxyPlayfieldIds.IsProxy(Identity.Instance) ? ResourceId : Identity.Instance;
+        public int ClientPlayfieldId => ProxyPlayfieldIds.IsProxy(Identity.Instance) || Cities.CityInsides.IsCityInside(Identity.Instance)
+            ? ResourceId : Identity.Instance;
 
         /// <summary>The walk-in door a proxy instance was entered through (full dynel instance); 0 for an ordinary playfield.</summary>
         public int ProxySourceDoorInstance { get; }
