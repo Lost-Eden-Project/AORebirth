@@ -1,1731 +1,1731 @@
 {
- "Templates": [
-  {
-   "Id": 393216,
-   "Version": 1,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 1000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
+  "Templates": [
     {
-     "Template": 41565,
-     "X": 19.547401428222656,
-     "Y": 0.3950578272342682,
-     "Z": 17.607128143310547,
-     "Turn": 180
-    }
-   ],
-   "Guards": [
-    {
-     "Hash": "AQUA",
-     "Value": 1101382650,
-     "X": 6.83469079376664e-06,
-     "Y": 6.8729248046875,
-     "Z": 2.5223372357846707e-43,
-     "Turn": 1745643793
-    }
-   ]
-  },
-  {
-   "Id": 393217,
-   "Version": 1,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 1000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 7,
-   "TilesZ": 5,
-   "Layout": "ffffffff07",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946816,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 1000,
-   "InsideTemplate": 4342,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "1f7cf0c1071ffcffffffffff0f",
-   "Doors": [
-    {
-     "Template": 41565,
-     "X": 17.168357849121094,
-     "Y": 1.9181054830551147,
-     "Z": 28.998130798339844,
-     "Turn": 90
-    }
-   ],
-   "Guards": [
-    {
-     "Hash": "MAGU",
-     "Value": 90,
-     "X": 18.963787078857422,
-     "Y": 0.39975643157958984,
-     "Z": 26.51272964477539,
-     "Turn": 89
+      "Id": 393216,
+      "Version": 1,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 1000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 41565,
+          "X": 19.547401428222656,
+          "Y": 0.3950578272342682,
+          "Z": 17.607128143310547,
+          "Turn": 180
+        }
+      ],
+      "Guards": [
+        {
+          "Hash": "AQUA",
+          "Value": 1101382650,
+          "X": 6.83469079376664e-06,
+          "Y": 6.8729248046875,
+          "Z": 2.5223372357846707e-43,
+          "Turn": 1745643793
+        }
+      ]
     },
     {
-     "Hash": "MAGU",
-     "Value": 90,
-     "X": 19.068328857421875,
-     "Y": 0.3996632397174835,
-     "Z": 31.616718292236328,
-     "Turn": 270
-    }
-   ]
-  },
-  {
-   "Id": 6946817,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 20000000,
-   "InsideTemplate": 4349,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 20,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "Doors": [
-    {
-     "Template": 255604,
-     "X": 40.400001525878906,
-     "Y": 6.942644119262695,
-     "Z": 61.15279769897461,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946818,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 3,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [
-    {
-     "Template": 297174,
-     "X": 9.77178955078125,
-     "Y": 1.345689058303833,
-     "Z": 10.191200256347656,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946819,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 15000000,
-   "InsideTemplate": 4350,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
-    {
-     "Template": 255601,
-     "X": 38.70721435546875,
-     "Y": 1.453579068183899,
-     "Z": 47.67693328857422,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946820,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946821,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4355,
-   "FixturesAllowed": 1,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 18.338348388671875,
-     "Y": 1.3143583536148071,
-     "Z": 18.523784637451172,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946822,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 17500000,
-   "InsideTemplate": 4351,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 41565,
-     "X": 12.04522705078125,
-     "Y": 1.516789197921753,
-     "Z": 29.634742736816406,
-     "Turn": 275
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946823,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 6,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946824,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 20000000,
-   "InsideTemplate": 4346,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 20,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "Doors": [
-    {
-     "Template": 41565,
-     "X": 39.89617919921875,
-     "Y": 3.142359733581543,
-     "Z": 64.96100616455078,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946825,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 15000000,
-   "InsideTemplate": 4343,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
-    {
-     "Template": 41565,
-     "X": 29.691650390625,
-     "Y": 3.2154290676116943,
-     "Z": 45.05754852294922,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946826,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 4,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [],
-   "Guards": [
-    {
-     "Hash": "XEPR",
-     "Value": 300,
-     "X": 12.73675537109375,
-     "Y": 0.0005867740837857127,
-     "Z": 14.86153793334961,
-     "Turn": 0
+      "Id": 393217,
+      "Version": 1,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 1000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 7,
+      "TilesZ": 5,
+      "Layout": "ffffffff07",
+      "Doors": [],
+      "Guards": []
     },
     {
-     "Hash": "XEPR",
-     "Value": 300,
-     "X": 6.89483642578125,
-     "Y": 0.001531351124867797,
-     "Z": 14.899871826171875,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6946827,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 10000000,
-   "InsideTemplate": 4342,
-   "FixturesAllowed": 1,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946828,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffff3f",
-   "Doors": [],
-   "Guards": [
-    {
-     "Hash": "BWCM",
-     "Value": 250,
-     "X": 17.2421875,
-     "Y": 1.4530558586120605,
-     "Z": 25.83969497680664,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6946829,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffffffffffffffff3f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946830,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 5,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946831,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4356,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 18.64208984375,
-     "Y": 1.3143340349197388,
-     "Z": 16.959415435791016,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946832,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4357,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 17.511962890625,
-     "Y": 1.3143340349197388,
-     "Z": 17.277015686035156,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946833,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 7,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946836,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946837,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 1,
-   "Layout": "03",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946838,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946839,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 2000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 2,
-   "Layout": "0f",
-   "Doors": [
-    {
-     "Template": 256031,
-     "X": 4.001190185546875,
-     "Y": 2.941673755645752,
-     "Z": 6.273918151855469,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946840,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 2000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 2,
-   "Layout": "0f",
-   "Doors": [
-    {
-     "Template": 256042,
-     "X": 4.0384521484375,
-     "Y": 2.9405574798583984,
-     "Z": 6.2331695556640625,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946841,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 2000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 2,
-   "Layout": "0f",
-   "Doors": [
-    {
-     "Template": 256040,
-     "X": 4.125396728515625,
-     "Y": 2.9411511421203613,
-     "Z": 6.147407531738281,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946842,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 2000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 2,
-   "Layout": "0f",
-   "Doors": [
-    {
-     "Template": 256041,
-     "X": 4.05517578125,
-     "Y": 2.940237045288086,
-     "Z": 6.1766815185546875,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946843,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946844,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946845,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946846,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946847,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946848,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946849,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946877,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 20000000,
-   "InsideTemplate": 4348,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 20,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "Doors": [
-    {
-     "Template": 255604,
-     "X": 39.691131591796875,
-     "Y": 6.943477153778076,
-     "Z": 61.174407958984375,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946878,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 3,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [
-    {
-     "Template": 297182,
-     "X": 10.003082275390625,
-     "Y": 1.345848560333252,
-     "Z": 9.089569091796875,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946879,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 15000000,
-   "InsideTemplate": 4350,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
-    {
-     "Template": 255601,
-     "X": 36.732421875,
-     "Y": 1.4532397985458374,
-     "Z": 47.2017822265625,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946880,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946881,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4355,
-   "FixturesAllowed": 1,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 17.632293701171875,
-     "Y": 1.3047915697097778,
-     "Z": 18.50592041015625,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946882,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 17500000,
-   "InsideTemplate": 4351,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255603,
-     "X": 11.32891845703125,
-     "Y": 1.5167782306671143,
-     "Z": 29.724578857421875,
-     "Turn": 275
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946883,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 6,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946884,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 20000000,
-   "InsideTemplate": 4345,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 20,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "Doors": [
-    {
-     "Template": 255605,
-     "X": 39.4173583984375,
-     "Y": 3.1423609256744385,
-     "Z": 65.30172729492188,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946885,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 15000000,
-   "InsideTemplate": 4342,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
-    {
-     "Template": 255609,
-     "X": 29.0,
-     "Y": 3.11014723777771,
-     "Z": 45.303375244140625,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946886,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 4,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [],
-   "Guards": [
-    {
-     "Hash": "XEPA",
-     "Value": 300,
-     "X": 12.73089599609375,
-     "Y": 0.17875578999519348,
-     "Z": 16.84600830078125,
-     "Turn": 0
+      "Id": 6946816,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 1000,
+      "InsideTemplate": 4342,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "1f7cf0c1071ffcffffffffff0f",
+      "Doors": [
+        {
+          "Template": 41565,
+          "X": 17.168357849121094,
+          "Y": 1.9181054830551147,
+          "Z": 28.998130798339844,
+          "Turn": 90
+        }
+      ],
+      "Guards": [
+        {
+          "Hash": "MAGU",
+          "Value": 90,
+          "X": 18.963787078857422,
+          "Y": 0.39975643157958984,
+          "Z": 26.51272964477539,
+          "Turn": 89
+        },
+        {
+          "Hash": "MAGU",
+          "Value": 90,
+          "X": 19.068328857421875,
+          "Y": 0.3996632397174835,
+          "Z": 31.616718292236328,
+          "Turn": 270
+        }
+      ]
     },
     {
-     "Hash": "XEPA",
-     "Value": 300,
-     "X": 6.888916015625,
-     "Y": 0.17966826260089874,
-     "Z": 16.884368896484375,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6946887,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 10000000,
-   "InsideTemplate": 4342,
-   "FixturesAllowed": 1,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946888,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffff3f",
-   "Doors": [],
-   "Guards": [
-    {
-     "Hash": "CBUT",
-     "Value": 250,
-     "X": 16.19830322265625,
-     "Y": 1.5000450611114502,
-     "Z": 26.586822509765625,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6946889,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffffffffffffffff3f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946890,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 5,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946891,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4356,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 18.092529296875,
-     "Y": 1.3047915697097778,
-     "Z": 17.04766845703125,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946892,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4357,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 16.6929931640625,
-     "Y": 1.3047915697097778,
-     "Z": 17.569305419921875,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946893,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 7,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946917,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 20000000,
-   "InsideTemplate": 4347,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 20,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "Doors": [
-    {
-     "Template": 255604,
-     "X": 39.4541015625,
-     "Y": 6.942630767822266,
-     "Z": 60.996307373046875,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946918,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 3,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [
-    {
-     "Template": 297183,
-     "X": 9.943740844726562,
-     "Y": 1.3457555770874023,
-     "Z": 10.251007080078125,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946919,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 15000000,
-   "InsideTemplate": 4350,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
-    {
-     "Template": 255601,
-     "X": 36.58416748046875,
-     "Y": 1.4532397985458374,
-     "Z": 49.0487060546875,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946920,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946921,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4355,
-   "FixturesAllowed": 1,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255602,
-     "X": 17.326324462890625,
-     "Y": 1.3047915697097778,
-     "Z": 18.139678955078125,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946922,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 17500000,
-   "InsideTemplate": 4351,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0f",
-   "Doors": [
-    {
-     "Template": 255603,
-     "X": 10.9991455078125,
-     "Y": 1.5167782306671143,
-     "Z": 28.88983154296875,
-     "Turn": 275
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946923,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 6,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946924,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 20000000,
-   "InsideTemplate": 4344,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 20,
-   "TilesZ": 20,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "Doors": [
-    {
-     "Template": 255605,
-     "X": 38.92584228515625,
-     "Y": 3.142359733581543,
-     "Z": 64.31124877929688,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946925,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 1,
-   "Upkeep": 15000000,
-   "InsideTemplate": 4341,
-   "FixturesAllowed": 100,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
-    {
-     "Template": 255609,
-     "X": 28.61761474609375,
-     "Y": 3.215428352355957,
-     "Z": 44.4217529296875,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946926,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 4,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [],
-   "Guards": [
-    {
-     "Hash": "XOPT",
-     "Value": 300,
-     "X": 12.51800537109375,
-     "Y": 0.37558797001838684,
-     "Z": 16.264190673828125,
-     "Turn": 0
+      "Id": 6946817,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 20000000,
+      "InsideTemplate": 4349,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 20,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Doors": [
+        {
+          "Template": 255604,
+          "X": 40.400001525878906,
+          "Y": 6.942644119262695,
+          "Z": 61.15279769897461,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
     },
     {
-     "Hash": "XOPT",
-     "Value": 300,
-     "X": 6.67596435546875,
-     "Y": 0.3765004277229309,
-     "Z": 16.30255126953125,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6946927,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 10000000,
-   "InsideTemplate": 4342,
-   "FixturesAllowed": 1,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946928,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffff3f",
-   "Doors": [],
-   "Guards": [
+      "Id": 6946818,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 3,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [
+        {
+          "Template": 297174,
+          "X": 9.77178955078125,
+          "Y": 1.345689058303833,
+          "Z": 10.191200256347656,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
     {
-     "Hash": "OBQD",
-     "Value": 250,
-     "X": 15.85931396484375,
-     "Y": 1.6911989450454712,
-     "Z": 28.43328857421875,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6946929,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffffffffffffffff3f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946930,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 5,
-   "Upkeep": 5000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946931,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4356,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
+      "Id": 6946819,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 15000000,
+      "InsideTemplate": 4350,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 255601,
+          "X": 38.70721435546875,
+          "Y": 1.453579068183899,
+          "Z": 47.67693328857422,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
     {
-     "Template": 255602,
-     "X": 17.521240234375,
-     "Y": 1.3047915697097778,
-     "Z": 16.509033203125,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946932,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 2,
-   "Upkeep": 1000,
-   "InsideTemplate": 4357,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [
+      "Id": 6946820,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
     {
-     "Template": 255602,
-     "X": 16.21826171875,
-     "Y": 1.3047915697097778,
-     "Z": 16.82977294921875,
-     "Turn": 225
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946933,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 7,
-   "Upkeep": 10000000,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6946996,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 5000000,
-   "InsideTemplate": 6133,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [
+      "Id": 6946821,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4355,
+      "FixturesAllowed": 1,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 18.338348388671875,
+          "Y": 1.3143583536148071,
+          "Z": 18.523784637451172,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
     {
-     "Template": 287554,
-     "X": 13.71273422241211,
-     "Y": 0.7873259782791138,
-     "Z": 4.77667236328125,
-     "Turn": 180
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946997,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 5000000,
-   "InsideTemplate": 6133,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [
+      "Id": 6946822,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 17500000,
+      "InsideTemplate": 4351,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 41565,
+          "X": 12.04522705078125,
+          "Y": 1.516789197921753,
+          "Z": 29.634742736816406,
+          "Turn": 275
+        }
+      ],
+      "Guards": []
+    },
     {
-     "Template": 287554,
-     "X": 13.619674682617188,
-     "Y": 0.7874719500541687,
-     "Z": 4.77667236328125,
-     "Turn": 180
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946998,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 9,
-   "Upkeep": 5000000,
-   "InsideTemplate": 6133,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 5,
-   "TilesZ": 5,
-   "Layout": "ffffff01",
-   "Doors": [
+      "Id": 6946823,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 6,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [],
+      "Guards": []
+    },
     {
-     "Template": 287554,
-     "X": 13.439544677734375,
-     "Y": 0.787841260433197,
-     "Z": 4.8052978515625,
-     "Turn": 180
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6946999,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 2,
-   "Layout": "0f",
-   "Doors": [],
-   "Guards": [
+      "Id": 6946824,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 20000000,
+      "InsideTemplate": 4346,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 20,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Doors": [
+        {
+          "Template": 41565,
+          "X": 39.89617919921875,
+          "Y": 3.142359733581543,
+          "Z": 64.96100616455078,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
     {
-     "Hash": "BSMF",
-     "Value": 200,
-     "X": 5.798065185546875,
-     "Y": 1.7824437618255615,
-     "Z": 4.0120849609375,
-     "Turn": 2
-    }
-   ]
-  },
-  {
-   "Id": 6947000,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": [
+      "Id": 6946825,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 15000000,
+      "InsideTemplate": 4343,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 41565,
+          "X": 29.691650390625,
+          "Y": 3.2154290676116943,
+          "Z": 45.05754852294922,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
     {
-     "Hash": "LE01",
-     "Value": 1,
-     "X": 5.501800537109375,
-     "Y": 0.7925323843955994,
-     "Z": 13.9925537109375,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6947001,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": [
+      "Id": 6946826,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 4,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "XEPR",
+          "Value": 300,
+          "X": 12.73675537109375,
+          "Y": 0.0005867740837857127,
+          "Z": 14.86153793334961,
+          "Turn": 0
+        },
+        {
+          "Hash": "XEPR",
+          "Value": 300,
+          "X": 6.89483642578125,
+          "Y": 0.001531351124867797,
+          "Z": 14.899871826171875,
+          "Turn": 0
+        }
+      ]
+    },
     {
-     "Hash": "LE01",
-     "Value": 1,
-     "X": 7.714447021484375,
-     "Y": 0.2006392627954483,
-     "Z": 31.4351806640625,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6947002,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 10,
-   "TilesZ": 10,
-   "Layout": "ffffffffffffffffffffffff0f",
-   "Doors": [],
-   "Guards": [
+      "Id": 6946827,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 10000000,
+      "InsideTemplate": 4342,
+      "FixturesAllowed": 1,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
     {
-     "Hash": "LE01",
-     "Value": 1,
-     "X": 13.357177734375,
-     "Y": 0.20000888407230377,
-     "Z": 32.9010009765625,
-     "Turn": 0
-    }
-   ]
-  },
-  {
-   "Id": 6947003,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 8,
-   "Upkeep": 15000000,
-   "InsideTemplate": 7019,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
+      "Id": 6946828,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffff3f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "BWCM",
+          "Value": 250,
+          "X": 17.2421875,
+          "Y": 1.4530558586120605,
+          "Z": 25.83969497680664,
+          "Turn": 0
+        }
+      ]
+    },
     {
-     "Template": 296417,
-     "X": 25.16748046875,
-     "Y": 0.09682272374629974,
-     "Z": 34.0667724609375,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6947004,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 8,
-   "Upkeep": 15000000,
-   "InsideTemplate": 7018,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
+      "Id": 6946829,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffffffffffffffff3f",
+      "Doors": [],
+      "Guards": []
+    },
     {
-     "Template": 296417,
-     "X": 25.62469482421875,
-     "Y": 0.08051935583353043,
-     "Z": 33.889404296875,
-     "Turn": 0
-    }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6947005,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 8,
-   "Upkeep": 15000000,
-   "InsideTemplate": 7020,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 15,
-   "TilesZ": 15,
-   "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
-   "Doors": [
+      "Id": 6946830,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 5,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [],
+      "Guards": []
+    },
     {
-     "Template": 296417,
-     "X": 24.59576416015625,
-     "Y": 0.09646929055452347,
-     "Z": 33.88604736328125,
-     "Turn": 0
+      "Id": 6946831,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4356,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 18.64208984375,
+          "Y": 1.3143340349197388,
+          "Z": 16.959415435791016,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946832,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4357,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 17.511962890625,
+          "Y": 1.3143340349197388,
+          "Z": 17.277015686035156,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946833,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 7,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946836,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946837,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 1,
+      "Layout": "03",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946838,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946839,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 2000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 2,
+      "Layout": "0f",
+      "Doors": [
+        {
+          "Template": 256031,
+          "X": 4.001190185546875,
+          "Y": 2.941673755645752,
+          "Z": 6.273918151855469,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946840,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 2000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 2,
+      "Layout": "0f",
+      "Doors": [
+        {
+          "Template": 256042,
+          "X": 4.0384521484375,
+          "Y": 2.9405574798583984,
+          "Z": 6.2331695556640625,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946841,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 2000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 2,
+      "Layout": "0f",
+      "Doors": [
+        {
+          "Template": 256040,
+          "X": 4.125396728515625,
+          "Y": 2.9411511421203613,
+          "Z": 6.147407531738281,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946842,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 2000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 2,
+      "Layout": "0f",
+      "Doors": [
+        {
+          "Template": 256041,
+          "X": 4.05517578125,
+          "Y": 2.940237045288086,
+          "Z": 6.1766815185546875,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946843,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946844,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946845,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946846,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946847,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946848,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946849,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946877,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 20000000,
+      "InsideTemplate": 4348,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 20,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Doors": [
+        {
+          "Template": 255604,
+          "X": 39.691131591796875,
+          "Y": 6.943477153778076,
+          "Z": 61.174407958984375,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946878,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 3,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [
+        {
+          "Template": 297182,
+          "X": 10.003082275390625,
+          "Y": 1.345848560333252,
+          "Z": 9.089569091796875,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946879,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 15000000,
+      "InsideTemplate": 4350,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 255601,
+          "X": 36.732421875,
+          "Y": 1.4532397985458374,
+          "Z": 47.2017822265625,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946880,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946881,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4355,
+      "FixturesAllowed": 1,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 17.632293701171875,
+          "Y": 1.3047915697097778,
+          "Z": 18.50592041015625,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946882,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 17500000,
+      "InsideTemplate": 4351,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255603,
+          "X": 11.32891845703125,
+          "Y": 1.5167782306671143,
+          "Z": 29.724578857421875,
+          "Turn": 275
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946883,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 6,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946884,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 20000000,
+      "InsideTemplate": 4345,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 20,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Doors": [
+        {
+          "Template": 255605,
+          "X": 39.4173583984375,
+          "Y": 3.1423609256744385,
+          "Z": 65.30172729492188,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946885,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 15000000,
+      "InsideTemplate": 4342,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 255609,
+          "X": 29.0,
+          "Y": 3.11014723777771,
+          "Z": 45.303375244140625,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946886,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 4,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "XEPA",
+          "Value": 300,
+          "X": 12.73089599609375,
+          "Y": 0.17875578999519348,
+          "Z": 16.84600830078125,
+          "Turn": 0
+        },
+        {
+          "Hash": "XEPA",
+          "Value": 300,
+          "X": 6.888916015625,
+          "Y": 0.17966826260089874,
+          "Z": 16.884368896484375,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6946887,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 10000000,
+      "InsideTemplate": 4342,
+      "FixturesAllowed": 1,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946888,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffff3f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "CBUT",
+          "Value": 250,
+          "X": 16.19830322265625,
+          "Y": 1.5000450611114502,
+          "Z": 26.586822509765625,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6946889,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffffffffffffffff3f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946890,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 5,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946891,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4356,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 18.092529296875,
+          "Y": 1.3047915697097778,
+          "Z": 17.04766845703125,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946892,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4357,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 16.6929931640625,
+          "Y": 1.3047915697097778,
+          "Z": 17.569305419921875,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946893,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 7,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946917,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 20000000,
+      "InsideTemplate": 4347,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 20,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Doors": [
+        {
+          "Template": 255604,
+          "X": 39.4541015625,
+          "Y": 6.942630767822266,
+          "Z": 60.996307373046875,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946918,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 3,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [
+        {
+          "Template": 297183,
+          "X": 9.943740844726562,
+          "Y": 1.3457555770874023,
+          "Z": 10.251007080078125,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946919,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 15000000,
+      "InsideTemplate": 4350,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 255601,
+          "X": 36.58416748046875,
+          "Y": 1.4532397985458374,
+          "Z": 49.0487060546875,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946920,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946921,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4355,
+      "FixturesAllowed": 1,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 17.326324462890625,
+          "Y": 1.3047915697097778,
+          "Z": 18.139678955078125,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946922,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 17500000,
+      "InsideTemplate": 4351,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255603,
+          "X": 10.9991455078125,
+          "Y": 1.5167782306671143,
+          "Z": 28.88983154296875,
+          "Turn": 275
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946923,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 6,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946924,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 20000000,
+      "InsideTemplate": 4344,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 20,
+      "TilesZ": 20,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Doors": [
+        {
+          "Template": 255605,
+          "X": 38.92584228515625,
+          "Y": 3.142359733581543,
+          "Z": 64.31124877929688,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946925,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 1,
+      "Upkeep": 15000000,
+      "InsideTemplate": 4341,
+      "FixturesAllowed": 100,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 255609,
+          "X": 28.61761474609375,
+          "Y": 3.215428352355957,
+          "Z": 44.4217529296875,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946926,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 4,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "XOPT",
+          "Value": 300,
+          "X": 12.51800537109375,
+          "Y": 0.37558797001838684,
+          "Z": 16.264190673828125,
+          "Turn": 0
+        },
+        {
+          "Hash": "XOPT",
+          "Value": 300,
+          "X": 6.67596435546875,
+          "Y": 0.3765004277229309,
+          "Z": 16.30255126953125,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6946927,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 10000000,
+      "InsideTemplate": 4342,
+      "FixturesAllowed": 1,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946928,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffff3f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "OBQD",
+          "Value": 250,
+          "X": 15.85931396484375,
+          "Y": 1.6911989450454712,
+          "Z": 28.43328857421875,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6946929,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffffffffffffffff3f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946930,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 5,
+      "Upkeep": 5000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946931,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4356,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 17.521240234375,
+          "Y": 1.3047915697097778,
+          "Z": 16.509033203125,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946932,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 2,
+      "Upkeep": 1000,
+      "InsideTemplate": 4357,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [
+        {
+          "Template": 255602,
+          "X": 16.21826171875,
+          "Y": 1.3047915697097778,
+          "Z": 16.82977294921875,
+          "Turn": 225
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946933,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 7,
+      "Upkeep": 10000000,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6946996,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 5000000,
+      "InsideTemplate": 6133,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [
+        {
+          "Template": 287554,
+          "X": 13.71273422241211,
+          "Y": 0.7873259782791138,
+          "Z": 4.77667236328125,
+          "Turn": 180
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946997,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 5000000,
+      "InsideTemplate": 6133,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [
+        {
+          "Template": 287554,
+          "X": 13.619674682617188,
+          "Y": 0.7874719500541687,
+          "Z": 4.77667236328125,
+          "Turn": 180
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946998,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 9,
+      "Upkeep": 5000000,
+      "InsideTemplate": 6133,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 5,
+      "TilesZ": 5,
+      "Layout": "ffffff01",
+      "Doors": [
+        {
+          "Template": 287554,
+          "X": 13.439544677734375,
+          "Y": 0.787841260433197,
+          "Z": 4.8052978515625,
+          "Turn": 180
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6946999,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 2,
+      "Layout": "0f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "BSMF",
+          "Value": 200,
+          "X": 5.798065185546875,
+          "Y": 1.7824437618255615,
+          "Z": 4.0120849609375,
+          "Turn": 2
+        }
+      ]
+    },
+    {
+      "Id": 6947000,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "LE01",
+          "Value": 1,
+          "X": 5.501800537109375,
+          "Y": 0.7925323843955994,
+          "Z": 13.9925537109375,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6947001,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "LE01",
+          "Value": 1,
+          "X": 7.714447021484375,
+          "Y": 0.2006392627954483,
+          "Z": 31.4351806640625,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6947002,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 10,
+      "TilesZ": 10,
+      "Layout": "ffffffffffffffffffffffff0f",
+      "Doors": [],
+      "Guards": [
+        {
+          "Hash": "LE01",
+          "Value": 1,
+          "X": 13.357177734375,
+          "Y": 0.20000888407230377,
+          "Z": 32.9010009765625,
+          "Turn": 0
+        }
+      ]
+    },
+    {
+      "Id": 6947003,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 8,
+      "Upkeep": 15000000,
+      "InsideTemplate": 7019,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 296417,
+          "X": 25.16748046875,
+          "Y": 0.09682272374629974,
+          "Z": 34.0667724609375,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6947004,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 8,
+      "Upkeep": 15000000,
+      "InsideTemplate": 7018,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 296417,
+          "X": 25.62469482421875,
+          "Y": 0.08051935583353043,
+          "Z": 33.889404296875,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6947005,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 8,
+      "Upkeep": 15000000,
+      "InsideTemplate": 7020,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 15,
+      "TilesZ": 15,
+      "Layout": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff01",
+      "Doors": [
+        {
+          "Template": 296417,
+          "X": 24.59576416015625,
+          "Y": 0.09646929055452347,
+          "Z": 33.88604736328125,
+          "Turn": 0
+        }
+      ],
+      "Guards": []
+    },
+    {
+      "Id": 6947006,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 2,
+      "Layout": "03",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6947007,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6947008,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6947009,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6947010,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 4,
+      "TilesZ": 2,
+      "Layout": "ff",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6947011,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 2,
+      "TilesZ": 2,
+      "Layout": "0f",
+      "Doors": [],
+      "Guards": []
+    },
+    {
+      "Id": 6947012,
+      "Version": 4,
+      "Name": "",
+      "HouseType": 0,
+      "Upkeep": 0,
+      "InsideTemplate": 0,
+      "FixturesAllowed": 0,
+      "StealthFactor": 0,
+      "TilesX": 1,
+      "TilesZ": 1,
+      "Layout": "01",
+      "Doors": [],
+      "Guards": []
     }
-   ],
-   "Guards": []
-  },
-  {
-   "Id": 6947006,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 2,
-   "Layout": "03",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6947007,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6947008,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6947009,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6947010,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 4,
-   "TilesZ": 2,
-   "Layout": "ff",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6947011,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 2,
-   "TilesZ": 2,
-   "Layout": "0f",
-   "Doors": [],
-   "Guards": []
-  },
-  {
-   "Id": 6947012,
-   "Version": 4,
-   "Name": "",
-   "HouseType": 0,
-   "Upkeep": 0,
-   "InsideTemplate": 0,
-   "FixturesAllowed": 0,
-   "StealthFactor": 0,
-   "TilesX": 1,
-   "TilesZ": 1,
-   "Layout": "01",
-   "Doors": [],
-   "Guards": []
-  }
- ]
+  ]
 }
