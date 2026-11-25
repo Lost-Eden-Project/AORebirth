@@ -1,0 +1,1 @@
+- Changed: The three level-banded shopping channels are now one channel, Shopping - Global, open to every level.

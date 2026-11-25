@@ -2834,15 +2834,44 @@ namespace ZoneEngine_New.Core.Entities
             Inventory.ApplyWearBonuses(Stats);
         }
 
-        /// <summary>Every bonus layer from scratch: equipment (clears the layer first), perks, buffs, level IP, trickle.</summary>
+        /// <summary>Every bonus layer from scratch: equipment (clears the layer first), perks, buffs, city advantages, level IP, trickle.</summary>
         void ApplyBonusLayers()
         {
             RebaseEquipBonuses();
             RebasePerks();
             ApplyBuffBonuses();
             ApplyTimedEffectBonuses();
+            ApplyCityAdvantageBonuses(Stats);
             ApplyLevelIpBonus();
             SkillCatalog.ApplyTrickle(Stats);
+        }
+
+        /// <summary>
+        /// The active advantages of the player's organization's city district (<see cref="Cities.CityService"/>): advantage
+        /// items whose OnUse modifiers (ScalingModify, scaled by the player's level) are a bonus layer. Replaced whole; memory
+        /// only, set again on every login and organization change.
+        /// </summary>
+        IReadOnlyList<ItemTemplate> _cityAdvantages = [];
+
+        /// <summary>The city advantages in effect, for diagnostics and tests.</summary>
+        internal IReadOnlyList<ItemTemplate> CityAdvantages => _cityAdvantages;
+
+        /// <summary>Replaces the city advantage layer; a set equal to the current one changes nothing.</summary>
+        internal void SetCityAdvantages(IReadOnlyList<ItemTemplate> advantages)
+        {
+            ArgumentNullException.ThrowIfNull(advantages);
+            if (advantages.Count == _cityAdvantages.Count
+                && advantages.Select(a => (a.Id, a.Quality)).SequenceEqual(_cityAdvantages.Select(a => (a.Id, a.Quality))))
+                return;
+            _cityAdvantages = advantages.ToArray();
+            MarkRebaseDirty();
+        }
+
+        void ApplyCityAdvantageBonuses(StatCollection stats)
+        {
+            foreach (ItemTemplate advantage in _cityAdvantages)
+                if (advantage.SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells))
+                    StatModifierSpells.Apply(spells, stats);
         }
 
         /// <summary>Prospective level-up bonus layers, without changing worn items or the live actor.</summary>
@@ -2886,6 +2915,7 @@ namespace ZoneEngine_New.Core.Entities
                 RebasePerks(projected);
                 ApplyBuffStatBonuses(projected);
                 ApplyTimedEffectBonuses(projected);
+                ApplyCityAdvantageBonuses(projected);
                 projected.AddBonus(CharacterStat.IP, TotalIpEarnedAtLevel(projected.GetOrOne(CharacterStat.Level)));
                 SkillCatalog.ApplyTrickle(projected);
             }

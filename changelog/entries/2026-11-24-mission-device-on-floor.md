@@ -1,0 +1,1 @@
+- Fixed: The device you repair or use in a Rubi-Ka mission now stands on the floor instead of floating above it.

@@ -1,0 +1,1 @@
+- Fixed: Sparrow Flight now lets you fly where flying is allowed instead of pulling you back to the ground.

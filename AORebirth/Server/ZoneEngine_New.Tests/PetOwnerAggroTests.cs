@@ -186,6 +186,71 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
+        public void PetDamageOnlyPutsItsOwnerOnTheHateListAtTheMinimum()
+        {
+            using var world = new AggroWorld();
+            for (int i = 0; i < 5; i++)
+                world.Brain.AddThreatFrom(world.PetNpc, 30f, fromDamage: true);
+
+            Assert.AreEqual(150f, world.Brain.Hate.ThreatOf(world.PetNpc.Identity));
+            Assert.AreEqual(NpcAiRules.ProximityHate, world.Brain.Hate.ThreatOf(world.Owner.Identity));
+        }
+
+        [TestMethod]
+        public void OwnerHealingBehindATankingPetStillGetsTheFlickerRoll()
+        {
+            using var world = new AggroWorld();
+            // The pet tanks for 100 threat; the owner's own heals and nukes add 60. With a 50% share the owner would sit
+            // at 111, above the pet, and the mob would leave the pet for them on every decision with no roll.
+            world.Brain.AddThreatFrom(world.PetNpc, 100f, fromDamage: true);
+            world.Brain.AddThreat(world.Owner.Identity, 60f, fromDamage: true);
+            var roll = new FixedRoll(0.99);
+            world.Brain.AggroRandom = roll;
+
+            for (int i = 0; i < 8; i++)
+            {
+                world.Mob.Tick(Think);
+                Assert.AreEqual(world.PetNpc.Identity, world.Mob.FightingTarget);
+            }
+
+            // A low roll still flickers the mob to the owner.
+            roll.Value = 0.0;
+            for (int i = 0; i < 4; i++)
+                world.Mob.Tick(Think);
+            Assert.AreEqual(world.Owner.Identity, world.Mob.FightingTarget);
+        }
+
+        [TestMethod]
+        public void OwnerIsTheNextTargetWhenThePetIsGone()
+        {
+            using var world = new AggroWorld();
+            world.Brain.AggroRandom = new FixedRoll(0.99);
+            world.Brain.AddThreatFrom(world.PetNpc, 100f, fromDamage: true);
+            world.Mob.Tick(Think);
+            Assert.AreEqual(world.PetNpc.Identity, world.Mob.FightingTarget);
+
+            // The pet dies or is dismissed: the mob turns on the owner instead of walking home.
+            world.Services.GetRequiredService<DynelRegistry>().Unregister(world.PetNpc.Identity);
+            world.Mob.Tick(Think);
+
+            Assert.AreEqual(world.Owner.Identity, world.Mob.FightingTarget);
+        }
+
+        [TestMethod]
+        public void ShippedGameplayConfigGivesTheOwnerNoThreatShare()
+        {
+            GameplaySettings shipped = GameplaySettings.Load(ShippedGameplayConfig());
+
+            Assert.AreEqual(0f, shipped.Pets.OwnerThreatSharePercent);
+            Assert.IsTrue(shipped.Pets.OwnerAlwaysOnHateList);
+            Assert.AreEqual(0f, new GameplaySettings().Pets.OwnerThreatSharePercent);
+        }
+
+        static string ShippedGameplayConfig([CallerFilePath] string here = "")
+            => System.IO.Path.GetFullPath(System.IO.Path.Combine(
+                System.IO.Path.GetDirectoryName(here)!, "..", "..", "Config", "Gameplay.json"));
+
+        [TestMethod]
         public void OwnerChanceFollowsTheMeasuredFit()
         {
             var chance = new GameplayPetOwnerAggroChance();

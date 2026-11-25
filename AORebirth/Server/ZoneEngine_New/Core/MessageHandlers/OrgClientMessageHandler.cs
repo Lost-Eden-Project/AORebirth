@@ -13,9 +13,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
     public sealed class OrgClientMessageHandler : IMessageHandler<OrgClientMessage>
     {
         readonly OrganizationService _organizations;
+        readonly Cities.CityService? _cities;
 
-        public OrgClientMessageHandler(OrganizationService organizations)
-            => _organizations = organizations ?? throw new ArgumentNullException(nameof(organizations));
+        public OrgClientMessageHandler(OrganizationService organizations, Cities.CityService? cities = null)
+        {
+            _organizations = organizations ?? throw new ArgumentNullException(nameof(organizations));
+            _cities = cities;
+        }
 
         public Type MessageBodyType => typeof(OrgClientMessage);
 
@@ -28,6 +32,13 @@ namespace ZoneEngine_New.Core.MessageHandlers
             if (session.State != SessionState.InPlay || session.Player is not Player player
                 || !ReferenceEquals(player.Session, session) || player.IsPersistenceQuarantined)
                 return;
+            // "Dump city advantages to chat" (Gamecode N3Msg_OrgShowCity 1001a8be): the district's advantages, Active or Disabled.
+            if (message.Command == OrgClientCommand.Benefits && _cities != null)
+            {
+                _cities.SendAdvantages(player);
+                return;
+            }
+
             _organizations.Handle(player, message);
         }
     }

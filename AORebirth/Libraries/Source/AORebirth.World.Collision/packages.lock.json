@@ -14,9 +14,9 @@
       },
       "LostEden.Protocol": {
         "type": "Direct",
-        "requested": "[0.4.3, )",
-        "resolved": "0.4.3",
-        "contentHash": "+gESfLig12vsRKOdgfHFmAuqU8BWw9LUJ1dzUooOGS6gq4xsJ5RucCNRo+AKhl9onac3OrcQzGcOy7ZBEMOXFw=="
+        "requested": "[0.5.0, )",
+        "resolved": "0.5.0",
+        "contentHash": "RTlcMtbbxeoOdFnZITrpK6tuZ+VfY6via3BnIhBch3IwcQw4LNzgoF6Sx6hCCtPcaOYqhDbikbo/EcNQo48ZzQ=="
       },
       "N3Lite": {
         "type": "Direct",

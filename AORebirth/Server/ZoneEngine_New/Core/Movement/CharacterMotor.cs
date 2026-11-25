@@ -737,6 +737,16 @@ namespace ZoneEngine_New.Core.Movement
             // the follow on every client.
             if (action != MovementAction.Update)
                 EndFollow();
+            // EXPLOIT guard: sneak starts only through the StartSneak request, which refuses a fighter and a locked
+            // Concealment. The client asks with CharacterAction StartSneak and switches only on StartedSneaking, so a
+            // SwitchToSneak move from a character the server has not put in sneak skips both checks.
+            if (action == MovementAction.SwitchToSneak && State != MovementState.Sneak)
+            {
+                LogRefusedAction(action, "sneak starts only through StartSneak");
+                ApplyClientHeading(message);
+                return false;
+            }
+
             // A position update carries no transition, so it never goes through the state machine.
             bool accepted = action == MovementAction.Update || ApplyAction(action);
             ApplyClientHeading(message);
@@ -1242,10 +1252,12 @@ namespace ZoneEngine_New.Core.Movement
             else if (_followTarget != null)
                 SteerFollow();
 
+            Vec3 stepFrom = _sim.Position;
             if (surface != null)
                 _move.Tick(dt);
             else
                 TickAtAltitude(dt);
+            StopAtLockedDoor(stepFrom);
 
             ApplyLiquidChanges();
             _character.Position = ToVector3(_sim.Position);
@@ -1255,6 +1267,24 @@ namespace ZoneEngine_New.Core.Movement
             if (_npc != null && _npc.HasFollowTarget && _npc.FollowQueue.Count == 0
                 && _sim.Speed <= VehicleSim.MovingSpeedEpsilon)
                 ClearPath();
+        }
+
+        /// <summary>
+        /// A locked, closed door is solid to every client: a player holding forward against one stays in front of it.
+        /// The step's body only meets the playfield surface, so without this the server ran a held-forward player on
+        /// through the door between client updates: mobs in the locked room aggroed on that position, and the pet,
+        /// finding no route to it, warped in after its owner. A step that crosses a locked door's panel is undone.
+        /// </summary>
+        void StopAtLockedDoor(Vec3 from)
+        {
+            Vec3 to = _sim.Position;
+            if (to.X == from.X && to.Z == from.Z)
+                return;
+            DoorOcclusion? doors = _character.Playfield?.WorldAccess.Instance?.Doors;
+            if (doors == null || doors.Count == 0
+                || !doors.BlocksStep(new System.Numerics.Vector3(from.X, from.Y, from.Z), new System.Numerics.Vector3(to.X, to.Y, to.Z)))
+                return;
+            _sim.Position = from;
         }
 
         readonly List<bool> _liquidChanges = new();
@@ -1469,6 +1499,15 @@ namespace ZoneEngine_New.Core.Movement
                     // Breaking into a run mid-walk breaks the cast the walk kept.
                     _character.InterruptTimedActions(TimedActionInterrupt.Movement);
                     break;
+                case MovementAction.SwitchToSit:
+                case MovementAction.SwitchToSleep:
+                case MovementAction.SwitchToLounge:
+                case MovementAction.SwitchToCrawl:
+                case MovementAction.SwitchToSwim:
+                    // The modes a cast cannot start in (PlayerCastGate) end one already in flight: the client has taken
+                    // the posture, so the cast bar ends rather than a nano landing from a sitting or crawling caster.
+                    _character.InterruptTimedActions(TimedActionInterrupt.Movement);
+                    break;
                 case MovementAction.JumpStart when surface == null:
                     // No ground to leave: the jump lands at once, which runs its end in the status.
                     _sim.LandNow(_sim.Position.Y);
@@ -1623,10 +1662,10 @@ namespace ZoneEngine_New.Core.Movement
             {
                 _character.Stats.Set(CharacterStat.CurrentMovementMode, mode, StatDetail.Base, dirty: true);
                 _character.Stats.Set(CharacterStat.WaitState, mode == (int)MovementState.Sit ? 2 : 0, StatDetail.Base);
-                // Every way out of sneak tells the sneaker's client and those near (StopSneaking): a LeaveSneak, a
-                // walk/run toggle, a yalm switching the player into Fly, water switching it into Swim (bug #545).
+                // Every way out of sneak tells the sneaker's client and those near (StopSneaking) and locks Concealment:
+                // a LeaveSneak, a walk/run toggle, a yalm switching the player into Fly, water into Swim (bug #545).
                 if (previous == (int)MovementState.Sneak)
-                    _character.AnnounceStopSneaking();
+                    _character.OnLeftSneak();
             }
 
             if (mode != (int)MovementState.Fly)

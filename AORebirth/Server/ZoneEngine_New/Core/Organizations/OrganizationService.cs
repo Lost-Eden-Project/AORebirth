@@ -420,6 +420,67 @@ namespace ZoneEngine_New.Core.Organizations
             // The organization tag others see is in the spawn packet only.
             if (visibleChange && player.Playfield is Playfield playfield)
                 playfield.GetRequiredService<PlayfieldLocality>().RespawnForObservers(player, except: player);
+            try
+            {
+                MembershipReconciled?.Invoke(player);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Organization membership observer failed character=" + id);
+            }
+        }
+
+        /// <summary>
+        /// Raised on the player's tick once its organization is brought up to date: the check after login, a join, a leave,
+        /// a kick, a rank change. Its organization's city advantages follow it (<see cref="Cities.CityService"/>).
+        /// </summary>
+        internal event Action<Player>? MembershipReconciled;
+
+        /// <summary>
+        /// The member's governing form, effective rank and leadership in the cached organization, for checks on the tick
+        /// that a transaction makes again. False when the organization or the member is not cached here.
+        /// </summary>
+        internal bool TryGetStanding(int organizationId, int characterId, out GoverningForm form, out int rank, out bool isLeader)
+        {
+            form = null!;
+            rank = 0;
+            isLeader = false;
+            if (!Rules.Enabled || Cached(organizationId) is not { } state || state.Member(characterId) is not { } member)
+                return false;
+            form = Rules.FormOf(state.GoverningForm);
+            rank = member.Rank;
+            isLeader = state.IsLeader(characterId);
+            return true;
+        }
+
+        /// <summary>The cached organization's bank, for a check on the tick that a transaction makes again. False when not cached here.</summary>
+        internal bool TryGetBank(int organizationId, out long bank)
+        {
+            bank = 0;
+            if (!Rules.Enabled || Cached(organizationId) is not { } state)
+                return false;
+            bank = state.Bank;
+            return true;
+        }
+
+        /// <summary>
+        /// Another service's transaction changed the organization's bank (a city district bought from it): reloads it here
+        /// and tells the other instances, so its members see the new balance. Off the tick.
+        /// </summary>
+        internal void BankChangedElsewhere(int organizationId)
+        {
+            if (_disposed || !Rules.Enabled || organizationId <= 0)
+                return;
+            try
+            {
+                Refresh(organizationId);
+                Broadcast(organizationId, new Outcome { OrganizationId = organizationId });
+            }
+            catch (Exception exception)
+            {
+                // The minute's version check reloads it instead.
+                _logger.Error(exception, "Organization reload after a bank change failed org=" + organizationId);
+            }
         }
 
         static void SetStat(Player player, CharacterStat stat, int value)

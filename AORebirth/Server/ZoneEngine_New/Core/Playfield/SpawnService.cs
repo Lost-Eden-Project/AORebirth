@@ -723,6 +723,8 @@ namespace ZoneEngine_New.Core.Playfield
                 {
                     PlacementIdentity = identity
                 };
+            else if (CityController.IsCityControllerType(identity.Type))
+                dynel = new CityController(identity, template);
             else
                 dynel = new PlayfieldStaticDynel(identity, template);
 
@@ -1259,12 +1261,13 @@ namespace ZoneEngine_New.Core.Playfield
                     Identity = playfieldIdentity,
                     TowerInfo = []
                 });
+            // Every built house of the playfield's city districts (none outside city playfields). The client clears its
+            // houses on PlayfieldAnarchyF, so this comes after it.
             session.Send(
                 new PlayfieldAllCitiesMessage
                 {
                     Identity = playfieldIdentity,
-                    Unknown = 0,
-                    Unknown1 = 0
+                    Houses = _playfield.GetService<ZoneEngine_New.Core.Cities.CityService>()?.HousesFor(_playfield) ?? []
                 });
             session.Send(player.BuildSpecialAttackWeaponMessage());
         }

@@ -40,7 +40,8 @@ public static class SchemaContract
         "20261117_organizations.sql",
         "20261118_module_schema_migrations.sql",
         "20261118_player_bag_names.sql",
-        "20261122_static_dungeon_instances.sql"
+        "20261122_static_dungeon_instances.sql",
+        "20261124_city_plots.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -63,7 +64,8 @@ public static class SchemaContract
         "characterperklocks", "characterresearch", "characternanolinelocks", "characterpetnames", "characterbagnames", "dailyloginclaims",
         "account_sanctions",
         "org_organizations", "org_members", "org_votes", "org_vote_ballots",
-        "module_schema_migrations", "staticdungeoninstances"
+        "module_schema_migrations", "staticdungeoninstances",
+        "city_plots", "city_houses"
     });
 
     public static readonly IReadOnlyList<(string Table, string Columns)> UniqueKeys = Array.AsReadOnly(new[]
@@ -92,7 +94,9 @@ public static class SchemaContract
         ("account_sanctions", "SanctionId"),
         ("org_organizations", "OrganizationId"), ("org_organizations", "Name"), ("org_members", "CharacterId"),
         ("org_votes", "VoteId"), ("org_vote_ballots", "VoteId,CharacterId"),
-        ("module_schema_migrations", "ModuleId,MigrationName")
+        ("module_schema_migrations", "ModuleId,MigrationName"),
+        ("city_plots", "PlayfieldId,ControllerIndex"), ("city_plots", "OrganizationId"),
+        ("city_houses", "HouseId"), ("city_houses", "PlayfieldId,ControllerIndex,TileX,TileZ")
     });
 
     private static IReadOnlyList<ColumnRequirement> BuildColumns()
@@ -212,6 +216,15 @@ public static class SchemaContract
         Add("module_schema_migrations", "varchar", "ModuleId MigrationName");
         Add("module_schema_migrations", "char", "Sha256");
         Add("module_schema_migrations", "datetime", "AppliedAtUtc");
+        Add("city_plots", "int", "PlayfieldId ControllerIndex OrganizationId PurchasedBy CloakState LockoutOrganizationId", false);
+        Add("city_plots", "bigint", "OwnershipId Version", false);
+        Add("city_plots", "tinyint", "ClaimPending", false);
+        Add("city_plots", "datetime", "ClaimedAtUtc PurchasedAtUtc NextBillAtUtc UpkeepWarnedForUtc EmptySinceUtc HeadquartersBuiltAtUtc CloakToggledAtUtc LockoutUntilUtc");
+        Add("city_plots", "float", "ControllerCharge");
+        Add("city_houses", "bigint", "HouseId", false);
+        Add("city_houses", "int", "PlayfieldId ControllerIndex TemplateId TileX TileZ Rotation BuiltBy ItemLowId ItemHighId ItemQuality", false);
+        Add("city_houses", "tinyint", "Pending", false);
+        Add("city_houses", "datetime", "CreatedAtUtc DemolishAtUtc");
         Add("login", "int", "Id Flags");
         Add("login", "varchar", "Username");
         return result.AsReadOnly();

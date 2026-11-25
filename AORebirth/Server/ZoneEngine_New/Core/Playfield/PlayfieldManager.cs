@@ -94,9 +94,11 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.World.CrossInstanceTransfer? crossInstance = null,
             ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? npcScripts = null,
             ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService? staticDungeons = null,
-            ZoneEngine_New.Core.Teams.SummonService? summons = null)
+            ZoneEngine_New.Core.Teams.SummonService? summons = null,
+            ZoneEngine_New.Core.Cities.CityService? cities = null)
         {
             World = world;
+            Cities = cities;
             Summons = summons;
             StaticDungeons = staticDungeons;
             _crossInstance = crossInstance;
@@ -180,6 +182,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Root static dungeon service, forwarded into every playfield container (walking into a static dungeon's door).</summary>
         public ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService? StaticDungeons { get; }
+
+        /// <summary>Org cities (city controllers, houses), forwarded into every playfield container.</summary>
+        public ZoneEngine_New.Core.Cities.CityService? Cities { get; }
 
         /// <summary>Engineer summons' route to characters on other zone instances, forwarded into every playfield container.</summary>
         public ZoneEngine_New.Core.Teams.SummonService? Summons { get; }

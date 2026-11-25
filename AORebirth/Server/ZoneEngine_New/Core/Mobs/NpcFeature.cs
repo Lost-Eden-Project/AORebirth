@@ -96,5 +96,13 @@ namespace ZoneEngine_New.Core.Mobs
         /// on its own Spawns.json respawnTime and respawnChance, with no player needed. For world NPCs players wait on.
         /// </summary>
         Persistent,
+
+        /// <summary>
+        /// Fights although its template is blue-named: a blue name (Flags HasBlueName) otherwise makes an NPC
+        /// <see cref="NoCombat"/> (NpcTemplateCatalog). With it the NPC keeps its blue name but can be attacked, gets a
+        /// combat brain and fights like any other monster. An explicitly listed <see cref="NoCombat"/> still wins, and the
+        /// unresolved placeholder stays NoCombat.
+        /// </summary>
+        Combat,
     }
 }

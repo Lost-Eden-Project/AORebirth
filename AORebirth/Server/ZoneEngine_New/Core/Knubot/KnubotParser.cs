@@ -155,12 +155,13 @@ public static class KnubotParser
                     break;
 
                 case "givequest":
-                    // An optional mission quality for a dungeon quest: a number, or the player's level with a percent.
+                    // An optional mission quality for a dungeon quest: a number, or the player's level with a percent
+                    // and optional softcap=/pastlevel= modifiers.
                     KnubotQuestQuality? questQuality = null;
-                    if (words.Length < 2 || words.Length > 3 || !load.Quests.TryGet(words[1], out _)
-                        || (words.Length == 3 && !KnubotQuestQuality.TryParse(words[2], out questQuality)))
+                    if (words.Length < 2 || words.Length > 5 || !load.Quests.TryGet(words[1], out _)
+                        || (words.Length >= 3 && !KnubotQuestQuality.TryParse(words[2..], out questQuality)))
                     {
-                        errors.Add("expected {givequest HASH [QL|level|level+N%|level-N%]} with a Quests.json hash: {" + body + "}");
+                        errors.Add("expected {givequest HASH [QL|level|level+N%|level-N% [softcap=Q/D] [pastlevel=L:B+S]]} with a Quests.json hash: {" + body + "}");
                         break;
                     }
 

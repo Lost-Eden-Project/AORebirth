@@ -55,6 +55,15 @@ namespace AORebirth.Core.GameData
 
         public const string MonsterDataFileName = "MonsterData.json";
 
+        /// <summary>Org city controllers and their buildable zones per playfield, from RDB 1000039 (ZoneEngine_New CityCatalog).</summary>
+        public const string CityControllersFileName = "CityControllers.json";
+
+        /// <summary>Org city house templates (type, upkeep, footprint), from RDB 1000040 (ZoneEngine_New CityCatalog).</summary>
+        public const string HouseTemplatesFileName = "HouseTemplates.json";
+
+        /// <summary>Org city rules: billing, timers, who may build (ZoneEngine_New CityCatalog).</summary>
+        public const string CityRulesFileName = "CityRules.json";
+
         /// <summary>Static ChatEngine channels and their join conditions (ChatEngine ChannelCatalog).</summary>
         public const string ChatChannelsFileName = "ChatChannels.json";
 

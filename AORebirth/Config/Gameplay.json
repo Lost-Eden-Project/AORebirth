@@ -72,7 +72,7 @@
     "chain": false
   },
   "pets": {
-    "ownerThreatSharePercent": 50,
+    "ownerThreatSharePercent": 0,
     "ownerAlwaysOnHateList": true,
     "ownerSharesPetEngageRange": true,
     "ownerAggroChance": { "ceilingPercent": 79.181, "scalePercent": 28.683, "perAggressiveness": 0.0088877 }

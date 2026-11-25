@@ -1,0 +1,5 @@
+- Added: Organization cities. Use a City Controller in Athen Shire, Aegean, Deep Artery Valley, Eastern Fouls Plains, Milky Way, Galway Shire, Omni Forest, Greater Omni Forest, Coast of Harmony or Three Craters to buy its city district for your organization, paid from your own credits.
+- Added: Build houses on your organization's district by dragging house items onto the City Controller's map, starting with an Organization Headquarters, and demolish them from the same window.
+- Added: City upkeep is taken from the organization bank every 30 days, with a warning a day before; a city that cannot pay its upkeep is demolished, and a district left without a headquarters for 24 hours is lost.
+- Added: City houses with advantages raise skills for every member of the owning organization, and "Dump city advantages to chat" lists them.
+- Added: The cloaking device can be switched on or off once every 2 hours.

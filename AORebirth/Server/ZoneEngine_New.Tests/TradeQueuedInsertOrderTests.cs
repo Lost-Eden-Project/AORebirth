@@ -602,6 +602,9 @@ public sealed class TradeQueuedInsertOrderTests
                                                                            // stat mutations write no item rows.
             ["Core/Quests/QuestService.cs"] = (1, false),                  // Quest state row.
             ["Core/Organizations/OrganizationService.Bank.cs"] = (2, false), // Cash and the org bank.
+            ["Core/Cities/CityService.cs"] = (1, false),                   // A house's confirmation behind the house item's
+                                                                           // retire (TryCommit, already queued). A district is
+                                                                           // paid from the org bank in its claim transaction.
         };
 
         var problems = new List<string>();

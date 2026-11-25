@@ -101,7 +101,8 @@ namespace ZoneEngine_New.Core.Helpers
 
         /// <summary>
         /// A blue-named NPC (Flags stat bit <see cref="LostEden.Protocol.GameData.CharacterFlags.HasBlueName"/>):
-        /// the friendly, non-combat NPCs (receptionists, recruiters, vendors, quest givers). They are not attackable.
+        /// the friendly, non-combat NPCs (receptionists, recruiters, vendors, quest givers). They are not attackable,
+        /// unless their hash lists <see cref="Mobs.NpcFeature.Combat"/> (MonsterCombatRules.json).
         /// </summary>
         public static bool IsBlueNameNpc(int flags)
             => !Entities.StatCollection.IsUnset(flags)

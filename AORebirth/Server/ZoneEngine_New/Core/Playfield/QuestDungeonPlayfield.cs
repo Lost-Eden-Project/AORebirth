@@ -508,7 +508,9 @@ public sealed class QuestDungeonPlayfield : AcgDungeonPlayfield
             _collectObjective!)
         {
             Playfield = this,
-            Position = new AORebirth.Core.Vector.Vector3(_objectiveItem.X, _objectiveItem.Y, _objectiveItem.Z),
+            // The district points sit about 0.4 m above the floor: the objective stands on the floor under its point, as
+            // a mission chest does (bug #686). No floor known: the point itself.
+            Position = SnapFeetToFloor(new AORebirth.Core.Vector.Vector3(_objectiveItem.X, _objectiveItem.Y, _objectiveItem.Z)),
             Rotation = new AORebirth.Core.Vector.Quaternion(0, 0, 0, 1)
         };
         if (!GetRequiredService<DynelRegistry>().TryRegister(item))

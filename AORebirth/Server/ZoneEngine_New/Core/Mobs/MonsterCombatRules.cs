@@ -121,7 +121,7 @@ namespace ZoneEngine_New.Core.Mobs
 
         public MonsterPetRule? Pets { get; set; }
 
-        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard, Boss, Social, Summoner, SpawnsExitDevice, NoXp, HealsSpawner, AggroesAllSides, Passive (<see cref="NpcFeature"/>).</summary>
+        /// <summary>Behaviour switches: NoCombat, NoMove, Wander, Guard, Boss, Social, Summoner, SpawnsExitDevice, NoXp, HealsSpawner, AggroesAllSides, Passive, Persistent, Combat (<see cref="NpcFeature"/>).</summary>
         public List<NpcFeature>? Features { get; set; }
 
         /// <summary>

@@ -84,6 +84,7 @@ namespace AORebirth.Tools.RDBDataExtractor
                 bool needRdb = !resolved.SkipMonsterData
                     || !resolved.SkipDynelCollision
                     || !resolved.SkipItemsDat
+                    || !resolved.SkipCities
                     || exportPlayfields;
                 if (needRdb)
                 {
@@ -148,6 +149,24 @@ namespace AORebirth.Tools.RDBDataExtractor
                             failed++;
                             Console.Error.WriteLine(
                                 "FAIL items.dat "
+                                + exception.GetType().Name
+                                + ": "
+                                + exception.Message);
+                        }
+                    }
+
+                    if (!resolved.SkipCities)
+                    {
+                        try
+                        {
+                            // Reports its own lines ("exported CityControllers.json ...").
+                            new CityDataExporter(controller, resolved.GameDataDirectory).Export(resolved.Overwrite);
+                        }
+                        catch (Exception exception)
+                        {
+                            failed++;
+                            Console.Error.WriteLine(
+                                "FAIL Cities "
                                 + exception.GetType().Name
                                 + ": "
                                 + exception.Message);

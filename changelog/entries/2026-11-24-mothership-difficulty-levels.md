@@ -1,0 +1,2 @@
+- Changed: The Unicorn Recruiter's easy Alien Mothership mission is now a little below your level.
+- Changed: Alien Mothership missions climb much more slowly past level 200 on every difficulty, so hard missions no longer jump far above mid-level players; a level 220 player on hard faces level 250 aliens.

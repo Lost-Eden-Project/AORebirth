@@ -2079,10 +2079,27 @@ namespace ZoneEngine_New.Core.Entities
             Motor.ApplyAction(MovementAction.LeaveSneak);
         }
 
+        /// <summary>Seconds Concealment stays locked after a player leaves sneak, however it ended.</summary>
+        public const int SneakExitLockSeconds = 10;
+
         /// <summary>
-        /// Tells everyone near, the sneaker's own client included, that sneak ended (StopSneaking). The motor calls it
-        /// whenever the mode leaves sneak, whatever took it out.
+        /// The motor calls it whenever the mode leaves sneak, whatever took it out (a stop request, a walk/run toggle,
+        /// a fight, flight, water). Everyone near, the sneaker's own client included, is told (StopSneaking), and a
+        /// player's Concealment locks for <see cref="SneakExitLockSeconds"/>: their client shows the lock on its sneak
+        /// button (SpecialUsed) and StartSneak is refused until it runs out.
         /// </summary>
+        internal void OnLeftSneak()
+        {
+            AnnounceStopSneaking();
+            if (this is not Player player)
+                return;
+
+            int statId = (int)CharacterStat.Concealment;
+            int locked = LockSkill(statId, SneakExitLockSeconds, DateTime.UtcNow);
+            player.ShowSkillLock(statId, SneakExitLockSeconds, locked);
+        }
+
+        /// <summary>Tells everyone near, the sneaker's own client included, that sneak ended (StopSneaking).</summary>
         internal void AnnounceStopSneaking() =>
             Cell?.Announce(new CharacterActionMessage
             {
@@ -3800,8 +3817,10 @@ namespace ZoneEngine_New.Core.Entities
             if (stats.Get(CharacterStat.VisualProfession, StatDetail.Base) != profession)
                 stats.Set(CharacterStat.VisualProfession, profession, StatDetail.Base, dirty: true);
 
+            // The resolver answers leaves a stat cannot: Sparrow Flight 82835's CanFly runs only under
+            // "ExpansionPlayfield = 0, FlyingAllowed, And". Without it that leaf failed closed and the Reet never flew.
             for (int i = 0; i < _buffs.Count; i++)
-                StatModifierSpells.Apply(_buffs[i].ModifierSpells, stats);
+                StatModifierSpells.Apply(_buffs[i].ModifierSpells, stats, resolve: ResolveRequirement);
         }
 
         /// <summary>

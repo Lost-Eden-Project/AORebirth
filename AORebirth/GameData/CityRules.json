@@ -1,0 +1,17 @@
+{
+  "Enabled": true,
+  "Playfields": [550, 585, 595, 620, 625, 647, 687, 716, 717, 4894, 6101, 6102],
+  "BillingPeriodDays": 30,
+  "UpkeepWarningHours": 24,
+  "EmptyPlotReleaseHours": 24,
+  "NoHeadquartersLockoutHours": 48,
+  "DemolishSeconds": 120,
+  "CloakToggleCooldownSeconds": 7200,
+  "StartingControllerCharge": 0.0,
+  "AdvantageChargeThreshold": 0.0,
+  "AdvantageQuality": 300,
+  "ManageMinRanksAboveLowest": 1,
+  "MaxHousesPerPlot": 40,
+  "InteractionRange": 15.0,
+  "PendingTimeoutMinutes": 30
+}

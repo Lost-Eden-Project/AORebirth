@@ -1,5 +1,5 @@
 {
-  "Notes": "Unicorn Recruiter. Captured by LiveCapture in Unicorn Outpost (4364) at (151.7, 100.9, 164.4). Nearest HashSpawnPoint UIRC at (151.7, 101.3, 164.4), 0.4m away. Rolls the Alien Mothership mission 829N (a Quests.json dungeon quest in ACG style 386 behind the outpost's Alien Mothership entrance) at the mission quality the line names, from the captured live multipliers of the top monster level: take it easy = level+2% (easy), handle our business = level+12% (medium), too chicken = level+53% (hard). The quest puts ordinary mobs 5% under that and the MJ9O boss at it. Each give rolls a fresh dungeon. Replies that give the mission are hidden while it is active; the captured no-give line 7 shows instead.",
+  "Notes": "Unicorn Recruiter. Captured by LiveCapture in Unicorn Outpost (4364) at (151.7, 100.9, 164.4). Nearest HashSpawnPoint UIRC at (151.7, 101.3, 164.4), 0.4m away. Rolls the Alien Mothership mission 829N (a Quests.json dungeon quest in ACG style 386 behind the outpost's Alien Mothership entrance) at the mission quality the line names: take it easy = level-4% (easy), handle our business = level+12% (medium), too chicken = level+53% (hard). Above QL 200 only a quarter of the part over 200 counts (softcap=200/4), since past 200 an alien level is worth about 4 player levels; hard for a player above level 200 is 227 plus 1.15 per level over 200 (pastlevel=200:227+1.15), so level 220 gets QL 250. Easy stays below medium and medium below hard at every level. The quest puts ordinary mobs 5% under that and the MJ9O boss at it. Each give rolls a fresh dungeon. Replies that give the mission are hidden while it is active; the captured no-give line 7 shows instead.",
   "Npcs": [
     "UIRC"
   ],
@@ -85,7 +85,7 @@
     },
     "3": {
       "Text": [
-        "{delay 1.5}{givequest 829N level+2%}",
+        "{delay 1.5}{givequest 829N level-4% softcap=200/4}",
         "Good luck. ",
         "{delay 1} Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. Good luck!"
       ],
@@ -93,14 +93,14 @@
     },
     "4": {
       "Text": [
-        "{delay 2}{givequest 829N level+12%}",
+        "{delay 2}{givequest 829N level+12% softcap=200/4}",
         "Confidence is good.  Take care not to have too much of it.Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. Good luck!"
       ],
       "Replies": []
     },
     "5": {
       "Text": [
-        "{delay 1.5}{givequest 829N level+53%}",
+        "{delay 1.5}{givequest 829N level+53% softcap=200/4 pastlevel=200:227+1.15}",
         "I have something special for you suicidal types.",
         "{delay 2}{emote}You think you can see the Unicorn grinning in his helmet...but it might have been a trick of the light..{/emote}",
         "{delay 1}Enter the shuttle through the gates there and you'll be knee-deep in green trouble within minutes. ",

@@ -45,7 +45,8 @@
             "HealsSpawner",
             "AggroesAllSides",
             "Passive",
-            "Persistent"
+            "Persistent",
+            "Combat"
           ]
         }
       },

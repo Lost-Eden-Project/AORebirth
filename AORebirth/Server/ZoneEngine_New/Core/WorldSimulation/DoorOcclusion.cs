@@ -247,6 +247,23 @@ namespace ZoneEngine_New.Core.WorldSimulation
         }
 
         /// <summary>
+        /// True when one movement step from <paramref name="from"/> to <paramref name="to"/> (feet) goes through a locked,
+        /// closed door, judged as a walked route is (<see cref="BlocksRoute"/>). Every moving character asks this every
+        /// step, so the cheap panel bounds test runs before the door's state is read.
+        /// </summary>
+        public bool BlocksStep(System.Numerics.Vector3 from, System.Numerics.Vector3 to)
+        {
+            foreach (Blocker d in _blockers)
+            {
+                if (Crosses(d, from.X, from.Y + PassageLift, from.Z, to.X, to.Y + PassageLift, to.Z, PassageSideMargin)
+                    && d.IsLocked && !d.IsOpen)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// The segment crosses <paramref name="d"/>'s panel, widened by <paramref name="sideMargin"/> past each edge. A
         /// segment that only touches the panel's plane at one end counts as crossing.
         /// </summary>

@@ -4,21 +4,28 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 using AORebirth.Core.GameData;
 using AORebirth.DungeonGenerator;
+using AORebirth.Enums;
 using AORebirth.World.Collision;
 using AORebirth.World.Pathfinding;
 
 using LostEden.Protocol.GameData;
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+using ZoneEngine_New.Core.Data;
 using ZoneEngine_New.Core.Entities;
 using ZoneEngine_New.Core.GameData;
+using ZoneEngine_New.Core.Inventory;
 using ZoneEngine_New.Core.Logging;
 using ZoneEngine_New.Core.Movement;
+using ZoneEngine_New.Core.Playfield;
 using ZoneEngine_New.Core.WorldSimulation;
 
 using NVector3 = System.Numerics.Vector3;
@@ -143,6 +150,68 @@ public sealed class LockedDoorPassageTests
     }
 
     /// <summary>
+    /// A player holding forward into a locked door stays in front of it, as the client holds him. The server's own step
+    /// only met the floor, so between client updates it ran the player on into the locked room: the mobs there aggroed
+    /// and the pet, with no route to that position, warped in after him. The same run through the door once it is
+    /// unlocked proves the step itself goes through the doorway.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Styles), DynamicDataSourceType.Method)]
+    public void APlayerRunningIntoALockedDoorStopsAtItAndRunsThroughOnceUnlocked(int style)
+    {
+        using Rig rig = Rig.Build(style);
+        Playfield playfield = rig.CreatePlayfield();
+        int proven = 0;
+        foreach (DoorPair pair in rig.Pairs())
+        {
+            if (!rig.TryRoomPoints(pair.First, out NVector3 a, out NVector3 b) || !rig.Route(a, b, out _))
+                continue;
+
+            NVector3 facing = Facing(pair.First);
+            var panel = new NVector3(pair.First.Position.xf, pair.First.Position.yf, pair.First.Position.zf);
+            float Side(Player p) => NVector3.Dot(new NVector3(p.Position.xf, p.Position.yf, p.Position.zf) - panel, facing);
+
+            // Holding forward from one room at the door into the other, for three seconds (15 m at run speed).
+            Player RunThrough(out float furthest)
+            {
+                var player = new Player(new Identity { Type = IdentityType.SimpleChar, Instance = 0x632 }, new Logger(), new Items())
+                {
+                    Playfield = playfield
+                };
+                float yaw = MathF.Atan2(b.X - a.X, b.Z - a.Z);
+                player.Motor.Warp(new AORebirth.Core.Vector.Vector3(a.X, a.Y, a.Z),
+                    new AORebirth.Core.Vector.Quaternion(0, MathF.Sin(yaw / 2f), 0, MathF.Cos(yaw / 2f)));
+                for (int i = 0; i < 20; i++)
+                    player.Motor.Tick(0.05);
+                Assert.IsTrue(player.Motor.ApplyAction(ZoneEngine_New.Core.Movement.MovementAction.ForwardStart), "forward start");
+                furthest = float.MinValue;
+                for (int i = 0; i < 60; i++)
+                {
+                    player.Motor.Tick(0.05);
+                    furthest = MathF.Max(furthest, Side(player));
+                }
+
+                return player;
+            }
+
+            // A closed, unlocked door opens to the touch: the run goes through. A doorway the straight run cannot make
+            // (a frame or step in the way) proves nothing about the lock.
+            if (Side(RunThrough(out _)) <= 0.5f)
+                continue;
+
+            pair.Lock();
+            Player blocked = RunThrough(out float reached);
+            Assert.IsTrue(reached < 0f, "style " + style + ": the server ran the player " + reached + " m past a locked door");
+            Assert.IsTrue(Side(blocked) > -1.5f, "style " + style + ": the player never reached the door (" + Side(blocked) + ")");
+            pair.Unlock();
+            proven++;
+        }
+
+        if (proven == 0)
+            Assert.Inconclusive("style " + style + ": no doorway had a straight run through it");
+    }
+
+    /// <summary>
     /// Two points on one line through the door, in the same sight-cache cell (PlayfieldWorldSimulation quantises every
     /// coordinate to a quarter metre): <paramref name="near"/> on the facing side of the panel, <paramref name="far"/>
     /// just past it.
@@ -206,6 +275,15 @@ public sealed class LockedDoorPassageTests
         public NavMeshPathfinder Finder { get; }
 
         public IEnumerable<DoorPair> Pairs() => _pairs;
+
+        /// <summary>A playfield whose world is this dungeon's: all a character's motor asks of its playfield.</summary>
+        public Playfield CreatePlayfield()
+        {
+            var playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
+            var services = new ServiceCollection().AddSingleton(new WorldSimulationAccess { Instance = World }).BuildServiceProvider();
+            typeof(Playfield).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(playfield, services);
+            return playfield;
+        }
 
         public static Rig Build(int style)
         {
@@ -325,5 +403,18 @@ public sealed class LockedDoorPassageTests
         public void Error(string message) { }
         public void Error(Exception exception, string message) { }
         public IZoneLogger CreateForPlayfield(int playfieldId) => this;
+    }
+
+    sealed class Items : IItemBuilder
+    {
+        public Item Create(int lowId, int highId, int quality, ItemSource source, int stackCount = 1, int instanceId = 0,
+            Identity? identity = null, byte[]? statsBlob = null) => throw new NotSupportedException();
+
+        public Item CreateWithNewInstance(int lowId, int highId, int quality, ItemSource source, int stackCount = 1)
+            => throw new NotSupportedException();
+
+        public ItemTemplate CreateTemplate(int lowId, int highId, int quality) => throw new NotSupportedException();
+
+        public bool TryFromInstanceRecord(ItemInstanceRecord row, out Item item) => throw new NotSupportedException();
     }
 }

@@ -66,6 +66,11 @@ namespace AORebirth.Tools.RDBDataExtractor
         public bool SkipText { get; set; }
 
         [Option(
+            "skip-cities",
+            HelpText = "Skip GameData/CityControllers.json and HouseTemplates.json export (org city plots).")]
+        public bool SkipCities { get; set; }
+
+        [Option(
             "skip-playfields",
             HelpText = "Skip playfield tilemap, district, and dat export.")]
         public bool SkipPlayfields { get; set; }
@@ -118,6 +123,7 @@ namespace AORebirth.Tools.RDBDataExtractor
                 SkipDynelCollision = options.SkipDynelCollision,
                 SkipItemsDat = options.SkipItemsDat,
                 SkipText = options.SkipText,
+                SkipCities = options.SkipCities,
                 SkipPlayfields = options.SkipPlayfields,
             };
         }

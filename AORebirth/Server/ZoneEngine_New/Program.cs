@@ -129,6 +129,8 @@ namespace ZoneEngine_New
                 _ = rootServices.GetRequiredService<ZoneEngine_New.Core.Accounts.AccountSanctionService>();
                 // Hooks player registration and other instances' organization changes before any client connects.
                 rootServices.GetRequiredService<ZoneEngine_New.Core.Organizations.OrganizationService>().Start();
+                // Loads every city district and starts their sync and due timers, before any client connects.
+                rootServices.GetRequiredService<ZoneEngine_New.Core.Cities.CityService>().Start();
                 networkHost = rootServices.GetRequiredService<ZoneNetworkHost>();
                 networkHost.Start();
                 try
@@ -305,6 +307,10 @@ namespace ZoneEngine_New
             services.AddSingleton<IBagNameRepository, MySqlBagNameRepository>();
             services.AddSingleton<ZoneEngine_New.Core.Organizations.IOrganizationStore, ZoneEngine_New.Core.Organizations.MySqlOrganizationStore>();
             services.AddSingleton<ZoneEngine_New.Core.Organizations.OrganizationService>();
+            // Org cities: districts, houses, upkeep and advantages (GameData CityRules/CityControllers/HouseTemplates).
+            services.AddSingleton<ZoneEngine_New.Core.Cities.CityCatalog>();
+            services.AddSingleton<ZoneEngine_New.Core.Cities.ICityStore, ZoneEngine_New.Core.Cities.MySqlCityStore>();
+            services.AddSingleton<ZoneEngine_New.Core.Cities.CityService>();
             services.AddSingleton<ICharacterCoalesceCommit, MySqlCharacterCoalesceCommit>();
             services.AddSingleton<IItemInstanceIdAllocator, ItemInstanceIdAllocator>();
             services.AddSingleton<IItemTemplateCatalog, ItemTemplateCatalog>();
@@ -437,6 +443,7 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.PlayfieldsReload>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.NoKillXpFamilyCatalog>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.GameData.NoKillXpFamiliesReload>();
+            services.AddSingleton<ZoneEngine_New.Core.GameData.IReloadableGameData, ZoneEngine_New.Core.Cities.CitiesReload>();
             // Modules' own reloadables (module API 1.13), listed after the catalogs as <module id>/<name>.
             services.AddSingleton<ZoneEngine_New.Core.Modules.ModuleReloadables>();
             services.AddSingleton<ZoneEngine_New.Core.GameData.GameDataReloadRegistry>();
@@ -501,6 +508,11 @@ namespace ZoneEngine_New
             AddMessageHandler<KnuBotFinishTradeMessageHandler>(services);
             AddMessageHandler<RaidCmdMessageHandler>(services);
             AddMessageHandler<OrgClientMessageHandler>(services);
+            AddMessageHandler<ClientRequestBuyMessageHandler>(services);
+            AddMessageHandler<ClientRequestBuildMessageHandler>(services);
+            AddMessageHandler<ClientRequestDemolishMessageHandler>(services);
+            AddMessageHandler<ClientRequestCloseGuiMessageHandler>(services);
+            AddMessageHandler<ToggleCloakMessageHandler>(services);
             AddMessageHandler<TeamChatMessageHandler>(services);
             AddMessageHandler<QuestAlternativeMessageHandler>(services);
             AddMessageHandler<CreateQuestMessageHandler>(services);

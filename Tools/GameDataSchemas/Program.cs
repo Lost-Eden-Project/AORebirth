@@ -42,6 +42,16 @@ Write("StaticDungeon", "Static dungeon: a fixed ACG dungeon behind a world door 
     nameof(StaticDungeonFile), typeof(StaticDungeonFile), LoaderOptions(typeof(StaticDungeonFile)));
 Write("StaticDungeonSites", "Static dungeon site pool: chest, mine and turret spots per room template of one ACG style (Dungeons/Sites/<style>.json).",
     nameof(StaticDungeonSitePoolFile), typeof(StaticDungeonSitePoolFile), LoaderOptions(typeof(StaticDungeonFile)));
+// Org cities: CityRules.json (the server's rules), and CityControllers.json and HouseTemplates.json (the client's RDB
+// 1000039/1000040 records, exported by RDBDataExtractor into private GameData).
+Write("CityRules", "Org city rules: billing, timers, who may build (CityRules.json).", "CityCatalog.RulesFile",
+    typeof(ZoneEngine_New.Core.Cities.CityCatalog.RulesFile), LoaderOptions(typeof(ZoneEngine_New.Core.Cities.CityCatalog)));
+Write("CityControllers", "Org city districts per playfield: costs and buildable zones (CityControllers.json, RDB 1000039).",
+    "CityCatalog.ControllersFile", typeof(ZoneEngine_New.Core.Cities.CityCatalog.ControllersFile),
+    LoaderOptions(typeof(ZoneEngine_New.Core.Cities.CityCatalog)));
+Write("HouseTemplates", "Org city house templates: type, upkeep and footprint (HouseTemplates.json, RDB 1000040).",
+    "CityCatalog.TemplatesFile", typeof(ZoneEngine_New.Core.Cities.CityCatalog.TemplatesFile),
+    LoaderOptions(typeof(ZoneEngine_New.Core.Cities.CityCatalog)));
 // Xp.json: level rows keyed by level number, plus the NoKillXpFamilies list beside them.
 Type xpLevelRow = typeof(GameDataStore).GetNestedType("XpLevelRow", BindingFlags.NonPublic)
     ?? throw new InvalidOperationException("GameDataStore.XpLevelRow not found.");
@@ -94,6 +104,9 @@ JsonSchemaExporterOptions Exporter()
                 };
             if (context.PropertyInfo is { } questProperty && questProperty.DeclaringType == typeof(QuestTemplate) && node is JsonObject questNode)
                 RefineQuestProperty(questProperty.Name, questNode);
+            if (context.PropertyInfo is { } cityProperty && cityProperty.DeclaringType.DeclaringType == typeof(ZoneEngine_New.Core.Cities.CityCatalog)
+                && node is JsonObject cityNode)
+                RefineCityProperty(cityProperty.Name, cityNode);
             // Quests.json reward items live in QuestRewards.json, keyed by Reward.Hash; Records is not read from it.
             if (context.TypeInfo.Type == typeof(QuestReward) && node is JsonObject rewardNode
                 && rewardNode["properties"] is JsonObject rewardProperties)
@@ -161,6 +174,64 @@ static void RefineQuestProperty(string name, JsonObject node)
         case nameof(QuestTemplate.IconId):
         case nameof(QuestTemplate.QasInstance):
             node["minimum"] = 0;
+            break;
+    }
+}
+
+// The ranges CityCatalog checks on load (CityRules.Validate and the file checks).
+static void RefineCityProperty(string name, JsonObject node)
+{
+    switch (name)
+    {
+        case "BillingPeriodDays":
+        case "EmptyPlotReleaseHours":
+        case "AdvantageQuality":
+        case "PendingTimeoutMinutes":
+        case "PlayfieldId":
+        case "Id":
+            node["minimum"] = 1;
+            break;
+        case "UpkeepWarningHours":
+        case "NoHeadquartersLockoutHours":
+        case "DemolishSeconds":
+        case "CloakToggleCooldownSeconds":
+        case "ManageMinRanksAboveLowest":
+        case "PurchaseCost":
+        case "UpkeepCost":
+        case "Upkeep":
+        case "ZoneId":
+        case "Index":
+            node["minimum"] = 0;
+            break;
+        case "StartingControllerCharge":
+        case "AdvantageChargeThreshold":
+            node["minimum"] = 0;
+            node["maximum"] = 1;
+            break;
+        case "Playfields":
+            node["minItems"] = 1;
+            node["description"] = "The playfield ids whose districts are for sale.";
+            break;
+        case "MaxHousesPerPlot":
+            node["minimum"] = 1;
+            node["maximum"] = ZoneEngine_New.Core.Cities.CityLimits.MaxHousesPerPlotCap;
+            break;
+        case "TilesX":
+        case "TilesZ":
+            node["minimum"] = 1;
+            node["maximum"] = 64;
+            break;
+        case "HouseType":
+            node["minimum"] = 0;
+            node["maximum"] = 9;
+            break;
+        case "Mask":
+            node["pattern"] = "^[0-9a-fA-F]{26}$";
+            node["description"] = "13 bytes of hex: 100 bits, bit z * 10 + x, lowest bit first.";
+            break;
+        case "Layout":
+            node["pattern"] = "^([0-9a-fA-F]{2})+$";
+            node["description"] = "TilesX * TilesZ bits of hex, bit z * TilesX + x, lowest bit first.";
             break;
     }
 }

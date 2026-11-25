@@ -1,0 +1,1 @@
+- Changed: Your pet's attacks no longer build up threat on you. Monsters fighting your pet still turn on you from time to time, less often the more aggressive your pet is, and still come after you once your pet is gone.

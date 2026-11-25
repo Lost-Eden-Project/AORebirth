@@ -533,10 +533,11 @@ namespace ZoneEngine_New.Core.Configuration
     {
         /// <summary>
         /// Percent of every threat a player's pet earns (damage, taunts, hostile nanos) that its owner earns as well. The
-        /// pet keeps the full amount, so it still holds the NPC in ordinary play; the owner builds up behind it. 0 leaves
-        /// the owner with only the minimum entry from <see cref="OwnerAlwaysOnHateList"/>.
+        /// pet keeps the full amount. 0 (the default) leaves the owner with only the minimum entry from <see
+        /// cref="OwnerAlwaysOnHateList"/> plus their own acts: the owner's share of the hits comes from the <see
+        /// cref="OwnerAggroChance"/> flicker, and a share on top would lift the owner above the pet and skip that roll.
         /// </summary>
-        public float OwnerThreatSharePercent { get; init; } = 50f;
+        public float OwnerThreatSharePercent { get; init; } = 0f;
 
         /// <summary>
         /// The owner goes on the NPC's hate list the moment their pet first draws its threat, at least at the proximity

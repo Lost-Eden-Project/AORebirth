@@ -231,6 +231,19 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         break;
                     }
 
+                    // No sneaking mid-cast. The client switches only on StartedSneaking, so withholding it leaves the
+                    // client standing with its cast bar running.
+                    if (player.IsCastingNano)
+                        break;
+
+                    // Leaving sneak locks Concealment (Character.OnLeftSneak); no new sneak until it runs out.
+                    TimeSpan concealmentLock = player.SkillLocks.Remaining((int)CharacterStat.Concealment, DateTime.UtcNow);
+                    if (concealmentLock > TimeSpan.Zero)
+                    {
+                        player.SendSkillLocked((int)CharacterStat.Concealment, concealmentLock);
+                        break;
+                    }
+
                     if (player.Motor.ApplyAction(MovementAction.SwitchToSneak))
                         AnnounceAction(player, CharacterActionType.StartedSneaking);
                     break;

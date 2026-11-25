@@ -184,15 +184,43 @@ public abstract record KnubotEffect
 
 /// <summary>
 /// A dungeon quest's mission quality as a dialog names it: a fixed level, or the player's level moved by a percent
-/// (<c>150</c>, <c>level</c>, <c>level+12%</c>, <c>level-25%</c>).
+/// (<c>150</c>, <c>level</c>, <c>level+12%</c>, <c>level-25%</c>). A level form may add, in any order:
+/// <list type="bullet">
+/// <item><c>softcap=Q/D</c>: of a quality above <c>Q</c> only the part over <c>Q</c> divided by <c>D</c> counts
+/// (<c>softcap=200/4</c>: 224 becomes 206).</item>
+/// <item><c>pastlevel=L:B+S</c>: a player above level <c>L</c> gets <c>B</c> plus <c>S</c> per level over <c>L</c>
+/// instead, with no soft cap (<c>pastlevel=200:227+1.15</c>: level 220 gets 250).</item>
+/// </list>
+/// The quality is rounded once, at the end.
 /// </summary>
 public sealed record KnubotQuestQuality(int? Fixed, int Percent)
 {
-    public static bool TryParse(string word, out KnubotQuestQuality? quality)
+    /// <summary>The quality the soft cap starts at; 0: none.</summary>
+    public int SoftCapAt { get; init; }
+
+    /// <summary>What the part over <see cref="SoftCapAt"/> is divided by.</summary>
+    public int SoftCapDivisor { get; init; } = 1;
+
+    /// <summary>The player level above which <see cref="PastLevelBase"/> and <see cref="PastLevelPerLevel"/> apply; 0: none.</summary>
+    public int PastLevel { get; init; }
+
+    public int PastLevelBase { get; init; }
+
+    public double PastLevelPerLevel { get; init; }
+
+    public static bool TryParse(string word, out KnubotQuestQuality? quality) => TryParse([word], out quality);
+
+    /// <summary>The quality word followed by its modifiers.</summary>
+    public static bool TryParse(IReadOnlyList<string> words, out KnubotQuestQuality? quality)
     {
         quality = null;
+        if (words.Count == 0)
+            return false;
+        string word = words[0];
         if (KnubotCondition.TryPositive(word, out int fixedLevel))
         {
+            if (words.Count > 1)
+                return false;
             quality = new KnubotQuestQuality(fixedLevel, 0);
             return true;
         }
@@ -204,12 +232,64 @@ public sealed record KnubotQuestQuality(int? Fixed, int Percent)
         if (rest.Length > 0 && (rest[0] != '+' && rest[0] != '-' || !rest.EndsWith('%')
             || !int.TryParse(rest[..^1], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out percent)))
             return false;
-        quality = new KnubotQuestQuality(null, percent);
+
+        var parsed = new KnubotQuestQuality(null, percent);
+        for (int i = 1; i < words.Count; i++)
+        {
+            string modifier = words[i];
+            if (modifier.StartsWith("softcap=", StringComparison.OrdinalIgnoreCase) && parsed.SoftCapAt == 0)
+            {
+                string[] parts = modifier["softcap=".Length..].Split('/');
+                if (parts.Length != 2 || !KnubotCondition.TryPositive(parts[0], out int at)
+                    || !KnubotCondition.TryPositive(parts[1], out int divisor))
+                    return false;
+                parsed = parsed with { SoftCapAt = at, SoftCapDivisor = divisor };
+            }
+            else if (modifier.StartsWith("pastlevel=", StringComparison.OrdinalIgnoreCase) && parsed.PastLevel == 0)
+            {
+                string value = modifier["pastlevel=".Length..];
+                int colon = value.IndexOf(':');
+                int plus = value.IndexOf('+');
+                if (colon <= 0 || plus <= colon + 1
+                    || !KnubotCondition.TryPositive(value[..colon], out int level)
+                    || !KnubotCondition.TryPositive(value[(colon + 1)..plus], out int baseQuality)
+                    || !double.TryParse(value[(plus + 1)..], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double perLevel)
+                    || !double.IsFinite(perLevel))
+                    return false;
+                parsed = parsed with { PastLevel = level, PastLevelBase = baseQuality, PastLevelPerLevel = perLevel };
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        quality = parsed;
         return true;
     }
 
-    public int Resolve(Player player)
-        => Fixed ?? Math.Max(1, (int)Math.Round(player.Stats.GetOrZero(CharacterStat.Level) * (100 + Percent) / 100.0, MidpointRounding.AwayFromZero));
+    public int Resolve(Player player) => Resolve(player.Stats.GetOrZero(CharacterStat.Level));
+
+    /// <summary>The mission quality for a player of <paramref name="playerLevel"/>, at least 1.</summary>
+    public int Resolve(int playerLevel)
+    {
+        if (Fixed is int fixedLevel)
+            return fixedLevel;
+
+        double quality;
+        if (PastLevel > 0 && playerLevel > PastLevel)
+        {
+            quality = PastLevelBase + (PastLevelPerLevel * (playerLevel - PastLevel));
+        }
+        else
+        {
+            quality = playerLevel * (100 + Percent) / 100.0;
+            if (SoftCapAt > 0 && quality > SoftCapAt)
+                quality = SoftCapAt + ((quality - SoftCapAt) / SoftCapDivisor);
+        }
+
+        return Math.Max(1, (int)Math.Round(quality, MidpointRounding.AwayFromZero));
+    }
 }
 
 /// <summary>

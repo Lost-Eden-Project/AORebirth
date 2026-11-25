@@ -606,7 +606,7 @@ public sealed class QuestDungeonDestinationTests
         Assert.AreEqual(0, update.Identitytype);
         Assert.AreEqual(0, update.Instance);
         Assert.AreEqual(binding.X, update.Coordinate.X);
-        Assert.AreEqual(binding.Y, update.Coordinate.Y);
+        Assert.AreEqual(world.SnapFeetToFloor(new Vector3(binding.X, binding.Y, binding.Z)).yf, update.Coordinate.Y);
         Assert.AreEqual(binding.Z, update.Coordinate.Z);
         Assert.AreEqual((uint)binding.LowId, update.Stats.Single(row => row.Value1 == CharacterStat.ACGItemTemplateID).Value2);
         Assert.AreEqual((uint)binding.HighId, update.Stats.Single(row => row.Value1 == CharacterStat.ACGItemTemplateID2).Value2);

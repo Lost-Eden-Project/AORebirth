@@ -85,6 +85,104 @@ public sealed class KnubotDungeonQuestGateTests
         Assert.IsFalse(rig.Player.IsPersistenceQuarantined);
     }
 
+    const string Easy = "Take it easy on us";
+    const string Medium = "We can handle our business";
+    const string Hard = "I want the mission Unicorns are too chicken";
+
+    /// <summary>
+    /// Team request 24: easy is level-4%, medium level+12%, hard level+53%; above QL 200 only a quarter of the part over
+    /// 200 counts, and hard for a player above level 200 is 227 + 1.15 per level over 200. Each answer is given the way
+    /// a client answers, and the mission the player receives carries that quality.
+    /// </summary>
+    [TestMethod]
+    public void RecruiterDifficultyGivesTheMothershipAtTheCompressedQuality()
+    {
+        (int Level, string Reply, int Quality)[] expected =
+        [
+            (100, Easy, 96), (100, Medium, 112), (100, Hard, 153),
+            (150, Easy, 144), (150, Medium, 168), (150, Hard, 207),
+            (160, Easy, 154), (160, Medium, 179), (160, Hard, 211),
+            (180, Easy, 173), (180, Medium, 200), (180, Hard, 219),
+            (200, Easy, 192), (200, Medium, 206), (200, Hard, 227),
+            (210, Easy, 200), (210, Medium, 209), (210, Hard, 239),
+            (220, Easy, 203), (220, Medium, 212), (220, Hard, 250),
+        ];
+
+        using var rig = new Rig();
+        var failures = new List<string>();
+        foreach ((int level, string reply, int quality) in expected)
+        {
+            int given = rig.GiveFromRecruiter(level, reply);
+            if (given != quality)
+                failures.Add("level " + level + " '" + reply + "': QL " + given + ", expected " + quality);
+        }
+
+        Assert.AreEqual(0, failures.Count, string.Join(Environment.NewLine, failures));
+        // The rig has no dungeon style catalog, so the background navmesh prewarm warns; nothing may error.
+        Assert.IsFalse(rig.Log.Problems.Contains("ERROR", StringComparison.Ordinal), rig.Log.Problems);
+        Assert.IsFalse(rig.Player.IsPersistenceQuarantined);
+    }
+
+    /// <summary>
+    /// The recruiter's own lines, as GameData writes them: at every player level easy is never above medium nor medium
+    /// above hard (strictly below once rounding allows), no difficulty drops as the player levels, and none passes the
+    /// highest mission quality.
+    /// </summary>
+    [TestMethod]
+    public void RecruiterDifficultiesStayOrderedAtEveryLevel()
+    {
+        string path = Path.Combine(GameDataPaths.ResolveRuntimeRoot(), "Knubot", "UnicornRecruiter.json");
+        if (!File.Exists(path))
+            Assert.Inconclusive("The runtime GameData has no " + path + ".");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+        System.Text.Json.JsonElement lines = document.RootElement.GetProperty("Lines");
+        KnubotQuestQuality Line(string line)
+        {
+            string text = string.Join(" ", lines.GetProperty(line).GetProperty("Text").EnumerateArray().Select(piece => piece.GetString()));
+            var match = System.Text.RegularExpressions.Regex.Match(text, @"\{givequest " + QuestHash + @" ([^}]*)\}");
+            Assert.IsTrue(match.Success, "Line " + line + " gives no " + QuestHash + ": " + text);
+            Assert.IsTrue(KnubotQuestQuality.TryParse(match.Groups[1].Value.Split(' '), out KnubotQuestQuality? quality), match.Value);
+            return quality!;
+        }
+
+        KnubotQuestQuality easy = Line("3"), medium = Line("4"), hard = Line("5");
+        int previousEasy = 0, previousMedium = 0, previousHard = 0;
+        for (int level = 1; level <= 220; level++)
+        {
+            int e = easy.Resolve(level), m = medium.Resolve(level), h = hard.Resolve(level);
+            Assert.IsTrue(e <= m && m <= h, "level " + level + ": easy " + e + ", medium " + m + ", hard " + h);
+            if (level >= 5)
+                Assert.IsTrue(e < m && m < h, "level " + level + ": easy " + e + ", medium " + m + ", hard " + h);
+            Assert.IsTrue(e >= previousEasy && m >= previousMedium && h >= previousHard, "a difficulty dropped at level " + level);
+            Assert.IsTrue(h <= QuestDungeonTemplate.MaxMissionQuality, "hard at level " + level + " is " + h);
+            (previousEasy, previousMedium, previousHard) = (e, m, h);
+        }
+    }
+
+    [TestMethod]
+    public void QualityModifiersParseOnlyInTheirWrittenForm()
+    {
+        Assert.IsTrue(KnubotQuestQuality.TryParse(["level+53%", "pastlevel=200:227+1.15", "softcap=200/4"], out KnubotQuestQuality? both));
+        Assert.AreEqual(207, both!.Resolve(150));
+        Assert.AreEqual(250, both.Resolve(220));
+        Assert.IsTrue(KnubotQuestQuality.TryParse(["level+12%"], out KnubotQuestQuality? plain));
+        Assert.AreEqual(246, plain!.Resolve(220), "Without a soft cap the quality is the plain percent.");
+
+        string[][] rejected =
+        [
+            ["150", "softcap=200/4"],
+            ["level", "softcap=200/0"],
+            ["level", "softcap=200"],
+            ["level", "softcap=200/4", "softcap=150/2"],
+            ["level", "pastlevel=200:227"],
+            ["level", "pastlevel=200:227+-1"],
+            ["level", "pastlevel=:227+1"],
+            ["level", "cap=200"],
+        ];
+        foreach (string[] words in rejected)
+            Assert.IsFalse(KnubotQuestQuality.TryParse(words, out _), string.Join(" ", words));
+    }
+
     [TestMethod]
     public void TwoGivesUnderTheGateMakeOneMission()
     {
@@ -305,6 +403,29 @@ public sealed class KnubotDungeonQuestGateTests
             int index = Array.FindIndex(list.DialogOptions, option => option.Text.StartsWith(text, StringComparison.Ordinal));
             Assert.IsTrue(index >= 0, "No reply '" + text + "' in: " + string.Join(" | ", list.DialogOptions.Select(option => option.Text)));
             return index;
+        }
+
+        /// <summary>
+        /// A player of <paramref name="level"/> with no Mothership held talks to the recruiter, picks
+        /// <paramref name="reply"/> as a client answers, and returns the quality of the mission given.
+        /// </summary>
+        internal int GiveFromRecruiter(int level, string reply)
+        {
+            Player.Stats.Set(CharacterStat.Level, level);
+            Player.QuestLog = new QuestLog();
+            Store.Generated = null;
+            int assigned = Store.Assigned;
+            OnTick(() => Assert.IsTrue(Knubot.TryOpen(Session, Npc.Identity)));
+            Settle();
+            OnTick(() => Assert.IsTrue(Knubot.TryAnswer(Session, Npc.Identity, Option("I want to visit"))));
+            Settle();
+            int option = Option(reply);
+            Inbound(() => Assert.IsTrue(Knubot.TryAnswer(Session, Npc.Identity, option)));
+            Drain();
+            Settle();
+            Assert.AreEqual(assigned + 1, Store.Assigned, "level " + level + " '" + reply + "' gave no mission. " + Log.Problems);
+            Assert.IsTrue(QuestDungeonParameters.TryParse(Store.Generated!.AcgBuildingGeneratorJson, out QuestDungeonParameters parameters));
+            return parameters.Quality;
         }
 
         /// <summary>Lets the NPC's queued text run out, a paced packet per tick.</summary>

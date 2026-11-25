@@ -79,7 +79,7 @@ namespace ZoneEngine_New.Core.Mobs
 
         /// <summary>
         /// Behaviour switches from the level entry's "Features" (plus NoCombat for the unresolved placeholder and for
-        /// blue-named NPCs).
+        /// blue-named NPCs without Combat).
         /// </summary>
         public HashSet<NpcFeature> Features { get; set; } = new();
 

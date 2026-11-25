@@ -19,6 +19,6 @@
   <!-- Framing / paths / metadata stay in AORebirth.Core (single type identity with ZoneEngine). -->
   <ItemGroup>
     <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/AORebirth.Core.ZoneNew.WinNet10.csproj" />
-    <PackageReference Include="LostEden.Protocol" Version="0.4.3" />
+    <PackageReference Include="LostEden.Protocol" Version="0.5.0" />
   </ItemGroup>
 </Project>
