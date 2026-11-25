@@ -20,6 +20,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Chat modules serve the website's private HTTP APIs with ASP.NET Core, as zone modules do; they load it from the
+         process's shared frameworks, so the engine must run with it. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="NLog" Version="6.1.4" />
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="MsgPack.Cli" Version="1.0.1" />

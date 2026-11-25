@@ -32,6 +32,10 @@ refuses a module built against a different major version, and minor versions onl
   exit. There is no hot reload and no unloading.
 - If a module fails to load, it is skipped and logged. If it is also listed in `Required`, chat startup fails.
 - `context.GetConfig<T>()` reads `ChatModules/<Id>/config.json`, for example the channels to relay and a webhook URL.
+- ChatEngine runs with the ASP.NET Core shared framework (1.2), so a module may serve a private HTTP API for the
+  website the way zone modules do (a slim `WebApplication` on the private network, `X-Api-Key` on every request).
+  Start it in `Initialize`, stop it in `Shutdown`, and reference `Microsoft.AspNetCore.App` as a framework, not a
+  copied package.
 
 ## Channels
 
