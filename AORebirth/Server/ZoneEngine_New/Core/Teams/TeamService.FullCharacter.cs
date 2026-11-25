@@ -1,6 +1,7 @@
 namespace ZoneEngine_New.Core.Teams
 {
     using System.Collections.Generic;
+    using System.Linq;
 
     using LostEden.Protocol.GameData;
     using LostEden.Protocol.Messages.N3Messages;
@@ -91,6 +92,14 @@ namespace ZoneEngine_New.Core.Teams
 
         static int RaidListOf(Team team, int characterId)
             => team.RaidTeamIndex.GetValueOrDefault(characterId, -1) is int index and >= 0 and < RaidTeamLists ? index : 0;
+
+        /// <summary>An ordinary team holds six, one raid group; only a raid grows past that.</summary>
+        static bool IsFullTeam(Team team) => !team.IsRaid && team.Members.Count >= RaidGroupSize;
+
+        /// <summary>Whether raid group <paramref name="group"/> has room for <paramref name="characterId"/> (who may already be in it).</summary>
+        static bool RaidGroupHasRoom(Team team, int group, int characterId)
+            => group is >= 0 and < RaidTeamLists
+                && team.Members.Count(id => id != characterId && RaidListOf(team, id) == group) < RaidGroupSize;
 
         /// <summary>The first raid group with room for a joiner (groups fill in order), or -1 when every group is full.</summary>
         static int FirstRaidGroupWithRoom(Team team)

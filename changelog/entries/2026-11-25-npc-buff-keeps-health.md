@@ -1,0 +1,1 @@
+- Fixed: Monsters buffed by their allies no longer sit at partial health while nobody is fighting them. A buff that raises a monster's maximum health or nano now keeps the same share it had, just as it does for players.

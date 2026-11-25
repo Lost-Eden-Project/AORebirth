@@ -1582,34 +1582,77 @@ namespace ZoneEngine_New.Core.Cities
             return new string(text);
         }
 
+        /// <summary>
+        /// CityAdvantages' N3 header byte. 1 marks the list the player asked for (OrgClient Benefits, the terminal's chat
+        /// button; retail's reply carries 1), 0 a list the server pushed on its own (team request 33). The Lost Eden client
+        /// applies every list it gets for its own character and writes only an asked-for one to chat.
+        /// </summary>
+        public const byte AdvantagesRequested = 1, AdvantagesPushed = 0;
+
+        /// <summary>The list each player's client was last sent, so a district change that leaves it as it was sends nothing. Per login.</summary>
+        readonly ConditionalWeakTable<Player, AdvantagesItem[]> _sentAdvantages = new();
+
         /// <summary>OrgClient Benefits (31), "Dump city advantages to chat": one line per advantage, Active or Disabled.</summary>
         public void SendAdvantages(Player player)
         {
-            if (player.Session == null)
-                return;
-            IReadOnlyList<CityAdvantage> advantages = Advantages(PlotOf(player.Organization?.Id ?? 0) is { IsActive: true } plot ? plot : null,
-                out bool active);
-            player.Session.Send(new CityAdvantagesMessage
-            {
-                Identity = player.Identity,
-                Advantages = advantages.Select(a => new AdvantagesItem { LowId = a.LowId, HighId = a.HighId, Ql = a.Quality, Status = active ? 1 : 0 })
-                    .ToArray()
-            });
+            IReadOnlyList<CityAdvantage> advantages = Advantages(PlotOf(player.Organization?.Id ?? 0), out bool active);
+            SendAdvantageList(player, WireAdvantages(advantages, active), AdvantagesRequested, always: true);
         }
 
-        /// <summary>The player's organization changed (or was checked at login): its members' advantages follow.</summary>
+        /// <summary>
+        /// The player's organization changed (or was checked after login): its advantages follow, and its client gets the
+        /// full list again when it is not the one it has (an empty one when it has none).
+        /// </summary>
         void OnMembershipReconciled(Player player)
         {
             if (!Enabled)
                 return;
-            ApplyAdvantages(player, PlotOf(player.Organization?.Id ?? 0));
+            ApplyAdvantages(player, PlotOf(player.Organization?.Id ?? 0), always: false);
         }
 
-        /// <summary>On the player's tick: its city advantage layer from its organization's district.</summary>
-        void ApplyAdvantages(Player player, CityPlotState? plot)
+        /// <summary>
+        /// On the player's tick, after its client got its FullCharacter (login, a zone change, a reconnect): the client starts
+        /// with no advantages, so it gets the full list again.
+        /// </summary>
+        public void ClientEntered(Player player)
+        {
+            if (!Enabled)
+                return;
+            ApplyAdvantages(player, PlotOf(player.Organization?.Id ?? 0), always: true);
+        }
+
+        /// <summary>
+        /// On the player's tick: its city advantage layer from its organization's district, and the list pushed to its client
+        /// (always, or only when it differs from the last one sent).
+        /// </summary>
+        void ApplyAdvantages(Player player, CityPlotState? plot, bool always)
         {
             IReadOnlyList<CityAdvantage> advantages = Advantages(plot, out bool active);
             player.SetCityAdvantages(active ? advantages.Select(a => a.Template).ToArray() : []);
+            SendAdvantageList(player, WireAdvantages(advantages, active), AdvantagesPushed, always);
+        }
+
+        static AdvantagesItem[] WireAdvantages(IReadOnlyList<CityAdvantage> advantages, bool active)
+            => advantages.Select(a => new AdvantagesItem { LowId = a.LowId, HighId = a.HighId, Ql = a.Quality, Status = active ? 1 : 0 }).ToArray();
+
+        void SendAdvantageList(Player player, AdvantagesItem[] list, byte origin, bool always)
+        {
+            if (player.Session == null)
+                return;
+            if (!always && _sentAdvantages.TryGetValue(player, out AdvantagesItem[]? sent) && SameAdvantages(sent, list))
+                return;
+            _sentAdvantages.AddOrUpdate(player, list);
+            player.Session.Send(new CityAdvantagesMessage { Identity = player.Identity, Unknown = origin, Advantages = list });
+        }
+
+        static bool SameAdvantages(AdvantagesItem[] a, AdvantagesItem[] b)
+        {
+            if (a.Length != b.Length)
+                return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i].LowId != b[i].LowId || a[i].HighId != b[i].HighId || a[i].Ql != b[i].Ql || a[i].Status != b[i].Status)
+                    return false;
+            return true;
         }
 
         /// <summary>A district's owner or its standing houses changed: the members of the organizations concerned get their advantages again.</summary>
@@ -1629,7 +1672,7 @@ namespace ZoneEngine_New.Core.Cities
                 return;
             foreach (int organizationId in organizations)
                 foreach (Player member in OnlineMembers(organizationId))
-                    Dispatch(member, () => ApplyAdvantages(member, PlotOf(member.Organization?.Id ?? 0)));
+                    Dispatch(member, () => ApplyAdvantages(member, PlotOf(member.Organization?.Id ?? 0), always: false));
         }
 
         // ------------------------------------------------------------------------------------------------ messages

@@ -999,7 +999,22 @@ namespace ZoneEngine_New.Core.Playfield
                 return;
             }
             using Metrics.TickStallWatch.StageScope stageScope = Metrics.TickStallWatch.Enter("arrive.hydrate", characterId);
-            Player player = SpawnPlayer(session, command.Hydration);
+            Player player;
+            try
+            {
+                player = SpawnPlayer(session, command.Hydration);
+            }
+            catch (Exception exception)
+            {
+                // A character the spawn guards reject (an unset vital after rebase, a sentinel stat) fails that one login.
+                // SpawnPlayer has already undone its registration and Online ownership; letting the exception out of the
+                // inbound drain failed the whole playfield tick and left the client on the loading screen.
+                _logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
+                    "ZoneLogin rejected character={0} playfield={1}: spawn failed", characterId,
+                    _playfield.Identity.Instance));
+                session.Close();
+                return;
+            }
             // Worn items this playfield's playshift requirements forbid go ineffective before FullCharacter.
             ZoneEngine_New.Core.Inventory.PlayshiftItems.Refresh(player);
             // NCU restored at login, or carried from another zone instance, drops other playfields' item effects.
@@ -1196,6 +1211,16 @@ namespace ZoneEngine_New.Core.Playfield
                 _playfield.GetRequiredService<Pets.PetService>().AnnounceOwnedPets(player);
 
             TryRestoreJournal(player);
+
+            try
+            {
+                // The Lost Eden client counts city advantages itself and keeps none across a playfield load.
+                _playfield.GetService<Cities.CityService>()?.ClientEntered(player);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "City advantages push failed character=" + player.Identity.Instance.ToString(CultureInfo.InvariantCulture));
+            }
         }
 
         /// <summary>

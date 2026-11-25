@@ -703,6 +703,68 @@ public sealed class CityPlotTests
         Assert.AreEqual(1, rig.Buyer.CityAdvantages.Count, "the others keep it");
     }
 
+    [TestMethod]
+    public void EveryMemberIsSentItsCityAdvantagesWhenTheyChangeAndOnEveryPlayfieldEntry()
+    {
+        using var rig = new Rig();
+        rig.Templates.Known[HeadquartersItem] = new ItemTemplate
+        {
+            Id = HeadquartersItem, Quality = 1, Stats = { [CharacterStat.AdvantageHash1] = 0x4749484F }
+        };
+        rig.Templates.Known[254387] = new ItemTemplate { Id = 254387, Quality = 300 };
+        rig.Hashes["GIHO"] = new HashInstance("GIHO", [254387]);
+        rig.GiveDistrict();
+        rig.Settle();
+        int[] beforeBuild = [rig.AdvantageLists(rig.Buyer).Count, rig.AdvantageLists(rig.Member).Count];
+        Item hq = rig.GiveItem(rig.Buyer, HeadquartersItem, HeadquartersTemplate);
+        rig.OpenWindow(rig.Buyer);
+        rig.OnTick(() => rig.Cities.Build(rig.Buyer, rig.BuildMessage(hq, HeadquartersTemplate, 10, 0)));
+        rig.Settle();
+
+        Player[] members = [rig.Buyer, rig.Member];
+        for (int i = 0; i < members.Length; i++)
+        {
+            Player player = members[i];
+            List<CityAdvantagesMessage> lists = rig.AdvantageLists(player);
+            Assert.AreEqual(beforeBuild[i] + 1, lists.Count, "the house going up sends each member its new list once");
+            CityAdvantagesMessage pushed = lists[^1];
+            Assert.AreEqual(CityService.AdvantagesPushed, pushed.Unknown, "a pushed list, applied without a chat dump");
+            Assert.AreEqual(player.Identity, pushed.Identity, "addressed to the member's own character");
+            Assert.AreEqual(1, pushed.Advantages.Length);
+            Assert.AreEqual(254387, pushed.Advantages[0].LowId);
+            Assert.AreEqual(300, pushed.Advantages[0].Ql);
+            Assert.AreEqual(1, pushed.Advantages[0].Status, "the advantage is active");
+        }
+
+        int memberLists = rig.AdvantageLists(rig.Member).Count;
+        rig.Reconcile(rig.Member);
+        rig.Settle();
+        Assert.AreEqual(memberLists, rig.AdvantageLists(rig.Member).Count, "an organization check that changes nothing sends nothing");
+
+        // A zone change or a reconnect: the client starts without advantages and gets the same list again.
+        rig.OnTick(() => rig.Cities.ClientEntered(rig.Member));
+        List<CityAdvantagesMessage> afterEntry = rig.AdvantageLists(rig.Member);
+        Assert.AreEqual(memberLists + 1, afterEntry.Count);
+        Assert.AreEqual(CityService.AdvantagesPushed, afterEntry[^1].Unknown);
+        Assert.AreEqual(254387, afterEntry[^1].Advantages.Single().LowId);
+        Assert.AreEqual(1, rig.Member.CityAdvantages.Count, "the server's own layer is unchanged by the push");
+
+        rig.OnTick(() => rig.Cities.SendAdvantages(rig.Member));
+        CityAdvantagesMessage requested = rig.AdvantageLists(rig.Member).Last();
+        Assert.AreEqual(CityService.AdvantagesRequested, requested.Unknown, "the list the player asked for is marked for chat");
+        Assert.AreEqual(1, requested.Advantages.Length);
+
+        int buyerLists = rig.AdvantageLists(rig.Buyer).Count;
+        rig.RemoveFromOrganization(rig.Member);
+        rig.Settle();
+        CityAdvantagesMessage left = rig.AdvantageLists(rig.Member).Last();
+        Assert.AreEqual(CityService.AdvantagesPushed, left.Unknown);
+        Assert.AreEqual(0, left.Advantages.Length, "leaving the organization sends an empty list");
+        Assert.AreEqual(0, rig.Member.CityAdvantages.Count);
+        Assert.AreEqual(buyerLists, rig.AdvantageLists(rig.Buyer).Count, "the members who stay are not sent anything");
+        Assert.AreEqual(string.Empty, rig.Log.Problems, "no advantage update failed on a member's tick");
+    }
+
     // ------------------------------------------------------------------------------------------------ helpers
 
     static CityControllerDefinition Controller(out CityPlayfieldDefinition playfield)
@@ -801,6 +863,7 @@ public sealed class CityPlotTests
             Set(_world, "_tickSync", new Lock());
             Set(_world, "_lifecycleSync", new Lock());
             Set(_world, "_inbound", new PlayfieldInboundQueue());
+            Set(_world, "_pendingStatRebases", new ConcurrentDictionary<Character, byte>());
             Set(_world, "_dynelRegistry", registry);
             Set(_world, "_logger", Log);
             Set(_world, "_playfieldManager", _manager);
@@ -951,6 +1014,17 @@ public sealed class CityPlotTests
         internal long Cash(Player player) => player.Stats.GetOrZero(CharacterStat.Cash, StatDetail.Base);
 
         internal long StoredCash(Player player) => _characters.Stored[player.Identity.Instance];
+
+        /// <summary>Every CityAdvantages list the player's client was sent, in order.</summary>
+        internal List<CityAdvantagesMessage> AdvantageLists(Player player)
+            => ((Session)player.Session!).Sent.OfType<CityAdvantagesMessage>().ToList();
+
+        /// <summary>The organization is checked again for a member who stays in it (a rank change does this).</summary>
+        internal void Reconcile(Player player)
+        {
+            MethodInfo reconcile = typeof(OrganizationService).GetMethod("ReconcileOnTick", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            OnTick(() => reconcile.Invoke(_organizations, [player, OrganizationId]));
+        }
 
         internal IEnumerable<AOTransportSignalMessage> Signals(Player player, CitySignal signal)
             => ((Session)player.Session!).Sent.OfType<AOTransportSignalMessage>().Where(s => s.Signal == signal);

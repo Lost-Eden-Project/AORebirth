@@ -1,0 +1,1 @@
+- Fixed: Arriving through a door no longer sends you straight back the moment you move. If you land standing in the door, step away from it and walk back in to use it again.

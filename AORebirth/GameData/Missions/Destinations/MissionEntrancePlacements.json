@@ -14672,24 +14672,6 @@
       }
     },
     {
-      "DisplayName": "Recyclebuilding in Omni-1 Entertainment",
-      "IdentityInstance": 3222143692,
-      "IdentityType": 56006,
-      "LocalX": 78.70184326171875,
-      "LocalXBits": 1117611864,
-      "LocalY": 12.901250839233398,
-      "LocalYBits": 1095658374,
-      "LocalZ": 2713.035400390625,
-      "LocalZBits": 1160351889,
-      "PlayfieldId": 716,
-      "RawNameHex": "52656379636c656275696c64696e6720696e204f6d6e692d3120456e7465727461696e6d656e74",
-      "RotationComponent0": -0.07846258580684662,
-      "RotationComponent1": 0.0,
-      "RotationComponent2": 0.9969170689582825,
-      "RotationComponent3": 0.0,
-      "WorldPos": null
-    },
-    {
       "DisplayName": "Mutant Village Building",
       "IdentityInstance": 3222143693,
       "IdentityType": 56006,

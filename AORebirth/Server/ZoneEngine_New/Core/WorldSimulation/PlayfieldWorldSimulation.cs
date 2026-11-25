@@ -409,7 +409,10 @@
                 state.PreviousZ = z;
                 state.HasPrevious = true;
 
-                _triggers.ClearOverlapOutside(x, y, z, state.Overlapping);
+                // Zone lines first: crossing the line from beside it is a real crossing. Doors and pads are let go only
+                // after this step is sampled, so the step that walks out of one (whose swept path starts inside it) is
+                // not taken for walking into it: arriving on a door, you have to leave it and come back to use it.
+                _triggers.ClearOverlapOutside(x, y, z, state.Overlapping, zoneLinesOnly: true);
 
                 // One character's failed crossing is that character's problem, not the playfield's tick.
                 try
@@ -443,6 +446,8 @@
                     _logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
                         "Zone trigger crossing failed for character {0} on playfield {1}; skipped this tick", id, _playfieldId));
                 }
+
+                _triggers.ClearOverlapOutside(x, y, z, state.Overlapping);
             }
 
             if (_triggers.NpcPads.Count > 0)

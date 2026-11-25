@@ -1,0 +1,1 @@
+- Fixed: Battle suits, Grid Armor and other full-body suits can no longer be worn together with other armor. Only items made to go with them, such as rings and press cards, can be worn beside them.

@@ -742,6 +742,24 @@ namespace ZoneEngine_New.Core.Entities
                 Stats.AddBonus(CharacterStat.RunSpeed, AppliedCharmRunSpeedBonus);
             RebaseWearAppearance();
             SyncPetRunSpeeds();
+
+            // A buff that moves the maxima keeps the share of health and nano left, as on a player: an idle NPC another
+            // NPC buffs stays full instead of waiting out its slow natural regen.
+            RebaseNpcVital(CharacterStat.Health, CharacterStat.MaxHealth, CharacterStat.PercentRemainingHealth);
+            RebaseNpcVital(CharacterStat.CurrentNano, CharacterStat.MaxNanoEnergy, CharacterStat.PercentRemainingNano);
+        }
+
+        /// <summary>
+        /// The template sets the max's base; only the bonus moves it. An NPC without that max (or without the current
+        /// vital) is left alone, so a stat-less NPC does not gain a 0 max or 0 health.
+        /// </summary>
+        void RebaseNpcVital(CharacterStat currentStat, CharacterStat maxStat, CharacterStat percentStat)
+        {
+            int baseMax = Stats.GetOrZero(maxStat, StatDetail.Base);
+            if (baseMax <= 0 || StatCollection.IsUnset(Stats.Get(currentStat)))
+                return;
+
+            RebaseVital(currentStat, maxStat, percentStat, baseMax);
         }
 
         /// <summary>The run speed bonus the last rebase gave this NPC to keep up with its charmer (0 when not charmed).</summary>

@@ -1442,19 +1442,16 @@ namespace ZoneEngine_New.Core.Movement
         float _fightTurnSign;
 
         /// <summary>
-        /// The fight state's facing, as every client runs it for the NPCs it draws (LostEden client
-        /// <c>Character.UpdateFightFacing</c>): standing in combat with a target, every 0.67 s the angle between the
-        /// facing and the flat direction to the target is taken, and over 0.26 rad the body yaws the short way at
-        /// 7.2 rad/s until under 0.005 rad remains (the angle is fixed when the turn starts). Moving, casting or no
-        /// target restarts the timer; a keyboard turn holds it at 0. Without it a mob fighting a player who walked
-        /// around it kept its old heading on the server while every client showed it turned, so Backstab's "behind"
-        /// was judged against a heading nobody saw. Players are left alone: their heading is their client's.
+        /// The fight state's facing, as every client runs it for every character it draws, its own player included
+        /// (LostEden client <c>Character.UpdateFightFacing</c>): standing in combat with a target, every 0.67 s the
+        /// angle between the facing and the flat direction to the target is taken, and over 0.26 rad the body yaws
+        /// the short way at 7.2 rad/s until under 0.005 rad remains (the angle is fixed when the turn starts). Moving,
+        /// casting or no target restarts the timer; a keyboard turn holds it at 0. Without it a character fighting
+        /// someone who walked around it kept its old heading on the server while every client showed it turned, so
+        /// Backstab's "behind" was judged against a heading nobody saw. A player's next client heading still wins.
         /// </summary>
         public void TickFightFacing(double deltaTime, Character? target, bool casting)
         {
-            if (_npc == null)
-                return;
-
             if (target == null || casting || IsMoving || _character.IsDead)
             {
                 _fightFacingTimer = 0f;
@@ -1469,9 +1466,7 @@ namespace ZoneEngine_New.Core.Movement
             if (_fightTurnLeft >= 0f)
             {
                 float step = MathF.Min(FightTurnRate * dt, _fightTurnLeft);
-                float yaw = GetYawRadians() + (_fightTurnSign * step);
-                float half = yaw * 0.5f;
-                _character.Rotation = new Quaternion(0, MathF.Sin(half), 0, MathF.Cos(half));
+                ApplyYawDelta(_fightTurnSign * step);
                 _fightTurnLeft -= step;
                 if (_fightTurnLeft < FightTurnDoneRadians)
                 {
@@ -1504,6 +1499,22 @@ namespace ZoneEngine_New.Core.Movement
 
             _fightTurnLeft = Math.Abs(angle);
             _fightTurnSign = Math.Sign(angle);
+        }
+
+        /// <summary>
+        /// The client motor's <c>ApplyYawDelta</c>: the rotation turned about world up, so a flying player's pitch is
+        /// kept. Up-yaw (0, sin, 0, cos) times the current rotation.
+        /// </summary>
+        void ApplyYawDelta(float radians)
+        {
+            Quaternion q = _character.Rotation ?? new Quaternion(0, 0, 0, 1);
+            float s = MathF.Sin(radians * 0.5f);
+            float c = MathF.Cos(radians * 0.5f);
+            _character.Rotation = new Quaternion(
+                (c * q.xf) + (s * q.zf),
+                (c * q.yf) + (s * q.wf),
+                (c * q.zf) - (s * q.xf),
+                (c * q.wf) - (s * q.yf));
         }
 
         void SetYawFrom(Vec3 forward)

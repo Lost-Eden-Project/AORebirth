@@ -718,6 +718,8 @@ namespace ZoneEngine_New.Core.Teams
                     || !_membership.TryGetValue(targetCharacterId, out Team? targetTeam)
                     || !ReferenceEquals(targetTeam, team))
                     return Error(leader, "That player is not in your raid.");
+                if (!RaidGroupHasRoom(team, destinationTeamIndex, targetCharacterId))
+                    return Error(leader, "That raid team is full.");
 
                 team.RaidTeamIndex[targetCharacterId] = destinationTeamIndex;
                 foreach (int viewerId in team.Members)
@@ -735,6 +737,7 @@ namespace ZoneEngine_New.Core.Teams
                 || ReferenceEquals(target, inviter)) return Error(inviter, "Team invite target is not available.");
             if (_membership.ContainsKey(target.Identity.Instance)) return Feedback(inviter, "Feedback_AlreadyTeamMember");
             _membership.TryGetValue(inviter.Identity.Instance, out Team? team);
+            if (team != null && IsFullTeam(team)) return Error(inviter, "Your team is full.");
             if (_invitations.ContainsKey(target.Identity.Instance))
                 return Error(inviter, "Team invite already pending for " + target.Name + ".");
             if (_declinedUntil.TryGetValue(target.Identity.Instance, out DateTime until) && _utcNow() < until)
@@ -955,6 +958,12 @@ namespace ZoneEngine_New.Core.Teams
                 foreach (int id in _invitations.Where(p => ReferenceEquals(p.Value.Inviter, inviter)
                     && p.Value.TeamId == 0).Select(p => p.Key).ToArray())
                     _invitations[id] = _invitations[id] with { TeamId = team.Id };
+            }
+            // Invites sent while the team had room are checked again here: once six are in, the rest are refused.
+            if (IsFullTeam(team))
+            {
+                Error(inviter, "Your team is full.");
+                return Error(invitee, "The team is full.");
             }
             if (team.IsRaid)
             {

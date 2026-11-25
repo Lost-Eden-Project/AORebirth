@@ -113,7 +113,32 @@ namespace ZoneEngine_New.Tests
         }
 
         [TestMethod]
-        public void PlayersKeepTheirClientsHeading()
+        public void PlayerFightingAnotherPlayerTurnsSoABackstabFromTheOtherSideLands()
+        {
+            using ServiceProvider services = new ServiceCollection().AddSingleton(new DynelRegistry()).BuildServiceProvider();
+            Playfield playfield = Playfield(services);
+            Player fighter = PlayerAt(18);
+            Player opponent = PlayerAt(19);
+            Player rogue = PlayerAt(20);
+            Place(playfield, services, fighter, opponent, rogue);
+
+            // PvP: the fighter faces +Z, its opponent is at its back and the rogue at its front.
+            fighter.Position = new Vector3(0, 0, 0);
+            fighter.Rotation = Yaw(0f);
+            opponent.Position = new Vector3(0, 0, -2);
+            rogue.Position = new Vector3(0, 0, 2);
+            fighter.SetFightingTarget(opponent.Identity);
+
+            Assert.AreEqual(ClientFeedback.SpecialMustBeBehind, BackstabBlocker(rogue, fighter));
+
+            TickFacing(fighter, seconds: 2.0);
+
+            Assert.AreEqual(MathF.PI, MathF.Abs(YawOf(fighter)), 0.01f, "the player faces who they fight");
+            Assert.IsNull(BackstabBlocker(rogue, fighter));
+        }
+
+        [TestMethod]
+        public void FlyingPlayerTurnKeepsItsPitch()
         {
             using ServiceProvider services = new ServiceCollection().AddSingleton(new DynelRegistry()).BuildServiceProvider();
             Playfield playfield = Playfield(services);
@@ -121,15 +146,17 @@ namespace ZoneEngine_New.Tests
             NpcCharacter mob = Npc(1);
             Place(playfield, services, player, mob);
 
+            // Facing +Z, nosed 0.3 rad down (pitch about X), with the mob a quarter turn to the +X side.
             player.Position = new Vector3(0, 0, 0);
-            player.Rotation = Yaw(0f);
-            mob.Position = new Vector3(0, 0, -2);
+            player.Rotation = new Quaternion(MathF.Sin(0.15f), 0, 0, MathF.Cos(0.15f));
+            mob.Position = new Vector3(2, 0, 0);
             player.SetFightingTarget(mob.Identity);
 
-            for (double t = 0; t < 2.0; t += Tick)
-                player.Motor.TickFightFacing(Tick, mob, casting: false);
+            TickFacing(player, seconds: 2.0);
 
-            Assert.AreEqual(0f, YawOf(player), 1e-4f);
+            var forward = (Vector3)player.Rotation.RotateVector3(Vector3.AxisZ);
+            Assert.AreEqual(1.0, forward.x / Math.Sqrt((forward.x * forward.x) + (forward.z * forward.z)), 0.01, "turned to the mob");
+            Assert.AreEqual(-MathF.Sin(0.3f), forward.y, 0.01, "pitch kept");
         }
 
         // Character.Tick's own call: the resolved fight target and whether a nano is being cast.

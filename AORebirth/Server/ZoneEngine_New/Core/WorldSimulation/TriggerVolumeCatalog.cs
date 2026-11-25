@@ -608,7 +608,11 @@ namespace ZoneEngine_New.Core.WorldSimulation
             }
         }
 
-        public void ClearOverlapOutside(float x, float y, float z, HashSet<int> overlappingIds)
+        /// <summary>
+        /// Forgets every trigger the point is no longer inside, so walking back in fires it again.
+        /// <paramref name="zoneLinesOnly"/> leaves doors, pads and areas held for now.
+        /// </summary>
+        public void ClearOverlapOutside(float x, float y, float z, HashSet<int> overlappingIds, bool zoneLinesOnly = false)
         {
             if (overlappingIds.Count == 0)
                 return;
@@ -617,6 +621,8 @@ namespace ZoneEngine_New.Core.WorldSimulation
             foreach (int id in overlappingIds)
             {
                 ZoneTriggerVolume? v = FindById(id);
+                if (v != null && zoneLinesOnly && v.Kind != ZoneTriggerKind.WallBorder)
+                    continue;
                 if (v == null || !Contains(v, x, y, z))
                 {
                     remove ??= new List<int>();

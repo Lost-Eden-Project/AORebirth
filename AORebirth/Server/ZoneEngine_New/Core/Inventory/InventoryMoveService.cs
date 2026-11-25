@@ -1333,11 +1333,14 @@ namespace ZoneEngine_New.Core.Inventory
             if (wearPage.Identity.Type == IdentityType.SocialPage)
                 return true;
 
+            PlayerInventory inventory = player.Inventory;
+            if (!SocialArmour.Allows(inventory, item, wearPage, swappedWith))
+                return false;
+
             ActionType needed = wearPage.Identity.Type == IdentityType.WeaponPage
                 ? ActionType.ToWield
                 : ActionType.ToWear;
 
-            PlayerInventory inventory = player.Inventory;
             bool? Resolve(ItemRequirement requirement) => (Operator)requirement.Operator switch
             {
                 Operator.HasWornItem => inventory.IsEquipped(requirement.Value, wieldedOnly: false, item, swappedWith),

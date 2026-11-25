@@ -207,6 +207,7 @@ namespace WorldEngine.Teams
                 return Refused("Team invite target is not available.");
             if (_membership.ContainsKey(targetId)) return Feedback("Feedback_AlreadyTeamMember");
             _membership.TryGetValue(inviter.CharacterId, out Team? team);
+            if (team != null && IsFullTeam(team)) return Refused("Your team is full.");
             if (_invitations.TryGetValue(targetId, out Invitation? pending) && Now < pending.ExpiresMs)
                 return Refused("Team invite already pending for " + target.Value.Card.Name + ".");
             if (_declinedUntilMs.TryGetValue(targetId, out long until) && Now < until)
@@ -291,6 +292,8 @@ namespace WorldEngine.Teams
                     _invitations[id] = _invitations[id] with { TeamId = team.Id };
             }
 
+            // Invites sent while the team had room are checked again here: once six are in, the rest are refused.
+            if (IsFullTeam(team)) return Refused("The team is full.");
             if (team.IsRaid)
             {
                 // A joiner lands in the raid group it has room in, not in group zero regardless.
@@ -361,6 +364,7 @@ namespace WorldEngine.Teams
             if (_state.View(targetId) is not { LinkDead: false } || !_membership.TryGetValue(targetId, out Team? targetTeam)
                 || !ReferenceEquals(targetTeam, team))
                 return Refused("That player is not in your raid.");
+            if (!RaidGroupHasRoom(team, raidTeam, targetId)) return Refused("That raid team is full.");
             team.RaidTeamIndex[targetId] = raidTeam;
             Publish(team, new TeamUpdate());
             return Ok();
@@ -377,6 +381,18 @@ namespace WorldEngine.Teams
             _log.LogInformation("Team {Team} loot mode {Mode} set by {Leader}", team.Id, mode, leader.CharacterId);
             return Ok();
         }
+
+        /// <summary>An ordinary team holds six, one raid group; only a raid grows past that.</summary>
+        static bool IsFullTeam(Team team) => !team.IsRaid && team.Members.Count >= RaidGroupSize;
+
+        /// <summary>Whether raid group <paramref name="group"/> has room for <paramref name="characterId"/> (who may already be in it).</summary>
+        static bool RaidGroupHasRoom(Team team, int group, int characterId)
+            => group is >= 0 and < RaidTeamIdentityCount
+                && team.Members.Count(id => id != characterId && RaidGroupOf(team, id) == group) < RaidGroupSize;
+
+        /// <summary>A member's raid group; one without an index sits in group zero, as the zone lists it.</summary>
+        static int RaidGroupOf(Team team, int id)
+            => team.RaidTeamIndex.GetValueOrDefault(id, -1) is int index and >= 0 and < RaidTeamIdentityCount ? index : 0;
 
         /// <summary>
         /// The first raid group with room for a joiner (groups fill in order), or -1 when every group is full. A member

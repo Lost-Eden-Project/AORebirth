@@ -562,7 +562,12 @@ namespace ZoneEngine_New.Tests
             world.TickSoftTriggers(platform, 0.1);
             Assert.AreEqual(0, remembered.Transfers);
 
+            // Stepping off the ring you are standing in is not walking into it; coming back onto it is.
             leftInside.Position = landing;
+            world.TickSoftTriggers(platform, 0.1);
+            Assert.AreEqual(0, remembered.Transfers);
+
+            leftInside.Position = onRing;
             world.TickSoftTriggers(platform, 0.1);
             Assert.AreEqual(1, remembered.Transfers);
 

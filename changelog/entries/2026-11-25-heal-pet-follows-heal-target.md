@@ -1,0 +1,1 @@
+- Changed: A heal pet told to heal someone now stays with them and keeps healing, out to 70 metres from its owner, instead of staying at its owner's side.

@@ -70,6 +70,12 @@ namespace ZoneEngine_New.Core.Ai
         /// <summary>A melee pet closes to this distance from its enemy, at its own spot around it.</summary>
         public const double AttackReach = 1.6;
 
+        /// <summary>
+        /// A heal pet on a heal order walks with the one it heals until it is this far from its owner (by the walk
+        /// back), farther than <see cref="PetService.MaxPlayerPetDistance"/>; past it the order ends and the pet comes back.
+        /// </summary>
+        public const double HealLeashMeters = 70.0;
+
         [ThreadStatic]
         static List<System.Numerics.Vector3>? _routeScratch;
 
@@ -121,6 +127,25 @@ namespace ZoneEngine_New.Core.Ai
             if (pet.Mode == PetMode.Attack && pet.AttackTarget != Identity.None)
                 return straight > PetService.MaxPlayerPetDistance;
 
+            // A heal pet walking with the one it heals stays with them out to HealLeashMeters from its owner. No route
+            // back counts as the straight line: an owner on a ledge or an unmeshed spot must not pull it off its charge.
+            Character leader = Leader(brain);
+            if (!ReferenceEquals(leader, pet.Owner))
+            {
+                double walk = OwnerDistance(brain, HealLeashMeters);
+                if ((double.IsPositiveInfinity(walk) ? straight : walk) <= HealLeashMeters)
+                    return false;
+
+                // Past the leash: the order ends here, so the pet does not walk straight back out to its charge.
+                pet.EndHeal();
+                if (pet.Owner is Player owner)
+                    Helpers.ClientFeedback.SendFormatted(
+                        owner,
+                        Helpers.ClientFeedback.PlainText,
+                        $"Warning: {brain.Npc.Name} is out of range and stops healing {leader.Name} to return to you.");
+                return true;
+            }
+
             double distance = OwnerDistance(brain);
             return distance > PetService.MaxPlayerPetDistance
                    || (double.IsPositiveInfinity(distance) && pet.Mode != PetMode.Wait
@@ -130,18 +155,18 @@ namespace ZoneEngine_New.Core.Ai
         /// <summary>
         /// How far the pet has to walk to reach its owner: the navmesh route length, so a pet behind a wall or on
         /// another floor counts as far even when it is close in a straight line; +infinity when no route leads
-        /// there. The straight line is a lower bound, so a pet already past
-        /// <see cref="PetService.MaxPlayerPetDistance"/> needs no route; otherwise the route is measured at most
+        /// there. The straight line is a lower bound, so a pet already past <paramref name="limit"/> (by default
+        /// <see cref="PetService.MaxPlayerPetDistance"/>) needs no route; otherwise the route is measured at most
         /// every <see cref="OwnerDistanceSeconds"/> (or once either has moved <see cref="OwnerDistanceMoveMeters"/>)
         /// and reused. Without a navmesh, or with either end off it, the straight line is all there is.
         /// </summary>
-        public static double OwnerDistance(NpcBrain brain)
+        public static double OwnerDistance(NpcBrain brain, double limit = PetService.MaxPlayerPetDistance)
         {
             PetController pet = brain.Pet!;
             NpcCharacter npc = brain.Npc;
             Character owner = pet.Owner;
             double straight = Distance(npc, owner);
-            if (straight > PetService.MaxPlayerPetDistance)
+            if (straight > limit)
                 return straight;
 
             Playfield? playfield = npc.Playfield;
@@ -303,6 +328,18 @@ namespace ZoneEngine_New.Core.Ai
             return healPet ? pet.Owner : null;
         }
 
+        /// <summary>
+        /// Who the pet walks with: a heal pet on a heal order walks with the one it heals (so a charge that moves on
+        /// stays in reach of its heals), every other pet with its owner.
+        /// </summary>
+        public static Character Leader(NpcBrain brain)
+        {
+            PetController pet = brain.Pet!;
+            if (pet.HealTarget.Instance == 0 || PetTypes.Slot(pet.Type) != PetTypes.Slot(PetTypes.Heal))
+                return pet.Owner;
+            return Charge(brain) ?? pet.Owner;
+        }
+
         public static int HealthPercent(Character character)
         {
             int max = character.Stats.GetOrZero(CharacterStat.MaxHealth);
@@ -330,9 +367,19 @@ namespace ZoneEngine_New.Core.Ai
 
         /// <summary>The formation spot moved by (<paramref name="leadX"/>, <paramref name="leadZ"/>) before it is put on the navmesh.</summary>
         public static Vector3 FollowPoint(NpcBrain brain, double leadX, double leadZ)
+            => FollowPoint(brain, brain.Pet!.Owner, leadX, leadZ);
+
+        /// <summary>
+        /// The formation spot beside <paramref name="leader"/>. Beside someone else's character the pet takes the slots
+        /// after that character's own pets, so it does not stand on them.
+        /// </summary>
+        public static Vector3 FollowPoint(NpcBrain brain, Character leader, double leadX, double leadZ)
         {
             PetController pet = brain.Pet!;
-            Vector3 formation = PetFormation.PointFor(pet.Owner, pet.Owner.OwnedPets.FormationIndex(brain.Npc));
+            int index = pet.Owner.OwnedPets.FormationIndex(brain.Npc);
+            if (!ReferenceEquals(leader, pet.Owner))
+                index += leader.OwnedPets.Count;
+            Vector3 formation = PetFormation.PointFor(leader, index);
             var spot = new Vector3(formation.x + leadX, formation.y, formation.z + leadZ);
             AORebirth.World.Pathfinding.NavMeshPathfinder? finder = brain.Npc.Playfield?.Pathfinder;
             if (finder == null)
@@ -343,10 +390,10 @@ namespace ZoneEngine_New.Core.Ai
                 && MathF.Abs(onMesh.X - wanted.X) <= FollowSnapMeters && MathF.Abs(onMesh.Z - wanted.Z) <= FollowSnapMeters)
                 return new Vector3(onMesh.X, onMesh.Y, onMesh.Z);
 
-            Vector3 owner = pet.Owner.Position;
-            return finder.TrySnap(new System.Numerics.Vector3(owner.xf, owner.yf, owner.zf), out System.Numerics.Vector3 ownerOnMesh)
-                ? new Vector3(ownerOnMesh.X, ownerOnMesh.Y, ownerOnMesh.Z)
-                : new Vector3(owner.x, owner.y, owner.z);
+            Vector3 at = leader.Position;
+            return finder.TrySnap(new System.Numerics.Vector3(at.xf, at.yf, at.zf), out System.Numerics.Vector3 leaderOnMesh)
+                ? new Vector3(leaderOnMesh.X, leaderOnMesh.Y, leaderOnMesh.Z)
+                : new Vector3(at.x, at.y, at.z);
         }
 
         /// <summary>
@@ -543,8 +590,8 @@ namespace ZoneEngine_New.Core.Ai
     /// <summary>
     /// Keeps the pet's charge (<see cref="PetAi.Charge"/>) healed: when the charge is hurt and a heal can land,
     /// the pet casts it and that is its action this tick. Otherwise it carries on with everything else. A heal
-    /// order whose target is out of heal range waits for it to come back in range; the pet never runs off after a
-    /// heal target.
+    /// order whose target is out of heal range waits for it to come back in range; a heal pet walks with its heal
+    /// target (<see cref="PetAi.Leader"/>), which is what brings it back.
     /// </summary>
     sealed class PetTendNode : BehaviourNode
     {
@@ -576,8 +623,9 @@ namespace ZoneEngine_New.Core.Ai
                     return _nodeState = NodeState.Failure;
                 case HealOrderResult.OutOfRange:
                     // Out of range: the order stands and the pet heals again once its target is back in range (bug
-                    // #464: one step out of range sent the pet back to healing its owner for good). Following the
-                    // owner is what brings the pet back in range. The order ends once the target has despawned from
+                    // #464: one step out of range sent the pet back to healing its owner for good). A heal pet walks
+                    // with its target (PetAi.Leader), which brings it back in range; it gives the order up past
+                    // PetAi.HealLeashMeters from its owner (ShouldRejoinOwner). The order ends once the target has despawned from
                     // the owner (gone out of the owner's visibility), with the target (PetAi.Charge), or on the
                     // owner's next command.
                     if (!ReferenceEquals(charge, pet.Owner) && !OwnerStillSees(pet, charge))
@@ -655,10 +703,11 @@ namespace ZoneEngine_New.Core.Ai
         {
             TickStallWatch.Stage("node.pet-follow", _brain.Npc.Identity.Instance);
             _brain.StopFighting();
-            PetController pet = _brain.Pet!;
-            Vector3 spot = PetAi.FollowPoint(_brain);
+            // A heal pet on a heal order walks with the one it heals; every other pet with its owner.
+            Character leader = PetAi.Leader(_brain);
+            Vector3 spot = PetAi.FollowPoint(_brain, leader, 0, 0);
             double distance = Vector3.Abs(_brain.Npc.Position - spot);
-            (double vx, double vz) = pet.Owner.OwnedPets.OwnerVelocity(pet.Owner);
+            (double vx, double vz) = leader.OwnedPets.OwnerVelocity(leader);
             bool ownerMoving = Math.Sqrt((vx * vx) + (vz * vz)) >= OwnerMovingSpeed;
 
             // Set off once clearly out of place; settle only once the owner has stopped and the pet is at its spot.
@@ -675,16 +724,16 @@ namespace ZoneEngine_New.Core.Ai
                     // Aim where the spot will be, so the path end stays ahead and the pet never brakes into a
                     // point the owner has already left; re-plan only when that aim drifts.
                     double lead = LeadSeconds + (distance > CatchUpMeters ? CatchUpLeadSeconds : 0);
-                    _brain.PathTo(PetAi.FollowPoint(_brain, vx * lead, vz * lead), DriftReplanMeters);
+                    _brain.PathTo(PetAi.FollowPoint(_brain, leader, vx * lead, vz * lead), DriftReplanMeters);
                 }
                 else
                 {
                     _brain.PathTo(spot);
                 }
 
-                // No route to the spot itself: head for the owner instead of standing still.
+                // No route to the spot itself: head for the leader instead of standing still.
                 if (!_brain.Npc.Motor.HasPath && distance > PetAi.FollowStartMeters)
-                    _brain.PathTo(pet.Owner.Position);
+                    _brain.PathTo(leader.Position);
             }
             else
             {
