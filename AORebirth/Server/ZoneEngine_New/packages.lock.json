@@ -35,9 +35,18 @@
       },
       "LostEden.Protocol": {
         "type": "Direct",
-        "requested": "[0.5.0, )",
-        "resolved": "0.5.0",
-        "contentHash": "RTlcMtbbxeoOdFnZITrpK6tuZ+VfY6via3BnIhBch3IwcQw4LNzgoF6Sx6hCCtPcaOYqhDbikbo/EcNQo48ZzQ=="
+        "requested": "[0.5.3, )",
+        "resolved": "0.5.3",
+        "contentHash": "dKFNXP7FLwDsLFbWjKNlCNXkT/suq0lyfxq8qDbwt1UPdKe7jvrCBhj8/vW6X/7Q/1ZnnocaepXXdt51lMQ/SA=="
+      },
+      "LostEden.Protocol.Extensions": {
+        "type": "Direct",
+        "requested": "[0.5.3, )",
+        "resolved": "0.5.3",
+        "contentHash": "MMdSFXPnJKpfH/aEaV9GysrbOBjvzwxWQK9b/zkrS0+Qlk/d5OiRBbyIFOOpk/g+zF//oetYVfV2riMrm9IrSA==",
+        "dependencies": {
+          "LostEden.Protocol": "0.5.3"
+        }
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "Direct",
