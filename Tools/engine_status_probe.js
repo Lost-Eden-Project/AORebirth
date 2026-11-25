@@ -300,55 +300,95 @@
         return definitions;
     }
 
-    function captureWindowsSnapshot() {
+    /**
+     * Reads only the rows the checks look at: listeners on the configured engine ports, and the processes that are an
+     * engine executable by name, own one of those listeners, or were named with --expect-pid. Every check reads the
+     * snapshot by executable name, by one of those ports or by one of those PIDs, so the result is the same as a full
+     * snapshot's. A full Win32_Process read (every process's ExecutablePath) took over 10 s with ~800 processes running.
+     */
+    function captureWindowsSnapshot(definitions, options) {
         var snapshot = { processes: [], listeners: [] };
         var locator;
         var processService;
         var tcpService;
+        var ports = [];
+        var names = [];
+        var pids = [];
+        var index;
+        var portIndex;
 
-        try {
-            locator = new ActiveXObject("WbemScripting.SWbemLocator");
-            processService = locator.ConnectServer(".", "root\\cimv2");
-            var processRows = new Enumerator(
-                processService.ExecQuery(
-                    "SELECT ProcessId, Name, ExecutablePath FROM Win32_Process",
-                    "WQL",
-                    48));
-
-            for (; !processRows.atEnd(); processRows.moveNext()) {
-                var processRow = processRows.item();
-                var executablePath = processRow.ExecutablePath;
-                snapshot.processes.push({
-                    pid: Number(processRow.ProcessId),
-                    name: String(processRow.Name),
-                    path: executablePath === null || typeof executablePath === "undefined"
-                        ? null
-                        : String(executablePath)
-                });
+        for (index = 0; index < definitions.length; index++) {
+            addUnique(names, String(definitions[index].executable).toLowerCase());
+            for (portIndex = 0; portIndex < definitions[index].ports.length; portIndex++) {
+                addUnique(ports, Number(definitions[index].ports[portIndex]));
             }
         }
-        catch (processError) {
-            throw new Error("Windows process ownership query failed.");
+        for (var expectedKey in options.expectedPids) {
+            if (options.expectedPids.hasOwnProperty(expectedKey)) {
+                addUnique(pids, Number(options.expectedPids[expectedKey]));
+            }
         }
+
+        locator = new ActiveXObject("WbemScripting.SWbemLocator");
 
         try {
             tcpService = locator.ConnectServer(".", "root\\StandardCimv2");
+            var portClauses = [];
+            for (index = 0; index < ports.length; index++) {
+                portClauses.push("LocalPort = " + Math.floor(ports[index]));
+            }
             var listenerRows = new Enumerator(
                 tcpService.ExecQuery(
-                    "SELECT LocalPort, OwningProcess FROM MSFT_NetTCPConnection WHERE State = 2",
+                    "SELECT LocalPort, OwningProcess FROM MSFT_NetTCPConnection WHERE State = 2"
+                        + (portClauses.length > 0 ? " AND (" + portClauses.join(" OR ") + ")" : ""),
                     "WQL",
                     48));
 
             for (; !listenerRows.atEnd(); listenerRows.moveNext()) {
                 var listenerRow = listenerRows.item();
-                snapshot.listeners.push({
+                var listener = {
                     port: Number(listenerRow.LocalPort),
                     pid: Number(listenerRow.OwningProcess)
-                });
+                };
+                snapshot.listeners.push(listener);
+                addUnique(pids, listener.pid);
             }
         }
         catch (listenerError) {
             throw new Error("Windows TCP listener ownership query failed.");
+        }
+
+        try {
+            processService = locator.ConnectServer(".", "root\\cimv2");
+            var processClauses = [];
+            for (index = 0; index < names.length; index++) {
+                processClauses.push("Name = '" + names[index].replace(/[\\']/g, "") + "'");
+            }
+            for (index = 0; index < pids.length; index++) {
+                processClauses.push("ProcessId = " + Math.floor(pids[index]));
+            }
+            if (processClauses.length > 0) {
+                var processRows = new Enumerator(
+                    processService.ExecQuery(
+                        "SELECT ProcessId, Name, ExecutablePath FROM Win32_Process WHERE " + processClauses.join(" OR "),
+                        "WQL",
+                        48));
+
+                for (; !processRows.atEnd(); processRows.moveNext()) {
+                    var processRow = processRows.item();
+                    var executablePath = processRow.ExecutablePath;
+                    snapshot.processes.push({
+                        pid: Number(processRow.ProcessId),
+                        name: String(processRow.Name),
+                        path: executablePath === null || typeof executablePath === "undefined"
+                            ? null
+                            : String(executablePath)
+                    });
+                }
+            }
+        }
+        catch (processError) {
+            throw new Error("Windows process ownership query failed.");
         }
 
         return snapshot;
@@ -1083,7 +1123,7 @@
 
         var ports = loadConfigurationPorts(options.configPath);
         var definitions = createDefinitions(options.engineDirectory, ports);
-        var snapshot = captureWindowsSnapshot();
+        var snapshot = captureWindowsSnapshot(definitions, options);
 
         if (options.mode === "prestart") {
             var prestart = evaluatePrestart(definitions, snapshot, options);

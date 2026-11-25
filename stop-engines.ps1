@@ -122,8 +122,11 @@ function Get-ProcessesByExecutablePath {
     )
 
     $normalizedExpectedPath = [System.IO.Path]::GetFullPath($ExpectedPath)
+    # Only processes named like the executable can be at its path; reading .Path on every process (hundreds with many
+    # sessions open) opens a handle on each and made every stop take minutes.
+    $processName = [System.IO.Path]::GetFileNameWithoutExtension($normalizedExpectedPath)
     @(
-        foreach ($candidate in @(Get-Process -ErrorAction SilentlyContinue)) {
+        foreach ($candidate in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
             try {
                 $candidatePath = [System.IO.Path]::GetFullPath($candidate.Path)
                 if ($candidatePath -ieq $normalizedExpectedPath) {
@@ -150,7 +153,8 @@ function Get-AORebirthEngineProcesses {
     $pathSuffix = [System.IO.Path]::DirectorySeparatorChar + $relativeEnginePath
 
     @(
-        foreach ($candidate in @(Get-Process -ErrorAction SilentlyContinue)) {
+        # By name first: the name check below rejects every other process, and reading .Path on each is slow.
+        foreach ($candidate in @(Get-Process -Name $Engine.Name -ErrorAction SilentlyContinue)) {
             try {
                 $candidatePath = [System.IO.Path]::GetFullPath($candidate.Path)
                 if ($candidate.ProcessName -ine $Engine.Name) {
