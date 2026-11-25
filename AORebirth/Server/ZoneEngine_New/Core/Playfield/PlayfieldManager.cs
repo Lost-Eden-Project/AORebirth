@@ -494,6 +494,15 @@ namespace ZoneEngine_New.Core.Playfield
                 _logger.Info(string.Format(CultureInfo.InvariantCulture,
                     "Proxy playfield {0} is interior {1} behind door 0x{2:X8} on playfield {3}", playfieldId, resourceId, sourceDoor, sourcePlayfield));
             }
+            else if (ZoneEngine_New.Core.Cities.CityInsides.IsCityInside(playfieldId))
+            {
+                if (!ZoneEngine_New.Core.Cities.CityInsides.TryDescribe(playfieldId, out ZoneEngine_New.Core.Cities.CityInsides.Target inside))
+                    throw new InvalidOperationException("City inside " + playfieldId.ToString(CultureInfo.InvariantCulture)
+                        + " has no house with an inside behind it.");
+                resourceId = inside.ResourceId;
+                _logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "City inside {0} is playfield {1} of house {2} on playfield {3}", playfieldId, resourceId, inside.HouseId, inside.CityPlayfieldId));
+            }
 
             Playfield created;
             if (RequiresWorldSimulation(_gameData, resourceId))

@@ -170,6 +170,7 @@ namespace ZoneEngine_New.Core.Cities
                 return;
             foreach (CityPlotState state in stored)
                 _plots[state.Key] = state;
+            CityInsides.Describe = DescribeInside;
             _organizations.MembershipReconciled += OnMembershipReconciled;
             _catalog.Reloaded += OnCatalogReloaded;
             if (timers)
@@ -188,6 +189,7 @@ namespace ZoneEngine_New.Core.Cities
             _dueTimer?.Dispose();
             if (_started != 0)
             {
+                CityInsides.Describe = null;
                 _organizations.MembershipReconciled -= OnMembershipReconciled;
                 _catalog.Reloaded -= OnCatalogReloaded;
             }
@@ -779,7 +781,7 @@ namespace ZoneEngine_New.Core.Cities
             }
 
             BuildRefusal refusal = CityPlacement.Check(controller, template, message.Tile.X, message.Tile.Z, message.Rotation, state.Houses,
-                TemplateOf, Rules.MaxHousesPerPlot, allowMarket: false);
+                TemplateOf, Rules.MaxHousesPerPlot, allowMarket: true);
             if (refusal != BuildRefusal.None)
             {
                 SendRefusal(player, refusal, template);
@@ -1124,6 +1126,8 @@ namespace ZoneEngine_New.Core.Cities
                 }
             }
 
+            SyncFixtures(playfield);
+
             if (!_catalog.TryGetController(next.PlayfieldId, next.ControllerIndex, out CityControllerDefinition controller))
                 return;
             foreach (CityWindow window in _windows.Values)
@@ -1172,6 +1176,7 @@ namespace ZoneEngine_New.Core.Cities
             var houses = new List<CityHouseData>();
             if (!Enabled || playfield.IsProxyInstance || !_catalog.TryGetPlayfield(playfield.Identity.Instance, out CityPlayfieldDefinition city))
                 return houses;
+            SyncFixtures(playfield);
             foreach (CityControllerDefinition controller in city.Controllers)
             {
                 foreach (CityHouse house in Plot(city.PlayfieldId, controller.Index).Houses)
@@ -1189,6 +1194,240 @@ namespace ZoneEngine_New.Core.Cities
             }
 
             return houses;
+        }
+
+        // ------------------------------------------------------------------------------------------------ fixtures
+
+        /// <summary>What a shown house spawned on a playfield: its doors (DoorData_t) and guards (GuardData_t).</summary>
+        sealed class HouseFixtures
+        {
+            public readonly List<StaticDynel> Doors = [];
+            public readonly List<NpcCharacter> Guards = [];
+        }
+
+        // Per playfield object, by house id. Read and written only on that playfield's tick.
+        readonly ConditionalWeakTable<PlayfieldInstance, Dictionary<long, HouseFixtures>> _fixtures = new();
+
+        /// <summary>
+        /// Gives every shown house of the playfield's districts its doors and guards and takes them from houses no longer
+        /// shown. A door is its item template spawned as a static with its walk-in pad (a Grid House's Grid Door,
+        /// 297174 / 297182 / 297183, runs its OnTargetInVicinity TeleportProxy2 into the Grid); a guard is its NPC hash
+        /// spawned at the level stored with it. Each is placed as House_c::CalculateGlobalDoorPosRot (City 10012c5b) and
+        /// CalculateGlobalGuardPosRot (10012c97) place them. On the playfield's tick.
+        /// </summary>
+        void SyncFixtures(PlayfieldInstance playfield)
+        {
+            if (!Enabled || playfield.IsProxyInstance || !_catalog.TryGetPlayfield(playfield.Identity.Instance, out CityPlayfieldDefinition city))
+                return;
+            Dictionary<long, HouseFixtures> spawned = _fixtures.GetOrCreateValue(playfield);
+            var shown = new Dictionary<long, CityHouse>();
+            foreach (CityControllerDefinition controller in city.Controllers)
+                foreach (CityHouse house in Plot(city.PlayfieldId, controller.Index).Houses)
+                    if (house.Visible)
+                        shown[house.HouseId] = house;
+
+            foreach (long id in spawned.Keys.Where(id => !shown.ContainsKey(id)).ToList())
+            {
+                RemoveFixtures(playfield, id, spawned[id]);
+                spawned.Remove(id);
+            }
+
+            foreach ((long id, CityHouse house) in shown)
+                if (!spawned.ContainsKey(id))
+                    spawned[id] = SpawnFixtures(playfield, house);
+        }
+
+        HouseFixtures SpawnFixtures(PlayfieldInstance playfield, CityHouse house)
+        {
+            var fixtures = new HouseFixtures();
+            if (!_catalog.TryGetTemplate(house.TemplateId, out HouseTemplateDefinition template))
+                return fixtures;
+            SpawnService spawns = playfield.GetRequiredService<SpawnService>();
+            float baseX = house.TileX * 4f, baseZ = house.TileZ * 4f;
+            float baseY = playfield.Geometry.Collision?.Terrain is { } terrain && terrain.TryGetHeight(baseX, baseZ, out float ground) ? ground : 0f;
+
+            foreach (HouseDoorDefinition door in template.Doors)
+            {
+                (AORebirth.Core.Vector.Vector3 position, AORebirth.Core.Vector.Quaternion heading) =
+                    Place(template, house.Rotation, door.X, door.Y, door.Z, door.Turn, baseX, baseY, baseZ);
+                StaticDynel? dynel = spawns.SpawnStaticTemplate(door.Template, position, heading);
+                if (dynel != null)
+                {
+                    fixtures.Doors.Add(dynel);
+                    if (template.InsideTemplate > 0)
+                    {
+                        // The way back out lands in front of this door; stepping into it goes in.
+                        CityInsides.AddDoor(playfield.Identity.Instance, dynel.Identity.Instance,
+                            WorldSimulation.PortalDoorLandingResolver.LandingInFront(position, heading, WorldSimulation.PortalDoorLandingResolver.ExitDoorClearance),
+                            heading);
+                        long houseId = house.HouseId;
+                        int doorTemplate = door.Template;
+                        playfield.WorldAccess.Instance?.RegisterEntryPad(dynel.Identity, doorTemplate, position.xf, position.yf, position.zf,
+                            player => EnterInside(player, playfield, houseId, dynel));
+                    }
+                }
+                else
+                    _logger.Warn("City house " + house.HouseId + " door template " + door.Template + " is not in the item catalog");
+            }
+
+            foreach (HouseGuardDefinition guard in template.Guards)
+            {
+                (AORebirth.Core.Vector.Vector3 position, AORebirth.Core.Vector.Quaternion heading) =
+                    Place(template, house.Rotation, guard.X, guard.Y, guard.Z, guard.Turn, baseX, baseY, baseZ);
+                try
+                {
+                    // GuardData_t +0x30 taken as the spawn level: 300 at the guard houses, 90 at the small Neutral HQ.
+                    fixtures.Guards.AddRange(spawns.SpawnBranches(guard.Hash, position, heading, guard.Value > 0 ? guard.Value : null));
+                }
+                catch (KeyNotFoundException)
+                {
+                    _logger.Warn("City house " + house.HouseId + " guard hash " + guard.Hash + " is not an NPC template");
+                }
+            }
+
+            return fixtures;
+        }
+
+        void RemoveFixtures(PlayfieldInstance playfield, long houseId, HouseFixtures fixtures)
+        {
+            SpawnService spawns = playfield.GetRequiredService<SpawnService>();
+            DynelRegistry registry = playfield.GetRequiredService<DynelRegistry>();
+            foreach (StaticDynel door in fixtures.Doors)
+            {
+                if (CityInsides.TryGetDoorReturn(playfield.Identity.Instance, door.Identity.Instance, out AORebirth.Core.Vector.Vector3 outside,
+                        out AORebirth.Core.Vector.Quaternion outsideHeading))
+                {
+                    EvictInside(houseId, playfield.Identity.Instance, outside, outsideHeading);
+                    CityInsides.RemoveDoor(playfield.Identity.Instance, door.Identity.Instance);
+                }
+                if (ReferenceEquals(door.Playfield, playfield))
+                    spawns.DespawnStatic(door);
+            }
+            foreach (NpcCharacter guard in fixtures.Guards)
+                if (registry.TryGet(guard.Identity, out ZoneEngine_New.Core.Entities.Dynel? live) && ReferenceEquals(live, guard))
+                    spawns.DespawnNpc(guard);
+        }
+
+        /// <summary>
+        /// A character stepping into a house's door: into the house's own copy of its inside (CityInsides), landing in front
+        /// of the inside's door as a return-recording proxy lands, the house door recorded as the way back. Only the house's
+        /// organization goes in: City.dll's HouseInside_c::TrackVisitors (10013059) starts teleporting out every visitor of
+        /// another organization. On the city playfield's tick.
+        /// </summary>
+        void EnterInside(Player player, PlayfieldInstance source, long houseId, StaticDynel door)
+        {
+            if (player.Session == null || !ReferenceEquals(player.Playfield, source)
+                || DescribeInside(houseId) is not { } inside || !CityInsides.TryCreate(houseId, out int target))
+                return;
+            if ((player.Organization?.Id ?? 0) != inside.OrganizationId)
+                return;
+
+            PlayfieldGeometryData geometry = _gameData.GetPlayfieldGeometry(inside.ResourceId);
+            // The inside's way out: the door its placement marks as an exit (ExitInstance), as the client registers it;
+            // the first door when none is marked.
+            List<AODB.Common.RDBObjects.PlayfieldDynel> doors = geometry.Dynels?.Dynels?.Where(d => d.IdentityType == (int)IdentityType.Door).ToList() ?? [];
+            AODB.Common.RDBObjects.PlayfieldDynel? entry =
+                (Rules.InsideEntryDoors.TryGetValue(inside.ResourceId, out int configured) ? doors.FirstOrDefault(d => d.IdentityInstance == configured) : null)
+                ?? doors.FirstOrDefault(d => WorldSimulation.PlayfieldWorldSimulation.ExitInstanceOf(d) > 0)
+                ?? doors.FirstOrDefault();
+            if (entry == null || !WorldSimulation.PortalDoorLandingResolver.TryResolveDoorLanding(geometry, entry.IdentityInstance,
+                    WorldSimulation.PortalDoorLandingResolver.ProxyEntryDoorClearance, out AORebirth.Core.Vector.Vector3 landing,
+                    out AORebirth.Core.Vector.Quaternion heading))
+            {
+                _logger.Warn("City house " + houseId + " inside " + inside.ResourceId + " has no door to land at");
+                return;
+            }
+
+            player.Stats.Set(CharacterStat.ExternalPlayfieldInstance, source.Identity.Instance, StatDetail.Base, dirty: true);
+            player.Stats.Set(CharacterStat.ExternalDoorInstance, door.Identity.Instance, StatDetail.Base, dirty: true);
+            player.Rotation = heading;
+            source.GetService<WorldSimulation.WorldSimulationAccess>()?.Instance?.ForgetCharacterTriggers(player.Identity.Instance);
+            int entryDoor = entry.IdentityInstance;
+            source.GetRequiredService<PlayfieldManager>().WithPlayfield(target, player, arrival =>
+            {
+                if (!ReferenceEquals(player.Playfield, source) || player.Session is not { IsTransferring: false } session)
+                    return;
+                if (arrival is ACGPlayfield acg)
+                    acg.World?.RegisterExitProxyDoor(entryDoor);
+                session.TransferToPlayfield(arrival, landing, heading);
+            }, new World.RemoteArrival(landing, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport, entryDoor));
+        }
+
+        /// <summary>
+        /// A house gone: everyone in its inside is put back in front of its door, as HouseInside_c::TrackVisitors (10013059)
+        /// starts teleporting out every visitor once the house is demolished.
+        /// </summary>
+        void EvictInside(long houseId, int cityPlayfieldId, AORebirth.Core.Vector.Vector3 outside, AORebirth.Core.Vector.Quaternion heading)
+        {
+            if (!CityInsides.TryCreate(houseId, out int insideId) || !_playfields.Value.TryGet(insideId, out PlayfieldInstance? inside) || inside == null)
+                return;
+            inside.Dispatch(() =>
+            {
+                var players = new List<Player>();
+                inside.GetRequiredService<DynelRegistry>().CopyPlayers(players);
+                foreach (Player player in players)
+                {
+                    if (player.Session == null || !ReferenceEquals(player.Playfield, inside))
+                        continue;
+                    player.Stats.Set(CharacterStat.ExternalPlayfieldInstance, 0, StatDetail.Base, dirty: true);
+                    player.Stats.Set(CharacterStat.ExternalDoorInstance, 0, StatDetail.Base, dirty: true);
+                    player.Rotation = heading;
+                    inside.GetRequiredService<PlayfieldManager>().WithPlayfield(cityPlayfieldId, player, arrival =>
+                    {
+                        if (!ReferenceEquals(player.Playfield, inside) || player.Session is not { IsTransferring: false } session)
+                            return;
+                        session.TransferToPlayfield(arrival, outside, heading);
+                    }, new World.RemoteArrival(outside, heading, AORebirth.World.Contracts.V1.ArrivalKind.ArrivalTeleport));
+                }
+            });
+        }
+
+        /// <summary>
+        /// A house with an inside, as CityInsides describes it: the house's inside playfield, its city and organization, and
+        /// the landing in front of its first door. Null for a house that is not shown or has no inside.
+        /// </summary>
+        CityInsides.Target? DescribeInside(long houseId)
+        {
+            foreach (CityPlotState plot in _plots.Values)
+            {
+                CityHouse? house = plot.Houses.FirstOrDefault(h => h.HouseId == houseId && h.Visible);
+                if (house == null)
+                    continue;
+                if (!_catalog.TryGetTemplate(house.TemplateId, out HouseTemplateDefinition template) || template.InsideTemplate <= 0
+                    || template.Doors.Count == 0)
+                    return null;
+                float baseX = house.TileX * 4f, baseZ = house.TileZ * 4f;
+                float baseY = _gameData.GetPlayfieldGeometry(plot.PlayfieldId).Collision?.Terrain is { } terrain
+                    && terrain.TryGetHeight(baseX, baseZ, out float ground) ? ground : 0f;
+                HouseDoorDefinition door = template.Doors[0];
+                (AORebirth.Core.Vector.Vector3 position, AORebirth.Core.Vector.Quaternion heading) =
+                    Place(template, house.Rotation, door.X, door.Y, door.Z, door.Turn, baseX, baseY, baseZ);
+                return new CityInsides.Target(houseId, template.InsideTemplate, plot.PlayfieldId, plot.OrganizationId ?? 0,
+                    WorldSimulation.PortalDoorLandingResolver.LandingInFront(position, heading, WorldSimulation.PortalDoorLandingResolver.ExitDoorClearance),
+                    heading);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// A door's or guard's place: its house-local position turned as CityHouseTemplate_c::RotateLocalPos (1000e0db)
+        /// turns it (less the unturned layout's centre, turned by -rotation about up, plus the turned centre's absolute
+        /// components), plus the house's corner; its heading the turn about up by -((stored turn) + rotation) degrees
+        /// (1000e09c), the stored turn being the record's negated (10010c07).
+        /// </summary>
+        static (AORebirth.Core.Vector.Vector3, AORebirth.Core.Vector.Quaternion) Place(HouseTemplateDefinition template, int rotation,
+            float x, float y, float z, int turn, float baseX, float baseY, float baseZ)
+        {
+            double a = -rotation * Math.PI / 180.0, cos = Math.Cos(a), sin = Math.Sin(a);
+            double cx = template.Footprint.TilesX * 4.0 * 0.5, cz = template.Footprint.TilesZ * 4.0 * 0.5;
+            (double X, double Z) Turned(double px, double pz) => (px * cos + pz * sin, -px * sin + pz * cos);
+            (double tx, double tz) = Turned(x - cx, z - cz);
+            (double ccx, double ccz) = Turned(cx, cz);
+            var position = new AORebirth.Core.Vector.Vector3(baseX + tx + Math.Abs(ccx), baseY + y, baseZ + tz + Math.Abs(ccz));
+            double yaw = (turn - rotation) * Math.PI / 180.0;
+            var heading = new AORebirth.Core.Vector.Quaternion(0, Math.Sin(yaw / 2.0), 0, Math.Cos(yaw / 2.0));
+            return (position, heading);
         }
 
         // ------------------------------------------------------------------------------------------------ timers

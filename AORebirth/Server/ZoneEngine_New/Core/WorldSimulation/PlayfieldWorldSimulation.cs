@@ -655,6 +655,16 @@
                 return false;
             }
 
+            // A city house's inside: its exits return to the house's door (CityInsides), which is in no Dynels.dat.
+            if (hit.Volume.Kind is ZoneTriggerKind.ExitDoor or ZoneTriggerKind.ExitProxy
+                && returnTo.IsSet
+                && ZoneEngine_New.Core.Cities.CityInsides.TryGetDoorReturn(returnTo.PlayfieldId, returnTo.DoorInstance,
+                    out AoVector3 houseLanding, out AoQuaternion houseHeading))
+            {
+                crossing = new ZoneCrossing(returnTo.PlayfieldId, houseLanding, hit.Volume, houseHeading);
+                return true;
+            }
+
             if (hit.Volume.Kind == ZoneTriggerKind.ExitDoor)
             {
                 // Back out through the entrance the character recorded, as an exit proxy would; with none, the
@@ -1285,7 +1295,7 @@
         }
 
         /// <summary>ExitInstance (189) set by a door's placement blob; 0 when it has none or the blob does not read.</summary>
-        static int ExitInstanceOf(PlayfieldDynel door)
+        internal static int ExitInstanceOf(PlayfieldDynel door)
         {
             if (door.Blob == null || door.Blob.Length <= 12)
                 return 0;
@@ -1451,6 +1461,13 @@
         /// </summary>
         void FireTargetVicinity(PlayfieldType playfield, Character character, ZoneTriggerVolume pad)
         {
+            if (pad.Entered != null)
+            {
+                if (character is Player { Session: not null } entering)
+                    pad.Entered(entering);
+                return;
+            }
+
             ItemTemplate? events = pad.VicinityEvents;
             if (events == null || character is Player { Session: null })
                 return;
@@ -1625,6 +1642,20 @@
                 added = true;
             }
             return added;
+        }
+
+        /// <summary>
+        /// A walk-in pad on a spawned dynel that runs <paramref name="entered"/> for the character stepping in, shaped as a
+        /// door's (its template's collision sphere): a city house's door into its inside. Dropped with the dynel's other
+        /// pads (<see cref="UnregisterVicinityDynel"/>).
+        /// </summary>
+        public void RegisterEntryPad(Identity identity, int templateId, float x, float y, float z, Action<Player> entered)
+        {
+            ArgumentNullException.ThrowIfNull(entered);
+            if (_triggers.HasStaticEvent(identity, EventType.OnTargetInVicinity))
+                return;
+            ZoneTriggerVolume pad = AddVicinityPad(identity, templateId, new ItemTemplate { Id = templateId }, x, y, z, placedMesh: 0, placedScale: 0);
+            pad.Entered = entered;
         }
 
         /// <summary>Drops the pad <see cref="RegisterVicinityDynel"/> gave a dynel that has since despawned.</summary>

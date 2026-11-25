@@ -21,7 +21,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// Neither is ever built as an ordinary playfield.
         /// </summary>
         public static bool IsDungeonPlayfield(int playfieldId)
-            => playfieldId >= FirstPlayfield && playfieldId < ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First;
+            => playfieldId >= FirstPlayfield && playfieldId < ZoneEngine_New.Core.Cities.CityInsides.FirstPlayfield;
 
         /// <summary>A quest dungeon's id: in the dungeon range and below the static instance range.</summary>
         public static bool IsQuestDungeonPlayfield(int playfieldId)

@@ -173,8 +173,9 @@ namespace AORebirth.Tools.RDBDataExtractor
 
         /// <summary>
         /// One RDB 1000040 body (header stripped). Version 4 (every town template) and version 1 (the two playfield 6
-        /// test templates) are read; the parts after the layout (meshes, doors, guards, advantages, collision) are not
-        /// exported. Null for a version this does not know.
+        /// test templates) are read; after the layout, the visuals are skipped (City 10010e28) and the doors (10010c07)
+        /// and guards (10011166) exported; the advantages and collision after them are not. Null for a version this
+        /// does not know.
         /// </summary>
         internal static HouseTemplateRow ParseHouseTemplate(int id, byte[] body)
         {
@@ -215,6 +216,35 @@ namespace AORebirth.Tools.RDBDataExtractor
             if (row.TilesX <= 0 || row.TilesZ <= 0 || bits != row.TilesX * row.TilesZ)
                 throw new InvalidDataException("House template " + id + " layout " + bits + " bits for " + row.TilesX + "x" + row.TilesZ + ".");
             row.Layout = Hex(reader.Bytes((bits + 7) / 8));
+
+            // HouseVisualData (1000de5b): a mesh, a position and a turn, 20 bytes each.
+            reader.Skip(reader.Count() * 20);
+
+            // DoorData_t (1000df2f): an item template, a house-local position, a turn in degrees.
+            int doors = reader.Count();
+            row.Doors = new List<HouseDoorRow>(doors);
+            for (int i = 0; i < doors; i++)
+            {
+                row.Doors.Add(new HouseDoorRow
+                {
+                    Template = reader.Int32(), X = reader.Single(), Y = reader.Single(), Z = reader.Single(), Turn = reader.Int32()
+                });
+            }
+
+            // GuardData_t (1000e63f): a 4-character NPC hash, an int (+0x30), a house-local position, a turn in degrees.
+            int guards = reader.Count();
+            row.Guards = new List<HouseGuardRow>(guards);
+            for (int i = 0; i < guards; i++)
+            {
+                byte[] hash = reader.Bytes(4);
+                int end = Array.IndexOf(hash, (byte)0);
+                row.Guards.Add(new HouseGuardRow
+                {
+                    Hash = Encoding.Latin1.GetString(hash, 0, end < 0 ? 4 : end),
+                    Value = reader.Int32(), X = reader.Single(), Y = reader.Single(), Z = reader.Single(), Turn = reader.Int32()
+                });
+            }
+
             return row;
         }
 
@@ -319,6 +349,29 @@ namespace AORebirth.Tools.RDBDataExtractor
             public int TilesZ { get; set; }
             /// <summary>TilesX * TilesZ bits, lowest bit first, row by row in z (bit = z * TilesX + x); hex.</summary>
             public string Layout { get; set; }
+            public List<HouseDoorRow> Doors { get; set; }
+            public List<HouseGuardRow> Guards { get; set; }
+        }
+
+        /// <summary>A door: its item template, its house-local position (metres from the layout's corner) and turn as stored.</summary>
+        internal sealed class HouseDoorRow
+        {
+            public int Template { get; set; }
+            public float X { get; set; }
+            public float Y { get; set; }
+            public float Z { get; set; }
+            public int Turn { get; set; }
+        }
+
+        /// <summary>A guard: its NPC hash, the int stored with it (+0x30), its house-local position and turn as stored.</summary>
+        internal sealed class HouseGuardRow
+        {
+            public string Hash { get; set; }
+            public int Value { get; set; }
+            public float X { get; set; }
+            public float Y { get; set; }
+            public float Z { get; set; }
+            public int Turn { get; set; }
         }
     }
 }

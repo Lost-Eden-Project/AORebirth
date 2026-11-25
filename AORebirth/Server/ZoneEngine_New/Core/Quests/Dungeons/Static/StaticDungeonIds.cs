@@ -12,12 +12,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons.Static
         public const int FirstPlayfield = 0x40000000;
 
         public static bool IsStaticDungeonPlayfield(int playfieldId)
-            => playfieldId >= FirstPlayfield && playfieldId < ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First;
+            => playfieldId >= FirstPlayfield && playfieldId < ZoneEngine_New.Core.Cities.CityInsides.FirstPlayfield;
 
         public static bool TryCreate(int number, out int playfieldId)
         {
             playfieldId = 0;
-            if (number <= 0 || number >= ZoneEngine_New.Core.Playfield.ProxyPlayfieldIds.First - FirstPlayfield)
+            if (number <= 0 || number >= ZoneEngine_New.Core.Cities.CityInsides.FirstPlayfield - FirstPlayfield)
                 return false;
             playfieldId = FirstPlayfield + number;
             return true;
