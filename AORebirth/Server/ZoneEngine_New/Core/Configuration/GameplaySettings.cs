@@ -100,6 +100,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// <summary>Where a shop's stock list comes from.</summary>
         public GameplayShops Shops { get; init; } = new();
 
+        /// <summary>Player shops: the "Shop for Rent" terminals a player rents and stocks.</summary>
+        public GameplayPlayerShops PlayerShops { get; init; } = new();
+
         /// <summary>Corpse loot rolls.</summary>
         public GameplayLoot Loot { get; init; } = new();
 
@@ -274,6 +277,9 @@ namespace ZoneEngine_New.Core.Configuration
             if (Factions == null)
                 throw new InvalidDataException(path + ": factions must be an object (or omitted).");
             Factions.Validate(path);
+            if (PlayerShops == null || !PlayerShops.IsValid)
+                throw new InvalidDataException(path + ": playerShops needs rentCost 0 or more, maxItems from 1 to "
+                    + GameplayPlayerShops.MaxItemsLimit + " and maxNameLength from 1 to " + GameplayPlayerShops.MaxNameLengthLimit + ".");
         }
     }
 
@@ -945,6 +951,28 @@ namespace ZoneEngine_New.Core.Configuration
         /// shop's own list the source and the database rows are ignored.
         /// </summary>
         public bool PreferDatabaseStock { get; init; } = true;
+    }
+
+    /// <summary>The playerShops section of Gameplay.json.</summary>
+    public sealed class GameplayPlayerShops
+    {
+        /// <summary>Most items a shop may be configured to hold (its slot range).</summary>
+        public const int MaxItemsLimit = 200;
+
+        /// <summary>Longest shop name that may be configured (the player_shops.Name column holds 64).</summary>
+        public const int MaxNameLengthLimit = 64;
+
+        /// <summary>Credits renting a shop costs, taken once when it is rented and never refunded. 0 rents it free.</summary>
+        public int RentCost { get; init; } = 100_000;
+
+        /// <summary>Most items a shop holds for sale at once.</summary>
+        public int MaxItems { get; init; } = 50;
+
+        /// <summary>Longest name an owner may give their shop.</summary>
+        public int MaxNameLength { get; init; } = 40;
+
+        public bool IsValid => RentCost >= 0 && MaxItems is >= 1 and <= MaxItemsLimit
+            && MaxNameLength is >= 1 and <= MaxNameLengthLimit;
     }
 
     public sealed class GameplayLocation

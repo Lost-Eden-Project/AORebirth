@@ -323,6 +323,24 @@
       },
       "additionalProperties": false
     },
+    "playerShops": {
+      "type": "object",
+      "properties": {
+        "rentCost": {
+          "type": "integer"
+        },
+        "maxItems": {
+          "type": "integer"
+        },
+        "maxNameLength": {
+          "type": "integer"
+        },
+        "isValid": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "loot": {
       "type": "object",
       "properties": {

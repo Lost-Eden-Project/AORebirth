@@ -725,9 +725,9 @@ namespace ZoneEngine_New.Core.Trade
             foreach (Identity bag in tradedBags)
             {
                 if (initiator.SpeaksExtendedMessages)
-                    initiator.Session?.Send(new Network.BagNameMessage { Identity = initiator.Identity, Bag = bag, Name = string.Empty });
+                    initiator.Session?.Send(new BagNameMessage { Identity = initiator.Identity, Bag = bag, Name = string.Empty });
                 if (partner.SpeaksExtendedMessages)
-                    partner.Session?.Send(new Network.BagNameMessage { Identity = partner.Identity, Bag = bag, Name = string.Empty });
+                    partner.Session?.Send(new BagNameMessage { Identity = partner.Identity, Bag = bag, Name = string.Empty });
             }
             if (tradedBags.Count > 0)
             {

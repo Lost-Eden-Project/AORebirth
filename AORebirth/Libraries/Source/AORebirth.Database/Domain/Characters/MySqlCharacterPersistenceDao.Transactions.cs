@@ -74,8 +74,167 @@ namespace AORebirth.Database.Domain.Characters
                 WriteQualities(c, t, mutation.Qualities);
                 WriteUploadedNanos(c, t, mutation.CharacterId, mutation.UploadedNanoIds);
                 WriteStats(c, t, mutation.CharacterId, mutation.FinalStats);
+                if (mutation.PlayerShop != null)
+                    WritePlayerShop(c, t, mutation.CharacterId, mutation.PlayerShop);
                 return 0;
             }, IsolationLevel.RepeatableRead); // Preserve the child-range gap lock even on READ COMMITTED servers.
+        }
+
+        /// <summary>
+        /// A player shop change, after the same transaction's item rows are written. Every check that fails throws
+        /// <see cref="InvalidOperationException"/>, so nothing of the transaction is stored and the acting character is
+        /// reloaded from storage: the server's memory and the shop's rows disagree.
+        /// </summary>
+        private static void WritePlayerShop(IDbConnection c, IDbTransaction t, int characterId, PlayerShopMutationData shop)
+        {
+            if (shop.ShopId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(shop), "A player shop change needs its shop.");
+            if (shop.Kind != PlayerShopMutationKind.Sale && shop.OwnerId != characterId)
+                throw new ArgumentException("Only the shop's owner changes it.", nameof(shop));
+            const int ShopItems = (int)IdentityType.PlayerShopInventory;
+            switch (shop.Kind)
+            {
+                case PlayerShopMutationKind.Rent:
+                    if (string.IsNullOrEmpty(shop.Name) || shop.PlayfieldId <= 0 || shop.TerminalInstance == 0)
+                        throw new ArgumentException("A rented shop needs its terminal and a name.", nameof(shop));
+                    Execute(c, t, "INSERT INTO player_shops (ShopId,PlayfieldId,TerminalInstance,OwnerId,Name,Balance,RentedAtUtc) "
+                        + "VALUES (@Shop,@Playfield,@Terminal,@Owner,@Name,0,UTC_TIMESTAMP(6))",
+                        "@Shop", shop.ShopId, "@Playfield", shop.PlayfieldId, "@Terminal", shop.TerminalInstance,
+                        "@Owner", shop.OwnerId, "@Name", shop.Name);
+                    return;
+                case PlayerShopMutationKind.Rename:
+                    if (string.IsNullOrEmpty(shop.Name))
+                        throw new ArgumentException("A shop needs a name.", nameof(shop));
+                    LockOwnedShop(c, t, shop);
+                    Execute(c, t, "UPDATE player_shops SET Name=@Name WHERE ShopId=@Shop", "@Name", shop.Name, "@Shop", shop.ShopId);
+                    return;
+                case PlayerShopMutationKind.Abandon:
+                    if (LockOwnedShop(c, t, shop) != 0)
+                        throw new InvalidOperationException("The shop still holds credits.");
+                    if (Count(c, t, "SELECT COUNT(*) FROM item_instances WHERE ContainerType=@Type AND ContainerInstance=@Shop",
+                            "@Type", ShopItems, "@Shop", shop.ShopId) != 0
+                        || Count(c, t, "SELECT COUNT(*) FROM player_shop_items WHERE ShopId=@Shop", "@Shop", shop.ShopId) != 0)
+                        throw new InvalidOperationException("The shop still has items for sale.");
+                    if (Execute(c, t, "DELETE FROM player_shops WHERE ShopId=@Shop AND OwnerId=@Owner AND Balance=0",
+                            "@Shop", shop.ShopId, "@Owner", shop.OwnerId) != 1)
+                        throw new InvalidOperationException("The shop changed before it could be abandoned.");
+                    return;
+                case PlayerShopMutationKind.Stock:
+                    if (shop.ItemInstanceId <= 0 || shop.Price <= 0 || shop.MaxItems <= 0)
+                        throw new ArgumentOutOfRangeException(nameof(shop));
+                    LockOwnedShop(c, t, shop);
+                    if (Count(c, t, "SELECT COUNT(*) FROM item_instances WHERE InstanceId=@Item AND ContainerType=@Type AND ContainerInstance=@Shop",
+                            "@Item", shop.ItemInstanceId, "@Type", ShopItems, "@Shop", shop.ShopId) != 1)
+                        throw new InvalidOperationException("The stocked item is not in the shop.");
+                    Execute(c, t, "INSERT INTO player_shop_items (ItemInstanceId,ShopId,Price) VALUES (@Item,@Shop,@Price)",
+                        "@Item", shop.ItemInstanceId, "@Shop", shop.ShopId, "@Price", shop.Price);
+                    if (Count(c, t, "SELECT COUNT(*) FROM item_instances WHERE ContainerType=@Type AND ContainerInstance=@Shop",
+                            "@Type", ShopItems, "@Shop", shop.ShopId) > shop.MaxItems)
+                        throw new InvalidOperationException("The shop is full.");
+                    return;
+                case PlayerShopMutationKind.Price:
+                    if (shop.ItemInstanceId <= 0 || shop.Price <= 0 || shop.Price == shop.ExpectedPrice)
+                        throw new ArgumentOutOfRangeException(nameof(shop));
+                    LockOwnedShop(c, t, shop);
+                    if (Execute(c, t, "UPDATE player_shop_items SET Price=@Price WHERE ItemInstanceId=@Item AND ShopId=@Shop AND Price=@Expected",
+                            "@Price", shop.Price, "@Item", shop.ItemInstanceId, "@Shop", shop.ShopId, "@Expected", shop.ExpectedPrice) != 1)
+                        throw new InvalidOperationException("The item's price changed before it could be set.");
+                    return;
+                case PlayerShopMutationKind.Unstock:
+                    if (shop.ItemInstanceId <= 0)
+                        throw new ArgumentOutOfRangeException(nameof(shop));
+                    LockOwnedShop(c, t, shop);
+                    if (Execute(c, t, "DELETE FROM player_shop_items WHERE ItemInstanceId=@Item AND ShopId=@Shop",
+                            "@Item", shop.ItemInstanceId, "@Shop", shop.ShopId) != 1)
+                        throw new InvalidOperationException("The item was not for sale in the shop.");
+                    return;
+                case PlayerShopMutationKind.Sale:
+                    WriteSale(c, t, characterId, shop);
+                    return;
+                case PlayerShopMutationKind.Withdraw:
+                    if (shop.Amount <= 0)
+                        throw new ArgumentOutOfRangeException(nameof(shop));
+                    if (LockOwnedShop(c, t, shop) < shop.Amount)
+                        throw new InvalidOperationException("The shop does not hold that many credits.");
+                    if (Execute(c, t, "UPDATE player_shops SET Balance=Balance-@Amount WHERE ShopId=@Shop AND Balance>=@Amount",
+                            "@Amount", shop.Amount, "@Shop", shop.ShopId) != 1)
+                        throw new InvalidOperationException("The shop's balance changed before the withdrawal.");
+                    return;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(shop), "Unknown player shop change.");
+            }
+        }
+
+        /// <summary>
+        /// A purchase: the shop is still rented by the owner the buyer saw (never the buyer), the item still asks the
+        /// price the buyer paid, and the balance can take it. The item row's move to the buyer is in the same transaction.
+        /// </summary>
+        private static void WriteSale(IDbConnection c, IDbTransaction t, int buyerId, PlayerShopMutationData shop)
+        {
+            if (shop.ItemInstanceId <= 0 || shop.ExpectedPrice <= 0 || shop.MaxBalance <= 0)
+                throw new ArgumentOutOfRangeException(nameof(shop));
+            long balance;
+            int owner;
+            using (IDbCommand command = Command(c, t, "SELECT OwnerId,Balance FROM player_shops WHERE ShopId=@Shop FOR UPDATE", "@Shop", shop.ShopId))
+            using (IDataReader reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                    throw new InvalidOperationException("The shop is no longer rented.");
+                owner = reader.GetInt32(0);
+                balance = reader.GetInt64(1);
+            }
+            if (owner == buyerId || owner != shop.OwnerId)
+                throw new InvalidOperationException("The shop's owner changed before the sale.");
+            if (balance + shop.ExpectedPrice > shop.MaxBalance)
+                throw new InvalidOperationException("The shop cannot hold the sale's credits.");
+            if (Execute(c, t, "DELETE FROM player_shop_items WHERE ItemInstanceId=@Item AND ShopId=@Shop AND Price=@Price",
+                    "@Item", shop.ItemInstanceId, "@Shop", shop.ShopId, "@Price", shop.ExpectedPrice) != 1)
+                throw new InvalidOperationException("The item was not for sale at that price.");
+            if (Execute(c, t, "UPDATE player_shops SET Balance=Balance+@Price WHERE ShopId=@Shop",
+                    "@Price", (long)shop.ExpectedPrice, "@Shop", shop.ShopId) != 1)
+                throw new InvalidOperationException("The shop's balance could not take the sale.");
+        }
+
+        /// <summary>Locks the shop row for its owner and returns its balance; throws when the owner no longer has it.</summary>
+        private static long LockOwnedShop(IDbConnection c, IDbTransaction t, PlayerShopMutationData shop)
+        {
+            using (IDbCommand command = Command(c, t, "SELECT Balance FROM player_shops WHERE ShopId=@Shop AND OwnerId=@Owner FOR UPDATE",
+                "@Shop", shop.ShopId, "@Owner", shop.OwnerId))
+            {
+                object balance = command.ExecuteScalar();
+                if (balance == null || balance is DBNull)
+                    throw new InvalidOperationException("The shop is not rented by its owner any more.");
+                return Convert.ToInt64(balance, System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        private static long Count(IDbConnection c, IDbTransaction t, string sql, params object[] parameters)
+        {
+            using (IDbCommand command = Command(c, t, sql, parameters))
+                return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        public IList<PersistedPlayerShopData> LoadPlayerShops()
+        {
+            return Query("SELECT s.ShopId,s.PlayfieldId,s.TerminalInstance,s.OwnerId,COALESCE(c.Name,''),s.Name,s.Balance "
+                + "FROM player_shops s LEFT JOIN characters c ON c.Id=s.OwnerId",
+                r => new PersistedPlayerShopData
+                {
+                    ShopId = r.GetInt32(0), PlayfieldId = r.GetInt32(1), TerminalInstance = r.GetInt32(2), OwnerId = r.GetInt32(3),
+                    OwnerName = r.GetString(4), Name = r.GetString(5), Balance = r.GetInt64(6)
+                });
+        }
+
+        public IList<PersistedPlayerShopPriceData> LoadPlayerShopPrices()
+        {
+            return Query("SELECT ItemInstanceId,ShopId,Price FROM player_shop_items",
+                r => new PersistedPlayerShopPriceData { ItemInstanceId = r.GetInt32(0), ShopId = r.GetInt32(1), Price = r.GetInt32(2) });
+        }
+
+        public IList<PersistedItemData> LoadPlayerShopItems()
+        {
+            return Query("SELECT " + ItemColumns + " FROM item_instances WHERE ContainerType=@Type",
+                ReadItem, "@Type", (int)IdentityType.PlayerShopInventory);
         }
 
         public void CommitItemCredits(ItemCreditMutationData mutation)

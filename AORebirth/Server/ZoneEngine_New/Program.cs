@@ -131,6 +131,8 @@ namespace ZoneEngine_New
                 rootServices.GetRequiredService<ZoneEngine_New.Core.Organizations.OrganizationService>().Start();
                 // Loads every city district and starts their sync and due timers, before any client connects.
                 rootServices.GetRequiredService<ZoneEngine_New.Core.Cities.CityService>().Start();
+                // Loads every rented player shop and what it holds, before any client connects.
+                rootServices.GetRequiredService<ZoneEngine_New.Core.PlayerShops.PlayerShopService>().Start();
                 networkHost = rootServices.GetRequiredService<ZoneNetworkHost>();
                 networkHost.Start();
                 try
@@ -311,6 +313,9 @@ namespace ZoneEngine_New
             services.AddSingleton<ZoneEngine_New.Core.Cities.CityCatalog>();
             services.AddSingleton<ZoneEngine_New.Core.Cities.ICityStore, ZoneEngine_New.Core.Cities.MySqlCityStore>();
             services.AddSingleton<ZoneEngine_New.Core.Cities.CityService>();
+            // Player shops: "Shop for Rent" terminals players rent and stock (player_shops, player_shop_items).
+            services.AddSingleton<IPlayerShopRepository, MySqlPlayerShopRepository>();
+            services.AddSingleton<ZoneEngine_New.Core.PlayerShops.PlayerShopService>();
             services.AddSingleton<ICharacterCoalesceCommit, MySqlCharacterCoalesceCommit>();
             services.AddSingleton<IItemInstanceIdAllocator, ItemInstanceIdAllocator>();
             services.AddSingleton<IItemTemplateCatalog, ItemTemplateCatalog>();
@@ -525,6 +530,7 @@ namespace ZoneEngine_New
             AddMessageHandler<BagNameSetMessageHandler>(services);
             AddMessageHandler<LootRollChoiceMessageHandler>(services);
             AddMessageHandler<ClientHelloMessageHandler>(services);
+            AddMessageHandler<PlayerShopActionMessageHandler>(services);
             services.AddSingleton<IMessageRouter, MessageRouter>();
             services.AddSingleton<ZoneMessageDispatcher>();
             services.AddSingleton<ZoneNetworkHost>();

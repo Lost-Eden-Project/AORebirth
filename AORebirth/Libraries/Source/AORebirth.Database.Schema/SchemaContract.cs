@@ -41,7 +41,8 @@ public static class SchemaContract
         "20261118_module_schema_migrations.sql",
         "20261118_player_bag_names.sql",
         "20261122_static_dungeon_instances.sql",
-        "20261124_city_plots.sql"
+        "20261124_city_plots.sql",
+        "20261125_player_shops.sql"
     });
 
     // Other governed components may legitimately record these unrelated migrations.
@@ -65,7 +66,8 @@ public static class SchemaContract
         "account_sanctions",
         "org_organizations", "org_members", "org_votes", "org_vote_ballots",
         "module_schema_migrations", "staticdungeoninstances",
-        "city_plots", "city_houses"
+        "city_plots", "city_houses",
+        "player_shops", "player_shop_items"
     });
 
     public static readonly IReadOnlyList<(string Table, string Columns)> UniqueKeys = Array.AsReadOnly(new[]
@@ -96,7 +98,9 @@ public static class SchemaContract
         ("org_votes", "VoteId"), ("org_vote_ballots", "VoteId,CharacterId"),
         ("module_schema_migrations", "ModuleId,MigrationName"),
         ("city_plots", "PlayfieldId,ControllerIndex"), ("city_plots", "OrganizationId"),
-        ("city_houses", "HouseId"), ("city_houses", "PlayfieldId,ControllerIndex,TileX,TileZ")
+        ("city_houses", "HouseId"), ("city_houses", "PlayfieldId,ControllerIndex,TileX,TileZ"),
+        ("player_shops", "ShopId"), ("player_shops", "PlayfieldId,TerminalInstance"), ("player_shops", "OwnerId"),
+        ("player_shop_items", "ItemInstanceId")
     });
 
     private static IReadOnlyList<ColumnRequirement> BuildColumns()
@@ -225,6 +229,11 @@ public static class SchemaContract
         Add("city_houses", "int", "PlayfieldId ControllerIndex TemplateId TileX TileZ Rotation BuiltBy ItemLowId ItemHighId ItemQuality", false);
         Add("city_houses", "tinyint", "Pending", false);
         Add("city_houses", "datetime", "CreatedAtUtc DemolishAtUtc");
+        Add("player_shops", "int", "ShopId PlayfieldId TerminalInstance OwnerId", false);
+        Add("player_shops", "varchar", "Name");
+        Add("player_shops", "bigint", "Balance", false);
+        Add("player_shops", "datetime", "RentedAtUtc");
+        Add("player_shop_items", "int", "ItemInstanceId ShopId Price", false);
         Add("login", "int", "Id Flags");
         Add("login", "varchar", "Username");
         return result.AsReadOnly();

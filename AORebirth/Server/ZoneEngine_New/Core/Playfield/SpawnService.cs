@@ -762,6 +762,8 @@ namespace ZoneEngine_New.Core.Playfield
                 };
             else if (CityController.IsCityControllerType(identity.Type))
                 dynel = new CityController(identity, template);
+            else if (PlayerShops.PlayerShopTerminal.IsPlayerShopTerminalType(identity.Type))
+                dynel = new PlayerShops.PlayerShopTerminal(identity, template);
             else
                 dynel = new PlayfieldStaticDynel(identity, template);
 

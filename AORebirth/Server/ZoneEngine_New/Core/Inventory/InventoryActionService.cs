@@ -117,7 +117,7 @@ namespace ZoneEngine_New.Core.Inventory
                 // A deleted or dropped bag loses its name (a dropped bag picked up again is a new item).
                 if (loot == null && InventoryMoveService.IsBagItem(item) && player.BagNames.Remove(item.InstanceId)
                     && player.SpeaksExtendedMessages)
-                    player.Session?.Send(new Network.BagNameMessage { Identity = player.Identity, Bag = item.Identity, Name = string.Empty });
+                    player.Session?.Send(new BagNameMessage { Identity = player.Identity, Bag = item.Identity, Name = string.Empty });
             }
             if (result && page.Identity.Type.IsWearPage())
             {
@@ -313,10 +313,12 @@ namespace ZoneEngine_New.Core.Inventory
         /// <paramref name="expectedSources"/> and <paramref name="finalStats"/>. Items the plan inserts count as persisted
         /// from here on: whatever moves or retires one later writes behind the insert in the lane. False when the action
         /// does not apply (nothing changed); a transaction that fails quarantines the player for a reload.
+        /// <paramref name="playerShop"/> is a player shop change stored in the same transaction; <paramref name="stored"/>
+        /// runs on the lane's writer once that transaction has committed (never when it fails or is discarded).
         /// </summary>
         internal bool TryCommit(Player player, IReadOnlyList<InventoryRowChange> changes,
             Func<bool> validate, Action publish, IReadOnlyList<StatRecord>? finalStats = null,
-            IReadOnlyList<ItemInstanceRecord>? expectedSources = null)
+            IReadOnlyList<ItemInstanceRecord>? expectedSources = null, PlayerShopWrite? playerShop = null, Action? stored = null)
         {
             player.InvalidateOwnedItemCache();
             lock (player.PersistenceGate)
@@ -364,7 +366,19 @@ namespace ZoneEngine_New.Core.Inventory
                 int characterId = player.Identity.Instance;
                 IReadOnlyList<StatRecord> stats = finalStats ?? [];
                 IReadOnlyList<ItemInstanceRecord> sources = expectedSources ?? [];
-                _flush.Enqueue(player, () => Persist(player, characterId, writes, rows, claim, planSequence, stats, sources, emptyContainersBeforeRetire));
+                _flush.Enqueue(player, () =>
+                {
+                    Persist(player, characterId, writes, rows, claim, planSequence, stats, sources, emptyContainersBeforeRetire, playerShop);
+                    // Committed: a throw from here on must not reach the lane, which would retry a stored transaction.
+                    try
+                    {
+                        stored?.Invoke();
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger.Error(exception, "Inventory action stored-callback failed after commit char=" + characterId);
+                    }
+                });
             }
             return true;
         }
@@ -375,7 +389,7 @@ namespace ZoneEngine_New.Core.Inventory
         /// </summary>
         void Persist(Player player, int characterId, InventoryWriteSet writes, PlannedRow[] rows, QueuedRowClaim claim,
             long planSequence, IReadOnlyList<StatRecord> finalStats, IReadOnlyList<ItemInstanceRecord> expectedSources,
-            int[] emptyContainersBeforeRetire)
+            int[] emptyContainersBeforeRetire, PlayerShopWrite? playerShop)
         {
             lock (player.PersistenceGate)
             {
@@ -407,7 +421,8 @@ namespace ZoneEngine_New.Core.Inventory
                 ExpectedSources = expectedSources,
                 FinalStats = finalStats,
                 Qualities = qualities,
-                EmptyContainersBeforeRetire = emptyContainersBeforeRetire
+                EmptyContainersBeforeRetire = emptyContainersBeforeRetire,
+                PlayerShop = playerShop
             });
         }
 

@@ -54,7 +54,8 @@
     <ProjectReference Include="../../Libraries/Source/AORebirth.World.Collision/AORebirth.World.Collision.csproj" />
     <ProjectReference Include="../../Libraries/Source/AORebirth.World.Pathfinding/AORebirth.World.Pathfinding.csproj" />
     <ProjectReference Include="../../Libraries/Source/AORebirth.World.Contracts/AORebirth.World.Contracts.csproj" />
-    <PackageReference Include="LostEden.Protocol" Version="0.5.0" />
+    <PackageReference Include="LostEden.Protocol" Version="0.5.3" />
+    <PackageReference Include="LostEden.Protocol.Extensions" Version="0.5.3" />
     <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/AORebirth.Core.ZoneNew.WinNet10.csproj" />
     <ProjectReference Include="$(AORebirthRepositoryRoot)/WindowsBuildNet10/Projects/Utility.ZoneNew.WinNet10.csproj" />
   </ItemGroup>

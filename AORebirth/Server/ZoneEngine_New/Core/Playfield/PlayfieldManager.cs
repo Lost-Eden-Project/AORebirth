@@ -95,10 +95,12 @@ namespace ZoneEngine_New.Core.Playfield
             ZoneEngine_New.Core.NpcScripts.NpcScriptCatalog? npcScripts = null,
             ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonService? staticDungeons = null,
             ZoneEngine_New.Core.Teams.SummonService? summons = null,
-            ZoneEngine_New.Core.Cities.CityService? cities = null)
+            ZoneEngine_New.Core.Cities.CityService? cities = null,
+            ZoneEngine_New.Core.PlayerShops.PlayerShopService? playerShops = null)
         {
             World = world;
             Cities = cities;
+            PlayerShops = playerShops;
             Summons = summons;
             StaticDungeons = staticDungeons;
             _crossInstance = crossInstance;
@@ -185,6 +187,9 @@ namespace ZoneEngine_New.Core.Playfield
 
         /// <summary>Org cities (city controllers, houses), forwarded into every playfield container.</summary>
         public ZoneEngine_New.Core.Cities.CityService? Cities { get; }
+
+        /// <summary>Rented player shop terminals; settled on each playfield's tick.</summary>
+        public ZoneEngine_New.Core.PlayerShops.PlayerShopService? PlayerShops { get; }
 
         /// <summary>Engineer summons' route to characters on other zone instances, forwarded into every playfield container.</summary>
         public ZoneEngine_New.Core.Teams.SummonService? Summons { get; }

@@ -1214,7 +1214,7 @@ namespace ZoneEngine_New.Core.Entities
             if (Session == null || !SpeaksExtendedMessages)
                 return;
             foreach ((int bagInstanceId, string name) in BagNames.Snapshot())
-                Session.Send(new Network.BagNameMessage
+                Session.Send(new BagNameMessage
                 {
                     Identity = Identity,
                     Bag = new Identity { Type = IdentityType.Container, Instance = bagInstanceId },

@@ -61,6 +61,66 @@
             ],
             "pattern": "^([0-9a-fA-F]{2})\u002B$",
             "description": "TilesX * TilesZ bits of hex, bit z * TilesX \u002B x, lowest bit first."
+          },
+          "Doors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "Template": {
+                  "type": "integer"
+                },
+                "X": {
+                  "type": "number"
+                },
+                "Y": {
+                  "type": "number"
+                },
+                "Z": {
+                  "type": "number"
+                },
+                "Turn": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "Guards": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "Hash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "Value": {
+                  "type": "integer"
+                },
+                "X": {
+                  "type": "number"
+                },
+                "Y": {
+                  "type": "number"
+                },
+                "Z": {
+                  "type": "number"
+                },
+                "Turn": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            }
           }
         },
         "additionalProperties": false

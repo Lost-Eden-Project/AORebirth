@@ -837,6 +837,8 @@ namespace ZoneEngine_New.Core.Playfield
                 GetRequiredService<AreaTriggerService>().Tick(deltaTime);
                 ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("trades");
                 _trades.Tick(this, deltaTime);
+                ZoneEngine_New.Core.Metrics.TickStallWatch.Stage("playershops");
+                _playfieldManager.PlayerShops?.Tick(this);
 
                 WorldSimulation.PlayfieldWorldSimulation? world = WorldAccess.Instance;
                 if (world != null)
@@ -959,6 +961,8 @@ namespace ZoneEngine_New.Core.Playfield
                 services.AddSingleton(_playfieldManager.Summons);
             if (_playfieldManager.Cities != null)
                 services.AddSingleton(_playfieldManager.Cities);
+            if (_playfieldManager.PlayerShops != null)
+                services.AddSingleton(_playfieldManager.PlayerShops);
             if (_playfieldManager.ModuleEvents != null)
                 services.AddSingleton(_playfieldManager.ModuleEvents);
             services.AddSingleton(_playfieldManager.ItemTemplates);

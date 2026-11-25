@@ -5,6 +5,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
 
     using LostEden.Protocol.GameData;
     using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;

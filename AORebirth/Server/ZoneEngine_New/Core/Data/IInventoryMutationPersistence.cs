@@ -14,6 +14,8 @@ namespace ZoneEngine_New.Core.Data
         public IReadOnlyList<StatRecord> FinalStats { get; init; } = [];
         public IReadOnlyList<int> EmptyContainersBeforeRetire { get; init; } = [];
         public IReadOnlyList<ItemQualityUpdate> Qualities { get; init; } = [];
+        /// <summary>A player shop change stored in the same transaction (null when none).</summary>
+        public PlayerShopWrite? PlayerShop { get; init; }
     }
 
     public interface IInventoryMutationPersistence

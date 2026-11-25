@@ -79,6 +79,12 @@ namespace AORebirth.Interfaces.Persistence.Characters
             IList<PersistedActiveNanoData>? activeNanos = null,
             IList<PersistedSkillLockData>? skillLocks = null);
         void CommitInventoryMutation(CharacterInventoryMutationData mutation);
+        /// <summary>Every rented player shop, with its owner's name (player_shops).</summary>
+        IList<PersistedPlayerShopData> LoadPlayerShops();
+        /// <summary>Every player shop's asking prices (player_shop_items).</summary>
+        IList<PersistedPlayerShopPriceData> LoadPlayerShopPrices();
+        /// <summary>The items every player shop has for sale (item_instances, ContainerType 0x790 PlayerShopInventory).</summary>
+        IList<PersistedItemData> LoadPlayerShopItems();
         // Retains the existing item/credit boundary; this does not implement a new trade feature.
         void CommitItemCredits(ItemCreditMutationData mutation);
         // Retains active-nano/base-stat coupling without moving gameplay nano policy into storage.

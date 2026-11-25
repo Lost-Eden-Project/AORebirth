@@ -84,6 +84,81 @@ namespace AORebirth.Interfaces.Persistence.Characters
         public IList<int> UploadedNanoIds { get; set; } = new List<int>();
         public IList<CharacterStatData> FinalStats { get; set; } = new List<CharacterStatData>();
         public IList<int> EmptyContainersBeforeRetire { get; set; } = new List<int>();
+        /// <summary>A player shop change stored in the same transaction as the items and stats (null when none).</summary>
+        public PlayerShopMutationData? PlayerShop { get; set; }
+    }
+
+    /// <summary>What a <see cref="PlayerShopMutationData"/> does to the shop's rows.</summary>
+    public enum PlayerShopMutationKind
+    {
+        /// <summary>Inserts the shop row (owner, name, zero balance).</summary>
+        Rent = 1,
+
+        /// <summary>Sets the shop's name.</summary>
+        Rename = 2,
+
+        /// <summary>Deletes the shop row; refused unless the balance is zero and nothing is for sale.</summary>
+        Abandon = 3,
+
+        /// <summary>Inserts the asking price of an item the same transaction moves into the shop.</summary>
+        Stock = 4,
+
+        /// <summary>Changes an item's asking price.</summary>
+        Price = 5,
+
+        /// <summary>Deletes the asking price of an item the same transaction moves back to its owner.</summary>
+        Unstock = 6,
+
+        /// <summary>
+        /// Deletes the asking price of an item the same transaction moves to its buyer (refused unless it still asks
+        /// ExpectedPrice) and adds that price to the shop's balance.
+        /// </summary>
+        Sale = 7,
+
+        /// <summary>Takes Amount from the shop's balance (refused unless the balance holds it).</summary>
+        Withdraw = 8
+    }
+
+    /// <summary>
+    /// One player shop change. Every kind but Sale is the owner's and checks that <see cref="OwnerId"/> still owns
+    /// <see cref="ShopId"/>; a row count other than the one expected rolls the whole transaction back.
+    /// </summary>
+    public sealed class PlayerShopMutationData
+    {
+        public PlayerShopMutationKind Kind { get; set; }
+        public int ShopId { get; set; }
+        public int OwnerId { get; set; }
+        public int PlayfieldId { get; set; }
+        public int TerminalInstance { get; set; }
+        public string Name { get; set; }
+        public int ItemInstanceId { get; set; }
+        public int Price { get; set; }
+        public int ExpectedPrice { get; set; }
+        public long Amount { get; set; }
+        /// <summary>Stock: the most items the shop may hold, counted after this one.</summary>
+        public int MaxItems { get; set; }
+        /// <summary>Sale: the most the balance may hold after it.</summary>
+        public long MaxBalance { get; set; }
+    }
+
+    /// <summary>A rented player shop row (player_shops).</summary>
+    public sealed class PersistedPlayerShopData
+    {
+        public int ShopId { get; set; }
+        public int PlayfieldId { get; set; }
+        public int TerminalInstance { get; set; }
+        public int OwnerId { get; set; }
+        public string OwnerName { get; set; }
+        public string Name { get; set; }
+        public long Balance { get; set; }
+    }
+
+    /// <summary>The asking price of one item a player shop has for sale (player_shop_items).</summary>
+    public sealed class PersistedPlayerShopPriceData
+    {
+        public int ItemInstanceId { get; set; }
+        public int ShopId { get; set; }
+        public int Price { get; set; }
     }
 
     public sealed class CharacterCreditData

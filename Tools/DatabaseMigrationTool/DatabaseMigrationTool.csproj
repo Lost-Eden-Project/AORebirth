@@ -43,6 +43,8 @@
     <Content Include="../../AORebirth/Libraries/Source/AORebirth.Database/Migrations/20261118_module_schema_migrations.sql" Link="Migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="../../AORebirth/Libraries/Source/AORebirth.Database/Migrations/20261124_city_plots.sql" Link="Migrations/%(Filename)%(Extension)" />
     <Content Include="../../AORebirth/Libraries/Source/AORebirth.Database/Migrations/20261124_city_plots.sql" Link="Migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../AORebirth/Libraries/Source/AORebirth.Database/Migrations/20261125_player_shops.sql" Link="Migrations/%(Filename)%(Extension)" />
+    <Content Include="../../AORebirth/Libraries/Source/AORebirth.Database/Migrations/20261125_player_shops.sql" Link="Migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../AORebirth/Libraries/Source/AORebirth.Database/SqlTables/*.sql" Link="SqlTables/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

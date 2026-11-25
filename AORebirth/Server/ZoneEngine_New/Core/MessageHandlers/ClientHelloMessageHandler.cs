@@ -3,6 +3,7 @@ namespace ZoneEngine_New.Core.MessageHandlers
     using System;
 
     using LostEden.Protocol.Messages;
+    using LostEden.Protocol.Messages.N3Messages;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Network;
@@ -12,7 +13,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
     /// An updated client's hello (<see cref="ClientHelloMessage"/>) after its FullCharacter: the player is sent the
     /// server's own messages from now on, beginning with its bag names and its team's loot order.
     /// </summary>
-    public sealed class ClientHelloMessageHandler(TeamService teams) : IMessageHandler<ClientHelloMessage>
+    public sealed class ClientHelloMessageHandler(TeamService teams, ZoneEngine_New.Core.PlayerShops.PlayerShopService? playerShops = null)
+        : IMessageHandler<ClientHelloMessage>
     {
         public Type MessageBodyType => typeof(ClientHelloMessage);
 
@@ -27,6 +29,8 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
             player.OnClientHello();
             teams.SendCurrentLootOrder(player);
+            // The names of the player shops rented on this playfield.
+            playerShops?.SendNames(player);
         }
     }
 }
