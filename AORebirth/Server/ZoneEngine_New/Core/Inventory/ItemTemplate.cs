@@ -602,12 +602,12 @@ namespace ZoneEngine_New.Core.Inventory
                 : ItemUseFunctions.ResolveApplyOn(target, source, spell);
 
         /// <summary>Executes one retained static action after its owner-specific scheduling and requirement gate.</summary>
-        internal bool ExecuteStaticSpell(ItemSpell row, Player player, SpellCriteria criteria,
+        internal bool ExecuteStaticSpell(ItemSpell row, Character character, SpellCriteria criteria,
             bool requirementsAlreadyChecked = false)
-            => ExecuteSpell(criteria.TriggerContext?.ExecutionTarget as Character ?? player,
-                criteria.TriggerContext?.Source as Character ?? player, row,
-                player.Playfield!.GetRequiredService<IInventoryRepository>(),
-                player.Playfield.GetRequiredService<IItemBuilder>(), false, criteria,
+            => ExecuteSpell(criteria.TriggerContext?.ExecutionTarget as Character ?? character,
+                criteria.TriggerContext?.Source as Character ?? character, row,
+                character.Playfield!.GetRequiredService<IInventoryRepository>(),
+                character.Playfield.GetRequiredService<IItemBuilder>(), false, criteria,
                 skipRequirements: requirementsAlreadyChecked);
 
         /// <summary>

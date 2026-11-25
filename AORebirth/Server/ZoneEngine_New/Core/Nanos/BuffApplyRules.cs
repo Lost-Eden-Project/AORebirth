@@ -32,7 +32,10 @@ namespace ZoneEngine_New.Core.Nanos
         /// <paramref name="maxNcu"/> unless they ignore NCU; hostile nanos never consume it.
         /// A nano conflicts with every running buff it shares a nano line with (<see cref="NanoSpell.StackingLines"/>):
         /// one with a higher stacking order refuses it, and the rest all leave when it lands, so a composite
-        /// replaces each single-line nano it covers. <paramref name="replaced"/> lists them on
+        /// replaces each single-line nano it covers. The buff that launches the nano (<see cref="NanoSpell.LaunchesNano"/>)
+        /// is left out of that: Refresh Outfit (Team) 223241 (line 588, order 11) team-casts its nano-heal 216580 (line
+        /// 588, order 10) on the land and every 8 s, and on the caster, where the parent runs, the child must land beside
+        /// it rather than be refused by it or replace it. <paramref name="replaced"/> lists the leaving buffs on
         /// <see cref="BuffApplyDecision.Replace"/>; otherwise it is empty.
         /// </summary>
         public static BuffApplyDecision Evaluate(
@@ -60,7 +63,7 @@ namespace ZoneEngine_New.Core.Nanos
                 // A recast refreshes itself and never loses the stacking comparison.
                 if (buff.Id != spell.Id)
                 {
-                    if (!spell.SharesStackingLine(buff))
+                    if (!spell.SharesStackingLine(buff) || buff.LaunchesNano(spell.Id))
                         continue;
 
                     if (buff.StackingOrder > spell.StackingOrder)

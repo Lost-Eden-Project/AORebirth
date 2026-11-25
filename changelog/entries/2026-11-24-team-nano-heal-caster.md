@@ -1,0 +1,1 @@
+- Fixed: Trader team nano heals such as Refresh Outfit (Team) now heal the trader as well as the team, instead of showing "NCU error: Better nano program already running." every few seconds.

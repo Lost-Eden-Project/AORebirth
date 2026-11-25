@@ -75,7 +75,8 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>
         /// SpawnItem's mint for a hash that may be flagged SpawnAll: a SpawnAll category mints one item per leaf family
         /// reachable from it, each at its highest QL at or below <paramref name="desiredQuality"/>; a leaf starting above
-        /// the request mints at its lowest QL (Soldier Nanoprogram Container 248265 asks QL 1 for its QL 1-7 crystals). Any other hash, a leaf included, mints one item by <see cref="TryMintHighestUpTo"/>.
+        /// the request mints at its lowest QL (Soldier Nanoprogram Container 248265 asks QL 1 for its QL 1-7 crystals). Any other hash, a leaf included, mints one item by <see cref="TryMintHighestUpTo"/>,
+        /// or, when the request is below it, the hash's only template (<see cref="TryMintOnlyTemplate"/>).
         /// Appends to <paramref name="into"/>.
         /// </summary>
         public void MintHighestUpToSpawns(string hash, int desiredQuality, ItemSource source, List<Item> into)
@@ -86,7 +87,7 @@ namespace ZoneEngine_New.Core.Inventory
 
             if (!_gameData.IsSpawnAllItemHash(hash))
             {
-                if (TryMintHighestUpTo(hash, desiredQuality, source, out Item one))
+                if (TryMintHighestUpTo(hash, desiredQuality, source, out Item one) || TryMintOnlyTemplate(hash, source, out one))
                     into.Add(one);
                 return;
             }
@@ -100,6 +101,35 @@ namespace ZoneEngine_New.Core.Inventory
                 if (HashItemCatalog.TrySelectIds(leaf.Instance, reached, CatalogQuality, out int lowId, out int highId))
                     into.Add(_items.CreateWithNewInstance(lowId, highId, reached, source));
             }
+        }
+
+        /// <summary>
+        /// The one template <paramref name="hash"/> holds, at its own QL, for a SpawnItem asking below it: the inactive
+        /// Tuning Units (Sigma 284434) ask QL 1 of their QL 200 activated unit. Only a hash with exactly one template; a
+        /// low/high pair or a QL ladder (the Clan Merits boards' CLMR) still mints nothing below its range, since its
+        /// lowest entry may be a different item than the one asked for.
+        /// </summary>
+        bool TryMintOnlyTemplate(string hash, ItemSource source, out Item item)
+        {
+            item = null!;
+            int only = 0;
+            foreach (LeafRange leaf in _leafRanges.GetOrAdd(hash, BuildLeafRanges))
+            {
+                foreach (int id in leaf.Instance.TemplateIds)
+                {
+                    if (id <= 0 || id == only)
+                        continue;
+                    if (only != 0)
+                        return false;
+                    only = id;
+                }
+            }
+
+            if (only == 0)
+                return false;
+
+            item = _items.CreateWithNewInstance(only, only, CatalogQuality(only), source);
+            return true;
         }
 
         /// <summary>The ids and QL <see cref="TryMintHighestUpTo"/> would mint, without creating an <see cref="Item"/>.</summary>

@@ -19,7 +19,8 @@ namespace ZoneEngine_New.Core.Mobs
         /// <summary>
         /// Defends players: attacks any NPC within its aggro range (ProximityRangeOutdoors/Indoors) that is fighting a
         /// player or a player's pet. Otherwise an ordinary NPC (it can be attacked, and fights back). Which NPC families an
-        /// NPC attacks on its own is MonsterCombatRules.json "Hates".
+        /// NPC attacks on its own is MonsterCombatRules.json "Hates". Its kill gives no XP (regular or alien), as
+        /// <see cref="NoXp"/>, but still moves faction.
         /// </summary>
         Guard,
 

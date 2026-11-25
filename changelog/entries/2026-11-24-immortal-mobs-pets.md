@@ -1,0 +1,1 @@
+- Fixed: Pets, nanos and other monsters can no longer attack the Nascense named mobs (and other Immortal targets) while they cannot be attacked; they become attackable once the protection wears off, as they already were for players.

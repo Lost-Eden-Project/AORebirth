@@ -621,6 +621,7 @@ namespace ZoneEngine_New.Core.Entities
         public virtual void Revive()
         {
             _deathNotified = false;
+            _spoilsForfeited = false;
             _corpseSwapPending = false;
             _corpseSwapRemainingSeconds = 0;
             ClearNanoRecharge();
@@ -1173,9 +1174,15 @@ namespace ZoneEngine_New.Core.Entities
         bool HasNoXpFeature => this is NpcCharacter npc
             && (npc.PetOwner != null || (npc.MobTemplate is { } template && template.Has(Mobs.NpcFeature.NoXp)));
 
+        /// <summary>
+        /// A guard (the Guard feature, MonsterCombatRules.json): its kill gives no regular or alien XP, not even the grey
+        /// 1 XP, so a city's guards are not an XP farm. Unlike NoXp, the kill still moves faction.
+        /// </summary>
+        bool IsGuardNpc => this is NpcCharacter npc && npc.HasFeature(Mobs.NpcFeature.Guard);
+
         void AwardRegularXp(Playfield playfield, IReadOnlyList<int> present)
         {
-            if (IsPlayer || HasNoXpFeature)
+            if (IsPlayer || HasNoXpFeature || IsGuardNpc)
                 return;
 
             // Guards and civilians (family 0) and the other Xp.json NoKillXpFamilies are worth nothing, grey XP included.
@@ -1349,7 +1356,7 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         void AwardAlienXp(Playfield playfield, IReadOnlyList<int> present)
         {
-            if (IsPlayer || HasNoXpFeature || Stats.GetOrZero(CharacterStat.NPCFamily) != AlienNpcFamily)
+            if (IsPlayer || HasNoXpFeature || IsGuardNpc || Stats.GetOrZero(CharacterStat.NPCFamily) != AlienNpcFamily)
                 return;
 
             int monsterLevel = Stats.GetOrOne(CharacterStat.Level);
@@ -1540,7 +1547,17 @@ namespace ZoneEngine_New.Core.Entities
             => _killRewards.TryGetLootWinner(out identity);
 
         /// <summary>Players did enough of the damage for this death to leave spoils (<see cref="KillRewardResolver.PlayersEarnedSpoils"/>).</summary>
-        public bool PlayersEarnedSpoils() => _killRewards.PlayersEarnedSpoils();
+        public bool PlayersEarnedSpoils() => !_spoilsForfeited && _killRewards.PlayersEarnedSpoils();
+
+        bool _spoilsForfeited;
+
+        /// <summary>
+        /// The world killed this character, not a player (a Unicorn Laser Fence an alien walked into): its corpse carries
+        /// no rolled loot, cash or credits, whatever the damage record says. Otherwise a death with no recorded damage
+        /// keeps its spoils and its corpse is open to anyone, which would let players herd aliens through a fence for
+        /// free loot. Cleared by <see cref="Revive"/>.
+        /// </summary>
+        public void ForfeitSpoils() => _spoilsForfeited = true;
 
         protected void ClearKillRewards()
             => _killRewards.Clear();
@@ -2132,7 +2149,9 @@ namespace ZoneEngine_New.Core.Entities
             TickStallWatch.Stage("char.motor", instance);
             Motor.Tick(deltaTime);
             TickStallWatch.Stage("char.combat", instance);
-            if (FightingTarget.Instance != 0 && TryResolveFightingTarget() != null)
+            Character? fightTarget = FightingTarget.Instance != 0 ? TryResolveFightingTarget() : null;
+            Motor.TickFightFacing(deltaTime, fightTarget, IsCastingNano);
+            if (fightTarget != null)
                 TickCombat(deltaTime);
             else
                 TickIdleRecharge(deltaTime);
@@ -3235,6 +3254,12 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public bool CombatRestricted { get; private set; }
 
+        /// <summary>
+        /// Rebuilt from running <see cref="FunctionType.ChangeActionRestriction"/> buffs on every rebase: a player's PvP
+        /// flags, a mob's <see cref="ActionRestrictionFlags.CantBeAttacked"/>.
+        /// </summary>
+        public ActionRestrictionFlags ActionRestrictionFlags { get; internal set; }
+
         bool HasCombatRestriction
             => HasBuffFunction(FunctionType.RestrictAction, RestrictsFighting)
                 || HasWornFunction(FunctionType.RestrictAction, RestrictsFighting);
@@ -3803,6 +3828,7 @@ namespace ZoneEngine_New.Core.Entities
 
             CombatRestricted = HasCombatRestriction;
             IsStunned = HasBuffFunction(FunctionType.Stun);
+            ActionRestrictionFlags = CombatRules.CollectActionRestrictions(_buffs, Stats);
 
             // Every buff change rebases, so a root landing stops the character here.
             if (IsRooted)

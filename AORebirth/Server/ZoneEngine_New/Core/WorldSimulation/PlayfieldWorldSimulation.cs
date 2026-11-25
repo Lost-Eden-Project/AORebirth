@@ -22,6 +22,7 @@
     using ZoneEngine_New.Core.Movement;
     using ZoneEngine_New.Core.Network;
     using ZoneEngine_New.Core.Playfield;
+    using ZoneEngine_New.Core.Playfield.Locality;
 
     using EventType = AORebirth.Enums.EventType;
     using AoVector3 = AORebirth.Core.Vector.Vector3;
@@ -43,6 +44,10 @@
 
         /// <summary>Per-tick player snapshot for <see cref="TickSoftTriggers"/>; a transfer may remove the player mid-pass.</summary>
         readonly List<Player> _tickPlayers = new();
+
+        /// <summary>Scratch for <see cref="TickNpcWalkIns"/>: the NPCs around one pad, and which of them are inside it.</summary>
+        readonly List<NpcCharacter> _tickNpcs = new();
+        readonly HashSet<int> _npcsInsidePad = new();
         readonly DestinationsCatalog _destinations;
         readonly PlayfieldGeometryData _geometry;
         readonly IGameData _gameData;
@@ -439,6 +444,75 @@
                         "Zone trigger crossing failed for character {0} on playfield {1}; skipped this tick", id, _playfieldId));
                 }
             }
+
+            if (_triggers.NpcPads.Count > 0)
+            {
+                Metrics.TickStallWatch.Stage("world.npcwalkins");
+                TickNpcWalkIns(playfield);
+            }
+        }
+
+        /// <summary>
+        /// Runs the few pads that NPCs set off (<see cref="ZoneTriggerVolume.FiresOnNpcs"/>) against the NPCs around
+        /// them: an alien walking into a Unicorn Laser Fence dies there. Each pad looks only at its own cell ring, so the
+        /// cost is per fence, not per NPC on the playfield. An NPC fires a pad once per visit: it stays in
+        /// <see cref="ZoneTriggerVolume.NpcOverlapping"/> until it leaves, so a lingering non-alien is not re-tested every
+        /// tick. No sweep: NPCs move a fraction of a pad per tick, and a dead one stops where it is.
+        /// </summary>
+        void TickNpcWalkIns(PlayfieldType playfield)
+        {
+            PlayfieldLocality locality = playfield.GetRequiredService<PlayfieldLocality>();
+            IReadOnlyList<ZoneTriggerVolume> pads = _triggers.NpcPads;
+            // A firing can remove its pad (a self-destructing owner); walk a count taken first and re-check membership.
+            for (int p = pads.Count - 1; p >= 0; p--)
+            {
+                if (p >= pads.Count)
+                    continue;
+                ZoneTriggerVolume pad = pads[p];
+                locality.CollectNear(new AoVector3(pad.CenterX, pad.CenterY, pad.CenterZ), pad.Radius, _tickNpcs);
+                if (_tickNpcs.Count == 0)
+                {
+                    pad.NpcOverlapping?.Clear();
+                    continue;
+                }
+
+                _npcsInsidePad.Clear();
+                HashSet<int> inside = pad.NpcOverlapping ??= new HashSet<int>();
+                for (int i = 0; i < _tickNpcs.Count; i++)
+                {
+                    NpcCharacter npc = _tickNpcs[i];
+                    if (npc.IsDead || !ReferenceEquals(npc.Playfield, playfield))
+                        continue;
+                    AoVector3 at = npc.Position;
+                    if (!TriggerVolumeCatalog.IsInside(pad, (float)at.x, (float)at.y, (float)at.z))
+                        continue;
+
+                    int id = npc.Identity.Instance;
+                    _npcsInsidePad.Add(id);
+                    if (!inside.Add(id))
+                        continue;
+
+                    // One NPC's failed walk-in is that NPC's problem, not the playfield's tick.
+                    try
+                    {
+                        FireTargetVicinity(playfield, npc, pad);
+                        // The world killed it: no loot, cash or credits on the corpse, so nobody farms the fence.
+                        if (npc.IsDead)
+                            npc.ForfeitSpoils();
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger.Error(exception, string.Format(CultureInfo.InvariantCulture,
+                            "NPC walk-in failed for {0} on pad {1:X8} playfield {2}; skipped this tick", id, pad.DynelInstance, _playfieldId));
+                    }
+                }
+
+                // Whoever left (or died and went) is forgotten, so a return fires again.
+                inside.IntersectWith(_npcsInsidePad);
+            }
+
+            _tickNpcs.Clear();
+            _npcsInsidePad.Clear();
         }
 
         /// <summary>
@@ -1370,10 +1444,15 @@
             _playerTriggerState.Remove(characterId);
         }
 
-        void FireTargetVicinity(PlayfieldType playfield, Player player, ZoneTriggerVolume pad)
+        /// <summary>
+        /// Runs a pad's rows on the character that walked into it: a player from the crossing pass, or an NPC from
+        /// <see cref="TickNpcWalkIns"/> on a pad that fires on NPCs. Only its criteria decide what lands on an NPC; a
+        /// scheduled AreaTrigger event is a player's static use and never runs for one.
+        /// </summary>
+        void FireTargetVicinity(PlayfieldType playfield, Character character, ZoneTriggerVolume pad)
         {
             ItemTemplate? events = pad.VicinityEvents;
-            if (events == null || player.Session == null)
+            if (events == null || character is Player { Session: null })
                 return;
 
             var criteria = new SpellCriteria { SourceDoorInstance = pad.DynelInstance };
@@ -1381,7 +1460,8 @@
                 && rows.Exists(DynelEventSpells.IsAreaTrigger))
             {
                 // Never infer a placed owner from proximity or its instance number alone.
-                if (playfield.GetRequiredService<DynelRegistry>().TryGet(pad.DynelIdentity, out ZoneEngine_New.Core.Entities.Dynel? dynel)
+                if (character is Player player
+                    && playfield.GetRequiredService<DynelRegistry>().TryGet(pad.DynelIdentity, out ZoneEngine_New.Core.Entities.Dynel? dynel)
                     && dynel is StaticDynel owner)
                 {
                     playfield.GetRequiredService<AreaTriggerService>().BeginEvent(owner, player, pad.StaticEvent, criteria);
@@ -1393,7 +1473,7 @@
             {
                 events.ExecuteSpells(
                     pad.StaticEvent,
-                    player,
+                    character,
                     playfield.GetRequiredService<IInventoryRepository>(),
                     playfield.GetRequiredService<IItemBuilder>(),
                     criteria);
@@ -1412,7 +1492,7 @@
                     destroysOwner |= IsSelfDestruct(row);
                     continue;
                 }
-                fired |= events.ExecuteStaticSpell(row, player, criteria);
+                fired |= events.ExecuteStaticSpell(row, character, criteria);
             }
 
             // Nothing ran on the player (its criteria failed: a GM, an NPC): the trap stays armed.
@@ -1584,7 +1664,9 @@
                 DynelInstance = identity.Instance,
                 DynelIdentity = identity,
                 StaticEvent = eventType,
-                VicinityEvents = events
+                VicinityEvents = events,
+                FiresOnNpcs = events.SpellList.TryGetValue(eventType, out List<ItemSpell>? padRows)
+                    && DynelEventSpells.TargetsNpcs(padRows)
             };
             float h = TriggerVolumeCatalog.HalfHeight(pad);
             pad.MinY = y - h;
@@ -1592,7 +1674,10 @@
             // Without a VicinityRange the pad is the ring's own collision sphere against the player's, as for a door:
             // the 1 m default made the Jobe rings (Harbour to Market 225784, sphere 3.96) fire only dead centre.
             if (!explicitRange)
-                ApplyClientSphere(pad, templateId, x, y, z, placedMesh: placedMesh, placedScale: placedScale);
+            {
+                int ownMesh = events.Stats.TryGetValue(CharacterStat.Mesh, out int mesh) && mesh > 0 ? mesh : 0;
+                ApplyClientSphere(pad, templateId, x, y, z, placedMesh: placedMesh, placedScale: placedScale, ownMesh: ownMesh);
+            }
             if (minRadius > pad.Radius)
             {
                 pad.Radius = minRadius;
@@ -1727,12 +1812,19 @@
             ApplyClientSphere(volume, placed.TemplateId, x, y, z, doorRotation, mesh, scale);
         }
 
+        /// <summary>
+        /// <paramref name="ownMesh"/> is the item's own Mesh stat, for a dynel with no placement (a hash-spawned static such
+        /// as the Unicorn Laser Fence 278035, mesh 279351): the client builds its sphere from that mesh, so when the
+        /// template itself has no sphere on file the mesh's is used.
+        /// </summary>
         void ApplyClientSphere(ZoneTriggerVolume volume, int templateId, float x, float y, float z, AoQuaternion? doorRotation = null,
-            int placedMesh = 0, int placedScale = 0)
+            int placedMesh = 0, int placedScale = 0, int ownMesh = 0)
         {
-            if (templateId <= 0
-                || !_gameData.TryGetDynelCollisionSphere(templateId, placedMesh, placedScale, out float radius, out float centerY)
-                || _gameData.PlayerCollisionSphere is not { } player)
+            if (templateId <= 0 || _gameData.PlayerCollisionSphere is not { } player)
+                return;
+            if (!_gameData.TryGetDynelCollisionSphere(templateId, placedMesh, placedScale, out float radius, out float centerY)
+                && (placedMesh > 0 || ownMesh <= 0
+                    || !_gameData.TryGetDynelCollisionSphere(templateId, ownMesh, placedScale, out radius, out centerY)))
                 return;
 
             TriggerVolumeCatalog.MakeClientSphere(volume, x, y, z, radius, centerY, player.Radius, player.CenterY);

@@ -92,6 +92,32 @@ namespace ZoneEngine_New.Core.WorldSimulation
         public static bool IsAreaTrigger(ItemSpell spell)
             => spell.Is(FunctionType.AreaTrigger) || spell.Is(FunctionType.RemoteAreaTrigger);
 
+        /// <summary>
+        /// Whether a walk-in list is also checked against NPCs that step into it: a row acting on the entering character
+        /// (not the owner) tests its NPCFamily (Unicorn Laser Fence 278035: Set Health 0 and SetFlag NPCFlags on
+        /// npcfamily == 220). Ordinary pads (teleport rings, altars, traps) stay player-only; a list carrying an
+        /// AreaTrigger belongs to the player-driven static event scheduler.
+        /// </summary>
+        public static bool TargetsNpcs(List<ItemSpell> rows)
+        {
+            ArgumentNullException.ThrowIfNull(rows);
+            if (rows.Exists(IsAreaTrigger))
+                return false;
+
+            foreach (ItemSpell row in rows)
+            {
+                if (row.Target == (int)ItemTarget.User || row.Requirements == null)
+                    continue;
+                foreach (ItemRequirement leaf in row.Requirements)
+                {
+                    if (leaf.StatNumber == (int)Characters.CharacterStat.NPCFamily)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         static bool CopyEvent(
             PlayfieldDynel dynel,
             Dictionary<EventType, List<ItemSpell>> spellList,

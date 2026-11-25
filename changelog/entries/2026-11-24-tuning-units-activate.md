@@ -1,0 +1,2 @@
+- Fixed: Activating an inactive Alpha, Sigma, Rho or Kappa Tuning Unit now gives you the activated unit instead of using it up with nothing in return.
+- Fixed: Several other containers and kits that hold a single item (including the Adventurer, Enforcer and Martial Artist Nanoprogram Containers) now give that item when used.

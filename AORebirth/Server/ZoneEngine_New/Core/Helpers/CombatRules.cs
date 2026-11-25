@@ -14,7 +14,8 @@ namespace ZoneEngine_New.Core.Helpers
 
     /// <summary>
     /// Bits from <see cref="FunctionType.ChangeActionRestriction"/>.
-    /// 214879 sets <see cref="PvPEnabled"/>; 202732 sets <see cref="PvPEnabled_Tower"/>.
+    /// 214879 sets <see cref="PvPEnabled"/>; 202732 sets <see cref="PvPEnabled_Tower"/>; 242890 Immortal sets
+    /// <see cref="CantBeAttacked"/>.
     /// </summary>
     [Flags]
     public enum ActionRestrictionFlags
@@ -24,6 +25,14 @@ namespace ZoneEngine_New.Core.Helpers
         PvPEnabled = 1,
 
         PvPEnabled_Tower = 67108864,
+
+        /// <summary>
+        /// Nobody may attack the holder. 242890 Immortal ("You cannot attack this target."), cast by the "No Attack 10
+        /// Minutes" item (242892) the Nascense named mobs wear (Craig-Or, Barad-Or, Sun-Len, Orad-Or). The client refuses
+        /// its own attack on such a target with Feedback_CantbeAttacked (Gamecode.dll 0x100699ed, stat 224 bit
+        /// 0x20000000); pets, nanos and specials are judged here.
+        /// </summary>
+        CantBeAttacked = 0x20000000,
     }
 
     /// <summary>Whether one character may engage another.</summary>
@@ -41,6 +50,10 @@ namespace ZoneEngine_New.Core.Helpers
                 return false;
 
             if (IsShieldedByGas(target) || IsInRestrictedGas(attacker))
+                return false;
+
+            // An Immortal buff shields its holder from everyone: players, their pets, NPCs.
+            if ((target.ActionRestrictionFlags & ActionRestrictionFlags.CantBeAttacked) != 0)
                 return false;
 
             // A NoCombat NPC does not attack, and neither does anyone whose fighting a buff restricts.
@@ -179,7 +192,9 @@ namespace ZoneEngine_New.Core.Helpers
         }
 
         /// <summary>
-        /// Flags granted by active buffs. Arg1 of 0 means the bits last as long as the buff.
+        /// Flags granted by active buffs. Arg1 of 0 (PvP Enabled 214879) or -1 (the Immortal nanos 242890, 304935: the
+        /// client refuses an attack on their holder) means the bits last as long as the buff. A positive arg1 (Portable
+        /// Surgery Clinic's 30) is not applied.
         /// </summary>
         public static ActionRestrictionFlags CollectActionRestrictions(IReadOnlyList<Buff> buffs, StatCollection stats)
         {
@@ -199,7 +214,7 @@ namespace ZoneEngine_New.Core.Helpers
                         continue;
                     if (!spell.TryReadInt(0, out int bits))
                         continue;
-                    if (spell.TryReadInt(1, out int mode) && mode != 0)
+                    if (spell.TryReadInt(1, out int mode) && mode > 0)
                         continue;
 
                     flags |= (ActionRestrictionFlags)bits;

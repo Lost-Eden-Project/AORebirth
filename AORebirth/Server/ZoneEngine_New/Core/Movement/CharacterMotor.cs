@@ -1432,6 +1432,80 @@ namespace ZoneEngine_New.Core.Movement
                     _character.Position.z));
         }
 
+        // CharFight_t (Gamecode 1007bdd3) +0xc, and CharTurn_t (1007c9b0 / 1007c8af) +0x10 / the yaw sign.
+        const float FightFacingCheckSeconds = 0.67f;
+        const float FightFacingSlackRadians = 0.26f;
+        const float FightTurnRate = 9f * 100f / 125f;
+        const float FightTurnDoneRadians = 0.005f;
+        float _fightFacingTimer;
+        float _fightTurnLeft = -1f;
+        float _fightTurnSign;
+
+        /// <summary>
+        /// The fight state's facing, as every client runs it for the NPCs it draws (LostEden client
+        /// <c>Character.UpdateFightFacing</c>): standing in combat with a target, every 0.67 s the angle between the
+        /// facing and the flat direction to the target is taken, and over 0.26 rad the body yaws the short way at
+        /// 7.2 rad/s until under 0.005 rad remains (the angle is fixed when the turn starts). Moving, casting or no
+        /// target restarts the timer; a keyboard turn holds it at 0. Without it a mob fighting a player who walked
+        /// around it kept its old heading on the server while every client showed it turned, so Backstab's "behind"
+        /// was judged against a heading nobody saw. Players are left alone: their heading is their client's.
+        /// </summary>
+        public void TickFightFacing(double deltaTime, Character? target, bool casting)
+        {
+            if (_npc == null)
+                return;
+
+            if (target == null || casting || IsMoving || _character.IsDead)
+            {
+                _fightFacingTimer = 0f;
+                _fightTurnLeft = -1f;
+                return;
+            }
+
+            float dt = (float)deltaTime;
+            if (dt <= 0f)
+                return;
+
+            if (_fightTurnLeft >= 0f)
+            {
+                float step = MathF.Min(FightTurnRate * dt, _fightTurnLeft);
+                float yaw = GetYawRadians() + (_fightTurnSign * step);
+                float half = yaw * 0.5f;
+                _character.Rotation = new Quaternion(0, MathF.Sin(half), 0, MathF.Cos(half));
+                _fightTurnLeft -= step;
+                if (_fightTurnLeft < FightTurnDoneRadians)
+                {
+                    _fightTurnLeft = -1f;
+                    _fightFacingTimer = 0f;
+                }
+
+                return;
+            }
+
+            _fightFacingTimer += dt;
+            if ((CurrentFlags & TurnFlags) != 0)
+            {
+                _fightFacingTimer = 0f;
+                return;
+            }
+
+            if (_fightFacingTimer <= FightFacingCheckSeconds)
+                return;
+            _fightFacingTimer = 0f;
+
+            float dx = (float)(target.Position.x - _character.Position.x);
+            float dz = (float)(target.Position.z - _character.Position.z);
+            if (Math.Abs(dx) < 1e-5f && Math.Abs(dz) < 1e-5f)
+                return;
+
+            float angle = NormalizeRadians(MathF.Atan2(dx, dz) - GetYawRadians());
+            if (Math.Abs(angle) <= FightFacingSlackRadians)
+                return;
+
+            _fightTurnLeft = Math.Abs(angle);
+            _fightTurnSign = Math.Sign(angle);
+        }
+
         void SetYawFrom(Vec3 forward)
         {
             if (Math.Abs(forward.X) < 1e-5f && Math.Abs(forward.Z) < 1e-5f)

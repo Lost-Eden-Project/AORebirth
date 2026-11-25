@@ -182,7 +182,7 @@ namespace ZoneEngine_New.Tests
             Player player = TestWorld.CreatePlayer(1);
             player.Stats.Set(CharacterStat.MaxNCU, 60);
 
-            Assert.AreEqual(BuffApplyDecision.Apply, Apply(player, 214879, (int)ActionRestrictionFlags.PvPEnabled, mode: -1));
+            Assert.AreEqual(BuffApplyDecision.Apply, Apply(player, 214879, (int)ActionRestrictionFlags.PvPEnabled, mode: 30));
             Assert.AreEqual(ActionRestrictionFlags.None, player.ActionRestrictionFlags);
         }
 

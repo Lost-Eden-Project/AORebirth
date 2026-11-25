@@ -70,9 +70,6 @@ namespace ZoneEngine_New.Core.Entities
 
         public CharacterSaveState SaveState { get; } = new();
 
-        /// <summary>Rebuilt from active <see cref="FunctionType.ChangeActionRestriction"/> buffs.</summary>
-        public ActionRestrictionFlags ActionRestrictionFlags { get; internal set; }
-
         /// <summary>Quests from characterquests; loaded by <see cref="Quests.QuestService"/> on first use.</summary>
         public Quests.QuestLog? QuestLog { get; set; }
 
@@ -2627,7 +2624,6 @@ namespace ZoneEngine_New.Core.Entities
             ApplyBonusLayers();
             for (int pass = 0; pass < MaxOverEquipPasses && Inventory.IsHydrated && Inventory.ApplyOverEquip(Stats); pass++)
                 ApplyBonusLayers();
-            ActionRestrictionFlags = CombatRules.CollectActionRestrictions(Buffs, Stats);
             RebaseWearAppearance();
             RebaseMaxHealth();
             RebaseMaxNano();

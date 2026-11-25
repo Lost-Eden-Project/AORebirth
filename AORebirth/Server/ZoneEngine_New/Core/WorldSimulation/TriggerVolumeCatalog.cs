@@ -135,6 +135,15 @@ namespace ZoneEngine_New.Core.WorldSimulation
         public Inventory.ItemTemplate? VicinityEvents;
 
         /// <summary>
+        /// A walk-in pad NPCs set off as well as players (<see cref="DynelEventSpells.TargetsNpcs"/>): the Unicorn Laser
+        /// Fence kills the alien that steps into it.
+        /// </summary>
+        public bool FiresOnNpcs;
+
+        /// <summary>NPC instances currently standing in a <see cref="FiresOnNpcs"/> pad: one that lingers fires once.</summary>
+        public HashSet<int>? NpcOverlapping;
+
+        /// <summary>
         /// A portal dynel's walk-in functions with their criteria (<see cref="DynelEventSpells.ReadWalkIn"/>): the
         /// teleport runs only when its criteria pass; otherwise the matching Text functions are said instead.
         /// </summary>
@@ -225,6 +234,17 @@ namespace ZoneEngine_New.Core.WorldSimulation
 
         readonly List<ZoneTriggerVolume> _all = new();
         readonly Dictionary<long, List<ZoneTriggerVolume>> _bins = new();
+        readonly List<ZoneTriggerVolume> _npcPads = new();
+
+        /// <summary>The walk-in pads NPCs set off (<see cref="ZoneTriggerVolume.FiresOnNpcs"/>); usually none or a few.</summary>
+        public IReadOnlyList<ZoneTriggerVolume> NpcPads => _npcPads;
+
+        /// <summary>Whether a character standing at the point is inside the trigger (the lingering test, no sweep).</summary>
+        public static bool IsInside(ZoneTriggerVolume volume, float x, float y, float z)
+        {
+            ArgumentNullException.ThrowIfNull(volume);
+            return Contains(volume, x, y, z);
+        }
 
         public int WallTriggerCount { get; private set; }
 
@@ -272,6 +292,8 @@ namespace ZoneEngine_New.Core.WorldSimulation
                 TeleportalTriggerCount++;
             else if (volume.Kind == ZoneTriggerKind.WaterExit)
                 WaterExitTriggerCount++;
+            if (volume.FiresOnNpcs)
+                _npcPads.Add(volume);
 
             int minBinX = (int)MathF.Floor(volume.MinX / BinSize);
             int maxBinX = (int)MathF.Floor(volume.MaxX / BinSize);
@@ -318,6 +340,7 @@ namespace ZoneEngine_New.Core.WorldSimulation
             _all.RemoveAt(index);
             if (volume.Kind == ZoneTriggerKind.TargetVicinity)
                 VicinityTriggerCount--;
+            _npcPads.Remove(volume);
 
             int minBinX = (int)MathF.Floor(volume.MinX / BinSize);
             int maxBinX = (int)MathF.Floor(volume.MaxX / BinSize);

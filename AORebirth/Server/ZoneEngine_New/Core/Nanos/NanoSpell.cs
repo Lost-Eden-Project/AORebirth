@@ -165,6 +165,32 @@ namespace ZoneEngine_New.Core.Nanos
         /// <summary>Higher wins within a strain.</summary>
         public int StackingOrder { get; }
 
+        /// <summary>
+        /// True when an OnUse function of this nano casts <paramref name="nanoId"/> (CastNano, TeamCastNano,
+        /// AreaCastNano, PlayfieldNano, CastOnPets or a CastNanoIfPossible variant), on the land or from a repeating tick.
+        /// Refresh Outfit (Team) 223241 launches its nano-heal 216580 this way.
+        /// </summary>
+        public bool LaunchesNano(int nanoId)
+        {
+            if (!SpellList.TryGetValue(EventType.OnUse, out List<ItemSpell>? spells))
+                return false;
+
+            for (int i = 0; i < spells.Count; i++)
+            {
+                ItemSpell spell = spells[i];
+                if (IsNanoLaunch((FunctionType)spell.FunctionType) && spell.TryReadInt(0, out int launched) && launched == nanoId)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool IsNanoLaunch(FunctionType function)
+            => function is FunctionType.CastNano or FunctionType.TeamCastNano or FunctionType.AreaCastNano
+                or FunctionType.PlayfieldNano or FunctionType.CastOnPets or FunctionType.CastNanoIfPossible
+                or FunctionType.NpcCastNanoIfPossible or FunctionType.CastNanoIfPossibleOnFightTarget
+                or FunctionType.NpcCastNanoIfPossibleOnFightTarget;
+
         public int NcuCost { get; }
 
         /// <summary>Base nano point cost before <see cref="CharacterStat.NPCostModifier"/>.</summary>

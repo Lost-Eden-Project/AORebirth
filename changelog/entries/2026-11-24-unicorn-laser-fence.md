@@ -1,0 +1,1 @@
+- Fixed: Unicorn Laser Fences now kill the aliens that walk into them, as at the Sector 10 outposts. Players and other NPCs pass through unharmed, and an alien the fence kills leaves nothing to loot.

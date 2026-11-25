@@ -1,0 +1,2 @@
+- Changed: Guards no longer give experience when killed. This covers city guards, patrollers and watchers, and the city merchants that fight back like guards.
+- Fixed: Urban Guard Patrollers and the other Clan patrollers that were not acting as guards now defend players like the rest of the city guard.
