@@ -13,5 +13,8 @@
   "ManageMinRanksAboveLowest": 1,
   "MaxHousesPerPlot": 40,
   "InteractionRange": 15.0,
-  "PendingTimeoutMinutes": 30
+  "PendingTimeoutMinutes": 30,
+  "InsideEntryDoors": {
+    "4357": "C0011105"
+  }
 }
