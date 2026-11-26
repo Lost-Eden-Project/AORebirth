@@ -181,7 +181,13 @@ namespace ChatEngine
                     LftSearch.Read(client, packet);
                     break;
                 default:
-                    client.Server.Warning(client, "Client sent unknown message {0}", messageNumber.ToString());
+                    // The chat protocol has no resync point. An opcode this server never accepts means the stream is
+                    // off its frame boundaries (a bot whose frame exceeded the 16-bit length field and wrapped), and
+                    // every later byte would be swallowed as garbage headers while the sender sees no error. Drop the
+                    // connection so the sender reconnects, as the retail chat server did.
+                    client.Server.Warning(
+                        client, "Client sent unknown message {0}; disconnecting the desynchronized stream", messageNumber.ToString());
+                    client.Server.DisconnectClient(client);
                     return false;
             }
 

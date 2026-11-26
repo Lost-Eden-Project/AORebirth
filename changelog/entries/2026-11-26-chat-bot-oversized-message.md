@@ -1,0 +1,1 @@
+- Fixed: A chat bot that sends one message too long for the chat protocol is now disconnected at once so it reconnects, instead of the chat server silently dropping every tell it sends afterwards.

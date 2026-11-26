@@ -452,12 +452,19 @@ namespace Cell.Core
             Info(client, Resources.ClientDisconnected);
 
             ClientDisconnectedHandler handler = ClientDisconnected;
-            if (handler != null)
+            try
             {
-                handler(client, forced);
+                if (handler != null)
+                {
+                    handler(client, forced);
+                }
             }
-
-            client.Dispose();
+            finally
+            {
+                // A disconnect must close the socket even when a handler fails (database, World link): a client left
+                // half-alive keeps reading a stream the server has given up on.
+                client.Dispose();
+            }
         }
 
         protected void StartTCP()

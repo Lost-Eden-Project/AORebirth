@@ -130,14 +130,45 @@ public sealed class ChatNetworkTests
     }
 
     [TestMethod]
-    public void UnknownCompleteFrameDoesNotEatTheFollowingTell()
+    public void UnknownOpcodeDisconnectsTheSenderInsteadOfSwallowingTheFollowingTell()
     {
         using var world = new ChatWorld();
-        const string message = "after unknown opcode";
+        Assert.IsTrue(world.Sender.HasSocket);
 
-        world.Sender.Feed(Join(Frame(0x7FFE, new byte[] { 0xAA, 0xBB }), TellFrame(RecipientId, message)));
+        world.Sender.Feed(Join(Frame(0x7FFE, new byte[] { 0xAA, 0xBB }), TellFrame(RecipientId, "after unknown opcode")));
 
-        AssertTells(world, message);
+        // No resync point exists, so the stream is dropped: the sender reconnects rather than talking into a void.
+        Assert.IsFalse(world.Sender.HasSocket);
+        Assert.AreEqual(0, world.Recipient.Sent.Count);
+    }
+
+    /// <summary>
+    /// Lost Eden 2026-11-26: Nadybot answered a player with a tell longer than the 16-bit frame length, so its
+    /// length fields wrapped. The server relayed the wrapped prefix, then read the leftover text as frame headers
+    /// and silently swallowed every later tell from the bot for ten minutes while the bot saw no error.
+    /// </summary>
+    [TestMethod]
+    public void TellWhoseFrameLengthWrappedDisconnectsTheBotSoLaterTellsAreNotSilentlyLost()
+    {
+        using var world = new ChatWorld();
+        const int textLength = 70000;
+        byte[] text = Encoding.ASCII.GetBytes(new string('x', textLength));
+        byte[] body = new byte[8 + textLength];
+        BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(0, 4), RecipientId);
+        BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(4, 2), unchecked((ushort)textLength));
+        text.CopyTo(body, 6);
+        byte[] oversized = new byte[body.Length + 4];
+        BinaryPrimitives.WriteUInt16BigEndian(oversized.AsSpan(0, 2), 30);
+        BinaryPrimitives.WriteUInt16BigEndian(oversized.AsSpan(2, 2), unchecked((ushort)body.Length));
+        body.CopyTo(oversized, 4);
+
+        world.Sender.FeedInReceiveSegments(Join(oversized, TellFrame(RecipientId, "the next answer")));
+
+        // The wrapped prefix is self-consistent and goes out as live showed; the garbage after it ends the stream.
+        Assert.AreEqual(1, world.Recipient.Sent.Count);
+        byte[] relayed = world.Recipient.Sent[0];
+        Assert.AreEqual(textLength % 65536, (int)BinaryPrimitives.ReadUInt16BigEndian(relayed.AsSpan(8, 2)));
+        Assert.IsFalse(world.Sender.HasSocket);
     }
 
     [TestMethod]
@@ -440,6 +471,12 @@ public sealed class ChatNetworkTests
                 _tcpSock.Dispose();
                 _tcpSock = socket;
             }
+
+            // The fixture stands for a connection that already proved its character; Parser drops anything else.
+            typeof(ChatClient).GetMethod("MarkChatReady", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(this, null);
+            // A plain player: the GM line flag otherwise reads the fixture character's login row from the database.
+            typeof(ChatEngine.CoreClient.Character).GetField("characterGMLevel", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(Character, 0);
         }
 
         protected override bool OnReceive(BufferSegment buffer)
@@ -475,8 +512,9 @@ public sealed class ChatNetworkTests
 
         public void FeedInReceiveSegments(byte[] wire)
         {
-            for (int offset = 0; offset < wire.Length; offset += ClientBase.BufferSize)
+            for (int offset = 0; offset < wire.Length && HasSocket; offset += ClientBase.BufferSize)
             {
+                // ProcessReceive stops reading a disposed client; a disconnected stream gets no further chunk.
                 Feed(wire.AsSpan(offset, Math.Min(ClientBase.BufferSize, wire.Length - offset)));
             }
         }
