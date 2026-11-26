@@ -190,7 +190,7 @@ namespace ZoneEngine_New.Core.World
             Tell(player, message);
         }
 
-        static TransferEnvelope BuildEnvelope(Player player, int destinationPlayfield, Vector3 landing, Quaternion heading,
+        internal static TransferEnvelope BuildEnvelope(Player player, int destinationPlayfield, Vector3 landing, Quaternion heading,
             ArrivalKind arrival, int exitProxyDoor)
         {
             var envelope = new TransferEnvelope
@@ -217,7 +217,7 @@ namespace ZoneEngine_New.Core.World
                     || Pets.PetTypes.StaysBehind(controller.Type))
                     continue;
                 int max = pet.Stats.GetOrZero(CharacterStat.MaxHealth);
-                envelope.Pets.Add(new PetEnvelope
+                var carried = new PetEnvelope
                 {
                     Hash = controller.Hash,
                     Level = controller.Level,
@@ -225,12 +225,41 @@ namespace ZoneEngine_New.Core.World
                     RemainingSeconds = controller.ExpiresUtc is DateTime expires
                         ? Math.Max(1, (int)Math.Ceiling((expires - now).TotalSeconds))
                         : 0,
-                    Mode = (int)controller.Mode,
+                    // An attack order's target stays on this instance: the pet goes on with what it did before it.
+                    Mode = (int)(controller.Mode == Pets.PetMode.Attack ? controller.ModeBeforeAttack : controller.Mode),
                     AggDef = pet.Stats.GetOrZero(CharacterStat.AggDef, StatDetail.Base)
-                });
+                };
+                AddPetBuffs(carried, pet, now);
+                envelope.Pets.Add(carried);
             }
 
             return envelope;
+        }
+
+        /// <summary>The pet's NCU with the time each buff has left, and what is left of its absorb pools.</summary>
+        internal static void AddPetBuffs(PetEnvelope carried, NpcCharacter pet, DateTime nowUtc)
+        {
+            foreach (Nanos.Buff buff in pet.Buffs)
+            {
+                int remaining = buff.RemainingCentiseconds(nowUtc);
+                if (remaining <= 0 || buff.NanoInstance <= 0)
+                    continue;
+                carried.Buffs.Add(new PetBuffEnvelope
+                {
+                    NanoId = buff.Id,
+                    NanoInstance = buff.NanoInstance,
+                    RemainingCentiseconds = remaining,
+                    SourceType = (int)buff.Source.Type,
+                    SourceInstance = buff.Source.Instance
+                });
+            }
+
+            for (CharacterStat stat = CharacterStat.AbsorbProjectileAC; stat <= CharacterStat.AbsorbNanoAC; stat++)
+            {
+                int pool = pet.Stats.GetOrZero(stat, StatDetail.Base);
+                if (pool > 0)
+                    carried.AbsorbPools[(int)stat] = pool;
+            }
         }
 
         static void Tell(Player player, string text)
@@ -246,24 +275,21 @@ namespace ZoneEngine_New.Core.World
     /// <summary>The arriving side of a cross-instance move.</summary>
     public static class EnvelopeApplier
     {
-        /// <summary>Summons again the pets the character brought, beside it, with their health and remaining time.</summary>
+        /// <summary>
+        /// Summons again the pets the character brought, beside it, with their health, remaining time, order and NCU.
+        /// </summary>
         public static void SummonPets(PlayfieldInstance playfield, Player player, TransferEnvelope envelope, IZoneLogger logger)
         {
             if (envelope.Pets.Count == 0) return;
             var pets = playfield.GetRequiredService<Pets.PetService>();
+            IItemBuilder items = playfield.GetRequiredService<IItemBuilder>();
             foreach (PetEnvelope carried in envelope.Pets)
             {
                 try
                 {
                     NpcCharacter? pet = pets.Summon(player, carried.Hash, carried.Level, carried.RemainingSeconds);
                     if (pet == null) continue;
-                    int max = pet.Stats.GetOrZero(CharacterStat.MaxHealth);
-                    if (max > 0)
-                        pet.Stats.Set(CharacterStat.Health, Math.Max(1, (int)Math.Round(max * carried.HealthFraction)), StatDetail.Base, dirty: true);
-                    if (carried.HasAggDef)
-                        pet.Stats.Set(CharacterStat.AggDef, carried.AggDef, StatDetail.Base, dirty: true);
-                    if (Enum.IsDefined(typeof(Pets.PetMode), carried.Mode))
-                        pet.Pet?.Order((Pets.PetMode)carried.Mode);
+                    RestorePet(pet, carried, items, DateTime.UtcNow);
                 }
                 catch (Exception exception)
                 {
@@ -271,6 +297,41 @@ namespace ZoneEngine_New.Core.World
                         + player.Identity.Instance.ToString(CultureInfo.InvariantCulture) + " failed");
                 }
             }
+        }
+
+        /// <summary>
+        /// Puts a freshly summoned pet back the way it left. Its buffs return first, with the time they had left and
+        /// their absorb pools as they stood (never a fresh grant), so health is set against the buffed maximum.
+        /// </summary>
+        internal static void RestorePet(NpcCharacter pet, PetEnvelope carried, IItemBuilder items, DateTime nowUtc)
+        {
+            foreach (PetBuffEnvelope buff in carried.Buffs)
+            {
+                if (buff.NanoId <= 0 || buff.NanoInstance <= 0 || buff.RemainingCentiseconds <= 0)
+                    continue;
+                Nanos.NanoSpell spell = Nanos.NanoSpell.From(items.CreateTemplate(buff.NanoId, buff.NanoId, quality: 1));
+                var source = new Identity { Type = (IdentityType)buff.SourceType, Instance = buff.SourceInstance };
+                pet.TryRestoreBuff(spell, source, buff.NanoInstance,
+                    nowUtc.AddMilliseconds(Math.Min(buff.RemainingCentiseconds, Nanos.Buff.MaxDurationCentiseconds) * 10L));
+            }
+
+            if (carried.Buffs.Count > 0)
+            {
+                for (CharacterStat stat = CharacterStat.AbsorbProjectileAC; stat <= CharacterStat.AbsorbNanoAC; stat++)
+                    pet.Stats.Set(stat, carried.AbsorbPools.TryGetValue((int)stat, out int pool) ? Math.Max(0, pool) : 0, StatDetail.Base);
+                // Each pool goes back to the buffs that grant it, up to their grant; what no buff accounts for is dropped.
+                pet.ReconcileAbsorbs();
+                pet.RebaseStats();
+            }
+
+            int max = pet.Stats.GetOrZero(CharacterStat.MaxHealth);
+            if (max > 0)
+                pet.Stats.Set(CharacterStat.Health, Math.Max(1, (int)Math.Round(max * carried.HealthFraction)), StatDetail.Base, dirty: true);
+            if (carried.HasAggDef)
+                pet.Stats.Set(CharacterStat.AggDef, carried.AggDef, StatDetail.Base, dirty: true);
+            // An attack order never crosses (its target is on the other instance); an older sender may still send one.
+            if (Enum.IsDefined(typeof(Pets.PetMode), carried.Mode) && (Pets.PetMode)carried.Mode != Pets.PetMode.Attack)
+                pet.Pet?.Order((Pets.PetMode)carried.Mode);
         }
     }
 }

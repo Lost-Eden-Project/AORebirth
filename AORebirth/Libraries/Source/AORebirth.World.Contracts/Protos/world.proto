@@ -491,6 +491,18 @@ message PetEnvelope {
   int32 mode = 5;
   // The robot's AGG/DEF setting (stat 51), as a Trimmer left it.
   optional int32 agg_def = 6;
+  // Its NCU, each with the time it had left: a pet keeps its buffs across a move, as it does inside one instance.
+  repeated PetBuffEnvelope buffs = 7;
+  // What is left of its absorb pools (stat id -> amount), shared out again over the buffs that grant them.
+  map<int32, int32> absorb_pools = 8;
+}
+
+message PetBuffEnvelope {
+  int32 nano_id = 1;
+  int32 nano_instance = 2;
+  int32 remaining_centiseconds = 3;
+  int32 source_type = 4;
+  int32 source_instance = 5;
 }
 
 message PresenceUpdate {
