@@ -3,10 +3,13 @@ namespace ZoneEngine_New.Tests;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading;
 
+using AORebirth.Database.Domain.Characters;
 using AORebirth.Enums;
+using AORebirth.Interfaces.Persistence.Characters;
 
 using LostEden.Protocol.GameData;
 using LostEden.Protocol.Messages;
@@ -91,6 +94,66 @@ public sealed class TeamNanoChildOnParentLineTests
         Assert.IsFalse(
             session.Sent.OfType<FeedbackMessage>().Any(message => message.MessageId == ncuError),
             "No \"Better nano program already running\" for the caster's own child.");
+    }
+
+    /// <summary>
+    /// Lost Eden v0.15.0 (2026-11-26): with parent and child both running on line 588, the caster's save rejected its
+    /// own NCU ("Invalid or duplicate active nano identity.") and the flush lane retried that write every 10 s. Every
+    /// later inventory change for the character queued behind it unsaved, and hard flushes broke the playfield tick.
+    /// The save must store both rows, through the coalesced flush and through the NCU-only write.
+    /// </summary>
+    [TestMethod]
+    public void TheCastersSaveStoresAParentAndTheChildItLaunchedOnTheSameLine()
+    {
+        var items = new Items(Parent(), Child());
+        Player caster = NewPlayer(new Session(), items);
+        Assert.IsTrue(NanoRuntime.TryApplyImmediate(caster, caster, ParentId, items, new Inventory(), DateTime.UtcNow));
+
+        List<ActiveNanoRecord> snapshot = caster.TakeDirtyActiveNanos()!;
+        Assert.IsNotNull(snapshot, "The land must leave NCU dirty for the flush.");
+        CollectionAssert.AreEquivalent(new[] { ParentId, ChildId }, snapshot.Select(n => n.NanoId).ToArray());
+        Assert.IsTrue(snapshot.All(n => n.Strain == Line), "Both run on line 588.");
+
+        var flush = new RecordingDatabase();
+        var logger = new Logger();
+        var flushDao = new MySqlCharacterPersistenceDao(flush.Connect);
+        new MySqlCharacterCoalesceCommit(
+                new MySqlInventoryRepository(logger, flushDao),
+                new MySqlUploadedNanoRepository(logger, flushDao),
+                new MySqlActiveNanoRepository(flushDao),
+                logger)
+            .Persist([], [], Caster.Instance, [], snapshot, null);
+        AssertStored(flush, snapshot);
+
+        var ncuOnly = new RecordingDatabase();
+        new MySqlActiveNanoRepository(new MySqlCharacterPersistenceDao(ncuOnly.Connect)).WriteReplaceAll(Caster.Instance, snapshot);
+        AssertStored(ncuOnly, snapshot);
+    }
+
+    [TestMethod]
+    public void TheSaveStillRefusesTwoNcuRowsWithOneNanoInstance()
+    {
+        var dao = new MySqlCharacterPersistenceDao(new RecordingDatabase().Connect);
+        PersistedActiveNanoData[] rows =
+        [
+            new() { NanoId = ParentId, Strain = Line, NanoInstance = 7, DurationCentiseconds = 6000, ExpiresAtUtcTicks = 1 },
+            new() { NanoId = ChildId, Strain = Line, NanoInstance = 7, DurationCentiseconds = 800, ExpiresAtUtcTicks = 1 }
+        ];
+
+        Assert.ThrowsExactly<ArgumentException>(() => dao.SaveInventoryAndUploadedNanos(Caster.Instance, [], [], [], rows));
+        Assert.ThrowsExactly<ArgumentException>(() => dao.CommitActiveNanos(
+            [new CharacterActiveNanoData { CharacterId = Caster.Instance, BaseStats = [], ActiveNanos = rows }]));
+    }
+
+    static void AssertStored(RecordingDatabase db, IReadOnlyList<ActiveNanoRecord> snapshot)
+    {
+        Assert.IsTrue(db.Transactions.Count == 1 && db.Transactions[0].Committed, "One committed transaction.");
+        Assert.AreEqual(1, db.Statements.Count(s => s.Text.StartsWith("DELETE FROM charactersactivenanos", StringComparison.Ordinal)));
+        CollectionAssert.AreEquivalent(
+            snapshot.Select(n => n.NanoInstance).ToArray(),
+            db.Statements.Where(s => s.Text.StartsWith("INSERT INTO charactersactivenanos", StringComparison.Ordinal))
+                .Select(s => (int)s.Values["@Instance"]!).ToArray(),
+            "Each running nano is stored once.");
     }
 
     static Buff Require(Character character, int nanoId)
@@ -214,6 +277,107 @@ public sealed class TeamNanoChildOnParentLineTests
             => _templates.TryGetValue(lowId, out ItemTemplate? template) ? template : new ItemTemplate { Id = lowId, Quality = quality };
 
         public bool TryFromInstanceRecord(ItemInstanceRecord row, out Item item) => throw new NotSupportedException();
+    }
+
+    /// <summary>Records every statement the DAO runs; the character row exists, so its lock succeeds.</summary>
+    sealed class RecordingDatabase
+    {
+        internal readonly List<RecordedTransaction> Transactions = [];
+        internal readonly List<(string Text, Dictionary<string, object?> Values)> Statements = [];
+
+        internal IDbConnection Connect() => new Connection(this);
+
+        sealed class Connection(RecordingDatabase db) : IDbConnection
+        {
+            [System.Diagnostics.CodeAnalysis.AllowNull]
+            public string ConnectionString { get; set; } = string.Empty;
+            public int ConnectionTimeout => 0;
+            public string Database => "fake";
+            public ConnectionState State { get; private set; }
+            public IDbTransaction BeginTransaction() => BeginTransaction(IsolationLevel.Unspecified);
+            public IDbTransaction BeginTransaction(IsolationLevel il)
+            {
+                var transaction = new RecordedTransaction(this, il);
+                db.Transactions.Add(transaction);
+                return transaction;
+            }
+            public void ChangeDatabase(string databaseName) { }
+            public void Close() => State = ConnectionState.Closed;
+            public IDbCommand CreateCommand() => new Command(db) { Connection = this };
+            public void Open() => State = ConnectionState.Open;
+            public void Dispose() => Close();
+        }
+
+        sealed class Command(RecordingDatabase db) : IDbCommand
+        {
+            readonly Parameters _parameters = [];
+            [System.Diagnostics.CodeAnalysis.AllowNull]
+            public string CommandText { get; set; } = string.Empty;
+            public int CommandTimeout { get; set; }
+            public CommandType CommandType { get; set; }
+            public IDbConnection? Connection { get; set; }
+            IDataParameterCollection IDbCommand.Parameters => _parameters;
+            public IDbTransaction? Transaction { get; set; }
+            public UpdateRowSource UpdatedRowSource { get; set; }
+            public void Cancel() { }
+            public IDbDataParameter CreateParameter() => new Parameter();
+            public int ExecuteNonQuery()
+            {
+                db.Statements.Add((CommandText, _parameters.Cast<Parameter>().ToDictionary(p => p.ParameterName, p => p.Value)));
+                return 1;
+            }
+            public IDataReader ExecuteReader() => throw new NotSupportedException(CommandText);
+            public IDataReader ExecuteReader(CommandBehavior behavior) => throw new NotSupportedException(CommandText);
+            public object? ExecuteScalar() => CommandText.StartsWith("SELECT Id FROM characters", StringComparison.Ordinal)
+                ? Caster.Instance
+                : throw new NotSupportedException(CommandText);
+            public void Prepare() { }
+            public void Dispose() { }
+        }
+
+        sealed class Parameters : System.Collections.ArrayList, IDataParameterCollection
+        {
+            public object this[string parameterName]
+            {
+                get => this[IndexOf(parameterName)]!;
+                set => this[IndexOf(parameterName)] = value;
+            }
+            public bool Contains(string parameterName) => IndexOf(parameterName) >= 0;
+            public int IndexOf(string parameterName)
+            {
+                for (int i = 0; i < Count; i++)
+                    if (((Parameter)this[i]!).ParameterName == parameterName)
+                        return i;
+                return -1;
+            }
+            public void RemoveAt(string parameterName) => RemoveAt(IndexOf(parameterName));
+        }
+
+        sealed class Parameter : IDbDataParameter
+        {
+            public byte Precision { get; set; }
+            public byte Scale { get; set; }
+            public int Size { get; set; }
+            public DbType DbType { get; set; }
+            public ParameterDirection Direction { get; set; }
+            public bool IsNullable => true;
+            [System.Diagnostics.CodeAnalysis.AllowNull]
+            public string ParameterName { get; set; } = string.Empty;
+            [System.Diagnostics.CodeAnalysis.AllowNull]
+            public string SourceColumn { get; set; } = string.Empty;
+            public DataRowVersion SourceVersion { get; set; }
+            public object? Value { get; set; }
+        }
+    }
+
+    sealed class RecordedTransaction(IDbConnection connection, IsolationLevel isolation) : IDbTransaction
+    {
+        internal bool Committed;
+        public IDbConnection Connection => connection;
+        public IsolationLevel IsolationLevel => isolation;
+        public void Commit() => Committed = true;
+        public void Rollback() { }
+        public void Dispose() { }
     }
 
     sealed class Inventory : IInventoryRepository

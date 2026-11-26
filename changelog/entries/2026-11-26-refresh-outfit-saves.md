@@ -1,0 +1,1 @@
+- Fixed: Casting Refresh Outfit (Team) no longer stops your character's progress, items and buffs from being saved.

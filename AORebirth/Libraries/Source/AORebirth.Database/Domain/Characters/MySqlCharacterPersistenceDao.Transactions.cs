@@ -26,8 +26,8 @@ namespace AORebirth.Database.Domain.Characters
                 throw new ArgumentException("Invalid or duplicate skill lock.", nameof(skillLocks));
             if (activeNanos != null
                 && (activeNanos.Any(n => n.NanoId <= 0 || n.NanoInstance <= 0 || n.DurationCentiseconds < 0 || n.ExpiresAtUtcTicks < 0)
-                    // Strain 0 is "no strain": those nanos never conflict in NCU, so only real strains must be unique.
-                    || activeNanos.Where(n => n.Strain > 0).Select(n => n.Strain).Distinct().Count() != activeNanos.Count(n => n.Strain > 0)
+                    // NanoInstance is the identity, not the strain: a buff and the nano it launches share a line on the
+                    // caster (Refresh Outfit 223241 and its heal 216580, both line 588), and so does strain 0.
                     || activeNanos.Select(n => n.NanoInstance).Distinct().Count() != activeNanos.Count))
                 throw new ArgumentException("Invalid or duplicate active nano identity.", nameof(activeNanos));
             Transaction((c, t) =>
@@ -277,7 +277,6 @@ namespace AORebirth.Database.Domain.Characters
                 throw new ArgumentException("Distinct positive nano owners are required.", nameof(characters));
             foreach (var character in characters)
                 if (character.ActiveNanos.Any(n => n.NanoId <= 0 || n.NanoInstance <= 0 || n.DurationCentiseconds < 0 || n.ExpiresAtUtcTicks < 0)
-                    || character.ActiveNanos.Select(n => n.Strain).Distinct().Count() != character.ActiveNanos.Count
                     || character.ActiveNanos.Select(n => n.NanoInstance).Distinct().Count() != character.ActiveNanos.Count)
                     throw new ArgumentException("Invalid or duplicate active nano identity.", nameof(characters));
             Transaction((c, t) =>
