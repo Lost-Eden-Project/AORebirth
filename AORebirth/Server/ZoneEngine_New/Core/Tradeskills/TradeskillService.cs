@@ -51,6 +51,9 @@ namespace ZoneEngine_New.Core.Tradeskills
 
         /// <summary>Swapped whole by <see cref="ReloadCatalog"/>; each lookup reads it once.</summary>
         volatile TradeskillCatalog _catalog;
+        /// <summary>ItemGroups.csv, swapped whole with the recipes by <see cref="ReloadCatalog"/>.</summary>
+        volatile GameData.ItemLineCatalog _lines;
+        readonly GameData.IGameData _gameData;
         readonly string _gameDataRoot;
         readonly InventoryActionService _inventory;
         readonly IItemBuilder _items;
@@ -91,18 +94,40 @@ namespace ZoneEngine_New.Core.Tradeskills
             _templates = templates ?? throw new ArgumentNullException(nameof(templates));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             ArgumentNullException.ThrowIfNull(gameData);
+            _gameData = gameData;
             _gameDataRoot = gameData.RootPath;
             _skillNames = new Lazy<IReadOnlyDictionary<int, string>>(() => LoadSkillNames(gameData.RootPath));
+            _lines = LoadLines() ?? GameData.ItemLineCatalog.Empty;
         }
 
         public TradeskillCatalog Catalog => _catalog;
 
+        /// <summary>ItemGroups.csv, or null (warned) when it cannot be read.</summary>
+        GameData.ItemLineCatalog? LoadLines()
+        {
+            try
+            {
+                return GameData.ItemLineCatalog.Load(_gameDataRoot);
+            }
+            catch (Exception exception) when (exception is System.IO.IOException or System.IO.InvalidDataException
+                or UnauthorizedAccessException)
+            {
+                _logger.Warn(GameData.ItemLineCatalog.FileName + " not read; tradeskill results keep their recipe's two templates: "
+                    + exception.Message);
+                return null;
+            }
+        }
+
         /// <summary>
         /// Reads Tradeskills.json again (through the GameData override folder) and swaps the recipes in whole; a file
-        /// that fails to read or parse keeps the old recipes. Reads a file: never call it on a playfield tick.
+        /// that fails to read or parse keeps the old recipes. ItemGroups.csv is read again with it, and kept as it was
+        /// when it fails. Reads files: never call it on a playfield tick.
         /// </summary>
         public AORebirth.Modules.Content.GameDataReloadResult ReloadCatalog()
         {
+            if (LoadLines() is GameData.ItemLineCatalog lines)
+                _lines = lines;
+
             TradeskillCatalog loaded;
             try
             {
@@ -278,8 +303,10 @@ namespace ZoneEngine_New.Core.Tradeskills
 
             TradeskillRecipe recipe = plan.Recipe;
             int quality = requestedQl is int asked ? Math.Clamp(asked, plan.MinQl, plan.MaxQl) : plan.MaxQl;
-            (int low, int high) = ResultIds(recipe);
-            if (IsUniqueResult(low, high) && Trade.TradeRules.WouldDuplicateUnique(player, low, high))
+            // Unique covers every template the result's line spans: a second copy from another band is still a second.
+            var spanned = new List<int>(2);
+            (int low, int high) = ResultIdsAt(recipe, quality, spanned);
+            if (spanned.Any(IsUniqueTemplate) && spanned.Any(id => Trade.TradeRules.WouldDuplicateUnique(player, id, id)))
             {
                 Feedback(player, "You can only have one of the resulting item.");
                 return CombineOutcome.Refused;
@@ -476,10 +503,78 @@ namespace ZoneEngine_New.Core.Tradeskills
             return (low, high);
         }
 
-        /// <summary>The result template carries the Unique item flag (either end of its QL pair).</summary>
-        bool IsUniqueResult(int low, int high)
-            => (_templates.TryGet(low, out ItemTemplate l) && (l.Flags & (int)AORebirth.Enums.ItemFlags.Unique) != 0)
-                || (_templates.TryGet(high, out ItemTemplate h) && (h.Flags & (int)AORebirth.Enums.ItemFlags.Unique) != 0);
+        /// <summary>
+        /// The templates a result at <paramref name="quality"/> is made from (team request 22). When the recipe's two
+        /// Result ids are ends of one ItemGroups.csv item line with more of its templates between them by QL, the result
+        /// takes the line's templates that hold that QL, as a drop of the item would: the narrowest exact pair or single
+        /// template ItemTemplates.json gives the line, else the two line templates next to the QL. Perennium Sniper
+        /// 246408 (QL 50) .. 246414 (QL 200) at QL 120 is 246410/246411, the QL 100-149 pair, not the Superior's
+        /// neighbours. A single id, a pair with nothing between, or ids no line holds keep the recipe's two templates.
+        /// <paramref name="spanned"/> gets every template the result may be made from: the line's in range, else the two.
+        /// </summary>
+        (int Low, int High) ResultIdsAt(TradeskillRecipe recipe, int quality, List<int> spanned)
+        {
+            (int low, int high) = ResultIds(recipe);
+            spanned.Clear();
+            spanned.Add(low);
+            if (high != low)
+                spanned.Add(high);
+            GameData.ItemLineCatalog lines = _lines;
+            if (low == high || !lines.TryGetLine(low, out IReadOnlyList<int> line) || !line.Contains(high)
+                || !_templates.TryGet(low, out ItemTemplate lowTemplate) || !_templates.TryGet(high, out ItemTemplate highTemplate))
+                return (low, high);
+
+            int minQl = lowTemplate.Quality, maxQl = highTemplate.Quality;
+            var steps = new List<(int Id, int Ql)>(line.Count);
+            foreach (int id in line)
+            {
+                if (_templates.TryGet(id, out ItemTemplate template) && template.Quality >= minQl && template.Quality <= maxQl)
+                    steps.Add((id, template.Quality));
+            }
+            if (steps.Count <= 2)
+                return (low, high);
+            steps.Sort((a, b) => a.Ql != b.Ql ? a.Ql.CompareTo(b.Ql) : a.Id.CompareTo(b.Id));
+            foreach ((int id, int _) in steps)
+            {
+                if (id != low && id != high)
+                    spanned.Add(id);
+            }
+
+            // An exact pair keeps a QL shared by the end of one band and the start of the next on the right band.
+            (int Low, int High)? best = null;
+            int bestWidth = int.MaxValue, bestStart = int.MinValue;
+            for (int i = 0; i < steps.Count && steps[i].Ql <= quality; i++)
+            {
+                for (int j = i; j < steps.Count; j++)
+                {
+                    if (steps[j].Ql < quality)
+                        continue;
+                    int width = steps[j].Ql - steps[i].Ql;
+                    if (width > bestWidth || (width == bestWidth && steps[i].Ql <= bestStart) || !IsExactPair(steps[i].Id, steps[j].Id))
+                        continue;
+                    best = (steps[i].Id, steps[j].Id);
+                    bestWidth = width;
+                    bestStart = steps[i].Ql;
+                }
+            }
+            if (best is (int, int) exact)
+                return exact;
+
+            for (int i = 0; i < steps.Count - 1; i++)
+            {
+                if (steps[i].Ql <= quality && quality <= steps[i + 1].Ql)
+                    return (steps[i].Id, steps[i + 1].Id);
+            }
+            return (low, high);
+        }
+
+        /// <summary>ItemTemplates.json has a leaf of exactly these templates (one, or the two in either order).</summary>
+        bool IsExactPair(int a, int b)
+            => _gameData.TryGetAssignedItemHash(a, b, out _) || (a != b && _gameData.TryGetAssignedItemHash(b, a, out _));
+
+        /// <summary>The template carries the Unique item flag.</summary>
+        bool IsUniqueTemplate(int id)
+            => _templates.TryGet(id, out ItemTemplate template) && (template.Flags & (int)AORebirth.Enums.ItemFlags.Unique) != 0;
 
         (int Min, int Max) ResultQlRange(TradeskillRecipe recipe)
         {
