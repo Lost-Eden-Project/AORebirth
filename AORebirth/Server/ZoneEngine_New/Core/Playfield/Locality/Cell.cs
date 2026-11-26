@@ -47,6 +47,10 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         /// </summary>
         public void Announce(MessageBody message, Dynel? exclude = null, Dynel? alsoExclude = null)
         {
+            // A server-only NPC (a raid director) is never on any client: nothing about it goes out.
+            if (IsServerOnlySubject(message, exclude, alsoExclude))
+                return;
+
             // A message about a player some neighbors cannot see (sneaking past their Perception, or GM-hidden) skips
             // them: the player is despawned on their clients and must not leak moves or actions there.
             Player? concealed = ConcealedSubject(message, exclude, alsoExclude);
@@ -113,6 +117,21 @@ namespace ZoneEngine_New.Core.Playfield.Locality
                    && (player.HiddenFromPlayers || player.Motor.State == Movement.MovementState.Sneak)
                 ? player
                 : null;
+        }
+
+        bool IsServerOnlySubject(MessageBody message, Dynel? exclude, Dynel? alsoExclude)
+        {
+            if (message is not N3Message n3)
+                return false;
+            Identity subject = n3.Identity;
+            if (exclude is NpcCharacter { ServerOnly: true } a && a.Identity == subject)
+                return true;
+            if (alsoExclude is NpcCharacter { ServerOnly: true } b && b.Identity == subject)
+                return true;
+            foreach (Dynel dynel in _occupants)
+                if (dynel is NpcCharacter { ServerOnly: true } npc && npc.Identity == subject)
+                    return true;
+            return false;
         }
 
         static Player? MatchPlayer(Dynel? dynel, Identity subject)

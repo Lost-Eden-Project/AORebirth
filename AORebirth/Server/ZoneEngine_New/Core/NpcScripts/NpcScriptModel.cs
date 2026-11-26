@@ -137,7 +137,33 @@ public enum ScriptOpCode : byte
     /// every living player of the same playfield instance within B metres, edge to edge, who holds it active. Players
     /// without it are left alone. Does not block.
     /// </summary>
-    CompleteQuest
+    CompleteQuest,
+
+    /// <summary>
+    /// Sends a Script message (ScriptIIR_t) to every player of the playfield instance: Strings[A] the text ("{X}", "{Y}",
+    /// "{Z}" become the position's coordinates), B = kind + duration seconds * 8, C = Strings index of the district name
+    /// or -1, D = offset vector ref in the NPC's frame (or <see cref="ScriptOp.None"/>: the NPC's own position), whose X
+    /// and Z also go in the message. Does not block.
+    /// </summary>
+    SendScript,
+
+    /// <summary>
+    /// Takes B thousandths off the charge of a city controller within A metres of the NPC (the nearest), as an alien
+    /// hacker does. Does not block.
+    /// </summary>
+    DrainController,
+
+    /// <summary>
+    /// Summons C pets of NPC hash Strings[A] for the NPC (PetService.Summon, several of a kind): at level B (a value ref),
+    /// or with D = 1 at the NPC's own level plus B.
+    /// </summary>
+    SummonPet,
+
+    /// <summary>
+    /// Blocking: waits until every live add this runner spawned with tag A is gone, then C ms more; or B ms in all,
+    /// whichever comes first (a wave cleared fast brings the next sooner; a slow one is overrun on time).
+    /// </summary>
+    WaitWave
 }
 
 /// <summary>Who a <see cref="ScriptOpCode.CastNano"/> lands on.</summary>
@@ -183,6 +209,12 @@ public enum NpcScriptTarget
 /// <param name="JoinFight">The spawn takes the owner's current target as its first hate.</param>
 /// <param name="LevelPercent">Spawn level as a percent of the owner's level, rounded, at least 1; 0 when unused.</param>
 /// <param name="Tag">Index into <see cref="NpcScriptProgram.Tags"/> the spawns carry for AddDied; -1 for none.</param>
+/// <param name="PerMember">One spawn more for each this many members of the raid group (0: none), read at the spawn.</param>
+/// <param name="LevelFromGroup">The level is the raid group's highest plus <paramref name="LevelOffset"/>, kept within
+/// <paramref name="LevelMin"/>..<paramref name="LevelMax"/>; with nobody in the group, <paramref name="LevelMin"/>.</param>
+/// <param name="GroupRange">The raid group counts members within this many metres of the spawning NPC.</param>
+/// <param name="ServerOnly">The spawn is never on any client (<see cref="Entities.NpcCharacter.ServerOnly"/>): a helper
+/// that only runs a script, such as a raid's ship fly-bys.</param>
 public readonly record struct SpawnNpcSpec(
     bool Absolute,
     int Count,
@@ -192,7 +224,14 @@ public readonly record struct SpawnNpcSpec(
     int Level,
     bool JoinFight,
     int LevelPercent = 0,
-    int Tag = -1);
+    int Tag = -1,
+    int PerMember = 0,
+    bool LevelFromGroup = false,
+    int LevelOffset = 0,
+    int LevelMin = 1,
+    int LevelMax = 300,
+    float GroupRange = 150f,
+    bool ServerOnly = false);
 
 /// <summary>
 /// What a SpawnNpc add remembers of the runner that spawned it, so its kill reaches that runner as AddDied. Only
@@ -229,7 +268,16 @@ public enum ScriptPredicate
     VarGreaterThan = 3,
     HealthBelow = 4,
     HasTarget = 5,
-    Chance = 6
+    Chance = 6,
+
+    /// <summary>The charge of the city controller nearest the NPC is below B percent (none near: false).</summary>
+    ControllerChargeBelow = 7,
+
+    /// <summary>
+    /// The raid group (the team or raid of the player who started the raid this NPC runs, alive, on its playfield and
+    /// within C metres) has at least B members.
+    /// </summary>
+    GroupSizeAtLeast = 8
 }
 
 /// <summary>
@@ -334,6 +382,12 @@ public sealed class NpcScriptProgram
     public string Id { get; }
 
     public string File { get; }
+
+    /// <summary>
+    /// How many live SpawnNpc adds one NPC running this program may own: the script's top-level "MaxOwnedNpcs" (a raid
+    /// director lets a slow group be overrun), else <see cref="NpcScriptRunner.MaxOwnedNpcs"/>.
+    /// </summary>
+    public int MaxOwned { get; init; } = NpcScriptRunner.MaxOwnedNpcs;
 
     public ScriptParam[] Params { get; }
 

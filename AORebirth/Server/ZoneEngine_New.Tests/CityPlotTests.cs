@@ -1248,6 +1248,8 @@ public sealed class CityPlotTests
         public CityWriteResult ToggleCloak(CityControllerDefinition controller, CityCatalog cities, int organizationId, int characterId,
             CityManagePermission canManage) => CityWriteResult.Fail(CityWriteStatus.NoCloakingDevice);
 
+        public CityPlotState? AdjustCharge(int playfieldId, int controllerIndex, float delta) => null;
+
         public IReadOnlyList<(int PlayfieldId, int ControllerIndex)> DuePlots(CityRules cityRules)
         {
             lock (_sync)

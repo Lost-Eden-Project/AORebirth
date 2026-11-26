@@ -99,6 +99,9 @@ namespace ZoneEngine_New.Core.Cities
         CityWriteResult StartDemolish(CityControllerDefinition controller, CityCatalog catalog, int organizationId, int characterId,
             int tileX, int tileZ, CityManagePermission canManage);
 
+        /// <summary>Moves an owned district's controller charge by <paramref name="delta"/>, kept within 0..1; null when unowned.</summary>
+        CityPlotState? AdjustCharge(int playfieldId, int controllerIndex, float delta);
+
         CityWriteResult ToggleCloak(CityControllerDefinition controller, CityCatalog catalog, int organizationId, int characterId,
             CityManagePermission canManage);
 
@@ -421,6 +424,21 @@ namespace ZoneEngine_New.Core.Cities
             CityPlotState state = Read(connection, transaction, controller.PlayfieldId, controller.Index);
             transaction.Commit();
             return new CityWriteResult(CityWriteStatus.Done, BuildRefusal.None, 0, state);
+        }
+
+        public CityPlotState? AdjustCharge(int playfieldId, int controllerIndex, float delta)
+        {
+            using MySqlConnection connection = _open();
+            using MySqlTransaction transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            PlotLock plot = LockPlot(connection, transaction, playfieldId, controllerIndex);
+            if (plot.OrganizationId == null)
+                return null;
+            connection.Execute("UPDATE city_plots SET ControllerCharge=LEAST(1, GREATEST(0, ControllerCharge+@Delta)), Version=Version+1 "
+                + "WHERE PlayfieldId=@Pf AND ControllerIndex=@Idx",
+                new { Delta = delta, Pf = playfieldId, Idx = controllerIndex }, transaction);
+            CityPlotState state = Read(connection, transaction, playfieldId, controllerIndex);
+            transaction.Commit();
+            return state;
         }
 
         // ------------------------------------------------------------------------------------------------ due work

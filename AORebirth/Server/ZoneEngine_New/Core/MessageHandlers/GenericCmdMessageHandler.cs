@@ -174,6 +174,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
                         else
                             Deny(session, message);
                     }
+                    else if (message.Target.Type == IdentityType.CityController
+                             && playfield.GetService<Cities.CityService>() is { } cities
+                             && cities.TryRecharge(player, playfield, source, message.Target))
+                        Acknowledge(session, message, message.Target);
                     else if (TryUseItemOnItem(player, playfield, source, message.Target))
                         Acknowledge(session, message, message.Target);
                     else if (_tradeskills != null

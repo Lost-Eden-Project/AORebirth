@@ -620,6 +620,10 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         /// </summary>
         internal static bool IsHiddenFrom(Player recipient, Dynel source)
         {
+            // A server-only NPC (a raid director) is on no client, GMs' included.
+            if (source is NpcCharacter { ServerOnly: true })
+                return true;
+
             if (source is Player hidden && hidden.HiddenFromPlayers && !recipient.IsGm)
                 return true;
 
