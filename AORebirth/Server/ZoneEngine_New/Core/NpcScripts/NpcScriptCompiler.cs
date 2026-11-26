@@ -102,6 +102,10 @@ public sealed class NpcScriptCompiler
             return byTrigger != 0 ? byTrigger : b.Priority.CompareTo(a.Priority);
         });
 
+        int maxOwned = root.TryGetProperty("MaxOwnedNpcs", out JsonElement maxOwnedElement) && maxOwnedElement.TryGetInt32(out int m)
+            ? Math.Clamp(m, 1, 200)
+            : NpcScriptRunner.MaxOwnedNpcs;
+
         return new NpcScriptProgram(
             id,
             file,
@@ -114,7 +118,7 @@ public sealed class NpcScriptCompiler
             ctx.Spawns.ToArray(),
             ctx.Tags.ToArray(),
             ctx.NanoLists.ToArray(),
-            ctx.HashLists.ToArray());
+            ctx.HashLists.ToArray()) { MaxOwned = maxOwned };
     }
 
     static ScriptParam[] ParseParams(JsonElement root, List<string> errors)
@@ -473,6 +477,121 @@ public sealed class NpcScriptCompiler
                 ctx.Ops.Add(new ScriptOp(ScriptOpCode.Despawn));
                 return;
 
+            case "SendScript":
+            {
+                // { "Kind": 0..4, "Text": "...", "Duration": seconds, "District": "City", "At": [x, y, z] | "$Param" }
+                string? text = GetString(value, "Text");
+                int kind = GetInt(value, "Kind", -1);
+                int duration = GetInt(value, "Duration", 0);
+                if (string.IsNullOrEmpty(text) || kind < 0 || kind > 7 || duration < 0)
+                {
+                    ctx.Error("SendScript needs Text, Kind 0..7 and a Duration of 0 or more seconds");
+                    return;
+                }
+
+                string? district = GetString(value, "District");
+                int at = ScriptOp.None;
+                if (value.TryGetProperty("At", out JsonElement atElement))
+                {
+                    if (atElement.ValueKind == JsonValueKind.Array && TryParseVector(atElement, out Vector3 offset))
+                        at = ctx.Vector(offset);
+                    else if (atElement.ValueKind == JsonValueKind.String && (atElement.GetString() ?? string.Empty).StartsWith('$'))
+                    {
+                        int slot = ctx.ParamSlot(atElement.GetString()!.Substring(1), ScriptParamType.Vector3, out _);
+                        if (slot < 0)
+                            return;
+                        at = ScriptOp.ParamRef(slot);
+                    }
+                    else
+                    {
+                        ctx.Error("SendScript: At is [x, y, z] or \"$Param\"");
+                        return;
+                    }
+                }
+
+                ctx.Ops.Add(new ScriptOp(ScriptOpCode.SendScript, ctx.String(text), kind + duration * 8,
+                    string.IsNullOrEmpty(district) ? -1 : ctx.String(district), at));
+                return;
+            }
+
+            case "WaitWave":
+            {
+                // { "Tag": "Wave", "MaxMs": 120000, "AfterClearMs": 15000 }
+                int waveTag = ctx.Tag(GetString(value, "Tag"), "WaitWave");
+                int maxMs = GetInt(value, "MaxMs", 0);
+                int afterClear = GetInt(value, "AfterClearMs", 0);
+                if (waveTag < 0)
+                    return;
+                if (maxMs < MinWaitMs || afterClear < 0 || afterClear > maxMs)
+                    ctx.Error("WaitWave needs MaxMs of at least " + MinWaitMs + " and AfterClearMs 0..MaxMs");
+                else
+                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.WaitWave, waveTag, maxMs, afterClear));
+                return;
+            }
+
+            case "DrainController":
+            {
+                // { "Range": metres, "PerMille": thousandths of the charge }
+                int range = GetInt(value, "Range", 0);
+                int perMille = GetInt(value, "PerMille", 0);
+                if (range <= 0 || perMille <= 0)
+                    ctx.Error("DrainController needs a positive Range and PerMille");
+                else
+                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.DrainController, range, perMille));
+                return;
+            }
+
+            case "SummonPet":
+            {
+                // { "Hash": "MDKN", "Level": 79 | "$Param" | "OwnerLevelOffset": 8 | "$Param", "Count": 2 }
+                string? hash = GetString(value, "Hash");
+                int count = GetInt(value, "Count", 1);
+                int level;
+                int fromOwner = 0;
+                if (value.TryGetProperty("OwnerLevelOffset", out JsonElement offsetElement))
+                {
+                    fromOwner = 1;
+                    if (offsetElement.ValueKind == JsonValueKind.String && (offsetElement.GetString() ?? string.Empty).StartsWith('$'))
+                    {
+                        int slot = ctx.ParamSlot(offsetElement.GetString()!.Substring(1), ScriptParamType.Int, out _);
+                        if (slot < 0)
+                            return;
+                        level = ScriptOp.ParamRef(slot);
+                    }
+                    else if (offsetElement.ValueKind == JsonValueKind.Number && offsetElement.TryGetInt32(out int literal) && literal >= 0)
+                        level = literal;
+                    else
+                    {
+                        // A negative literal cannot be a value ref (negative refs are params): give it through a param.
+                        ctx.Error("SummonPet: OwnerLevelOffset is 0 or more, or an $Int param");
+                        return;
+                    }
+                }
+                else if (value.TryGetProperty("Level", out JsonElement levelElement) && levelElement.ValueKind == JsonValueKind.String
+                    && (levelElement.GetString() ?? string.Empty).StartsWith('$'))
+                {
+                    int slot = ctx.ParamSlot(levelElement.GetString()!.Substring(1), ScriptParamType.Int, out _);
+                    if (slot < 0)
+                        return;
+                    level = ScriptOp.ParamRef(slot);
+                }
+                else
+                {
+                    level = GetInt(value, "Level", 0);
+                    if (level <= 0)
+                    {
+                        ctx.Error("SummonPet needs a positive Level or a $Int param");
+                        return;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(hash) || count <= 0 || count > 10)
+                    ctx.Error("SummonPet needs Hash and a Count of 1..10");
+                else
+                    ctx.Ops.Add(new ScriptOp(ScriptOpCode.SummonPet, ctx.String(hash.Trim()), level, count, fromOwner));
+                return;
+            }
+
             case "SetStat":
             {
                 string statName = GetString(value, "Stat") ?? string.Empty;
@@ -587,6 +706,13 @@ public sealed class NpcScriptCompiler
         if (string.Equals(text, "Home", StringComparison.OrdinalIgnoreCase))
         {
             ctx.Ops.Add(new ScriptOp(code, 0, 0, runFlag, 3));
+            return;
+        }
+
+        // The city controller nearest the NPC (an alien raid's target).
+        if (string.Equals(text, "Controller", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Ops.Add(new ScriptOp(code, 0, 0, runFlag, 5));
             return;
         }
 
@@ -828,7 +954,15 @@ public sealed class NpcScriptCompiler
         }
 
         int centreRef = ScriptOp.None;
-        if (at || offset)
+        // A Vector3 parameter for an offset: one city's landing point for a raid director bound per playfield.
+        if (offset && offsetElement.ValueKind == JsonValueKind.String && (offsetElement.GetString() ?? string.Empty).StartsWith('$'))
+        {
+            int slot = ctx.ParamSlot(offsetElement.GetString()!.Substring(1), ScriptParamType.Vector3, out _);
+            if (slot < 0)
+                return;
+            centreRef = ScriptOp.ParamRef(slot);
+        }
+        else if (at || offset)
         {
             if (!TryParseVector(at ? atElement : offsetElement, out Vector3 centre))
             {
@@ -913,7 +1047,40 @@ public sealed class NpcScriptCompiler
             ctx.SpawnedTags.Add(tag);
         }
 
-        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true), levelPercent, tag);
+        int perMember = GetInt(value, "PerMember", 0);
+        float groupRange = (float)GetDouble(value, "GroupRange", 150);
+        bool levelFromGroup = false;
+        int levelOffset = 0, levelMin = 1, levelMax = 300;
+        if (value.TryGetProperty("LevelFromGroup", out JsonElement group))
+        {
+            // { "Use": "Highest", "Offset": -5, "Min": 1, "Max": 300 }
+            if (group.ValueKind != JsonValueKind.Object
+                || !string.Equals(GetString(group, "Use") ?? "Highest", "Highest", StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Error("SpawnNpc: LevelFromGroup is { \"Use\": \"Highest\", \"Offset\", \"Min\", \"Max\" }");
+                return;
+            }
+
+            if (level > 0 || levelPercent > 0)
+            {
+                ctx.Error("SpawnNpc: Level, LevelPercent or LevelFromGroup, one of them");
+                return;
+            }
+
+            levelFromGroup = true;
+            levelOffset = GetInt(group, "Offset", 0);
+            levelMin = Math.Max(1, GetInt(group, "Min", 1));
+            levelMax = Math.Max(levelMin, GetInt(group, "Max", 300));
+        }
+
+        if (perMember < 0 || groupRange <= 0)
+        {
+            ctx.Error("SpawnNpc: PerMember must be 0 or more and GroupRange positive");
+            return;
+        }
+
+        var spec = new SpawnNpcSpec(at, count, radius, lifetime, ownerDelay, level, GetBool(value, "JoinFight", true), levelPercent, tag,
+            perMember, levelFromGroup, levelOffset, levelMin, levelMax, groupRange, GetBool(value, "ServerOnly", false));
         ctx.Spawns.Add(spec);
         ctx.Ops.Add(new ScriptOp(ScriptOpCode.SpawnNpc, hashRef, centreRef, ctx.Spawns.Count - 1));
     }
@@ -1325,6 +1492,27 @@ public sealed class NpcScriptCompiler
         {
             predicate = ScriptPredicate.Chance;
             b = Math.Clamp(GetInt(value, "Chance", 0), 0, 100);
+        }
+        else if (value.TryGetProperty("GroupSizeAtLeast", out _))
+        {
+            predicate = ScriptPredicate.GroupSizeAtLeast;
+            b = GetInt(value, "GroupSizeAtLeast", 0);
+            c = Math.Max(1, GetInt(value, "Range", 150));
+            if (b < 1)
+            {
+                ctx.Error("If: GroupSizeAtLeast is 1 or more");
+                return;
+            }
+        }
+        else if (value.TryGetProperty("ControllerChargeBelow", out _))
+        {
+            predicate = ScriptPredicate.ControllerChargeBelow;
+            b = GetInt(value, "ControllerChargeBelow", 0);
+            if (b < 1 || b > 100)
+            {
+                ctx.Error("If: ControllerChargeBelow is 1..100");
+                return;
+            }
         }
         else
         {

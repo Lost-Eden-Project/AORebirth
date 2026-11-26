@@ -171,6 +171,12 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public string? SpawnHash { get; init; }
 
+        /// <summary>
+        /// Lives on the server only: never spawned on, or announced to, any client (GMs' included). A raid director, the
+        /// invisible host whose NPC script runs an alien city raid, is one. Set before the NPC is registered.
+        /// </summary>
+        public bool ServerOnly { get; set; }
+
         /// <summary>The hash spawn point's key (hash, position, stack ordinal), or null when no spawn point owns it.</summary>
         public string? SpawnPointKey { get; init; }
 

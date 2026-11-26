@@ -49,7 +49,7 @@ namespace ZoneEngine_New.Core.Cities
     /// sweep, never confirmed.
     /// </para>
     /// </summary>
-    public sealed class CityService : IDisposable
+    public sealed partial class CityService : IDisposable
     {
         /// <summary>CityID_t's controller identity type (AOCityInterfaceClient_c vtable +0x94, 1012e5b0).</summary>
         public const int CityIdentityType = 0xC419;
@@ -1025,7 +1025,7 @@ namespace ZoneEngine_New.Core.Cities
             if (organizationId <= 0 || state.OrganizationId != organizationId || !state.IsActive || !CanManage(player, organizationId))
                 return;
             (int cloak, int timer) = CloakSignal(state, DateTime.UtcNow);
-            if (cloak == 0 || timer >= 0 || !BeginWork(player))
+            if (cloak == 0 || timer >= 0 || RaidRunning(controller.PlayfieldId, controller.Index) || !BeginWork(player))
                 return;
             int characterId = player.Identity.Instance;
             string name = player.Name ?? string.Empty;
@@ -1039,6 +1039,8 @@ namespace ZoneEngine_New.Core.Cities
                     {
                         Publish(result.State);
                         NotifyMembers(organizationId, CityText.NoticeCategory, CityText.CloakToggled, name, PlayfieldName(controller));
+                        if (result.State.CloakState == 0)
+                            ScheduleRaid(controller, result.State, characterId);
                     }
                     else
                     {

@@ -282,6 +282,9 @@ namespace ZoneEngine_New.Core.Cities
         /// </summary>
         public IReadOnlyDictionary<int, int> InsideEntryDoors { get; init; } = new Dictionary<int, int>();
 
+        /// <summary>Alien raids (CityService.Raids).</summary>
+        public CityRaidRules Raid { get; init; } = new();
+
         public TimeSpan BillingPeriod => TimeSpan.FromDays(BillingPeriodDays);
         public TimeSpan UpkeepWarning => TimeSpan.FromHours(UpkeepWarningHours);
         public TimeSpan EmptyPlotRelease => TimeSpan.FromHours(EmptyPlotReleaseHours);
@@ -585,6 +588,7 @@ namespace ZoneEngine_New.Core.Cities
             public int PendingTimeoutMinutes { get; set; } = 30;
             /// <summary>Inside playfield id to its entry door's instance, as hex ("4357": "C0011105").</summary>
             public Dictionary<string, string>? InsideEntryDoors { get; set; }
+            public CityRaidRules? Raid { get; set; }
 
             internal CityRules ToRules() => new()
             {
@@ -602,6 +606,7 @@ namespace ZoneEngine_New.Core.Cities
                 MaxHousesPerPlot = MaxHousesPerPlot,
                 InteractionRange = InteractionRange,
                 PendingTimeoutMinutes = PendingTimeoutMinutes,
+                Raid = Raid ?? new CityRaidRules(),
                 InsideEntryDoors = (InsideEntryDoors ?? []).ToDictionary(
                     pair => int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture),
                     pair => unchecked((int)uint.Parse(pair.Value, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)))

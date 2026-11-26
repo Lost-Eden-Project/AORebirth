@@ -113,8 +113,17 @@ public sealed class NpcScriptRunner
         None,
         Delay,
         Arrive,
-        Cast
+        Cast,
+        Wave
     }
+
+    // WaitWave: the tag waited on, the deadline, and whether the clear's grace has started.
+    int _waveTag = -1;
+    long _waveDeadlineMs;
+    bool _waveCleared;
+
+    // The adds spawned with a tag, for WaitWave (whatever OwnerDespawnDelaySeconds says).
+    List<(NpcCharacter Add, int Tag)>? _tagged;
 
     readonly record struct PendingAddDied(long DueMs, int Handler);
 
@@ -458,6 +467,9 @@ public sealed class NpcScriptRunner
         if (_waiting == WaitKind.Arrive && !PollArrival(nowMs))
             return;
 
+        if (_waiting == WaitKind.Wave && !PollWave(nowMs))
+            return;
+
         if (_waiting == WaitKind.Cast)
         {
             if (_npc.IsCastingNano && !_npc.IsDead)
@@ -638,6 +650,27 @@ public sealed class NpcScriptRunner
                     DoCompleteQuest(op);
                     break;
 
+                case ScriptOpCode.SendScript:
+                    DoSendScript(op);
+                    break;
+
+                case ScriptOpCode.DrainController:
+                    _npc.Playfield?.GetService<Cities.CityService>()?.DrainNear(_npc.Playfield, _npc.Position, op.A, op.B / 1000f);
+                    break;
+
+                case ScriptOpCode.SummonPet:
+                    DoSummonPet(op);
+                    break;
+
+                case ScriptOpCode.WaitWave:
+                    _waiting = WaitKind.Wave;
+                    _waveTag = op.A;
+                    _waveDeadlineMs = now + op.B;
+                    _waveCleared = false;
+                    _waveAfterClearMs = op.C;
+                    _wakeAtMs = now;
+                    return;
+
                 case ScriptOpCode.CastNano:
                     if (BeginCast(op, now))
                         return;
@@ -732,6 +765,11 @@ public sealed class NpcScriptRunner
             case ScriptPredicate.HealthBelow: return HealthPercent() < op.B;
             case ScriptPredicate.HasTarget: return (_npc.FightingTarget.Instance != 0) == (op.B != 0);
             case ScriptPredicate.Chance: return NextInt(0, 99) < op.B;
+            case ScriptPredicate.GroupSizeAtLeast:
+                return RaidGroup(op.C).Members >= op.B;
+            case ScriptPredicate.ControllerChargeBelow:
+                return _npc.Playfield?.GetService<Cities.CityService>()?.ChargeNear(_npc.Playfield, _npc.Position) is float charge
+                    && charge * 100f < op.B;
             default: return false;
         }
     }
@@ -779,6 +817,9 @@ public sealed class NpcScriptRunner
         Vector3? destination;
         switch (op.D)
         {
+            case 5:
+                destination = _npc.Playfield?.GetService<Cities.CityService>()?.ControllerNear(_npc.Playfield, _npc.Position);
+                break;
             case 4:
                 destination = _npc.Position;
                 break;
@@ -1031,6 +1072,109 @@ public sealed class NpcScriptRunner
     /// From a Death handler the owner is already dead: an independent spawn is unaffected, a linked one starts its
     /// owner-despawn delay at once (0 = gone next tick), and none reports AddDied to the dead owner.
     /// </summary>
+    static int s_nextScriptId = 3000;
+
+    /// <summary><see cref="ScriptOpCode.SendScript"/>.</summary>
+    void DoSendScript(ScriptOp op)
+    {
+        Playfield? playfield = _npc.Playfield;
+        string? template = op.A >= 0 && op.A < _program.Strings.Length ? _program.Strings[op.A] : null;
+        if (playfield == null || string.IsNullOrEmpty(template))
+            return;
+
+        Vector3 at = _npc.Position;
+        if (op.D != ScriptOp.None && VectorValue(op.D) is Vector3 offset)
+        {
+            var turned = (Vector3)_npc.Rotation.RotateVector3(offset);
+            at = new Vector3(at.x + turned.x, at.y + turned.y, at.z + turned.z);
+        }
+
+        string text = template
+            .Replace("{X}", at.xf.ToString("F6", System.Globalization.CultureInfo.InvariantCulture))
+            .Replace("{Y}", at.yf.ToString("F6", System.Globalization.CultureInfo.InvariantCulture))
+            .Replace("{Z}", at.zf.ToString("F6", System.Globalization.CultureInfo.InvariantCulture));
+        string district = op.C >= 0 && op.C < _program.Strings.Length ? _program.Strings[op.C] : string.Empty;
+        int now = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var message = new LostEden.Protocol.Messages.N3Messages.ScriptMessage
+        {
+            Identity = new LostEden.Protocol.GameData.Identity
+            {
+                Type = LostEden.Protocol.GameData.IdentityType.Playfield2, Instance = playfield.Identity.Instance
+            },
+            Id = System.Threading.Interlocked.Increment(ref s_nextScriptId),
+            Kind = op.B & 7,
+            Script = text,
+            Start = now,
+            Duration = op.B >> 3,
+            SentAt = now,
+            DistrictName = district,
+            X = (int)at.xf,
+            Z = (int)at.zf,
+        };
+        var players = new List<Player>();
+        playfield.GetRequiredService<DynelRegistry>().CopyPlayers(players);
+        foreach (Player player in players)
+            player.Session?.Send(message);
+    }
+
+    int _waveAfterClearMs;
+
+    /// <summary><see cref="ScriptOpCode.WaitWave"/>'s poll: true when the wait is over.</summary>
+    bool PollWave(long now)
+    {
+        if (now >= _waveDeadlineMs)
+            return true;
+        if (!_waveCleared)
+        {
+            bool alive = false;
+            if (_tagged != null)
+            {
+                for (int i = _tagged.Count - 1; i >= 0; i--)
+                {
+                    (NpcCharacter add, int tag) = _tagged[i];
+                    if (add.IsDead || add.Playfield == null)
+                    {
+                        _tagged.RemoveAt(i);
+                        continue;
+                    }
+                    if (tag == _waveTag)
+                        alive = true;
+                }
+            }
+
+            if (alive)
+            {
+                _wakeAtMs = now + ArrivePollMs;
+                return false;
+            }
+
+            _waveCleared = true;
+            _waveDeadlineMs = Math.Min(_waveDeadlineMs, now + _waveAfterClearMs);
+            if (now >= _waveDeadlineMs)
+                return true;
+        }
+
+        _wakeAtMs = _waveDeadlineMs;
+        return false;
+    }
+
+    /// <summary>The raid group this NPC's raid counts (members, highest level); nobody when it runs no raid.</summary>
+    (int Members, int Highest) RaidGroup(float range)
+        => _npc.Playfield?.GetService<Cities.CityService>()?.RaidGroup(_npc, range) ?? (0, 0);
+
+    /// <summary><see cref="ScriptOpCode.SummonPet"/>.</summary>
+    void DoSummonPet(ScriptOp op)
+    {
+        string? hash = op.A >= 0 && op.A < _program.Strings.Length ? _program.Strings[op.A] : null;
+        if (string.IsNullOrEmpty(hash) || _npc.IsDead || _npc.Playfield?.GetService<Pets.PetService>() is not { } pets)
+            return;
+        int level = op.D == 1 ? _npc.Stats.GetOrOne(CharacterStat.Level) + IntValue(op.B) : IntValue(op.B);
+        if (level <= 0)
+            level = 1;
+        for (int i = 0; i < op.C; i++)
+            pets.Summon(_npc, hash, level, 0, replaceSameSlot: false);
+    }
+
     void DoSpawnNpc(ScriptOp op, long now)
     {
         Playfield? playfield = _npc.Playfield;
@@ -1050,10 +1194,12 @@ public sealed class NpcScriptRunner
 
         SpawnNpcSpec spec = _program.Spawns[op.C];
         PruneOwned();
-        int wanted = Math.Min(spec.Count, MaxOwnedNpcs - (_owned?.Count ?? 0));
+        (int members, int highest) = spec.PerMember > 0 || spec.LevelFromGroup ? RaidGroup(spec.GroupRange) : (0, 0);
+        int count = spec.Count + (spec.PerMember > 0 ? members / spec.PerMember : 0);
+        int wanted = Math.Min(count, _program.MaxOwned - (_owned?.Count ?? 0));
         if (wanted <= 0)
         {
-            WarnSpawnOnce("owns " + MaxOwnedNpcs + " live NPCs; its SpawnNpc is ignored until some die");
+            WarnSpawnOnce("owns " + _program.MaxOwned + " live NPCs; its SpawnNpc is ignored until some die");
             return;
         }
 
@@ -1061,6 +1207,8 @@ public sealed class NpcScriptRunner
         int? level = spec.Level > 0 ? spec.Level : null;
         if (spec.LevelPercent > 0)
             level = Math.Max(1, (int)Math.Round(_npc.Stats.GetOrOne(CharacterStat.Level) * spec.LevelPercent / 100.0, MidpointRounding.AwayFromZero));
+        if (spec.LevelFromGroup)
+            level = members > 0 ? Math.Clamp(highest + spec.LevelOffset, spec.LevelMin, spec.LevelMax) : spec.LevelMin;
         if (spawns == null
             || !playfield.GetRequiredService<IGameData>().TryResolveMobTemplate(hash, level, out MobTemplate template)
             || !NpcTemplateValidation.CanSpawn(template))
@@ -1086,16 +1234,18 @@ public sealed class NpcScriptRunner
         for (int i = 0; i < wanted; i++)
         {
             Vector3 at = centre;
-            if (spec.Count > 1)
+            if (count > 1)
             {
-                double angle = phase + (Math.PI * 2.0 * i / spec.Count);
+                double angle = phase + (Math.PI * 2.0 * i / count);
                 at = new Vector3(centre.x + (spec.Radius * Math.Cos(angle)), centre.y, centre.z + (spec.Radius * Math.Sin(angle)));
             }
 
             NpcCharacter add;
             try
             {
-                add = spawns.SpawnMob(template, at, _npc.Rotation, level, SpawnSource.Script, spawnHash: hash);
+                bool serverOnly = spec.ServerOnly;
+                add = spawns.SpawnMob(template, at, _npc.Rotation, level, SpawnSource.Script, spawnHash: hash,
+                    configure: serverOnly ? npc => npc.ServerOnly = true : null);
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
             {
@@ -1105,6 +1255,8 @@ public sealed class NpcScriptRunner
 
             add.ScriptOwner = _npc;
             add.ScriptSpawnDepth = _npc.ScriptSpawnDepth + 1;
+            if (spec.Tag >= 0)
+                (_tagged ??= new List<(NpcCharacter, int)>()).Add((add, spec.Tag));
             if (spec.LifetimeSeconds > 0)
                 add.DespawnAtMs = now + (spec.LifetimeSeconds * 1000L);
             if (spec.OwnerDespawnDelaySeconds >= 0)
