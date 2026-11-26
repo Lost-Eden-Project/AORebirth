@@ -154,15 +154,21 @@ namespace ZoneEngine_New.Core.Playfield.Locality
         internal IReadOnlyDictionary<int, IReadOnlyList<int>> DungeonRoomLinks => _grid.RoomLinks;
 
         /// <summary>
-        /// <paramref name="a"/> and <paramref name="b"/> stand in two different rooms of this dungeon: each one's cell is a
-        /// room that holds its position on its floor. False outside dungeons, in one room, or when either is between rooms
-        /// (its cell no longer holds it until the next locality update), so a caller never decides on a stale room.
+        /// <paramref name="a"/> and <paramref name="b"/> stand in two different rooms of this dungeon, beyond doubt: each
+        /// one's cell is the only room whose box holds its position (<see cref="CellGrid.HoldsAlone"/>). False outside
+        /// dungeons, in one room, when either is between rooms (its cell no longer holds it until the next locality
+        /// update), or when either stands where two rooms' boxes overlap. A placed room's box is an irregular room's bounding
+        /// box reaching past its walls, so a hall's box takes in whole side rooms, and a cell is history there: a character
+        /// who walked in through a door keeps the room it came from until it leaves that room's box, and a monster spawned
+        /// against a shared wall takes the box based highest. Out of a generated Rubi-Ka mission's spawn points about a
+        /// third lie in such an overlap, so a caller that trusted the cell there would put a player and the monster in
+        /// front of them in different rooms (Lost Eden: no line of sight on monsters in the room just entered).
         /// </summary>
         internal bool TryGetSeparateRooms(Dynel a, Dynel b, out int roomA, out int roomB)
         {
             roomA = roomB = CellGrid.NonLocalCellId;
             if (!_grid.IsDungeon || a.Cell is not Cell cellA || b.Cell is not Cell cellB || cellA.Id == cellB.Id
-                || !_grid.HoldsOnFloor(cellA.Id, a.Position) || !_grid.HoldsOnFloor(cellB.Id, b.Position))
+                || !_grid.HoldsAlone(cellA.Id, a.Position) || !_grid.HoldsAlone(cellB.Id, b.Position))
                 return false;
 
             roomA = cellA.Id;

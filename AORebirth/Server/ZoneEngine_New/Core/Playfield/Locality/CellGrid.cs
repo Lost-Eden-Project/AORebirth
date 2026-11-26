@@ -71,6 +71,14 @@ namespace ZoneEngine_New.Core.Playfield.Locality
             => _roomById.TryGetValue(room, out DungeonRoomBounds bounds)
                && DungeonRoomCellResolver.HoldsOnFloor(_rooms, bounds, new System.Numerics.Vector3(position.xf, position.yf, position.zf));
 
+        /// <summary>
+        /// Room <paramref name="room"/> is the only room on its floor or above whose box holds <paramref name="position"/>
+        /// (<see cref="DungeonRoomCellResolver.HoldsAlone"/>); false for an unknown room.
+        /// </summary>
+        internal bool HoldsAlone(int room, Vector3 position)
+            => _roomById.TryGetValue(room, out DungeonRoomBounds bounds)
+               && DungeonRoomCellResolver.HoldsAlone(_rooms, bounds, new System.Numerics.Vector3(position.xf, position.yf, position.zf));
+
         /// <summary>True when some dungeon room's box holds <paramref name="position"/>; false outside every room or with no rooms.</summary>
         internal bool IsInsideDungeonRoom(Vector3 position)
         {

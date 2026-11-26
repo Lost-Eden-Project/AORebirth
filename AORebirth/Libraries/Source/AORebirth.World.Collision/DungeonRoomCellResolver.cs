@@ -75,5 +75,35 @@ namespace AORebirth.World.Collision
 
             return true;
         }
+
+        /// <summary>
+        /// Whether <paramref name="room"/> is the only room that can hold <paramref name="position"/>: its box contains
+        /// the point and no other box does, apart from a floor below's reaching up. A placed room's box is the bounding
+        /// box of an often irregular room (<see cref="DungeonRoomBounds.FromPlaced"/>), a metre past its tiles, so a
+        /// hall's box takes in whole side rooms and every box overlaps its neighbours at the walls and doorways. Which of
+        /// the rooms holding a point a dynel's cell says is a matter of history: the room it came from keeps it while
+        /// that box still holds it, and a spawn takes the box based highest, then the smallest. Rooms on one floor stand
+        /// at their templates' own heights (a few metres apart), so a box is a floor below only when its base is more
+        /// than half a floor (half this room's box height) under this room's. A decision that needs the room to be
+        /// right (which rooms a sight line crosses) asks this instead of <see cref="HoldsOnFloor"/>.
+        /// </summary>
+        public static bool HoldsAlone(IReadOnlyList<DungeonRoomBounds> rooms, in DungeonRoomBounds room, Vector3 position)
+        {
+            ArgumentNullException.ThrowIfNull(rooms);
+            if (!room.Contains(position))
+                return false;
+
+            float floorBelow = room.Min.Y - (0.5f * (room.Max.Y - room.Min.Y));
+            for (int i = 0; i < rooms.Count; i++)
+            {
+                DungeonRoomBounds other = rooms[i];
+                if (other.Index == room.Index)
+                    continue;
+                if (other.Min.Y >= floorBelow && other.Contains(position))
+                    return false;
+            }
+
+            return true;
+        }
     }
 }

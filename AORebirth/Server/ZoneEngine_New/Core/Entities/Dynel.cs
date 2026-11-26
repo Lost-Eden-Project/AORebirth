@@ -153,7 +153,9 @@ namespace ZoneEngine_New.Core.Entities
 
             // In a mission dungeon two characters in rooms no chain of open doors joins cannot see each other, whatever
             // the walls let a ray through (an Alien Mothership door hid only the bottom 2 m of its doorway). Characters
-            // only: a door or chest stands on its room's edge, and a player must still see a door to open it.
+            // only: a door or chest stands on its room's edge, and a player must still see a door to open it. Only where
+            // each one's room is certain: where two rooms' boxes overlap (a doorway, a shared wall) the ray decides, and a
+            // closed door's panel still stops it there.
             if (this is Character && other is Character && world.Doors.Count > 0
                 && Playfield.GetService<ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality>() is { } locality
                 && locality.TryGetSeparateRooms(this, other, out int room, out int otherRoom)

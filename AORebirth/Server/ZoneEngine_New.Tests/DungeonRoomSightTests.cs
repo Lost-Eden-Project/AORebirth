@@ -34,11 +34,62 @@ using Vector3 = AORebirth.Core.Vector.Vector3;
 /// In a mission dungeon, characters in rooms that no chain of open doors joins are out of each other's sight, whatever
 /// a sight ray would say. The rooms here have no walls at all, so only the closed doors between rooms can hide anyone:
 /// three rooms in a row (0 - 1 - 2, a door in each doorway, standing aside of the sight lines) and, a floor above
-/// room 0, rooms 3 and 4 that only a lift reaches.
+/// room 0, rooms 3 and 4 that only a lift reaches. As placed rooms do (DungeonRoomBounds.FromPlaced), each room's box
+/// reaches 1 m past its own tiles into the next room, so the metre on either side of a doorway's wall line belongs to
+/// both rooms' boxes.
 /// </summary>
 [TestClass]
 public sealed class DungeonRoomSightTests
 {
+    /// <summary>
+    /// Lost Eden: players in Rubi-Ka missions lost line of sight on monsters standing in front of them. A character who
+    /// walks through a door keeps the room they came from as their cell while that room's box still holds them (the
+    /// client's RoomSpace_t rule), and about a third of a generated mission's spawn points lie where two rooms' boxes
+    /// overlap. Once the door closed behind the player, the rooms-apart rule took the stale cell for the truth and
+    /// hid the monster. Where a position is held by two rooms, the sight ray decides.
+    /// </summary>
+    [TestMethod]
+    public void AFighterJustThroughTheDoorStillSeesTheMonsterInTheRoomTheyEntered()
+    {
+        using var rig = new Rig();
+        // Standing 0.5 m inside room 1's tiles, cell still room 0 (room 0's box reaches to x = 21). The door behind
+        // them closed again as they left its touch.
+        Player player = rig.Fighter(1, new Vector3(20.5f, 0, 0), cell: 0);
+        NpcCharacter monster = rig.Monster(1001, new Vector3(30, 0, 0));
+        Assert.AreEqual(0, player.Cell!.Id);
+        Assert.AreEqual(1, monster.Cell!.Id);
+
+        Assert.IsTrue(player.HasLineOfSightTo(monster), "the fighter stands in the monster's room: nothing between them");
+        Assert.IsTrue(monster.HasLineOfSightTo(player));
+    }
+
+    [TestMethod]
+    public void AMonsterSpawnedAgainstTheSharedWallIsSeenFromItsOwnRoom()
+    {
+        using var rig = new Rig();
+        // A spawn takes the smaller of the boxes holding it: this monster stands in room 1, 0.5 m from the wall it
+        // shares with room 0, and its cell says room 0. The door between the rooms is closed.
+        NpcCharacter monster = rig.Monster(1001, new Vector3(20.5f, 0, 0), cell: 0);
+        Player player = rig.Fighter(1, new Vector3(30, 0, 0));
+
+        Assert.IsTrue(player.HasLineOfSightTo(monster), "a monster in the player's own room is in sight");
+        Assert.IsTrue(monster.HasLineOfSightTo(player), "and it sees the player it will attack");
+    }
+
+    [TestMethod]
+    public void WhereTwoRoomsOverlapTheClosedDoorStillStopsTheSightRay()
+    {
+        using var rig = new Rig();
+        // In the overlap in front of the door (x = 19.5, the door's panel at x = 20 across z = 8): the ray decides,
+        // and it runs through the closed panel.
+        Player player = rig.Fighter(1, new Vector3(19.5f, 0, 8));
+        NpcCharacter monster = rig.Monster(1001, new Vector3(30, 0, 8));
+
+        Assert.IsFalse(player.HasLineOfSightTo(monster), "the closed door's panel is on the sight line");
+        rig.Open(rig.Door01);
+        Assert.IsTrue(player.HasLineOfSightTo(monster));
+    }
+
     [TestMethod]
     public void AMonsterCannotSeeIntoTheNextRoomWhileTheDoorBetweenIsClosed()
     {
@@ -144,14 +195,15 @@ public sealed class DungeonRoomSightTests
                 BindingFlags.Instance | BindingFlags.NonPublic, binder: null,
                 args: new object?[] { 1, null, new PlayfieldGeometryData(), null, new GameDataStore(logger), logger }, culture: null)!;
 
-            // Rooms 20 m long in a row along X; rooms 3 and 4 a floor up (base 64), joined by their own doorway.
+            // Rooms 20 m long in a row along X, each box 1 m past its tiles as FromPlaced makes them; rooms 3 and 4 a
+            // floor up (base 64), joined by their own doorway.
             var rooms = new List<DungeonRoomBounds>
             {
-                new(0, new NVector3(0, 0, -10), new NVector3(20, 64, 10)),
-                new(1, new NVector3(20, 0, -10), new NVector3(40, 64, 10)),
-                new(2, new NVector3(40, 0, -10), new NVector3(60, 64, 10)),
-                new(3, new NVector3(0, 64, -10), new NVector3(20, 128, 10)),
-                new(4, new NVector3(20, 64, -10), new NVector3(40, 128, 10))
+                new(0, new NVector3(-1, -1, -11), new NVector3(21, 64, 11)),
+                new(1, new NVector3(19, -1, -11), new NVector3(41, 64, 11)),
+                new(2, new NVector3(39, -1, -11), new NVector3(61, 64, 11)),
+                new(3, new NVector3(-1, 63, -11), new NVector3(21, 128, 11)),
+                new(4, new NVector3(19, 63, -11), new NVector3(41, 128, 11))
             };
             // Each door stands at the edge of its doorway's wall line, aside of the sight lines along z = 0.
             var doors = new List<DungeonDoorPlacement>
@@ -214,7 +266,8 @@ public sealed class DungeonRoomSightTests
 
         public void Close(Door door) => door.ApplyFlags(door.Flags & ~Door.OpenFlag);
 
-        public NpcCharacter Monster(int id, Vector3 at)
+        /// <param name="cell">The room the character's cell says, when it is not the room its position resolves to.</param>
+        public NpcCharacter Monster(int id, Vector3 at, int? cell = null)
         {
             var npc = new NpcCharacter(new Identity { Type = IdentityType.SimpleChar, Instance = id }, new Items())
             {
@@ -226,12 +279,12 @@ public sealed class DungeonRoomSightTests
             npc.Stats.Set(CharacterStat.MaxHealth, 1000);
             npc.Stats.Set(CharacterStat.Health, 1000);
             npc.Stats.Set(CharacterStat.BreedHostility, 100);
-            Place(npc);
+            Place(npc, cell);
             NpcBrain.Create(npc, at);
             return npc;
         }
 
-        public Player Fighter(int id, Vector3 at)
+        public Player Fighter(int id, Vector3 at, int? cell = null)
         {
             var player = new Player(new Identity { Type = IdentityType.SimpleChar, Instance = id }, new Logger(), new Items())
             {
@@ -241,14 +294,18 @@ public sealed class DungeonRoomSightTests
             player.Stats.Set(CharacterStat.Level, 60);
             player.Stats.Set(CharacterStat.MaxHealth, 100);
             player.Stats.Set(CharacterStat.Health, 100);
-            Place(player);
+            Place(player, cell);
             return player;
         }
 
-        void Place(Character character)
+        void Place(Character character, int? cell)
         {
             _services.GetRequiredService<DynelRegistry>().Register(character);
-            _services.GetRequiredService<PlayfieldLocality>().RegisterDynel(character);
+            PlayfieldLocality locality = _services.GetRequiredService<PlayfieldLocality>();
+            if (cell is { } room)
+                locality.RegisterDynel(character, room);
+            else
+                locality.RegisterDynel(character);
         }
 
         public void Dispose()
@@ -258,30 +315,123 @@ public sealed class DungeonRoomSightTests
         }
     }
 
-    sealed class Logger : IZoneLogger
-    {
-        public void Debug(string message) { }
-        public void Info(string message) { }
-        public void Warn(string message) { }
-        public void Error(string message) { }
-        public void Error(Exception exception, string message) { }
-        public IZoneLogger CreateForPlayfield(int playfieldId) => this;
-    }
+}
 
-    sealed class Items : IItemBuilder
+/// <summary>
+/// Against the runtime GameData (AO_REBIRTH_GAMEDATA_PATH): in generated Rubi-Ka missions, two monsters spawned in one
+/// room are never taken for standing in separate rooms, whichever room's box each spawn point fell into.
+/// </summary>
+[TestClass]
+public sealed class RkMissionRoomSightTests
+{
+    const int PlayfieldId = 0x0FF00633;
+
+    [TestMethod]
+    public void MonstersSpawnedInOneRoomAreNeverInSeparateRooms()
     {
-        public Item Create(int lowId, int highId, int quality, ItemSource source, int stackCount = 1, int instanceId = 0,
-            Identity? identity = null, byte[]? statsBlob = null) => new()
+        string? root = Environment.GetEnvironmentVariable(GameDataPaths.EnvironmentVariableName);
+        if (string.IsNullOrWhiteSpace(root) || !System.IO.File.Exists(System.IO.Path.Combine(root, "Missions", "Missions.json")))
+            Assert.Inconclusive("Set AO_REBIRTH_GAMEDATA_PATH to the private GameData (Missions.json, Dungeons).");
+
+        var logger = new Logger();
+        var data = new GameDataStore(logger, null, root!);
+        var generator = new Core.Quests.Dungeons.DungeonLayoutGenerator(data, logger);
+        Assert.IsTrue(generator.IsAvailable, "The dungeon generator is unavailable.");
+        var playfield = (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
+        typeof(Playfield).GetField("<Identity>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(playfield, new Identity { Type = IdentityType.Playfield2, Instance = PlayfieldId });
+
+        int layouts = 0, pairs = 0, overlapping = 0;
+        foreach (string mission in new[] { "rkSolo", "rkTeam" })
+        {
+            Core.Quests.Dungeons.MissionDefinition definition = generator.Mission(mission)
+                ?? throw new AssertFailedException("Missions.json has no " + mission + " mission.");
+            Core.Quests.Dungeons.ResolvedDungeon resolved = generator.Resolve(definition.Dungeon, 100, out string? problem)
+                ?? throw new AssertFailedException(mission + " does not resolve at QL 100: " + problem);
+            for (int seed = 1; seed <= 6; seed++)
             {
-                LowId = lowId, HighId = highId, Quality = quality, Source = source, StackCount = stackCount,
-                InstanceId = instanceId, Identity = identity ?? Identity.None, Definition = CreateTemplate(lowId, highId, quality)
-            };
+                var parameters = new Core.Quests.Dungeons.QuestDungeonParameters { Seed = seed, Quality = 100, EntranceInstance = unchecked((int)0xC00010F4) };
+                Assert.IsTrue(generator.ConfigureNewDungeon(parameters, resolved, tokenReward: false, playerSide: 0, out problem), problem);
+                Assert.IsTrue(generator.TryGenerate(parameters, out Core.Quests.Dungeons.DungeonLayout layout));
+                DungeonWorldLayout dungeon = DungeonCollisionBuilder.BuildLayout(data.RootPath, layout.Generator);
+                PlayfieldDistrictsData? districts = AcgDungeonPlayfield.LoadStyleDistricts(data.RootPath, layout.Generator.TemplatePlayfield, logger);
+                Assert.IsNotNull(districts?.Districts, "style " + layout.Generator.TemplatePlayfield + " has no districts");
+                var byIndex = new Dictionary<int, PlayfieldDistrictEntry>();
+                foreach (PlayfieldDistrictEntry district in districts.Districts)
+                    if (district != null)
+                        byIndex[district.DistrictIndex] = district;
 
-        public Item CreateWithNewInstance(int lowId, int highId, int quality, ItemSource source, int stackCount = 1)
-            => Create(lowId, highId, quality, source, stackCount);
+                var locality = new PlayfieldLocality(PlayfieldId, null);
+                locality.ApplyDungeonRooms(dungeon);
+                layouts++;
+                int id = 1;
+                foreach (DungeonRoomPlacement placement in dungeon.Placements)
+                {
+                    int zone = placement.Template.InstanceId;
+                    int index = districts.ZoneToDistrictMap is { } map && zone >= 0 && zone < map.Length ? map[zone] : zone;
+                    if (!byIndex.TryGetValue(index, out PlayfieldDistrictEntry? district))
+                        continue;
 
-        public ItemTemplate CreateTemplate(int lowId, int highId, int quality) => new() { Id = lowId, Quality = quality };
+                    // Every spawn point of the room, as a monster spawned there: its cell is what its position resolves to.
+                    var monsters = new List<NpcCharacter>();
+                    foreach (PlayfieldDistrictSpawnPoint point in district.SpawnPoints ?? [])
+                    {
+                        if (point?.Position is not { Length: >= 3 } p)
+                            continue;
+                        NVector3 at = placement.TransformTemplatePoint(new NVector3(p[0], p[1], p[2]));
+                        var monster = new NpcCharacter(new Identity { Type = IdentityType.SimpleChar, Instance = id++ }, new Items())
+                        {
+                            Playfield = playfield,
+                            Position = new Vector3(at.X, at.Y, at.Z)
+                        };
+                        locality.RegisterDynel(monster);
+                        monsters.Add(monster);
+                        if (monster.Cell!.Id != placement.Index)
+                            overlapping++;
+                    }
 
-        public bool TryFromInstanceRecord(ItemInstanceRecord row, out Item item) => throw new NotSupportedException();
+                    for (int i = 0; i < monsters.Count; i++)
+                    {
+                        for (int j = i + 1; j < monsters.Count; j++)
+                        {
+                            pairs++;
+                            Assert.IsFalse(locality.TryGetSeparateRooms(monsters[i], monsters[j], out int roomA, out int roomB),
+                                mission + " seed " + seed + " room " + placement.Index + ": monsters at " + monsters[i].Position
+                                + " and " + monsters[j].Position + " taken for rooms " + roomA + " and " + roomB);
+                        }
+                    }
+                }
+            }
+        }
+
+        Assert.IsTrue(layouts > 0 && pairs > 0, "no rooms with spawn points were generated");
+        Assert.IsTrue(overlapping > 0, "no spawn point fell into a neighbouring room's box: the layouts no longer exercise the overlap");
     }
+}
+
+sealed class Logger : IZoneLogger
+{
+    public void Debug(string message) { }
+    public void Info(string message) { }
+    public void Warn(string message) { }
+    public void Error(string message) { }
+    public void Error(Exception exception, string message) { }
+    public IZoneLogger CreateForPlayfield(int playfieldId) => this;
+}
+
+sealed class Items : IItemBuilder
+{
+    public Item Create(int lowId, int highId, int quality, ItemSource source, int stackCount = 1, int instanceId = 0,
+        Identity? identity = null, byte[]? statsBlob = null) => new()
+        {
+            LowId = lowId, HighId = highId, Quality = quality, Source = source, StackCount = stackCount,
+            InstanceId = instanceId, Identity = identity ?? Identity.None, Definition = CreateTemplate(lowId, highId, quality)
+        };
+
+    public Item CreateWithNewInstance(int lowId, int highId, int quality, ItemSource source, int stackCount = 1)
+        => Create(lowId, highId, quality, source, stackCount);
+
+    public ItemTemplate CreateTemplate(int lowId, int highId, int quality) => new() { Id = lowId, Quality = quality };
+
+    public bool TryFromInstanceRecord(ItemInstanceRecord row, out Item item) => throw new NotSupportedException();
 }

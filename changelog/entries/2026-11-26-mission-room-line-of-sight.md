@@ -1,0 +1,1 @@
+- Fixed: In Rubi-Ka and Alien Mothership missions, monsters standing in the same room as you are in sight again. After walking through a door, or against a monster spawned by a wall shared with the next room, attacks and nanos no longer fail for line of sight. A closed door between you and a monster still blocks sight.
