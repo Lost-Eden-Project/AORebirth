@@ -265,6 +265,49 @@ namespace ZoneEngine_New.Core.GameData
     }
 
     /// <summary>
+    /// Missions/Missions.json, with Dungeons/*.json (the missions are validated against the presets, so both swap
+    /// together). An accepted mission keeps what it froze at acceptance; one accepted afterwards, or a terminal offer
+    /// accepted afterwards, resolves its mission name against the new definitions.
+    /// </summary>
+    public sealed class MissionsReload(ZoneEngine_New.Core.Quests.Dungeons.DungeonLayoutGenerator dungeons) : IReloadableGameData
+    {
+        public string Name => ZoneEngine_New.Core.Quests.Dungeons.MissionDefinitions.ReloadName;
+
+        public IReadOnlyList<string> Files { get; } = [ZoneEngine_New.Core.Quests.Dungeons.MissionDefinitions.RelativePath];
+
+        public GameDataReloadResult Reload() => dungeons.ReloadMissions();
+    }
+
+    /// <summary>
+    /// Dungeons/Defaults.json, Layouts.json, Population.json, Chests.json, Objectives.json and Families.json, with
+    /// Missions/Missions.json (see <see cref="MissionsReload"/>). Dungeons/Static and Dungeons/Sites are
+    /// <see cref="ZoneEngine_New.Core.Quests.Dungeons.Static.StaticDungeonsReload"/>'s.
+    /// </summary>
+    public sealed class DungeonsReload(ZoneEngine_New.Core.Quests.Dungeons.DungeonLayoutGenerator dungeons) : IReloadableGameData
+    {
+        public string Name => ZoneEngine_New.Core.Quests.Dungeons.DungeonPresets.ReloadName;
+
+        public IReadOnlyList<string> Files => ZoneEngine_New.Core.Quests.Dungeons.DungeonPresets.Files;
+
+        public GameDataReloadResult Reload() => dungeons.ReloadDungeons();
+    }
+
+    /// <summary>
+    /// DungeonEntrances.json: the ACG styles' entrance rooms, exit doors, main halls and floor-transition rooms. The styles
+    /// loaded so far are dropped; the next dungeon built of a style reads its rooms and entrances again. A dungeon frozen
+    /// before the reload is built from its plan with the new rooms, so adding entrances to a style that had none changes
+    /// nothing accepted, while changing a style's existing rows can change its accepted dungeons when they next build.
+    /// </summary>
+    public sealed class DungeonEntrancesReload(ZoneEngine_New.Core.Quests.Dungeons.DungeonLayoutGenerator dungeons) : IReloadableGameData
+    {
+        public string Name => "DungeonEntrances";
+
+        public IReadOnlyList<string> Files { get; } = [AORebirth.DungeonGenerator.DungeonEntranceMap.FileName];
+
+        public GameDataReloadResult Reload() => dungeons.ReloadEntrances();
+    }
+
+    /// <summary>
     /// GameData/Playfields: every playfield that is not running reads its files (Spawns.json, Npcs, metadata, Dynels.dat,
     /// ExitProxyDoors.json, ...) from disk again the next time it is built, and the exit-proxy door index is rebuilt.
     /// Every running playfield reads its Spawns.json and Districts.json again and applies them in place

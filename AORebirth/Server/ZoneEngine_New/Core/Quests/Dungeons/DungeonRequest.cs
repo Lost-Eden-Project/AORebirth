@@ -702,17 +702,32 @@ public sealed class DungeonPresets
         _objectives = objectives;
     }
 
-    /// <summary>Reads GameData/Dungeons; throws naming what is wrong. Every preset must resolve over the defaults.</summary>
+    /// <summary>The reloadable catalog name (<see cref="ZoneEngine_New.Core.GameData.DungeonsReload"/>).</summary>
+    public const string ReloadName = "Dungeons";
+
+    /// <summary>The files read, GameData-relative. Each is taken from the override folder when it has a copy.</summary>
+    public static readonly IReadOnlyList<string> Files =
+        [Folder + "/Defaults.json", Folder + "/Layouts.json", Folder + "/Population.json", Folder + "/Chests.json", Folder + "/Objectives.json", Folder + "/Families.json"];
+
+    /// <summary>The named presets of every kind.</summary>
+    public int Count => _layouts.Count + _population.Count + _chests.Count + _objectives.Count;
+
+    /// <summary>
+    /// Reads GameData/Dungeons (each file from the GameData override folder when it has a copy, else the shipped one);
+    /// throws naming what is wrong. Every preset must resolve over the defaults.
+    /// </summary>
     public static DungeonPresets Load(IGameData gameData, IZoneLogger logger)
     {
         ArgumentNullException.ThrowIfNull(gameData);
-        string folder = Path.Combine(gameData.RootPath, Folder);
-        DefaultsFile defaults = Read<DefaultsFile>(Path.Combine(folder, "Defaults.json"))
+        string root = gameData.RootPath;
+        DefaultsFile defaults = Read<DefaultsFile>(Resolve(root, "Defaults.json"))
             ?? throw new InvalidDataException(Folder + "/Defaults.json is empty");
         var presets = new DungeonPresets(gameData, defaults,
-            Named<DungeonLayoutBlock>(folder, "Layouts.json"), Named<DungeonPopulationBlock>(folder, "Population.json"),
-            Named<DungeonChestBlock>(folder, "Chests.json"), Named<DungeonObjectiveBlock>(folder, "Objectives.json"));
-        presets.LoadFamilies(folder);
+            Named<DungeonLayoutBlock>(Resolve(root, "Layouts.json"), "Layouts.json"),
+            Named<DungeonPopulationBlock>(Resolve(root, "Population.json"), "Population.json"),
+            Named<DungeonChestBlock>(Resolve(root, "Chests.json"), "Chests.json"),
+            Named<DungeonObjectiveBlock>(Resolve(root, "Objectives.json"), "Objectives.json"));
+        presets.LoadFamilies(Resolve(root, "Families.json"));
 
         var problems = new List<string>();
         void Check(string where, string? problem)
@@ -872,10 +887,12 @@ public sealed class DungeonPresets
 
     List<MissionFamily> _families = [];
 
+    /// <summary>The file to read for <paramref name="file"/> of GameData/Dungeons: the override folder's copy, else the shipped one.</summary>
+    static string Resolve(string root, string file) => AORebirth.Core.GameData.GameDataPaths.ResolveFile(root, Folder + "/" + file);
+
     /// <summary>Families.json: the families fit for missions (Mission true) that have an NPC template, with their buckets and levels.</summary>
-    void LoadFamilies(string folder)
+    void LoadFamilies(string path)
     {
-        string path = Path.Combine(folder, "Families.json");
         if (!File.Exists(path))
             return;
         var rows = JsonSerializer.Deserialize<Dictionary<string, FamilyRow>>(File.ReadAllText(path), DungeonRequest.JsonOptions) ?? [];
@@ -910,9 +927,8 @@ public sealed class DungeonPresets
         return JsonSerializer.Deserialize<T>(File.ReadAllText(path), DungeonRequest.JsonOptions);
     }
 
-    static Dictionary<string, T> Named<T>(string folder, string file) where T : class, IDungeonBlock<T>
+    static Dictionary<string, T> Named<T>(string path, string file) where T : class, IDungeonBlock<T>
     {
-        string path = Path.Combine(folder, file);
         if (!File.Exists(path))
             return new Dictionary<string, T>(StringComparer.Ordinal);
         var named = JsonSerializer.Deserialize<Dictionary<string, T>>(File.ReadAllText(path), DungeonRequest.JsonOptions)

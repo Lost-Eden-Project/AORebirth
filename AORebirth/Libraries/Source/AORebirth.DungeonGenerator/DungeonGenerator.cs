@@ -163,9 +163,28 @@ namespace AORebirth.DungeonGenerator
             _gameDataRoot = gameDataRoot;
         }
 
-        /// <summary>The style's rooms as building blocks (loaded once per style).</summary>
+        /// <summary>The style's rooms as building blocks (loaded once per style, until <see cref="ForgetStyles"/>).</summary>
         public StyleRoomSet LoadStyle(int styleId)
             => StyleCache.GetOrAdd((_gameDataRoot, styleId), key => StyleRoomSet.Load(key.Root, key.Style));
+
+        /// <summary>
+        /// Drops every style loaded for this generator's GameData root, so the next <see cref="LoadStyle"/> reads the
+        /// style's rooms and <see cref="DungeonEntranceMap"/> from disk again (a reload of DungeonEntrances.json). A
+        /// generation in flight keeps the set it already holds. A dungeon frozen before the change is built again from
+        /// its plan with the new set: adding entrances to a style that had none changes nothing already accepted;
+        /// changing a style's existing entrances or main halls can change its accepted dungeons when they next build.
+        /// </summary>
+        public int ForgetStyles()
+        {
+            int dropped = 0;
+            foreach ((string Root, int Style) key in StyleCache.Keys)
+            {
+                if (string.Equals(key.Root, _gameDataRoot, StringComparison.OrdinalIgnoreCase) && StyleCache.TryRemove(key, out _))
+                    dropped++;
+            }
+
+            return dropped;
+        }
 
         public DungeonGenerationResult Generate(DungeonGenerationRequest request)
         {

@@ -66,11 +66,29 @@ namespace AORebirth.DungeonGenerator
             public int ExitDoor { get; set; }
         }
 
-        /// <summary>The entrances (room id to exit door) and main halls of <paramref name="styleId"/>; empty when unlisted.</summary>
+        /// <summary>
+        /// The style ids the file lists (the GameData override folder's copy when it has one); empty without a file.
+        /// Throws when the file is not valid JSON, so a reload can refuse it before any style is read again.
+        /// </summary>
+        public static IReadOnlyList<int> ListStyles(string gameDataRoot)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
+            string path = AORebirth.Core.GameData.GameDataPaths.ResolveFile(gameDataRoot, FileName);
+            if (!File.Exists(path))
+                return [];
+            EntrancesFile? file = JsonSerializer.Deserialize<EntrancesFile>(File.ReadAllText(path),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return (file?.Styles ?? []).Where(style => style != null).Select(style => style.Style).Distinct().ToArray();
+        }
+
+        /// <summary>
+        /// The entrances (room id to exit door) and main halls of <paramref name="styleId"/>; empty when unlisted. Read
+        /// from the GameData override folder's copy of the file when it has one, else the shipped file.
+        /// </summary>
         public static DungeonEntranceMap Load(string gameDataRoot, int styleId)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(gameDataRoot);
-            string path = Path.Combine(gameDataRoot, FileName);
+            string path = AORebirth.Core.GameData.GameDataPaths.ResolveFile(gameDataRoot, FileName);
             var exits = new Dictionary<int, int>();
             var mainHalls = new HashSet<int>();
             DungeonTransitionMap? transitions = null;

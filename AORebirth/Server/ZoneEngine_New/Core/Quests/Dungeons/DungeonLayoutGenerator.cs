@@ -7,6 +7,8 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
     using System.Linq;
     using System.Text.Json;
 
+    using AORebirth.Modules.Content;
+
     using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.GameData;
@@ -156,9 +158,17 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         readonly Dictionary<int, DungeonDoorStyle> _doorStyles = new();
         readonly AORebirth.DungeonGenerator.DungeonGenerator? _generator;
         readonly IZoneLogger _logger;
-        readonly DungeonPresets? _presets;
-        readonly MissionDefinitions? _missions;
+        readonly IGameData _gameData;
         GenerationPolicy? _policy;
+
+        /// <summary>
+        /// Missions/Missions.json and Dungeons/*.json as one immutable snapshot: the missions are validated against the
+        /// presets, so they load and swap together (<see cref="ReloadMissions"/>, <see cref="ReloadDungeons"/>). Null when
+        /// they failed to load: new mission acceptance is unavailable until a reload succeeds.
+        /// </summary>
+        sealed record Definitions(DungeonPresets Presets, MissionDefinitions Missions);
+
+        volatile Definitions? _definitions;
 
         sealed class GenerationPolicy
         {
@@ -205,6 +215,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             ArgumentNullException.ThrowIfNull(gameData);
             ArgumentNullException.ThrowIfNull(logger);
             _logger = logger;
+            _gameData = gameData;
 
             try
             {
@@ -219,14 +230,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             LoadDoorStyles(Path.Combine(gameData.RootPath, DoorStylesFileName), logger);
             try
             {
-                _presets = DungeonPresets.Load(gameData, logger);
-                _missions = MissionDefinitions.Load(gameData.RootPath, _presets, logger);
+                _definitions = LoadDefinitions();
             }
             catch (Exception exception)
             {
-                _presets = null;
-                _missions = null;
-                logger.Error(exception, "Failed to load GameData/" + DungeonPresets.Folder + " or Missions/" + MissionDefinitions.FileName
+                _definitions = null;
+                logger.Error(exception, "Failed to load GameData/" + DungeonPresets.Folder + " or " + MissionDefinitions.RelativePath
                     + "; new mission acceptance is unavailable");
             }
 
@@ -281,15 +290,75 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             }
         }
 
+        /// <summary>Reads the presets, then the missions against them; throws naming what is wrong.</summary>
+        Definitions LoadDefinitions()
+        {
+            DungeonPresets presets = DungeonPresets.Load(_gameData, _logger);
+            return new Definitions(presets, MissionDefinitions.Load(_gameData.RootPath, presets, _logger));
+        }
+
+        /// <summary>
+        /// Reads Missions/Missions.json and Dungeons/*.json again (the GameData override folder's copies first) and swaps
+        /// both in whole; a file that fails to read or validate keeps the current snapshot and reports why. A mission
+        /// already accepted keeps what it froze at acceptance (its resolved dungeon, seed and plan; the token and reward
+        /// rules it was given); a mission accepted after the reload resolves its name against the new definitions.
+        /// Reads files: never call it on a playfield tick.
+        /// </summary>
+        public GameDataReloadResult ReloadMissions() => ReloadDefinitions(MissionDefinitions.ReloadName, d => d.Missions.Count);
+
+        /// <summary>The same reload, counted in presets: the missions are validated against them, so both swap together.</summary>
+        public GameDataReloadResult ReloadDungeons() => ReloadDefinitions(DungeonPresets.ReloadName, d => d.Presets.Count);
+
+        GameDataReloadResult ReloadDefinitions(string name, Func<Definitions, int> entries)
+        {
+            Definitions? current = _definitions;
+            try
+            {
+                Definitions loaded = LoadDefinitions();
+                _definitions = loaded;
+                return new GameDataReloadResult(name, true, entries(loaded), []);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Reload of " + name + " failed; " + (current == null
+                    ? "mission acceptance stays unavailable" : "the loaded missions and dungeon presets are unchanged"));
+                return new GameDataReloadResult(name, false, current == null ? 0 : entries(current), [exception.Message]);
+            }
+        }
+
+        /// <summary>
+        /// Reads DungeonEntrances.json again (the override folder's copy first): the file must parse, then every ACG style
+        /// loaded so far is dropped so the next dungeon built reads its rooms and entrances from disk. Entries: the styles
+        /// the file lists. See <see cref="AORebirth.DungeonGenerator.DungeonGenerator.ForgetStyles"/> for what an
+        /// accepted dungeon of a changed style sees.
+        /// </summary>
+        public GameDataReloadResult ReloadEntrances()
+        {
+            const string name = "DungeonEntrances";
+            if (_generator == null)
+                return new GameDataReloadResult(name, false, 0, ["the dungeon generator is unavailable"]);
+            try
+            {
+                int styles = AORebirth.DungeonGenerator.DungeonEntranceMap.ListStyles(_gameData.RootPath).Count;
+                _generator.ForgetStyles();
+                return new GameDataReloadResult(name, true, styles, []);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error(exception, "Reload of " + name + " failed; the loaded styles are unchanged");
+                return new GameDataReloadResult(name, false, 0, [exception.Message]);
+            }
+        }
+
         /// <summary>True when new dungeons can be generated.</summary>
-        public bool IsAvailable => _generator != null && _policy != null && _presets != null && _missions != null;
+        public bool IsAvailable => _generator != null && _policy != null && _definitions != null;
 
         /// <summary>The DungeonDoorStyles.json row for an ACG <paramref name="style"/>; false when the style has no doors configured.</summary>
         public bool TryGetDoorStyle(int style, out DungeonDoorStyle doors)
             => _doorStyles.TryGetValue(style, out doors!);
 
         /// <summary>The named mission definition (GameData/Missions/Missions.json), or null.</summary>
-        public MissionDefinition? Mission(string? name) => _missions?.Get(name);
+        public MissionDefinition? Mission(string? name) => _definitions?.Missions.Get(name);
 
         /// <summary>The policy's accepted-quest lifetime; 0 when no policy loaded.</summary>
         public int AcceptedLifetimeSeconds => _policy?.AcceptedLifetimeSeconds ?? 0;
@@ -300,12 +369,12 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
         /// <summary>The request resolved against GameData/Dungeons for a mission of <paramref name="quality"/>; null with the reason.</summary>
         public ResolvedDungeon? Resolve(DungeonRequest? request, int quality, out string? problem)
         {
-            if (_presets == null)
+            if (_definitions is not { Presets: DungeonPresets presets })
             {
                 problem = "dungeon presets are unavailable";
                 return null;
             }
-            return _presets.Resolve(request, quality, out problem);
+            return presets.Resolve(request, quality, out problem);
         }
 
         /// <summary>
@@ -320,7 +389,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
             ArgumentNullException.ThrowIfNull(parameters);
             ArgumentNullException.ThrowIfNull(dungeon);
             problem = null;
-            if (_generator == null || _policy == null)
+            if (_generator == null || _policy == null || _definitions is not { Presets: DungeonPresets presets })
             {
                 problem = "the generator is unavailable";
                 return false;
@@ -331,7 +400,7 @@ namespace ZoneEngine_New.Core.Quests.Dungeons
                 // A population that picks its NPCs from the family buckets is frozen to the families it drew.
                 if (dungeon.Population.Mix != null)
                 {
-                    DungeonPopulationBlock? picked = _presets!.Pick(dungeon.Population, parameters.Quality, playerSide,
+                    DungeonPopulationBlock? picked = presets.Pick(dungeon.Population, parameters.Quality, playerSide,
                         new Random(unchecked(parameters.Seed * 92821 + 17)), out string? pickProblem);
                     if (picked == null)
                     {

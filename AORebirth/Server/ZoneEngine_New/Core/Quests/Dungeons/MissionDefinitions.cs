@@ -205,13 +205,19 @@ public sealed class MissionDefinitions
     public MissionDefinition? Get(string? name)
         => name != null && _missions.TryGetValue(name, out MissionDefinition? mission) ? mission : null;
 
+    /// <summary>The reloadable catalog name (<see cref="ZoneEngine_New.Core.GameData.MissionsReload"/>).</summary>
+    public const string ReloadName = "Missions";
+
+    /// <summary>The file's GameData-relative path.</summary>
+    public const string RelativePath = "Missions/" + FileName;
+
     /// <summary>
-    /// Reads the file; throws naming what is wrong. Each definition's dungeon must resolve against
-    /// <paramref name="presets"/> at every mission quality.
+    /// Reads the file (the GameData override folder's copy when it has one, else the shipped file); throws naming what
+    /// is wrong. Each definition's dungeon must resolve against <paramref name="presets"/> at every mission quality.
     /// </summary>
     public static MissionDefinitions Load(string gameDataRoot, DungeonPresets presets, IZoneLogger logger)
     {
-        string path = Path.Combine(gameDataRoot, "Missions", FileName);
+        string path = AORebirth.Core.GameData.GameDataPaths.ResolveFile(gameDataRoot, RelativePath);
         if (!File.Exists(path))
             throw new FileNotFoundException(path + " not found", path);
         Dictionary<string, MissionDefinition> missions = JsonSerializer.Deserialize<Dictionary<string, MissionDefinition>>(
