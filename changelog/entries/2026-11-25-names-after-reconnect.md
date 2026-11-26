@@ -1,0 +1,1 @@
+- Fixed: After you reconnect from a dropped connection, your bag names, your team's loot order and the player shop names in the market show again.

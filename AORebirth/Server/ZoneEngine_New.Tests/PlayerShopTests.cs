@@ -75,6 +75,32 @@ public sealed class PlayerShopTests
         rig.AssertStorageMatchesMemory();
     }
 
+    /// <summary>
+    /// Live 2026-11-26: the owner's client dropped and logged back in while the character was link-dead. The new client
+    /// said hello, but the character still spoke the server's messages from the old connection, so the hello was ignored
+    /// and the new client never got the shop names (nor its bag names or loot order).
+    /// </summary>
+    [TestMethod]
+    public void AClientThatLogsBackInWhileLinkDeadIsToldTheShopNamesAfterItsHello()
+    {
+        using var rig = new Rig();
+        rig.RentA();
+        var hello = new ZoneEngine_New.Core.MessageHandlers.ClientHelloMessageHandler(new ZoneEngine_New.Core.Teams.TeamService(), rig.Shops);
+
+        rig.Owner.EnterLinkDead(TimeSpan.FromMinutes(1));
+        var session = new Session();
+        rig.Owner.EnterOnline(session);
+        hello.Handle(new ClientHelloMessage { Identity = rig.Owner.Identity }, session);
+        Assert.IsTrue(session.Of<PlayerShopNameMessage>().Any(m => m.Terminal.Instance == TerminalA && m.ShopName == "Owner's Shop"
+            && m.OwnerName == "Owner"), "the new client labels the owner's booth");
+
+        // A repeated hello on the same connection sends nothing again.
+        int names = session.Of<PlayerShopNameMessage>().Count();
+        hello.Handle(new ClientHelloMessage { Identity = rig.Owner.Identity }, session);
+        Assert.AreEqual(names, session.Of<PlayerShopNameMessage>().Count());
+        rig.AssertStorageMatchesMemory();
+    }
+
     [TestMethod]
     public void ACharacterRentsOneShopAndARentedTerminalCannotBeTaken()
     {

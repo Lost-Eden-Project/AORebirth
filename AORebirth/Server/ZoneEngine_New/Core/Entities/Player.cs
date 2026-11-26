@@ -1201,10 +1201,17 @@ namespace ZoneEngine_New.Core.Entities
         /// </summary>
         public bool SpeaksExtendedMessages { get; private set; }
 
+        /// <summary>The connection whose hello was answered last; a new connection (a relog, a zone change) says hello again.</summary>
+        IZoneSession? _helloSession;
+
+        /// <summary>This connection's hello was already answered: a repeat sends nothing again.</summary>
+        internal bool HasHelloFrom(IZoneSession session) => ReferenceEquals(_helloSession, session);
+
         /// <summary>The client's hello: from now on it gets the server's own messages, starting with its bag names.</summary>
-        internal void OnClientHello()
+        internal void OnClientHello(IZoneSession? session = null)
         {
             SpeaksExtendedMessages = true;
+            _helloSession = session ?? Session;
             SendBagNames();
         }
 

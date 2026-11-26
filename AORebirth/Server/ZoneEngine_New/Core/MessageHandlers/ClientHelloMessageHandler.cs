@@ -13,6 +13,10 @@ namespace ZoneEngine_New.Core.MessageHandlers
     /// An updated client's hello (<see cref="ClientHelloMessage"/>) after its FullCharacter: the player is sent the
     /// server's own messages from now on, beginning with its bag names and its team's loot order.
     /// </summary>
+    /// <remarks>
+    /// Answered once per connection. A client that logs back in while its character is link-dead, or zones, is a new
+    /// connection to the same character: its hello is answered again, since that client starts with nothing.
+    /// </remarks>
     public sealed class ClientHelloMessageHandler(TeamService teams, ZoneEngine_New.Core.PlayerShops.PlayerShopService? playerShops = null)
         : IMessageHandler<ClientHelloMessage>
     {
@@ -25,9 +29,9 @@ namespace ZoneEngine_New.Core.MessageHandlers
             ArgumentNullException.ThrowIfNull(message);
             ArgumentNullException.ThrowIfNull(session);
             if (session.State != SessionState.InPlay || session.Player is not Player player || !ReferenceEquals(player.Session, session)
-                || message.Identity != player.Identity || player.SpeaksExtendedMessages)
+                || message.Identity != player.Identity || player.HasHelloFrom(session))
                 return;
-            player.OnClientHello();
+            player.OnClientHello(session);
             teams.SendCurrentLootOrder(player);
             // The names of the player shops rented on this playfield.
             playerShops?.SendNames(player);
