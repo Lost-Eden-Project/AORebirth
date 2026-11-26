@@ -90,8 +90,19 @@ namespace ZoneEngine_New.Core.Entities
                 throw new InvalidOperationException("Player already has online ownership.");
         }
 
+        /// <summary>
+        /// Lets go of the World lease. A quarantined player leaves without its latest changes stored, and World is
+        /// told so (a swap reports it as logged out unsaved, not saved).
+        /// </summary>
         public void ReleaseOnlineOwnership()
-            => Interlocked.Exchange(ref _onlineOwnership, null)?.Dispose();
+        {
+            IDisposable? ownership = Interlocked.Exchange(ref _onlineOwnership, null);
+            if (ownership == null)
+                return;
+            if (_persistenceQuarantined && ownership is World.IUnsavedRelease unsaved)
+                unsaved.MarkUnsaved();
+            ownership.Dispose();
+        }
 
         // Temporary hardcoded hospital until real respawn tables exist.
         public const int RespawnGracePeriodMilliseconds = 3000;

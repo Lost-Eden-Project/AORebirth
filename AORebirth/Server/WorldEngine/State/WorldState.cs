@@ -784,6 +784,8 @@ namespace WorldEngine.State
                     return new Ack { Ok = false, Reason = "stale_lease" };
                 _leases.Remove(request.CharacterId);
                 _gone.Enqueue(request.CharacterId);
+                if (request.Unsaved)
+                    NoteUnsavedReleaseLocked(instance, request.CharacterId);
                 return new Ack { Ok = true, Reason = "released" };
             }
         }

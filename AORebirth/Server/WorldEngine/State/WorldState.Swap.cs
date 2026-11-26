@@ -79,6 +79,9 @@ namespace WorldEngine.State
             /// <summary>The characters on the leaving instance when the hand-over started, by id, with their names.</summary>
             public Dictionary<int, string> Moving { get; } = new();
 
+            /// <summary>Moving characters whose zone released them without storing their latest changes.</summary>
+            public HashSet<int> ReleasedUnsaved { get; } = new();
+
             /// <summary>
             /// Occupied playfields still assigned to the leaving instance. Each moves to the taking one when the leaving
             /// one starts moving its players (BeginTransfer), so the two never both run it with players in it.
@@ -688,6 +691,14 @@ namespace WorldEngine.State
             AssignDuty();
         }
 
+        /// <summary>A zone released a character without storing its latest changes; a swap moving it reports that.</summary>
+        void NoteUnsavedReleaseLocked(ServiceInstance instance, int characterId)
+        {
+            _log.LogWarning("Character {Character} released by {Instance} without its latest changes stored", characterId, instance.Name);
+            if (_swap is { } swap && swap.Moving.ContainsKey(characterId))
+                swap.ReleasedUnsaved.Add(characterId);
+        }
+
         static void CancelHandOverLocked(ZoneSwap swap, ServiceInstance? handing)
             => handing?.Send(new WorldToService { HandOver = new HandOver { SwapId = swap.Id, Cancel = true } });
 
@@ -726,7 +737,7 @@ namespace WorldEngine.State
         {
             if (_swap is not ZoneSwap swap)
                 return null;
-            int moved = 0, loggedOut = 0, pending = 0, failed = 0;
+            int moved = 0, loggedOut = 0, loggedOutUnsaved = 0, pending = 0, failed = 0;
             var results = new List<object>(swap.Moving.Count);
             bool overdue = swap.HandOverDeadlineMs > 0 && now > swap.HandOverDeadlineMs + 15_000;
             foreach ((int character, string name) in swap.Moving.OrderBy(m => m.Key))
@@ -735,8 +746,17 @@ namespace WorldEngine.State
                 string? reason = null;
                 if (!_leases.TryGetValue(character, out CharacterLease? lease))
                 {
-                    outcome = "logged_out_saved";
                     loggedOut++;
+                    if (swap.ReleasedUnsaved.Contains(character))
+                    {
+                        outcome = "logged_out_unsaved";
+                        reason = "its zone released it without storing its latest changes (a save failed)";
+                        loggedOutUnsaved++;
+                    }
+                    else
+                    {
+                        outcome = "logged_out_saved";
+                    }
                 }
                 else if (string.Equals(lease.Owner, swap.HandingTo, StringComparison.OrdinalIgnoreCase) && lease.State == LeaseState.InPlay)
                 {
@@ -773,7 +793,7 @@ namespace WorldEngine.State
                 handingFrom = swap.HandingFrom.Length == 0 ? null : swap.HandingFrom,
                 handingTo = swap.HandingTo.Length == 0 ? null : swap.HandingTo,
                 deadlineInSeconds = swap.HandOverDeadlineMs == 0 ? (long?)null : Math.Max(0, (swap.HandOverDeadlineMs - now) / 1000),
-                players = new { onFrom = On(swap.From), onTo = On(swap.To), moved, loggedOut, failed, pending },
+                players = new { onFrom = On(swap.From), onTo = On(swap.To), moved, loggedOut, loggedOutUnsaved, failed, pending },
                 results
             };
         }

@@ -397,6 +397,9 @@ message ClaimReply {
 message ReleaseRequest {
   int32 character_id = 1;
   LeaseToken token = 2;
+  // The zone let go of the character without storing its latest changes: its persistence was quarantined (a save
+  // failed for good, or its outcome is unknown) and the database copy is what the next login loads.
+  bool unsaved = 3;
 }
 
 message ServiceLeaseRequest {

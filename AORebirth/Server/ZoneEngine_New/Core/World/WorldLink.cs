@@ -23,6 +23,12 @@ namespace ZoneEngine_New.Core.World
     /// lease: while heartbeats are acknowledged the zone may write its characters; past the deadline it must not.
     /// Nothing here blocks a playfield tick: lease checks are local, releases are queued.
     /// </summary>
+    /// <summary>A character's World lease that can be released as "latest changes not stored".</summary>
+    public interface IUnsavedRelease : IDisposable
+    {
+        void MarkUnsaved();
+    }
+
     public sealed class WorldLink : IDisposable
     {
         static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(3);
@@ -220,13 +226,13 @@ namespace ZoneEngine_New.Core.World
             }
 
             if (_leases.TryRemove(new KeyValuePair<int, LocalLease>(characterId, lease)))
-                QueueRelease(characterId, lease.Token);
+                QueueRelease(characterId, lease.Token, lease.Unsaved);
         }
 
-        void QueueRelease(int characterId, LeaseToken token)
+        void QueueRelease(int characterId, LeaseToken token, bool unsaved = false)
         {
             Interlocked.Increment(ref _releasesPending);
-            if (!_releases.Writer.TryWrite(new ReleaseRequest { CharacterId = characterId, Token = token }))
+            if (!_releases.Writer.TryWrite(new ReleaseRequest { CharacterId = characterId, Token = token, Unsaved = unsaved }))
                 Interlocked.Decrement(ref _releasesPending);
         }
 
@@ -915,12 +921,21 @@ namespace ZoneEngine_New.Core.World
 
             public bool Released { get; set; }
 
+            /// <summary>Persistence was quarantined: the release tells World the latest changes were not stored.</summary>
+            public bool Unsaved { get; set; }
+
             public PlayerPresence? SentPresence { get; set; }
         }
 
-        sealed class Ownership(WorldLink link, int characterId, LocalLease lease) : IDisposable
+        sealed class Ownership(WorldLink link, int characterId, LocalLease lease) : IUnsavedRelease
         {
             int _disposed;
+
+            public void MarkUnsaved()
+            {
+                lock (lease)
+                    lease.Unsaved = true;
+            }
 
             public void Dispose()
             {
