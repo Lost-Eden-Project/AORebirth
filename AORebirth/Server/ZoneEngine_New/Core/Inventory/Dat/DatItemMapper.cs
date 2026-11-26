@@ -48,13 +48,17 @@ namespace ZoneEngine_New.Core.Inventory.Dat
             {
                 if (line == null || line.Hash == 0)
                     continue;
+
+                // A band above QL 255 is stored in the extended form (see DatShopItem.DecodeBand); read as the
+                // 17-byte line it would stock City Buildings (2CS6, QL 300-300) as Amount 44 at QL 1.
+                line.DecodeBand(out int minQl, out int maxQl, out int amount, out int regen);
                 entries.Add(new ShopInventoryEntry
                 {
                     Hash = HashText(line.Hash),
-                    MinQl = line.MinQl,
-                    MaxQl = line.MaxQl,
-                    Amount = line.Amount,
-                    Regen = line.Regen,
+                    MinQl = minQl,
+                    MaxQl = maxQl,
+                    Amount = amount,
+                    Regen = regen,
                     Interval = line.Interval,
                     Chance = line.Chance
                 });

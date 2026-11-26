@@ -1,0 +1,2 @@
+- Fixed: Shops whose stock is QL 256 or higher (the City Buildings shops and the many QL 250-299 vendors) now sell their items at the right quality instead of QL 1 or nothing.
+- Fixed: A shop now sells an item whose quality lies outside the shop's own range at its nearest quality, as on live: the Tax Refund Office and the sculptures in the City Buildings shops, and the Monarchy government chip at the Organization registration shop.

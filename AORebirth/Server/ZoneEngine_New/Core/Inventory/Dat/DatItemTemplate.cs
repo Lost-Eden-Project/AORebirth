@@ -239,7 +239,13 @@ namespace ZoneEngine_New.Core.Inventory.Dat
         public MessagePackObject Expression;
     }
 
-    /// <summary>AODB <c>ShopItem</c>: one vendor stock line.</summary>
+    /// <summary>
+    /// AODB <c>ShopItem</c>: one vendor stock line, with the fields as AODB reads the 17-byte line: hash, two single-byte
+    /// qualities, Amount, Regen, Interval (2 bytes), Unknown1 (2), Unknown2 (1), Chance (4). A line whose band goes above
+    /// 255 stores both quality bytes as 0 and its band as two 16-bit values in the next four bytes, which AODB reads as
+    /// <see cref="Amount"/>, <see cref="Regen"/> and <see cref="Extra"/>; the real Amount and Regen are Extra's upper two
+    /// bytes. The cached fields keep those bytes unchanged; <see cref="DecodeBand"/> recovers the line.
+    /// </summary>
     [Serializable]
     public sealed class DatShopItem
     {
@@ -273,6 +279,31 @@ namespace ZoneEngine_New.Core.Inventory.Dat
 
         [MessagePackMember(9)]
         public uint Chance;
+
+        /// <summary>
+        /// The line's band, amount and regen. An extended line (both quality bytes 0, <see cref="Extra"/> present) is
+        /// re-read from the cached bytes: MinQl is Amount | Regen &lt;&lt; 8, MaxQl is Extra's low 16 bits, Amount and
+        /// Regen its third and fourth bytes. Every one of the 279 extended lines in the stock items.dat decodes this way to
+        /// the Amount/Regen values the 17-byte lines carry (City Buildings 2CS6: Amount 44, Regen 1, Extra 0x0101012C is
+        /// QL 300-300, Amount 1, Regen 1). An ordinary line returns its fields as stored. True for an extended line.
+        /// </summary>
+        public bool DecodeBand(out int minQl, out int maxQl, out int amount, out int regen)
+        {
+            if (MinQl == 0 && MaxQl == 0 && Extra is uint extra)
+            {
+                minQl = (Amount & 0xff) | ((Regen & 0xff) << 8);
+                maxQl = (int)(extra & 0xffff);
+                amount = (int)((extra >> 16) & 0xff);
+                regen = (int)((extra >> 24) & 0xff);
+                return true;
+            }
+
+            minQl = MinQl;
+            maxQl = MaxQl;
+            amount = Amount;
+            regen = Regen;
+            return false;
+        }
     }
 
     [Serializable]

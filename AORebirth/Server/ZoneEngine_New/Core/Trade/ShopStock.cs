@@ -191,9 +191,10 @@ namespace ZoneEngine_New.Core.Trade
         /// hash fans out one level (a leaf hash is its own single child), and each child is rolled
         /// <see cref="Inventory.ShopInventoryEntry.Amount"/> times. A roll is kept when random(0, 100) &lt;
         /// <see cref="Inventory.ShopInventoryEntry.Chance"/>, and picks a QL inside the child's own QL span intersected with the
-        /// line's band, then a leaf under the child made at it; a child is dropped only when that intersection is empty
-        /// (unless it has a Special family, which stocks at its nearest QL as Special loot does). Retail Specialist Commerce
-        /// (KWJH QL 1-200, Amount 1) lists 48 of KWJH's 49 children, single-QL items included. A roll identical to one
+        /// line's band, then a leaf under the child made at it; a child whose span misses the band stocks at its nearest QL
+        /// instead (retail Neutral City Buildings, 2CS6 QL 300-300, sold the QL 1-200 Tax Refund Office at 200 and the QL 1
+        /// AO Logo Sculpture at 1). Retail Specialist Commerce (KWJH QL 1-200, Amount 1) lists 48 of KWJH's 49 children,
+        /// every one of them inside the band, so its missing child is not a band drop. A roll identical to one
         /// already stocked adds no row. Items <paramref name="hasTemplate"/> rejects (no server template for the low/high
         /// ids) are skipped. Lines stay in list order (retail sent Tsunayoshi Smith's shop (164104) with 213 slots), up to
         /// <see cref="MaxShopInventorySlots"/>: a round with more children than the remaining room visits them in a random
@@ -283,7 +284,9 @@ namespace ZoneEngine_New.Core.Trade
         /// One ShopInventory roll for a child's leaf families: a QL inside the child's QL span (the union of its families'
         /// ranges) intersected with the line's band <paramref name="bandMin"/>..<paramref name="bandMax"/>, and a family made
         /// at it. A QL that falls between two families' ranges goes to the nearest one, clamped into its range. When no
-        /// family reaches the band, only Special families stock (at their nearest QL); otherwise the child is dropped.
+        /// family reaches the band, the family nearest the band stocks at its edge QL closest to the band (a 300-300 line
+        /// sells a QL 1-200 item at 200 and a QL 1 item at 1; a 0-0 line sells a QL 10 item at 10). False only when the
+        /// child has no usable family.
         /// </summary>
         static bool TryPickShopLeaf(
             HashItemMinter minter,
@@ -315,17 +318,34 @@ namespace ZoneEngine_New.Core.Trade
 
             if (low > high)
             {
-                // No family reaches the band: a Special family still stocks, clamped to its own range by TryRollIdsFor.
+                // No family reaches the band: the child stocks at its nearest QL, as retail does (Neutral City Buildings
+                // 2CS6, band 300-300, sold the QL 1-200 Tax Refund Office at 200 and the QL 1 AO Logo Sculpture at 1;
+                // Social City Buildings 7UC2, band 300-300, sold its QL 1 statues and benches at 1). The families with the
+                // smallest gap to the band are the candidates; the roll is the band clamped into the chosen family.
+                int nearestGap = int.MaxValue;
                 for (int i = 0; i < leaves.Count; i++)
                 {
-                    if (minter.TryGetLeafQualitySpan(leaves[i], out _, out _, out bool special) && special)
-                        usable.Add(leaves[i]);
+                    if (!minter.TryGetLeafQualitySpan(leaves[i], out int min, out int max, out _))
+                        continue;
+
+                    int gap = min > bandMax ? min - bandMax : bandMin - max;
+                    if (gap > nearestGap)
+                        continue;
+                    if (gap < nearestGap)
+                    {
+                        nearestGap = gap;
+                        usable.Clear();
+                    }
+
+                    usable.Add(leaves[i]);
                 }
 
                 if (usable.Count == 0)
                     return false;
                 leaf = usable[random.Next(usable.Count)];
                 quality = random.Next(bandMin, bandMax + 1);
+                if (minter.TryGetLeafQualitySpan(leaf, out int edgeMin, out int edgeMax, out _))
+                    quality = Math.Clamp(quality, edgeMin, edgeMax);
                 return true;
             }
 
