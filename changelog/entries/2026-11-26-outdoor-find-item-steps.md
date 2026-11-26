@@ -1,0 +1,1 @@
+- Fixed: Quest steps that ask you to find and target an object in the world (such as the Arks in the Key to the Garden of Gilthar) now complete when you select that object. Nothing is picked up, so the object stays for other players.

@@ -588,6 +588,38 @@ namespace ZoneEngine_New.Core.Quests
         }
 
         /// <summary>
+        /// <paramref name="player"/> selected <paramref name="target"/>, a world item standing on an ordinary playfield:
+        /// active Quests.json Find Item steps whose <see cref="QuestObjective.WorldItem"/> hash covers its template
+        /// complete when the player has line of sight to it (live: the Key to the Garden of Gilthar's "Find still intact
+        /// Ark." closed on selecting the Ancient Control Panel in Adonis, nothing taken). The item stays in the world for
+        /// every other holder of the step. A generated mission's Find Item completes only on its own bound objective
+        /// (<see cref="TryEarnTargetedFindItem"/>).
+        /// </summary>
+        public void OnWorldItemTargeted(Player player, StaticDynel target)
+        {
+            ArgumentNullException.ThrowIfNull(player);
+            ArgumentNullException.ThrowIfNull(target);
+            if (target is MissionObjectiveItem || player.Playfield?.GetService<IGameData>() is not IGameData gameData)
+                return;
+
+            int targetLowId = target.ItemTemplateLowId;
+            int targetHighId = target is WorldItem worldItem ? worldItem.HighId : targetLowId;
+            List<PlayerQuest>? found = null;
+            foreach (PlayerQuest quest in GetLog(player).Quests.Values)
+            {
+                if (quest.IsActive && quest.Template.IsFindItem
+                    && !RequiresBoundObjective(quest)
+                    && quest.Template.Objective.WorldItem is { Length: > 0 } worldItemHash
+                    && HashHolds(gameData, worldItemHash, targetLowId, targetHighId))
+                    (found ??= new List<PlayerQuest>()).Add(quest);
+            }
+
+            // Raycast only when something would complete.
+            if (found != null && player.HasLineOfSightTo(target))
+                CompleteAll(player, found);
+        }
+
+        /// <summary>
         /// <paramref name="player"/> used <paramref name="item"/> on <paramref name="npc"/> (GenericCmd UseItemOnCharacter):
         /// active UseItemOnCharacter quests on that NPC whose <see cref="QuestObjective.SpecItem"/> hash covers the item
         /// complete when the player has line of sight to it. The item is kept. True when one completed.

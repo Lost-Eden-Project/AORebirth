@@ -53,6 +53,16 @@ namespace ZoneEngine_New.Core.MessageHandlers
                 return;
             }
 
+            // An outdoor Find Item step (Quests.json) completes on selecting a world item its hash covers, again only
+            // one this client was actually sent.
+            if (dynel is StaticDynel worldItem)
+            {
+                if (playfield.GetService<QuestService>() is QuestService worldItemQuests
+                    && playfield.GetRequiredService<PlayfieldLocality>().IsVisibleTo(worldItem, player))
+                    worldItemQuests.OnWorldItemTargeted(player, worldItem);
+                return;
+            }
+
             if (dynel is not Character target)
                 return;
 
