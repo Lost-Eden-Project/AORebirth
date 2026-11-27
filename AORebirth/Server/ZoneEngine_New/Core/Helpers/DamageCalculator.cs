@@ -205,10 +205,11 @@ namespace ZoneEngine_New.Core.Helpers
         /// Whether a hostile nano lands or is resisted. The nano's Attack skills (its nano skill lines) plus the caster's
         /// Add All Off. make the attack rating; its Defend skills plus the target's Add All Def. make the defense rating.
         /// A nano without positively weighted Defend skills has no defense contest and lands without a roll. Nanos
-        /// declaring defense skills send the two ratings through the weapon hit curve.
-        /// NOTE: the retail nano-resist formula is not known. This reuses the weapon hit curve so a nano skill against an
-        /// equal Nano Resist lands about as often as an equal weapon skill hits; it may need tuning once players report
-        /// land rates.
+        /// declaring defense skills roll <see cref="NanoLandChance"/>: the weapon hit curve with the target's
+        /// aggressive/defensive bar, plus a flat 4%, so a nano always has about a 4% chance to land whatever the target's
+        /// Nano Resist (strain resists, rolled before this, aside).
+        /// Land-chance formula measured on live by Reimagine (https://anarchaeology.github.io/theory/nano-chance.html).
+        /// A perk action (<paramref name="nanoLandBonus"/> false) keeps the plain hit curve at a neutral bar.
         /// </summary>
         public static bool ResolveNanoLand(
             Character caster,
@@ -216,7 +217,8 @@ namespace ZoneEngine_New.Core.Helpers
             ItemTemplate nano,
             out int attackRating,
             out int defenseRating,
-            out int landChancePercent)
+            out int landChancePercent,
+            bool nanoLandBonus = true)
         {
             ArgumentNullException.ThrowIfNull(caster);
             ArgumentNullException.ThrowIfNull(target);
@@ -231,10 +233,26 @@ namespace ZoneEngine_New.Core.Helpers
             }
 
             defenseRating = ResolveDefenseRating(target, nano);
-            double hitPercentage = HitPercentage(attackRating, defenseRating, aggDef: 0);
-            landChancePercent = (int)Math.Round(Math.Clamp(hitPercentage, 0, 1) * 100);
-            return NextDouble() < hitPercentage;
+            double landChance = nanoLandBonus
+                ? NanoLandChance(attackRating, defenseRating, StatCollection.Normalize(target.Stats.GetOrZero(CharacterStat.AggDef)))
+                : HitPercentage(attackRating, defenseRating, aggDef: 0);
+            landChancePercent = (int)Math.Round(landChance * 100);
+            return NextDouble() < landChance;
         }
+
+        /// <summary>Flat land chance every hostile nano adds on top of the hit curve (Reimagine's measurements).</summary>
+        public const double NanoLandFloor = 0.04;
+
+        /// <summary>
+        /// Nano land chance = 50% + (AR - DR) / (DR + |AR - DR|) + (target AggDef + 100) / 500 + 4%, held to 0-100%.
+        /// AR is the nano's Attack skills weighted against the caster (Mind Control 50% + Time and Space 50% on
+        /// 28602) plus Add All Off.; DR its Defend skills weighted against the target (Nano Resist 100% on 28602, 75%
+        /// on 45879) plus Add All Def. The same curve as weapon hit chance with a flat 4% added, so at AR 0 against a
+        /// fully defensive bar a nano still lands 4% of the time.
+        /// Formula measured and credited to Reimagine: https://anarchaeology.github.io/theory/nano-chance.html
+        /// </summary>
+        public static double NanoLandChance(int attackRating, int defenseRating, int targetAggDef)
+            => Math.Clamp(HitChance(attackRating, defenseRating, targetAggDef) + NanoLandFloor, 0, 1);
 
         /// <summary>
         /// The character's attack rating (the AMS stat, 22): its wielded weapon's Attack skills weighted against the

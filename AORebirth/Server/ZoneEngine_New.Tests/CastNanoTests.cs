@@ -161,11 +161,13 @@ namespace ZoneEngine_New.Tests
             caster.Stats.Set(CharacterStat.AMSModifier, 0);
             target.Stats.Set(CharacterStat.NanoAC, 1000);
             target.Stats.Set(CharacterStat.DMSModifier, 100);
+            target.Stats.Set(CharacterStat.AggDef, 0);
 
             DamageCalculator.ResolveNanoLand(caster, target, nano, out int attack, out int defense, out int chance);
             Assert.AreEqual(0, attack);
             Assert.AreEqual(350, defense);
-            Assert.AreEqual(0, chance);
+            // 50% - 50% + (0 + 100) / 500 + 4%.
+            Assert.AreEqual(24, chance);
         }
 
         [TestMethod]

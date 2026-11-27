@@ -1,0 +1,1 @@
+- Changed: Hostile nanos now land using the land-chance formula measured on live by Reimagine: the target's aggressive/defensive bar matters, and every hostile nano has at least about a 4% chance to land however much Nano Resist the target has.

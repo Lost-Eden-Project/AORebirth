@@ -1623,10 +1623,11 @@ namespace ZoneEngine_New.Core.Entities
         }
 
         /// <summary>
-        /// Whether a perk action aimed at another character lands: the same roll as a hostile nano
-        /// (<see cref="DamageCalculator.ResolveNanoLand"/>), this player's attack rating (the action's Attack skills
-        /// weighted against this player, plus Add All Offense) against the target's defense rating (the action's Defend
-        /// skills weighted against the target, plus Add All Defense) at 1/sqrt(2) x AR/DR. Pulverize: 2H Blunt 100% +
+        /// Whether a perk action aimed at another character lands: the hostile-nano contest
+        /// (<see cref="DamageCalculator.ResolveNanoLand"/>) without the nano-only 4% and target bar, this player's attack
+        /// rating (the action's Attack skills weighted against this player, plus Add All Offense) against the target's
+        /// defense rating (the action's Defend skills weighted against the target, plus Add All Defense) on the weapon
+        /// hit curve. Pulverize: 2H Blunt 100% +
         /// AAO vs skill 155 at 85% + AAD. Self-only actions and actions without Attack or Defend skills always succeed.
         /// Decided when the action is used: live answers a miss at once, with no QueuePerk. A hard AR >= DR threshold
         /// had every Shade perk resisted by any mob whose check was higher (bugs #302, #385, #390).
@@ -1637,7 +1638,7 @@ namespace ZoneEngine_New.Core.Entities
                 return true;
 
             bool lands = DamageCalculator.ResolveNanoLand(this, use.Target, use.Template,
-                out int attackRating, out int defenseRating, out int landChance);
+                out int attackRating, out int defenseRating, out int landChance, nanoLandBonus: false);
             if (!lands)
                 LogUtil.Debug(
                     DebugInfoDetail.Engine,
