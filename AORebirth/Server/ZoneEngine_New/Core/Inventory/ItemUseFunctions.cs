@@ -511,6 +511,7 @@ namespace ZoneEngine_New.Core.Inventory
             target.Stats.ClearDirty(CharacterStat.Health);
             target.AnnounceHealthDamage(caster, healed, applied, damageTypeStat: 0);
             GiveFeedback.HealthGiven(caster, target, applied);
+            Ai.HealThreat.Apply(caster, target, applied);
             return true;
         }
 

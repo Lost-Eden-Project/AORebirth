@@ -70,6 +70,9 @@ namespace ZoneEngine_New.Core.Configuration
         /// </summary>
         public double AggroIntervalSeconds { get; init; } = 2;
 
+        /// <summary>Threat from healing, and the boss and immobile-NPC target rules.</summary>
+        public GameplayThreat Threat { get; init; } = new();
+
         /// <summary>XP rules.</summary>
         public GameplayXp Xp { get; init; } = new();
 
@@ -259,6 +262,9 @@ namespace ZoneEngine_New.Core.Configuration
                 throw new InvalidDataException(path + ": pets.ownerAggroChance ceilingPercent, scalePercent and perAggressiveness must be finite numbers.");
             if (!double.IsFinite(AggroIntervalSeconds) || AggroIntervalSeconds < 0)
                 throw new InvalidDataException(path + ": aggroIntervalSeconds must be a finite number, 0 or more.");
+            if (Threat == null || !Threat.IsValid)
+                throw new InvalidDataException(path + ": threat.healThreatPercent must be a finite percent, 0 or more, and "
+                    + "bossLowHealthPercent and bossSittingAggroPercent from 0 to 100.");
             if (WorldClock == null || !WorldClock.TryGetEpoch(out _) || WorldClock.DayAtEpoch < 0
                 || WorldClock.TimeOfDayAtEpochSeconds < 0 || WorldClock.TimeOfDayAtEpochSeconds >= Network.GameClock.SecondsPerDay)
                 throw new InvalidDataException(path + ": worldClock needs an ISO 8601 epochUtc, dayAtEpoch 0 or more, and "
@@ -565,6 +571,46 @@ namespace ZoneEngine_New.Core.Configuration
         /// NPC's target, with no roll.
         /// </summary>
         public GameplayPetOwnerAggroChance OwnerAggroChance { get; init; } = new();
+    }
+
+    /// <summary>
+    /// The threat section of Gameplay.json. Damage is threat point for point (NpcCharacter.OnDamaged); these are the
+    /// other live rules: healing threat, a boss locked on a nearly dead player, a boss turning on a
+    /// player sitting in front of it, and an NPC that cannot move fighting whoever it can reach.
+    /// </summary>
+    public sealed class GameplayThreat
+    {
+        /// <summary>
+        /// Percent of the health a heal actually restored (no overheal) the healer earns as threat on every NPC that has
+        /// the healed one on its hate list. 50 is live: 2 points of healing make 1 point of threat. 0 turns it off.
+        /// </summary>
+        public float HealThreatPercent { get; init; } = 50f;
+
+        /// <summary>
+        /// A player on a boss's hate list below this percent of MaxHealth, inside the boss's attack range and line of
+        /// sight, holds the boss's aggro until healed back to it (or out of reach or sight). Several such players: the
+        /// highest threat of them. 0 turns it off.
+        /// </summary>
+        public float BossLowHealthPercent { get; init; } = 15f;
+
+        /// <summary>
+        /// Percent chance, rolled on each aggro decision (<see cref="GameplaySettings.AggroIntervalSeconds"/>), that a
+        /// boss turns on a player on its hate list sitting inside its attack range and line of sight, until the next
+        /// decision. NOTE: the percent is a stand-in; live gave only "a % chance every 2 s". 0 turns it off.
+        /// </summary>
+        public double BossSittingAggroPercent { get; init; } = 25;
+
+        /// <summary>
+        /// A rooted NPC, or one that cannot move at all (NoMove), fights the highest threat it can hit from where it
+        /// stands (attack range and line of sight), at once rather than on the next aggro decision. With nobody in reach
+        /// it keeps its target. False leaves it on the plain top threat.
+        /// </summary>
+        public bool ImmobileFightsInReach { get; init; } = true;
+
+        public bool IsValid
+            => float.IsFinite(HealThreatPercent) && HealThreatPercent >= 0
+               && float.IsFinite(BossLowHealthPercent) && BossLowHealthPercent is >= 0 and <= 100
+               && double.IsFinite(BossSittingAggroPercent) && BossSittingAggroPercent is >= 0 and <= 100;
     }
 
     /// <summary>

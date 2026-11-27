@@ -62,6 +62,27 @@
     "aggroIntervalSeconds": {
       "type": "number"
     },
+    "threat": {
+      "type": "object",
+      "properties": {
+        "healThreatPercent": {
+          "type": "number"
+        },
+        "bossLowHealthPercent": {
+          "type": "number"
+        },
+        "bossSittingAggroPercent": {
+          "type": "number"
+        },
+        "immobileFightsInReach": {
+          "type": "boolean"
+        },
+        "isValid": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "xp": {
       "type": "object",
       "properties": {

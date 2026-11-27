@@ -82,6 +82,7 @@ namespace ZoneEngine_New.Core.Ai
             _tree.Enable();
             _nanos = new NpcNanoCaster(this);
             _isEngageable = IsEngageable;
+            _isInReach = IsInReach;
             _thinkElapsed = ThinkPhase(npc);
             if (npc.Playfield?.GetService<GameData.IGameData>()?.RootPath is string root && root.Length > 0)
                 _petSummons = NpcPetSummons.TryCreate(npc, root);
@@ -105,6 +106,7 @@ namespace ZoneEngine_New.Core.Ai
             _tree.Enable();
             _nanos = new NpcNanoCaster(this);
             _isEngageable = IsEngageable;
+            _isInReach = IsInReach;
             _thinkElapsed = ThinkPhase(npc);
         }
 
@@ -1150,25 +1152,110 @@ namespace ZoneEngine_New.Core.Ai
         public bool TrySelectHighestThreat()
         {
             TickStallWatch.Stage("brain.select", Npc.Identity.Instance);
-            if (!NpcAiRules.TryHighestNearby(Hate, _isEngageable, out Identity identity, out float top))
+            ZoneEngine_New.Core.Configuration.GameplaySettings? settings
+                = Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>();
+            ZoneEngine_New.Core.Configuration.GameplayThreat? threat = Pet == null ? settings?.Threat : null;
+
+            // Rooted, or a body that cannot move (NoMove): only those it can hit from where it stands count while there
+            // are any (Gameplay.json threat.immobileFightsInReach). With nobody in reach it keeps the plain choice.
+            Func<Identity, bool> candidate = _isEngageable;
+            Identity identity;
+            float top;
+            if (threat is { ImmobileFightsInReach: true } && (Npc.IsImmobile || Npc.IsRooted)
+                && NpcAiRules.TryHighestNearby(Hate, _isInReach, out identity, out top))
+                candidate = _isInReach;
+            else if (!NpcAiRules.TryHighestNearby(Hate, _isEngageable, out identity, out top))
             {
                 _currentTarget = Identity.None;
                 return false;
             }
 
-            ZoneEngine_New.Core.Configuration.GameplaySettings? settings
-                = Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>();
+            bool boss = threat != null && Npc.HasFeature(Mobs.NpcFeature.Boss);
+
+            // A nearly dead player in a boss's reach holds its aggro on every think until healed (threat.bossLowHealthPercent).
+            if (boss && TryLowHealthLock(threat!.BossLowHealthPercent, out Identity locked))
+            {
+                _currentTarget = locked;
+                _aggroHoldSeconds = settings!.AggroIntervalSeconds;
+                return true;
+            }
 
             // Aggro is decided on its own interval (Gameplay.json aggroIntervalSeconds): until the next decision the NPC
             // stays on a target that is still on its hate list and in reach, whoever has passed it since.
             if (_aggroHoldSeconds > 0 && _currentTarget.Instance != 0
-                && Hate.Contains(_currentTarget) && _isEngageable(_currentTarget))
+                && Hate.Contains(_currentTarget) && candidate(_currentTarget))
                 return true;
 
             _aggroHoldSeconds = settings?.AggroIntervalSeconds ?? 0;
-            _currentTarget = PetOwnerAggro(BreakThreatTie(identity, top), settings?.Pets);
+            if (boss && TrySittingFlicker(threat!.BossSittingAggroPercent, out Identity sitter))
+            {
+                _currentTarget = sitter;
+                return true;
+            }
+
+            _currentTarget = PetOwnerAggro(BreakThreatTie(identity, top, candidate), settings?.Pets, candidate);
             return true;
         }
+
+        /// <summary>
+        /// The player on the hate list below <paramref name="percent"/> of MaxHealth that this NPC can hit now (attack
+        /// range and line of sight); the highest threat of several. False with none, or <paramref name="percent"/> 0.
+        /// </summary>
+        bool TryLowHealthLock(float percent, out Identity locked)
+        {
+            locked = Identity.None;
+            if (percent <= 0)
+                return false;
+
+            float best = float.MinValue;
+            foreach (HateEntry entry in Hate.Entries)
+            {
+                if (entry.Threat <= best || Resolve(entry.Identity) is not Player player || player.IsDead)
+                    continue;
+                long max = Math.Max(1, player.Stats.GetOrZero(CharacterStat.MaxHealth));
+                long health = Math.Max(0, player.Stats.GetOrZero(CharacterStat.Health));
+                if (health * 100 >= percent * max || !_isInReach(entry.Identity))
+                    continue;
+
+                locked = entry.Identity;
+                best = entry.Threat;
+            }
+
+            return locked.Instance != 0;
+        }
+
+        /// <summary>
+        /// The boss sitting flicker (threat.bossSittingAggroPercent): with a player on the hate list sitting where the
+        /// boss can hit them now, one roll per aggro decision turns the boss on them (the highest threat of several)
+        /// until the next decision. No sitter, no roll.
+        /// </summary>
+        bool TrySittingFlicker(double percent, out Identity sitter)
+        {
+            sitter = Identity.None;
+            if (percent <= 0)
+                return false;
+
+            float best = float.MinValue;
+            foreach (HateEntry entry in Hate.Entries)
+            {
+                if (entry.Threat <= best || Resolve(entry.Identity) is not Player player || player.IsDead
+                    || player.Stats.GetOrZero(CharacterStat.CurrentMovementMode) != (int)MovementState.Sit
+                    || !_isInReach(entry.Identity))
+                    continue;
+
+                sitter = entry.Identity;
+                best = entry.Threat;
+            }
+
+            return sitter.Instance != 0 && AggroRandom.NextDouble() * 100 < percent;
+        }
+
+        /// <summary>Engageable, and this NPC can hit it from where it stands now (attack range and line of sight).</summary>
+        bool IsInReach(Identity identity)
+            => _isEngageable(identity) && Resolve(identity) is Character target && CanAttackNow(target);
+
+        /// <summary>The in-reach test, created once like <see cref="_isEngageable"/>.</summary>
+        readonly Func<Identity, bool> _isInReach;
 
         /// <summary>Seconds until this NPC next decides who to attack; at or below 0 the next selection decides.</summary>
         double _aggroHoldSeconds;
@@ -1182,11 +1269,11 @@ namespace ZoneEngine_New.Core.Ai
         /// pet. The chance falls with the pet's Aggressiveness. The NPC only switches to one it can see; failing that it
         /// stays on its current one of the two. Only pet and owner flicker: other players keep plain threat order.
         /// </summary>
-        Identity PetOwnerAggro(Identity top, ZoneEngine_New.Core.Configuration.GameplayPets? rules)
+        Identity PetOwnerAggro(Identity top, ZoneEngine_New.Core.Configuration.GameplayPets? rules, Func<Identity, bool> candidate)
         {
             if (rules?.OwnerAggroChance is not { } chance
                 || Resolve(top) is not NpcCharacter { PetOwner: Player owner } pet
-                || !Hate.Contains(owner.Identity) || !_isEngageable(owner.Identity))
+                || !Hate.Contains(owner.Identity) || !candidate(owner.Identity))
                 return top;
 
             double percent = chance.PercentFor(pet.Stats.GetOrZero(CharacterStat.Aggressiveness));
@@ -1203,14 +1290,14 @@ namespace ZoneEngine_New.Core.Ai
         /// switch, and otherwise the nearest wins. Picking by hate-list order sent a scout running back and forth at a
         /// guard on a raised deck it could never reach while others stood inside it.
         /// </summary>
-        Identity BreakThreatTie(Identity first, float top)
+        Identity BreakThreatTie(Identity first, float top, Func<Identity, bool> candidate)
         {
             Identity best = first;
             int bestRank = int.MaxValue;
             double bestDistance = double.MaxValue;
             foreach (HateEntry entry in Hate.Entries)
             {
-                if (entry.Threat < top || !_isEngageable(entry.Identity) || Resolve(entry.Identity) is not Character enemy)
+                if (entry.Threat < top || !candidate(entry.Identity) || Resolve(entry.Identity) is not Character enemy)
                     continue;
 
                 int rank = CanAttackNow(enemy) ? 0 : entry.Identity == _currentTarget ? 1 : 2;

@@ -81,6 +81,24 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "Raid": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "Enabled": {
+          "type": "boolean"
+        },
+        "MinCharge": {
+          "type": "number"
+        },
+        "DirectorHash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

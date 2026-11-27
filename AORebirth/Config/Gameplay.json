@@ -15,6 +15,7 @@
   "requireAmmo": true,
   "zoneInGraceSeconds": 1,
   "aggroIntervalSeconds": 2,
+  "threat": { "healThreatPercent": 50, "bossLowHealthPercent": 15, "bossSittingAggroPercent": 25, "immobileFightsInReach": true },
   "shops": { "preferDatabaseStock": true },
   "playerShops": { "rentCost": 100000, "maxItems": 50, "maxNameLength": 40 },
   "loot": { "qualityVariancePercent": 25, "needGreedRollSeconds": 45, "needGreedRange": 100 },

@@ -1,0 +1,4 @@
+- Added: Healing now draws aggro. Every 2 points of health you restore count as 1 point of threat with every monster fighting the one you healed, so a busy healer can pull monsters off the tank. Overhealing draws nothing.
+- Added: A player below 15% health who is in a boss's attack range and line of sight holds that boss's attention until healed back up.
+- Added: Sitting down in front of a boss now carries a chance, every couple of seconds, that it turns on you.
+- Changed: A rooted monster, or one that can't move at all, now attacks the highest-threat target it can reach from where it stands instead of staying on someone out of its reach.
