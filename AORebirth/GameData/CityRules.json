@@ -16,5 +16,10 @@
   "PendingTimeoutMinutes": 30,
   "InsideEntryDoors": {
     "4357": "C0011105"
+  },
+  "Raid": {
+    "Enabled": true,
+    "MinCharge": 0.5,
+    "DirectorHash": "RDIR"
   }
 }

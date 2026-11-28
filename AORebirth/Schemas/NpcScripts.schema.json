@@ -33,6 +33,13 @@
     "Bindings": {
       "type": "array",
       "items": { "$ref": "#/$defs/binding" }
+    },
+    "MaxOwnedNpcs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 16,
+      "description": "How many SpawnNpc adds one NPC running this program may own alive at once (a raid director's waves need more than the default)."
     }
   },
   "anyOf": [
@@ -82,10 +89,10 @@
       ]
     },
     "movePoint": {
-      "description": "[x, y, z], \"Home\", \"$Vector3Param\", \"$Vector3ArrayParam[i]\" or \"$Vector3ArrayParam[next]\" (advances the NPC's waypoint cursor).",
+      "description": "[x, y, z], \"Home\", \"Controller\" (the city controller nearest the NPC: an alien raider's target), \"$Vector3Param\", \"$Vector3ArrayParam[i]\" or \"$Vector3ArrayParam[next]\" (advances the NPC's waypoint cursor).",
       "oneOf": [
         { "$ref": "#/$defs/vector3" },
-        { "type": "string", "pattern": "^(Home|\\$[A-Za-z_][A-Za-z0-9_]*(\\[(next|[0-9]+)\\])?)$" }
+        { "type": "string", "pattern": "^(Home|Controller|\\$[A-Za-z_][A-Za-z0-9_]*(\\[(next|[0-9]+)\\])?)$" }
       ]
     },
     "moveTarget": {
@@ -190,8 +197,25 @@
           "properties": {
             "Hash": { "type": "string", "minLength": 1, "description": "An NPC template hash or a $NpcHash param." },
             "At": { "$ref": "#/$defs/vector3", "description": "World position of the centre." },
-            "Offset": { "$ref": "#/$defs/vector3", "description": "Centre relative to the NPC, in its frame." },
+            "Offset": {
+              "description": "Centre relative to the NPC, in its frame: [x, y, z] or a $Vector3 param (one city's landing point for a raid director bound per playfield).",
+              "oneOf": [ { "$ref": "#/$defs/vector3" }, { "$ref": "#/$defs/paramRef" } ]
+            },
             "Count": { "type": "integer", "minimum": 1, "maximum": 12, "default": 1, "description": "Above 1 needs Radius: the spawns stand evenly on that circle, from a random start angle." },
+            "PerMember": { "type": "integer", "minimum": 0, "default": 0, "description": "One more spawn for every this many members of the raid group (the team of the character who started the city raid, alive and within GroupRange of the NPC). 0: none." },
+            "GroupRange": { "type": "number", "exclusiveMinimum": 0, "default": 150, "description": "Metres from the NPC within which a raid group member counts for PerMember and LevelFromGroup." },
+            "LevelFromGroup": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Spawn level from the raid group: its highest level plus Offset, clamped to Min..Max; Min when nobody counts. Not with Level or LevelPercent.",
+              "properties": {
+                "Use": { "type": "string", "enum": ["Highest"], "default": "Highest" },
+                "Offset": { "type": "integer", "default": 0 },
+                "Min": { "type": "integer", "minimum": 1, "default": 1 },
+                "Max": { "type": "integer", "minimum": 1, "default": 300 }
+              }
+            },
+            "ServerOnly": { "type": "boolean", "default": false, "description": "No client is ever sent the spawn (an invisible helper)." },
             "Radius": { "type": "number", "minimum": 0, "maximum": 30, "description": "Circle radius in metres." },
             "LifetimeSeconds": { "type": "integer", "minimum": 1, "maximum": 3600, "description": "The spawn despawns after this long, whatever its owner does." },
             "DespawnWithOwner": {
@@ -259,6 +283,56 @@
           }
         },
         "Despawn": { "type": "boolean", "description": "The NPC leaves the world as a GM despawn would." },
+        "SendScript": {
+          "type": "object",
+          "description": "Sends a Script message to every player on the NPC's playfield: Kind 3 is district music (Text the track, District the district name), Kinds 0, 2 and 4 are client FXS scripts such as the alien raid ship's. {X}, {Y} and {Z} in Text become the position (the NPC's, or At from it). Does not block.",
+          "additionalProperties": false,
+          "required": ["Text", "Kind"],
+          "properties": {
+            "Text": { "type": "string", "minLength": 1 },
+            "Kind": { "type": "integer", "minimum": 0, "maximum": 7 },
+            "Duration": { "type": "integer", "minimum": 0, "default": 0, "description": "Seconds." },
+            "District": { "type": "string", "description": "The district the music plays in, e.g. City." },
+            "At": {
+              "description": "Offset from the NPC, in its frame: [x, y, z] or a $Vector3 param.",
+              "oneOf": [ { "$ref": "#/$defs/vector3" }, { "$ref": "#/$defs/paramRef" } ]
+            }
+          }
+        },
+        "WaitWave": {
+          "type": "object",
+          "description": "Blocks until every live add of SpawnNpc Tag is dead (then AfterClearMs more) or MaxMs has passed, whichever is first.",
+          "additionalProperties": false,
+          "required": ["Tag", "MaxMs"],
+          "properties": {
+            "Tag": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "MaxMs": { "type": "integer", "minimum": 100 },
+            "AfterClearMs": { "type": "integer", "minimum": 0, "default": 0, "description": "At most MaxMs." }
+          }
+        },
+        "DrainController": {
+          "type": "object",
+          "description": "Takes PerMille thousandths off the charge of the owned city controller within Range metres of the NPC (an alien hacker's). Does not block.",
+          "additionalProperties": false,
+          "required": ["Range", "PerMille"],
+          "properties": {
+            "Range": { "type": "integer", "minimum": 1 },
+            "PerMille": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "SummonPet": {
+          "type": "object",
+          "description": "Summons Count pets of NPC hash Hash for the NPC, at Level (a number or $Int param) or the NPC's own level plus OwnerLevelOffset (0 or more, or an $Int param).",
+          "additionalProperties": false,
+          "required": ["Hash"],
+          "properties": {
+            "Hash": { "type": "string", "minLength": 1 },
+            "Level": { "oneOf": [ { "type": "integer", "minimum": 1 }, { "$ref": "#/$defs/paramRef" } ] },
+            "OwnerLevelOffset": { "oneOf": [ { "type": "integer", "minimum": 0 }, { "$ref": "#/$defs/paramRef" } ] },
+            "Count": { "type": "integer", "minimum": 1, "maximum": 10, "default": 1 }
+          },
+          "oneOf": [ { "required": ["Level"] }, { "required": ["OwnerLevelOffset"] } ]
+        },
         "SetStat": {
           "type": "object",
           "additionalProperties": false,
@@ -273,7 +347,7 @@
         "AddVar": { "$ref": "#/$defs/varOp" },
         "If": {
           "type": "object",
-          "description": "Jumps to Goto when the condition holds. One of: Var with Eq/Ne/Lt/Gt, HealthBelow, HasTarget, Chance.",
+          "description": "Jumps to Goto when the condition holds. One of: Var with Eq/Ne/Lt/Gt, HealthBelow, HasTarget, Chance, GroupSizeAtLeast (with Range), ControllerChargeBelow.",
           "additionalProperties": false,
           "required": ["Goto"],
           "properties": {
@@ -285,7 +359,10 @@
             "Gt": { "type": "integer" },
             "HealthBelow": { "type": "integer", "minimum": 1, "maximum": 100 },
             "HasTarget": { "type": "boolean" },
-            "Chance": { "type": "integer", "minimum": 0, "maximum": 100 }
+            "Chance": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "GroupSizeAtLeast": { "type": "integer", "minimum": 1, "description": "The raid group has at least this many members alive within Range metres." },
+            "Range": { "type": "integer", "minimum": 1, "default": 150, "description": "GroupSizeAtLeast only." },
+            "ControllerChargeBelow": { "type": "integer", "minimum": 1, "maximum": 100, "description": "The charge of the city controller nearest the NPC is below this percent." }
           }
         },
         "Goto": { "type": "string", "minLength": 1 },

@@ -1,0 +1,1 @@
+- Added: alien raids on organization cities. Lowering a charged city's cloak brings eight waves of aliens to the city controller, then their General; kill the Hacker'Uri before they drain the controller.
