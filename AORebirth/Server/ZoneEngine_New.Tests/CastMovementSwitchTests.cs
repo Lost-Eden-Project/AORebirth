@@ -54,9 +54,11 @@ public sealed class CastMovementSwitchTests
 
         rig.Move(action);
 
-        // Sit, crawl and swim are taken from standing (sit settles its mode on the next tick); sleep and lounge are
-        // refused from standing by the movement rules, so the posture never comes and the cast keeps running.
-        if (action is MovementAction.SwitchToSleep or MovementAction.SwitchToLounge)
+        // Sit and crawl are taken from standing (sit settles its mode on the next tick); sleep and lounge are refused
+        // from standing by the movement rules, and swim is refused on dry land (the server's liquid detection puts a
+        // body into Swim; MovementCheatGuardTests cover the switch in water), so the posture never comes and the cast
+        // keeps running.
+        if (action is MovementAction.SwitchToSleep or MovementAction.SwitchToLounge or MovementAction.SwitchToSwim)
         {
             Assert.AreEqual(MovementState.Run, rig.Player.Motor.State, action + " is refused from standing");
             Assert.IsTrue(rig.Player.IsCastingNano, "a switch the rules refuse leaves the cast running");

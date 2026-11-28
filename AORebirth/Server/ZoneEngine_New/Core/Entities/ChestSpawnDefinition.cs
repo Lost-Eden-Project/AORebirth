@@ -13,7 +13,7 @@ namespace ZoneEngine_New.Core.Entities
         /// state machine 1000015:7, chest template 162447, header stat bytes 111 and lockable marker 15. Only the
         /// verified Locked flag is cleared from the captured Flags (0x20001841) for an ordinary unlocked chest.
         /// <paramref name="template"/> is the chest item template the client draws (the Mothership boss room's cocoon,
-        /// 10000002, is the same chest with a CATMesh body); everything else is the captured mission chest's.
+        /// 10000022, is the same chest with a CATMesh body); everything else is the captured mission chest's.
         /// </summary>
         public static ChestSpawnDefinition MissionChest(int template = MissionChestTemplate)
         {

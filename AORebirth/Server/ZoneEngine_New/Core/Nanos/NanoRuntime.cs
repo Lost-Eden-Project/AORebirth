@@ -900,6 +900,18 @@ namespace ZoneEngine_New.Core.Nanos
         static bool IsOwnPet(Character source, Character target)
             => target is NpcCharacter { PetOwner: Character owner } && ReferenceEquals(owner, source);
 
+        /// <summary>
+        /// "X executes Y within your NCU..." to another player a cast landed on: the line live prints for a buff or a
+        /// debuff someone else puts on you (bugs #625 and #318). The caster keeps its own "Nano program executed
+        /// successfully."; a self cast gets no second line.
+        /// </summary>
+        static void TellRecipientExecuted(Character caster, Character recipient, NanoSpell spell)
+        {
+            if (recipient is not Player other || ReferenceEquals(other, caster))
+                return;
+            ClientFeedback.SendFormatted(other, ClientFeedback.ExecutesWithinYourNcu, caster.Name ?? string.Empty, spell.Name);
+        }
+
         static void Complete(Character caster, PendingNanoCast cast, DateTime nowUtc)
         {
             if (cast.Spread != null)
@@ -912,8 +924,10 @@ namespace ZoneEngine_New.Core.Nanos
             Character? recipient = ResolveTarget(caster, cast.Target);
 
             // Everything the up-front gate checked can have changed while the bar ran. The nano cost was
-            // already paid at the start, so it is not checked again.
-            NanoCastAttempt attempt = BuildAttempt(caster, spell, recipient, nanoCost: 0, nowUtc);
+            // already paid at the start, so it is not checked again, and neither are the nano's own requirements:
+            // they were met when the bar started, and a debuff that lands meanwhile (an init or skill drain) does not
+            // undo a cast in progress on live (bug #204). Dead or stunned caster, a gone or dead target still refuse.
+            NanoCastAttempt attempt = BuildAttempt(caster, spell, recipient, nanoCost: 0, nowUtc) with { RequirementsMet = true };
             NanoCastRefusal refusal = NanoCastRules.Evaluate(attempt);
             // Cast bar already went out via CastNanoSpell; refusal must clear it.
             if (refusal != NanoCastRefusal.None)
@@ -1023,6 +1037,7 @@ namespace ZoneEngine_New.Core.Nanos
             if (!spell.IsBuff)
             {
                 ClientFeedback.Send(caster, ClientFeedback.NanoExecutedSuccessfully);
+                TellRecipientExecuted(caster, recipient!, spell);
                 ExecuteOnUseEffects(caster, recipient!, spell, skipPassiveModifiers: false);
                 (caster as NpcCharacter)?.Scripts?.OnCastLanded(spell.Id, recipient!);
                 CastResolved(caster, cast, PlayerActionOutcome.Executed);
@@ -1064,6 +1079,7 @@ namespace ZoneEngine_New.Core.Nanos
             AnnounceReplaced(recipient, replaced, spell);
 
             ClientFeedback.Send(caster, ClientFeedback.NanoExecutedSuccessfully);
+            TellRecipientExecuted(caster, recipient, spell);
             SendNanoDuration(caster, recipient, applied);
             ExecuteOnUseEffects(caster, recipient, spell, skipPassiveModifiers: true);
             if (spell.IsHostile)
@@ -1233,8 +1249,7 @@ namespace ZoneEngine_New.Core.Nanos
                 RequirementsMet = spell.MeetsActionRequirements(
                     stat => caster.Stats.Get(stat),
                     ActionType.ToUse,
-                    resolve: ItemTemplate.WithActionTarget(
-                        caster is Player casterPlayer ? casterPlayer.ResolvePerkRequirement : null, caster, recipient),
+                    resolve: ItemTemplate.WithActionTarget(CasterResolver(caster, spell), caster, recipient),
                     getTargetStat: recipient == null ? null : stat => recipient.Stats.Get(stat),
                     resolveTarget: recipient == null
                         ? null
@@ -1244,6 +1259,25 @@ namespace ZoneEngine_New.Core.Nanos
                 CurrentNano = caster.Stats.GetOrZero(CharacterStat.CurrentNano),
                 NanoCost = nanoCost
             };
+
+        static Func<ItemRequirement, bool?>? CasterResolver(Character caster, NanoSpell spell)
+        {
+            if (caster is Player player)
+                return player.ResolvePerkRequirement;
+            return caster.UploadedNanoIds.Contains(spell.Id) ? UploadedNpcNanoRequirement : null;
+        }
+
+        /// <summary>
+        /// An NPC's cast of a nano it has uploaded (a crystal in its template's equipment) passes the nano's caster
+        /// profession check: stock NPCs run other professions' nanos they cast themselves (The Reck 2026-11-26:
+        /// Nano-Technician Arachnobots on Engineer and Enforcer buffs, team request 39). Only the caster's own
+        /// "Profession / VisualProfession EqualTo" leaves pass; target checks and every other requirement stay.
+        /// </summary>
+        static bool? UploadedNpcNanoRequirement(ItemRequirement requirement)
+            => (Operator)requirement.Operator == Operator.EqualTo
+                && (CharacterStat)requirement.StatNumber is CharacterStat.Profession or CharacterStat.VisualProfession
+                    ? true
+                    : null;
 
         /// <summary>
         /// Start-time NCU preview. Instant, hostile, and NoRemoveNoNCUFriendly nanos skip it.
@@ -1617,7 +1651,10 @@ namespace ZoneEngine_New.Core.Nanos
                     Action = CharacterActionType.FinishNanoCasting,
                     Unknown1 = 0,
                     Target = Identity.None,
-                    Parameter1 = landed ? 1 : 0,
+                    // Live: 1 landed, 3 resisted/countered (captures 20260721-052115 and 20260721-033006, cultist 205379
+                    // and defender 205389; docs/evidence/PF1931_TEMPLE_NANO_GAMEPLAY_COMPLETION_20260730.md). With 0 the
+                    // client took the finish as neither and showed nothing for a resist (bug #323).
+                    Parameter1 = landed ? 1 : 3,
                     Parameter2 = nanoId,
                     Unknown2 = string.Empty
                 });

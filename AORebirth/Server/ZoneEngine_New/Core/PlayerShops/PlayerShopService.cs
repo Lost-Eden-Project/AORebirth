@@ -4,6 +4,7 @@ namespace ZoneEngine_New.Core.PlayerShops
     using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Globalization;
+    using System.Linq;
 
     using AORebirth.Modules.Events;
 
@@ -108,17 +109,8 @@ namespace ZoneEngine_New.Core.PlayerShops
                     _logger.Error("Player shop item row has no shop item=" + row.InstanceId + " shop=" + row.ContainerInstance);
                     continue;
                 }
-                if (!snapshot.PricesByItem.TryGetValue(row.InstanceId, out int price) || price <= 0
-                    || snapshot.ShopByItem[row.InstanceId] != shop.ShopId
-                    || row.ContainerPlacement < 0 || row.ContainerPlacement >= _rules.MaxItems
-                    || shop.Listings.ContainsKey(row.ContainerPlacement)
-                    || !_items.TryFromInstanceRecord(row, out Item item))
-                {
-                    Lock(shop, "item " + row.InstanceId + " has no usable price, slot or template");
-                    continue;
-                }
-                shop.AddListing(new PlayerShopListing(item, row.ContainerPlacement, price));
-                priced.Add(row.InstanceId);
+                if (TryLoadListing(shop, row, snapshot))
+                    priced.Add(row.InstanceId);
             }
             foreach ((int itemId, int shopId) in snapshot.ShopByItem)
             {
@@ -136,6 +128,81 @@ namespace ZoneEngine_New.Core.PlayerShops
             _logger.Error(string.Format(CultureInfo.InvariantCulture,
                 "Player shop {0} locked (owner {1}, playfield {2}, terminal {3}): {4}",
                 shop.ShopId, shop.OwnerId, shop.PlayfieldId, shop.TerminalInstance, reason));
+        }
+
+        /// <summary>
+        /// One stored item row as a listing of <paramref name="shop"/>; a row without a usable price, slot or template
+        /// locks the shop (its rows disagree) and is skipped.
+        /// </summary>
+        bool TryLoadListing(PlayerShop shop, ItemInstanceRecord row, PlayerShopSnapshot snapshot)
+        {
+            if (!snapshot.PricesByItem.TryGetValue(row.InstanceId, out int price) || price <= 0
+                || !snapshot.ShopByItem.TryGetValue(row.InstanceId, out int shopId) || shopId != shop.ShopId
+                || row.ContainerPlacement < 0 || row.ContainerPlacement >= _rules.MaxItems
+                || shop.Listings.ContainsKey(row.ContainerPlacement)
+                || !_items.TryFromInstanceRecord(row, out Item item))
+            {
+                Lock(shop, "item " + row.InstanceId + " has no usable price, slot or template");
+                return false;
+            }
+            shop.AddListing(new PlayerShopListing(item, row.ContainerPlacement, price));
+            return true;
+        }
+
+        /// <summary>
+        /// Reads a shop whose memory can no longer be trusted back from storage, on its playfield's tick, once nothing of
+        /// it is pending: a shop row restores its listings, balance and name and unlocks; no row (its rent, or its
+        /// abandon, never stored) releases the terminal. A read that fails leaves the shop locked until the next start.
+        /// True when the shop changed.
+        /// </summary>
+        bool Recover(ZoneEngine_New.Core.Playfield.Playfield playfield, PlayerShop shop, ConcurrentDictionary<int, PlayerShop> terminals)
+        {
+            PlayerShopSnapshot snapshot;
+            try
+            {
+                snapshot = _repository.LoadShop(shop.ShopId);
+            }
+            catch (Exception exception)
+            {
+                shop.RecoverFromStorage = false;
+                _logger.Error(exception, "Player shop " + shop.ShopId + " could not be read back from storage; it stays locked until the next start");
+                return false;
+            }
+
+            PlayerShopRecord? record = snapshot.Shops.FirstOrDefault(stored => stored.ShopId == shop.ShopId);
+            if (record == null)
+            {
+                shop.RecoverFromStorage = false;
+                terminals.TryRemove(new KeyValuePair<int, PlayerShop>(shop.TerminalInstance, shop));
+                _byOwner.TryRemove(new KeyValuePair<int, PlayerShop>(shop.OwnerId, shop));
+                _logger.Info("Player shop " + shop.ShopId + " is not stored (owner " + shop.OwnerId + ", terminal " + shop.TerminalInstance
+                    + "): released for rent");
+                if (TryGetTerminal(playfield, shop.TerminalInstance, out PlayerShopTerminal terminal))
+                {
+                    foreach (Player viewer in shop.Viewers.ToArray())
+                        SendView(viewer, terminal, null);
+                    BroadcastName(terminal, string.Empty, string.Empty);
+                }
+                return true;
+            }
+
+            shop.ResetFromStorage(record.Name, record.Balance);
+            foreach (ItemInstanceRecord row in snapshot.Items)
+            {
+                if (row.ContainerInstance == shop.ShopId && !TryLoadListing(shop, row, snapshot))
+                    return true;
+            }
+            foreach ((int itemId, int shopId) in snapshot.ShopByItem)
+            {
+                if (shopId == shop.ShopId && !shop.Listings.Values.Any(listing => listing.Item.InstanceId == itemId))
+                {
+                    Lock(shop, "price row for item " + itemId + " has no item");
+                    return true;
+                }
+            }
+            _logger.Info("Player shop " + shop.ShopId + " read back from storage after a quarantined write: items=" + shop.Count
+                + " balance=" + shop.Balance.ToString(CultureInfo.InvariantCulture));
+            return true;
         }
 
         ConcurrentDictionary<int, PlayerShop> Terminals(int playfieldId) => _byPlayfield.GetOrAdd(playfieldId, _ => new());
@@ -157,11 +224,12 @@ namespace ZoneEngine_New.Core.PlayerShops
                 return;
             foreach (PlayerShop shop in terminals.Values)
             {
-                if (!shop.HasPendingWrites || !shop.Settle())
-                    continue;
-                if (shop.Locked)
+                bool changed = shop.HasPendingWrites && shop.Settle();
+                if (changed && shop.Locked)
                     _logger.Error("Player shop " + shop.ShopId + " locked: a write's character was quarantined before it was stored");
-                if (TryGetTerminal(playfield, shop.TerminalInstance, out PlayerShopTerminal terminal))
+                if (shop.RecoverFromStorage && !shop.HasPendingWrites)
+                    changed |= Recover(playfield, shop, terminals);
+                if (changed && TryGetTerminal(playfield, shop.TerminalInstance, out PlayerShopTerminal terminal))
                     Refresh(terminal);
             }
         }
@@ -248,7 +316,10 @@ namespace ZoneEngine_New.Core.PlayerShops
                 // A failed plan or apply: TryCommit quarantined and closed the player when memory had changed.
                 _logger.Error(exception, "Player shop action failed char=" + player.Identity.Instance + " action=" + message.Action);
                 if (shop != null)
+                {
                     Lock(shop, "an action threw while it was applied");
+                    shop.RecoverFromStorage = true;
+                }
                 result = PlayerShopResult.Locked;
             }
 
@@ -317,8 +388,10 @@ namespace ZoneEngine_New.Core.PlayerShops
                 shop.Untrack(token);
                 if (player.IsPersistenceQuarantined)
                 {
-                    // Cash may have changed in memory; the claim stays until the next start reads storage.
+                    // Cash may have changed in memory; the claim stays until the tick reads storage back (no shop row:
+                    // the terminal is released).
                     Lock(shop, "the rent's apply failed");
+                    shop.RecoverFromStorage = true;
                     return PlayerShopResult.Locked;
                 }
                 Terminals(playfieldId).TryRemove(new KeyValuePair<int, PlayerShop>(terminal.Identity.Instance, shop));

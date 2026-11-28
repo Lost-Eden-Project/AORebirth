@@ -79,7 +79,11 @@ namespace ZoneEngine_New.Core.Inventory
             if (!TryPlace(player, playfield, requested, out AoVector3 rest, out AoVector3 normal))
                 return Refuse(player, logger, "drop ray hit nothing");
 
-            if (!inventoryActions.TryDelete(player, slot, item.InstanceId, ItemPlaceKind.World))
+            // EXPLOIT guard: the world item appears at once but can be picked up only once the retire of the inventory
+            // row is stored. A retire that never stores (the lane failed ahead of it and was discarded; the owner reloads
+            // from storage, which still holds the row) must not leave a copy on the ground for that owner to take.
+            var settlement = new DropSettlement();
+            if (!inventoryActions.TryDelete(player, slot, item.InstanceId, ItemPlaceKind.World, settlement.MarkStored))
                 return Refuse(player, logger, "inventory row could not be retired");
 
             player.Session?.Send(new CharacterActionMessage
@@ -87,7 +91,7 @@ namespace ZoneEngine_New.Core.Inventory
                 Identity = player.Identity, Action = CharacterActionType.DeleteItem, Target = slot
             });
             playfield.GetRequiredService<SpawnService>().SpawnDroppedItem(item, rest, AlignToSurface(player.Rotation, normal), player.Identity,
-                DroppedItemLifetime);
+                DroppedItemLifetime, settlement);
             return true;
         }
 

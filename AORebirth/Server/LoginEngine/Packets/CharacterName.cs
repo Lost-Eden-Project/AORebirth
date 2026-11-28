@@ -332,6 +332,42 @@ namespace LoginEngine.Packets
             return this.CreateNewChar(startInSL, starter, account, startPackage, Connector.GetConnection);
         }
 
+        /// <summary>
+        /// Locks the account's login row for the rest of the transaction and counts its characters against
+        /// <see cref="CharacterSlotPolicy"/>.
+        /// </summary>
+        private static bool HasFreeCharacterSlot(IDbConnection connection, IDbTransaction transaction, DBLoginData account)
+        {
+            using (IDbCommand lockAccount = connection.CreateCommand())
+            {
+                lockAccount.Transaction = transaction;
+                lockAccount.CommandText = "SELECT Id FROM login WHERE Username=@Username FOR UPDATE";
+                AddParameter(lockAccount, "@Username", account.Username);
+                if (lockAccount.ExecuteScalar() == null)
+                    throw new InvalidOperationException("The authenticated character-creation account is unavailable.");
+            }
+
+            long existing;
+            using (IDbCommand count = connection.CreateCommand())
+            {
+                count.Transaction = transaction;
+                count.CommandText = "SELECT COUNT(*) FROM characters WHERE Username=@Username";
+                AddParameter(count, "@Username", account.Username);
+                existing = Convert.ToInt64(count.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            return CharacterSlotPolicy.CanCreate(existing,
+                CharacterSlotPolicy.Allowed(account.AllowedCharacters, Program.DefaultAllowedCharacters));
+        }
+
+        private static void AddParameter(IDbCommand command, string name, object value)
+        {
+            IDbDataParameter parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+
         internal int CreateNewChar(bool startInSL, NewCharacterStats starter, DBLoginData account,
             CharacterStartProfessionPackage startPackage, Func<IDbConnection> connectionFactory)
         {
@@ -475,9 +511,20 @@ namespace LoginEngine.Packets
                 if (connection == null) throw new InvalidOperationException("Character creation connection is unavailable.");
                 if (connection.State != ConnectionState.Open) connection.Open();
                 transaction = connection.BeginTransaction();
-                string stage = "character insertion";
+                string stage = "character slot limit";
                 try
                 {
+                    // EXPLOIT guard: the account's characters are counted here, inside the transaction with the account
+                    // row locked, so two creations racing for the last slot cannot both pass. The stock client never
+                    // offers creation past its slots, so a request past them is refused as "name in use" (the only
+                    // refusal it shows). The list reply alone never enforced the limit.
+                    if (!HasFreeCharacterSlot(connection, transaction, account))
+                    {
+                        transaction.Rollback();
+                        return 0;
+                    }
+
+                    stage = "character insertion";
                     CharacterDao.Instance.Add(newCharacter, connection, transaction);
                     charID = newCharacter.Id;
                     if (charID <= 0) throw new InvalidOperationException("Character insertion returned no identity.");

@@ -785,18 +785,23 @@ namespace LoginEngine
         private static void SetGMLevel(string[] obj)
         {
             int gmlevel = 0;
-            if ((obj.Length != 3) || (!int.TryParse(obj[2], out gmlevel)))
+            if ((obj.Length != 3) || (!int.TryParse(obj[2], out gmlevel)) || gmlevel < 0 || gmlevel > 511)
             {
                 Colouring.Push(ConsoleColor.Red);
                 Console.WriteLine("Syntax: setgm <username> <gmlevel>");
                 Console.WriteLine("gmlevel range: 0 - 511");
                 Colouring.Pop();
             }
-            else
+            else if (LoginDataDao.SetGM(obj[1], gmlevel))
             {
-                LoginDataDao.SetGM(obj[1], gmlevel);
                 Colouring.Push(ConsoleColor.Green);
                 Console.WriteLine("Successfully set GM Level " + gmlevel + " to account " + obj[1]);
+                Colouring.Pop();
+            }
+            else
+            {
+                Colouring.Push(ConsoleColor.Red);
+                Console.WriteLine("GM level of account " + obj[1] + " was not changed: no such account, or the database refused the update (see the log).");
                 Colouring.Pop();
             }
         }

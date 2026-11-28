@@ -476,7 +476,8 @@ namespace ZoneEngine_New.Core.Playfield
         /// Places a dropped inventory item in the world as a temporary <see cref="WorldItem"/> only
         /// <paramref name="owner"/> can pick up, removed after <paramref name="lifetime"/>.
         /// </summary>
-        public WorldItem SpawnDroppedItem(Item item, Vector3 position, Quaternion rotation, Identity owner, TimeSpan lifetime)
+        public WorldItem SpawnDroppedItem(Item item, Vector3 position, Quaternion rotation, Identity owner, TimeSpan lifetime,
+            DropSettlement? settlement = null)
         {
             ArgumentNullException.ThrowIfNull(item);
             ArgumentNullException.ThrowIfNull(position);
@@ -491,7 +492,8 @@ namespace ZoneEngine_New.Core.Playfield
                 SpawnSource = SpawnSource.None,
                 Owner = owner,
                 StackCount = Math.Max(1, item.StackCount),
-                ExpiresAtUtc = DateTime.UtcNow + lifetime
+                ExpiresAtUtc = DateTime.UtcNow + lifetime,
+                Settlement = settlement
             };
 
             _registry.Register(dynel);

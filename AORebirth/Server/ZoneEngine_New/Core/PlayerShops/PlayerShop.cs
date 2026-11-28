@@ -72,8 +72,18 @@ namespace ZoneEngine_New.Core.PlayerShops
         /// <summary>The owner gave it up and that is being stored: nothing can be done at it.</summary>
         public bool Closing { get; internal set; }
 
-        /// <summary>A write of this shop could not be stored: it stays shut until the server is restarted.</summary>
+        /// <summary>
+        /// A write of this shop could not be stored: it stays shut until it is read back from storage
+        /// (<see cref="RecoverFromStorage"/>) or, when its rows cannot be read back consistently, until the next start.
+        /// </summary>
         public bool Locked { get; internal set; }
+
+        /// <summary>
+        /// The shop's memory can no longer be trusted (a write's character was quarantined, so whether the write stored
+        /// is known only to storage): once no write is pending, the tick reads the shop back from storage and unlocks it.
+        /// Without this a buyer who arranged their own quarantine shut another player's shop until a restart.
+        /// </summary>
+        public bool RecoverFromStorage { get; internal set; }
 
         public IReadOnlyDictionary<int, PlayerShopListing> Listings => _listings;
 
@@ -136,8 +146,10 @@ namespace ZoneEngine_New.Core.PlayerShops
 
         /// <summary>
         /// On the tick: applies every write a lane has stored since. A write still outstanding whose character was
-        /// quarantined will never be known to be stored (it may or may not have committed): the shop locks, and the next
-        /// start reads it from storage. True when anything changed.
+        /// quarantined will never be known to be stored (it may or may not have committed): the shop locks, and once
+        /// that character's lane has run dry the write is dropped here and the shop is marked to be read back from
+        /// storage (<see cref="RecoverFromStorage"/>), which the tick does once nothing else is pending. True when
+        /// anything changed.
         /// </summary>
         internal bool Settle()
         {
@@ -151,13 +163,45 @@ namespace ZoneEngine_New.Core.PlayerShops
                     token.OnStored();
                     changed = true;
                 }
-                else if (token.Actor.IsPersistenceQuarantined && !Locked)
+                else if (token.Actor.IsPersistenceQuarantined)
                 {
-                    Locked = true;
-                    changed = true;
+                    if (!Locked)
+                    {
+                        Locked = true;
+                        changed = true;
+                    }
+                    if (LaneClosed(token.Actor))
+                    {
+                        _pending.RemoveAt(i--);
+                        RecoverFromStorage = true;
+                        changed = true;
+                    }
                 }
             }
             return changed;
+        }
+
+        /// <summary>A quarantined character's lane with nothing queued and no driver: nothing of it will store any more.</summary>
+        static bool LaneClosed(Player actor) => !actor.Lane.HasQueuedWork && actor.Lane.Driver.CurrentCount == 1;
+
+        /// <summary>
+        /// Replaces memory with what storage holds: no listings (the caller adds the stored ones), no reserved slots, no
+        /// pending writes, the stored balance and name, and the shop open and unlocked.
+        /// </summary>
+        internal void ResetFromStorage(string name, long balance)
+        {
+            if (balance < 0)
+                throw new ArgumentOutOfRangeException(nameof(balance));
+            _listings.Clear();
+            _reserved.Clear();
+            _pending.Clear();
+            Name = name ?? string.Empty;
+            Balance = balance;
+            PendingSales = 0;
+            Opening = false;
+            Closing = false;
+            Locked = false;
+            RecoverFromStorage = false;
         }
 
         internal void AddViewer(Player player)

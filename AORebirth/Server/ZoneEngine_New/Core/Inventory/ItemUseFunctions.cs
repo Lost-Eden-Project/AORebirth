@@ -911,7 +911,8 @@ namespace ZoneEngine_New.Core.Inventory
             if (!spell.TryReadInt(0, out int amount) || amount <= 0)
                 return false;
 
-            npc.Brain.AddThreatFrom(source, amount);
+            // A taunt is a loud pull (Gameplay.json socialAggro.tauntRadiusPercent), called from where the NPC stands now.
+            npc.Brain.AddThreatFrom(source, amount, ZoneEngine_New.Core.Configuration.SocialCall.Taunt);
             return true;
         }
 

@@ -364,10 +364,15 @@ namespace ZoneEngine_New.Core.Trade
         static void LogShopPick(Player player, TradeSession session, TradeMessage message, string result)
         {
             var stock = session.Machine?.Stock;
-            string picks = string.Join(",", session.ShopPicks.Select(index =>
+            // The queue is bounded (TradeOffer.Capacity lines, MaxPicksPerStackableLine each), but a full one is long: log
+            // the first few picks and the count, not every pick on every pick.
+            const int LoggedPicks = 24;
+            string picks = string.Join(",", session.ShopPicks.Take(LoggedPicks).Select(index =>
                 stock != null && stock.TryGetSlot(index, out ShopStockSlot slot)
                     ? index.ToString(CultureInfo.InvariantCulture) + ":" + slot.LowId.ToString(CultureInfo.InvariantCulture)
                     : index.ToString(CultureInfo.InvariantCulture)));
+            if (session.ShopPicks.Count > LoggedPicks)
+                picks += ",... (" + session.ShopPicks.Count.ToString(CultureInfo.InvariantCulture) + " picks)";
             player.Logger.Info(string.Format(CultureInfo.InvariantCulture,
                 "Shop pick {0} action={1} target={2}:{3} container={4}:{5} params={6},{7},{8},{9} queue=[{10}]",
                 result, message.Action, (int)message.Target.Type, message.Target.Instance,
@@ -625,6 +630,10 @@ namespace ZoneEngine_New.Core.Trade
                     {
                         if (TradeRules.IsNoDrop(content))
                             return item.Name + " cannot be traded.";
+                        // Locked after the bag was offered (an equip from inside it is pending, or a use is waiting on
+                        // its delay): the lock's owner finishes first, or the row would be written under another player's bag.
+                        if (content.Locked)
+                            return item.Name + " cannot be traded right now.";
                         if (TradeRules.IsUnique(content) && TradeRules.WouldDuplicateUnique(receiver, content.LowId, content.HighId))
                             return receiver.Name + " already has " + content.Name + ".";
                     }

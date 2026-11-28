@@ -486,7 +486,8 @@ namespace ZoneEngine_New.Core.Inventory
             IItemBuilder items,
             SpellCriteria? criteria = null,
             bool skipPassiveModifiers = false,
-            Character? source = null)
+            Character? source = null,
+            bool userIsRecipient = false)
         {
             ArgumentNullException.ThrowIfNull(target);
             ArgumentNullException.ThrowIfNull(inventoryRepository);
@@ -521,7 +522,8 @@ namespace ZoneEngine_New.Core.Inventory
                 foreach (ItemSpell spell in spells)
                 {
                     if (spell.Is(FunctionType.DestroyItem))
-                        executed |= ExecuteSpell(target, source, spell, inventoryRepository, items, skipPassiveModifiers, criteria);
+                        executed |= ExecuteSpell(target, source, spell, inventoryRepository, items, skipPassiveModifiers, criteria,
+                            userIsRecipient: userIsRecipient);
                 }
             }
 
@@ -529,7 +531,8 @@ namespace ZoneEngine_New.Core.Inventory
             {
                 if (consumeFirst && spell.Is(FunctionType.DestroyItem))
                     continue;
-                executed |= ExecuteSpell(target, source, spell, inventoryRepository, items, skipPassiveModifiers, criteria);
+                executed |= ExecuteSpell(target, source, spell, inventoryRepository, items, skipPassiveModifiers, criteria,
+                    userIsRecipient: userIsRecipient);
             }
 
             return executed;
@@ -590,14 +593,23 @@ namespace ZoneEngine_New.Core.Inventory
                 target,
                 inventoryRepository,
                 items,
-                source: source);
+                source: source,
+                userIsRecipient: TerminateUserIsRecipient);
         }
 
         /// <summary>True when User / Wearer / Self functions act on the character running this template, not its source.</summary>
         protected virtual bool UserIsRecipient => false;
 
-        Character ResolveApplyOn(Character target, Character? source, ItemSpell spell)
-            => UserIsRecipient && spell.Target is (int)ItemTarget.User or (int)ItemTarget.Wearer or (int)ItemTarget.Self
+        /// <summary>
+        /// True when OnTerminate User / Wearer / Self functions act on the character the template leaves, not its source:
+        /// a hostile nano's end belongs to the NCU it ran in (Rik-Rak's 5 s Paralysis Field casts the 5 min field on
+        /// "Self" when it ends: the player it held, not the boss; bug #308).
+        /// </summary>
+        protected virtual bool TerminateUserIsRecipient => false;
+
+        Character ResolveApplyOn(Character target, Character? source, ItemSpell spell, bool userIsRecipient = false)
+            => (UserIsRecipient || userIsRecipient)
+                && spell.Target is (int)ItemTarget.User or (int)ItemTarget.Wearer or (int)ItemTarget.Self
                 ? target
                 : ItemUseFunctions.ResolveApplyOn(target, source, spell);
 
@@ -615,10 +627,11 @@ namespace ZoneEngine_New.Core.Inventory
         /// (with <paramref name="criteria"/>'s overrides, e.g. the used item's id in stat 273), OnUser / OnCaster leaves
         /// against the user, OnTarget leaves against the selected world object or else the event target.
         /// </summary>
-        bool SpellRequirementsMet(Character eventTarget, Character? source, ItemSpell spell, SpellCriteria criteria)
+        bool SpellRequirementsMet(Character eventTarget, Character? source, ItemSpell spell, SpellCriteria criteria,
+            bool userIsRecipient = false)
         {
             Character user = source ?? eventTarget;
-            Character applyOn = ResolveApplyOn(eventTarget, source, spell);
+            Character applyOn = ResolveApplyOn(eventTarget, source, spell, userIsRecipient);
             Identity usedFrom = criteria.SubjectSlot;
             // An item used with a world object selected tests that object with its OnTarget leaves (Incarnator crystals).
             Dynel? selected = criteria.SelectedDynel;
@@ -643,7 +656,8 @@ namespace ZoneEngine_New.Core.Inventory
             bool skipPassiveModifiers,
             SpellCriteria criteria,
             bool isTick = false,
-            bool skipRequirements = false)
+            bool skipRequirements = false,
+            bool userIsRecipient = false)
         {
             // Each function names who it applies to (User / Wearer / Self: whoever used the item or cast the
             // nano; Target: the event target). A nano cast on someone else can still act on its caster, e.g. a
@@ -651,8 +665,8 @@ namespace ZoneEngine_New.Core.Inventory
             // leaves read the user and OnTarget leaves the event target, so staged functions (Ritual of Devotion
             // 225317: stage 1 while no line-495 nano runs on the user, each later stage while the previous one runs)
             // pick exactly one branch.
-            Character applyOn = ResolveApplyOn(target, source, spell);
-            if (!skipRequirements && !SpellRequirementsMet(target, source, spell, criteria))
+            Character applyOn = ResolveApplyOn(target, source, spell, userIsRecipient);
+            if (!skipRequirements && !SpellRequirementsMet(target, source, spell, criteria, userIsRecipient))
                 return false;
             target = applyOn;
 

@@ -348,37 +348,39 @@ namespace AORebirth.Tools.AccountDaoValidation
 
         private static void LegacyGmChecks(string connectionString, bool affected)
         {
+            // setgm is scoped to the named account: it changes that row alone, reports an unknown account, and reports
+            // (and logs) a provider failure instead of printing success.
             using (MySqlConnection connection = Open(rootConnection))
                 connection.Execute("UPDATE login SET GM=0");
             long total = NewDao(application).CountRegisteredAccounts();
-            Require(total >= 2, "legacy-gm-characterization-at-least-two-rows");
-            foreach (string unusedUsername in new string[] { "Created", "does-not-exist", null })
+            Require(total >= 2, "setgm-characterization-at-least-two-rows");
+            Require(LoginDataDao.SetGM("Created", 17), "setgm-existing-account-succeeds");
+            using (MySqlConnection connection = Open(rootConnection))
             {
-                var observed = new FaultConnection(connectionString);
-                Connector.TestConnectionFactory = () => observed;
-                int level = unusedUsername == "Created" ? 17 : 18;
-                try { LoginDataDao.SetGM(unusedUsername, level); }
-                finally { Connector.TestConnectionFactory = null; }
-                Require(observed.LastSql == "UPDATE login SET GM=@gm"
-                    && observed.LastParameterNames.SequenceEqual(new[] {"gm"}), "actual-legacy-gm-username-unused-" + checks);
-                long expected = affected && unusedUsername == null ? 0 : total;
-                Require(observed.LastAffected == expected, "actual-legacy-gm-affected-rows-" + checks);
-                long rowsAtLevel;
-                using (MySqlConnection connection = Open(rootConnection))
-                    rowsAtLevel = connection.Query<long>("SELECT COUNT(*) FROM login WHERE GM=@level", new {level}).Single();
-                Require(rowsAtLevel == total, "actual-legacy-gm-all-rows-observed-" + checks);
-                Console.WriteLine("LEGACY_SETGM_OBSERVATION mode=" + (affected ? "changed" : "matched")
-                    + " suppliedNameCase=" + (unusedUsername == null ? "null" : unusedUsername == "Created" ? "existing" : "missing")
-                    + " totalRows=" + total + " affectedRows=" + observed.LastAffected + " rowsAtLevel=" + rowsAtLevel);
-                Require(observed.BeginCount == 0 && observed.Disposed, "legacy-gm-autocommit-owned-connection-" + checks);
+                Require(connection.Query<long>("SELECT COUNT(*) FROM login WHERE GM=17").Single() == 1, "setgm-changes-exactly-one-row");
+                Require(connection.Query<long>("SELECT GM FROM login WHERE Username='Created'").Single() == 17, "setgm-changes-the-named-account");
             }
+            Require(LoginDataDao.SetGM("Created", 17), "setgm-same-level-still-succeeds-in-" + (affected ? "changed" : "matched") + "-mode");
+            Require(!LoginDataDao.SetGM("does-not-exist", 18) && !LoginDataDao.SetGM(null, 18) && !LoginDataDao.SetGM("", 18),
+                "setgm-unknown-or-empty-account-refused");
+            using (MySqlConnection connection = Open(rootConnection))
+                Require(connection.Query<long>("SELECT COUNT(*) FROM login WHERE GM<>0").Single() == 1, "setgm-touches-no-other-row");
+            var observed = new FaultConnection(connectionString);
+            Connector.TestConnectionFactory = () => observed;
+            try { Require(LoginDataDao.SetGM("Created", 17), "setgm-observed-connection-succeeds"); }
+            finally { Connector.TestConnectionFactory = null; }
+            Require(observed.LastParameterNames.SequenceEqual(new[] {"gm", "user"}) && observed.BeginCount == 0 && observed.Disposed,
+                "setgm-account-parameter-bound-autocommit-owned-connection");
             var failed = new FaultConnection(connectionString) { FailurePoint = "execute" };
             Connector.TestConnectionFactory = () => failed;
             int logs = Utility.LogUtil.ErrorCount;
-            try { LoginDataDao.SetGM("ignored", 19); }
+            bool reported;
+            try { reported = LoginDataDao.SetGM("Created", 19); }
             finally { Connector.TestConnectionFactory = null; }
-            Require(Utility.LogUtil.ErrorCount == logs + 1 && failed.Disposed,
-                "legacy-gm-swallows-provider-failure-no-new-gm-api");
+            Require(!reported && Utility.LogUtil.ErrorCount == logs + 1 && failed.Disposed,
+                "setgm-provider-failure-reported-and-logged");
+            using (MySqlConnection connection = Open(rootConnection))
+                connection.Execute("UPDATE login SET GM=0");
         }
 
         private static void ConcurrencyChecks(IAccountDao dao)

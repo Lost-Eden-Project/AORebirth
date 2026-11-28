@@ -7,8 +7,8 @@ namespace ZoneEngine_New.Tests
     using AORebirth.Core.GameData;
     using AORebirth.Enums;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
-    using SmokeLounge.AOtomation.Messaging.Messages;
+    using LostEden.Protocol.GameData;
+    using LostEden.Protocol.Messages;
 
     using ZoneEngine_New.Core.Characters;
     using ZoneEngine_New.Core.Data;
@@ -243,7 +243,7 @@ namespace ZoneEngine_New.Tests
         public static Player CreatePlayer(int instance, string firstName = "Test")
         {
             var player = new Player(
-                new Identity { Type = IdentityType.CanbeAffected, Instance = instance },
+                new Identity { Type = IdentityType.SimpleChar, Instance = instance },
                 new StubLogger(),
                 new StubItemBuilder())
             {
@@ -504,12 +504,6 @@ namespace ZoneEngine_New.Tests
 
         public void Send(byte[] packet)
         {
-        }
-
-        public void Send(Message message)
-        {
-            if (message?.Body != null)
-                Sent.Add(message.Body);
         }
 
         public void Send(MessageBody body)

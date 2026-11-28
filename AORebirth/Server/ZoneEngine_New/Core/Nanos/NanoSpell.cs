@@ -96,6 +96,12 @@ namespace ZoneEngine_New.Core.Nanos
         /// </summary>
         protected override bool UserIsRecipient => _userIsRecipient;
 
+        /// <summary>
+        /// A hostile nano's OnTerminate User / Self functions act on the character whose NCU it leaves: the end of a
+        /// debuff is the victim's, not the caster's (bug #308, Rik-Rak's Paralysis Field chain).
+        /// </summary>
+        protected override bool TerminateUserIsRecipient => IsHostile;
+
         /// <summary>Every function names the User or Wearer and none an opponent (see <see cref="UserIsRecipient"/>).</summary>
         public bool ActsOnlyOnRunner => _userIsRecipient;
 

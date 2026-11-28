@@ -111,18 +111,32 @@ namespace AORebirth.Database.Dao
         /// </param>
         /// <param name="gmlevel">
         /// </param>
-        public static void SetGM(string user, int gmlevel)
+        /// <summary>
+        /// Sets one account's GM level. True when that account now holds the level; false when there is no such account
+        /// or the write failed (logged). The update is scoped to the account: an unscoped update once set every account's
+        /// level at once.
+        /// </summary>
+        public static bool SetGM(string user, int gmlevel)
         {
+            if (string.IsNullOrWhiteSpace(user))
+            {
+                return false;
+            }
+
             try
             {
                 using (IDbConnection conn = Connector.GetConnection())
                 {
-                    conn.Execute("UPDATE login SET GM=@gm", new { gm = gmlevel });
+                    conn.Execute("UPDATE login SET GM=@gm WHERE Username=@user", new { gm = gmlevel, user });
+                    // Affected-row counts depend on the connection's matched/changed setting: read the result back.
+                    return conn.ExecuteScalar<long>(
+                        "SELECT COUNT(*) FROM login WHERE Username=@user AND GM=@gm", new { gm = gmlevel, user }) == 1;
                 }
             }
             catch (Exception e)
             {
                 LogUtil.ErrorException(e);
+                return false;
             }
         }
 

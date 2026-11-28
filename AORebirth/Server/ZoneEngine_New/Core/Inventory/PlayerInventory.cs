@@ -480,6 +480,22 @@ namespace ZoneEngine_New.Core.Inventory
         }
 
         /// <summary>
+        /// True while <paramref name="page"/> is one of this character's pages: a fixed page of theirs, or a bag page
+        /// still registered to them. A traded bag's page is forgotten by the giver, so a move planned into or out of it
+        /// must not complete.
+        /// </summary>
+        public bool OwnsPage(Container page)
+        {
+            ArgumentNullException.ThrowIfNull(page);
+            if (ReferenceEquals(page, Inventory) || ReferenceEquals(page, Equipment) || ReferenceEquals(page, Armor)
+                || ReferenceEquals(page, Implant) || ReferenceEquals(page, Social) || ReferenceEquals(page, Bank)
+                || ReferenceEquals(page, Overflow))
+                return true;
+            return (page.Flags & ContainerFlags.Backpack) != 0
+                && TryGetBackpackPage(page.Identity, out Container registered) && ReferenceEquals(registered, page);
+        }
+
+        /// <summary>
         /// The item may not change hands or move: it is locked, or it is a bag holding a locked item (an item use
         /// waiting on its AttackDelay). Moving such a bag would carry the pending use away with it.
         /// </summary>

@@ -195,43 +195,36 @@ namespace ChatEngine.PacketHandlers
 
         /// <summary>
         /// The client's channel packet (type, length, channel type, channel id, text S, block S) relayed with the sender
-        /// id after the channel id. A GM's block gets the line-flags entry 02 01 appended (entries start at the block's
-        /// first byte); everyone else's block is relayed as sent.
+        /// id after the channel id and a server-made block: the sender's macro entries kept, its line-flags entries
+        /// dropped, and the GM entry 02 01 appended for a GM (<see cref="ChatLineFlags.SanitizeBlock"/>). A packet whose
+        /// text or block does not fit its length is relayed with an empty block.
         /// </summary>
-        private static byte[] InsertSender(byte[] packet, byte[] senderId, bool gm)
+        internal static byte[] InsertSender(byte[] packet, byte[] senderId, bool gm)
         {
             const int TextOffset = 9;
-            int blockEnd = -1;
-            int blockLengthOffset = -1;
-            if (gm && packet.Length >= TextOffset + 2)
+            int textEnd = packet.Length;
+            byte[] block = ChatLineFlags.SanitizeBlock(packet, 0, 0, gm);
+            if (packet.Length >= TextOffset + 2)
             {
-                blockLengthOffset = TextOffset + 2 + ((packet[TextOffset] << 8) | packet[TextOffset + 1]);
+                int blockLengthOffset = TextOffset + 2 + ((packet[TextOffset] << 8) | packet[TextOffset + 1]);
                 if (blockLengthOffset + 2 <= packet.Length)
                 {
-                    blockEnd = blockLengthOffset + 2 + ((packet[blockLengthOffset] << 8) | packet[blockLengthOffset + 1]);
-                    if (blockEnd > packet.Length)
-                        blockEnd = -1;
+                    textEnd = blockLengthOffset;
+                    int blockLength = (packet[blockLengthOffset] << 8) | packet[blockLengthOffset + 1];
+                    if (blockLengthOffset + 2 + blockLength <= packet.Length)
+                        block = ChatLineFlags.SanitizeBlock(packet, blockLengthOffset + 2, blockLength, gm);
                 }
             }
 
-            byte[] gmEntry = blockEnd >= 0 ? ChatLineFlags.GmEntry : Array.Empty<byte>();
-            byte[] newpacket = new byte[packet.Length + senderId.Length + gmEntry.Length];
+            byte[] newpacket = new byte[textEnd + senderId.Length + 2 + block.Length];
             Array.Copy(packet, 0, newpacket, 0, TextOffset);
             Array.Copy(senderId, 0, newpacket, TextOffset, senderId.Length);
             int shift = senderId.Length;
-            if (gmEntry.Length == 0)
-            {
-                Array.Copy(packet, TextOffset, newpacket, TextOffset + shift, packet.Length - TextOffset);
-            }
-            else
-            {
-                Array.Copy(packet, TextOffset, newpacket, TextOffset + shift, blockEnd - TextOffset);
-                Array.Copy(gmEntry, 0, newpacket, blockEnd + shift, gmEntry.Length);
-                Array.Copy(packet, blockEnd, newpacket, blockEnd + shift + gmEntry.Length, packet.Length - blockEnd);
-                int blockLength = ((packet[blockLengthOffset] << 8) | packet[blockLengthOffset + 1]) + gmEntry.Length;
-                newpacket[blockLengthOffset + shift] = (byte)(blockLength >> 8);
-                newpacket[blockLengthOffset + shift + 1] = (byte)blockLength;
-            }
+            Array.Copy(packet, TextOffset, newpacket, TextOffset + shift, textEnd - TextOffset);
+            int blockOffset = textEnd + shift;
+            newpacket[blockOffset] = (byte)(block.Length >> 8);
+            newpacket[blockOffset + 1] = (byte)block.Length;
+            Array.Copy(block, 0, newpacket, blockOffset + 2, block.Length);
 
             int bodyLength = newpacket.Length - 4;
             newpacket[2] = (byte)(bodyLength >> 8);

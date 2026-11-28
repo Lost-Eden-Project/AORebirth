@@ -101,7 +101,7 @@ public static class MissionChestPlacement
 
     /// <summary>
     /// The chest dynel's collision sphere from its spawn definition's template, mesh and scale. A template drawn as a CAT
-    /// body (CATMesh, no Mesh: the Mothership cocoon 10000002) is sized as the client sizes a character, CharRadius * Scale
+    /// body (CATMesh, no Mesh: the Mothership cocoon 10000022) is sized as the client sizes a character, CharRadius * Scale
     /// / 100, with the CharRadius the MonsterData records give that body; the sphere stands on the floor.
     /// </summary>
     public static bool TryGetChestSphere(IGameData gameData, IItemTemplateCatalog templates,

@@ -393,6 +393,10 @@ namespace ZoneEngine_New.Core.Ai
                 _scriptedVia = null;
                 _scriptedResult = ScriptMoveResult.Arrived;
                 StopPathing();
+                // The walk is over: back to running pace, as every other end of a scripted walk does. A later walk leg
+                // switches to walk again on its own think; a chase after arrival runs.
+                if (Npc.Motor.State == Movement.MovementState.Walk)
+                    Npc.Motor.ApplyAction(Movement.MovementAction.SwitchToRun);
                 return;
             }
 
@@ -650,11 +654,19 @@ namespace ZoneEngine_New.Core.Ai
         }
 
         /// <summary>
-        /// <paramref name="fromDamage"/> is false for threat alone (a taunt, a debuff, a hostile nano): a new attacker's
-        /// call for help then carries socialAggro.threatOnlyRadiusPercent of its radius, and the attacker's first damage
-        /// afterwards calls again at the full radius.
+        /// <paramref name="fromDamage"/> is false for threat alone (a debuff, a hostile nano, a heal): see
+        /// <see cref="AddThreat(Identity, float, ZoneEngine_New.Core.Configuration.SocialCall)"/>.
         /// </summary>
         public void AddThreat(Identity identity, float amount, bool fromDamage = false)
+            => AddThreat(identity, amount, fromDamage ? ZoneEngine_New.Core.Configuration.SocialCall.Damage
+                : ZoneEngine_New.Core.Configuration.SocialCall.Threat);
+
+        /// <summary>
+        /// Threat from an act as loud as <paramref name="call"/>. A new attacker's call for help carries that act's share
+        /// of the radius (Gameplay.json socialAggro); a later, louder act calls again at its own. However the acts come,
+        /// the call has reached the loudest of them.
+        /// </summary>
+        public void AddThreat(Identity identity, float amount, ZoneEngine_New.Core.Configuration.SocialCall call)
         {
             // Pacified NPCs keep no hate.
             if (_evading || Npc.IsPacified)
@@ -663,17 +675,31 @@ namespace ZoneEngine_New.Core.Ai
             AddHate(identity, amount);
             if (newAttacker)
             {
-                _threatOnlyCalls.Remove(identity);
-                if (!fromDamage)
-                    _threatOnlyCalls.Add(identity);
-                CallForHelp(identity, threatOnly: !fromDamage);
+                RecordCall(identity, call);
+                CallForHelp(identity, call);
             }
-            else if (fromDamage && _threatOnlyCalls.Remove(identity))
-                CallForHelp(identity);
+            else if (_quietCalls.TryGetValue(identity, out ZoneEngine_New.Core.Configuration.SocialCall loudest) && call > loudest)
+            {
+                RecordCall(identity, call);
+                CallForHelp(identity, call);
+            }
         }
 
-        /// <summary>Attackers whose call for help so far was threat-only (reduced radius); their first damage calls at full.</summary>
-        readonly HashSet<Identity> _threatOnlyCalls = new();
+        /// <summary>The attacker's loudest act so far; damage, the loudest there is, keeps no entry.</summary>
+        void RecordCall(Identity identity, ZoneEngine_New.Core.Configuration.SocialCall call)
+        {
+            if (call == ZoneEngine_New.Core.Configuration.SocialCall.Damage)
+                _quietCalls.Remove(identity);
+            else
+                _quietCalls[identity] = call;
+        }
+
+        /// <summary>
+        /// Attackers whose call for help so far was quieter than damage (a reduced radius), by their loudest act; a
+        /// louder act calls again. One on the hate list without an entry has already called at the full radius, or
+        /// joined through another NPC's call.
+        /// </summary>
+        readonly Dictionary<Identity, ZoneEngine_New.Core.Configuration.SocialCall> _quietCalls = new();
 
         /// <summary>
         /// Puts <paramref name="identity"/> on the hate list. The first hate starts the NPC's fight, whoever started it
@@ -693,9 +719,14 @@ namespace ZoneEngine_New.Core.Ai
         /// time, so the owner is the NPC's next target once the pet is dead, dismissed or out of reach.
         /// </summary>
         public void AddThreatFrom(Character source, float amount, bool fromDamage = false)
+            => AddThreatFrom(source, amount, fromDamage ? ZoneEngine_New.Core.Configuration.SocialCall.Damage
+                : ZoneEngine_New.Core.Configuration.SocialCall.Threat);
+
+        /// <inheritdoc cref="AddThreatFrom(Character, float, bool)"/>
+        public void AddThreatFrom(Character source, float amount, ZoneEngine_New.Core.Configuration.SocialCall call)
         {
             ArgumentNullException.ThrowIfNull(source);
-            AddThreat(source.Identity, amount, fromDamage);
+            AddThreat(source.Identity, amount, call);
 
             if (source is not NpcCharacter { PetOwner: Player owner } || owner.IsDead
                 || Npc.Playfield?.GetService<ZoneEngine_New.Core.Configuration.GameplaySettings>()?.Pets is not { } rules)
@@ -705,15 +736,15 @@ namespace ZoneEngine_New.Core.Ai
             if (rules.OwnerAlwaysOnHateList && !Hate.Contains(owner.Identity))
                 share = Math.Max(share, NpcAiRules.ProximityHate);
             if (share > 0f)
-                AddThreat(owner.Identity, share, fromDamage);
+                AddThreat(owner.Identity, share, call);
         }
 
         /// <summary>
         /// Social aggro (Gameplay.json socialAggro): NPCs of its kind within this NPC's spawn point AssistanceRadius join
-        /// the fight against <paramref name="attacker"/>, nearest first. Runs once per new attacker; <paramref name="threatOnly"/>
-        /// scales the radius by socialAggro.threatOnlyRadiusPercent.
+        /// the fight against <paramref name="attacker"/>, nearest first. Runs once per new attacker, and again for each
+        /// louder act; <paramref name="call"/> scales the radius (socialAggro.proximityRadiusPercent and the rest).
         /// </summary>
-        void CallForHelp(Identity attacker, bool threatOnly = false)
+        void CallForHelp(Identity attacker, ZoneEngine_New.Core.Configuration.SocialCall call = ZoneEngine_New.Core.Configuration.SocialCall.Damage)
         {
             if (Pet != null || !Npc.Attackable || Npc.Playfield is not ZoneEngine_New.Core.Playfield.Playfield playfield)
                 return;
@@ -754,7 +785,7 @@ namespace ZoneEngine_New.Core.Ai
                     continue;
 
                 double distance = Npc.GetEdgeDistanceTo(other);
-                if (distance > rules.RadiusFor(callRadius, npcAttacker, guards, threatOnly) * helpScale || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
+                if (distance > rules.RadiusFor(callRadius, npcAttacker, guards, call) * helpScale || !ZoneEngine_New.Core.Helpers.CombatRules.CanAttack(other, enemy))
                     continue;
                 if (rules.RequireLineOfSight && !other.HasLineOfSightTo(Npc))
                     continue;
@@ -807,7 +838,7 @@ namespace ZoneEngine_New.Core.Ai
         public void ClearHate()
         {
             Hate.Clear();
-            _threatOnlyCalls.Clear();
+            _quietCalls.Clear();
             _currentTarget = Identity.None;
             _aggroHoldSeconds = 0;
             _approachTarget = Identity.None;
@@ -976,11 +1007,11 @@ namespace ZoneEngine_New.Core.Ai
             if (!WithinProximityWalk(player, range))
                 return;
 
-            // Proximity aggro is threat without damage, like a taunt: its call for help carries the threat-only radius,
-            // and the player's first damage on this NPC calls again at the full radius.
+            // Proximity aggro is the quietest pull: its call for help carries socialAggro.proximityRadiusPercent, and the
+            // player's first taunt or damage on this NPC calls again at its own radius from where the NPC then stands.
             AddHate(player.Identity, NpcAiRules.ProximityHate);
-            _threatOnlyCalls.Add(player.Identity);
-            CallForHelp(player.Identity, threatOnly: true);
+            RecordCall(player.Identity, ZoneEngine_New.Core.Configuration.SocialCall.Proximity);
+            CallForHelp(player.Identity, ZoneEngine_New.Core.Configuration.SocialCall.Proximity);
         }
 
         /// <summary>

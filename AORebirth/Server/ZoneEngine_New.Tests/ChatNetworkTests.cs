@@ -35,6 +35,41 @@ public sealed class ChatNetworkTests
         AssertTells(world, html);
     }
 
+    /// <summary>
+    /// LE-13: 0 is "no group", which every ungrouped client is in. A message naming group 0 reached every ungrouped
+    /// client (bots included) past the moderation filters; it now reaches nobody. A real group still gets its lines.
+    /// </summary>
+    [TestMethod]
+    public void APrivateGroupMessageToGroupZeroReachesNobody()
+    {
+        using var world = new ChatWorld();
+        Assert.AreEqual(0u, GroupOf(world.Sender), "the fixture clients are ungrouped");
+
+        world.Sender.Feed(PrivateGroupFrame(0, "everyone?"));
+        Assert.AreEqual(0, world.Recipient.Sent.Count, "an ungrouped sender reaches no one through group 0");
+
+        SetGroup(world.Sender, SenderId);
+        SetGroup(world.Recipient, SenderId);
+        world.Sender.Feed(PrivateGroupFrame(SenderId, "group only"));
+        Assert.AreEqual(1, world.Recipient.Sent.Count, "a real group still receives its lines");
+    }
+
+    static PropertyInfo PrivateGroupProperty => typeof(ChatClient).GetProperty("PrivateGroupId", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    static uint GroupOf(ChatClient client) => (uint)PrivateGroupProperty.GetValue(client)!;
+
+    static void SetGroup(ChatClient client, uint groupId) => PrivateGroupProperty.SetValue(client, groupId);
+
+    static byte[] PrivateGroupFrame(uint groupId, string message)
+    {
+        byte[] text = Encoding.UTF8.GetBytes(message);
+        byte[] body = new byte[6 + text.Length];
+        BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(0, 4), groupId);
+        BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(4, 2), checked((ushort)text.Length));
+        text.CopyTo(body, 6);
+        return Frame(57, body);
+    }
+
     [TestMethod]
     public void OneByteReceivesWaitForTheWholeHeaderAndBody()
     {

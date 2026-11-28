@@ -1,0 +1,6 @@
+- Fixed: several ways items could end up duplicated, lost or handed over past the trade rules around bag deletes, dropped items, equip delays and player shops.
+- Fixed: a player shop no longer stays shut until a restart after another player's failed purchase.
+- Fixed: a city controller recharge now uses up one unit of the recharge item instead of the whole stack.
+- Fixed: chat lines can no longer be made to show a fake GM tag, and a message to no private group no longer reaches everyone.
+- Fixed: repeated wrong passwords now slow further login attempts for a while.
+- Fixed: a few movement tricks a modified client could use (swimming on dry land, bad coordinates) are refused.

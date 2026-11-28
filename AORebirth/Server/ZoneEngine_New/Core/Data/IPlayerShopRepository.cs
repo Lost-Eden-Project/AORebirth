@@ -45,5 +45,33 @@ namespace ZoneEngine_New.Core.Data
     public interface IPlayerShopRepository
     {
         PlayerShopSnapshot LoadAll();
+
+        /// <summary>
+        /// One shop as stored (its row, if any, its item rows and their prices), for a shop whose memory can no longer
+        /// be trusted. Reads everything and keeps the shop's part unless the store does better.
+        /// </summary>
+        PlayerShopSnapshot LoadShop(int shopId)
+        {
+            PlayerShopSnapshot all = LoadAll();
+            var prices = new Dictionary<int, int>();
+            var shopByItem = new Dictionary<int, int>();
+            foreach (KeyValuePair<int, int> pair in all.ShopByItem)
+            {
+                if (pair.Value != shopId)
+                    continue;
+                shopByItem[pair.Key] = pair.Value;
+                if (all.PricesByItem.TryGetValue(pair.Key, out int price))
+                    prices[pair.Key] = price;
+            }
+            var shops = new List<PlayerShopRecord>();
+            foreach (PlayerShopRecord shop in all.Shops)
+                if (shop.ShopId == shopId)
+                    shops.Add(shop);
+            var items = new List<ItemInstanceRecord>();
+            foreach (ItemInstanceRecord item in all.Items)
+                if (item.ContainerInstance == shopId)
+                    items.Add(item);
+            return new PlayerShopSnapshot(shops, items, prices, shopByItem);
+        }
     }
 }

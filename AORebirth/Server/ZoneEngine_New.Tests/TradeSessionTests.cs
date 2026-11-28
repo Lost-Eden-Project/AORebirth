@@ -2,7 +2,7 @@ namespace ZoneEngine_New.Tests
 {
     using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-    using SmokeLounge.AOtomation.Messaging.GameData;
+    using LostEden.Protocol.GameData;
 
     using ZoneEngine_New.Core.Entities;
     using ZoneEngine_New.Core.Inventory;
@@ -175,6 +175,24 @@ namespace ZoneEngine_New.Tests
 
             Assert.AreEqual(-1, session.AddShopPick(99));
             Assert.AreEqual(TradeOffer.Capacity, session.ShopPicks.Count);
+        }
+
+        /// <summary>
+        /// LE-19: a stackable line is one pane item however often it is picked, so the pane cap alone let a client queue
+        /// picks of it without end. Each line takes at most twenty picks; other lines are unaffected.
+        /// </summary>
+        [TestMethod]
+        public void StackablePicksOfOneLineAreCappedAtTwenty()
+        {
+            TradeSession session = ShopSession();
+
+            for (int i = 0; i < TradeSession.MaxPicksPerStackableLine; i++)
+                Assert.AreEqual(i, session.AddShopPick(7, stackable: true), "pick " + i);
+
+            Assert.AreEqual(-1, session.AddShopPick(7, stackable: true), "the twenty-first pick of the line is refused");
+            Assert.AreEqual(TradeSession.MaxPicksPerStackableLine, session.ShopPicks.Count);
+            Assert.AreEqual(TradeSession.MaxPicksPerStackableLine, session.AddShopPick(8, stackable: true), "another line still takes a pick");
+            Assert.AreEqual(TradeSession.MaxPicksPerStackableLine + 1, session.AddShopPick(9), "a plain pick still fits");
         }
 
         [TestMethod]

@@ -516,6 +516,163 @@ public sealed class TradeQueuedInsertOrderTests
     /// write may reach a row ahead of its insert, nothing is quarantined, and storage ends exactly where memory holds each
     /// item. A failure names the seed and the steps that led to it.
     /// </summary>
+    /// <summary>
+    /// LE-02: a trade's joint commit sits in both lanes. When the giver's lane fails terminally ahead of it (here the
+    /// database refuses an earlier retire, as it refuses retiring a bag with rows) and is discarded, the joint never
+    /// runs. The partner's memory shows a trade storage will never hold, so the partner is quarantined at once and its
+    /// lane emptied, instead of playing on unsaved until a forced save failed hours later.
+    /// </summary>
+    [TestMethod]
+    public void ADiscardedLaneAbandonsItsTradeAndQuarantinesThePartnerAtOnce()
+    {
+        using var rig = new Rig();
+        Item doomed = rig.Carried(51222101, persisted: true);
+        Item given = rig.Carried(51222102, persisted: true);
+        Item returned = rig.Carried(rig.Partner, 51222103, persisted: true);
+        int givenSlot = rig.SlotOf(given);
+        int returnedSlot = rig.Partner.Inventory.Inventory.Content.Single(pair => ReferenceEquals(pair.Value, returned)).Key;
+        rig.Store.Refuse = batch => batch.Locations.Any(location => location.InstanceId == doomed.InstanceId);
+
+        Assert.IsTrue(rig.Delete(rig.Player, doomed), "the delete is applied in memory and queued");
+        rig.TradeWithPartner(given, returned);
+        Assert.IsTrue(rig.Partner.Lane.HasQueuedWork, "the joint sits in the partner's lane");
+
+        Assert.ThrowsExactly<InvalidOperationException>(() => rig.Flush.HardFlush(rig.Player));
+
+        Assert.IsTrue(rig.Player.IsPersistenceQuarantined);
+        Assert.IsTrue(rig.Partner.IsPersistenceQuarantined, "the partner's memory shows a trade that will never be stored");
+        Assert.AreEqual(SessionState.Closed, rig.PartnerSession.State, "the partner reloads from storage");
+        Assert.IsFalse(rig.Player.Lane.HasQueuedWork);
+        Assert.IsFalse(rig.Partner.Lane.HasQueuedWork, "the abandoned joint is gone from the partner's lane");
+        // Storage never saw the trade or the delete: a relog loads every item where it was.
+        rig.Store.AssertRow(doomed, (int)IdentityType.Inventory, CharacterId, rig.Store.Rows().Single(row => row.Key == doomed.InstanceId).Value.Slot);
+        rig.Store.AssertRow(given, (int)IdentityType.Inventory, CharacterId, givenSlot);
+        rig.Store.AssertRow(returned, (int)IdentityType.Inventory, PartnerId, returnedSlot);
+        // A later hard flush of the partner writes nothing from its stale memory.
+        rig.Flush.HardFlush(rig.Partner);
+        rig.Store.AssertRow(returned, (int)IdentityType.Inventory, PartnerId, returnedSlot);
+    }
+
+    /// <summary>
+    /// LE-03: taking a worn item off into a bag is delayed by its equip delay. While that move is pending the bag is
+    /// locked, so it cannot be put on the trade table; the move then completes into the bag, which is still the player's.
+    /// </summary>
+    [TestMethod]
+    public void ABagReceivingAPendingUnequipCannotBeOfferedUntilTheMoveCompletes()
+    {
+        using var rig = new Rig();
+        InventoryMoveService moves = rig.Moves();
+        Item worn = rig.Worn(51222111);
+        Item bag = rig.BagItem;
+        TradeSession trade = rig.OpenPlayerTrade();
+
+        rig.UnequipIntoBag(moves, worn);
+        Assert.IsTrue(moves.HasPending(CharacterId), "the unequip waits for its equip delay");
+        Assert.IsTrue(worn.Locked);
+        Assert.IsTrue(bag.Locked, "the destination bag is locked while the move is pending");
+        Assert.IsFalse(rig.TryOffer(rig.Player, trade, bag), "a locked bag cannot be put on the table");
+
+        moves.Tick(rig.Player.Playfield!, 60);
+        Assert.IsFalse(moves.HasPending(CharacterId));
+        Assert.IsFalse(bag.Locked, "the bag is free again once the move completed");
+        Assert.IsTrue(rig.Bag.Content.Values.Any(item => ReferenceEquals(item, worn)), "the item landed in the bag");
+        Assert.IsFalse(rig.Player.Inventory.Armor.Content.Values.Any(item => ReferenceEquals(item, worn)));
+        Assert.IsTrue(rig.TryOffer(rig.Player, trade, bag), "the bag can be offered afterwards");
+        rig.Flush.HardFlush(rig.Player);
+        rig.Store.AssertRow(worn, (int)IdentityType.Container, rig.Bag.Identity.Instance,
+            rig.Bag.Content.Single(pair => ReferenceEquals(pair.Value, worn)).Key);
+        rig.AssertNoFailure();
+    }
+
+    /// <summary>
+    /// LE-03 the other way round: a bag already on the table (locked by the offer) takes no unequip, so the trade that
+    /// follows carries the bag as it was offered and the worn item stays worn.
+    /// </summary>
+    [TestMethod]
+    public void AnOfferedBagTakesNoPendingUnequipAndTradesAsOffered()
+    {
+        using var rig = new Rig();
+        InventoryMoveService moves = rig.Moves();
+        Item worn = rig.Worn(51222121);
+        Item bag = rig.BagItem;
+        int wornSlot = rig.Player.Inventory.Armor.Offset;
+        TradeSession trade = rig.OpenPlayerTrade();
+        Assert.IsTrue(rig.TryOffer(rig.Player, trade, bag), "the free bag goes on the table");
+
+        rig.UnequipIntoBag(moves, worn);
+        Assert.IsFalse(moves.HasPending(CharacterId), "a bag on the table takes nothing");
+        Assert.AreSame(worn, rig.Player.Inventory.Armor.Content[wornSlot], "the item stays worn");
+        Assert.IsFalse(worn.Locked);
+
+        rig.CommitPlayerTrade(trade);
+
+        Assert.AreSame(rig.Partner, rig.Holder(bag), "the bag changed hands as offered");
+        Assert.IsFalse(rig.Player.Inventory.TryGetBackpackPage(bag.Identity, out _), "the giver forgot the bag's page");
+        moves.Tick(rig.Player.Playfield!, 60);
+        Assert.AreSame(worn, rig.Player.Inventory.Armor.Content[wornSlot]);
+        rig.Flush.HardFlush(rig.Player);
+        rig.Flush.HardFlush(rig.Partner);
+        rig.Store.AssertRow(worn, (int)IdentityType.ArmorPage, CharacterId, wornSlot);
+        rig.AssertStorageMatchesMemory();
+    }
+
+    /// <summary>
+    /// LE-03: an item inside an offered bag that becomes locked after the offer (an equip from inside the bag is
+    /// pending) refuses the trade at commit, not only at the offer; the row is never written under another player's bag.
+    /// </summary>
+    [TestMethod]
+    public void ATradeIsRefusedAtCommitWhenAnItemInsideTheOfferedBagBecameLocked()
+    {
+        using var rig = new Rig();
+        Item inside = rig.InBag(51222141);
+        Item bag = rig.BagItem;
+        TradeSession trade = rig.OpenPlayerTrade();
+        Assert.IsTrue(rig.TryOffer(rig.Player, trade, bag), "the bag goes on the table");
+
+        inside.Locked = true; // a pending equip from inside the bag, as InventoryMoveService locks it
+        rig.CommitPlayerTrade(trade);
+
+        Assert.IsTrue(trade.InitiatorOffer.Items.Values.Any(item => ReferenceEquals(item, bag)), "the trade did not go through: the bag is still on the table");
+        Assert.AreNotSame(rig.Partner, rig.Holder(bag), "the partner never received the bag");
+        Assert.IsTrue(rig.Player.Inventory.TryGetBackpackPage(bag.Identity, out Container page) && ReferenceEquals(page, rig.Bag),
+            "the owner keeps the bag's page");
+        Assert.IsTrue(rig.Bag.Content.Values.Any(item => ReferenceEquals(item, inside)));
+        Assert.IsFalse(rig.Partner.Lane.HasQueuedWork, "no joint commit was queued");
+        rig.Store.AssertRow(inside, (int)IdentityType.Container, rig.Bag.Identity.Instance,
+            rig.Bag.Content.Single(pair => ReferenceEquals(pair.Value, inside)).Key);
+        rig.Store.AssertRow(bag, (int)IdentityType.Inventory, CharacterId, rig.Store.Rows().Single(row => row.Key == bag.InstanceId).Value.Slot);
+    }
+
+    /// <summary>
+    /// LE-03, the last line of defence: a pending move whose destination page is no longer the player's (the bag changed
+    /// hands by any path) is dropped at completion. The item stays where it was and no row is written under a page
+    /// another player now holds.
+    /// </summary>
+    [TestMethod]
+    public void APendingMoveIntoABagThatLeftThePlayerIsDroppedAtCompletion()
+    {
+        using var rig = new Rig();
+        InventoryMoveService moves = rig.Moves();
+        Item worn = rig.Worn(51222131);
+        Item bag = rig.BagItem;
+        Container bagPage = rig.Bag;
+        int wornSlot = rig.Player.Inventory.Armor.Offset;
+
+        rig.UnequipIntoBag(moves, worn);
+        Assert.IsTrue(moves.HasPending(CharacterId));
+        // The bag changes hands: the giver's page is forgotten, as a committed trade forgets it.
+        rig.Player.Inventory.ForgetBackpackPage(bag.Identity);
+
+        moves.Tick(rig.Player.Playfield!, 60);
+
+        Assert.IsFalse(moves.HasPending(CharacterId));
+        Assert.AreSame(worn, rig.Player.Inventory.Armor.Content[wornSlot], "the item stays worn");
+        Assert.AreEqual(0, bagPage.Content.Count, "nothing landed in the page that left");
+        Assert.IsFalse(worn.Locked);
+        rig.Flush.HardFlush(rig.Player);
+        rig.Store.AssertRow(worn, (int)IdentityType.ArmorPage, CharacterId, wornSlot);
+    }
+
     [TestMethod]
     public void RandomInterleavingsOfQueuedCommitsKeepStorageInStepWithMemory()
     {
@@ -894,7 +1051,7 @@ public sealed class TradeQueuedInsertOrderTests
             return items.Length == 0 ? null : items[random.Next(items.Length)];
         }
 
-        Player? Holder(Item item)
+        internal Player? Holder(Item item)
         {
             foreach (Player player in new[] { Player, Partner })
                 foreach (Container page in new[] { player.Inventory.Inventory, player.Inventory.Overflow })
@@ -1063,6 +1220,71 @@ public sealed class TradeQueuedInsertOrderTests
 
         internal int SlotOf(Item item) => SlotOf(Player, item);
 
+        /// <summary>A player trade session with both registered and nothing on the table yet.</summary>
+        internal TradeSession OpenPlayerTrade()
+        {
+            var session = new TradeSession(new Identity { Type = IdentityType.TradeWindow, Instance = 94 }, TradeKind.Player,
+                Player, Partner, machine: null);
+            Invoke("Register", Player, session);
+            Invoke("Register", Partner, session);
+            return session;
+        }
+
+        /// <summary>The client's add of a carried item to the table; true when the server put it there.</summary>
+        internal bool TryOffer(Player player, TradeSession session, Item item)
+        {
+            int slot = SlotOf(player, item);
+            Invoke("HandleAddItem", player, session, new TradeMessage
+            {
+                Identity = player.Identity, Action = TradeAction.AddItem, Target = player.Identity,
+                Container = new Identity { Type = IdentityType.Inventory, Instance = slot }
+            });
+            return session.OfferFor(player).Items.Values.Any(offered => ReferenceEquals(offered, item));
+        }
+
+        internal void CommitPlayerTrade(TradeSession session) => Invoke("CommitPlayerTrade", session);
+
+        /// <summary>The move service over this rig's flush and actions, with the player on a playfield so moves run.</summary>
+        internal InventoryMoveService Moves()
+        {
+            Player.Playfield ??= (Playfield)RuntimeHelpers.GetUninitializedObject(typeof(Playfield));
+            return new InventoryMoveService(Log, Flush, Actions);
+        }
+
+        /// <summary>A stored item worn on the armor page's first slot.</summary>
+        internal Item Worn(int instanceId)
+        {
+            Container armor = Player.Inventory.Armor;
+            int slot = armor.Offset;
+            Item item = _items.Create(5000, 5000, 1, ItemSource.Loot, instanceId: instanceId);
+            item.IsPersisted = true;
+            Assert.IsTrue(armor.Add(slot, item), "the armor slot is free");
+            Store.Seed(item, (int)armor.Identity.Type, Player.Identity.Instance, slot);
+            return item;
+        }
+
+        /// <summary>The client's ContainerAddItem taking the worn item off into the open bag.</summary>
+        internal void UnequipIntoBag(InventoryMoveService moves, Item worn)
+        {
+            Container armor = Player.Inventory.Armor;
+            int slot = armor.Content.Single(pair => ReferenceEquals(pair.Value, worn)).Key;
+            moves.Handle(Player, new ClientContainerAddItem
+            {
+                Identity = Player.Identity,
+                Source = new Identity { Type = armor.Identity.Type, Instance = slot },
+                Target = Bag.Identity
+            });
+        }
+
+        internal Item BagItem
+        {
+            get
+            {
+                _ = Bag;
+                return Player.Inventory.Inventory.Content.Values.Single(item => item.InstanceId == BagId);
+            }
+        }
+
         internal void OfferToKnubotAt(TradeSession session, Identity source)
             => Invoke("AddKnubotItem", Player, session, session.InitiatorOffer, source);
 
@@ -1148,9 +1370,14 @@ public sealed class TradeQueuedInsertOrderTests
 
         public void Persist(TradePersistenceBatch batch) => Write(batch.Inserts, batch.Updates);
 
+        /// <summary>A batch the database refuses outright (a container retired with rows in it): a terminal failure.</summary>
+        internal Func<InventoryMutationBatch, bool>? Refuse;
+
         /// <summary>As the DAO: a shared source row must still be exactly where this server last saw it, or the take fails.</summary>
         public void Persist(InventoryMutationBatch batch)
         {
+            if (Refuse?.Invoke(batch) == true)
+                throw new InvalidOperationException("Cannot retire a nonempty item container.");
             lock (_sync)
             {
                 foreach (ItemInstanceRecord expected in batch.ExpectedSources)

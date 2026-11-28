@@ -198,13 +198,34 @@ namespace ZoneEngine_New.Core.Trade
         public int AddShopPick(int stockIndex, bool stackable = false)
         {
             if (stackable)
+            {
                 _stackableShopLines.Add(stockIndex);
+                // EXPLOIT guard: a stackable line counts as one pane item however often it is picked, so without a cap a
+                // client could queue picks without end (each one scanning and logging the whole queue).
+                if (PicksOf(stockIndex) >= MaxPicksPerStackableLine)
+                    return -1;
+            }
             bool newEntry = !stackable || !_shopPicks.Contains(stockIndex);
             if (newEntry && CountShopPaneItems() >= TradeOffer.Capacity)
                 return -1;
 
             _shopPicks.Add(stockIndex);
             return _shopPicks.Count - 1;
+        }
+
+        /// <summary>
+        /// Picks of one stackable line in the buy pane; 20 was the most a line could reach on live (a 100-round ammo line
+        /// bought as 2,000 rounds).
+        /// </summary>
+        public const int MaxPicksPerStackableLine = 20;
+
+        int PicksOf(int stockIndex)
+        {
+            int count = 0;
+            for (int i = 0; i < _shopPicks.Count; i++)
+                if (_shopPicks[i] == stockIndex)
+                    count++;
+            return count;
         }
 
         readonly HashSet<int> _stackableShopLines = new();

@@ -321,6 +321,11 @@ namespace ZoneEngine_New.Core.Inventory
             if (!TryResolveAddTarget(player, message.Target, out Container destPage))
                 return;
 
+            // EXPLOIT guard: a bag that is locked (on the trade table, or held by a pending move or use) takes nothing:
+            // a move completing into it after the trade would write the item's row under the other player's bag.
+            if (destPage.LinkedItem is { Locked: true })
+                return;
+
             // A bag goes into the bank but never into another bag. An open bag closes as it is put away.
             if (IsBagItem(item))
             {
@@ -703,6 +708,20 @@ namespace ZoneEngine_New.Core.Inventory
                 || player.Session == null
                 || !ReferenceEquals(player.Playfield, pending.OriginPlayfield))
                 return;
+
+            // EXPLOIT guard: both pages must still be this player's. A bag traded away while the move was pending is no
+            // longer theirs; completing would write the item's row under another player's bag (or pull one out of it).
+            if (!player.Inventory.OwnsPage(pending.SourcePage) || !player.Inventory.OwnsPage(pending.DestPage))
+            {
+                _logger.Warn(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Pending equip aborted; a page left the player char={0} source={1} dest={2}",
+                        player.Identity.Instance,
+                        pending.SourcePage.Identity,
+                        pending.DestPage.Identity));
+                return;
+            }
 
             if (!pending.SourcePage.Content.TryGetValue(pending.SourceSlot, out Item? current)
                 || !ReferenceEquals(current, pending.Item))
@@ -1294,11 +1313,19 @@ namespace ZoneEngine_New.Core.Inventory
             return true;
         }
 
+        /// <summary>
+        /// Locks what a pending move touches: the moving item, the occupant it swaps with, and the bag it is going into.
+        /// The bag lock keeps the destination from being traded, banked or dropped while the move is pending: without it
+        /// the move completed into a bag another player already held (a NoDrop or Unique item changing hands past the
+        /// trade's checks).
+        /// </summary>
         static void SetMoveLock(PendingEquip pending, bool locked)
         {
             pending.Item.Locked = locked;
             if (pending.SwappedItem != null)
                 pending.SwappedItem.Locked = locked;
+            if (pending.LocksDestinationBag)
+                pending.DestPage.LinkedItem!.Locked = locked;
         }
 
         static void SendAck(Player player, Identity sourceContainer, Identity target, int targetPlacement)
@@ -1545,7 +1572,12 @@ namespace ZoneEngine_New.Core.Inventory
                 AckTargetPlacement = ackTargetPlacement;
                 LockedInstanceId = item.InstanceId;
                 OriginPlayfield = player.Playfield!;
+                // A bag already locked by something else keeps that lock's owner in charge of it.
+                LocksDestinationBag = IsBagPage(destPage) && destPage.LinkedItem is { Locked: false };
             }
+
+            /// <summary>The destination is a bag page whose bag item this move locks for its duration.</summary>
+            public bool LocksDestinationBag { get; }
 
             public Player Player { get; }
 

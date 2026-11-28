@@ -204,15 +204,15 @@ namespace ZoneEngine_New.Core.Cities
                 return false;
             if (!Plot(controller.PlayfieldId, controller.Index).IsOwned)
                 return false;
-            if (!playfield.GetRequiredService<Inventory.InventoryActionService>().TryDelete(player, sourceSlot, item.InstanceId))
-                return false;
-            Queue((controller.PlayfieldId, controller.Index), () =>
-            {
-                CityPlotState? state = _store.AdjustCharge(controller.PlayfieldId, controller.Index, percent / 100f);
-                if (state != null)
-                    Publish(state);
-            });
-            return true;
+            // One unit is used up (a stack keeps the rest), and the charge is queued only once that is stored: queued
+            // at once, a player's lane discarded before the retire ran kept both the item and the charge.
+            return playfield.GetRequiredService<Inventory.InventoryActionService>().TryConsumeOne(player, sourceSlot, item.InstanceId,
+                stored: () => Queue((controller.PlayfieldId, controller.Index), () =>
+                {
+                    CityPlotState? state = _store.AdjustCharge(controller.PlayfieldId, controller.Index, percent / 100f);
+                    if (state != null)
+                        Publish(state);
+                }));
         }
     }
 }

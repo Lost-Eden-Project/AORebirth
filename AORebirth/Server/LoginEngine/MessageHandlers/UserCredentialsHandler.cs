@@ -47,6 +47,7 @@ namespace LoginEngine.MessageHandlers
     using AORebirth.Database.Dao;
 
     using LoginEngine.CoreClient;
+    using LoginEngine.CoreServer;
     using LoginEngine.Packets;
     using LoginEngine.QueryBase;
 
@@ -100,11 +101,26 @@ namespace LoginEngine.MessageHandlers
                 return;
             }
 
+            // Repeated wrong passwords lock the address and the account out for a while, before the hash is computed.
+            LoginAttemptThrottle throttle = LoginAttemptThrottle.Shared;
+            if (!throttle.Allow(client.ClientAddress, challengedAccount))
+            {
+                Colouring.Push(ConsoleColor.Green);
+                Console.WriteLine(
+                    "Client '" + Client.ToLogValue(challengedAccount) + "' is locked out after repeated failed logins ("
+                    + throttle.Describe(challengedAccount) + ").");
+                Colouring.Pop();
+
+                client.RejectAuthentication();
+                return;
+            }
+
             if (checkLogin.IsLoginCorrect(
                 challengedAccount,
                 challengedServerSalt,
                 userCredentialsMessage.Credentials) == false)
             {
+                throttle.RecordFailure(client.ClientAddress, challengedAccount);
                 Colouring.Push(ConsoleColor.Green);
                 Console.WriteLine(
                     "Client '" + Client.ToLogValue(challengedAccount) + "' failed Authentication.");
@@ -114,6 +130,8 @@ namespace LoginEngine.MessageHandlers
 
                 return;
             }
+
+            throttle.RecordSuccess(client.ClientAddress, challengedAccount);
 
 
             DBLoginData loginData =

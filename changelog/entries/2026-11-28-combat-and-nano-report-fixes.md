@@ -1,0 +1,6 @@
+- Fixed: after one of several mobs died with a special attack queued, the next attack no longer stalls on "Please wait until previous action has finished."
+- Fixed: calmed monsters regenerate health again while nobody is fighting them.
+- Fixed: a resisted nano now shows as resisted instead of playing out silently.
+- Fixed: when another character's nano lands on you, chat shows who executed what within your NCU.
+- Fixed: a debuff landing while your nano bar runs no longer cancels the cast.
+- Fixed: Captain "Rik-Rak" Jones' Paralysis Field now holds the player it was cast on instead of stunning Rik-Rak himself.

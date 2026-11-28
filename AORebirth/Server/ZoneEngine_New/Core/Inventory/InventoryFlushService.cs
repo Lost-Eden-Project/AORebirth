@@ -590,14 +590,40 @@ namespace ZoneEngine_New.Core.Inventory
                 lane.Queue.TryDequeue(out _);
         }
 
-        static bool Discard(PersistenceLane lane)
+        /// <summary>
+        /// Drops everything a quarantined character's lane still holds. A joint commit (a player trade) found in it has
+        /// not run and never will: the other participant's memory shows a trade storage will never hold, so that player
+        /// is quarantined for a reload and its lane discarded the same way (which follows any further joints it holds),
+        /// and a lane parked on the joint is woken so it stops waiting. A joint another driver is running now is left to
+        /// that driver, whose completion settles both lanes.
+        /// </summary>
+        bool Discard(PersistenceLane lane)
         {
             bool hadWork = lane.HasQueuedWork;
-            while (lane.Queue.TryDequeue(out _))
+            List<PersistenceLane>? abandoned = null;
+            while (lane.Queue.TryDequeue(out LaneEntry? entry))
             {
+                if (entry is not JointCommit joint || !joint.TryAbandon(out PersistenceLane? first, out PersistenceLane? second))
+                    continue;
+                PersistenceLane other = joint.Other(lane);
+                var otherPlayer = (Player)other.Owner;
+                if (!otherPlayer.IsPersistenceQuarantined)
+                {
+                    Quarantine(otherPlayer, new InvalidOperationException(
+                            "The shared commit with character " + ((Player)lane.Owner).Identity.Instance.ToString(CultureInfo.InvariantCulture)
+                            + " was discarded before it ran."),
+                        "Shared commit abandoned for character {0}; player persistence quarantined for reload.");
+                }
+                (abandoned ??= []).Add(other);
+                long now = Environment.TickCount64;
+                if (first != null && !ReferenceEquals(first, lane)) ScheduleAt(first.Id, now);
+                if (second != null && !ReferenceEquals(second, lane)) ScheduleAt(second.Id, now);
             }
             Volatile.Write(ref lane.RetryWrite, null);
             Volatile.Write(ref lane.NextAttemptAtMs, 0);
+            if (abandoned != null)
+                foreach (PersistenceLane other in abandoned)
+                    Discard(other);
             return hadWork;
         }
 

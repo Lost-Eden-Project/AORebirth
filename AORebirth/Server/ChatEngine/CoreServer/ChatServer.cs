@@ -434,7 +434,9 @@ namespace ChatEngine.CoreServer
 
         internal void SendPrivateGroupMessage(Client sender, uint privateGroupId, string message)
         {
-            if (sender.Character == null || sender.PrivateGroupId != privateGroupId)
+            // EXPLOIT guard: 0 is "no group". An ungrouped sender naming it matched every ungrouped client, bots included,
+            // past the moderation filters.
+            if (privateGroupId == 0 || sender.Character == null || sender.PrivateGroupId != privateGroupId)
             {
                 return;
             }
@@ -519,9 +521,11 @@ namespace ChatEngine.CoreServer
         }
 
         private Client[] PrivateGroupMembers(uint privateGroupId, Client except)
-            => this.ConnectedClients.Values
-                .Where(connected => connected != null && connected != except && connected.PrivateGroupId == privateGroupId)
-                .ToArray();
+            => privateGroupId == 0
+                ? new Client[0]
+                : this.ConnectedClients.Values
+                    .Where(connected => connected != null && connected != except && connected.PrivateGroupId == privateGroupId)
+                    .ToArray();
 
         private void SendToPrivateGroup(uint privateGroupId, byte[] packet, Client except)
         {

@@ -1,0 +1,2 @@
+- Changed: Face pulling is now the quiet way to pull. A monster that notices you on its own only brings friends standing right beside it, so you can step in, get noticed, back off and fight it away from its group.
+- Changed: Taunting a monster, for example with an Aggression Enhancer, now alerts its friends from where the monster stands before it runs to you, so taunting from range no longer leaves the rest of the group behind.

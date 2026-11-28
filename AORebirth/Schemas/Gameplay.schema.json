@@ -200,6 +200,12 @@
         "threatOnlyRadiusPercent": {
           "type": "number"
         },
+        "proximityRadiusPercent": {
+          "type": "number"
+        },
+        "tauntRadiusPercent": {
+          "type": "number"
+        },
         "radiusPercent": {
           "type": "number"
         },

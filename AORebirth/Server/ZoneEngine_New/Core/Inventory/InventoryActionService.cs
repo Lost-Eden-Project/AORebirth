@@ -81,26 +81,76 @@ namespace ZoneEngine_New.Core.Inventory
         static bool IsTemplateOf(Item item, int templateId) => templateId == item.LowId || templateId == item.HighId;
 
         /// <param name="destination">Where the item goes, for module item moves: destroyed, or dropped into the world.</param>
+        /// <param name="stored">
+        /// Runs on the lane writer once the retire has committed, never when it fails or the lane is discarded: anything
+        /// the deleted item becomes outside this inventory (a world item, a city charge) waits for it.
+        /// </param>
         public bool TryDelete(Player player, Identity slot, int expectedInstanceId,
-            ItemPlaceKind destination = ItemPlaceKind.Destroyed)
+            ItemPlaceKind destination = ItemPlaceKind.Destroyed, Action? stored = null)
         {
             Chest? chest = InventoryMoveService.FindChestSource(player, slot);
             if (chest != null)
             {
                 lock (player.PersistenceGate)
                     lock (chest.LootGate)
-                        return chest.CanTransferLoot(player) && TryDeleteCore(player, slot, expectedInstanceId, destination);
+                        return chest.CanTransferLoot(player) && TryDeleteCore(player, slot, expectedInstanceId, destination, stored);
             }
-            return TryDeleteCore(player, slot, expectedInstanceId, destination);
+            return TryDeleteCore(player, slot, expectedInstanceId, destination, stored);
         }
 
-        bool TryDeleteCore(Player player, Identity slot, int expectedInstanceId, ItemPlaceKind destination)
+        /// <summary>
+        /// Uses up one of the item in <paramref name="slot"/>: a stack loses one, a single item is retired. The change is
+        /// applied on the tick and stored in the player's lane; <paramref name="stored"/> runs on the lane writer once it
+        /// has committed, which is where the effect the item pays for belongs (a discarded lane then grants nothing).
+        /// </summary>
+        public bool TryConsumeOne(Player player, Identity slot, int expectedInstanceId, Action? stored = null)
+        {
+            if (!TryResolveDeleteSlot(player, slot, out Container page, out int placement, out Item item, out LootableDynel? loot)
+                || loot != null || item.InstanceId != expectedInstanceId)
+                return false;
+            if (item.StackCount <= 1)
+                return TryDelete(player, slot, expectedInstanceId, ItemPlaceKind.Destroyed, stored);
+            int before = item.StackCount;
+            return TryCommit(player,
+                [new InventoryRowChange(item, page.Identity, placement, before - 1)],
+                () => IsCurrent(page, placement, item, expectedInstanceId) && item.StackCount == before,
+                () => item.StackCount = before - 1,
+                stored: stored);
+        }
+
+        /// <summary>
+        /// EXPLOIT guard: a bag may only be deleted or dropped once its contents are known to be none. A bag never opened
+        /// since login has no loaded page, and the old check passed it: the delete was queued, the database then refused
+        /// to retire a container with rows and the whole lane was discarded, which a client could arrange on purpose to
+        /// keep its later changes out of storage (a dropped item's row survived the drop). The page is loaded here, on the
+        /// tick, as opening the bag loads it; with no way to load it the delete is refused.
+        /// </summary>
+        static bool IsBagKnownEmpty(Player player, Item bag, Container page, int placement)
+        {
+            Identity container = bag.Identity.Type == IdentityType.Container && bag.Identity.Instance != 0
+                ? bag.Identity
+                : new Identity { Type = IdentityType.Container, Instance = bag.InstanceId };
+            if (player.Inventory.TryGetBackpackPage(container, out Container bagPage) && bagPage.Content.Count != 0)
+                return false;
+            if (bagPage == null || !bagPage.IsHydrated)
+            {
+                if (player.Playfield?.GetService<IInventoryRepository>() is not IInventoryRepository repository
+                    || player.Playfield.GetService<IItemBuilder>() is not IItemBuilder items)
+                    return false;
+                bagPage ??= player.Inventory.GetOrCreateBackpackPage(bag, container,
+                    new Identity { Type = page.Identity.Type, Instance = placement });
+                player.Inventory.HydrateBackpack(bagPage, repository, items);
+                if (!bagPage.IsHydrated)
+                    return false;
+            }
+            return bagPage.Content.Count == 0;
+        }
+
+        bool TryDeleteCore(Player player, Identity slot, int expectedInstanceId, ItemPlaceKind destination, Action? stored)
         {
             if (!TryResolveDeleteSlot(player, slot, out Container page, out int placement, out Item item, out LootableDynel? loot)
                 || item.InstanceId != expectedInstanceId) return false;
-            if (InventoryMoveService.IsBagItem(item)
-                && player.Inventory.TryGetBackpackPage(item.Identity, out Container bagPage)
-                && bagPage.Content.Count != 0) return false;
+            if (InventoryMoveService.IsBagItem(item) && !IsBagKnownEmpty(player, item, page, placement)) return false;
             if (!BeltDeckSlots.AllowsRemoval(player, page, placement)) return false;
             var graveyard = new Identity { Type = IdentityType.None, Instance = player.Identity.Instance };
             ItemInstanceRecord[] expectedSources = loot != null && item.IsPersisted
@@ -109,7 +159,7 @@ namespace ZoneEngine_New.Core.Inventory
                 [new InventoryRowChange(item, graveyard, item.InstanceId, item.StackCount, Retired: true)],
                 () => IsCurrent(page, placement, item, expectedInstanceId)
                     && (loot is not Chest sourceChest || sourceChest.CanDistribute(item)),
-                () => page.Content.Remove(placement), expectedSources: expectedSources);
+                () => page.Content.Remove(placement), expectedSources: expectedSources, stored: stored);
             if (result)
             {
                 loot?.NotifyLootChanged();

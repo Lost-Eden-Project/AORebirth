@@ -275,8 +275,23 @@ namespace ZoneEngine_New.Core.Entities
                     ? SpecialAttacks.FireResult.Dropped
                     : SpecialAttacks.TryFire(this, victim, special, request, header);
                 if ((victim == null || victim.IsDead) && this is Player player)
+                {
                     ModuleHooks.ActionResolved(player, PlayerActionKind.SpecialAttack, (int)special, PlayerActionOutcome.Failed,
                         ActionRefusal.Target, target: target, detail: "target gone", requestTimestamp: request);
+                    // The client holds the special as its pending action until it hears the action end, and answers
+                    // every attack start meanwhile with "Please wait until previous action has finished." (bug #691:
+                    // the first of several mobs dies with a special queued). A dropped special closes out the way a
+                    // refused attack start does (AttackMessageHandler): StartingAttackFailed 2, which the client takes
+                    // without a chat line of its own.
+                    player.Session?.Send(new CharacterActionMessage
+                    {
+                        Identity = Identity,
+                        Action = CharacterActionType.StartingAttackFailed,
+                        Target = Identity.None,
+                        Parameter1 = 0,
+                        Parameter2 = 2
+                    });
+                }
                 if (result != SpecialAttacks.FireResult.Waiting)
                     _queuedSpecials.Remove((special, target, request, header));
                 if (Playfield == null)
@@ -2314,8 +2329,12 @@ namespace ZoneEngine_New.Core.Entities
         /// <summary>Seconds between health ticks for a pet that is not attacking.</summary>
         const double PetRestHealIntervalSeconds = 1;
 
-        /// <summary>Attacking something (a fighting target) or being attacked (on someone's attacker list).</summary>
-        public bool IsInCombat => !IsDead && (FightingTarget.Instance != 0 || _attackers.Count > 0);
+        /// <summary>
+        /// Attacking something (a fighting target) or being attacked (on someone's attacker list). A pacified character
+        /// (a Calm running in its NCU) has no fight of its own, whatever target it still remembers: it is in combat only
+        /// while someone is fighting it, so a calmed monster regenerates as live's does (bug #539).
+        /// </summary>
+        public bool IsInCombat => !IsDead && ((FightingTarget.Instance != 0 && !IsPacified) || _attackers.Count > 0);
 
         /// <summary>A pet heals every second while it has no fighting target, even if something is attacking it.</summary>
         bool IsRestingPet => this is NpcCharacter { PetOwner: not null } && FightingTarget.Instance == 0;

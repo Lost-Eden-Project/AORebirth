@@ -84,6 +84,7 @@
     <Compile Include="CharacterCreation\CharacterStartPackageApplier.cs" />
     <Compile Include="CharacterCreation\StarterVitalStats.cs" />
     <Compile Include="Component\ClientFactory.cs" />
+    <Compile Include="CoreServer\LoginAttemptThrottle.cs" />
     <Compile Include="CoreServer\LoginServer.cs" />
     <Compile Include="MessageHandlers\CreateCharacterHandler.cs" />
     <Compile Include="MessageHandlers\DeleteCharacterHandler.cs" />
@@ -93,6 +94,7 @@
     <Compile Include="MessageHandlers\UserLoginHandler.cs" />
     <Compile Include="Packets\CharacterEntry.cs" />
     <Compile Include="Packets\CharacterName.cs" />
+    <Compile Include="Packets\CharacterSlotPolicy.cs" />
     <Compile Include="Packets\CheckLogin.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

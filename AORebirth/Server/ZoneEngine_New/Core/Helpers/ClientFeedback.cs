@@ -31,6 +31,9 @@ namespace ZoneEngine_New.Core.Helpers
         /// <summary>"Target resisted." (category 110).</summary>
         public const int TargetResisted = 205237300;
 
+        /// <summary>"%s executes %s within your NCU..." (category 110): to a player another character's nano landed on.</summary>
+        public const int ExecutesWithinYourNcu = 178697301;
+
         /// <summary>"Your attack was blocked by an attack shield!" (category 110): to the attacker a Keeper Ward stopped.</summary>
         public const int AttackBlockedByAttackShield = 25272340;
 

@@ -508,7 +508,7 @@ public sealed class DungeonChestBlock : IDungeonBlock<DungeonChestBlock>
     public int? LockedChancePercent { get; set; }
 
     /// <summary>
-    /// The item template every chest is drawn as (the Mothership's alien cocoon, 10000002); null: the mission chest
+    /// The item template every chest is drawn as (the Mothership's alien cocoon, 10000022); null: the mission chest
     /// 162447. Appearance only: the loot, lock, Need or Greed and persistence are any mission chest's.
     /// </summary>
     public int? Template { get; set; }

@@ -23,6 +23,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../ChatEngine/CoreServer/ChatSessionOwnership.cs" Link="ChatSessionOwnership.cs" />
+    <!-- LoginEngine policies with no engine dependencies: the failed-password throttle and the character slot rule. -->
+    <Compile Include="../LoginEngine/CoreServer/LoginAttemptThrottle.cs" Link="LoginAttemptThrottle.cs" />
+    <Compile Include="../LoginEngine/Packets/CharacterSlotPolicy.cs" Link="CharacterSlotPolicy.cs" />
     <!-- Existing mission behavior tests now exercise the native implementation directly. -->
     <Compile Include="../../Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging.Tests/MissionLevelGraphTests.cs" Link="Missions/MissionLevelGraphTests.cs" />
     <Compile Include="../../Libraries/Source/AOtomation/AOtomation.Messaging/src/SmokeLounge.AOtomation.Messaging.Tests/MissionRollSemanticsTests.cs" Link="Missions/MissionRollSemanticsTests.cs" />
@@ -43,7 +46,7 @@
     <EmbeddedResource Include="Fixtures/LegacyProductionCharacterStats.json" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Remove="ChatNetworkTests.cs;ClientSendTests.cs;BuddyListPersistenceTests.cs;LftTeamRangeTests.cs;ChatLineFilterTests.cs" />
+    <Compile Remove="ChatNetworkTests.cs;ClientSendTests.cs;BuddyListPersistenceTests.cs;LftTeamRangeTests.cs;ChatLineFilterTests.cs;ChatLineRelayGuardTests.cs" />
   </ItemGroup>
   <!-- Explicit focused run: the clean baseline contains unrelated stale test types.
        The default/full suite remains unchanged and continues reporting those failures. -->
@@ -56,6 +59,7 @@
     <Compile Include="BuddyListPersistenceTests.cs" />
     <Compile Include="LftTeamRangeTests.cs" />
     <Compile Include="ChatLineFilterTests.cs" />
+    <Compile Include="ChatLineRelayGuardTests.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(StaticDoorFocusedTests)' == 'true'">
     <Compile Remove="@(Compile)" />

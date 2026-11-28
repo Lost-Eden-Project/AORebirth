@@ -161,14 +161,38 @@ namespace ZoneEngine_New.Core.Inventory
         /// <summary>Marks the joint run (or abandoned) and returns the lanes it parked, which the caller reschedules.</summary>
         public (PersistenceLane? First, PersistenceLane? Second) Complete()
         {
-            PersistenceLane? first = null, second = null;
+            (PersistenceLane? First, PersistenceLane? Second) parked;
+            lock (_sync)
+                parked = Finish();
+            _completed.Set();
+            return parked;
+        }
+
+        /// <summary>
+        /// A lane holding this joint was discarded before the joint ran: the joint is marked done without running, so no
+        /// lane waits for it, and the lanes it parked are returned for rescheduling. False when it has already run or a
+        /// driver is running it now, in which case its own completion settles both lanes.
+        /// </summary>
+        public bool TryAbandon(out PersistenceLane? first, out PersistenceLane? second)
+        {
+            first = null;
+            second = null;
             lock (_sync)
             {
-                _done = true;
-                if (ReferenceEquals(Low.ParkedOn, this)) { Low.ParkedOn = null; first = Low; }
-                if (ReferenceEquals(High.ParkedOn, this)) { High.ParkedOn = null; second = High; }
+                if (_done || _running)
+                    return false;
+                (first, second) = Finish();
             }
             _completed.Set();
+            return true;
+        }
+
+        (PersistenceLane? First, PersistenceLane? Second) Finish()
+        {
+            PersistenceLane? first = null, second = null;
+            _done = true;
+            if (ReferenceEquals(Low.ParkedOn, this)) { Low.ParkedOn = null; first = Low; }
+            if (ReferenceEquals(High.ParkedOn, this)) { High.ParkedOn = null; second = High; }
             return (first, second);
         }
 

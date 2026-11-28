@@ -719,6 +719,15 @@ namespace ZoneEngine_New.Core.Movement
         public bool Consume(CharDCMoveMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
+            // EXPLOIT guard: a non-finite coordinate or heading component would poison the position, the travel budget
+            // and every range and sight check made from it. Refused outright, position and heading unchanged.
+            if (!IsFiniteMove(message))
+            {
+                if (_character is Player refused)
+                    refused.Logger.Warn("Rejected CharDCMove with a non-finite position or heading character="
+                        + _character.Identity.Instance.ToString(CultureInfo.InvariantCulture));
+                return false;
+            }
             // Both corrections are per-move verdicts. A root pull-back raised by the last held move used to stay raised
             // after the root ended, and every free move then snapped the client back to where it already was.
             JumpCorrectionDue = false;
@@ -1157,9 +1166,14 @@ namespace ZoneEngine_New.Core.Movement
             return true;
         }
 
-        /// <summary>Client heading through <c>SetRelRot</c>, which re-aims residual velocity along it.</summary>
+        /// <summary>
+        /// Client heading through <c>SetRelRot</c>, which re-aims residual velocity along it. A heading that is not a
+        /// unit rotation (zero, or scaled) is ignored: the forward made from it would scale that velocity.
+        /// </summary>
         void ApplyClientHeading(CharDCMoveMessage message)
         {
+            if (!IsUnitHeading(message))
+                return;
             var heading = new Quaternion(
                 message.Heading.X,
                 message.Heading.Y,
@@ -1167,6 +1181,21 @@ namespace ZoneEngine_New.Core.Movement
                 message.Heading.W);
             _character.Rotation = heading;
             ApplyHeadingToSim(heading);
+        }
+
+        static bool IsFiniteMove(CharDCMoveMessage message)
+        {
+            LostEden.Protocol.GameData.Vector3 position = message.Position;
+            LostEden.Protocol.GameData.Quaternion heading = message.Heading;
+            return float.IsFinite(position.X) && float.IsFinite(position.Y) && float.IsFinite(position.Z)
+                && float.IsFinite(heading.X) && float.IsFinite(heading.Y) && float.IsFinite(heading.Z) && float.IsFinite(heading.W);
+        }
+
+        static bool IsUnitHeading(CharDCMoveMessage message)
+        {
+            LostEden.Protocol.GameData.Quaternion heading = message.Heading;
+            float norm = (heading.X * heading.X) + (heading.Y * heading.Y) + (heading.Z * heading.Z) + (heading.W * heading.W);
+            return float.IsFinite(norm) && norm > 0.81f && norm < 1.21f;
         }
 
         void ApplyHeadingToSim(Quaternion heading)
@@ -1310,6 +1339,10 @@ namespace ZoneEngine_New.Core.Movement
                         continue;
                     _move.Apply((int)action);
                     SyncModeStats();
+                    // A cast cannot start swimming (PlayerCastGate), so entering water ends one in flight, as the
+                    // client's own switch into Swim did before the server took the switch over.
+                    if (entered)
+                        _character.InterruptTimedActions(TimedActionInterrupt.Movement);
                 }
                 else if (entered || _move.State == (int)MovementState.Swim)
                 {
@@ -1547,6 +1580,11 @@ namespace ZoneEngine_New.Core.Movement
             {
                 case MovementAction.SwitchToFly when !HasFlightAuthority():
                     LogRefusedAction(action, "no flight authority");
+                    return false;
+                case MovementAction.SwitchToSwim when !_sim.InLiquid:
+                    // EXPLOIT guard: swimming skips the height check. The server's own liquid detection puts a body that
+                    // enters deep water into Swim (ApplyLiquidChanges); a client declaring it on dry land is refused.
+                    LogRefusedAction(action, "not in liquid");
                     return false;
                 case MovementAction.SwitchToWalk or MovementAction.SwitchToRun when !HasWalkRunSpecialAction():
                     LogRefusedAction(action, "no walk/run special action");

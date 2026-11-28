@@ -1,0 +1,1 @@
+- Fixed: Monsters that walk into position on a script, such as The Beast's adds in Pandemonium, now chase at a run once they get there instead of walking after you.

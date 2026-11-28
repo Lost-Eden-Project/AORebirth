@@ -252,6 +252,12 @@ namespace ZoneEngine_New.Core.Configuration
             if (!float.IsFinite(SocialAggro.ThreatOnlyRadiusPercent) || SocialAggro.ThreatOnlyRadiusPercent < 0
                 || SocialAggro.ThreatOnlyRadiusPercent > 100)
                 throw new InvalidDataException(path + ": socialAggro.threatOnlyRadiusPercent must be 0 to 100.");
+            if (!float.IsFinite(SocialAggro.ProximityRadiusPercent) || SocialAggro.ProximityRadiusPercent < 0
+                || SocialAggro.ProximityRadiusPercent > 100)
+                throw new InvalidDataException(path + ": socialAggro.proximityRadiusPercent must be 0 to 100.");
+            if (!float.IsFinite(SocialAggro.TauntRadiusPercent) || SocialAggro.TauntRadiusPercent < 0
+                || SocialAggro.TauntRadiusPercent > 100)
+                throw new InvalidDataException(path + ": socialAggro.tauntRadiusPercent must be 0 to 100.");
             if (!float.IsFinite(SocialAggro.RadiusPercent) || SocialAggro.RadiusPercent < 0 || SocialAggro.RadiusPercent > 100)
                 throw new InvalidDataException(path + ": socialAggro.radiusPercent must be 0 to 100.");
             if (SocialAggro.MaxHelpers < 0)
@@ -728,22 +734,45 @@ namespace ZoneEngine_New.Core.Configuration
         /// <paramref name="npcAttacker"/> when the enemy is an NPC that is not a player's pet, <paramref name="guards"/>
         /// when a guard is answering a guard.
         /// </summary>
-        public float RadiusFor(int assistanceRadius, bool npcAttacker = false, bool guards = false, bool threatOnly = false)
+        public float RadiusFor(int assistanceRadius, bool npcAttacker = false, bool guards = false, SocialCall call = SocialCall.Damage)
         {
             float fallback = guards && GuardDefaultRadius > 0 ? GuardDefaultRadius
                 : npcAttacker && NpcVsNpcDefaultRadius > 0 ? NpcVsNpcDefaultRadius
                 : DefaultRadius;
             float radius = Math.Min(assistanceRadius > 0 ? assistanceRadius : fallback, MaxRadius) * RadiusPercent / 100f;
             // Guards answering a guard are one force: a taunt on one still brings the rest at the full radius.
-            return threatOnly && !guards ? radius * ThreatOnlyRadiusPercent / 100f : radius;
+            return guards ? radius : radius * CallPercent(call) / 100f;
         }
 
+        /// <summary>Percent of the call radius that <paramref name="call"/> carries.</summary>
+        public float CallPercent(SocialCall call) => call switch
+        {
+            SocialCall.Proximity => ProximityRadiusPercent,
+            SocialCall.Threat => ThreatOnlyRadiusPercent,
+            SocialCall.Taunt => TauntRadiusPercent,
+            _ => 100f
+        };
+
         /// <summary>
-        /// Percent of the call radius when the attacker's first threat was not damage (a taunt, a debuff, a hostile
-        /// nano that did no damage, the NPC's own proximity aggro on a player). The attacker's first damage afterwards calls again at the full radius. Guards
-        /// answering a guard always come from the full radius. 100 leaves it as it is.
+        /// Percent of the call radius when the attacker's first threat was not damage (a debuff, a hostile nano that did
+        /// no damage, a heal on someone the NPC fights). The attacker's first taunt or damage afterwards calls again at
+        /// its own radius. Guards answering a guard always come from the full radius. 100 leaves it as it is.
         /// </summary>
         public float ThreatOnlyRadiusPercent { get; init; } = 100f;
+
+        /// <summary>
+        /// Percent of the call radius when the NPC noticed the player on its own (proximity aggro, a face pull). Below
+        /// threatOnlyRadiusPercent and tauntRadiusPercent makes walking up to a mob and backing off the quiet pull: the
+        /// player's first damage calls at the full radius from wherever the mob then stands. 100 leaves it as it is.
+        /// </summary>
+        public float ProximityRadiusPercent { get; init; } = 100f;
+
+        /// <summary>
+        /// Percent of the call radius for a taunt (TauntNpc: an Aggression Enhancer, a taunt nano), called at once from
+        /// where the taunted mob stands, before it runs to the taunter: a taunt from range does not leave the pack
+        /// behind. 100 leaves it as it is.
+        /// </summary>
+        public float TauntRadiusPercent { get; init; } = 100f;
 
         /// <summary>
         /// Percent of every call radius (spawn AssistanceRadius and the defaults alike, guards included), applied after
@@ -769,6 +798,25 @@ namespace ZoneEngine_New.Core.Configuration
 
         /// <summary>A helper calls for help in turn. Off keeps one pull from spreading across a whole area.</summary>
         public bool Chain { get; init; }
+    }
+
+    /// <summary>
+    /// The loudest act an attacker has done to an NPC so far, quietest first: how far that NPC's call for help carries
+    /// (Gameplay.json socialAggro). A louder act calls again at its own radius; a quieter one never calls again.
+    /// </summary>
+    public enum SocialCall
+    {
+        /// <summary>The NPC noticed the player on its own (proximity aggro): socialAggro.proximityRadiusPercent.</summary>
+        Proximity,
+
+        /// <summary>Threat without damage (a debuff, a hostile nano, a heal): socialAggro.threatOnlyRadiusPercent.</summary>
+        Threat,
+
+        /// <summary>A taunt (TauntNpc): socialAggro.tauntRadiusPercent.</summary>
+        Taunt,
+
+        /// <summary>Damage: the full radius.</summary>
+        Damage
     }
 
     /// <summary>

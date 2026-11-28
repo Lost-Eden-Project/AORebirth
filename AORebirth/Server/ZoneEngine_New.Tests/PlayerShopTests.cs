@@ -426,21 +426,60 @@ public sealed class PlayerShopTests
 
         rig.Db.Refuse = batch => batch.PlayerShop?.Kind == PlayerShopWriteKind.Sale;
         Assert.AreEqual(PlayerShopResult.Done, rig.Act(rig.Buyer, PlayerShopAction.Buy, slot: 0, item: sword.InstanceId, price: 900));
+        Assert.IsTrue(rig.ShopA.Listings.Count == 0, "the sale is applied in memory while its write is pending");
         rig.Store();
         Assert.IsTrue(rig.Buyer.IsPersistenceQuarantined, "the buyer reloads from storage");
-        Assert.IsTrue(rig.ShopA.Locked);
-        Assert.AreEqual(PlayerShopResult.Locked, rig.Act(rig.Other, PlayerShopAction.Buy, slot: 0, item: sword.InstanceId, price: 900));
-        Assert.AreEqual(PlayerShopResult.Locked, rig.Act(rig.Owner, PlayerShopAction.Withdraw));
-        // Storage still holds the item in the shop, priced, and the buyer's credits: the restart offers it again.
+        // Storage still holds the item in the shop, priced, and the buyer's credits: nothing was duplicated.
         Assert.AreEqual((int)IdentityType.PlayerShopInventory, rig.Db.Items[sword.InstanceId].Type);
         Assert.AreEqual(900, rig.Db.Prices[sword.InstanceId].Price);
         Assert.AreEqual(StartCash, rig.Db.Cash[BuyerId]);
         Assert.AreEqual(0, rig.Db.Shops[rig.ShopA.ShopId].Balance);
+        // LE-33: the quarantined buyer's write locked the shop, and with the buyer's lane run dry the same tick read the
+        // shop back from storage and reopened it. The owner's items and credits are not held until a restart.
+        Assert.IsFalse(rig.ShopA.Locked, "the shop reopened from storage");
+        Assert.IsFalse(rig.ShopA.RecoverFromStorage);
+        Assert.AreEqual(0, rig.ShopA.PendingWriteCount);
+        Assert.AreEqual(sword.InstanceId, rig.ShopA.Listings.Values.Single().Item.InstanceId);
+        Assert.IsFalse(rig.ShopA.Listings.Values.Single().Pending);
+        Assert.AreEqual(900, rig.ShopA.Listings.Values.Single().Price);
+        Assert.AreEqual(0, rig.ShopA.Balance);
         rig.Db.Refuse = null;
         PlayerShopService reloaded = rig.NewService();
         reloaded.Start();
         Assert.IsTrue(reloaded.TryGetShop(PlayfieldId, TerminalA, out PlayerShop shop));
         Assert.AreEqual(sword.InstanceId, shop.Listings.Values.Single().Item.InstanceId);
+
+        Assert.AreEqual(PlayerShopResult.Done, rig.Act(rig.Other, PlayerShopAction.Buy, slot: 0, item: sword.InstanceId, price: 900));
+        rig.Store();
+        // The reopened shop re-read its item from storage, so the buyer gets that same row (not the old in-memory object).
+        Assert.AreEqual(1, rig.Other.Inventory.Inventory.Content.Values.Count(item => item.InstanceId == sword.InstanceId));
+        Assert.AreEqual(900, rig.ShopA.Balance);
+        Assert.AreEqual(PlayerShopResult.Done, rig.Act(rig.Owner, PlayerShopAction.Withdraw, price: 900));
+        rig.Store();
+        rig.AssertStorageMatchesMemory();
+    }
+
+    /// <summary>
+    /// LE-33: a quarantined write whose rent never stored releases the terminal once the shop is read back; one whose
+    /// listings read back inconsistent stays locked (storage itself disagrees, which only a restart with repaired rows ends).
+    /// </summary>
+    [TestMethod]
+    public void AShopWhoseRentNeverStoredIsReleasedWhenReadBack()
+    {
+        using var rig = new Rig();
+        rig.Db.Refuse = batch => batch.PlayerShop?.Kind == PlayerShopWriteKind.Rent;
+        Assert.AreEqual(PlayerShopResult.Done, rig.Act(rig.Owner, PlayerShopAction.Rent, price: rig.Rules.RentCost));
+        Assert.IsTrue(rig.ShopA.Opening, "the claim is held while the rent's write is pending");
+        rig.Store();
+
+        Assert.IsTrue(rig.Owner.IsPersistenceQuarantined);
+        Assert.IsFalse(rig.Shops.TryGetShop(PlayfieldId, TerminalA, out _), "the terminal is for rent again once the claim is read back");
+        Assert.IsFalse(rig.Shops.TryGetShopOf(OwnerId, out _));
+        Assert.IsFalse(rig.Db.Shops.Values.Any(row => row.OwnerId == OwnerId), "storage never held the shop");
+        rig.Db.Refuse = null;
+        Assert.AreEqual(PlayerShopResult.Done, rig.Act(rig.Other, PlayerShopAction.Rent, price: rig.Rules.RentCost), "someone else can rent it");
+        rig.Store();
+        Assert.IsTrue(rig.Shops.TryGetShopOf(OtherId, out PlayerShop shop) && !shop.Locked);
     }
 
     /// <summary>

@@ -678,6 +678,47 @@ public sealed class CityPlotTests
 
     // ------------------------------------------------------------------------------------------------ advantages
 
+    /// <summary>
+    /// LE-34: a Controller Recompiler Unit used on the controller took the whole stack and queued the charge at once,
+    /// so a lane discarded before the retire ran kept both the units and the charge. One unit is used, and the charge
+    /// is queued only once that use is stored.
+    /// </summary>
+    [TestMethod]
+    public void RechargingAControllerUsesOneUnitAndChargesOnlyOnceTheUseIsStored()
+    {
+        using var rig = new Rig();
+        rig.GiveDistrict();
+        Item units = rig.RechargeUnits(rig.Buyer, count: 3, percent: 100);
+        Identity slot = rig.SlotOf(rig.Buyer, units);
+
+        Assert.IsTrue(rig.Recharge(rig.Buyer, slot), "the unit is used on the controller");
+        Assert.AreEqual(2, units.StackCount, "one unit is used up, the rest stays");
+        Assert.IsTrue(rig.Cities.WhenIdle().Wait(TimeSpan.FromSeconds(10)));
+        Assert.AreEqual(0, rig.Store.Charges.Count, "the charge waits for the use to be stored");
+
+        rig.Settle();
+
+        CollectionAssert.AreEqual(new[] { 1f }, rig.Store.Charges, "one full charge once stored");
+        Assert.IsFalse(rig.Buyer.IsPersistenceQuarantined);
+    }
+
+    [TestMethod]
+    public void ARechargeWhoseUseCannotBeStoredChargesNothing()
+    {
+        using var rig = new Rig();
+        rig.GiveDistrict();
+        Item unit = rig.RechargeUnits(rig.Buyer, count: 1, percent: 100);
+        Identity slot = rig.SlotOf(rig.Buyer, unit);
+        rig.Persistence.Refuse = batch => batch.Locations.Any(location => location.InstanceId == unit.InstanceId);
+
+        Assert.IsTrue(rig.Recharge(rig.Buyer, slot));
+        Assert.ThrowsExactly<InvalidOperationException>(() => rig.HardFlush(rig.Buyer));
+
+        Assert.IsTrue(rig.Buyer.IsPersistenceQuarantined, "the player reloads from storage, where the unit still is");
+        Assert.IsTrue(rig.Cities.WhenIdle().Wait(TimeSpan.FromSeconds(10)));
+        Assert.AreEqual(0, rig.Store.Charges.Count, "an unsaved use grants no charge");
+    }
+
     [TestMethod]
     public void AMemberWhoLeavesTheOrganizationLosesItsCityAdvantages()
     {
@@ -895,7 +936,8 @@ public sealed class CityPlotTests
             Cities = new CityService(Store, catalog, gameData, items, templates, actions, _flush, trades, _organizations,
                 new Lazy<PlayfieldManager>(() => _manager), Log);
             var locality = new ZoneEngine_New.Core.Playfield.Locality.PlayfieldLocality(Playfield, null);
-            _services = new ServiceCollection().AddSingleton(registry).AddSingleton(locality).AddSingleton(Cities).BuildServiceProvider();
+            _services = new ServiceCollection().AddSingleton(registry).AddSingleton(locality).AddSingleton(Cities).AddSingleton(actions)
+                .BuildServiceProvider();
             Set(_world, "_serviceProvider", _services);
 
             _controller = new CityController(new Identity(IdentityType.CityController, unchecked((int)(0xC0000000u | Playfield))),
@@ -928,6 +970,28 @@ public sealed class CityPlotTests
         }
 
         internal void GiveDistrict() => Store.Give(Playfield, 0, OrganizationId, BuyerId, Cities);
+
+        /// <summary>A stack of controller recharge units in the player's next free inventory slot.</summary>
+        internal Item RechargeUnits(Player player, int count, int percent)
+        {
+            Item unit = new Items().CreateWithNewInstance(301001, 301001, 100, ItemSource.Loot, count);
+            unit.Definition!.Stats[CharacterStat.CityTerminalRechargePercent] = percent;
+            unit.IsPersisted = true;
+            Container page = player.Inventory.Inventory;
+            int slot = page.FindFreeSlot();
+            Assert.IsTrue(page.Add(slot, unit));
+            return unit;
+        }
+
+        /// <summary>UseItemOnItem of a recharge unit on the controller, on the playfield tick.</summary>
+        internal bool Recharge(Player player, Identity slot)
+        {
+            bool result = false;
+            OnTick(() => result = Cities.TryRecharge(player, _world, slot, _controller.Identity));
+            return result;
+        }
+
+        internal void HardFlush(Player player) => _flush.HardFlush(player);
 
         object TryGetHash(object?[] args)
         {
@@ -1248,7 +1312,14 @@ public sealed class CityPlotTests
         public CityWriteResult ToggleCloak(CityControllerDefinition controller, CityCatalog cities, int organizationId, int characterId,
             CityManagePermission canManage) => CityWriteResult.Fail(CityWriteStatus.NoCloakingDevice);
 
-        public CityPlotState? AdjustCharge(int playfieldId, int controllerIndex, float delta) => null;
+        /// <summary>Every charge adjustment asked of the store, in order.</summary>
+        internal readonly List<float> Charges = new();
+
+        public CityPlotState? AdjustCharge(int playfieldId, int controllerIndex, float delta)
+        {
+            lock (_sync) Charges.Add(delta);
+            return null;
+        }
 
         public IReadOnlyList<(int PlayfieldId, int ControllerIndex)> DuePlots(CityRules cityRules)
         {
@@ -1354,7 +1425,15 @@ public sealed class CityPlotTests
         public void Persist(IReadOnlyList<ItemInstanceRecord> inserts, IReadOnlyList<ItemLocationUpdate> updates, int characterId,
             IReadOnlyList<int> uploadedNanoIds, IReadOnlyList<ActiveNanoRecord>? activeNanos, IReadOnlyList<SkillLockRecord>? skillLocks) { }
 
-        public void Persist(InventoryMutationBatch batch) { lock (_batches) _batches.Add(batch); }
+        /// <summary>A batch the database refuses outright: a terminal failure that quarantines the character.</summary>
+        internal Func<InventoryMutationBatch, bool>? Refuse;
+
+        public void Persist(InventoryMutationBatch batch)
+        {
+            if (Refuse?.Invoke(batch) == true)
+                throw new InvalidOperationException("The database refused the batch.");
+            lock (_batches) _batches.Add(batch);
+        }
 
         public void Persist(TradePersistenceBatch batch) { }
     }

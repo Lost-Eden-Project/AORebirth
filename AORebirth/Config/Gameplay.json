@@ -68,6 +68,8 @@
     "maxRadius": 30,
     "radiusPercent": 50,
     "threatOnlyRadiusPercent": 60,
+    "proximityRadiusPercent": 25,
+    "tauntRadiusPercent": 100,
     "sameClanOnly": true,
     "requireLineOfSight": true,
     "maxHelpers": 0,

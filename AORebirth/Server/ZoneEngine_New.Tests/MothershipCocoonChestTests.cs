@@ -26,7 +26,7 @@ using ZoneEngine_New.Core.Quests.Dungeons;
 using ZoneEngine_New.Core.WorldSimulation;
 
 /// <summary>
-/// Every Alien Mothership mission chest is the alien cocoon (team request 18): item template 10000002, the mission chest
+/// Every Alien Mothership mission chest is the alien cocoon (team request 18): item template 10000022, the mission chest
 /// 162447 with its mesh replaced by the ai_cocoon CAT body (CATMesh 257279), so state machine 7 plays the burst open and
 /// closed. Only the chests' appearance changes; loot, lock, Need or Greed and persistence are any mission chest's.
 /// Against the runtime GameData (AO_REBIRTH_GAMEDATA_PATH): its Dungeons presets, Missions.json, items.dat and
@@ -35,7 +35,8 @@ using ZoneEngine_New.Core.WorldSimulation;
 [TestClass]
 public sealed class MothershipCocoonChestTests
 {
-    const int Cocoon = 10000002;
+    // Not 10000002: the site's items.dat build lets nano 10000002 replace item 10000002, which dropped the cocoon.
+    const int Cocoon = 10000022;
     const int CocoonBody = 257279;
 
     static readonly Lazy<(GameDataStore Data, ItemTemplateCatalog Templates)?> Runtime = new(() =>

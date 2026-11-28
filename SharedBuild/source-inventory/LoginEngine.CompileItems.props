@@ -10,6 +10,7 @@
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/CharacterCreation/CharacterStartPackageApplier.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/CharacterCreation/StarterVitalStats.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Component/ClientFactory.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/CoreServer/LoginAttemptThrottle.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/CoreServer/LoginServer.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/MessageHandlers/CreateCharacterHandler.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/MessageHandlers/DeleteCharacterHandler.cs" />
@@ -19,6 +20,7 @@
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/MessageHandlers/UserLoginHandler.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Packets/CharacterEntry.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Packets/CharacterName.cs" />
+    <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Packets/CharacterSlotPolicy.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Packets/CheckLogin.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Program.cs" />
     <Compile Include="$(AORebirthRepositoryRoot)/AORebirth/Server/LoginEngine/Properties/AssemblyInfo.cs" />
