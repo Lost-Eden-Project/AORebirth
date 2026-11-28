@@ -2562,9 +2562,10 @@ namespace ZoneEngine_New.Core.Entities
 
         /// <summary>
         /// Runs the weapon's OnHit functions after a connecting swing. Item 205012's
-        /// OnHit is CastChance: a percent chance to land a nano on the recipient.
+        /// OnHit is CastChance: a percent chance to land a nano on the recipient. A nano whose every function names the
+        /// User or Wearer is the attacker's own, whatever the CastChance names (Glory, bug #773).
         /// </summary>
-        void ApplyOnHitProcs(Character target, Item weapon)
+        internal void ApplyOnHitProcs(Character target, Item weapon)
         {
             if (!weapon.SpellList.ContainsKey(EventType.OnHit))
                 return;
@@ -2583,6 +2584,7 @@ namespace ZoneEngine_New.Core.Entities
                 target,
                 inventory,
                 items,
+                criteria: new SpellCriteria { WeaponProc = true },
                 source: this);
         }
 

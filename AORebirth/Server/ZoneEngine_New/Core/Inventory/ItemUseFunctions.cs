@@ -410,13 +410,22 @@ namespace ZoneEngine_New.Core.Inventory
 
             Character caster = source ?? target;
             Character recipient = ResolveApplyOn(target, source, spell);
+            if (criteria.WeaponProc && !ReferenceEquals(recipient, caster))
+            {
+                // A weapon proc whose nano names only the User / Wearer is the attacker's buff (Glory, bug #773).
+                ItemTemplate template = items.CreateTemplate(nanoId, nanoId, quality: 1);
+                if (template.Id == nanoId && NanoSpell.From(template).ActsOnlyOnRunner)
+                    recipient = caster;
+            }
+
             return NanoRuntime.TryApplyImmediate(
                 caster,
                 recipient,
                 nanoId,
                 items,
                 inventory,
-                DateTime.UtcNow);
+                DateTime.UtcNow,
+                fromProc: criteria.WeaponProc);
         }
 
         /// <summary>

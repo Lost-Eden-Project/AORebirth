@@ -187,6 +187,13 @@ namespace ZoneEngine_New.Core.Inventory
         /// </summary>
         public Dynel? SelectedDynel { get; init; }
 
+        /// <summary>
+        /// The functions run as a weapon's OnHit proc: a CastChance nano whose every function names the User or Wearer is
+        /// the attacker's own (Glory 250469 from the Kyr'Ozch weapons' Fightingtarget CastChance, bug #773), the rule
+        /// <see cref="Nanos.ProcRules"/> applies to AddOffProc.
+        /// </summary>
+        public bool WeaponProc { get; init; }
+
         /// <summary>Test hook. Production rolls <see cref="RollMin"/> through <see cref="RollMaxInclusive"/>.</summary>
         public Func<int>? NextRoll { get; init; }
 

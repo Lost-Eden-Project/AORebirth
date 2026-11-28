@@ -1,0 +1,1 @@
+- Fixed: the Glory buff from upgraded and Special Edition Kyr'Ozch weapons now lands on you instead of the monster you hit.
